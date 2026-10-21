@@ -1,5 +1,65 @@
 import { describe, expect, it } from 'vitest';
-import { responseProgressesRepeatedPriceObjectionV1 } from '../../../botpress-agent/src/lib/conversation/sales-objection-turn-policy';
+import type { AgentAContextV1 } from '../../../botpress-agent/src/schemas/agent-a-brain';
+import {
+  evaluateSalesObjectionTurnV1,
+  responseAvoidsDisallowedPriceReframingV1,
+  responseProgressesRepeatedPriceObjectionV1,
+} from '../../../botpress-agent/src/lib/conversation/sales-objection-turn-policy';
+
+function contextWithCurrentMessage(text: string, priorInbound: readonly string[] = []): AgentAContextV1 {
+  return {
+    turn: {
+      batch_messages: [{ id: 'current-message', text }],
+      recent_turns: priorInbound.map((content, index) => ({
+        id: `prior-${index}`,
+        direction: 'inbound' as const,
+        content,
+      })),
+    },
+  } as AgentAContextV1;
+}
+
+describe('evaluateSalesObjectionTurnV1', () => {
+  it.each([
+    ['Cual es el costo?', 'price_question', null],
+    ['Cuanto sale el curso?', 'price_question', null],
+    ['Me sigue pareciendo caro', 'repeated_price_objection', ['Está fuera de mi presupuesto']],
+    ['Si pago en 12 meses, el diploma tarda 12 meses?', 'payment_terms_question', null],
+    ['Si pago en 12 meses, puedo terminar antes?', 'payment_terms_question', null],
+    ['Hay que pagar todo junto para empezar?', 'payment_terms_question', null],
+    ['Hay que pagar todo junto para inscribirme?', 'payment_terms_question', null],
+    ['Trabajo mucho, no sé si voy a tener tiempo', 'time_or_schedule_objection', null],
+    ['No puedo en ese horario', 'time_or_schedule_objection', null],
+    ['Las clases son de lunes a viernes?', 'time_or_schedule_objection', null],
+    ['Prefiero estudiar de mañana', 'time_or_schedule_objection', null],
+    ['Estoy desde cero', 'readiness_or_requirements_objection', null],
+    ['No tengo computadora', 'readiness_or_requirements_objection', null],
+    ['El certificado sirve?', 'trust_objection', null],
+    ['Es una escuela real?', 'trust_objection', null],
+    ['Pensé que las clases eran con un profesor en vivo, no un video', 'trust_objection', null],
+    ['Pensé que eran clases en vivo, no videos', 'trust_objection', null],
+    ['El banco no me deja hacer el pago', 'payment_friction', null],
+    ['El banco rechazó el pago', 'payment_friction', null],
+    ['La tarjeta fue rechazada', 'payment_friction', null],
+    ['La tarjeta está bloqueada', 'payment_friction', null],
+    ['Se me quedó la tarjeta en el cajero', 'payment_friction', null],
+    ['Ahorita recargo la tarjeta', 'payment_friction', null],
+    ['Hasta cuándo es válida la oferta?', 'offer_timing_question', null],
+  ] satisfies ReadonlyArray<readonly [string, string, readonly string[] | null]>)('classifies %s as %s', (text, expected, priorInbound) => {
+    expect(evaluateSalesObjectionTurnV1(contextWithCurrentMessage(text, priorInbound ?? []))).toEqual({
+      kind: expected,
+    });
+  });
+
+  it.each([
+    'Cuánto dura?',
+    'Quiero tiempo para pensarlo',
+    'Hoy sí o sí hago el pago',
+    'Me interesa Inglés 1',
+  ])('does not force an objection category for %s', (text) => {
+    expect(evaluateSalesObjectionTurnV1(contextWithCurrentMessage(text))).toEqual({ kind: 'none' });
+  });
+});
 
 describe('responseProgressesRepeatedPriceObjectionV1', () => {
   it.each([
@@ -56,5 +116,23 @@ describe('responseProgressesRepeatedPriceObjectionV1', () => {
       messages: [message],
       call_offer: null,
     })).toBe(false);
+  });
+});
+
+describe('responseAvoidsDisallowedPriceReframingV1', () => {
+  it.each([
+    'Para tu negocio, lo aprendido te puede ayudar a vender y puedes pagarlo en 12 cuotas de USD 30.',
+    'Para tu trabajo, te puede ayudar a crecer y es menos de un dólar por día.',
+    'Te puede ayudar a emprender y puedo incluir Marketing sin costo por el mismo precio.',
+    'Es una inversión parecida a lo que gastas en un café por día.',
+  ])('rejects forbidden price persuasion even when it also sounds contextual: %s', (message) => {
+    expect(responseAvoidsDisallowedPriceReframingV1({ messages: [message] })).toBe(false);
+  });
+
+  it.each([
+    'Si lo que buscas es conseguir clientes para tu negocio, puedes aplicar lo aprendido para ordenar cómo lo comunicas.',
+    'Si hoy el presupuesto realmente no te lo permite, está bien; no quiero presionarte.',
+  ])('allows contextual value or an honest budget limit without changing the price: %s', (message) => {
+    expect(responseAvoidsDisallowedPriceReframingV1({ messages: [message] })).toBe(true);
   });
 });

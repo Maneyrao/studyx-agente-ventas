@@ -676,31 +676,58 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
     expect(result.evidence).toMatchObject({ repair_attempted: true, repaired: true });
   });
 
-  it('preserves the repaired call invitation when the repair also duplicates it in messages', async () => {
+  it('preserves the repaired call invitation for uncertain English discovery without selecting a level', async () => {
     const current = context();
-    current.turn.batch_messages = [{ id: 'm2', text: 'Algo con marketing, pero no estoy seguro' }];
+    current.turn.batch_messages = [
+      { id: 'm2', text: 'Quizás es para estudiar.' },
+      { id: 'm3', text: 'No estoy muy seguro.' },
+    ];
     current.turn.recent_turns = [{
       id: 'prior-agent', direction: 'outbound',
-      content: 'Marketing Digital encaja con lo que buscás porque te ayuda a comunicar mejor un negocio.',
+      content: 'Si arrancás desde cero, Inglés 1 es el punto de partida natural.',
     }];
+    current.commercial_state.selected_offering_code = null;
+    current.commercial_state.stage = 'exploring';
     current.commercial_state.call_preference = 'unknown';
     current.commercial_state.call_offer_status = 'not_offered';
     current.commercial_state.call_offer_count = 0;
+    current.catalog.selected_offering = null;
+    current.catalog.candidate_offerings = [
+      { code: 'ingles-1', fact_id: ENGLISH_1_NAME_FACT, display_name: 'Inglés 1', area_code: 'idiomas' },
+      { code: 'ingles-2', fact_id: ENGLISH_2_NAME_FACT, display_name: 'Inglés 2', area_code: 'idiomas' },
+      { code: 'ingles-3', fact_id: ENGLISH_3_NAME_FACT, display_name: 'Inglés 3', area_code: 'idiomas' },
+    ];
     current.capabilities.may_offer_call = true;
     const initial = generated(proposal({
+      move: {
+        schema_version: 1,
+        move: 'ask_course_information',
+        secondary_moves: [],
+        vetoes: [],
+        confidence: 0.9,
+      },
       response: {
-        messages: ['Marketing Digital tiene 38 clases y te da una base amplia para empezar.'],
+        messages: ['Para orientarte bien, lo querés principalmente para estudiar, trabajar, viajar o algo personal?'],
         call_offer: null,
       },
+      used_fact_ids: [],
     }));
     const repair = vi.fn(async rejection => generated(proposal({
+      move: {
+        schema_version: 1,
+        move: 'ask_course_information',
+        secondary_moves: [],
+        vetoes: [],
+        confidence: 0.9,
+      },
       response: {
         messages: [
-          'Marketing Digital tiene 38 clases y te da una base amplia para empezar.',
-          'Si querés, te llamo y vemos juntos qué te conviene.',
+          'Para orientarte bien, lo querés principalmente para estudiar, trabajar, viajar o algo personal?',
+          'Si querés, te llamo y vemos tu objetivo y el nivel que mejor te sirve.',
         ],
-        call_offer: 'Si querés, te llamo y vemos juntos qué te conviene.',
+        call_offer: 'Si querés, te llamo y vemos tu objetivo y el nivel que mejor te sirve.',
       },
+      used_fact_ids: [],
       repair_of: { rejection_id: rejection.rejection_id, attempt: 1 },
     })));
 
@@ -714,9 +741,10 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
 
     expect(repair).toHaveBeenCalledTimes(1);
     expect(result.effective.proposal.response).toEqual({
-      messages: ['Marketing Digital tiene 38 clases y te da una base amplia para empezar.'],
-      call_offer: 'Si querés, te llamo y vemos juntos qué te conviene.',
+      messages: ['Para orientarte bien, lo querés principalmente para estudiar, trabajar, viajar o algo personal?'],
+      call_offer: 'Si querés, te llamo y vemos tu objetivo y el nivel que mejor te sirve.',
     });
+    expect(result.effective.proposal.move.course_reference).toBeUndefined();
     expect(result.evidence).toMatchObject({ repair_attempted: true, repaired: true });
   });
 
@@ -1154,10 +1182,7 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
     expect(result.effective.proposal.response.messages).toEqual([
       'Los dos sirven, pero uno apunta a campañas y el otro a manejar una comunidad.',
     ]);
-    expect(result.evidence.rejection_codes).toEqual([
-      'FACT_VALUE_MISMATCH',
-      'COURSE_NOT_RESOLVED',
-    ]);
+    expect(result.evidence.rejection_codes).toEqual(['FACT_VALUE_MISMATCH']);
   });
 
   it('preserves a confirmed call action and its model-authored acknowledgement after an offer', async () => {

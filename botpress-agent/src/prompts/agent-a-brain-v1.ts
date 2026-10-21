@@ -6,7 +6,7 @@ import {
 import { resolveCanonicalPromptIdentityV1 } from './agent-a-identity';
 import { evaluateSalesObjectionTurnV1 } from '../lib/conversation/sales-objection-turn-policy';
 
-export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v121' as const;
+export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v123' as const;
 
 /**
  * Runtime contract only. The sales behavior lives in the canonical prompt so
@@ -88,11 +88,23 @@ function currentCommercialGuidanceDirectiveV1(context: AgentAContextV1): string 
   const objection = evaluateSalesObjectionTurnV1(context);
   if (objection.kind === 'none') return '';
 
-  const repeated = objection.kind === 'repeated_price_objection';
+  const guidanceByKind: Record<Exclude<typeof objection.kind, 'none'>, string> = {
+    price_question: `Answer the price question promptly with the authorized plans; do not delay it behind a presentation or diagnostic. You may connect one relevant benefit afterward when the customer's intended use is already known.`,
+    price_objection: `Distinguish a perceived-value gap from a real inability to pay, but only ask one brief discriminating question when existing context does not already make that clear. For a value gap, connect the customer's stated goal or constraint to one authorized course capability and describe a possible application conditionally. For a real budget limit, acknowledge it without pressure or an invented workaround. Do not use payment plans, installment amounts, cost-per-day comparisons, discounts or bonus courses to make the price feel lower.`,
+    repeated_price_objection: `This is a persistent price objection. Do not merely repeat the price, installment amounts or class count. Change the argument dimension using recent conversation evidence: connect a different authorized fact to the customer's intended use with conditional language, or ask one concrete question that isolates budget, timing, confidence or value. Do not use payment plans, installment amounts, cost-per-day comparisons, discounts or bonus courses to make the price feel lower.`,
+    payment_terms_question: `Answer the payment-terms question directly. Do not infer how payment cadence affects study, access or certification; state that relationship only when authorized_context explicitly supports it.`,
+    time_or_schedule_objection: `Separate a real schedule conflict from fear of sustaining the course only when the context does not make it clear. Use only authorized duration, modality, schedule, recording, access or dedication facts. If the needed detail is absent, say you cannot confirm it instead of filling the gap.`,
+    readiness_or_requirements_objection: `Respond to the concrete readiness concern with authorized prerequisites, level, equipment or course-description facts. Do not claim beginner suitability or that equipment is unnecessary unless authorized_context explicitly supports it.`,
+    trust_objection: `Use concrete authorized evidence, not reassuring adjectives. Website, Instagram, certification, contact channels, graduate evidence or physical-certificate claims are usable only when they appear in authorized_context. Treat an expectation mismatch about live teaching or recorded video as high risk: acknowledge it, do not assert either format unless it is authorized, and offer an immediate call only when the call policy authorizes it.`,
+    payment_friction: `Lower pressure and preserve the customer's purchase intent without pretending an operation occurred. Offer only payment alternatives present in authorized_context. Do not claim a reserved place or a loaded pre-enrollment, and do not suggest Apple Pay or Google Pay unless specifically authorized.`,
+    offer_timing_question: `Answer with an authorized real start date or expiry only. Never invent an expiry, start date, scarcity or urgency; if no date is authorized, say you cannot confirm it and keep the next step practical.`,
+  };
   return `<current_commercial_guidance kind="${objection.kind}">
-${repeated ? 'This turn contains a persistent price objection. ' : ''}The call lifecycle never replaces handling the objection in chat.
-${repeated ? 'Do not merely repeat the price, installment amounts or class count. ' : ''}Connect an authorized fact to the customer's stated use with conditional language. If the real outcome is unclear, ask one concrete diagnostic question.
-Keep USD 30 as the floor. Do not invent discounts, extras or promises of income or results.
+These are decision criteria, not customer-facing scripts. Answer the customer's direct question before advancing.
+Use the customer's known goal, motivation or constraint when it is relevant; do not re-ask known information or force a diagnostic sequence.
+${guidanceByKind[objection.kind]}
+The call lifecycle never replaces handling the objection in chat. Never invent missing facts or completed effects.
+Do not invent discounts, extras, promises of income or results. A direct price or payment-terms question still receives the exact authorized facts.
 If the call policy permits or requires an invitation, put it only in response.call_offer and briefly explain what the call would help resolve.
 Choose the wording and structure yourself; this is guidance, not a script.
 </current_commercial_guidance>`;

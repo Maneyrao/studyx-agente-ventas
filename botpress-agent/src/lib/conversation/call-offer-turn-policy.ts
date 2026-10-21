@@ -93,7 +93,7 @@ function severalQuestions(context: AgentAContextV1, text: string): boolean {
 
 function indecision(text: string): boolean {
   const value = normalized(text);
-  return /\b(?:no\s+se\s+(?:si|cual|que)|no\s+me\s+decido|estoy\s+entre|dudo\s+entre|indecis[oa]|cual\s+me\s+conviene|comparando)\b/u.test(value);
+  return /\b(?:no\s+se\s+(?:si|cual|que)|no\s+estoy\s+(?:(?:muy|tan|del\s+todo)\s+)?segur[oa]|no\s+me\s+decido|estoy\s+entre|dudo\s+entre|indecis[oa]|cual\s+me\s+conviene|comparando)\b/u.test(value);
 }
 
 function detailsRequest(text: string): boolean {
@@ -103,7 +103,55 @@ function detailsRequest(text: string): boolean {
 
 function prepaymentFriction(text: string): boolean {
   const value = normalized(text);
-  return /\b(?:antes\s+de\s+pagar|pensarlo|mas\s+adelante|lo\s+veo\s+despues|ahora\s+no|todavia\s+no|no\s+estoy\s+segur[oa]|consultarlo|falta\s+de\s+tiempo|no\s+tengo\s+tiempo)\b/u.test(value);
+  return /\b(?:antes\s+de\s+pagar|pensarlo|mas\s+adelante|lo\s+veo\s+despues|ahora\s+no|todavia\s+no|no\s+estoy\s+(?:(?:muy|tan|del\s+todo)\s+)?segur[oa]|consultarlo|falta\s+de\s+tiempo|no\s+tengo\s+tiempo)\b/u.test(value);
+}
+
+function hasCanonicalOrientation(input: {
+  readonly context: AgentAContextV1;
+  readonly response_messages?: readonly string[];
+  readonly proposed_course_reference?: string | null;
+}): boolean {
+  const orientedOfferings = [
+    ...(input.context.catalog.selected_offering ? [input.context.catalog.selected_offering] : []),
+    ...input.context.catalog.candidate_offerings,
+  ];
+  const canonicalOfferings = [
+    ...orientedOfferings,
+    ...input.context.catalog.available_offerings,
+  ];
+  if (canonicalOfferings.length === 0) return false;
+
+  const proposed = normalized(input.proposed_course_reference ?? '').trim();
+  if (proposed.length > 0 && canonicalOfferings.some((offering) => (
+    normalized(offering.code) === proposed
+    || normalized(offering.display_name) === proposed
+  ))) return true;
+
+  const customerText = normalized([
+    ...input.context.turn.recent_turns
+      .filter((turn) => turn.direction === 'inbound')
+      .map((turn) => turn.content),
+    currentText(input.context),
+  ].join('\n'));
+  const meaningfulCatalogTerms = new Set(
+    canonicalOfferings
+      .flatMap((offering) => normalized(offering.display_name).split(/[^\p{L}\p{N}]+/u))
+      .filter((term) => term.length >= 4 && !/^\d+$/u.test(term)),
+  );
+  if ([...meaningfulCatalogTerms].some((term) => (
+    new RegExp(`\\b${term}\\b`, 'u').test(customerText)
+  ))) return true;
+
+  const assistantText = normalized([
+    ...input.context.turn.recent_turns
+      .filter((turn) => turn.direction === 'outbound')
+      .map((turn) => turn.content),
+    ...(input.response_messages ?? []),
+  ].join('\n'));
+  return orientedOfferings.some((offering) => {
+    const displayName = normalized(offering.display_name).trim();
+    return displayName.length > 0 && assistantText.includes(displayName);
+  });
 }
 
 function asksForMissingIntake(
@@ -203,12 +251,16 @@ export function evaluateCallOfferTurnPolicyV1(input: {
       || context.catalog.selected_offering !== null) {
       return { offer_required: true, offer_allowed: true, reason: 'FIRST_OFFER_DUE', customer_signal: customerSignal };
     }
-    if (
-      isPriceObjectionTextV1(text)
+    const strongUsefulMoment = isPriceObjectionTextV1(text)
       || severalQuestions(context, text)
       || indecision(text)
-      || detailsRequest(text)
-      || prepaymentFriction(text)
+      || prepaymentFriction(text);
+    if (strongUsefulMoment && hasCanonicalOrientation(input)) {
+      return { offer_required: true, offer_allowed: true, reason: 'FIRST_OFFER_DUE', customer_signal: customerSignal };
+    }
+    const usefulMoment = strongUsefulMoment || detailsRequest(text);
+    if (
+      usefulMoment
     ) {
       return { offer_required: false, offer_allowed: true, reason: 'FIRST_USEFUL_MOMENT', customer_signal: customerSignal };
     }

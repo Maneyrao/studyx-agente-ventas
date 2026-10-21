@@ -85,6 +85,186 @@ describe('plannerless natural evidence regression', () => {
     });
   });
 
+  it('requires the first call invitation after useful English guidance even without a selected level', () => {
+    const context = {
+      schema_version: 1,
+      turn: {
+        batch_messages: [
+          { id: 'english-purpose', text: 'Quizás es para estudiar.' },
+          { id: 'english-uncertainty', text: 'No estoy muy seguro.' },
+        ],
+        recent_turns: [{
+          id: 'english-guidance',
+          direction: 'outbound' as const,
+          content: 'Si arrancás desde cero, Inglés 1 es el punto de partida natural.',
+        }],
+      },
+      continuity: {
+        assistant_has_spoken: true,
+        first_name_status: 'known' as const,
+        last_agent_reply: 'Si arrancás desde cero, Inglés 1 es el punto de partida natural.',
+      },
+      customer: { display_name: 'Carlos', memories: [] },
+      identity: null,
+      commercial_state: {
+        selected_offering_code: null,
+        selected_payment_plan: null,
+        stage: 'exploring' as const,
+        call_preference: 'unknown' as const,
+        call_offer_status: 'not_offered' as const,
+        call_offer_count: 0 as const,
+        awaiting_reply: 'none' as const,
+        payment_reported: false,
+      },
+      catalog: {
+        selected_offering: null,
+        available_offerings: [],
+        areas: [],
+        candidate_offerings: [
+          { code: 'ingles_1', fact_id: 'offering:ingles_1:name:v1', display_name: 'Inglés 1', area_code: 'idiomas' },
+          { code: 'ingles_2', fact_id: 'offering:ingles_2:name:v1', display_name: 'Inglés 2', area_code: 'idiomas' },
+          { code: 'ingles_3', fact_id: 'offering:ingles_3:name:v1', display_name: 'Inglés 3', area_code: 'idiomas' },
+        ],
+        payment_plans: [],
+      },
+      capabilities: {
+        may_reply: true,
+        may_offer_call: true,
+        may_request_call_now: false,
+        may_present_payment_options: false,
+        may_send_payment_link: false,
+        authorized_payment_plan: null,
+        intake_status: 'known' as const,
+        intake_missing: [],
+      },
+    } satisfies AgentAContextV1;
+
+    expect(evaluateCallOfferTurnPolicyV1({ context })).toMatchObject({
+      offer_required: true,
+      offer_allowed: true,
+      reason: 'FIRST_OFFER_DUE',
+    });
+  });
+
+  it('requires the first call invitation when the customer names English and shows uncertainty before a level is recommended', () => {
+    const context = {
+      schema_version: 1,
+      turn: {
+        batch_messages: [
+          { id: 'english-need', text: 'Me gustaría algo de inglés.' },
+          { id: 'english-uncertainty', text: 'No estoy muy seguro.' },
+        ],
+        recent_turns: [{
+          id: 'english-opening',
+          direction: 'outbound' as const,
+          content: 'Hola, soy Emma. Qué te gustaría aprender?',
+        }],
+      },
+      continuity: {
+        assistant_has_spoken: true,
+        first_name_status: 'known' as const,
+        last_agent_reply: 'Hola, soy Emma. Qué te gustaría aprender?',
+      },
+      customer: { display_name: 'Carlos', memories: [] },
+      identity: null,
+      commercial_state: {
+        selected_offering_code: null,
+        selected_payment_plan: null,
+        stage: 'exploring' as const,
+        call_preference: 'unknown' as const,
+        call_offer_status: 'not_offered' as const,
+        call_offer_count: 0 as const,
+        awaiting_reply: 'none' as const,
+        payment_reported: false,
+      },
+      catalog: {
+        selected_offering: null,
+        available_offerings: [],
+        areas: [{ code: 'idiomas', fact_id: 'area:idiomas:name:v1', display_name: 'Idiomas' }],
+        candidate_offerings: [
+          { code: 'ingles_1', fact_id: 'offering:ingles_1:name:v1', display_name: 'Inglés 1', area_code: 'idiomas' },
+          { code: 'ingles_2', fact_id: 'offering:ingles_2:name:v1', display_name: 'Inglés 2', area_code: 'idiomas' },
+          { code: 'ingles_3', fact_id: 'offering:ingles_3:name:v1', display_name: 'Inglés 3', area_code: 'idiomas' },
+        ],
+        payment_plans: [],
+      },
+      capabilities: {
+        may_reply: true,
+        may_offer_call: true,
+        may_request_call_now: false,
+        may_present_payment_options: false,
+        may_send_payment_link: false,
+        authorized_payment_plan: null,
+        intake_status: 'known' as const,
+        intake_missing: [],
+      },
+    } satisfies AgentAContextV1;
+
+    expect(evaluateCallOfferTurnPolicyV1({ context })).toMatchObject({
+      offer_required: true,
+      offer_allowed: true,
+      reason: 'FIRST_OFFER_DUE',
+    });
+  });
+
+  it('keeps a simple detail question optional after a course list without treating the list as orientation', () => {
+    const context = {
+      schema_version: 1,
+      turn: {
+        batch_messages: [{ id: 'english-details', text: 'Qué incluye?' }],
+        recent_turns: [{
+          id: 'english-list',
+          direction: 'outbound' as const,
+          content: 'Tenemos Inglés 1, Inglés 2 e Inglés 3. Cuál viste?',
+        }],
+      },
+      continuity: {
+        assistant_has_spoken: true,
+        first_name_status: 'missing' as const,
+        last_agent_reply: 'Tenemos Inglés 1, Inglés 2 e Inglés 3. Cuál viste?',
+      },
+      customer: { display_name: null, memories: [] },
+      identity: null,
+      commercial_state: {
+        selected_offering_code: null,
+        selected_payment_plan: null,
+        stage: 'exploring' as const,
+        call_preference: 'unknown' as const,
+        call_offer_status: 'not_offered' as const,
+        call_offer_count: 0 as const,
+        awaiting_reply: 'course_choice' as const,
+        payment_reported: false,
+      },
+      catalog: {
+        selected_offering: null,
+        available_offerings: [],
+        areas: [],
+        candidate_offerings: [
+          { code: 'ingles_1', fact_id: 'offering:ingles_1:name:v1', display_name: 'Inglés 1', area_code: 'idiomas' },
+          { code: 'ingles_2', fact_id: 'offering:ingles_2:name:v1', display_name: 'Inglés 2', area_code: 'idiomas' },
+          { code: 'ingles_3', fact_id: 'offering:ingles_3:name:v1', display_name: 'Inglés 3', area_code: 'idiomas' },
+        ],
+        payment_plans: [],
+      },
+      capabilities: {
+        may_reply: true,
+        may_offer_call: true,
+        may_request_call_now: false,
+        may_present_payment_options: false,
+        may_send_payment_link: false,
+        authorized_payment_plan: null,
+        intake_status: 'known' as const,
+        intake_missing: [],
+      },
+    } satisfies AgentAContextV1;
+
+    expect(evaluateCallOfferTurnPolicyV1({ context })).toMatchObject({
+      offer_required: false,
+      offer_allowed: true,
+      reason: 'FIRST_USEFUL_MOMENT',
+    });
+  });
+
   it.each([
     'Me parece caro.',
     'Estoy entre Inglés 1 e Inglés 2 y no sé cuál me conviene.',

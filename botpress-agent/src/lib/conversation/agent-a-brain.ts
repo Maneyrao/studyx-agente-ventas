@@ -4,6 +4,7 @@ import { supportsChatPreferenceV1 } from './channel-preference-evidence';
 import { evaluateCallOfferTurnPolicyV1 } from './call-offer-turn-policy';
 import {
   evaluateSalesObjectionTurnV1,
+  responseAvoidsDisallowedPriceReframingV1,
   responseProgressesRepeatedPriceObjectionV1,
 } from './sales-objection-turn-policy';
 import type { TurnRejectionV1 } from '../../schemas/turn-rejection'
@@ -1815,11 +1816,18 @@ export function validateAgentATurnProposalV1(input: {
   ) {
     rejections.push({ code: 'REPEATED_AGENT_REPLY', subject: 'previous_agent_question' });
   }
+  const salesObjection = evaluateSalesObjectionTurnV1(input.context);
   if (
-    evaluateSalesObjectionTurnV1(input.context).kind === 'repeated_price_objection'
+    salesObjection.kind === 'repeated_price_objection'
     && !responseProgressesRepeatedPriceObjectionV1(input.proposal.response)
   ) {
     rejections.push({ code: 'REPEATED_AGENT_REPLY', subject: 'persistent_price_objection' });
+  }
+  if (
+    (salesObjection.kind === 'price_objection' || salesObjection.kind === 'repeated_price_objection')
+    && !responseAvoidsDisallowedPriceReframingV1(input.proposal.response)
+  ) {
+    rejections.push({ code: 'FACT_VALUE_MISMATCH', subject: 'price_objection_reframe' });
   }
 
   // V2 — cada hecho citado existe en el registro materializado del turno.
@@ -2171,14 +2179,6 @@ export function validateAgentATurnProposalV1(input: {
     // valid model-owned copy.
     rejections.push({ code: 'CALL_OFFER_MESSAGE_BOUNDARY_INVALID', subject: 'call_offer' });
   }
-  const hasCanonicalCourse = state.selected_offering_code !== null
-    || typeof input.proposal.move.course_reference === 'string';
-  const hasResolvedCourseFamily = !hasCanonicalCourse
-    && moves.has('browse_catalog')
-    && [
-      ...input.context.catalog.candidate_offerings,
-      ...input.context.catalog.available_offerings,
-    ].some((offering) => cited.has(offering.fact_id));
   const selectedCourseReferenceIsCanonical = [
     ...(input.context.catalog.selected_offering ? [input.context.catalog.selected_offering] : []),
     ...input.context.catalog.candidate_offerings,
@@ -2187,9 +2187,7 @@ export function validateAgentATurnProposalV1(input: {
   const missingCourseSubject = moves.has('select_course')
     && !selectedCourseReferenceIsCanonical
     ? 'course_reference'
-    : offersACall && !callRequestSupported && !hasCanonicalCourse && !hasResolvedCourseFamily
-      ? 'call_offer'
-      : null;
+    : null;
   if (missingCourseSubject !== null) {
     rejections.push({ code: 'COURSE_NOT_RESOLVED', subject: missingCourseSubject });
   }

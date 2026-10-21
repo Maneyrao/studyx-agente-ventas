@@ -295,6 +295,40 @@ describe('validación de la propuesta del turno', () => {
     expect(rejection).toBeNull();
   });
 
+  it('rechaza usar una cuota autorizada como táctica para abaratar una objeción de precio', () => {
+    const paymentFactId = 'payment:redes-informaticas:monthly_12:price:v1';
+    const rejection = validateAgentATurnProposalV1({
+      proposal: proposal({
+        response: {
+          messages: ['Para tu negocio, lo aprendido te puede ayudar a vender y puedes pagarlo en 12 cuotas de USD 30.'],
+          call_offer: null,
+        },
+        used_fact_ids: [paymentFactId],
+      }),
+      context: context({
+        turn: {
+          batch_messages: [{ id: 'm-price-objection', text: 'Me parece caro.' }],
+          recent_turns: [],
+        },
+        catalog: {
+          ...context().catalog,
+          payment_plans: [{
+            fact_id: paymentFactId,
+            code: 'monthly_12',
+            label: '12 pagos mensuales de USD 30',
+          }],
+        },
+      }),
+      planned_fact_ids: [paymentFactId],
+      rejection_id: '00000000-0000-4000-8000-000000000001',
+    });
+
+    expect(rejection?.rejections).toContainEqual({
+      code: 'FACT_VALUE_MISMATCH',
+      subject: 'price_objection_reframe',
+    });
+  });
+
   // V4
   it('pedir el link sin plan seleccionado es ACTION_NOT_AUTHORIZED', () => {
     const rejection = validateAgentATurnProposalV1({
@@ -397,6 +431,60 @@ describe('validación de la propuesta del turno', () => {
       }),
       context: discovery,
       planned_fact_ids: ['offering:ingles_1:name:v1'],
+      rejection_id: '00000000-0000-4000-8000-000000000001',
+    });
+
+    expect(rejection).toBeNull();
+  });
+
+  it('permite ofrecer orientación por llamada aunque todavía no haya un nivel de inglés seleccionado', () => {
+    const discovery = context({
+      turn: {
+        batch_messages: [
+          { id: 'm1', text: 'Quizás es para estudiar.' },
+          { id: 'm2', text: 'No estoy muy seguro.' },
+        ],
+        recent_turns: [{
+          id: 'prior-agent',
+          direction: 'outbound',
+          content: 'Si arrancás desde cero, Inglés 1 es el punto de partida natural.',
+        }],
+      },
+      commercial_state: {
+        ...context().commercial_state,
+        selected_offering_code: null,
+        stage: 'exploring',
+      },
+      catalog: {
+        available_offerings: [],
+        selected_offering: null,
+        areas: [],
+        candidate_offerings: [
+          { code: 'ingles_1', fact_id: 'offering:ingles_1:name:v1', display_name: 'Inglés 1', area_code: 'idiomas' },
+          { code: 'ingles_2', fact_id: 'offering:ingles_2:name:v1', display_name: 'Inglés 2', area_code: 'idiomas' },
+          { code: 'ingles_3', fact_id: 'offering:ingles_3:name:v1', display_name: 'Inglés 3', area_code: 'idiomas' },
+        ],
+        payment_plans: [],
+      },
+      capabilities: { ...context().capabilities, may_offer_call: true },
+    });
+    const rejection = validateAgentATurnProposalV1({
+      proposal: proposal({
+        move: {
+          schema_version: 1,
+          move: 'ask_course_information',
+          secondary_moves: [],
+          vetoes: [],
+          confidence: 1,
+        },
+        response: {
+          messages: ['Para orientarte bien, ¿lo querés principalmente para estudiar, trabajar, viajar o algo personal?'],
+          call_offer: 'Si querés, te llamo y vemos tu objetivo y el nivel que mejor te sirve.',
+        },
+        used_fact_ids: [],
+      }),
+      context: discovery,
+      planned_fact_ids: [],
       rejection_id: '00000000-0000-4000-8000-000000000001',
     });
 

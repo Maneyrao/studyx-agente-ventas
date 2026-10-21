@@ -14,7 +14,7 @@ describe('Agent A canonical sales prompt', () => {
 
     const generated = readFileSync(GENERATED_PATH, 'utf8');
     expect(generated).toContain(`export const STUDYX_AGENT_A_CANONICAL_PROMPT = ${JSON.stringify(prompt)} as const;`);
-    expect(generated).toContain("export const STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION = 'studyx-agent-a-canonical-v87' as const;");
+    expect(generated).toContain("export const STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION = 'studyx-agent-a-canonical-v89' as const;");
   });
 
   it('combines warm Meta-lead selling with autonomous objection and post-call handling', () => {
@@ -55,7 +55,7 @@ describe('Agent A canonical sales prompt', () => {
 
   it('keeps the payment handoff concise and reserves access details for verified post-sale', () => {
     const prompt = readFileSync(PROMPT_PATH, 'utf8');
-    expect(prompt).toMatch(/transición breve y humana[\s\S]*No expliques el funcionamiento de Stripe/iu);
+    expect(prompt).toMatch(/transición (?:breve y )?humana[\s\S]*No expliques (?:el funcionamiento de )?Stripe/iu);
     expect(prompt).toMatch(/No enumeres por adelantado[\s\S]*evento verificado de postventa/iu);
     expect(prompt).toMatch(/link canónico dentro del mismo mensaje/iu);
     expect(prompt).toMatch(/redactas toda la parte conversacional de postventa[\s\S]*personalidad[\s\S]*contexto del cliente/iu);
@@ -108,10 +108,10 @@ describe('Agent A canonical sales prompt', () => {
     expect(prompt).not.toMatch(/asesora virtual|asistente virtual/iu);
     expect(prompt).toContain('No uses los signos invertidos de apertura `¿` ni `¡` en ningún punto');
     expect(prompt).toMatch(/no pidas nombre y apellido por rutina/iu);
-    expect(prompt).toMatch(/identificaste el curso o la necesidad concreta[\s\S]*primera invitaci[oó]n[\s\S]*motivo real/iu);
+    expect(prompt).toMatch(/primera duda relevante[\s\S]*necesidad o un [aá]rea[\s\S]*primera invitaci[oó]n[\s\S]*motivo real/iu);
     expect(prompt).not.toMatch(/segunda intervenci[oó]n comercial/iu);
     expect(prompt).toMatch(/m[aá]ximo dos invitaciones[\s\S]*segunda[\s\S]*motivo nuevo/iu);
-    expect(prompt).toMatch(/adaptada al trato y al motivo real[\s\S]*no repitas esa frase como plantilla/iu);
+    expect(prompt).toMatch(/adaptada al trato y (?:al )?motivo real[\s\S]*no repitas esa frase como plantilla/iu);
   });
 
   it('keeps Lisandro humanized selling as the primary behavior instead of a questionnaire', () => {
@@ -145,19 +145,19 @@ describe('Agent A canonical sales prompt', () => {
   it('offers a call for a commercial reason rather than for turn position alone', () => {
     const prompt = readFileSync(PROMPT_PATH, 'utf8');
 
-    expect(prompt).toMatch(/identificaste el curso o la necesidad concreta[^.]*orientaci[oó]n [uú]til/iu);
-    expect(prompt).toMatch(/no la ofrezcas antes de entender qu[eé] necesita ni en cada turno/iu);
-    expect(prompt).toMatch(/objeci[oó]n persistente|pedido de excepci[oó]n/iu);
+    expect(prompt).toMatch(/primera duda relevante[^.]*necesidad o un [aá]rea/iu);
+    expect(prompt).toMatch(/no la ofrezcas (?:s[oó]lo )?por turnos ni en cada mensaje/iu);
+    expect(prompt).toMatch(/objeci[oó]n persistente/iu);
   });
 
-  it('negotiates firmly without lowering USD 30, inventing income, or granting a bonus course', () => {
+  it('handles price objections by building value without reframing or changing the price', () => {
     const prompt = readFileSync(PROMPT_PATH, 'utf8');
 
-    expect(prompt).toMatch(/no bajes la cuota m[ií]nima de USD 30/iu);
+    expect(prompt).toMatch(/pregunta directa[^.]*precio[^.]*responde[^.]*hechos autorizados/iu);
+    expect(prompt).toMatch(/objeci[oó]n de precio[^.]*no uses[^.]*cuotas[^.]*comparaciones[^.]*descuentos[^.]*bonificaciones/iu);
     expect(prompt).toMatch(/sin prometer resultados[^.]*emprender[^.]*ampliar ingresos/iu);
     expect(prompt).not.toMatch(/curso complementario can[oó]nico|curso gratis|por el mismo valor/iu);
-    expect(prompt).toMatch(/pide negociar[^.]*no cierres con una negativa plana/iu);
-    expect(prompt).toMatch(/alternativa autorizada[^.]*llamada/iu);
+    expect(prompt).toMatch(/limitaci[oó]n real de presupuesto[^.]*sin presionar[^.]*atajo inventado/iu);
   });
 
   it('adapts to the customer register and delays intake until it executes a chosen next step', () => {
@@ -190,6 +190,7 @@ describe('Agent A canonical sales prompt', () => {
     expect(prompt).toMatch(/trabajo[^.]*habilidad[^.]*reconocimiento de terceros/iu);
     expect(prompt).toMatch(/frustraci[oó]n[^.]*persona relevante[^.]*oportunidad[^.]*visi[oó]n futura/iu);
     expect(prompt).toMatch(/no guardes inferencias/iu);
+    expect(prompt).toMatch(/matiz de certeza[^.]*source_quote[^.]*inter[eé]s tentativo[^.]*no un objetivo confirmado/iu);
   });
 
   it('sells consultatively from the current message instead of completing a questionnaire', () => {
@@ -200,6 +201,26 @@ describe('Agent A canonical sales prompt', () => {
     expect(prompt).toMatch(/informaci[oó]n del cliente[\s\S]*hecho verificado[\s\S]*utilidad/iu);
     expect(prompt).toMatch(/objeci[oó]n[\s\S]*entiend[ea][\s\S]*personaliza[\s\S]*comprueba/iu);
     expect(prompt).toMatch(/memory_candidates[\s\S]*hechos expresados/iu);
+  });
+
+  it('reuses discovery to personalize value, objections and closing without rediagnosing the customer', () => {
+    const prompt = readFileSync(PROMPT_PATH, 'utf8');
+
+    expect(prompt).toMatch(/como m[aá]ximo una pregunta principal[^.]*informaci[oó]n comercial [uú]til/iu);
+    expect(prompt).toMatch(/objetivo[^.]*motivaci[oó]n[^.]*freno[^.]*recomendaci[oó]n[^.]*valor[^.]*objeci[oó]n[^.]*cierre/iu);
+    expect(prompt).toMatch(/no vuelvas a preguntar[^.]*ya (?:dijo|expres[oó]|est[aá])/iu);
+    expect(prompt).toMatch(/objeci[oó]n[^.]*ambigua[^.]*a[ií]sla[^.]*una pregunta breve/iu);
+    expect(prompt).toMatch(/hecho autorizado[^.]*utilidad personal[^.]*comprueba[^.]*avanza/iu);
+    expect(prompt).not.toMatch(/Pregunta el objetivo s[oó]lo para recomendar/iu);
+  });
+
+  it('uses calls to complete discovery or persuasion without requiring an exact selected course', () => {
+    const prompt = readFileSync(PROMPT_PATH, 'utf8');
+
+    expect(prompt).toMatch(/curso exacto[^.]*no es (?:un )?requisito/iu);
+    expect(prompt).toMatch(/llamada[^.]*descubrir[^.]*orientar[^.]*convencer/iu);
+    expect(prompt).toMatch(/primera duda relevante[^.]*necesidad[^.]*[aá]rea/iu);
+    expect(prompt).toMatch(/raz[oó]n concreta[^.]*no reemplaza la respuesta/iu);
   });
 
   it('asks availability on one turn and dispatches only after the following confirmation', () => {
