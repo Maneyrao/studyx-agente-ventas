@@ -21,6 +21,7 @@ import { PostgresBusinessContextStore } from '@/features/orchestration/adapters/
 import { buildBusinessContextView } from '@/features/orchestration/domain/business-context';
 import type { DbClient } from '@/lib/db/types';
 import { synthesizeCallResultTurn } from '@/features/calls/application/synthesize-call-result-turn';
+import { seedWrittenCallIntakeV1 } from '../helpers/call-intake-fixtures';
 
 /**
  * Fase 3 against a real database: the controlled context is assembled only
@@ -522,6 +523,8 @@ run('sales_context at claim time', () => {
     const firstEnvelope = envelope({ message: {
       type: 'text', text: 'Llámame', occurred_at: new Date().toISOString(), reply_to_external_message_id: null,
     } });
+    if (!firstEnvelope.phone_e164) throw new Error('fixture phone missing');
+    await seedWrittenCallIntakeV1({ phone: firstEnvelope.phone_e164 }, db!);
     const seeded = await processInboundMessage(firstEnvelope);
     const identity = await db!<Array<{ contact_id: string; conversation_id: string }>>`
       SELECT contact_id, conversation_id FROM messages WHERE id = ${seeded.turn_id}::uuid

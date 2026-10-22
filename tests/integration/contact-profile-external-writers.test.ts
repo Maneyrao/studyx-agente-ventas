@@ -14,6 +14,7 @@ import { withSerializableTransactionOn } from '@/lib/db/transaction';
 import { registerMessage } from '@/lib/services/message.service';
 import { processInboundMessage, type InboundEnvelope } from '@/lib/services/ingestion.service';
 import { sql } from '@/lib/db/orchestrator';
+import { loadCallIntakeReadinessV1 } from '@/lib/repositories/call-intake-readiness.repository';
 
 const run = process.env.TEST_DATABASE_URL ? describe : describe.skip;
 const db = process.env.TEST_DATABASE_URL ? openLocalTestDatabase() : null;
@@ -35,6 +36,86 @@ async function fixture() {
 }
 
 run('canonical contact profile external writers', () => {
+  it('promotes an identical voice email only when the customer types it in WhatsApp', async () => {
+    const f = await fixture();
+    const voiceEmail = 'voice-then-whatsapp@example.test';
+    await new PostgresRetellContactToolStore(db!).saveCorrelatedContact({
+      callId: f.callId,
+      workspaceSlug: 'studyx',
+      email: voiceEmail,
+      sheets: null,
+    });
+    await db!`UPDATE conversations SET channel = 'whatsapp' WHERE id = ${f.conversation_id}::uuid`;
+
+    const before = await loadContactProfileV1(f.contact_id, db!);
+    expect(await loadCallIntakeReadinessV1(f.contact_id, f.conversation_id, db!)).toMatchObject({
+      status: 'needs_input',
+      requirements: [{ field: 'correo', reason: 'written_whatsapp_confirmation_required' }],
+    });
+
+    const [transport] = await db!<Array<{ payload: InboundEnvelope }>>`
+      SELECT e.payload FROM messages m JOIN channel_events e ON e.id = m.source_event_id
+      WHERE m.id = ${f.second_turn_id}::uuid
+    `;
+    const inbound = await processInboundMessage({
+      ...transport.payload,
+      channel: 'whatsapp',
+      identity_owner: 'agent_a_v1',
+      external_message_id: randomUUID(),
+      trace_id: randomUUID(),
+      message: {
+        ...transport.payload.message,
+        text: voiceEmail,
+        type: 'text',
+        occurred_at: new Date().toISOString(),
+      },
+    });
+    await db!`UPDATE inbound_batches SET due_at = now() - interval '1 second' WHERE id = ${inbound.batch.id}::uuid`;
+    const [claim] = await db!<Array<{ outcome: string; claim_token: string }>>`
+      SELECT outcome, claim_token FROM claim_inbound_batch(${inbound.batch.id}::uuid, 'voice-email-promotion', 120000)
+    `;
+    expect(claim.outcome).toBe('claimed');
+
+    const receipt = await withSerializableTransactionOn(db!, tx => applyContactProfileUpdatesV1(tx, {
+      turn_id: f.second_turn_id,
+      batch_id: inbound.batch.id,
+      claim_token: claim.claim_token,
+      expected_version: before!.version,
+      updates: [{
+        field: 'correo',
+        value: voiceEmail,
+        operation: 'set',
+        source_message_id: inbound.turn_id,
+        source_quote: voiceEmail,
+      }],
+    }));
+
+    expect(receipt.accepted_fields).toEqual(['correo']);
+    expect(receipt.version).toBe(before!.version + 1);
+    const promotedEmail = (await loadContactProfileV1(f.contact_id, db!))?.fields.correo;
+    expect(promotedEmail).toMatchObject({
+      value: voiceEmail,
+      source: 'agent_a_v1',
+      source_message_id: inbound.turn_id,
+    });
+    expect(promotedEmail).not.toHaveProperty('voice_evidence');
+    expect(await loadCallIntakeReadinessV1(f.contact_id, f.conversation_id, db!)).toMatchObject({
+      status: 'ready',
+      requirements: [],
+    });
+
+    const replay = await withSerializableTransactionOn(db!, tx => applyContactProfileUpdatesV1(tx, {
+      turn_id: f.second_turn_id,
+      batch_id: inbound.batch.id,
+      claim_token: claim.claim_token,
+      expected_version: before!.version,
+      updates: [{ field: 'correo', value: voiceEmail, operation: 'set',
+        source_message_id: inbound.turn_id, source_quote: voiceEmail }],
+    }));
+    expect(replay).toEqual(receipt);
+    expect((await loadContactProfileV1(f.contact_id, db!))?.version).toBe(before!.version + 1);
+  });
+
   it('resolves a delivered email clarification after a correlated voice observation before the next inbound', async () => {
     const f = await fixture();
     const [transport] = await db!<Array<{ provider: string; integration_id: string; phone: string; payload: InboundEnvelope }>>`
@@ -50,7 +131,7 @@ run('canonical contact profile external writers', () => {
       expect(claim.outcome).toBe('claimed');
       await db!`SELECT * FROM complete_inbound_batch(${batchId}::uuid, ${claim.claim_token}::uuid)`;
     };
-    const inbound = (text: string) => processInboundMessage({ ...transport.payload, channel: 'emulator',
+    const inbound = (text: string) => processInboundMessage({ ...transport.payload, channel: 'whatsapp',
       identity_owner: 'agent_a_v1', external_message_id: randomUUID(), trace_id: randomUUID(),
       message: { ...transport.payload.message, text, occurred_at: new Date().toISOString() } });
     await finish(f.second_batch_id);
@@ -125,8 +206,10 @@ run('canonical contact profile external writers', () => {
   it('keeps a newer chat correction when delayed call analysis carries an older observation', async () => {
     const f = await fixture();
     await db!`UPDATE messages SET content = 'chat@example.test' WHERE id = ${f.turn_id}::uuid`;
+    const beforeCorrection = await loadContactProfileV1(f.contact_id, db!);
     await withSerializableTransactionOn(db!, tx => applyContactProfileUpdatesV1(tx, {
-      turn_id: f.turn_id, batch_id: f.batch_id, claim_token: f.claim_token, expected_version: 0,
+      turn_id: f.turn_id, batch_id: f.batch_id, claim_token: f.claim_token,
+      expected_version: beforeCorrection!.version,
       updates: [{ field: 'correo', value: 'chat@example.test', operation: 'correct', source_message_id: f.turn_id, source_quote: 'chat@example.test' }],
     }));
     await new PostgresCallStore(db!).appendEvent({ schema_version: 1, call_id: f.callId, provider: 'retell',
@@ -146,8 +229,10 @@ run('canonical contact profile external writers', () => {
     await db!`UPDATE inbound_batches SET state = 'claimed', claim_token = ${token}::uuid,
       representative_turn_id = ${message.id}::uuid, claimed_by = 'during-call', claimed_at = now(), lease_until = now() + interval '5 minutes'
       WHERE id = ${f.second_batch_id}::uuid`;
+    const beforeCorrection = await loadContactProfileV1(f.contact_id, db!);
     await withSerializableTransactionOn(db!, tx => applyContactProfileUpdatesV1(tx, {
-      turn_id: message.id, batch_id: f.second_batch_id, claim_token: token, expected_version: 0,
+      turn_id: message.id, batch_id: f.second_batch_id, claim_token: token,
+      expected_version: beforeCorrection!.version,
       updates: [{ field: 'correo', value: 'during@example.test', operation: 'correct', source_message_id: message.id, source_quote: 'during@example.test' }],
     }));
     await new PostgresCallStore(db!).appendEvent({ schema_version: 1, call_id: f.callId, provider: 'retell',
@@ -174,8 +259,9 @@ run('canonical contact profile external writers', () => {
   it('keeps V3 payment authorization incomplete when a compound first name has no canonical surname', async () => {
     const f = await fixture();
     await new PostgresRetellContactToolStore(db!).saveCorrelatedContact({ callId: f.callId, workspaceSlug: 'studyx', nombre: 'Ana María', sheets: null });
+    const beforeRetraction = await loadContactProfileV1(f.contact_id, db!);
     await withSerializableTransactionOn(db!, tx => applyContactProfileUpdatesV1(tx, { turn_id: f.turn_id,
-      batch_id: f.batch_id, claim_token: f.claim_token, expected_version: 1,
+      batch_id: f.batch_id, claim_token: f.claim_token, expected_version: beforeRetraction!.version,
       updates: [{ field: 'apellido', value: null, operation: 'retract', source_message_id: f.turn_id, source_quote: 'Hola' }] }));
     expect((await loadContactIntakeV1(f.contact_id, db!)).apellido).toBeNull();
     const preparation = await preparePaymentLinkToolV1({ db: db!, turn_id: f.turn_id, conversation_id: f.conversation_id },

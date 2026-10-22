@@ -11,6 +11,7 @@ import {
 } from '../domain/call-context';
 import { splitFullName } from '@/lib/heuristics/contact-identity';
 import { CALL_START_TIMEOUT_SECONDS } from '../domain/call-timeouts';
+import { callIntakeRejectionReasonV1 } from '../domain/call-intake-readiness';
 
 /**
  * Reserves exactly one call from a validated Decision v4 with
@@ -196,10 +197,6 @@ export async function reserveCallForDecision(
   ) {
     throw new CallRequestRejectedError('CALL_RESERVATION_ID_INVALID');
   }
-  if (input.phone === null || !E164.test(input.phone)) {
-    throw new CallRequestRejectedError('CALL_PHONE_INVALID');
-  }
-
   const nowIso = (input.now?.() ?? new Date()).toISOString();
 
   const offers = await db<Array<{ decision_id: string; offered_at: Date }>>`
@@ -246,6 +243,27 @@ export async function reserveCallForDecision(
     throw new CallRequestRejectedError('CALL_CONSENT_MODE_MISMATCH');
   }
   const consentSourceMessageId = input.consent_messages[verdict.sourceIndex].id;
+
+  // Refusals and invalid consent must win over intake collection: after a
+  // customer says not to call, the agent must not respond by asking for
+  // personal data. Once consent is valid, lock the canonical contact profile
+  // before touching the call ledger so every writer keeps contact→session
+  // lock order and the final reservation uses one durable snapshot.
+  const { loadCallIntakeReadinessV1 } = await import(
+    '@/lib/repositories/call-intake-readiness.repository'
+  );
+  const callIntake = await loadCallIntakeReadinessV1(
+    input.contact_id,
+    input.conversation_id,
+    db,
+    { forUpdate: true },
+  );
+  const intakeRejection = callIntakeRejectionReasonV1(callIntake);
+  if (intakeRejection) throw new CallRequestRejectedError(intakeRejection);
+  const callPhone = callIntake.intake.telefono;
+  if (callPhone === null || !E164.test(callPhone)) {
+    throw new CallRequestRejectedError('CALL_PHONE_INVALID');
+  }
 
   // Xendra can acknowledge creation without ever delivering a lifecycle
   // event. Such a call must not hold the one-active-call fence forever.
@@ -393,9 +411,10 @@ export async function reserveCallForDecision(
   const provider = resolveStoredVoiceProvider();
   const callId = input.reserved_call_id ?? randomUUID();
   const sharedLead = deriveSharedLeadContext({
-    contactName: input.contact_name,
-    contactIntake: input.contact_intake,
-    contactEmail: input.contact_email ?? null,
+    contactName: [callIntake.intake.nombre, callIntake.intake.apellido]
+      .filter(Boolean).join(' ') || null,
+    contactIntake: callIntake.intake,
+    contactEmail: callIntake.intake.correo,
     // The final availability confirmation is commonly just “sí, llamame”.
     // An optional action field from that turn must not erase the course already
     // selected in the canonical conversation state.
@@ -413,7 +432,7 @@ export async function reserveCallForDecision(
     nombre_lead: sharedLead.nombreLead,
     apellido_lead: sharedLead.apellidoLead,
     curso_interes: sharedLead.courseOfInterest,
-    pais: inferCallCountryFromPhoneE164(input.phone),
+    pais: inferCallCountryFromPhoneE164(callPhone),
     email_lead: sharedLead.emailLead,
     ...(durablePlan === null ? {} : { plan_code: durablePlan }),
     ...(memoriaLead ? { memoria_lead: memoriaLead } : {}),

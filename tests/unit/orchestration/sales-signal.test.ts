@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { classifyBatchSalesSignal, classifyDeterministicSalesSignal } from '@/features/orchestration/domain/sales-signal';
+import {
+  classifyBatchSalesSignal,
+  classifyDeterministicSalesSignal,
+} from '@/features/orchestration/domain/sales-signal';
 
 describe('classifyDeterministicSalesSignal', () => {
   it('recognizes a direct request to be called', () => {
@@ -32,6 +35,8 @@ describe('classifyDeterministicSalesSignal', () => {
     'Prefiero WhatsApp',
     'Solo chat',
     'No puedo atender llamadas',
+    'Ahora no puedo atender',
+    'No estoy disponible en este momento',
   ])('recognizes a call/channel refusal (%s)', (text) => {
     expect(classifyDeterministicSalesSignal(text)).toEqual({ type: 'call_decline' });
   });
@@ -116,7 +121,6 @@ describe('classifyDeterministicSalesSignal', () => {
     expect(classifyDeterministicSalesSignal('   ')).toEqual({ type: 'model_required' });
   });
 });
-
 describe('classifyBatchSalesSignal', () => {
   it('finds a direct call request buried under trailing small talk', () => {
     expect(classifyBatchSalesSignal(['llamame', 'gracias'])).toEqual({ type: 'direct_call_request' });
@@ -148,6 +152,14 @@ describe('classifyBatchSalesSignal', () => {
 
   it('accepts a natural discourse marker before dale', () => {
     expect(classifyDeterministicSalesSignal('Bueno dale')).toEqual({ type: 'call_acceptance' });
+  });
+
+  it.each([
+    'Ahora puedo atender',
+    'Estoy disponible',
+    'Sí, ahora puedo',
+  ])('classifies an explicit current-availability answer (%s)', (text) => {
+    expect(classifyDeterministicSalesSignal(text)).toEqual({ type: 'call_acceptance' });
   });
 
   it('returns model_required when no message is decisive', () => {

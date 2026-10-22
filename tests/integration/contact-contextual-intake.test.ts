@@ -4,6 +4,7 @@ import { openLocalTestDatabase } from '../helpers/db';
 import { processInboundMessage, type InboundEnvelope, type IngestContext } from '@/lib/services/ingestion.service';
 import { registerMessage } from '@/lib/services/message.service';
 import { confirmDeliveredContactPhone } from '@/lib/repositories/contact-phone-confirmation.repository';
+import { loadContactProfileV1 } from '@/lib/repositories/contact-profile.repository';
 import { loadContactIntakeV1 } from '@/lib/repositories/contact-intake.repository';
 import { sql } from '@/lib/db/orchestrator';
 
@@ -40,7 +41,7 @@ async function outbound(initial: InboundEnvelope, context: IngestContext, conten
       ${delivery === 'wrong-destination' ? '+9990000000000' : initial.phone_e164}, ${randomUUID()},
       ${delivery === 'pending' ? 'pending' : 'submitted'},
       ${delivery === 'pending' || delivery === 'unproven' ? null : randomUUID()},
-      ${delivery === 'pending' || delivery === 'unproven' ? null : new Date()}::timestamptz)
+      ${delivery === 'pending' || delivery === 'unproven' ? null : message.created_at}::timestamptz)
   `;
   return message.id;
 }
@@ -371,16 +372,36 @@ run('confirmed phone delivery provenance', () => {
 
   it('records the exact source and rolls back the contact update with its surrounding commit', async () => {
     const first = envelope();
+    first.identity_owner = 'agent_a_v1';
     first.message.text = 'Mi teléfono es 1155550101';
     const opened = await processInboundMessage(first);
+    const beforeProfile = await loadContactProfileV1(opened.contact.id, db!);
+    expect(beforeProfile).not.toBeNull();
     const source = await outbound(first, opened, 'El número completo es +54 9 11 5555 0101?');
     const current = await processInboundMessage(answer(first, 'Si'));
     await expect(db!.begin(async tx => {
       expect(await confirmDeliveredContactPhone({ turnId: current.turn_id, phone: '+5491155550101' }, tx)).toBe(true);
+      const inTransaction = await loadContactProfileV1(opened.contact.id, tx);
+      expect(inTransaction).toMatchObject({
+        version: beforeProfile!.version + 1,
+        fields: {
+          telefono: {
+            value: '+5491155550101',
+            source_message_id: current.turn_id,
+            confirmation_evidence: {
+              kind: 'delivered_phone_confirmation_v1',
+              suggested_message_id: source,
+            },
+          },
+        },
+      });
       expect((await tx`SELECT metadata->'confirmed_phone_v1' AS proof FROM messages WHERE id=${current.turn_id}::uuid`)[0].proof)
         .toEqual({ phone: '+5491155550101', source_message_id: source });
       throw new Error('remaining proposal rejected');
     })).rejects.toThrow('remaining proposal rejected');
-    expect((await db!`SELECT declared_phone FROM contacts WHERE id=${opened.contact.id}::uuid`)[0].declared_phone).toBe('1155550101');
+    expect(await loadContactProfileV1(opened.contact.id, db!)).toEqual(beforeProfile);
+    expect((await db!`SELECT declared_phone FROM contacts WHERE id=${opened.contact.id}::uuid`)[0].declared_phone).toBeNull();
+    expect((await db!`SELECT metadata->'confirmed_phone_v1' AS proof FROM messages WHERE id=${current.turn_id}::uuid`)[0].proof)
+      .toBeNull();
   });
 });

@@ -4,7 +4,7 @@ import { scheduleTurnRecovery } from '../actions/scheduleTurnRecovery'
 import { bindRecoveryFeedbackV1 } from '../lib/conversation/recovery-feedback'
 import { captureContactProfile, ContactProfileReceiptSchema } from '../actions/captureContactProfile'
 import { randomUUID } from 'node:crypto'
-import { Autonomous, Workflow, configuration, context, secrets, z } from '@botpress/runtime'
+import { Autonomous, Workflow, actions as runtimeActions, configuration, context, secrets, z } from '@botpress/runtime'
 import { claimBatch } from '../actions/claimBatch'
 import { commitDecision } from '../actions/commitDecision'
 import { dispatchCall } from '../actions/dispatchCall'
@@ -95,6 +95,34 @@ import {
   AGENT_A_BRAIN_PROMPT_VERSION,
 } from '../prompts/agent-a-brain-v1'
 import { evaluateWhatsAppCanarySend } from '../channels/whatsapp.channel'
+
+// ADK 2.0.6 exposes integration actions at runtime, while its generated
+// aggregate declaration can omit the alias in mixed workspace typechecks.
+type WhatsappRuntimeActions = {
+  startTypingIndicator(input: {
+    conversationId: string
+    messageId: string
+    timeout?: number
+  }): Promise<Record<string, never>>
+  stopTypingIndicator(input: {
+    conversationId: string
+    messageId: string
+  }): Promise<Record<string, never>>
+}
+
+const getWhatsappRuntimeActions = (): WhatsappRuntimeActions => (runtimeActions as typeof runtimeActions & {
+  whatsapp: {
+    startTypingIndicator(input: {
+      conversationId: string
+      messageId: string
+      timeout?: number
+    }): Promise<Record<string, never>>
+    stopTypingIndicator(input: {
+      conversationId: string
+      messageId: string
+    }): Promise<Record<string, never>>
+  }
+}).whatsapp
 
 /**
  * One inbound turn, end to end.
@@ -458,6 +486,27 @@ export const processInboundTurn = new Workflow({
     input = WorkflowInputSchema.parse(input)
     state.phase = 'processing'
     state.errorCode = null
+    let whatsappTypingActive = false
+    const stopWhatsAppTyping = async (): Promise<void> => {
+      if (!whatsappTypingActive) return
+      whatsappTypingActive = false
+      try {
+        await getWhatsappRuntimeActions().stopTypingIndicator({
+          conversationId: input.botpress_conversation_id,
+          messageId: input.external_message_id,
+        })
+      } catch (error) {
+        if (!(error instanceof Error)) throw error
+        safeLog('studyx.turn.typing_indicator_stop_failed', {
+          trace_id: input.trace_id,
+          error_code: errorCode(error),
+        })
+      }
+    }
+    const finish = async (): Promise<WorkflowResult> => {
+      await stopWhatsAppTyping()
+      return resultFromState(state, input.trace_id)
+    }
 
     // A workflow may have been queued before a safer bundle was deployed.
     // Re-authorize the receiving WhatsApp business number before audio,
@@ -481,7 +530,7 @@ export const processInboundTurn = new Workflow({
           trace_id: input.trace_id,
           reason: authorization.reason,
         })
-        return resultFromState(state, input.trace_id)
+        return finish()
       }
     }
 
@@ -702,7 +751,7 @@ export const processInboundTurn = new Workflow({
       state.errorCode = errorCode(error)
       safeLog('studyx.turn.ingest_failed', { trace_id: input.trace_id, error_code: state.errorCode })
       emitTimings()
-      return resultFromState(state, input.trace_id)
+      return finish()
     }
 
     if (ingest.existing_result?.decision_id) {
@@ -730,7 +779,7 @@ export const processInboundTurn = new Workflow({
         processing_state: state.phase,
       })
       emitTimings()
-      return resultFromState(state, input.trace_id)
+      return finish()
     }
 
     // ---- Pasos 4-6: dormir hasta due_at y reclamar ------------------------
@@ -795,7 +844,7 @@ export const processInboundTurn = new Workflow({
           error_code: state.errorCode,
         })
         emitTimings()
-        return resultFromState(state, input.trace_id)
+        return finish()
       }
 
       if (outcome.outcome === 'claimed') {
@@ -823,7 +872,7 @@ export const processInboundTurn = new Workflow({
         outcome: outcome.outcome,
       })
       emitTimings()
-      return resultFromState(state, input.trace_id)
+      return finish()
     }
 
     if (!claimed) {
@@ -835,7 +884,7 @@ export const processInboundTurn = new Workflow({
         attempts: MAX_CLAIM_ATTEMPTS,
       })
       emitTimings()
-      return resultFromState(state, input.trace_id)
+      return finish()
     }
 
     const claimedAgentLoopV3Mode = claimed.features?.agent_loop_v3_mode ?? 'off'
@@ -854,6 +903,28 @@ export const processInboundTurn = new Workflow({
         }
       : claimed
     state.turnId = owned.turn_id
+    if (input.channel === 'whatsapp'
+      && input.sandbox_provider !== 'telegram_sandbox'
+      && owned.policy.may_respond
+      && !owned.contact.blocked) {
+      try {
+        await getWhatsappRuntimeActions().startTypingIndicator({
+          conversationId: input.botpress_conversation_id,
+          messageId: input.external_message_id,
+          timeout: 60_000,
+        })
+        whatsappTypingActive = true
+      } catch (error) {
+        if (!(error instanceof Error)) throw error
+        // Presence is UX only. A provider or integration failure must never
+        // prevent the durable turn from producing the actual answer.
+        safeLog('studyx.turn.typing_indicator_start_failed', {
+          trace_id: input.trace_id,
+          turn_id: owned.turn_id,
+          error_code: errorCode(error),
+        })
+      }
+    }
     const batchEventTimes = owned.context.batch_messages
       .map((message) => Date.parse(message.occurred_at ?? message.created_at))
       .filter((value) => Number.isFinite(value))
@@ -1027,22 +1098,31 @@ export const processInboundTurn = new Workflow({
             ...(proposal.confirmed_phone ? { confirmed_phone: proposal.confirmed_phone } : {}),
           } }), { maxAttempts: 1 },
         ))
-        owned.contact_intake = receipt.values
+        const currentProfile = receipt.contact_profile_snapshot
+        const currentValues = currentProfile?.values ?? receipt.values
+        const currentVersion = currentProfile?.version ?? receipt.version
+        owned.contact_intake = currentValues
         owned.contact_intake_missing = (['nombre', 'apellido', 'correo', 'telefono'] as const)
-          .filter(field => receipt.values[field] === null)
-        owned.contact.name = receipt.values.nombre
-          ? [receipt.values.nombre, receipt.values.apellido].filter(Boolean).join(' ') : null
-        owned.contact_profile = { ...owned.contact_profile, version: receipt.version,
+          .filter(field => currentValues[field] === null)
+        owned.call_intake_readiness = currentProfile?.call_intake_readiness
+          ? {
+              status: currentProfile.call_intake_readiness.status,
+              requirements: currentProfile.call_intake_readiness.requirements,
+            }
+          : { status: 'unknown', requirements: [] }
+        owned.contact.name = currentValues.nombre
+          ? [currentValues.nombre, currentValues.apellido].filter(Boolean).join(' ') : null
+        owned.contact_profile = { ...owned.contact_profile, version: currentVersion,
           pending_requests: owned.contact_profile.pending_requests.flatMap(request => {
             const fields = request.mode === 'clarify' ? request.fields.filter(field => !receipt.accepted_fields.includes(field))
-              : request.fields.filter(field => receipt.values[field] === null)
+              : request.fields.filter(field => currentValues[field] === null)
             return fields.length ? [{ ...request, fields }] : []
           }) }
         const refreshed = buildAgentAContextV1(owned,
           typeof configuration.agentAAdvisorName === 'string' ? configuration.agentAAdvisorName : null)
         if (refreshed) Object.assign(agentABrainContext, refreshed)
         safeLog('studyx.turn.contact_profile_persisted', { trace_id: input.trace_id,
-          turn_id: owned.turn_id, version: receipt.version, accepted_fields: receipt.accepted_fields,
+          turn_id: owned.turn_id, version: currentVersion, accepted_fields: receipt.accepted_fields,
           rejection_codes: receipt.rejections.map(item => item.code) })
         // A profile receipt is deliberately field-granular. Accepted
         // observations are already durable and rejected observations remain
@@ -1054,7 +1134,12 @@ export const processInboundTurn = new Workflow({
       }
       const repeated = (proposal.profile_requests ?? []).flatMap(request => {
         const eligible = eligibleContactRequestFieldsV1({ values: owned.contact_intake,
-          mode: request.mode, rejection })
+          mode: request.mode, rejection,
+          collectable_confirmed_fields: request.purpose === 'call'
+            ? (agentABrainContext.capabilities.call_contact_requirements ?? [])
+              .filter(({ reason }) => reason === 'written_whatsapp_confirmation_required')
+              .map(({ field }) => field)
+            : [] })
         return request.fields.filter(field => !eligible.includes(field))
       })
       if (repeated.length) {
@@ -1902,7 +1987,7 @@ export const processInboundTurn = new Workflow({
         })
       }
       emitTimings()
-      return resultFromState(state, input.trace_id)
+      return finish()
     }
     if (decision.reason_code === 'AGENT_A_CONTINUATION_REJECTED') {
       return recoverRejectedTurn()
@@ -2163,14 +2248,14 @@ export const processInboundTurn = new Workflow({
         error_code: state.errorCode,
       })
       emitTimings()
-      return resultFromState(state, input.trace_id)
+      return finish()
     }
 
     if (committed === null) {
       state.phase = 'paused_error'
       state.errorCode = 'COMMIT_RESULT_MISSING'
       emitTimings()
-      return resultFromState(state, input.trace_id)
+      return finish()
     }
 
     timings.commit_ms = Date.now() - commitStartedAt
@@ -2219,7 +2304,7 @@ export const processInboundTurn = new Workflow({
     if (committed.status === 'rejected' || !committed.outbound) {
       state.phase = committed.next_state
       emitTimings()
-      return resultFromState(state, input.trace_id)
+      return finish()
     }
 
     // A reserved call is a deferred side effect. Agent A must first submit
@@ -2406,7 +2491,7 @@ export const processInboundTurn = new Workflow({
           state.phase = 'retry_pending'
           state.errorCode = 'OUTBOUND_RETRY_PENDING'
           emitTimings()
-          return resultFromState(state, input.trace_id)
+          return finish()
         }
         const verification = await verifyAuthorizedEgressPortable({
           content: outboundPart.content,
@@ -2448,7 +2533,7 @@ export const processInboundTurn = new Workflow({
             })
           }
           emitTimings()
-          return resultFromState(state, input.trace_id)
+          return finish()
         }
 
         let delivery: Submission
@@ -2468,7 +2553,7 @@ export const processInboundTurn = new Workflow({
           delivery = await submitWithOwnership(
             `submit-outbound-to-botpress-part-${outboundPart.part_index}`,
             outboundPart,
-            () => {
+            async () => {
               if (input.channel === 'whatsapp' && input.sandbox_provider !== 'telegram_sandbox') {
                   const canary = evaluateWhatsAppCanarySend({
                     automationEnabled: configuration.automationEnabled,
@@ -2488,6 +2573,7 @@ export const processInboundTurn = new Workflow({
                     throw blocked
                   }
                 }
+                await stopWhatsAppTyping()
                 return client.createMessage({
                   conversationId: input.botpress_conversation_id,
                   userId: context.get('botId'),
@@ -2546,7 +2632,7 @@ export const processInboundTurn = new Workflow({
             })
           }
           emitTimings()
-          return resultFromState(state, input.trace_id)
+          return finish()
           }
         }
 
@@ -2559,7 +2645,7 @@ export const processInboundTurn = new Workflow({
             outcome: delivery.continuationOutcome,
           })
           emitTimings()
-          return resultFromState(state, input.trace_id)
+          return finish()
         }
 
         // Report immediately. If this becomes ambiguous after createMessage
@@ -2619,7 +2705,7 @@ export const processInboundTurn = new Workflow({
         model: decisionModel,
         fast_path: commercialRoute.kind === 'deterministic',
       })
-      return resultFromState(state, input.trace_id)
+      return finish()
     }
 
     // ---- Última barrera antes del único envío físico ---------------------
@@ -2674,7 +2760,7 @@ export const processInboundTurn = new Workflow({
         reason: egressVerification.reason,
       })
       emitTimings()
-      return resultFromState(state, input.trace_id)
+      return finish()
     }
 
     // ---- Paso 11: un único envío físico ----------------------------------
@@ -2685,7 +2771,7 @@ export const processInboundTurn = new Workflow({
       delivery = await submitWithOwnership(
         'submit-outbound-to-botpress',
         committed.outbound,
-        () => {
+        async () => {
           // The WhatsApp production canary applies only to real WhatsApp. The
           // Telegram sandbox is identified independently by its true channel
           // and `sandbox_provider=telegram_sandbox` safety marker.
@@ -2708,6 +2794,7 @@ export const processInboundTurn = new Workflow({
               throw blocked
             }
           }
+          await stopWhatsAppTyping()
           return client.createMessage({
             conversationId: input.botpress_conversation_id,
             // Un mensaje del bot se crea con el userId del BOT (así lo hace el
@@ -2729,7 +2816,7 @@ export const processInboundTurn = new Workflow({
         state.phase = 'absorbed'
         state.errorCode = 'OUTBOUND_SUPERSEDED'
         emitTimings()
-        return resultFromState(state, input.trace_id)
+        return finish()
       }
       timings.send_ms = Date.now() - sendStartedAt
       if (Number.isFinite(occurredAtMs)) {
@@ -2790,7 +2877,7 @@ export const processInboundTurn = new Workflow({
         error_code: state.errorCode,
       })
       emitTimings()
-      return resultFromState(state, input.trace_id)
+      return finish()
       }
     }
 
@@ -2853,6 +2940,6 @@ export const processInboundTurn = new Workflow({
       model: decisionModel,
       fast_path: commercialRoute.kind === 'deterministic',
     })
-    return resultFromState(state, input.trace_id)
+    return finish()
   },
 })

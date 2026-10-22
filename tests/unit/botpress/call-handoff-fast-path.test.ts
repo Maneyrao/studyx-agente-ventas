@@ -20,6 +20,7 @@ function claimed(overrides: {
   course?: string | null;
   route?: ClaimedTurn['deterministic_route'];
   awaitingReply?: NonNullable<ClaimedTurn['conversation_state_v1']>['awaiting_reply'];
+  callIntakeStatus?: 'ready' | 'needs_input' | 'unknown';
 }): ClaimedTurn {
   const texts = overrides.texts ?? ['Llamame'];
   return {
@@ -50,6 +51,14 @@ function claimed(overrides: {
       opted_in_at: '2026-08-12T00:00:00.000Z',
     },
     contact_intake_missing: overrides.contactIntakeMissing ?? [],
+    call_intake_readiness: {
+      status: overrides.callIntakeStatus
+        ?? ((overrides.contactIntakeMissing?.length ?? 0) > 0 ? 'needs_input' : 'ready'),
+      requirements: (overrides.contactIntakeMissing ?? []).map((field) => ({
+        field,
+        reason: 'missing' as const,
+      })),
+    },
     context: {
       batch_messages: texts.map((text, index) => ({
         id: UUID,
@@ -124,12 +133,12 @@ describe('matchCallHandoffFastPath', () => {
         texts: ['Sí, llamame'],
         allowedActions: ['request_call_now'],
         acceptedOffer: true,
-        route: 'call_accepted_offer',
+        route: 'call_direct_request',
       }),
     );
 
     expect(decision?.response).toBe(
-      'Perfecto. Registré la llamada; nuestra asesora virtual intenta comunicarse ahora.',
+      'Perfecto. Registré la llamada; nuestra asesora intenta comunicarse ahora.',
     );
   });
 
@@ -154,6 +163,15 @@ describe('matchCallHandoffFastPath', () => {
     ).toBeNull();
   });
 
+  it('falls through when the backend has not proved call intake readiness', () => {
+    expect(matchCallHandoffFastPath(claimed({
+      texts: ['Llamame ahora'],
+      allowedActions: ['request_call_now'],
+      callIntakeStatus: 'unknown',
+      route: 'call_direct_request',
+    }))).toBeNull();
+  });
+
   it('reports an already active call without creating another call action', () => {
     const active = claimed({
       texts: ['Me podes llamar?'],
@@ -172,7 +190,7 @@ describe('matchCallHandoffFastPath', () => {
     });
   });
 
-  it('an exact acceptance over an open offer becomes an accepted_offer request', () => {
+  it('an exact acceptance over an open offer falls through to ask availability', () => {
     const decision = matchCallHandoffFastPath(
       claimed({
         texts: ['sí'],
@@ -181,7 +199,23 @@ describe('matchCallHandoffFastPath', () => {
         route: 'call_accepted_offer',
       }),
     );
-    expect(decision).toMatchObject({
+    expect(decision).toBeNull();
+  });
+
+  it('a later availability confirmation can use the accepted-offer fast path', () => {
+    const pendingAvailability = claimed({
+      texts: ['sí'],
+      allowedActions: ['request_call_now'],
+      acceptedOffer: true,
+      route: 'call_accepted_offer',
+    });
+    Object.assign(pendingAvailability.conversation_state_v1!, {
+      call_preference: 'call',
+      call_offer_status: 'accepted',
+      awaiting_reply: 'call_or_chat',
+    });
+
+    expect(matchCallHandoffFastPath(pendingAvailability)).toMatchObject({
       response_type: 'call_confirmation',
       business_action: { type: 'request_call_now', reason: 'accepted_offer' },
     });

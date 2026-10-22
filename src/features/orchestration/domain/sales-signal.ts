@@ -47,6 +47,8 @@ const CALL_DECLINE_PATTERNS: RegExp[] = [
   /\bprefiero\s+(?:whatsapp|chat|texto)\b/,
   /\bsolo\s+(?:whatsapp|chat|texto)\b/,
   /\bno\s+puedo\s+atender\s+llamadas?\b/,
+  /\b(?:ahora\s+)?no\s+puedo\s+(?:atender|hablar)\b/,
+  /\bno\s+estoy\s+disponible\b/,
   /\bdeja\s+de\s+llamarme\b/,
 ];
 
@@ -78,6 +80,17 @@ const RETRY_ACCEPTANCE_PATTERNS: RegExp[] = [
   /^(?:(?:si|dale)\s+)?(?:intenta|intenten|intentemos|proba|probe|probemos|prueba|prueben|reintenta|reintentemos)\s+(?:nuevamente|de\s+nuevo|otra\s+vez)$/,
 ];
 
+// Availability is authority only when the durable conversation state says
+// the agent already asked whether the customer can answer now. Keep the
+// language set bounded here; arbitrary model interpretation must never start
+// a phone call.
+const AVAILABILITY_ACCEPTANCE_PATTERNS: RegExp[] = [
+  /^(?:si\s+)?ahora\s+puedo(?:\s+(?:atender|hablar))?$/,
+  /^(?:si\s+)?(?:estoy|estamos)\s+disponible(?:s)?(?:\s+ahora)?$/,
+  /^(?:si\s+)?puedo\s+(?:atender|hablar)\s+ahora$/,
+  /\by\s+ahora\s+puedo(?:\s+(?:atender|hablar))?\b/,
+];
+
 // Only an exact short reply counts — the moment the customer adds words
 // ("sí, contame más") the affirmative is no longer unambiguous on its own,
 // so it falls through to `model_required`.
@@ -104,6 +117,10 @@ export function classifyDeterministicSalesSignal(text: string): DeterministicSal
   }
 
   if (RETRY_ACCEPTANCE_PATTERNS.some((pattern) => pattern.test(phrase))) {
+    return { type: 'call_acceptance' };
+  }
+
+  if (AVAILABILITY_ACCEPTANCE_PATTERNS.some((pattern) => pattern.test(phrase))) {
     return { type: 'call_acceptance' };
   }
 

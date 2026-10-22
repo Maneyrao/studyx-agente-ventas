@@ -10,6 +10,7 @@ import type {
 } from '../domain/conversation-pipeline';
 import { authoritativelyPlanConversationTurnV1 } from './plan-conversation-turn';
 import type { ContactIntakeV1 } from '../domain/conversation-planner';
+import type { CallIntakeReadinessV1 } from '@/features/calls/domain/call-intake-readiness';
 import {
   buildCanonicalFactRegistry,
   materializeCanonicalFactRequests,
@@ -134,6 +135,10 @@ export async function prepareConversationPipelineCommitV1(input: {
   readonly state_store: ConversationStateStoreV1;
   readonly call_facts?: Pick<OrchestrationStore, 'loadClaimedCallFacts'>;
   readonly contact_intake?: (contactId: string) => Promise<ContactIntakeV1>;
+  readonly call_intake_readiness?: (
+    contactId: string,
+    conversationId: string,
+  ) => Promise<CallIntakeReadinessV1>;
 }): Promise<{
   readonly decision: DecisionV4;
   readonly plan: TurnPlanV1;
@@ -156,6 +161,7 @@ export async function prepareConversationPipelineCommitV1(input: {
     state_store: deps.state_store,
     call_facts: deps.call_facts,
     contact_intake: deps.contact_intake,
+    call_intake_readiness: deps.call_intake_readiness,
   });
   if (authoritative.plan_hash !== input.expected_plan_hash) {
     throw new ConversationPlanMismatchError();

@@ -20,10 +20,13 @@ VALUES (
   'Mensaje de prueba'
 );
 
-SELECT has_constraint(
-  'public',
-  'agent_decisions',
-  'agent_decisions_turn_id_uq',
+SELECT is(
+  (SELECT count(*)::integer
+   FROM pg_constraint
+   WHERE conrelid = 'public.agent_decisions'::regclass
+     AND conname = 'agent_decisions_turn_id_uq'
+     AND contype = 'u'),
+  1,
   'decision concurrency uses a stable named turn constraint'
 );
 

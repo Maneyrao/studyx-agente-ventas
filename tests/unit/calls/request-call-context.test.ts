@@ -1,10 +1,21 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import type { DbClient } from '@/lib/db/types';
+
+const { loadCallIntakeReadiness } = vi.hoisted(() => ({
+  loadCallIntakeReadiness: vi.fn(),
+}));
+
+vi.mock('@/lib/repositories/call-intake-readiness.repository', () => ({
+  loadCallIntakeReadinessV1: loadCallIntakeReadiness,
+}));
+
 import {
   buildLeadMemoryHandoff,
   buildPersistedWhatsappSummary,
   deriveSharedLeadContext,
   inferCallCountryFromPhoneE164,
   resolveStoredVoiceProvider,
+  reserveCallForDecision,
 } from '@/features/calls/application/request-call';
 
 describe('buildLeadMemoryHandoff', () => {
@@ -116,5 +127,59 @@ describe('resolveStoredVoiceProvider', () => {
 
   it('fails closed for unsupported configuration', () => {
     expect(() => resolveStoredVoiceProvider('unknown')).toThrow('VOICE_PROVIDER_INVALID');
+  });
+});
+
+describe('reserveCallForDecision intake gate', () => {
+  it('rejects a consented call before touching the call ledger when the email is not written in WhatsApp', async () => {
+    loadCallIntakeReadiness.mockReset();
+    loadCallIntakeReadiness.mockResolvedValueOnce({
+      status: 'needs_input',
+      intake: { nombre: 'Ana', apellido: 'Pérez', correo: 'ana@example.test', telefono: '+5491112345678' },
+      requirements: [{ field: 'correo', reason: 'written_whatsapp_confirmation_required' }],
+    });
+    const db = vi.fn(async () => []) as unknown as DbClient;
+
+    await expect(reserveCallForDecision(db, {
+      turn_id: '10000000-0000-4000-8000-000000000001',
+      trace_id: '10000000-0000-4000-8000-000000000002',
+      decision_id: '10000000-0000-4000-8000-000000000003',
+      contact_id: '10000000-0000-4000-8000-000000000004',
+      conversation_id: '10000000-0000-4000-8000-000000000005',
+      contact_name: 'Dato viejo',
+      contact_email: 'viejo@example.test',
+      phone: '+5491199999999',
+      consent_messages: [{ id: '10000000-0000-4000-8000-000000000006', content: 'Llamame ahora' }],
+      course_of_interest: 'marketing_digital',
+      prompt_version: 'test-v1',
+    })).rejects.toMatchObject({ reason: 'CALL_EMAIL_WHATSAPP_CONFIRMATION_REQUIRED' });
+    expect(loadCallIntakeReadiness).toHaveBeenCalledWith(
+      '10000000-0000-4000-8000-000000000004',
+      '10000000-0000-4000-8000-000000000005',
+      db,
+      { forUpdate: true },
+    );
+    expect(db).toHaveBeenCalledTimes(1);
+  });
+
+  it('honors a refusal before requesting or locking personal data', async () => {
+    loadCallIntakeReadiness.mockReset();
+    const db = vi.fn(async () => []) as unknown as DbClient;
+
+    await expect(reserveCallForDecision(db, {
+      turn_id: '10000000-0000-4000-8000-000000000011',
+      trace_id: '10000000-0000-4000-8000-000000000012',
+      decision_id: '10000000-0000-4000-8000-000000000013',
+      contact_id: '10000000-0000-4000-8000-000000000014',
+      conversation_id: '10000000-0000-4000-8000-000000000015',
+      contact_name: null,
+      contact_email: null,
+      phone: null,
+      consent_messages: [{ id: '10000000-0000-4000-8000-000000000016', content: 'Sí, pero no me llames' }],
+      course_of_interest: null,
+      prompt_version: 'test-v1',
+    })).rejects.toMatchObject({ reason: 'CALL_EXPLICITLY_DECLINED' });
+    expect(loadCallIntakeReadiness).not.toHaveBeenCalled();
+    expect(db).toHaveBeenCalledTimes(1);
   });
 });

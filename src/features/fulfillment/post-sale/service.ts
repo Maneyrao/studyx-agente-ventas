@@ -4,11 +4,24 @@ import { z } from 'zod';
 import { sql as defaultDb } from '@/lib/db/orchestrator';
 import { loadBotpressManagedMessagingConfig } from '@/lib/config';
 import { createManagedOutboundSender, type ManagedOutboundSender } from '@/features/messaging/adapters/managed-outbound';
-import { buildAuthorizedEgress, verifyAuthorizedEgress } from '@/features/orchestration/domain/egress-guard';
+import {
+  buildAuthorizedEgress,
+  protectedFactsInContentV1,
+  verifyAuthorizedEgress,
+} from '@/features/orchestration/domain/egress-guard';
 import { runEnrollmentWorker } from '../central-carga/worker';
 import { logger } from '@/lib/observability/structured-log';
 
 export const INITIAL_PASSWORD = 'Escuela.123';
+export const CAMPUS_URL = 'https://mystudyx.com/campus-virtual';
+const OFFICIAL_CONTACTS = [
+  'C A N A L E S  O F I C I A L E S  D E  C O N T A C T O',
+  '',
+  'WHATSAPP OFICIAL DE LA ACADEMIA: 786-916-4372 (solo WhatsApp)',
+  'NÚMERO DE ASISTENCIA AL ALUMNO: 866-217-7282 ☎️📚',
+  'ADMINISTRACIÓN: info@mystudyx.com',
+  'DEPARTAMENTO DE PROFESORES: studyxtutorias@gmail.com',
+].join('\n');
 export type NotificationKind = 'payment_received' | 'access_ready' | 'access_delayed';
 interface Source {
   id: string; payment_id: string; kind: NotificationKind; status: string; claim_token: string | null;
@@ -199,6 +212,17 @@ export class PostSaleContentError extends Error {
 
 const OPTIONAL_PASSWORD_CHANGE = /^(?:(?:si quieres,?\s+)?(?:puedes\s+)?(?:cambiar|actualizar|modificar)\s+(?:tu|la)\s+contraseña|te\s+(?:sugiero|recomiendo)(?:\s+que)?\s+(?:cambiar|actualizar|modificar|cambies|actualices|modifiques)\s+(?:tu|la)\s+contraseña)(?:\s+(?:después de|al)\s+(?:ingresar|entrar))?[.!]?$/iu;
 
+function deterministicAccessBlocks(
+  source: Pick<Source, 'kind' | 'student_was_created' | 'login_email' | 'login_url'>,
+): string[] {
+  if (source.kind !== 'access_ready') return [];
+  const credentials = source.student_was_created
+    ? `📌 USUARIO: ${source.login_email}\n\n📌 CONTRASEÑA: ${INITIAL_PASSWORD}\n\nRECUERDA LA «E» EN MAYÚSCULA`
+    : `📌 USUARIO: ${source.login_email}\n\n📌 CONTRASEÑA: la que ya utilizas`;
+  const campus = `LINK DIRECTO AL CAMPUS VIRTUAL 👇🏻\n\n${CAMPUS_URL}`;
+  return [campus, credentials, OFFICIAL_CONTACTS];
+}
+
 export function assemblePostSaleMessage(source: Pick<Source, 'kind' | 'student_was_created' | 'login_email' | 'login_url'> & Partial<Pick<Source, 'registration_name' | 'offering_name'>>, narrative: z.infer<typeof NarrativeSchema>) {
   // The model authors the conversation. Credentials are bound to verified backend data, outside the model.
   if (/https?:|www\.|@|\b(?:usuario|contraseña|password|clave)\b|(?:Studyx|Escuela)\.123/iu.test(narrative.intro)) {
@@ -215,10 +239,7 @@ export function assemblePostSaleMessage(source: Pick<Source, 'kind' | 'student_w
   if (narrative.suggestion && !OPTIONAL_PASSWORD_CHANGE.test(narrative.suggestion.trim())) {
     throw new PostSaleContentError('POST_SALE_CHANGE_MUST_BE_OPTIONAL');
   }
-  const credentials = source.student_was_created
-    ? `- Usuario: ${source.login_email}\n- Contraseña: ${INITIAL_PASSWORD}`
-    : `- Usuario: ${source.login_email}\n- Contraseña: la que ya utilizas`;
-  return [intro, credentials, source.login_url, narrative.suggestion]
+  return [intro, ...deterministicAccessBlocks(source), narrative.suggestion]
     .filter(Boolean).join('\n\n');
 }
 export async function deliverNotification(id: string, input: { claim_token: string; botpress_conversation_id: string; narrative: z.infer<typeof NarrativeSchema> }, deps: Deps = {}) {
@@ -236,7 +257,16 @@ export async function deliverNotification(id: string, input: { claim_token: stri
     }
     throw error;
   }
-  const authorization = buildAuthorizedEgress({ content: text, authorized_urls: source.login_url ? [source.login_url] : [], protected_facts: [] });
+  const authorization = buildAuthorizedEgress({
+    content: text,
+    authorized_urls: [CAMPUS_URL, ...(source.login_url ? [source.login_url] : [])],
+    // Only backend-owned blocks receive fact authorization. Model-authored
+    // prose remains subject to the commercial guard, so a fabricated price,
+    // modality or certification in `narrative` still fails closed.
+    protected_facts: protectedFactsInContentV1(
+      deterministicAccessBlocks(source).join('\n\n'),
+    ),
+  });
   if (!verifyAuthorizedEgress({ content: text, manifest: authorization }).ok) {
     return { outcome: 'invalid_content' as const, reason: 'POST_SALE_EGRESS_INVALID' as const };
   }

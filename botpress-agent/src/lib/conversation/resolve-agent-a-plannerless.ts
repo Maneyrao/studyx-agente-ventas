@@ -158,18 +158,23 @@ function validatePlannerless(input: {
         }
   }
   if (rejection !== null) {
+    const requiredCallFields = input.context.capabilities.required_contact_fields?.call
+      ?? (input.context.capabilities.intake_missing ?? []).filter((field) => (
+        ['nombre', 'apellido', 'correo', 'telefono'] as const
+      ).includes(field))
     const actionRejected = rejection.rejections.some((reason) => (
       reason.code === 'ACTION_NOT_AUTHORIZED'
       && reason.subject === action.type
     ))
     const callIdentityMissing = rejection.rejections.some((reason) => (
       reason.code === 'MISSING_INTAKE'
-      && ['nombre', 'apellido', 'telefono'].includes(reason.subject)
+      && requiredCallFields.includes(reason.subject as typeof requiredCallFields[number])
     ))
     const independentlyAuthorizedAction = action.type === 'request_call_now'
       && input.context.capabilities.may_request_call_now
       && input.context.capabilities.intake_status === 'known'
       && (input.context.capabilities.intake_missing ?? []).length === 0
+      && requiredCallFields.length === 0
       && !actionRejected
       && !callIdentityMissing
         ? 'request_call_now'
@@ -208,8 +213,9 @@ function hasUnbackedCallDispatchClaim(
   context: AgentAContextV1,
 ): boolean {
   const declaredCallOffer = proposal.response.call_offer
-  const missingCallIdentity = (['nombre', 'apellido', 'telefono'] as const)
-    .filter((field) => (context.capabilities.intake_missing ?? []).includes(field))
+  const missingCallIdentity = context.capabilities.required_contact_fields?.call
+    ?? (['nombre', 'apellido', 'correo', 'telefono'] as const)
+      .filter((field) => (context.capabilities.intake_missing ?? []).includes(field))
   const moves = new Set([proposal.move.move, ...proposal.move.secondary_moves])
   const callCollectionInProgress = moves.has('request_call')
     || (context.commercial_state.call_preference === 'call'
@@ -223,7 +229,8 @@ function hasUnbackedCallDispatchClaim(
     && (proposal.proposed_action.type !== 'request_call_now'
       || rejection.rejections.some((reason) => (
         reason.code === 'ACTION_NOT_AUTHORIZED' && reason.subject === 'request_call_now'
-        || reason.code === 'MISSING_INTAKE' && ['nombre', 'apellido', 'telefono'].includes(reason.subject)
+        || reason.code === 'MISSING_INTAKE'
+          && missingCallIdentity.includes(reason.subject as typeof missingCallIdentity[number])
       )))
 }
 

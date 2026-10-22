@@ -1,7 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { withSerializableTransaction, isRetryableTransactionError } from '@/lib/db/transaction';
-import { applyContactProfileUpdatesV1, ContactProfileClaimNotAuthorizedError } from '@/lib/repositories/contact-profile.repository';
+import {
+  applyContactProfileUpdatesV1,
+  contactProfileValuesV1,
+  ContactProfileClaimNotAuthorizedError,
+  loadContactProfileV1,
+} from '@/lib/repositories/contact-profile.repository';
+import { loadCallIntakeReadinessV1 } from '@/lib/repositories/call-intake-readiness.repository';
 import { ContactProfileUpdateV1Schema, CONTACT_PROFILE_MAX_UPDATES_V1 } from '@/shared/conversation/contact-profile-contract';
 
 const InputSchema = z.object({
@@ -24,7 +30,30 @@ export async function POST(request: NextRequest, context: { params: Promise<{ tu
     return NextResponse.json({ error: 'INVALID_CONTACT_PROFILE_REQUEST' }, { status: 400 });
   }
   try {
-    const receipt = await withSerializableTransaction(db => applyContactProfileUpdatesV1(db, parsed.data));
+    const receipt = await withSerializableTransaction(async db => {
+      const profileReceipt = await applyContactProfileUpdatesV1(db, parsed.data);
+      const [turn] = await db<Array<{ contact_id: string; conversation_id: string }>>`
+        SELECT contact_id, conversation_id FROM messages
+        WHERE id = ${turn_id}::uuid AND direction = 'inbound'
+      `;
+      if (!turn) throw new ContactProfileClaimNotAuthorizedError();
+      const callIntakeReadiness = await loadCallIntakeReadinessV1(
+          turn.contact_id,
+          turn.conversation_id,
+          db,
+          { forUpdate: true },
+        );
+      const currentProfile = await loadContactProfileV1(turn.contact_id, db);
+      if (!currentProfile) throw new ContactProfileClaimNotAuthorizedError();
+      return {
+        ...profileReceipt,
+        contact_profile_snapshot: {
+          version: currentProfile.version,
+          values: contactProfileValuesV1(currentProfile),
+          call_intake_readiness: callIntakeReadiness,
+        },
+      };
+    });
     return NextResponse.json(receipt);
   } catch (error) {
     if (error instanceof ContactProfileClaimNotAuthorizedError) {

@@ -44,6 +44,7 @@ import { loadContactIntakeV1 } from '@/lib/repositories/contact-intake.repositor
 import { EMBEDDING_DIMENSIONS } from '@/lib/embeddings/gemini';
 import { sql } from '@/lib/db/orchestrator';
 import { openLocalTestDatabase } from '../helpers/db';
+import { seedWrittenCallIntakeV1 } from '../helpers/call-intake-fixtures';
 import { startFakeXendraServer, type FakeXendraServer } from '../fixtures/fake-xendra-server';
 
 const run = process.env.TEST_DATABASE_URL ? describe : describe.skip;
@@ -302,6 +303,10 @@ async function createAgentACall(input: {
     identity,
     input.acceptedOffer ? 'Quiero saber sobre Fotografía Profesional' : 'Llamame ahora',
   ));
+  await seedWrittenCallIntakeV1({
+    phone: identity.phone,
+    correo: `ana.${randomUUID()}@example.test`,
+  }, db!);
   const workspace = await bindStudyxContext({
     contactId: first.contact.id,
     conversationId: first.conversation_id,
@@ -345,7 +350,7 @@ async function createAgentACall(input: {
   }
 
   const confirmation = await commitTurn(confirmationTurnId, decision(
-    'Perfecto. Registré la llamada; nuestra asesora virtual intenta comunicarse ahora.',
+    'Perfecto. Registré la llamada; nuestra asesora intenta comunicarse ahora.',
     'call_confirmation',
     {
       type: 'request_call_now',

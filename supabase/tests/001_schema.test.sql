@@ -14,7 +14,12 @@ SELECT has_column('public', 'message_embeddings', 'embedding', 'embedding vector
 SELECT has_column('public', 'audit_log', 'occurred_at', 'audit events have an occurrence timestamp');
 
 SELECT has_index('public', 'contacts', 'contacts_phone_unique', 'phone uniqueness is structural');
-SELECT has_index('public', 'messages', 'messages_in_reply_to_unique', 'one reply per turn is structural');
+SELECT has_index(
+  'public',
+  'messages',
+  'messages_in_reply_to_part_unique',
+  'one reply part per turn is structural'
+);
 
 SELECT * FROM finish();
 ROLLBACK;

@@ -22,6 +22,11 @@ import { recordDeliveryReport } from '@/lib/services/decision.service';
 import { flushSheetProjections } from '@/lib/services/projection.service';
 import { FakeSheetsProvider } from '@/lib/providers/sheets/fake-sheets-provider';
 import { sql } from '@/lib/db/orchestrator';
+import { withSerializableTransactionOn } from '@/lib/db/transaction';
+import {
+  applyContactProfileUpdatesV1,
+  loadContactProfileV1,
+} from '@/lib/repositories/contact-profile.repository';
 import { processInboundMessage, type InboundEnvelope } from '@/lib/services/ingestion.service';
 import { seedConversationForAgentTurn, type SeededAgentTurn } from '../helpers/agent-turn-fixtures';
 
@@ -217,13 +222,13 @@ run('Agent Loop preparation materialization', () => {
 
     const first = await commit(seeded, {
       preparation_ids: [prepared.preparation_id!],
-      text: 'Perfecto. Registré la llamada; nuestra asesora virtual intenta comunicarse ahora.',
+      text: 'Perfecto. Registré la llamada; nuestra asesora intenta comunicarse ahora.',
       response_type: 'call_confirmation',
       state_patch: { call_preference: 'call', call_offer_status: 'accepted', stage: 'handoff' },
     });
     const replay = await commit(seeded, {
       preparation_ids: [prepared.preparation_id!],
-      text: 'Perfecto. Registré la llamada; nuestra asesora virtual intenta comunicarse ahora.',
+      text: 'Perfecto. Registré la llamada; nuestra asesora intenta comunicarse ahora.',
       response_type: 'call_confirmation',
       state_patch: { call_preference: 'call', call_offer_status: 'accepted', stage: 'handoff' },
     });
@@ -1117,16 +1122,44 @@ run('Agent Loop preparation materialization', () => {
     process.env.GOOGLE_SHEETS_TAB_NAME = 'Leads';
 
     const older = await commit(seeded, { preparation_ids: [] });
-    const correction = await prepareContactDetailsToolV1({
-      db: sql,
+    await sql`
+      UPDATE messages
+      SET content = 'Mi apellido es García'
+      WHERE id = ${seeded.second_turn_id}::uuid
+    `;
+    const [secondClaim] = await sql<Array<{ claim_token: string }>>`
+      UPDATE inbound_batches
+      SET state = 'claimed',
+          claim_token = gen_random_uuid(),
+          claimed_by = 'agent-turn-fixture-correction',
+          claimed_at = now(),
+          lease_until = now() + interval '120 seconds',
+          claim_attempt_count = claim_attempt_count + 1,
+          version = version + 1,
+          updated_at = now()
+      WHERE id = ${seeded.second_batch_id}::uuid
+        AND state = 'waiting'
+      RETURNING claim_token
+    `;
+    if (!secondClaim) throw new Error('SECOND_BATCH_CLAIM_FAILED');
+    const profile = await loadContactProfileV1(seeded.contact_id, sql);
+    if (!profile) throw new Error('CONTACT_PROFILE_MISSING');
+    await withSerializableTransactionOn(sql, tx => applyContactProfileUpdatesV1(tx, {
       turn_id: seeded.second_turn_id,
-      conversation_id: seeded.conversation_id,
-      contact_id: seeded.contact_id,
-    }, { last_name: 'García' });
-    expect(correction.success).toBe(true);
+      batch_id: seeded.second_batch_id,
+      claim_token: secondClaim.claim_token,
+      expected_version: profile.version,
+      updates: [{
+        field: 'apellido',
+        value: 'García',
+        operation: 'correct',
+        source_message_id: seeded.second_turn_id,
+        source_quote: 'García',
+      }],
+    }));
     const newer = await commit(seeded, {
       turn_id: seeded.second_turn_id,
-      preparation_ids: [correction.preparation_id!],
+      preparation_ids: [],
     });
 
     await recordDeliveryReport({

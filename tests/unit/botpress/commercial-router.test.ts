@@ -58,11 +58,13 @@ type ClaimedOverrides = {
   selectedPaymentPlan?: ClaimedTurn['sales_context']['selected_payment_plan'];
   name?: string | null;
   contactIntakeMissing?: ClaimedTurn['contact_intake_missing'];
+  callIntakeStatus?: 'ready' | 'needs_input' | 'unknown';
   recentInbound?: string[];
   catalogResolution?: ClaimedTurn['catalog_resolution'];
   offerings?: BusinessOffering[];
   optOutAckEligible?: boolean;
   conversationPipelineV1?: boolean;
+  availabilityPending?: boolean;
 };
 
 function claimedTurn(overrides: ClaimedOverrides = {}): ClaimedTurn {
@@ -105,6 +107,14 @@ function claimedTurn(overrides: ClaimedOverrides = {}): ClaimedTurn {
       opted_in_at: '2026-08-20T12:00:00.000Z',
     },
     contact_intake_missing: overrides.contactIntakeMissing ?? [],
+    call_intake_readiness: {
+      status: overrides.callIntakeStatus
+        ?? ((overrides.contactIntakeMissing?.length ?? 0) > 0 ? 'needs_input' : 'ready'),
+      requirements: (overrides.contactIntakeMissing ?? []).map((field) => ({
+        field,
+        reason: 'missing' as const,
+      })),
+    },
     context: {
       batch_messages: texts.map((text, index) => ({
         id: UUID,
@@ -144,6 +154,19 @@ function claimedTurn(overrides: ClaimedOverrides = {}): ClaimedTurn {
     },
     catalog_resolution: overrides.catalogResolution ?? { kind: 'no_catalog_intent' },
     deterministic_route: overrides.route ?? null,
+    ...(overrides.availabilityPending ? {
+      conversation_state_v1: {
+        selected_offering_code: overrides.offeringCode ?? null,
+        selected_payment_plan: overrides.selectedPaymentPlan ?? null,
+        stage: 'course_selected',
+        call_preference: 'call',
+        call_offer_status: 'accepted',
+        call_offer_count: 1,
+        awaiting_reply: 'call_or_chat',
+        payment_reported: false,
+        version: 1,
+      },
+    } : {}),
     business_context_available: true,
     business_context: {
       as_of: '2026-08-25T12:00:00.000Z',
@@ -787,13 +810,14 @@ describe('routeCommercialTurn', () => {
     expectDecisionRoute(route);
   });
 
-  it('preserves acceptance of a currently authorized call offer', () => {
+  it('preserves a later availability confirmation for an accepted call', () => {
     const route = routeCommercialTurn({
       automationEnabled: true,
       claimed: claimedTurn({
         texts: ['Sí'],
         route: 'call_accepted_offer',
         acceptedOffer: true,
+        availabilityPending: true,
         allowedActions: ['request_call_now'],
       }),
     });

@@ -1001,6 +1001,49 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
     });
   });
 
+  it('never re-authorizes a call alternative while written WhatsApp email confirmation is pending', async () => {
+    const current = context();
+    current.turn.batch_messages = [{ id: 'm1', text: 'Quiero que me llames' }];
+    current.customer.contact_intake = {
+      nombre: 'Ana', apellido: 'Costa', correo: 'ana@example.test', telefono: '+15555550168',
+    };
+    current.capabilities.may_request_call_now = true;
+    current.capabilities.intake_missing = [];
+    current.capabilities.required_contact_fields = {
+      call: ['correo'], payment: [], identity: [],
+    };
+    current.capabilities.call_contact_requirements = [{
+      field: 'correo', reason: 'written_whatsapp_confirmation_required',
+    }];
+    const initial = proposal({
+      move: { schema_version: 1, move: 'request_call', secondary_moves: [], vetoes: [], confidence: 1 },
+      response: { messages: ['Perfecto, te llamo ahora.'], call_offer: null },
+      proposed_action: { type: 'request_call_now', reason: 'direct_request' },
+      profile_requests: [{
+        message_index: 0, fields: ['nombre'], purpose: 'call', mode: 'collect',
+      }],
+    });
+    const repair = vi.fn(async rejection => {
+      expect(rejection.authorized_alternatives.actions).not.toContain('request_call_now');
+      return generated({
+        ...initial,
+        response: { messages: ['Ya tenemos tu correo; escríbelo también por este chat.'], call_offer: null },
+        proposed_action: { type: 'none' as const },
+        profile_requests: [{
+          message_index: 0, fields: ['correo'], purpose: 'call', mode: 'collect',
+        }],
+        repair_of: { rejection_id: rejection.rejection_id, attempt: 1 as const },
+      });
+    });
+
+    await expect(resolveAgentAPlannerlessProposalV2({
+      initial: generated(initial), context: current, repair_enabled: true, repair,
+      rejection_id: '00000000-0000-4000-8000-0000000000c5',
+    })).rejects.toThrow('PLANNERLESS_PROPOSAL_REJECTED');
+
+    expect(repair).toHaveBeenCalledTimes(1);
+  });
+
   it('keeps the exact model-authored intake question when only the call action is unavailable', async () => {
     const current = context();
     current.turn.batch_messages = [{ id: 'm1', text: 'Dale, llamame' }];

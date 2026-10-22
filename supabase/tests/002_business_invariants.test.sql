@@ -68,10 +68,10 @@ SELECT is(
   (SELECT count(*)::integer FROM pg_indexes
    WHERE schemaname = 'public'
      AND tablename = 'messages'
-     AND indexname = 'messages_in_reply_to_unique'
+     AND indexname = 'messages_in_reply_to_part_unique'
      AND indexdef LIKE 'CREATE UNIQUE INDEX%'),
   1,
-  'reply correlation uses a unique partial index'
+  'reply-part correlation uses a unique partial index'
 );
 
 SELECT * FROM finish();

@@ -174,7 +174,7 @@ describe('prepareAgentTurnV2', () => {
     }, { state_store: store(state()), now: () => Date.parse(index.as_of),
       contact_intake: async () => ({ nombre: 'Camila', apellido: null, correo: null, telefono: null }) });
     expect(prepared.decision.business_action).toBeNull();
-    expect(prepared.transition).toMatchObject({ call_preference: 'call', call_offer_status: 'accepted', awaiting_reply: 'call_or_chat' });
+    expect(prepared.transition).toMatchObject({ call_preference: 'call', call_offer_status: 'accepted', awaiting_reply: 'contact_details' });
   });
 
   it.each(['requested', 'provider_accepted', 'in_progress'])(
@@ -275,14 +275,14 @@ describe('prepareAgentTurnV2', () => {
     expect(prepared.action_rejection).toMatchObject({ action: 'request_call_now', missing_fields: ['apellido'] });
   });
 
-  it('authorizes a confirmed call without asking for the payment-only email field', async () => {
+  it('requires email before authorizing a confirmed call', async () => {
     const prepared = await prepareAgentTurnV2({
       turn: { id: ids.turn, workspace_id: ids.workspace, conversation_id: ids.conversation, contact_id: ids.contact },
       workspace_slug: 'studyx', business_context: business, catalog_index: index,
       semantic_rejections: 'advisory', current_customer_messages: ['Sí'],
       proposal: proposal({
         move: { schema_version: 1, move: 'request_call', secondary_moves: [], vetoes: [], confidence: 1 },
-        response: { messages: ['Perfecto, te llamo ahora.'] },
+        response: { messages: ['Antes de llamarte, compartime tu correo por acá.'] },
         proposed_action: { type: 'request_call_now', reason: 'direct_request' },
       }),
     }, {
@@ -290,7 +290,10 @@ describe('prepareAgentTurnV2', () => {
       contact_intake: async () => ({ ...(await completeIntake()), correo: null }),
       now: () => Date.parse(index.as_of),
     });
-    expect(prepared.decision.business_action).toEqual({ type: 'request_call_now', reason: 'direct_request' });
+    expect(prepared.decision.business_action).toBeNull();
+    expect(prepared.action_rejection).toMatchObject({
+      action: 'request_call_now', missing_fields: ['correo'],
+    });
   });
 
   it.each([
@@ -767,7 +770,7 @@ describe('prepareAgentTurnV2', () => {
     expect(prepared.authorized_protected_facts).toContainEqual({ kind: 'duration', value: '12 clases' });
   });
 
-  it('authorizes current acceptance of the still-open call offer in the same turn', async () => {
+  it('records acceptance of an open call offer and asks availability before dispatch', async () => {
     const prepared = await prepareAgentTurnV2({
       turn: { id: ids.turn, workspace_id: ids.workspace, conversation_id: ids.conversation, contact_id: ids.contact },
       workspace_slug: 'studyx', business_context: business, catalog_index: index,
@@ -776,7 +779,7 @@ describe('prepareAgentTurnV2', () => {
         move: {
           schema_version: 1, move: 'request_call', secondary_moves: [], vetoes: [], confidence: 0.98,
         },
-        response: { messages: ['Perfecto, te llamo ahora.'] },
+        response: { messages: ['Perfecto. ¿Podés atender si te llamamos ahora?'] },
         proposed_action: { type: 'request_call_now', reason: 'accepted_offer' },
       }),
     }, {
@@ -799,13 +802,11 @@ describe('prepareAgentTurnV2', () => {
       now: () => Date.parse(index.as_of),
     });
 
-    expect(prepared.decision.business_action).toEqual({
-      type: 'request_call_now', reason: 'accepted_offer',
-    });
+    expect(prepared.decision.business_action).toBeNull();
     expect(prepared.transition).toMatchObject({
-      call_preference: 'call', call_offer_status: 'accepted', awaiting_reply: 'none', stage: 'handoff',
+      call_preference: 'call', call_offer_status: 'accepted', awaiting_reply: 'call_or_chat',
     });
-    expect(prepared.action_rejection).toBeNull();
+    expect(prepared.action_rejection).toMatchObject({ action: 'request_call_now' });
   });
 
   it('keeps Agent A conversationally in control when payment intake is incomplete', async () => {
@@ -889,6 +890,207 @@ describe('prepareAgentTurnV2', () => {
         stage: 'handoff',
       },
     });
+  });
+
+  it('keeps call intent but rejects dispatch while a known voice email is not typed in WhatsApp', async () => {
+    const prepared = await prepareAgentTurnV2({
+      turn: { id: ids.turn, workspace_id: ids.workspace, conversation_id: ids.conversation, contact_id: ids.contact },
+      workspace_slug: 'studyx', business_context: business, catalog_index: index,
+      current_customer_messages: ['Llamame'],
+      proposal: proposal({
+        move: { schema_version: 1, move: 'request_call', secondary_moves: [], vetoes: [], confidence: 0.99 },
+        response: { messages: ['Escribime tu correo por acá y seguimos con la llamada.'] },
+        proposed_action: { type: 'request_call_now', reason: 'direct_request' },
+      }),
+    }, {
+      state_store: store(state()),
+      contact_intake: completeIntake,
+      call_intake_readiness: async () => ({
+        status: 'needs_input',
+        intake: await completeIntake(),
+        requirements: [{ field: 'correo', reason: 'written_whatsapp_confirmation_required' }],
+      }),
+      now: () => Date.parse(index.as_of),
+    });
+
+    expect(prepared.decision.business_action).toBeNull();
+    expect(prepared.action_rejection).toMatchObject({
+      action: 'request_call_now',
+      status: 'needs_input',
+      missing_fields: ['correo'],
+    });
+    expect(prepared.transition).toMatchObject({
+      call_preference: 'call', call_offer_status: 'accepted', awaiting_reply: 'contact_details',
+    });
+  });
+
+  it('does not treat the final email as consent to call now', async () => {
+    const prepared = await prepareAgentTurnV2({
+      turn: { id: ids.turn, workspace_id: ids.workspace, conversation_id: ids.conversation, contact_id: ids.contact },
+      workspace_slug: 'studyx', business_context: business, catalog_index: index,
+      current_customer_messages: ['matia@example.test'],
+      proposal: proposal({
+        move: { schema_version: 1, move: 'request_call', secondary_moves: [], vetoes: [], confidence: 0.99 },
+        response: { messages: ['Listo. Podés atender si te llamamos ahora?'] },
+        proposed_action: { type: 'request_call_now', reason: 'direct_request' },
+      }),
+    }, {
+      state_store: store(state({
+        call_preference: 'call', call_offer_status: 'accepted', awaiting_reply: 'call_or_chat',
+      })),
+      contact_intake: completeIntake,
+      call_intake_readiness: async () => ({
+        status: 'ready', intake: await completeIntake(), requirements: [],
+      }),
+      now: () => Date.parse(index.as_of),
+    });
+
+    expect(prepared.decision.business_action).toBeNull();
+    expect(prepared.transition).toMatchObject({
+      call_preference: 'call', call_offer_status: 'accepted', awaiting_reply: 'call_or_chat',
+    });
+  });
+
+  it.each([
+    'Ahora puedo atender',
+    'Estoy disponible',
+    'Sí, ahora puedo',
+  ])('accepts Agent A semantic evidence for natural current availability: %s', async (text) => {
+    const prepared = await prepareAgentTurnV2({
+      turn: { id: ids.turn, workspace_id: ids.workspace, conversation_id: ids.conversation, contact_id: ids.contact },
+      workspace_slug: 'studyx', business_context: business, catalog_index: index,
+      current_customer_messages: [text],
+      proposal: proposal({
+        move: { schema_version: 1, move: 'request_call', secondary_moves: [], vetoes: [], confidence: 0.99 },
+        response: { messages: ['Perfecto, te llamamos ahora.'] },
+        proposed_action: { type: 'request_call_now', reason: 'accepted_offer' },
+      }),
+    }, {
+      state_store: store(state({
+        call_preference: 'call', call_offer_status: 'accepted', awaiting_reply: 'call_or_chat',
+      })),
+      contact_intake: completeIntake,
+      call_intake_readiness: async () => ({
+        status: 'ready', intake: await completeIntake(), requirements: [],
+      }),
+      now: () => Date.parse(index.as_of),
+    });
+
+    expect(prepared.decision.business_action).toEqual({
+      type: 'request_call_now', reason: 'direct_request',
+    });
+  });
+
+  it('rejects semantic dispatch when the same turn only provides profile data', async () => {
+    const prepared = await prepareAgentTurnV2({
+      turn: { id: ids.turn, workspace_id: ids.workspace, conversation_id: ids.conversation, contact_id: ids.contact },
+      workspace_slug: 'studyx', business_context: business, catalog_index: index,
+      current_customer_messages: ['Mi correo es matia@example.test'],
+      proposal: proposal({
+        move: { schema_version: 1, move: 'request_call', secondary_moves: [], vetoes: [], confidence: 0.99 },
+        response: { messages: ['Listo. ¿Podés atender ahora?'] },
+        proposed_action: { type: 'request_call_now', reason: 'accepted_offer' },
+        profile_updates: [{
+          field: 'correo', operation: 'set', value: 'matia@example.test',
+          source_message_id: '10000000-0000-4000-8000-000000000099',
+          source_quote: 'matia@example.test',
+        }],
+      }),
+    }, {
+      state_store: store(state({
+        call_preference: 'call', call_offer_status: 'accepted', awaiting_reply: 'call_or_chat',
+      })),
+      contact_intake: completeIntake,
+      call_intake_readiness: async () => ({
+        status: 'ready', intake: await completeIntake(), requirements: [],
+      }),
+      now: () => Date.parse(index.as_of),
+    });
+
+    expect(prepared.decision.business_action).toBeNull();
+    expect(prepared.transition).toMatchObject({
+      call_preference: 'call', call_offer_status: 'accepted', awaiting_reply: 'call_or_chat',
+    });
+  });
+
+  it.each([
+    'Mi correo es matia@example.test, gracias',
+    'Soy Matia Pérez, mi correo es matia@example.test',
+  ])('does not treat conversational profile data as availability: %s', async (text) => {
+    const prepared = await prepareAgentTurnV2({
+      turn: { id: ids.turn, workspace_id: ids.workspace, conversation_id: ids.conversation, contact_id: ids.contact },
+      workspace_slug: 'studyx', business_context: business, catalog_index: index,
+      current_customer_messages: [text],
+      proposal: proposal({
+        move: { schema_version: 1, move: 'request_call', secondary_moves: [], vetoes: [], confidence: 0.99 },
+        response: { messages: ['Listo. ¿Podés atender ahora?'] },
+        proposed_action: { type: 'request_call_now', reason: 'accepted_offer' },
+      }),
+    }, {
+      state_store: store(state({
+        call_preference: 'call', call_offer_status: 'accepted', awaiting_reply: 'call_or_chat',
+      })),
+      contact_intake: completeIntake,
+      call_intake_readiness: async () => ({
+        status: 'ready', intake: await completeIntake(), requirements: [],
+      }),
+      now: () => Date.parse(index.as_of),
+    });
+
+    expect(prepared.decision.business_action).toBeNull();
+  });
+
+  it('accepts semantic availability when the same turn also updates profile data', async () => {
+    const prepared = await prepareAgentTurnV2({
+      turn: { id: ids.turn, workspace_id: ids.workspace, conversation_id: ids.conversation, contact_id: ids.contact },
+      workspace_slug: 'studyx', business_context: business, catalog_index: index,
+      current_customer_messages: ['Mi correo es matia@example.test y ahora puedo atender'],
+      proposal: proposal({
+        move: { schema_version: 1, move: 'request_call', secondary_moves: [], vetoes: [], confidence: 0.99 },
+        response: { messages: ['Perfecto, te llamamos ahora.'] },
+        proposed_action: { type: 'request_call_now', reason: 'accepted_offer' },
+        profile_updates: [{
+          field: 'correo', operation: 'set', value: 'matia@example.test',
+          source_message_id: '10000000-0000-4000-8000-000000000099',
+          source_quote: 'matia@example.test',
+        }],
+      }),
+    }, {
+      state_store: store(state({
+        call_preference: 'call', call_offer_status: 'accepted', awaiting_reply: 'call_or_chat',
+      })),
+      contact_intake: completeIntake,
+      call_intake_readiness: async () => ({
+        status: 'ready', intake: await completeIntake(), requirements: [],
+      }),
+      now: () => Date.parse(index.as_of),
+    });
+
+    expect(prepared.decision.business_action).toMatchObject({ type: 'request_call_now' });
+  });
+
+  it('rejects semantic dispatch after a later call refusal', async () => {
+    const prepared = await prepareAgentTurnV2({
+      turn: { id: ids.turn, workspace_id: ids.workspace, conversation_id: ids.conversation, contact_id: ids.contact },
+      workspace_slug: 'studyx', business_context: business, catalog_index: index,
+      current_customer_messages: ['Ahora puedo atender', 'Ahora no puedo atender'],
+      proposal: proposal({
+        move: { schema_version: 1, move: 'request_call', secondary_moves: [], vetoes: [], confidence: 0.99 },
+        response: { messages: ['Entendido, seguimos por chat.'] },
+        proposed_action: { type: 'request_call_now', reason: 'accepted_offer' },
+      }),
+    }, {
+      state_store: store(state({
+        call_preference: 'call', call_offer_status: 'accepted', awaiting_reply: 'call_or_chat',
+      })),
+      contact_intake: completeIntake,
+      call_intake_readiness: async () => ({
+        status: 'ready', intake: await completeIntake(), requirements: [],
+      }),
+      now: () => Date.parse(index.as_of),
+    });
+
+    expect(prepared.decision.business_action).toBeNull();
   });
 
   it('prepares a direct call request and waits for a later availability confirmation', async () => {

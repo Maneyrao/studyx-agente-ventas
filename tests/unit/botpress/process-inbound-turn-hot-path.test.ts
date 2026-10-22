@@ -112,7 +112,7 @@ vi.mock('../../../botpress-agent/src/lib/conversation/agent-a-brain', async (imp
   }),
 }));
 
-import { adk, configuration, secrets } from '../../helpers/botpress-runtime-stub';
+import { actions as runtimeActions, adk, configuration, secrets } from '../../helpers/botpress-runtime-stub';
 import {
   isConfirmedPreSubmissionBlock,
   processInboundTurn,
@@ -192,6 +192,8 @@ function claimedResponse() {
       consent_status: 'allowed',
       opted_in_at: NOW,
     },
+    contact_intake_missing: [],
+    call_intake_readiness: { status: 'ready', requirements: [] },
     context: {
       batch_messages: [{
         id: UUID,
@@ -436,6 +438,10 @@ describe('processInboundTurn hot path', () => {
     vi.spyOn(console, 'info').mockImplementation(() => undefined);
   });
 
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it('abandons a queued WhatsApp turn for a non-allowed business number before ingesting it', async () => {
     configuration.whatsappPublicEnabled = true;
     configuration.whatsappCanaryEnabled = false;
@@ -470,6 +476,111 @@ describe('processInboundTurn hot path', () => {
     });
     expect(actionSpies.ingest).not.toHaveBeenCalled();
     expect(actionSpies.transcribe).not.toHaveBeenCalled();
+  });
+
+  it('does not show typing presence to a blocked contact', async () => {
+    configuration.whatsappPublicEnabled = true;
+    configuration.whatsappAllowedBotPhoneNumberId = 'allowed-business-number-75';
+    const claimed = claimedResponse() as unknown as ClaimedTurn;
+    claimed.policy = { may_respond: false, allowed_response_types: [], reason: 'CONTACT_BLOCKED' };
+    claimed.contact.blocked = true;
+    actionSpies.claim.mockResolvedValue(claimed);
+    const startTyping = vi.spyOn(runtimeActions.whatsapp, 'startTypingIndicator');
+    const stopTyping = vi.spyOn(runtimeActions.whatsapp, 'stopTypingIndicator');
+    const input = {
+      ...workflowInput(), channel: 'whatsapp',
+      message: {
+        ...workflowInput().message,
+        metadata: { bot_phone_number_id: 'allowed-business-number-75' },
+      },
+    };
+    const step = Object.assign(async (_name: string, run: () => Promise<unknown>) => run(), {
+      sleep: vi.fn(async () => undefined),
+    });
+
+    await (processInboundTurn as unknown as {
+      definition: { handler: (args: Record<string, unknown>) => Promise<unknown> };
+    }).definition.handler({
+      input, state: processingState(), step,
+      execute: vi.fn(async () => { throw new Error('MODEL_MUST_NOT_RUN'); }),
+      client: {}, signal: new AbortController().signal,
+      workflow: { id: 'blocked-contact-typing-test', setTimeout: vi.fn(async () => undefined) },
+    });
+
+    expect(startTyping).not.toHaveBeenCalled();
+    expect(stopTyping).not.toHaveBeenCalled();
+  });
+
+  it('starts and stops WhatsApp typing presence around an authorized turn', async () => {
+    configuration.whatsappPublicEnabled = true;
+    configuration.whatsappAllowedBotPhoneNumberId = 'allowed-business-number-75';
+    const claimed = claimedResponse() as unknown as ClaimedTurn;
+    claimed.context.batch_messages[0].content = 'Hola';
+    actionSpies.claim.mockResolvedValue(claimed);
+    const startTyping = vi.spyOn(runtimeActions.whatsapp, 'startTypingIndicator');
+    const stopTyping = vi.spyOn(runtimeActions.whatsapp, 'stopTypingIndicator');
+    const input = {
+      ...workflowInput(), channel: 'whatsapp', external_message_id: 'wamid.typing-test',
+      message: {
+        ...workflowInput().message, text: 'Hola',
+        metadata: { bot_phone_number_id: 'allowed-business-number-75' },
+      },
+    };
+    const step = Object.assign(async (_name: string, run: () => Promise<unknown>) => run(), {
+      sleep: vi.fn(async () => undefined),
+    });
+
+    await (processInboundTurn as unknown as {
+      definition: { handler: (args: Record<string, unknown>) => Promise<unknown> };
+    }).definition.handler({
+      input, state: processingState(), step,
+      execute: vi.fn(async () => { throw new Error('MODEL_MUST_NOT_RUN'); }),
+      client: {}, signal: new AbortController().signal,
+      workflow: { id: 'authorized-typing-test', setTimeout: vi.fn(async () => undefined) },
+    });
+
+    expect(startTyping).toHaveBeenCalledWith({
+      conversationId: 'bp-conversation', messageId: 'wamid.typing-test', timeout: 60_000,
+    });
+    expect(stopTyping).toHaveBeenCalledWith({
+      conversationId: 'bp-conversation', messageId: 'wamid.typing-test',
+    });
+    expect(startTyping.mock.invocationCallOrder[0]).toBeLessThan(stopTyping.mock.invocationCallOrder[0]!);
+  });
+
+  it('keeps the commercial turn alive when WhatsApp typing presence fails', async () => {
+    configuration.whatsappPublicEnabled = true;
+    configuration.whatsappAllowedBotPhoneNumberId = 'allowed-business-number-75';
+    const claimed = claimedResponse() as unknown as ClaimedTurn;
+    claimed.context.batch_messages[0].content = 'Hola';
+    actionSpies.claim.mockResolvedValue(claimed);
+    const startTyping = vi.spyOn(runtimeActions.whatsapp, 'startTypingIndicator')
+      .mockRejectedValueOnce(new Error('WHATSAPP_PRESENCE_UNAVAILABLE'));
+    const stopTyping = vi.spyOn(runtimeActions.whatsapp, 'stopTypingIndicator');
+    const input = {
+      ...workflowInput(), channel: 'whatsapp',
+      message: {
+        ...workflowInput().message, text: 'Hola',
+        metadata: { bot_phone_number_id: 'allowed-business-number-75' },
+      },
+    };
+    const step = Object.assign(async (_name: string, run: () => Promise<unknown>) => run(), {
+      sleep: vi.fn(async () => undefined),
+    });
+
+    const result = await (processInboundTurn as unknown as {
+      definition: { handler: (args: Record<string, unknown>) => Promise<unknown> };
+    }).definition.handler({
+      input, state: processingState(), step,
+      execute: vi.fn(async () => { throw new Error('MODEL_MUST_NOT_RUN'); }),
+      client: {}, signal: new AbortController().signal,
+      workflow: { id: 'typing-failure-test', setTimeout: vi.fn(async () => undefined) },
+    });
+
+    expect(startTyping).toHaveBeenCalledTimes(1);
+    expect(stopTyping).not.toHaveBeenCalled();
+    expect(result).toMatchObject({ status: 'completed' });
+    expect(actionSpies.commit).toHaveBeenCalledTimes(1);
   });
 
   it.each(['ingest', 'claim', 'syncInbound'] as const)('recovers a transient %s outage durably before accepting a terminal backend result', async stage => {
@@ -651,10 +762,19 @@ describe('processInboundTurn hot path', () => {
     actionSpies.claim.mockResolvedValue(claimed);
     actionSpies.captureProfile.mockResolvedValue({ version: 1,
       values: { nombre: 'María José', apellido: null, correo: null, telefono: '+5491169004497' },
-      accepted_fields: ['nombre'], rejections: [] });
+      accepted_fields: ['nombre'], rejections: [],
+      contact_profile_snapshot: {
+        version: 2,
+        values: { nombre: 'María José', apellido: 'Pérez', correo: null, telefono: '+5491169004497' },
+        call_intake_readiness: {
+          status: 'needs_input',
+          intake: { nombre: 'María José', apellido: 'Pérez', correo: null, telefono: '+5491169004497' },
+          requirements: [{ field: 'correo', reason: 'missing' }],
+        },
+      } });
     expect(buildAgentAContextV1(claimed)).not.toBeNull();
     actionSpies.commit.mockRejectedValueOnce(new StudyxHttpError('DECISION_REJECTED', false, 422, 1,
-      { reason: 'AGENT_TURN_V2_REJECTED:MISSING_INTAKE', subjects: ['apellido', 'correo'] }));
+      { reason: 'AGENT_TURN_V2_REJECTED:MISSING_INTAKE', subjects: ['correo'] }));
     const original = { schema_version: 1,
       move: { schema_version: 1, move: 'provide_contact_details', secondary_moves: ['request_call'], vetoes: [], confidence: 1 },
       response: { messages: ['Gracias.'], call_offer: null }, proposed_action: { type: 'request_call_now', reason: 'direct_request' },
@@ -665,11 +785,13 @@ describe('processInboundTurn hot path', () => {
       provider: 'deepseek-direct', model: 'deepseek-v4-flash', latency_ms: 1, attempt_count: 1 })
       .mockImplementationOnce(async ({ context }: { context: AgentAContextV1 }) => {
         expect(context.customer.contact_intake?.nombre).toBe('María José');
+        expect(context.customer.contact_intake?.apellido).toBe('Pérez');
         expect(context.capabilities.intake_missing).not.toContain('nombre');
+        expect(context.capabilities.intake_missing).not.toContain('apellido');
         return { proposal: { ...original, move: { ...original.move, move: 'unknown', secondary_moves: [] },
-          response: { messages: ['María José, me pasás tu apellido y correo?'], call_offer: null },
+          response: { messages: ['María José, me pasás tu correo?'], call_offer: null },
           proposed_action: { type: 'none' }, profile_updates: [],
-          profile_requests: [{ message_index: 0, fields: ['apellido', 'correo'], purpose: 'call', mode: 'collect' }],
+          profile_requests: [{ message_index: 0, fields: ['correo'], purpose: 'call', mode: 'collect' }],
           repair_of: context.turn_rejection ? { rejection_id: context.turn_rejection.rejection_id, attempt: 1 } : null },
           provider: 'deepseek-direct', model: 'deepseek-v4-flash', latency_ms: 1, attempt_count: 1 };
       });
@@ -699,7 +821,19 @@ describe('processInboundTurn hot path', () => {
     actionSpies.claim.mockResolvedValue(claimed);
     actionSpies.captureProfile.mockResolvedValue({ version: 1,
       values: { nombre: 'María José', apellido: null, correo: null, telefono: '+5491169004497' },
-      accepted_fields: ['nombre'], rejections: [{ field: 'telefono', code: 'INVALID_FORMAT' }] });
+      accepted_fields: ['nombre'], rejections: [{ field: 'telefono', code: 'INVALID_FORMAT' }],
+      contact_profile_snapshot: {
+        version: 1,
+        values: { nombre: 'María José', apellido: null, correo: null, telefono: '+5491169004497' },
+        call_intake_readiness: {
+          status: 'needs_input',
+          intake: { nombre: 'María José', apellido: null, correo: null, telefono: '+5491169004497' },
+          requirements: [
+            { field: 'apellido', reason: 'missing' },
+            { field: 'correo', reason: 'missing' },
+          ],
+        },
+      } });
     actionSpies.agentABrainDeepSeek.mockResolvedValueOnce({
       proposal: { schema_version: 1,
         move: { schema_version: 1, move: 'provide_contact_details', secondary_moves: [], vetoes: [], confidence: 1 },
@@ -3197,9 +3331,9 @@ describe('processInboundTurn hot path', () => {
       return run();
     }, { sleep: vi.fn(async () => undefined) });
     await expect(runCommittedOutbound({
-      content: 'Perfecto. Registré la llamada; nuestra asesora virtual intenta comunicarse ahora.',
+      content: 'Perfecto. Registré la llamada; nuestra asesora intenta comunicarse ahora.',
       authorized_egress: { schema_version: 1,
-        content_hash: '305f1762b8455e6e893f353c779db410e3a2cd070d8b493f28f82f1fadd0bc9e',
+        content_hash: 'f8236674ae25af685196ccb4eecdd2643535544876451529a3be1cf7fa058e9f',
         authorized_urls: [], protected_facts: [] },
     }, {}, { step, state, createMessage, callRequest: { call_id: UUID, status: 'requested' } }))
       .rejects.toBe(suspension);
@@ -3228,10 +3362,10 @@ describe('processInboundTurn hot path', () => {
     });
 
     await runCommittedOutbound({
-      content: 'Perfecto. Registré la llamada; nuestra asesora virtual intenta comunicarse ahora.',
+      content: 'Perfecto. Registré la llamada; nuestra asesora intenta comunicarse ahora.',
       authorized_egress: {
         schema_version: 1,
-        content_hash: '305f1762b8455e6e893f353c779db410e3a2cd070d8b493f28f82f1fadd0bc9e',
+        content_hash: 'f8236674ae25af685196ccb4eecdd2643535544876451529a3be1cf7fa058e9f',
         authorized_urls: [],
         protected_facts: [],
       },
@@ -3249,10 +3383,10 @@ describe('processInboundTurn hot path', () => {
 
   it('does not dispatch the reserved call when the Agent A acknowledgement cannot be submitted', async () => {
     await expect(runCommittedOutbound({
-      content: 'Perfecto. Registré la llamada; nuestra asesora virtual intenta comunicarse ahora.',
+      content: 'Perfecto. Registré la llamada; nuestra asesora intenta comunicarse ahora.',
       authorized_egress: {
         schema_version: 1,
-        content_hash: '305f1762b8455e6e893f353c779db410e3a2cd070d8b493f28f82f1fadd0bc9e',
+        content_hash: 'f8236674ae25af685196ccb4eecdd2643535544876451529a3be1cf7fa058e9f',
         authorized_urls: [],
         protected_facts: [],
       },

@@ -70,7 +70,7 @@ export const TurnPlanV1Schema = z.object({
   response_goal: z.enum([
     'greet_and_discover', 'guide_area_choice', 'guide_course_choice', 'explain_selected_course',
     'continue_course_advice', 'offer_call_or_chat', 'acknowledge_chat_preference',
-    'acknowledge_call_decline', 'confirm_call_request', 'present_payment_options',
+    'acknowledge_call_decline', 'confirm_call_availability', 'confirm_call_request', 'present_payment_options',
     'confirm_selected_plan', 'acknowledge_payment_deferral', 'request_contact_details',
     'confirm_payment_link', 'acknowledge_payment_report', 'confirm_current_state',
     'acknowledge_purchase_decline', 'clarify_current_step', 'catalog_temporarily_unavailable',

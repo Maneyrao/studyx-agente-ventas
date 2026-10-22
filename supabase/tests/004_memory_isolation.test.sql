@@ -3,8 +3,8 @@ SELECT plan(3);
 
 INSERT INTO contacts (id, phone, channel_origin)
 VALUES
-  ('91000000-0000-0000-0000-000000000001', '+5491100000001', 'whatsapp'),
-  ('91000000-0000-0000-0000-000000000002', '+5491100000002', 'whatsapp');
+  ('91000000-0000-0000-0000-000000000001', '+5491191000001', 'whatsapp'),
+  ('91000000-0000-0000-0000-000000000002', '+5491191000002', 'whatsapp');
 
 INSERT INTO conversations (id, contact_id, channel)
 VALUES

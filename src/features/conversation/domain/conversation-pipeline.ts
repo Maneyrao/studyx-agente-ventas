@@ -42,6 +42,7 @@ export const RESPONSE_GOALS_V1 = [
   'offer_call_or_chat',
   'acknowledge_chat_preference',
   'acknowledge_call_decline',
+  'confirm_call_availability',
   'confirm_call_request',
   'present_payment_options',
   'confirm_selected_plan',

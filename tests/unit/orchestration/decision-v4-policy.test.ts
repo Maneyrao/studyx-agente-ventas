@@ -16,7 +16,7 @@ import {
 } from '../../../src/features/orchestration/domain/decision-v4';
 
 const CONFIRMATION_RESPONSE =
-  'Perfecto. Registré la llamada; nuestra asesora virtual intenta comunicarse ahora.';
+  'Perfecto. Registré la llamada; nuestra asesora intenta comunicarse ahora.';
 
 function v4(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {

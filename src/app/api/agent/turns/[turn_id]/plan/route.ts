@@ -7,6 +7,7 @@ import {
   toConversationPlanResponseV1,
 } from '@/features/conversation/application/plan-conversation-turn';
 import { loadContactIntakeV1 } from '@/lib/repositories/contact-intake.repository';
+import { loadCallIntakeReadinessV1 } from '@/lib/repositories/call-intake-readiness.repository';
 import { businessContextStore } from '@/features/orchestration/adapters/postgres-business-context';
 import { orchestrationStore } from '@/features/orchestration/adapters/postgres-orchestration-store';
 import {
@@ -110,6 +111,7 @@ export async function POST(
         state_store: new PostgresConversationStateStoreV1(),
         call_facts: orchestrationStore,
         contact_intake: loadContactIntakeV1,
+        call_intake_readiness: loadCallIntakeReadinessV1,
       }),
     );
     return NextResponse.json(toConversationPlanResponseV1(result), { status: 200 });

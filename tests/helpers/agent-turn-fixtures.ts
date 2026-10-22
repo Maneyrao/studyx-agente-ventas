@@ -5,6 +5,8 @@ import {
 } from '../../agent-core/src/domain/release-manifest';
 import { sql } from '@/lib/db/orchestrator';
 import { processInboundMessage } from '@/lib/services/ingestion.service';
+import { withSerializableTransactionOn } from '@/lib/db/transaction';
+import { applyContactProfileUpdatesV1 } from '@/lib/repositories/contact-profile.repository';
 
 export interface SeededAgentTurn {
   readonly workspace_id: string;
@@ -110,17 +112,19 @@ export async function seedConversationForAgentTurn(options: {
   const phoneE164 = `+54911${Math.floor(Math.random() * 90_000_000 + 10_000_000)}`;
   const externalConversationId = `agent-turn-fixture-${traceId}`;
   const integrationId = 'vitest-agent-turn-fixture';
+  const intakeEmail = `ana.${traceId}@example.test`;
 
   const envelope = (text: string, suffix: string) => ({
     schema_version: 1 as const,
     source: 'botpress' as const,
-    channel: 'emulator' as const,
+    channel: options.intake_complete ? 'whatsapp' as const : 'emulator' as const,
     integration_id: integrationId,
     external_message_id: `agent-turn-fixture-${traceId}-${suffix}`,
     external_conversation_id: externalConversationId,
     external_user_id: `agent-turn-fixture-user-${traceId}`,
     phone_e164: phoneE164,
     trace_id: randomUUID(),
+    ...(options.intake_complete ? { identity_owner: 'agent_a_v1' as const } : {}),
     message: {
       type: 'text' as const,
       text,
@@ -129,7 +133,12 @@ export async function seedConversationForAgentTurn(options: {
     },
   });
 
-  const first = await processInboundMessage(envelope('Hola, quiero info', '1'));
+  const first = await processInboundMessage(envelope(
+    options.intake_complete
+      ? `Hola, soy Ana Pérez. Mi correo es ${intakeEmail}`
+      : 'Hola, quiero info',
+    '1',
+  ));
 
   // Reclama el primer lote directo por SQL: `claim_inbound_batch` sólo
   // permite reclamar una vez vencido `due_at` (la ventana de batching), y el
@@ -150,6 +159,23 @@ export async function seedConversationForAgentTurn(options: {
   `;
   if (!claimed) throw new Error('AGENT_TURN_FIXTURE_CLAIM_FAILED');
 
+  if (options.intake_complete) {
+    await withSerializableTransactionOn(sql, tx => applyContactProfileUpdatesV1(tx, {
+      turn_id: first.turn_id,
+      batch_id: first.batch.id,
+      claim_token: claimed.claim_token,
+      expected_version: 0,
+      updates: [
+        { field: 'nombre', value: 'Ana', operation: 'set',
+          source_message_id: first.turn_id, source_quote: 'Ana' },
+        { field: 'apellido', value: 'Pérez', operation: 'set',
+          source_message_id: first.turn_id, source_quote: 'Pérez' },
+        { field: 'correo', value: intakeEmail, operation: 'set',
+          source_message_id: first.turn_id, source_quote: intakeEmail },
+      ],
+    }));
+  }
+
   // El primer lote ya no está 'waiting', así que este segundo inbound abre un
   // lote propio en vez de unirse al primero.
   const second = await processInboundMessage(envelope('Dale, seguimos', '2'));
@@ -159,14 +185,6 @@ export async function seedConversationForAgentTurn(options: {
     VALUES (${workspace.id}::uuid, ${first.contact.id}::uuid)
     ON CONFLICT DO NOTHING
   `;
-
-  if (options.intake_complete) {
-    await sql`
-      UPDATE contacts
-      SET name = 'Ana Pérez', email = ${`ana.${traceId}@example.test`}
-      WHERE id = ${first.contact.id}::uuid
-    `;
-  }
 
   await sql`
     INSERT INTO conversation_sales_context_states_v1 (

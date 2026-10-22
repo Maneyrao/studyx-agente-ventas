@@ -27,6 +27,7 @@ import * as managedOutbound from '@/features/messaging/adapters/managed-outbound
 import * as agentANarrative from '@/features/calls/adapters/agent-a-post-call-narrative';
 import type { ComposePostCallFollowupInput } from '@/features/calls/ports/post-call-followup-composer';
 import { buildPostCallNarrativeEgress } from '@/features/calls/domain/post-call-narrative-egress';
+import { seedWrittenCallIntakeV1 } from '../helpers/call-intake-fixtures';
 
 /**
  * Spec 007 (B → A) against a real database. Unit tests already cover
@@ -1017,7 +1018,15 @@ run('post-call-followup cron (spec 007, B -> A)', () => {
     // that production uses. It must not manufacture call_sessions directly:
     // reserveCallForDecision binds the canonical workspace and writes the
     // requested ledger event atomically.
-    const inbound = await processInboundMessage(envelope('dale, llamame'));
+    const inboundEnvelope = envelope('dale, llamame');
+    if (!inboundEnvelope.phone_e164) throw new Error('fixture phone missing');
+    await seedWrittenCallIntakeV1({
+      phone: inboundEnvelope.phone_e164,
+      nombre: 'Ariana',
+      apellido: 'Paz',
+      correo: 'ariana.paz@example.test',
+    }, db!);
+    const inbound = await processInboundMessage(inboundEnvelope);
     // Give the canonical inbound turn an explicit sequence so the Agent B
     // projection is ordered immediately after Agent A's source order below.
     await sql`

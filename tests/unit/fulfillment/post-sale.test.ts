@@ -5,13 +5,21 @@ describe('post-sale verified access message', () => {
   const access = { kind: 'access_ready' as const, student_was_created: true, login_email: 'student@example.com', login_url: null,
     registration_name: 'Ana Prueba', offering_name: 'Curso Prueba' };
   it('uses the verified username and initial password in a list', () => {
-    expect(assemblePostSaleMessage(access, { intro: 'Ya tienes acceso. Bienvenido a Studyx 🙂', suggestion: 'Si quieres, puedes cambiar tu contraseña al ingresar.' }))
-      .toBe('Ya tienes acceso. Bienvenido a Studyx 🙂\n\n- Usuario: student@example.com\n- Contraseña: Escuela.123\n\nSi quieres, puedes cambiar tu contraseña al ingresar.');
+    const message = assemblePostSaleMessage(access, { intro: 'Ya tienes acceso. Bienvenido a Studyx 🙂', suggestion: 'Si quieres, puedes cambiar tu contraseña al ingresar.' });
+    expect(message).toContain('LINK DIRECTO AL CAMPUS VIRTUAL 👇🏻\n\nhttps://mystudyx.com/campus-virtual');
+    expect(message).toContain('📌 USUARIO: student@example.com\n\n📌 CONTRASEÑA: Escuela.123');
+    expect(message).toContain('RECUERDA LA «E» EN MAYÚSCULA');
+    expect(message).toContain('WHATSAPP OFICIAL DE LA ACADEMIA: 786-916-4372');
+    expect(message).toContain('NÚMERO DE ASISTENCIA AL ALUMNO: 866-217-7282');
+    expect(message).toContain('ADMINISTRACIÓN: info@mystudyx.com');
+    expect(message).toContain('DEPARTAMENTO DE PROFESORES: studyxtutorias@gmail.com');
   });
   it('retains the password of an existing user without appending backend-authored prose', () => {
     const message = assemblePostSaleMessage({ ...access, student_was_created: false }, { intro: 'Ya tienes acceso. Qué bueno seguir acompañándote en Studyx.', suggestion: '' });
     expect(message).not.toContain('Escuela.123');
-    expect(message).toBe('Ya tienes acceso. Qué bueno seguir acompañándote en Studyx.\n\n- Usuario: student@example.com\n- Contraseña: la que ya utilizas');
+    expect(message).toContain('📌 USUARIO: student@example.com');
+    expect(message).toContain('📌 CONTRASEÑA: la que ya utilizas');
+    expect(message).not.toContain('RECUERDA LA «E» EN MAYÚSCULA');
   });
   it('does not expose credentials on payment confirmation or delay', () => {
     for (const kind of ['payment_received', 'access_delayed'] as const) {

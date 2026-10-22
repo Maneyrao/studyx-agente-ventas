@@ -529,10 +529,12 @@ export function buildAgentAContextV1(
   // sobre un contacto del que no sabía nada.
   const intakeAnswered = Array.isArray(claimed.contact_intake_missing);
   const intakeMissing = intakeAnswered ? claimed.contact_intake_missing! : [];
+  const callIntakeReadiness = claimed.call_intake_readiness;
+  const callRequirements = callIntakeReadiness?.status === 'unknown'
+    ? []
+    : callIntakeReadiness?.requirements ?? [];
   const requiredContactFields = {
-    call: intakeMissing.filter((field) => (
-      field === 'nombre' || field === 'apellido' || field === 'telefono'
-    )),
+    call: callRequirements.map(({ field }) => field),
     // El alta y el pago usan la ficha completa. Mantener esta lista derivada
     // de la autoridad evita que el prompt adivine qué dato falta.
     payment: [...intakeMissing],
@@ -546,10 +548,7 @@ export function buildAgentAContextV1(
   const currentSalesSignal = classifyBatchSalesSignal(
     currentLogicalMessages.map((message) => message.content),
   );
-  const currentCallAuthorization = currentSalesSignal.type === 'direct_call_request'
-    || (currentSalesSignal.type === 'call_acceptance'
-      && state.call_offer_status === 'offered'
-      && state.awaiting_reply === 'call_or_chat');
+  const currentCallAuthorization = currentSalesSignal.type === 'direct_call_request';
   const inputCapability = inputCapabilityV1(claimed);
   const hasReadableCurrentInput = inputCapability.status !== 'unreadable';
   const previousAgentReplies = previousAgentRepliesV1(claimed);
@@ -597,6 +596,11 @@ export function buildAgentAContextV1(
         telefono: nonBlankOrNull(claimed.contact_intake.telefono),
       }
     : null;
+  const awaitingCallAvailability = state.call_preference === 'call'
+    && state.call_offer_status === 'accepted'
+    && state.awaiting_reply === 'call_or_chat';
+  const availabilityConfirmed = currentSalesSignal.type === 'direct_call_request'
+    || currentSalesSignal.type === 'call_acceptance';
 
   return AgentAContextV1Schema.parse({
     schema_version: 1,
@@ -738,18 +742,15 @@ export function buildAgentAContextV1(
         && hasReadableCurrentInput
         && !claimed.contact.blocked
         && claimed.sales_context.active_call === null
-        // Current consent is evidence in this turn. Requiring it to be written
-        // as accepted before evaluating the same turn created a circular,
-        // one-message-late authorization gate.
+        // A direct request is sufficient in this turn. A short acceptance is
+        // sufficient only after the persisted availability question, never
+        // while an invitation or contact-data request is still pending.
         && (currentCallAuthorization || (
-          state.call_preference === 'call'
-          && state.call_offer_status === 'accepted'
-          && state.awaiting_reply === 'call_or_chat'
+          awaitingCallAvailability
+          && availabilityConfirmed
         ))
         && !['handoff', 'closed'].includes(state.stage)
-        && intakeStatus === 'known'
-        && !(['nombre', 'apellido', 'telefono'] as const)
-          .some((field) => intakeMissing.includes(field)),
+        && callIntakeReadiness?.status === 'ready',
       may_present_payment_options: claimed.policy.may_respond
         && (claimed.business_context?.workspace.payment_options.length ?? 0) > 0,
       may_send_payment_link: hasReadableCurrentInput && maySendPaymentLink,
@@ -757,6 +758,7 @@ export function buildAgentAContextV1(
       authorized_payment_plan: selectedPlan,
       intake_missing: intakeMissing,
       required_contact_fields: requiredContactFields,
+      call_contact_requirements: callRequirements,
     },
   });
 }

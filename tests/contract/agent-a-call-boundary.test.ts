@@ -18,7 +18,8 @@ describe('Agent A to future Agent B call boundary', () => {
       }),
       selected_offering_code: 'redes_informaticas',
       stage: 'course_selected' as const,
-      call_offer_status: 'offered' as const,
+      call_preference: 'call' as const,
+      call_offer_status: 'accepted' as const,
       call_offer_count: 1 as const,
       awaiting_reply: 'call_or_chat' as const,
     };
@@ -41,6 +42,13 @@ describe('Agent A to future Agent B call boundary', () => {
         }],
         payment_plans: ['monthly_12', 'monthly_6', 'one_time'],
       },
+      contact_intake: {
+        nombre: 'Ariana',
+        apellido: 'Paz',
+        correo: 'ariana.paz@example.test',
+        telefono: '+5491100000001',
+      },
+      call_intake_ready: true,
     });
 
     expect(plan.allowed_business_action.type).toBe('request_call_now');

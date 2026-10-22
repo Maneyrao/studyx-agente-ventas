@@ -130,6 +130,10 @@ export interface AgentAContextV1 {
     readonly may_present_payment_options: boolean;
     readonly may_send_payment_link: boolean;
     readonly authorized_payment_plan: AgentAPaymentPlanV1 | null;
+    readonly call_contact_requirements?: ReadonlyArray<{
+      readonly field: 'nombre' | 'apellido' | 'correo' | 'telefono';
+      readonly reason: 'missing' | 'written_whatsapp_confirmation_required';
+    }>;
   };
 }
 

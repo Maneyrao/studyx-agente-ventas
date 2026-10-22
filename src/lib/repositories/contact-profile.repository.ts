@@ -149,7 +149,34 @@ function normalizeFieldValue(field: ContactProfileFieldV1, value: string): strin
   return isCallablePhoneE164V1(phone) ? phone : null;
 }
 
-interface AuthorizedSourceV1 { id: string; content: string; conversation_seq: number | string; }
+interface AuthorizedSourceV1 {
+  id: string;
+  content: string;
+  conversation_seq: number | string;
+  message_type: string | null;
+  channel: string;
+}
+
+async function isWrittenWhatsappSourceV1(
+  db: DbClient,
+  contactId: string,
+  sourceMessageId: string | null,
+): Promise<boolean> {
+  if (!sourceMessageId) return false;
+  const [source] = await db<Array<{ authorized: boolean }>>`
+    SELECT (
+      message.direction = 'inbound'
+      AND message.metadata->>'message_type' = 'text'
+      AND conversation.channel = 'whatsapp'
+    ) AS authorized
+    FROM messages AS message
+    JOIN conversations AS conversation ON conversation.id = message.conversation_id
+    WHERE message.id = ${sourceMessageId}::uuid
+      AND message.contact_id = ${contactId}::uuid
+    LIMIT 1
+  `;
+  return source?.authorized === true;
+}
 
 /** Local sequence orders one conversation; immutable ingress time fences older evidence across conversations. */
 export async function isContactProfileSourceStaleV1(db: DbClient, input: {
@@ -333,11 +360,16 @@ export async function applyContactProfileUpdatesV1(db: DbClient, input: ContactP
   const profile = structuredClone(isAgentOwnedContactProfileV1(contact.contact_profile_v1)
     ? contact.contact_profile_v1 : bootstrapContactProfileV1(contact));
   const sources = await db<AuthorizedSourceV1[]>`
-    SELECT id, content, conversation_seq FROM messages
-    WHERE conversation_id = ${turn.conversation_id}::uuid AND contact_id = ${turn.contact_id}::uuid
-      AND direction = 'inbound' AND conversation_seq <= ${Number(batch.max_seq)}
-      AND COALESCE(metadata->>'message_type', 'text') <> 'unsupported'
-    ORDER BY conversation_seq DESC LIMIT 32
+    SELECT message.id, message.content, message.conversation_seq,
+      message.metadata->>'message_type' AS message_type,
+      conversation.channel
+    FROM messages AS message
+    JOIN conversations AS conversation ON conversation.id = message.conversation_id
+    WHERE message.conversation_id = ${turn.conversation_id}::uuid
+      AND message.contact_id = ${turn.contact_id}::uuid
+      AND message.direction = 'inbound' AND message.conversation_seq <= ${Number(batch.max_seq)}
+      AND COALESCE(message.metadata->>'message_type', 'text') <> 'unsupported'
+    ORDER BY message.conversation_seq DESC LIMIT 32
   `;
   const sourceById = new Map(sources.map(source => [source.id, source]));
   const accepted: ContactProfileFieldV1[] = [];
@@ -362,9 +394,16 @@ export async function applyContactProfileUpdatesV1(db: DbClient, input: ContactP
       || current.version > input.expected_version) { reject('VERSION_CONFLICT'); continue; }
     // Retraction is meaningful even if the value is already empty: it records
     // this turn as the withdrawal source and fences older confirmation proof.
-    if (update.operation !== 'retract'
-      && equivalentFieldValueV1(update.field, current.value, normalized.value)) continue;
-    if (current.value !== null && normalized.value !== null && update.operation !== 'correct') {
+    const sameValue = update.operation !== 'retract'
+      && equivalentFieldValueV1(update.field, current.value, normalized.value);
+    if (sameValue) {
+      const promotesWrittenWhatsappEmail = update.field === 'correo'
+        && source.message_type === 'text'
+        && source.channel === 'whatsapp'
+        && !await isWrittenWhatsappSourceV1(db, turn.contact_id, current.source_message_id);
+      if (!promotesWrittenWhatsappEmail) continue;
+    }
+    if (!sameValue && current.value !== null && normalized.value !== null && update.operation !== 'correct') {
       reject('CORRECTION_REQUIRED'); continue;
     }
     profile.fields[update.field] = { value: normalized.value, status: update.operation === 'retract' ? 'retracted' : 'confirmed',

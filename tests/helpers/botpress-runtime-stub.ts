@@ -95,6 +95,27 @@ export const context = {
   },
 };
 
+/** Ephemeral integration actions used by the WhatsApp workflow. */
+export const actions = {
+  whatsapp: {
+    async startTypingIndicator(_input: {
+      conversationId: string;
+      messageId: string;
+      timeout?: number;
+    }): Promise<Record<string, never>> {
+      void _input;
+      return {};
+    },
+    async stopTypingIndicator(_input: {
+      conversationId: string;
+      messageId: string;
+    }): Promise<Record<string, never>> {
+      void _input;
+      return {};
+    },
+  },
+};
+
 /** Mutable per-test agent configuration; tests read/override as needed. */
 export const configuration: {
   emulatorPhoneE164: string;

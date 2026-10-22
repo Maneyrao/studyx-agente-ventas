@@ -62,6 +62,12 @@ export interface PlanConversationTurnInputV1 {
    * unknown is treated as missing: the gate never opens on ignorance.
    */
   readonly contact_intake?: ContactIntakeV1;
+  /**
+   * Canonical call readiness also verifies that the email was written by the
+   * customer on WhatsApp. Undefined preserves the pure planner's legacy
+   * field-only contract; production always supplies the canonical verdict.
+   */
+  readonly call_intake_ready?: boolean;
 }
 
 type StateIdentity = Pick<ConversationStateV1, 'workspace_id' | 'conversation_id' | 'contact_id'>;
@@ -327,6 +333,14 @@ function requestContactDetails(state: ConversationStateV1): TurnPlanV1 {
   };
 }
 
+function requestCallContactDetails(state: ConversationStateV1): TurnPlanV1 {
+  return {
+    ...requestContactDetails(state),
+    next_call_preference: 'call',
+    next_call_offer_status: 'accepted',
+  };
+}
+
 function paymentLinkPlan(
   state: ConversationStateV1,
   offeringCode: string,
@@ -452,14 +466,29 @@ function planSingle(
   }
   if (kind === 'request_call') {
     if (vetoes.has('call')) return unchangedPlan(state, 'clarify_current_step', ['call_or_chat_choice']);
+    if (input.call_intake_ready === false
+      || missingContactIntakeFieldsV1(input.contact_intake).length > 0) {
+      return requestCallContactDetails(state);
+    }
     const acceptedOffer = state.call_offer_status === 'offered'
+      && state.awaiting_reply === 'call_or_chat';
+    if (acceptedOffer) {
+      return {
+        ...unchangedPlan(state, 'confirm_call_availability'),
+        next_call_preference: 'call',
+        next_call_offer_status: 'accepted',
+        next_awaiting_reply: 'call_or_chat',
+      };
+    }
+    const confirmsAvailability = state.call_preference === 'call'
+      && state.call_offer_status === 'accepted'
       && state.awaiting_reply === 'call_or_chat';
     return {
       ...unchangedPlan(state, 'confirm_call_request'),
       next_stage: 'handoff',
       allowed_business_action: {
         type: 'request_call_now',
-        reason: acceptedOffer ? 'accepted_offer' : 'direct_request',
+        reason: confirmsAvailability ? 'accepted_offer' : 'direct_request',
       },
       next_call_preference: 'call',
       next_call_offer_status: 'accepted',
@@ -511,8 +540,19 @@ function planSingle(
     if (state.awaiting_reply !== 'contact_details') {
       return unchangedPlan(state, 'clarify_current_step');
     }
+    const acceptedCallPending = state.call_preference === 'call'
+      && state.call_offer_status === 'accepted';
+    if (acceptedCallPending && input.call_intake_ready === false) {
+      return requestCallContactDetails(state);
+    }
     if (missingContactIntakeFieldsV1(input.contact_intake).length > 0) {
       return requestContactDetails(state);
+    }
+    if (acceptedCallPending) {
+      return {
+        ...unchangedPlan(state, 'confirm_call_availability'),
+        next_awaiting_reply: 'call_or_chat',
+      };
     }
     const offeringCode = state.selected_offering_code;
     const paymentPlan = state.selected_payment_plan;

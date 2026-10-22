@@ -563,6 +563,13 @@ export const ClaimedTurnSchema = z.object({
     correo: z.string().nullable(),
     telefono: z.string().nullable(),
   }).strict().optional(),
+  call_intake_readiness: z.object({
+    status: z.enum(['ready', 'needs_input', 'unknown']),
+    requirements: z.array(z.object({
+      field: z.enum(['nombre', 'apellido', 'correo', 'telefono']),
+      reason: z.enum(['missing', 'written_whatsapp_confirmation_required']),
+    }).strict()),
+  }).strict().optional(),
   contact_profile: ContactProfileContextV1Schema.nullable().optional(),
   payment_verification: z.object({
     status: z.enum([
