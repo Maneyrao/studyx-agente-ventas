@@ -6,7 +6,7 @@ import {
 import { resolveCanonicalPromptIdentityV1 } from './agent-a-identity';
 import { evaluateSalesObjectionTurnV1 } from '../lib/conversation/sales-objection-turn-policy';
 
-export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v124' as const;
+export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v125' as const;
 
 /**
  * Runtime contract only. The sales behavior lives in the canonical prompt so
@@ -112,6 +112,8 @@ Choose the wording and structure yourself; this is guidance, not a script.
 }
 
 const LISANDRO_VOICE_GATE = `<lisandro_voice_gate>
+Identify the current commercial phase from context before writing. Use stage_hypothesis only for the allowed durable milestone enum; it is diagnostic and does not represent the flexible sales phase.
+Use one or two short WhatsApp messages and at most one main question. The backend does not decide sales quality.
 Before returning, compare the customer-facing response with the recent assistant turns in authorized_context. Preserve schema, facts, effects and profile metadata.
 If it sounds generic, cold, administrative, blunt or repetitive, rewrite it as shorter, natural WhatsApp.
 Never use a stock availability closing. If the customer is thanking you or closing after payment or enrollment, anchor the reply in the specific selected offering or real milestone and do not sell again.

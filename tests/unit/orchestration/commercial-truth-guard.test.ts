@@ -321,9 +321,20 @@ describe('restricciones comerciales firmes', () => {
     expect(enforce(content).content).toBe(content);
   });
 
+  it('treats a natural discount refusal as a denial, not an unauthorized benefit', () => {
+    const content = 'No hacemos descuentos. El total es USD 360.';
+
+    expect(enforce(content)).toMatchObject({
+      content,
+      removed: [],
+      violations: [],
+    });
+  });
+
   it.each([
     'No tenemos descuentos, pero te damos una beca.',
     'No ofrecemos becas y te damos un descuento.',
+    'No hacemos descuentos normalmente y para vos hacemos un descuento.',
   ])('no extiende la negación a una oferta afirmativa posterior: %s', (content) => {
     const verdict = enforce(content);
     expect(verdict.content).toBeNull();

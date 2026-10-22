@@ -78,6 +78,192 @@ function generated(value: AgentATurnProposalV1) {
 }
 
 describe('resolveAgentAPlannerlessProposalV2', () => {
+  it('keeps the exact production price-objection answer without a semantic repair', async () => {
+    const current = context();
+    current.turn = {
+      batch_messages: [
+        { id: 'payment-question', text: 'solo 1 pago?' },
+        { id: 'price-objection', text: 'me parece super caro' },
+      ],
+      recent_turns: [],
+    };
+    const messages = [
+      'No, también están las opciones de 12 pagos de USD 30 o 6 pagos de USD 60.',
+      'Para saber si realmente te conviene, qué te gustaría conseguir con el curso?',
+    ];
+    const initial = generated(proposal({
+      response: { messages, call_offer: null },
+      used_fact_ids: current.catalog.payment_plans.map((plan) => plan.fact_id),
+      stage_hypothesis: 'qualified',
+    }));
+    const repair = vi.fn(async () => { throw new Error('semantic repair must not run'); });
+
+    const result = await resolveAgentAPlannerlessProposalV2({
+      initial,
+      context: current,
+      repair_enabled: true,
+      semantic_rejections: 'advisory',
+      rejection_id: '00000000-0000-4000-8000-000000000124',
+      repair,
+    });
+
+    expect(result.effective).toBe(initial);
+    expect(result.effective.proposal.response.messages).toEqual(messages);
+    expect(result.evidence.rejection_codes).toEqual([]);
+    expect(result.evidence).toMatchObject({
+      repair_attempted: false,
+      repaired: false,
+      proposal_generation_calls: 1,
+    });
+    expect(repair).not.toHaveBeenCalled();
+  });
+
+  it('records price-objection quality guidance without blocking Agent A wording', async () => {
+    const current = context();
+    current.turn = {
+      batch_messages: [{ id: 'price-objection', text: 'me parece super caro' }],
+      recent_turns: [],
+    };
+    const messages = ['La opción mensual es más accesible: son 12 pagos de USD 30.'];
+    const initial = generated(proposal({
+      response: { messages, call_offer: null },
+      used_fact_ids: current.catalog.payment_plans.map((plan) => plan.fact_id),
+      stage_hypothesis: 'qualified',
+    }));
+    const repair = vi.fn(async () => { throw new Error('semantic repair must not run'); });
+
+    const result = await resolveAgentAPlannerlessProposalV2({
+      initial,
+      context: current,
+      repair_enabled: true,
+      semantic_rejections: 'advisory',
+      rejection_id: '00000000-0000-4000-8000-000000000126',
+      repair,
+    });
+
+    expect(result.effective).toBe(initial);
+    expect(result.effective.proposal.response.messages).toEqual(messages);
+    expect(result.evidence.rejection_codes).toContain('FACT_VALUE_MISMATCH');
+    expect(result.evidence).toMatchObject({ repair_attempted: false, proposal_generation_calls: 1 });
+    expect(repair).not.toHaveBeenCalled();
+  });
+
+  it('does not silence a repeated price objection because a commercial heuristic dislikes the reply', async () => {
+    const current = context();
+    current.turn = {
+      batch_messages: [
+        { id: 'price-objection', text: 'me sigue pareciendo caro' },
+        { id: 'follow-up', text: 'me contas?' },
+      ],
+      recent_turns: [{
+        id: 'prior-price-objection',
+        direction: 'inbound',
+        content: 'me parece super caro',
+      }],
+    };
+    const messages = ['La formación tiene 38 clases.'];
+    const initial = generated(proposal({
+      response: { messages, call_offer: null },
+      used_fact_ids: [],
+      stage_hypothesis: 'qualified',
+    }));
+    const repair = vi.fn(async () => { throw new Error('semantic repair unavailable'); });
+
+    const result = await resolveAgentAPlannerlessProposalV2({
+      initial,
+      context: current,
+      repair_enabled: true,
+      semantic_rejections: 'advisory',
+      rejection_id: '00000000-0000-4000-8000-000000000125',
+      repair,
+    });
+
+    expect(result.effective).toBe(initial);
+    expect(result.effective.proposal.response.messages).toEqual(messages);
+    expect(result.evidence).toMatchObject({
+      repair_attempted: true,
+      repaired: false,
+      proposal_generation_calls: 2,
+    });
+    expect(repair).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the reply when persistent objection and price-reframing guidance coincide', async () => {
+    const current = context();
+    current.turn = {
+      batch_messages: [
+        { id: 'price-objection', text: 'me sigue pareciendo caro' },
+        { id: 'follow-up', text: 'me contas?' },
+      ],
+      recent_turns: [{
+        id: 'prior-price-objection',
+        direction: 'inbound',
+        content: 'me parece super caro',
+      }],
+    };
+    const messages = ['La opción mensual es más accesible: son 12 pagos de USD 30.'];
+    const initial = generated(proposal({
+      response: { messages, call_offer: null },
+      used_fact_ids: current.catalog.payment_plans.map((plan) => plan.fact_id),
+      stage_hypothesis: 'qualified',
+    }));
+    const repair = vi.fn(async () => { throw new Error('semantic repair unavailable'); });
+
+    const result = await resolveAgentAPlannerlessProposalV2({
+      initial,
+      context: current,
+      repair_enabled: true,
+      semantic_rejections: 'advisory',
+      rejection_id: '00000000-0000-4000-8000-000000000127',
+      repair,
+    });
+
+    expect(result.effective).toBe(initial);
+    expect(result.effective.proposal.response.messages).toEqual(messages);
+    expect(result.evidence.rejection_codes).toEqual(expect.arrayContaining([
+      'REPEATED_AGENT_REPLY',
+      'FACT_VALUE_MISMATCH',
+    ]));
+    expect(result.evidence).toMatchObject({
+      repair_attempted: true,
+      repaired: false,
+      proposal_generation_calls: 2,
+    });
+    expect(repair).toHaveBeenCalledTimes(1);
+  });
+
+  it('still blocks a false price when it coincides with commercial guidance', async () => {
+    const current = context();
+    current.turn = {
+      batch_messages: [
+        { id: 'price-objection', text: 'me sigue pareciendo caro' },
+        { id: 'follow-up', text: 'me contas?' },
+      ],
+      recent_turns: [{
+        id: 'prior-price-objection',
+        direction: 'inbound',
+        content: 'me parece super caro',
+      }],
+    };
+    const initial = generated(proposal({
+      response: {
+        messages: ['La opción mensual es más accesible: son 12 pagos de USD 999.'],
+        call_offer: null,
+      },
+      used_fact_ids: current.catalog.payment_plans.map((plan) => plan.fact_id),
+      stage_hypothesis: 'qualified',
+    }));
+
+    await expect(resolveAgentAPlannerlessProposalV2({
+      initial,
+      context: current,
+      repair_enabled: true,
+      semantic_rejections: 'advisory',
+      rejection_id: '00000000-0000-4000-8000-000000000128',
+      repair: async () => { throw new Error('repair unavailable'); },
+    })).rejects.toThrow('FACT_VALUE_MISMATCH:price');
+  });
+
   it.each([
     'Si hoy el presupuesto realmente no te lo permite, está bien; no quiero presionarte.',
     'Claro, lo dejamos para cuando te resulte posible. No hace falta que decidas ahora.',
@@ -834,7 +1020,7 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
     });
   });
 
-  it('never degrades a failed persistent-price repair back to the sterile first draft', async () => {
+  it('does not silence the turn when a persistent-price quality repair still fails', async () => {
     const current = context();
     current.turn.batch_messages = [
       { id: 'm2', text: 'me sigue pareciendo caro' },
@@ -852,7 +1038,7 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
       response: { messages: [sterile], call_offer: null },
     }));
 
-    await expect(resolveAgentAPlannerlessProposalV2({
+    const result = await resolveAgentAPlannerlessProposalV2({
       initial,
       context: current,
       repair_enabled: true,
@@ -861,7 +1047,15 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
         repair_of: { rejection_id: rejection.rejection_id, attempt: 1 },
       })),
       rejection_id: '00000000-0000-4000-8000-0000000000b6',
-    })).rejects.toThrow('REPEATED_AGENT_REPLY:persistent_price_objection');
+    });
+
+    expect(result.effective).toBe(initial);
+    expect(result.effective.proposal.response.messages).toEqual([sterile]);
+    expect(result.evidence).toMatchObject({
+      repair_attempted: true,
+      repaired: false,
+      rejection_codes: expect.arrayContaining(['REPEATED_AGENT_REPLY', 'FACT_VALUE_MISMATCH']),
+    });
   });
 
   it.each([
@@ -900,7 +1094,7 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
   it.each([
     'Son 12 cuotas de USD 30. Qué te parece?',
     'Cuál plan quieres?',
-  ])('does not accept a repeated close as a persistent-price repair: %s', async (pseudoDiagnostic) => {
+  ])('does not replace the original with a failed persistent-price repair: %s', async (pseudoDiagnostic) => {
     const current = context();
     current.turn.batch_messages = [{ id: 'm2', text: 'me sigue pareciendo caro' }];
     current.turn.recent_turns = [
@@ -911,10 +1105,11 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
     current.commercial_state.call_offer_status = 'accepted';
     current.capabilities.may_offer_call = false;
 
-    await expect(resolveAgentAPlannerlessProposalV2({
-      initial: generated(proposal({
-        response: { messages: ['Son 38 clases y la cuota más baja es de USD 30.'], call_offer: null },
-      })),
+    const original = generated(proposal({
+      response: { messages: ['Son 38 clases y la cuota más baja es de USD 30.'], call_offer: null },
+    }));
+    const result = await resolveAgentAPlannerlessProposalV2({
+      initial: original,
       context: current,
       repair_enabled: true,
       repair: async rejection => generated(proposal({
@@ -922,7 +1117,10 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
         repair_of: { rejection_id: rejection.rejection_id, attempt: 1 },
       })),
       rejection_id: '00000000-0000-4000-8000-0000000000b9',
-    })).rejects.toThrow('REPEATED_AGENT_REPLY:persistent_price_objection');
+    });
+
+    expect(result.effective).toBe(original);
+    expect(result.evidence).toMatchObject({ repair_attempted: true, repaired: false });
   });
 
   it('does not salvage a required invitation that falsely claims an immediate call', async () => {

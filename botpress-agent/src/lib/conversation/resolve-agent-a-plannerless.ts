@@ -318,6 +318,7 @@ function requiresModelCorrection(
   if (reason.code === 'ACTION_NOT_AUTHORIZED'
     && reason.subject.startsWith('contact_profile.already_confirmed.')) return true
   if (reason.code === 'FACT_VALUE_MISMATCH') {
+    if (reason.subject === 'price_objection_reframe') return false
     // Candidate naming/resolution heuristics remain guidance. The backend
     // independently validates actual catalogue values before any delivery.
     return !['candidate_course_detail', 'candidate_course_names'].includes(reason.subject)
@@ -334,7 +335,11 @@ function isNonBlockingGuidanceReason(
 ): boolean {
   if (reason.code === 'PROPOSAL_SCHEMA_INVALID') return false
   if (reason.code === 'FACT_VALUE_MISMATCH'
-    && ['candidate_course_detail', 'candidate_course_names'].includes(reason.subject)) return true
+    && [
+      'candidate_course_detail',
+      'candidate_course_names',
+      'price_objection_reframe',
+    ].includes(reason.subject)) return true
   return NON_BLOCKING_GUIDANCE_CODES.has(reason.code)
 }
 
@@ -359,10 +364,6 @@ function mayDegradeToBackendBoundary(
   if (claimsImmediatePaymentLinkDelivery(proposal)) return false
   if (hasUnbackedCallDispatchClaim(proposal, rejection, context)) return false
   if (isMissingRequiredIntakeForRequestedCall(proposal, rejection)) return false
-  if (rejection.rejections.some((reason) => (
-    reason.code === 'REPEATED_AGENT_REPLY'
-    && reason.subject === 'persistent_price_objection'
-  ))) return false
   if ((proposal.proposed_action.type === 'send_payment_link'
     || proposal.proposed_action.type === 'send_test_payment_link') && rejection.rejections.some((reason) => (
     reason.code === 'ACTION_NOT_AUTHORIZED' || reason.code === 'MISSING_INTAKE'

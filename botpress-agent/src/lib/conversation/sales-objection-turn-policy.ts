@@ -24,7 +24,8 @@ function normalized(value: string): string {
 
 export function isPriceObjectionTextV1(text: string): boolean {
   const value = normalized(text);
-  return /\b(?:car[oa]|costos[oa]|fuera\s+de\s+(?:mi\s+)?presupuesto|no\s+me\s+alcanza|no\s+llego|no\s+(?:puedo|podria|podre)\s+(?:pagar|abonarlo|hacer\s+ese\s+gasto)|se\s+me\s+va|much[oa]\s+dinero|presupuesto\b[^.!?\n]{0,32}\b(?:ajustado|limitado|no\s+(?:me\s+)?(?:alcanza|permite)))\b/u.test(value);
+  return /\b(?:car[oa]|costos[oa]|fuera\s+de\s+(?:mi\s+)?presupuesto|no\s+me\s+alcanza|no\s+llego|no\s+(?:puedo|podria|podre)\s+(?:pagar|abonarlo|hacer\s+ese\s+gasto)|se\s+me\s+va|much[oa]\s+dinero|presupuesto\b[^.!?\n]{0,32}\b(?:ajustado|limitado|no\s+(?:me\s+)?(?:alcanza|permite)))\b/u.test(value)
+    || /\b(?:(?:hay|tenes|tienes|ofreces|haces|me\s+haces|puedes|podes)\b[^.!?\n]{0,32}\b(?:descuentos?|rebajas?)|(?:bajar|reducir)\b[^.!?\n]{0,24}\b(?:el\s+)?precio)\b/u.test(value);
 }
 
 export function customerExpressesRealBudgetLimitV1(text: string): boolean {
@@ -38,7 +39,8 @@ function isPaymentTermsQuestionTextV1(text: string): boolean {
   const allAtOnce = /\b(?:pagar|pago)\b[^.!?\n]{0,32}\b(?:todo\s+junto|completo|total)\b[^.!?\n]{0,48}\b(?:empezar|iniciar|arrancar|inscrib\p{L}*)\b/u.test(value);
   const installmentQuestion = /\b(?:puedo|podria|se\s+puede|hay\s+posibilidad\s+de)\s+(?:pagar|abonar)(?:lo)?\s+en\s+(?:cuotas?|pagos?|mensualidades?)\b/u.test(value)
     || /\bcuantas?\s+(?:cuotas?|pagos?|mensualidades?)\b/u.test(value)
-    || /\b(?:que|cuales)\s+(?:opciones|formas|modalidades)\s+de\s+pago\b/u.test(value);
+    || /\b(?:que|cuales)\s+(?:opciones|formas|modalidades)\s+de\s+pago\b/u.test(value)
+    || /(?:^|[.!?\n]\s*)(?:es\s+)?(?:solo\s+)?(?:un|1)\s+(?:solo\s+)?pago\s*\?/u.test(value);
   return installmentVersusStudy || allAtOnce || installmentQuestion;
 }
 

@@ -72,6 +72,15 @@ function context(memoryValue = 'busca salida laboral'): AgentAContextV1 {
 }
 
 describe('Agent A Brain prompt', () => {
+  it('makes phase identification and brevity an Agent A responsibility', () => {
+    const instructions = buildAgentABrainInstructionsV1(context());
+
+    expect(instructions).toContain('Identify the current commercial phase from context before writing');
+    expect(instructions).toContain('stage_hypothesis only for the allowed durable milestone enum');
+    expect(instructions).toContain('Use one or two short WhatsApp messages');
+    expect(instructions).toContain('The backend does not decide sales quality');
+  });
+
   it('includes the canonical behavior once and preserves the complete inert context', () => {
     const current = context();
     const instructions = buildAgentABrainInstructionsV1(current);
@@ -79,8 +88,8 @@ describe('Agent A Brain prompt', () => {
     const encoded = instructions.split('<authorized_context>')[1]!.split('</authorized_context>')[0]!;
     expect(JSON.parse(encoded)).toEqual(current);
     expect(instructions).not.toContain('<current_turn_guidance>');
-    expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v89');
-    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v124');
+    expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v90');
+    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v125');
   });
 
   it('adds turn-specific guidance for a repeated price objection without forcing a script', () => {
