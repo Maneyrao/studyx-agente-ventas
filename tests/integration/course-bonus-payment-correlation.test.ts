@@ -23,13 +23,16 @@ async function fixture() {
   await db!`INSERT INTO workspace_contacts(workspace_id,contact_id,source_channel) VALUES (${workspace.id},${contact.id},'whatsapp')`;
   const [thread] = await db!`INSERT INTO channel_threads(contact_id,provider,integration_id,channel,external_conversation_id,metadata)
     VALUES (${contact.id},'botpress','whatsapp','whatsapp',${suffix},${db!.json({botpress_conversation_id:suffix})}) RETURNING id`;
-  const [conversation] = await db!`INSERT INTO conversations(contact_id,channel,workspace_id,channel_thread_id)
-    VALUES (${contact.id},'whatsapp',${workspace.id},${thread.id}) RETURNING id`;
+  const [conversation] = await db!`INSERT INTO conversations(contact_id,channel,channel_thread_id)
+    VALUES (${contact.id},'whatsapp',${thread.id}) RETURNING id`;
   const offerings = await db!`INSERT INTO offerings(workspace_id,code,display_name,offering_type,status,description,price_type,price_amount,currency,billing_interval)
     VALUES (${workspace.id},${`paid-${suffix.slice(0,8)}`},'Inglés 1','course','active','Base','fixed',360,'USD','annual'),
       (${workspace.id},${`bonus-${suffix.slice(0,8)}`},'Inglés 2','course','active','Continuación','free',NULL,NULL,NULL)
     RETURNING id,code,display_name`;
   const [paid,bonus]=offerings;
+  await db!`INSERT INTO conversation_sales_context_states_v1(
+      workspace_id,conversation_id,contact_id,selected_offering_code)
+    VALUES (${workspace.id},${conversation.id},${contact.id},${paid.code})`;
   const [promotion]=await db!`INSERT INTO promotions(workspace_id,promotion_code,paid_offering_id,channels,active)
     VALUES (${workspace.id},${`promo-${suffix.slice(0,8)}`},${paid.id},ARRAY['text']::text[],true) RETURNING id,promotion_code`;
   await db!`INSERT INTO promotion_bonus_offerings(promotion_id,workspace_id,offering_id,position)
@@ -103,11 +106,14 @@ run('course bonus payment correlation', () => {
     const secondExternalId=`second-${randomUUID()}`;
     const [secondThread]=await db!`INSERT INTO channel_threads(
         contact_id,provider,integration_id,channel,external_conversation_id,metadata)
-      VALUES (${f.contact.id},'botpress','whatsapp','whatsapp',${secondExternalId},
+      VALUES (${f.contact.id},'botpress','telegram','telegram',${secondExternalId},
         ${db!.json({botpress_conversation_id:secondExternalId})}) RETURNING id`;
     const [secondConversation]=await db!`INSERT INTO conversations(
-        contact_id,channel,workspace_id,channel_thread_id)
-      VALUES (${f.contact.id},'whatsapp',${f.workspace.id},${secondThread.id}) RETURNING id`;
+        contact_id,channel,channel_thread_id)
+      VALUES (${f.contact.id},'telegram',${secondThread.id}) RETURNING id`;
+    await db!`INSERT INTO conversation_sales_context_states_v1(
+        workspace_id,conversation_id,contact_id,selected_offering_code)
+      VALUES (${f.workspace.id},${secondConversation.id},${f.contact.id},${f.paid.code})`;
     const [secondOffer]=await db!`INSERT INTO promotion_offers(
         workspace_id,contact_id,conversation_id,promotion_id,paid_offering_id,status,offered_at,accepted_at)
       VALUES (${f.workspace.id},${f.contact.id},${secondConversation.id},${f.promotion.id},

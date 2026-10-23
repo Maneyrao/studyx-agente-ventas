@@ -24,7 +24,7 @@ afterEach(() => {
 });
 afterAll(async () => db?.end());
 
-async function fixture(options: { workspaceScopedConversation?: boolean } = {}) {
+async function fixture() {
   const suffix = randomUUID();
   const botpressId = `bp-${suffix}`;
   const [workspace] = await db!`INSERT INTO workspaces(slug,display_name)
@@ -37,9 +37,8 @@ async function fixture(options: { workspaceScopedConversation?: boolean } = {}) 
     VALUES (${workspace.id},${contact.id},'whatsapp')`;
   const [thread] = await db!`INSERT INTO channel_threads(contact_id,provider,integration_id,channel,external_conversation_id,metadata)
     VALUES (${contact.id},'botpress','whatsapp','whatsapp',${botpressId},${db!.json({botpress_conversation_id:botpressId})}) RETURNING id`;
-  const [conversation] = await db!`INSERT INTO conversations(contact_id,channel,workspace_id,channel_thread_id)
-    VALUES (${contact.id},'whatsapp',${options.workspaceScopedConversation === false ? null : workspace.id}::uuid,
-      ${thread.id}) RETURNING id`;
+  const [conversation] = await db!`INSERT INTO conversations(contact_id,channel,channel_thread_id)
+    VALUES (${contact.id},'whatsapp',${thread.id}) RETURNING id`;
   const offerings = await db!`INSERT INTO offerings(workspace_id,code,display_name,offering_type,status,description,price_type,price_amount,currency,billing_interval)
     VALUES (${workspace.id},${`ingles_1_${suffix.slice(0,8)}`},'Inglés 1','course','active','Base','fixed',360,'USD','annual'),
       (${workspace.id},${`ingles_2_${suffix.slice(0,8)}`},'Inglés 2','course','active','Continuación','free',NULL,NULL,NULL)
@@ -150,8 +149,9 @@ run('durable commercial course-bonus follow-up', () => {
   });
 
   it('commits the review for a legacy Botpress conversation bound by commercial state', async () => {
-    const f = await fixture({ workspaceScopedConversation:false });
-    expect(await db!`SELECT workspace_id FROM conversations WHERE id=${f.conversation.id}`)
+    const f = await fixture();
+    expect(await db!`SELECT to_jsonb(conversation)->>'workspace_id' AS workspace_id
+      FROM conversations AS conversation WHERE id=${f.conversation.id}`)
       .toEqual([{workspace_id:null}]);
     const committed = await commitCommercialActionV1(db!, {
       workspace_id:f.workspace.id as string, contact_id:f.contact.id as string,
@@ -279,11 +279,11 @@ run('durable commercial course-bonus follow-up', () => {
     const otherBotpressId = `other-memory-${randomUUID()}`;
     const [otherThread] = await db!`INSERT INTO channel_threads(
         contact_id,provider,integration_id,channel,external_conversation_id,metadata)
-      VALUES (${f.contact.id},'botpress','whatsapp','whatsapp',${otherBotpressId},
+      VALUES (${f.contact.id},'botpress','telegram','telegram',${otherBotpressId},
         ${db!.json({botpress_conversation_id:otherBotpressId})}) RETURNING id`;
     const [otherConversation] = await db!`INSERT INTO conversations(
-        contact_id,channel,workspace_id,channel_thread_id)
-      VALUES (${f.contact.id},'whatsapp',${otherWorkspace.id},${otherThread.id}) RETURNING id`;
+        contact_id,channel,channel_thread_id)
+      VALUES (${f.contact.id},'telegram',${otherThread.id}) RETURNING id`;
     const [otherInbound] = await db!`INSERT INTO messages(conversation_id,contact_id,direction,content)
       VALUES (${otherConversation.id},${f.contact.id},'inbound','Quiero cambiar de trabajo') RETURNING id`;
     await db!`INSERT INTO conversation_sales_context_states_v1(

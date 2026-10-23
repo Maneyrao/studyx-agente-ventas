@@ -159,9 +159,11 @@ BEGIN
   INTO v_promotion_workspace, v_promotion_paid_offering
   FROM public.promotions WHERE id = NEW.promotion_id;
 
-  SELECT contact_id, workspace_id
+  SELECT conversation.contact_id,
+         NULLIF(to_jsonb(conversation)->>'workspace_id', '')::uuid
   INTO v_conversation_contact, v_conversation_workspace
-  FROM public.conversations WHERE id = NEW.conversation_id;
+  FROM public.conversations AS conversation
+  WHERE conversation.id = NEW.conversation_id;
 
   IF v_promotion_workspace IS NULL
      OR v_promotion_workspace IS DISTINCT FROM NEW.workspace_id

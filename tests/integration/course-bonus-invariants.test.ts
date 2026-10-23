@@ -7,7 +7,7 @@ const db = process.env.TEST_DATABASE_URL ? openLocalTestDatabase() : null;
 
 afterAll(async () => db?.end());
 
-async function fixture() {
+async function fixture(options: { withCommercialState?: boolean } = {}) {
   const suffix = randomUUID().slice(0, 8);
   const [workspace] = await db!<Array<{ id: string }>>`
     INSERT INTO workspaces (slug, display_name)
@@ -29,8 +29,8 @@ async function fixture() {
     VALUES (${workspace.id}::uuid, ${contact.id}::uuid, 'whatsapp')
   `;
   const [conversation] = await db!<Array<{ id: string }>>`
-    INSERT INTO conversations (contact_id, channel, workspace_id)
-    VALUES (${contact.id}::uuid, 'whatsapp', ${workspace.id}::uuid)
+    INSERT INTO conversations (contact_id, channel)
+    VALUES (${contact.id}::uuid, 'whatsapp')
     RETURNING id
   `;
   const offerings = await db!<Array<{ id: string; code: string }>>`
@@ -47,6 +47,16 @@ async function fixture() {
     RETURNING id, code
   `;
   const [paid, giftA, giftB, giftC, giftD, other] = offerings;
+  if (options.withCommercialState !== false) {
+    await db!`
+      INSERT INTO conversation_sales_context_states_v1 (
+        workspace_id, conversation_id, contact_id, selected_offering_code
+      ) VALUES (
+        ${workspace.id}::uuid, ${conversation.id}::uuid, ${contact.id}::uuid,
+        ${paid.code}
+      )
+    `;
+  }
   return { workspace, otherWorkspace, contact, conversation, paid, giftA, giftB, giftC, giftD, other, suffix };
 }
 
@@ -135,14 +145,12 @@ run('authorized course bonus database invariants', () => {
   });
 
   it('accepts a legacy unscoped conversation only through its canonical commercial state', async () => {
-    const f = await fixture();
+    const f = await fixture({ withCommercialState:false });
     const promotion = await createPromotion(f);
     await db!`
       INSERT INTO promotion_bonus_offerings (promotion_id, workspace_id, offering_id, position)
       VALUES (${promotion.id}::uuid, ${f.workspace.id}::uuid, ${f.giftA.id}::uuid, 1)
     `;
-    await db!`UPDATE conversations SET workspace_id=NULL WHERE id=${f.conversation.id}::uuid`;
-
     await expect(db!`
       INSERT INTO promotion_offers (
         workspace_id, contact_id, conversation_id, promotion_id, paid_offering_id, status

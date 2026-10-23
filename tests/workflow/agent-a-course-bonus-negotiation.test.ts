@@ -42,8 +42,8 @@ run('carries one authorized price-objection bonus through payment, Central v2 an
   const [thread] = await db!`INSERT INTO channel_threads(contact_id,provider,integration_id,channel,external_conversation_id,metadata)
     VALUES (${contact.id},'botpress','whatsapp','whatsapp',${botpressId},${db!.json({botpress_conversation_id:botpressId})})
     RETURNING id`;
-  const [conversation] = await db!`INSERT INTO conversations(contact_id,channel,workspace_id,channel_thread_id)
-    VALUES (${contact.id},'whatsapp',${workspace.id},${thread.id}) RETURNING id`;
+  const [conversation] = await db!`INSERT INTO conversations(contact_id,channel,channel_thread_id)
+    VALUES (${contact.id},'whatsapp',${thread.id}) RETURNING id`;
   const offerings = await db!`INSERT INTO offerings(workspace_id,code,display_name,offering_type,status,description,
       price_type,price_amount,currency,billing_interval)
     VALUES (${workspace.id},${`ingles_1_${suffix.slice(0,8)}`},'Inglés 1','course','active','Nivel inicial','fixed',360,'USD','annual'),
