@@ -3,10 +3,6 @@
   "regions": ["iad1"],
   "crons": [
     {
-      "path": "/api/cron/course-bonus-followups",
-      "schedule": "* * * * *"
-    },
-    {
       "path": "/api/cron/project-knowledge",
       "schedule": "0 3 * * *"
     },
