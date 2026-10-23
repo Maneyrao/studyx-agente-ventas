@@ -442,6 +442,13 @@ export type CommercialFollowupContentResult = { ok: true } | {
     | 'PROMOTION_PREMATURE_DISCLOSURE';
 };
 
+export type PreparedCommercialFollowupMessageV1 = { ok: true; message: string } | {
+  ok: false;
+  reason:
+    | Exclude<CommercialFollowupContentResult, { ok: true }>['reason']
+    | 'PROMOTION_PERSONALIZATION_FACT_NOT_ALLOWED';
+};
+
 export function validateCommercialFollowupNarrativeV1(
   source: {
     readonly kind: FollowupKind;
@@ -472,7 +479,7 @@ export function validateCommercialFollowupNarrativeV1(
     .replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')
     .replace(/\s+/gu, '\\s+');
   const principalMadeFree = new RegExp(
-    `(?:${paidOfferingPattern}\\s*[,;:]?\\s+(?:(?:(?:te|lo|la)\\s+)?(?:(?:es|ser[aá]|queda|quedar[ií]a|sale|saldr[ií]a|resulta|tienes|ten[eé]s|tenes|tendr[ií]as?|va a ser|tambi[eé]n)\\s+)?(?:totalmente\\s+)?(?:gratis|sin costo|bonificad[oa])\\b|(?:te\\s+)?(?:lo\\s+)?(?:regal|bonific)\\w*\\b)|(?:regal|bonific)\\w*.{0,18}\\b${paidOfferingPattern}\\b|(?:gratis|sin costo)\\s+(?:el curso\\s+)?${paidOfferingPattern}\\b|(?:no (?:tienes|ten[eé]s|hay) que|sin)\\s+pagar\\s+(?:nada|${paidOfferingPattern}))`,
+    `(?:${paidOfferingPattern}\\s*[,;:]?\\s+(?:(?:no\\s+se\\s+cobra\\b|(?:est[aá]\\s+)?sin\\s+cargo\\b)|(?:(?:(?:te|lo|la)\\s+)?(?:(?:es|ser[aá]|queda|quedar[ií]a|sale|saldr[ií]a|resulta|tienes|ten[eé]s|tenes|tendr[ií]as?|va a ser|tambi[eé]n)\\s+)?(?:totalmente\\s+)?(?:gratis|sin costo|bonificad[oa])\\b|(?:te\\s+)?(?:lo\\s+)?(?:regal|bonific)\\w*\\b))|(?:regal|bonific)\\w*.{0,18}\\b${paidOfferingPattern}\\b|(?:gratis|sin costo|sin cargo)\\s+(?:el curso\\s+)?${paidOfferingPattern}\\b|(?:no (?:tienes|ten[eé]s|hay) que|sin)\\s+pagar\\s+(?:nada|${paidOfferingPattern}))`,
     'iu',
   );
   const unassignedFreeClaim = source.kind === 'promotion_review'
@@ -512,7 +519,7 @@ export function validateCommercialFollowupNarrativeV1(
     || wordAmount.test(priceCandidate)
     || /\b(?:ambos?|los dos|todo(?:s)?)\s+(?:(?:son|quedan)\s+)?(?:gratis|sin costo|bonificad[oa]s?)\b/iu.test(normalized)
     || principalMadeFree.test(normalized)
-    || /\b(?:gratis|sin costo|regal\w*|bonific\w*)\b/iu.test(unassignedFreeClaim)) {
+    || /\b(?:gratis|sin costo|sin cargo|no se cobra|regal\w*|bonific\w*)\b/iu.test(unassignedFreeClaim)) {
     return { ok: false, reason: 'PROMOTION_PRICE_CHANGED' };
   }
   const namedBonuses = source.bonus_offerings.filter((bonus) => (
@@ -536,6 +543,47 @@ export function validateCommercialFollowupNarrativeV1(
       && !authorized.has(name.toLocaleLowerCase('es'))
   ))) return { ok: false, reason: 'PROMOTION_UNAUTHORIZED_COURSE' };
   return { ok: true };
+}
+
+function naturalCourseList(names: readonly string[]): string {
+  if (names.length <= 1) return names[0] ?? '';
+  if (names.length === 2) return `${names[0]} y ${names[1]}`;
+  return `${names.slice(0, -1).join(', ')} y ${names.at(-1)}`;
+}
+
+export function prepareCommercialFollowupMessageV1(
+  source: {
+    readonly kind: FollowupKind;
+    readonly paid_offering_name: string;
+    readonly bonus_offerings: ReadonlyArray<{ display_name: string }>;
+    readonly all_offering_names: readonly string[];
+  },
+  proposedMessage: string,
+): PreparedCommercialFollowupMessageV1 {
+  const personalizedReason = proposedMessage.replace(/\s+/gu, ' ').trim();
+  if (source.kind === 'price_objection_checkin') {
+    const validation = validateCommercialFollowupNarrativeV1(source, personalizedReason);
+    return validation.ok ? { ok: true, message: personalizedReason } : validation;
+  }
+
+  const normalized = personalizedReason.toLocaleLowerCase('es');
+  const mentionsKnownOffering = source.all_offering_names.some((name) => (
+    normalized.includes(name.toLocaleLowerCase('es'))
+  ));
+  const introducesCommercialFact = mentionsKnownOffering
+    || /https?:\/\/|www\./iu.test(personalizedReason)
+    || /\d|[$€£]|\b(?:usd|u\$s|d[oó]lares?|pesos?|euros?)\b/iu.test(personalizedReason)
+    || /\b(?:precio|cuotas?|pag(?:a|ar|ando|as|ás|o|ó)|abon\w*|cobr\w*|gratis|sin costo|sin cargo|regal\w*|bonific\w*|descuento|rebaja|promoci[oó]n|oferta|dos por uno|mitad del precio)\b/iu.test(personalizedReason)
+    || /\b(?:lucas|supervisor(?:a)?|gerencia|director(?:a)?|jef[ea])\b.{0,45}\b(?:autoriz|aprob|permit)/iu.test(personalizedReason)
+    || /\b(?:autoriz|aprob|permit)\w*\b.{0,45}\b(?:lucas|supervisor(?:a)?|gerencia|director(?:a)?|jef[ea])\b/iu.test(personalizedReason);
+  if (!personalizedReason || introducesCommercialFact) {
+    return { ok: false, reason: 'PROMOTION_PERSONALIZATION_FACT_NOT_ALLOWED' };
+  }
+
+  const gifts = naturalCourseList(source.bonus_offerings.map((bonus) => bonus.display_name));
+  const rendered = `Pude habilitarte ${gifts} sin costo adicional junto con ${source.paid_offering_name}; el precio de ${source.paid_offering_name} no cambia. ${personalizedReason}`;
+  const validation = validateCommercialFollowupNarrativeV1(source, rendered);
+  return validation.ok ? { ok: true, message: rendered } : validation;
 }
 
 export async function deliverCommercialFollowupV1(
@@ -583,20 +631,23 @@ export async function deliverCommercialFollowupV1(
     const offerings = await tx<Array<{ display_name: string }>>`
       SELECT display_name FROM offerings WHERE workspace_id = ${source.workspace_id}::uuid
     `;
-    const validation = validateCommercialFollowupNarrativeV1({
+    const renderedMessage = prepareCommercialFollowupMessageV1({
       kind: source.kind,
       paid_offering_name: source.paid_offering_name,
       bonus_offerings: bonuses,
       all_offering_names: offerings.map((offering) => offering.display_name),
     }, narrative.message);
-    if (!validation.ok) return { outcome: 'invalid_content' as const, reason: validation.reason };
+    if (!renderedMessage.ok) {
+      return { outcome: 'invalid_content' as const, reason: renderedMessage.reason };
+    }
+    const outboundMessage = renderedMessage.message;
 
     const authorization = buildAuthorizedEgress({
-      content: narrative.message,
+      content: outboundMessage,
       authorized_urls: [],
-      protected_facts: protectedFactsInContentV1(narrative.message),
+      protected_facts: protectedFactsInContentV1(outboundMessage),
     });
-    if (!verifyAuthorizedEgress({ content: narrative.message, manifest: authorization }).ok) {
+    if (!verifyAuthorizedEgress({ content: outboundMessage, manifest: authorization }).ok) {
       return { outcome: 'invalid_content' as const, reason: 'PROMOTION_EGRESS_INVALID' as const };
     }
     const locked = await tx<Array<{ id: string }>>`
@@ -606,10 +657,10 @@ export async function deliverCommercialFollowupV1(
       RETURNING id
     `;
     if (!locked[0]) return { outcome: 'claim_lost' as const };
-    return { outcome: 'ready' as const, source, authorization };
+    return { outcome: 'ready' as const, source, authorization, outboundMessage };
   });
   if (prepared.outcome !== 'ready') return prepared;
-  const { source, authorization } = prepared;
+  const { source, authorization, outboundMessage } = prepared;
 
   const sender = deps.sender ?? (await import('@/features/messaging/adapters/managed-outbound'))
     .createManagedOutboundSender(db, source.botpress_conversation_id);
@@ -619,7 +670,7 @@ export async function deliverCommercialFollowupV1(
       workspaceId: source.workspace_id,
       contactId: source.contact_id,
       conversationId: source.conversation_id,
-      text: narrative.message,
+      text: outboundMessage,
       authorizedEgress: authorization,
       idempotencyKey: `course-bonus-followup:${id}`,
       preferredChannel: 'whatsapp',
@@ -651,7 +702,7 @@ export async function deliverCommercialFollowupV1(
       const created = await registerMessage({
         conversation_id: source.conversation_id,
         direction: 'outbound',
-        content: narrative.message,
+        content: outboundMessage,
         metadata: { commercial_followup_id: id, provider_message_id: result.providerMessageId },
       }, { db, embedding: 'skip' });
       deliveredMessageId = created.message.id;

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  prepareCommercialFollowupMessageV1,
   validateCommercialFollowupNarrativeV1,
 } from '@/features/promotions/application/commercial-followup-service';
 
@@ -83,6 +84,12 @@ describe('commercial course-bonus follow-up content', () => {
       'Inglés 1 te lo bonifico y además te incluyo Inglés 2.'))
       .toEqual({ ok: false, reason: 'PROMOTION_PRICE_CHANGED' });
     expect(validateCommercialFollowupNarrativeV1(review,
+      'Inglés 1 no se cobra, y te incluyo Inglés 2 gratis.'))
+      .toEqual({ ok: false, reason: 'PROMOTION_PRICE_CHANGED' });
+    expect(validateCommercialFollowupNarrativeV1(review,
+      'Inglés 1 está sin cargo y te incluyo Inglés 2 gratis.'))
+      .toEqual({ ok: false, reason: 'PROMOTION_PRICE_CHANGED' });
+    expect(validateCommercialFollowupNarrativeV1(review,
       'Te incluyo Inglés 2 con Inglés 1 y pagás 10 al año.'))
       .toEqual({ ok: false, reason: 'PROMOTION_PRICE_CHANGED' });
     expect(validateCommercialFollowupNarrativeV1(review,
@@ -98,5 +105,23 @@ describe('commercial course-bonus follow-up content', () => {
     expect(validateCommercialFollowupNarrativeV1(checkin,
       'También puedo sumarte Inglés 2 gratis.'))
       .toEqual({ ok: false, reason: 'PROMOTION_PREMATURE_DISCLOSURE' });
+  });
+
+  it('renders the promotion facts in the backend and accepts only personalized reasoning', () => {
+    expect(prepareCommercialFollowupMessageV1(review,
+      'Así puedes empezar por la base y seguir avanzando con una formación complementaria.'))
+      .toEqual({
+        ok:true,
+        message:'Pude habilitarte Inglés 2 sin costo adicional junto con Inglés 1; el precio de Inglés 1 no cambia. Así puedes empezar por la base y seguir avanzando con una formación complementaria.',
+      });
+    expect(prepareCommercialFollowupMessageV1(review,
+      'Inglés 1 no se cobra, y te incluyo Inglés 2 gratis.'))
+      .toEqual({ok:false,reason:'PROMOTION_PERSONALIZATION_FACT_NOT_ALLOWED'});
+    expect(prepareCommercialFollowupMessageV1(review,
+      'Está sin cargo y puedes aprovechar la oportunidad.'))
+      .toEqual({ok:false,reason:'PROMOTION_PERSONALIZATION_FACT_NOT_ALLOWED'});
+    expect(prepareCommercialFollowupMessageV1(review,
+      'Marketing Digital también te vendría bien.'))
+      .toEqual({ok:false,reason:'PROMOTION_PERSONALIZATION_FACT_NOT_ALLOWED'});
   });
 });

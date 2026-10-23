@@ -91,15 +91,17 @@ run('durable commercial course-bonus follow-up', () => {
     const claim = [a,b].find(result=>result.claimed)!;
     if(!claim.claimed) throw new Error('claim expected');
     let sends=0;
+    let sentText='';
     const result = await deliverCommercialFollowupV1(first.followup!.id,{
       claim_token:claim.claim_token,botpress_conversation_id:f.botpressId,
-      narrative:{message:'Pude habilitarte Inglés 2 junto con Inglés 1, sin cambiar el precio de Inglés 1. Así puedes avanzar con una base y continuar con el siguiente nivel.'},
-    },{db:db!,sender:async()=>{sends++; return {outcome:'sent' as const,channel:'whatsapp' as const,providerMessageId:'wamid.1',deliveryId:null,reason:null};}});
+      narrative:{message:'Así puedes avanzar con una base y continuar con el siguiente nivel.'},
+    },{db:db!,sender:async(request)=>{sends++; sentText=request.text; return {outcome:'sent' as const,channel:'whatsapp' as const,providerMessageId:'wamid.1',deliveryId:null,reason:null};}});
     expect(result).toEqual({outcome:'sent'});
     expect(sends).toBe(1);
+    expect(sentText).toBe('Pude habilitarte Inglés 2 sin costo adicional junto con Inglés 1; el precio de Inglés 1 no cambia. Así puedes avanzar con una base y continuar con el siguiente nivel.');
     expect(await deliverCommercialFollowupV1(first.followup!.id,{
       claim_token:claim.claim_token,botpress_conversation_id:f.botpressId,
-      narrative:{message:'Pude habilitarte Inglés 2 junto con Inglés 1, sin cambiar el precio de Inglés 1.'},
+      narrative:{message:'Así puedes seguir avanzando paso a paso.'},
     },{db:db!,sender:async()=>{sends++; return {outcome:'sent' as const,channel:'whatsapp' as const,providerMessageId:'wamid.2',deliveryId:null,reason:null};}}))
       .toEqual({outcome:'claim_lost'});
     expect(sends).toBe(1);
@@ -215,7 +217,7 @@ run('durable commercial course-bonus follow-up', () => {
       let sends = 0;
       await expect(deliverCommercialFollowupV1(committed.followup!.id, {
         claim_token:claim.claim_token, botpress_conversation_id:f.botpressId,
-        narrative:{message:'Pude habilitarte Inglés 2 junto con Inglés 1, sin cambiar el precio de Inglés 1.'},
+        narrative:{message:'Así puedes seguir avanzando paso a paso.'},
       }, {db:db!,sender:async()=>{
         sends += 1;
         return {outcome:'sent' as const,channel:'whatsapp' as const,providerMessageId:'wamid.race',

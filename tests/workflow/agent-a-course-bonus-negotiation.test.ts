@@ -76,7 +76,7 @@ run('carries one authorized price-objection bonus through payment, Central v2 an
   const claim = await claimCommercialFollowupV1(review.followup!.id,botpressId,`event-${suffix}`,{db:db!});
   if(!claim.claimed) throw new Error('promotion review claim failed');
   expect(await deliverCommercialFollowupV1(review.followup!.id,{claim_token:claim.claim_token,
-    botpress_conversation_id:botpressId,narrative:{message:'Pude habilitarte Inglés 2 junto con Inglés 1, sin cambiar el precio de Inglés 1.'}},
+    botpress_conversation_id:botpressId,narrative:{message:'Así puedes empezar por la base y continuar avanzando paso a paso.'}},
     {db:db!,sender:async()=>({outcome:'sent' as const,channel:'whatsapp' as const,providerMessageId:`wamid.${suffix}`,
       deliveryId:null,reason:null})})).toEqual({outcome:'sent'});
   await commitCommercialActionV1(db!,{workspace_id:workspace.id,contact_id:contact.id,
