@@ -177,7 +177,6 @@ run('Retell five tools PostgreSQL adapter', () => {
     process.env.CENTRAL_CARGA_BONUS_ENABLED = 'true';
     try {
       const ids = await callFixture();
-      await db!`UPDATE conversations SET workspace_id=${ids.workspaceId}::uuid WHERE id=${ids.conversationId}::uuid`;
       const [bonus] = await db!<Array<{ id: string; code: string }>>`
         INSERT INTO offerings(workspace_id,code,display_name,offering_type,status,description,price_type)
         VALUES (${ids.workspaceId}::uuid,${`retell_bonus_${randomUUID().slice(0,8)}`},'Retell Bonus','course','active','Bonus','free')
@@ -232,7 +231,6 @@ run('Retell five tools PostgreSQL adapter', () => {
         WHERE conversation_id=${ids.conversationId}::uuid GROUP BY status`).resolves.toEqual([{status:'attached',count:1}]);
 
       const other = await callFixture();
-      await db!`UPDATE conversations SET workspace_id=${other.workspaceId}::uuid WHERE id=${other.conversationId}::uuid`;
       const blockedOutbound = sender();
       const blocked = new PostgresRetellOrchestrationStore(db!, {
         paymentLinkResolver: { resolve: () => 'https://buy.stripe.com/promoted-invalid-link' },

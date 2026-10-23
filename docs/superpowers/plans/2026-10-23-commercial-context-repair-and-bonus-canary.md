@@ -76,10 +76,10 @@ promotion entry point while the global feature flag stays off.
 - Modify: `tests/workflow/agent-a-course-bonus-negotiation.test.ts`
 - Modify: deployment environment and the existing promotion row operationally
 
-- [ ] Replay the observed commercial sequence and verify interest, two
+- [x] Replay the observed commercial sequence and verify interest, two
   objections, review request, authorized offer, acceptance, and immutable
   payment snapshot.
-- [ ] Run focused unit/integration/workflow suites, typecheck, build, and
+- [x] Run focused unit/integration/workflow suites, typecheck, build, and
   `adk check --format json`.
 - [ ] Deploy backend with the global flag off and the 4497 contact UUID as the
   sole canary; publish Botpress through ADK.

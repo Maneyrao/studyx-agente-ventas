@@ -572,9 +572,11 @@ run('la entrega gobierna la proyección payment_link_sent', () => {
       payment_reported: false,
       source_turn_id: promotedContext.turn_id,
     });
-    expect(await sql<Array<{ workspace_id:string|null }>>`
-      SELECT workspace_id FROM conversations WHERE id=${firstContext.conversation_id}::uuid
-    `).toEqual([{workspace_id:null}]);
+    expect(await sql<Array<{ workspace_id:string }>>`
+      SELECT workspace_id
+      FROM conversation_sales_context_states_v1
+      WHERE conversation_id=${firstContext.conversation_id}::uuid
+    `).toEqual([{workspace_id:paymentWorkspaceId}]);
 
     const [paid] = await sql<Array<{ id:string }>>`SELECT id FROM offerings
       WHERE workspace_id=${paymentWorkspaceId}::uuid AND code='course_fence'`;

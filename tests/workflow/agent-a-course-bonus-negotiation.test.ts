@@ -19,11 +19,14 @@ import { createDefaultConversationStateV1 } from '@/features/conversation/domain
 const run = process.env.TEST_DATABASE_URL ? it : it.skip;
 const db = process.env.TEST_DATABASE_URL ? openLocalTestDatabase() : null;
 const priorBonusFlag = process.env.CENTRAL_CARGA_BONUS_ENABLED;
+const priorCanaryContacts = process.env.CENTRAL_CARGA_BONUS_CANARY_CONTACT_IDS;
 
-beforeAll(() => { process.env.CENTRAL_CARGA_BONUS_ENABLED = 'true'; });
+beforeAll(() => { process.env.CENTRAL_CARGA_BONUS_ENABLED = 'false'; });
 afterAll(async () => {
   if (priorBonusFlag === undefined) delete process.env.CENTRAL_CARGA_BONUS_ENABLED;
   else process.env.CENTRAL_CARGA_BONUS_ENABLED = priorBonusFlag;
+  if (priorCanaryContacts === undefined) delete process.env.CENTRAL_CARGA_BONUS_CANARY_CONTACT_IDS;
+  else process.env.CENTRAL_CARGA_BONUS_CANARY_CONTACT_IDS = priorCanaryContacts;
   await db?.end();
 });
 
@@ -35,6 +38,7 @@ run('carries one authorized price-objection bonus through payment, Central v2 an
   const [contact] = await db!`INSERT INTO contacts(phone,status,channel_origin,name,email)
     VALUES (${`+54911${Math.floor(10000000+Math.random()*89999999)}`},'prospecto','whatsapp','Ana Prueba','ana@example.test')
     RETURNING id`;
+  process.env.CENTRAL_CARGA_BONUS_CANARY_CONTACT_IDS = contact.id;
   await db!`INSERT INTO contact_channel_permissions(contact_id,channel,consent_status)
     VALUES (${contact.id},'whatsapp','unknown')`;
   await db!`INSERT INTO workspace_contacts(workspace_id,contact_id,source_channel)
@@ -55,8 +59,12 @@ run('carries one authorized price-objection bonus through payment, Central v2 an
     RETURNING id,promotion_code`;
   await db!`INSERT INTO promotion_bonus_offerings(promotion_id,workspace_id,offering_id,position)
     VALUES (${promotion.id},${workspace.id},${bonus.id},1)`;
+  const [firstInbound] = await db!`INSERT INTO messages(conversation_id,contact_id,direction,content)
+    VALUES (${conversation.id},${contact.id},'inbound','Me parece caro') RETURNING id`;
+  await db!`INSERT INTO messages(conversation_id,contact_id,direction,content,in_reply_to)
+    VALUES (${conversation.id},${contact.id},'outbound','Inglés 1 puede ayudarte con documentación y entrevistas.',${firstInbound.id})`;
   const [inbound] = await db!`INSERT INTO messages(conversation_id,contact_id,direction,content)
-    VALUES (${conversation.id},${contact.id},'inbound','Me sigue pareciendo caro') RETURNING id`;
+    VALUES (${conversation.id},${contact.id},'inbound','El monto me sigue frenando') RETURNING id`;
   const [outbound] = await db!`INSERT INTO messages(conversation_id,contact_id,direction,content,in_reply_to)
     VALUES (${conversation.id},${contact.id},'outbound','Dame un momento y reviso qué alternativa puedo habilitarte.',${inbound.id})
     RETURNING id`;
@@ -66,7 +74,7 @@ run('carries one authorized price-objection bonus through payment, Central v2 an
 
   await expect(recordPromotionConversationContextV1(db!, {
     workspace_id:workspace.id, contact_id:contact.id, conversation_id:conversation.id,
-    source_turn_id:inbound.id, discussed_offering_code:paid.code, records_price_objection:true,
+    source_turn_id:firstInbound.id, discussed_offering_code:paid.code, records_price_objection:true,
   })).resolves.toEqual({interest_offering_code:paid.code, price_objection_count:1});
   await expect(readCourseBonusCapabilityV1({workspace_slug:workspace.slug,contact_id:contact.id,
     conversation_id:conversation.id,channel:'text',selected_offering_code:null},{db:db!})).resolves.toMatchObject({
@@ -75,6 +83,10 @@ run('carries one authorized price-objection bonus through payment, Central v2 an
   const review = await commitCommercialActionV1(db!,{workspace_id:workspace.id,contact_id:contact.id,
     conversation_id:conversation.id,paid_offering_code:paid.code,source_turn_id:inbound.id,
     source_outbound_message_id:outbound.id,action:{type:'request_promotion_review',reason:'persistent_price_objection'}});
+  await expect(recordPromotionConversationContextV1(db!, {
+    workspace_id:workspace.id, contact_id:contact.id, conversation_id:conversation.id,
+    source_turn_id:inbound.id, discussed_offering_code:paid.code, records_price_objection:true,
+  })).resolves.toEqual({interest_offering_code:paid.code, price_objection_count:2});
   await db!`UPDATE course_bonus_followups SET due_at=now()-interval '1 second' WHERE id=${review.followup!.id}`;
   const claim = await claimCommercialFollowupV1(review.followup!.id,botpressId,`event-${suffix}`,{db:db!});
   if(!claim.claimed) throw new Error('promotion review claim failed');
@@ -116,6 +128,10 @@ run('carries one authorized price-objection bonus through payment, Central v2 an
     offering_id:paid.id,conversation_id:conversation.id,plan_code:authorization.action.payment_plan,
     idempotency_key:`workflow-bonus:${suffix}`,payment_link_url:'https://buy.stripe.com/test_workflow_bonus',
     promotion_code:authorization.action.promotion_code});
+  expect(await db!`SELECT promotion_code_snapshot,offering_code_snapshot,position
+    FROM payment_bonus_offerings WHERE payment_id=${reservation.payment_id}`)
+    .toEqual([{promotion_code_snapshot:promotion.promotion_code,
+      offering_code_snapshot:bonus.code,position:1}]);
   await db!`UPDATE payments SET status='creating_checkout' WHERE id=${reservation.payment_id}`;
   await db!`UPDATE payments SET status='pending',provider_session_id=${`cs_test_${suffix}`} WHERE id=${reservation.payment_id}`;
   await db!`UPDATE payments SET status='paid',paid_at=now() WHERE id=${reservation.payment_id}`;
@@ -131,7 +147,7 @@ run('carries one authorized price-objection bonus through payment, Central v2 an
   expect(await runEnrollmentWorker({scoped:true,payment_id:reservation.payment_id,limit:1},{sql:db!,config:{enabled:true,
     baseUrl:'https://central.test',signingSecret:'workflow-secret-0123456789',environment:'test',
     paidAfter:new Date('2026-01-01T00:00:00Z'),allowSandboxContacts:true},fetchImpl:centralFetch,
-    bonusConfig:{enabled:true,fulfillmentPaused:false}})).toMatchObject({completed:1});
+    bonusConfig:{enabled:false,fulfillmentPaused:true,canaryContactIds:[contact.id]}})).toMatchObject({completed:1});
   const verified = await db!<Array<{
     offering_code: string;
     enrollment_status: string;
