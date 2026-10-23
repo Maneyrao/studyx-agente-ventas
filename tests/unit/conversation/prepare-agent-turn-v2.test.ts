@@ -1434,13 +1434,18 @@ describe('prepareAgentTurnV2', () => {
     },
   );
 
-  it('does not turn a rejected canonical course mention into commercial interest', async () => {
+  it.each([
+    'No te recomiendo Redes Informáticas para lo que buscas.',
+    'No necesitas Redes Informáticas para alcanzar ese objetivo.',
+    'Redes Informáticas no sería adecuada para tu nivel.',
+    'Redes Informáticas está descartada para este caso.',
+  ])('does not turn a rejected canonical course mention into commercial interest: %s', async response => {
     const prepared = await prepareAgentTurnV2({
       turn: { id: ids.turn, workspace_id: ids.workspace, conversation_id: ids.conversation, contact_id: ids.contact },
       workspace_slug: 'studyx', business_context: business, catalog_index: index,
       current_customer_messages: ['Sigue fuera de mi presupuesto'],
       proposal: proposal({
-        response: { messages: ['No te recomiendo Redes Informáticas para lo que buscas.'] },
+        response: { messages: [response] },
         memory_candidates: [{
           type: 'objection', key: 'price_objection', value: 'El precio sigue fuera de su presupuesto',
           source_quote: 'Sigue fuera de mi presupuesto', confidence: 1,

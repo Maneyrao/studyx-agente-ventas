@@ -53,11 +53,19 @@ export function singleCanonicalOfferingReferenceV1(input: {
 }
 
 function isRejectedOfferingOccurrence(content: string, start: number, length: number): boolean {
-  const before = content.slice(Math.max(0, start - 96), start);
-  const after = content.slice(start + length, start + length + 72);
-  const rejectsBefore = /(?:\bno\s+(?:te\s+)?(?:recomiendo|elegir[ií]a|elegir|ofrecemos|tenemos|considerar[ií]a)|\bdescart(?:o|amos|ar[ií]a)|\bdej(?:a|á|amos)\s+de\s+lado)\s+(?:el\s+curso\s+de\s+)?$/u;
-  const rejectsAfter = /^(?:\s|[:,;—-])*(?:no\s+(?:te\s+)?(?:conviene|sirve|encaja|aplica)|queda\s+descartad[oa]|no\s+es\s+para\s+(?:vos|ti))\b/u;
-  return rejectsBefore.test(before) || rejectsAfter.test(after);
+  const sentenceBoundary = /[.!?\n]/u;
+  let sentenceStart = start;
+  while (sentenceStart > 0 && !sentenceBoundary.test(content[sentenceStart - 1]!)) sentenceStart -= 1;
+  let sentenceEnd = start + length;
+  while (sentenceEnd < content.length && !sentenceBoundary.test(content[sentenceEnd]!)) sentenceEnd += 1;
+  const beforeWords = content.slice(sentenceStart, start).match(/[\p{L}\p{N}]+/gu) ?? [];
+  const afterWords = content.slice(start + length, sentenceEnd).match(/[\p{L}\p{N}]+/gu) ?? [];
+  const nearbyNegation = new Set(['no', 'nunca', 'tampoco']);
+  const negated = beforeWords.slice(-6).some((word) => nearbyNegation.has(word))
+    || afterWords.slice(0, 6).some((word) => nearbyNegation.has(word));
+  const sentence = content.slice(sentenceStart, sentenceEnd);
+  const rejectedOrUncertain = /\b(?:descart[\p{L}\p{N}]*|inadecuad[\p{L}\p{N}]*|innecesari[\p{L}\p{N}]*|quiz[aá]s?|tal\s+vez|posiblemente|probablemente|puede\s+que|podr[ií]a\s+ser|no\s+(?:estoy|estamos)\s+segur[oa]s?)\b/u.test(sentence);
+  return negated || rejectedOrUncertain;
 }
 
 function normalize(value: string): string {
