@@ -19,6 +19,8 @@ function capability(overrides: Record<string, unknown> = {}) {
   return deriveCourseBonusCapabilityV1({
     channel: 'text',
     selected_offering_code: 'ingles_1',
+    discussed_offering_code: null,
+    recorded_price_objections: 0,
     prior_price_objection_checkin: false,
     promotion,
     active_offer: null,
@@ -64,15 +66,20 @@ describe('course bonus capability', () => {
       may_send_promoted_payment: false,
       promotion_code: null,
       bonus_offerings: [],
+      interest_offering_code: 'ingles_1',
     });
   });
 
-  it('allows review only after Agent A committed the first-objection check-in for the exact interest', () => {
-    expect(capability({ prior_price_objection_checkin: true })).toMatchObject({
+  it('allows review after the model recorded one price objection without requiring a scheduled check-in', () => {
+    expect(capability({ recorded_price_objections: 1 })).toMatchObject({
       status: 'review_available', may_request_review: true, promotion_code: null, bonus_offerings: [],
     });
-    expect(capability({ selected_offering_code: null, prior_price_objection_checkin: true })).toMatchObject({
-      status: 'needs_interest', may_request_review: false,
+    expect(capability({
+      selected_offering_code: null,
+      discussed_offering_code: 'ingles_1',
+      recorded_price_objections: 1,
+    })).toMatchObject({
+      status: 'review_available', may_request_review: true, interest_offering_code: 'ingles_1',
     });
   });
 

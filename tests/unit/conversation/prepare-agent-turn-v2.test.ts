@@ -1325,6 +1325,39 @@ describe('prepareAgentTurnV2', () => {
       code: 'AGENT_TURN_V2_REJECTED', reasons: ['FACT_NOT_AUTHORIZED'],
     });
   });
+
+  it('records model-owned course interest and price objection without manufacturing a purchase selection', async () => {
+    const prepared = await prepareAgentTurnV2({
+      turn: { id: ids.turn, workspace_id: ids.workspace, conversation_id: ids.conversation, contact_id: ids.contact },
+      workspace_slug: 'studyx', business_context: business, catalog_index: index,
+      current_customer_messages: ['Redes me interesa, pero sigue fuera de mi presupuesto'],
+      proposal: proposal({
+        move: {
+          schema_version: 1,
+          move: 'ask_course_information',
+          secondary_moves: [],
+          vetoes: [],
+          course_reference: 'redes',
+          confidence: 1,
+        },
+        response: { messages: ['Te entiendo. Veamos qué valor concreto te puede aportar para decidirlo con claridad.'] },
+        memory_candidates: [{
+          type: 'objection',
+          key: 'price_objection',
+          value: 'El precio está fuera de su presupuesto',
+          source_quote: 'sigue fuera de mi presupuesto',
+          confidence: 1,
+        }],
+      }),
+    }, { state_store: store(state()), now: () => Date.parse(index.as_of) });
+
+    expect(prepared).toMatchObject({
+      discussed_offering_code: 'redes_informaticas',
+      commercial_interest_offering_code: 'redes_informaticas',
+      records_price_objection: true,
+      transition: { selected_offering_code: null },
+    });
+  });
 });
 
 it('persists semantic call acceptance when the channel has no callable phone', async () => {

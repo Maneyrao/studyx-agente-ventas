@@ -18,6 +18,8 @@ export interface CourseBonusCapabilityV1 {
   readonly may_accept_offer: boolean;
   readonly may_send_promoted_payment: boolean;
   readonly promotion_code: string | null;
+  /** Exact course being discussed. This is not a purchase selection. */
+  readonly interest_offering_code: string | null;
   readonly bonus_offerings: ReadonlyArray<{
     readonly code: string;
     readonly display_name: string;
@@ -41,6 +43,63 @@ export interface CourseBonusOfferProjectionV1 {
   readonly expires_at: string | Date | null;
 }
 
+export async function recordPromotionConversationContextV1(
+  db: DbClient,
+  input: {
+    readonly workspace_id: string;
+    readonly conversation_id: string;
+    readonly contact_id: string;
+    readonly source_turn_id: string;
+    readonly discussed_offering_code: string | null;
+    readonly records_price_objection: boolean;
+  },
+): Promise<{ interest_offering_code: string | null; price_objection_count: number } | null> {
+  if (input.discussed_offering_code === null && !input.records_price_objection) return null;
+  const rows = await db<Array<{
+    interest_offering_code: string | null;
+    price_objection_count: number;
+  }>>`
+    INSERT INTO conversation_promotion_context_v1 (
+      workspace_id, conversation_id, contact_id, interest_offering_code,
+      price_objection_count, source_turn_id
+    )
+    SELECT
+      ${input.workspace_id}::uuid,
+      ${input.conversation_id}::uuid,
+      ${input.contact_id}::uuid,
+      ${input.discussed_offering_code},
+      ${input.records_price_objection ? 1 : 0},
+      ${input.source_turn_id}::uuid
+    WHERE EXISTS (
+      SELECT 1 FROM conversation_sales_context_states_v1 state
+      WHERE state.workspace_id = ${input.workspace_id}::uuid
+        AND state.conversation_id = ${input.conversation_id}::uuid
+        AND state.contact_id = ${input.contact_id}::uuid
+    )
+    ON CONFLICT (workspace_id, conversation_id) DO UPDATE SET
+      interest_offering_code = COALESCE(
+        EXCLUDED.interest_offering_code,
+        conversation_promotion_context_v1.interest_offering_code
+      ),
+      price_objection_count = CASE
+        WHEN EXCLUDED.interest_offering_code IS NOT NULL
+          AND EXCLUDED.interest_offering_code IS DISTINCT FROM
+            conversation_promotion_context_v1.interest_offering_code
+          THEN EXCLUDED.price_objection_count
+        ELSE LEAST(
+          2,
+          conversation_promotion_context_v1.price_objection_count
+            + EXCLUDED.price_objection_count
+        )
+      END,
+      contact_id = EXCLUDED.contact_id,
+      source_turn_id = EXCLUDED.source_turn_id,
+      updated_at = now()
+    RETURNING interest_offering_code, price_objection_count
+  `;
+  return rows[0] ?? null;
+}
+
 const hidden = (
   status: CourseBonusCapabilityStatus,
   extras: Partial<CourseBonusCapabilityV1> = {},
@@ -51,6 +110,7 @@ const hidden = (
   may_accept_offer: false,
   may_send_promoted_payment: false,
   promotion_code: null,
+  interest_offering_code: null,
   bonus_offerings: [],
   ...extras,
 });
@@ -64,6 +124,9 @@ function timestamp(value: string | Date | null): number | null {
 export function deriveCourseBonusCapabilityV1(input: {
   readonly channel: 'text' | 'voice';
   readonly selected_offering_code: string | null;
+  readonly discussed_offering_code?: string | null;
+  /** Structured model-owned price-objection evidence, capped at two. */
+  readonly recorded_price_objections?: number;
   /** Durable evidence that Agent A already classified and handled a first
    * price objection for this exact conversation, promotion, and paid course. */
   readonly prior_price_objection_checkin: boolean;
@@ -73,10 +136,11 @@ export function deriveCourseBonusCapabilityV1(input: {
 }): CourseBonusCapabilityV1 {
   const now = (input.now ?? new Date()).getTime();
   const promotion = input.promotion;
-  if (input.selected_offering_code === null) return hidden('needs_interest');
+  const interestOfferingCode = input.discussed_offering_code ?? input.selected_offering_code;
+  if (interestOfferingCode === null) return hidden('needs_interest');
   if (!promotion
     || !promotion.active
-    || promotion.paid_offering_code !== input.selected_offering_code
+    || promotion.paid_offering_code !== interestOfferingCode
     || !promotion.channels.includes(input.channel)
     || (timestamp(promotion.valid_from) !== null && timestamp(promotion.valid_from)! > now)
     || (timestamp(promotion.valid_until) !== null && timestamp(promotion.valid_until)! <= now)
@@ -91,12 +155,15 @@ export function deriveCourseBonusCapabilityV1(input: {
     return hidden('not_eligible');
   }
   if (offer && offer.promotion_code === promotion.promotion_code && !offerExpired) {
-    if (offer.status === 'pending_review') return hidden('review_pending');
+    if (offer.status === 'pending_review') {
+      return hidden('review_pending', { interest_offering_code: interestOfferingCode });
+    }
     if (offer.status === 'offered') {
       return {
         ...hidden('offer_available'),
         may_accept_offer: true,
         promotion_code: promotion.promotion_code,
+        interest_offering_code: interestOfferingCode,
         bonus_offerings: promotion.bonus_offerings,
       };
     }
@@ -105,15 +172,22 @@ export function deriveCourseBonusCapabilityV1(input: {
         ...hidden('accepted'),
         may_send_promoted_payment: true,
         promotion_code: promotion.promotion_code,
+        interest_offering_code: interestOfferingCode,
         bonus_offerings: promotion.bonus_offerings,
       };
     }
   }
 
-  if (input.prior_price_objection_checkin) {
-    return hidden('review_available', { may_request_review: true });
+  if ((input.recorded_price_objections ?? 0) > 0 || input.prior_price_objection_checkin) {
+    return hidden('review_available', {
+      may_request_review: true,
+      interest_offering_code: interestOfferingCode,
+    });
   }
-  return hidden('checkin_available', { may_schedule_checkin: true });
+  return hidden('checkin_available', {
+    may_schedule_checkin: true,
+    interest_offering_code: interestOfferingCode,
+  });
 }
 
 interface CapabilityRow {
@@ -139,7 +213,21 @@ export async function readCourseBonusCapabilityV1(input: {
   readonly now?: Date;
 }, deps: { readonly db: DbClient }): Promise<CourseBonusCapabilityV1> {
   if (!loadCentralCargaBonusConfig().enabled) return hidden('unavailable');
-  if (input.selected_offering_code === null) return hidden('needs_interest');
+  const contexts = await deps.db<Array<{
+    interest_offering_code: string | null;
+    price_objection_count: number;
+  }>>`
+    SELECT context.interest_offering_code, context.price_objection_count
+    FROM conversation_promotion_context_v1 context
+    JOIN workspaces workspace ON workspace.id = context.workspace_id
+    WHERE workspace.slug = ${input.workspace_slug}
+      AND context.conversation_id = ${input.conversation_id}::uuid
+      AND context.contact_id = ${input.contact_id}::uuid
+    LIMIT 1
+  `;
+  const discussedOfferingCode = contexts[0]?.interest_offering_code ?? null;
+  const interestOfferingCode = discussedOfferingCode ?? input.selected_offering_code;
+  if (interestOfferingCode === null) return hidden('needs_interest');
   const rows = await deps.db<CapabilityRow[]>`
     SELECT
       p.promotion_code,
@@ -202,7 +290,7 @@ export async function readCourseBonusCapabilityV1(input: {
     ) po ON true
     LEFT JOIN public.promotions offer_promotion ON offer_promotion.id = po.promotion_id
     WHERE workspace.slug = ${input.workspace_slug}
-      AND paid.code = ${input.selected_offering_code}
+      AND paid.code = ${interestOfferingCode}
     ORDER BY p.active DESC, p.created_at DESC
     LIMIT 1
   `;
@@ -210,6 +298,8 @@ export async function readCourseBonusCapabilityV1(input: {
   return deriveCourseBonusCapabilityV1({
     channel: input.channel,
     selected_offering_code: input.selected_offering_code,
+    discussed_offering_code: discussedOfferingCode,
+    recorded_price_objections: contexts[0]?.price_objection_count ?? 0,
     prior_price_objection_checkin: row?.prior_price_objection_checkin ?? false,
     promotion: row ? {
       promotion_code: row.promotion_code,

@@ -60,6 +60,9 @@ export type AgentTurnAuthorityResultV2 = {
   readonly transition: AgentTurnStateTransitionV2;
   readonly authorized_fact_ids: readonly string[];
   readonly state_facts: ReadonlySet<StateFactIdV1>;
+  /** Exact catalog course referenced by Agent A this turn. It is interest,
+   * not purchase selection, and is persisted separately by the commit layer. */
+  readonly discussed_offering_code: string | null;
   /** Present when semantic checks run as diagnostics instead of a copy veto. */
   readonly advisory_reasons?: readonly AgentTurnRejectionReasonV2[];
   readonly rejection_subjects?: readonly StateFactIdV1[];
@@ -610,6 +613,7 @@ export function authorizeAgentTurnV2(input: {
     action,
     authorized_fact_ids: unique(authorizedFactIds),
     state_facts: stateFacts,
+    discussed_offering_code: requestedOffering,
     ...(reasons.length > 0 ? { advisory_reasons: unique(reasons) } : {}),
     ...(rejectionSubjects.length > 0 ? { rejection_subjects: rejectionSubjects } : {}),
     transition: {

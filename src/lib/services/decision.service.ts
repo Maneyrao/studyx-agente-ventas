@@ -66,7 +66,10 @@ import {
   stripePaymentLinkEnvironment,
   stripUnauthorizedUrls,
 } from '@/features/payments/domain/payment-link';
-import { readCourseBonusCapabilityV1 } from '@/features/promotions/application/read-course-bonus-capability';
+import {
+  readCourseBonusCapabilityV1,
+  recordPromotionConversationContextV1,
+} from '@/features/promotions/application/read-course-bonus-capability';
 import {
   commitCommercialActionV1,
   type ScheduledCommercialFollowupV1,
@@ -1785,10 +1788,21 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
         `;
         canonicalWorkspaceId = workspaceRows[0]?.id ?? null;
       }
+      if (preparedAgentTurn && canonicalWorkspaceId) {
+        await recordPromotionConversationContextV1(db, {
+          workspace_id: canonicalWorkspaceId,
+          contact_id: turn.contact_id,
+          conversation_id: turn.conversation_id,
+          source_turn_id: turn.id,
+          discussed_offering_code: preparedAgentTurn.discussed_offering_code,
+          records_price_objection: preparedAgentTurn.records_price_objection,
+        });
+      }
       if (preparedAgentTurn && canonicalWorkspaceId && committedBusinessAction
         && ['schedule_price_objection_checkin','request_promotion_review','accept_promotion']
           .includes(committedBusinessAction.type)) {
-        const paidOfferingCode = effectiveAuthorizedOfferingCode
+        const paidOfferingCode = preparedAgentTurn.commercial_interest_offering_code
+          ?? effectiveAuthorizedOfferingCode
           ?? pipelineStateBefore?.selected_offering_code
           ?? existingSalesContext?.selected_offering_code
           ?? null;

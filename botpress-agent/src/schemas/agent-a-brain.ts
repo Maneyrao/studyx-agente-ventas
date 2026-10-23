@@ -252,6 +252,7 @@ export const AgentAContextV1Schema = z.object({
       may_accept_offer: z.boolean(),
       may_send_promoted_payment: z.boolean(),
       promotion_code: IdentifierSchema.nullable(),
+      interest_offering_code: IdentifierSchema.nullable().optional(),
       bonus_offerings: z.array(z.object({
         code: IdentifierSchema,
         display_name: z.string().trim().min(1).max(240),

@@ -21,16 +21,18 @@ describe('commercial follow-up Agent A instructions', () => {
     expect(instructions).toContain('PERSONALIDAD CANÓNICA');
     expect(instructions).toContain('Inglés 1');
     expect(instructions).toContain('Inglés 2');
-    expect(instructions).toContain('backend agregará la frase exacta');
-    expect(instructions).toContain('únicamente una o dos frases breves y personalizadas');
+    expect(instructions).toContain('backend redactará todo el mensaje final');
+    expect(instructions).toContain('value_angle');
+    expect(instructions).toContain('No redactes texto libre');
     expect(instructions).toContain('objetivo');
     expect(instructions).not.toContain('Lucas');
   });
 
   it('has a deterministic safe fallback that never discounts', () => {
     const fallback = fallbackCommercialFollowupNarrative(claim);
-    expect(fallback.message).toContain('empezar por la base');
-    expect(fallback.message).not.toMatch(/Inglés [12]|precio|cuota|pago|descuento|rebaja|gratis|sin cargo/iu);
+    expect(fallback).toEqual({
+      kind:'promotion_review',value_angle:'progression',cta:'advance',treatment:'tu',
+    });
   });
 
   it('accepts a check-in without gift names but requires gifts for a promotion review', () => {

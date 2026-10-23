@@ -109,19 +109,35 @@ describe('commercial course-bonus follow-up content', () => {
 
   it('renders the promotion facts in the backend and accepts only personalized reasoning', () => {
     expect(prepareCommercialFollowupMessageV1(review,
-      'Así puedes empezar por la base y seguir avanzando con una formación complementaria.'))
+      {kind:'promotion_review',value_angle:'progression',cta:'advance',treatment:'tu'}))
       .toEqual({
         ok:true,
-        message:'Pude habilitarte Inglés 2 sin costo adicional junto con Inglés 1; el precio de Inglés 1 no cambia. Así puedes empezar por la base y seguir avanzando con una formación complementaria.',
+        message:'Pude habilitarte Inglés 2 sin costo adicional junto con Inglés 1; el precio de Inglés 1 no cambia. Así puedes empezar por la base y seguir avanzando con una formación complementaria. Si te sirve, avanzamos.',
       });
     expect(prepareCommercialFollowupMessageV1(review,
       'Inglés 1 no se cobra, y te incluyo Inglés 2 gratis.'))
-      .toEqual({ok:false,reason:'PROMOTION_PERSONALIZATION_FACT_NOT_ALLOWED'});
+      .toEqual({ok:false,reason:'PROMOTION_NARRATIVE_SHAPE_INVALID'});
     expect(prepareCommercialFollowupMessageV1(review,
       'Está sin cargo y puedes aprovechar la oportunidad.'))
-      .toEqual({ok:false,reason:'PROMOTION_PERSONALIZATION_FACT_NOT_ALLOWED'});
+      .toEqual({ok:false,reason:'PROMOTION_NARRATIVE_SHAPE_INVALID'});
     expect(prepareCommercialFollowupMessageV1(review,
       'Marketing Digital también te vendría bien.'))
-      .toEqual({ok:false,reason:'PROMOTION_PERSONALIZATION_FACT_NOT_ALLOWED'});
+      .toEqual({ok:false,reason:'PROMOTION_NARRATIVE_SHAPE_INVALID'});
+    for (const bypass of [
+      'El curso principal corre por nuestra cuenta.',
+      'El primero va de cortesía.',
+      'También te incluyo programación y diseño web.',
+      'Lo consulté con administración y me dieron el visto bueno.',
+      'Entra en campus-falso.com para continuar.',
+    ]) {
+      expect(prepareCommercialFollowupMessageV1(review, bypass))
+        .toEqual({ok:false,reason:'PROMOTION_NARRATIVE_SHAPE_INVALID'});
+    }
+    expect(prepareCommercialFollowupMessageV1(review,
+      {kind:'promotion_review',value_angle:'confidence',cta:'resolve_doubt',treatment:'vos'}))
+      .toEqual({
+        ok:true,
+        message:'Pude habilitarte Inglés 2 sin costo adicional junto con Inglés 1; el precio de Inglés 1 no cambia. Así construís una base más completa y podés avanzar con mayor seguridad. ¿Querés que resolvamos alguna duda antes de avanzar?',
+      });
   });
 });

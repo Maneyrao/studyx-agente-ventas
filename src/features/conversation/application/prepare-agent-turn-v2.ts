@@ -224,6 +224,9 @@ export async function prepareAgentTurnV2(input: {
   readonly authorized_payment_plan: 'monthly_12' | 'monthly_6' | 'one_time' | null;
   readonly authorized_protected_facts: readonly ProtectedFactRef[];
   readonly action_rejection: AgentActionRejectionV1 | null;
+  readonly discussed_offering_code: string | null;
+  readonly commercial_interest_offering_code: string | null;
+  readonly records_price_objection: boolean;
 }> {
   const nowMs = deps.now?.() ?? Date.now();
   const [loaded, callFacts, contactIntake, strictCallIntakeReadiness] = await Promise.all([
@@ -391,6 +394,16 @@ export async function prepareAgentTurnV2(input: {
     content: authority.response,
     offerings: offerings.map((offering) => ({ code: offering.code, display_name: offering.display_name })),
   });
+  const commercialInterestOfferingCode = authority.discussed_offering_code
+    ?? input.course_bonus_capability?.interest_offering_code
+    ?? state.selected_offering_code;
+  const recordsPriceObjection = commercialInterestOfferingCode !== null && (
+    effectiveProposal.proposed_action.type === 'schedule_price_objection_checkin'
+    || effectiveProposal.proposed_action.type === 'request_promotion_review'
+    || effectiveProposal.memory_candidates.some((candidate) => (
+      candidate.type === 'objection' && candidate.key === 'price_objection'
+    ))
+  );
   return {
     decision,
     response_messages: authority.response_messages,
@@ -410,5 +423,8 @@ export async function prepareAgentTurnV2(input: {
       ...catalogFacts,
     ]),
     action_rejection: actionRejection,
+    discussed_offering_code: authority.discussed_offering_code,
+    commercial_interest_offering_code: commercialInterestOfferingCode,
+    records_price_objection: recordsPriceObjection,
   };
 }

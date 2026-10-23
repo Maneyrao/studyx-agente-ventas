@@ -9,6 +9,10 @@ import {
   releaseCommercialFollowupV1,
 } from '@/features/promotions/application/commercial-followup-service';
 import { CommercialFollowupClaimSchema } from '../../botpress-agent/src/utils/commercial-followup-instructions';
+import {
+  readCourseBonusCapabilityV1,
+  recordPromotionConversationContextV1,
+} from '@/features/promotions/application/read-course-bonus-capability';
 
 const run = process.env.TEST_DATABASE_URL ? describe : describe.skip;
 const db = process.env.TEST_DATABASE_URL ? openLocalTestDatabase() : null;
@@ -24,7 +28,7 @@ async function fixture(options: { workspaceScopedConversation?: boolean } = {}) 
   const suffix = randomUUID();
   const botpressId = `bp-${suffix}`;
   const [workspace] = await db!`INSERT INTO workspaces(slug,display_name)
-    VALUES (${`bonus-followup-${suffix}`},'Studyx') RETURNING id`;
+    VALUES (${`bonus-followup-${suffix}`},'Studyx') RETURNING id,slug`;
   const [contact] = await db!`INSERT INTO contacts(phone,status,channel_origin,name)
     VALUES (${`+54911${Math.floor(10000000 + Math.random()*89999999)}`},'prospecto','whatsapp','Ana Pérez') RETURNING id`;
   await db!`INSERT INTO contact_channel_permissions(contact_id,channel,consent_status)
@@ -56,6 +60,43 @@ async function fixture(options: { workspaceScopedConversation?: boolean } = {}) 
 }
 
 run('durable commercial course-bonus follow-up', () => {
+  it('persists discussion interest separately, counts objections and resets them when the course changes', async () => {
+    const f = await fixture();
+    await db!`UPDATE conversation_sales_context_states_v1 SET selected_offering_code=NULL
+      WHERE conversation_id=${f.conversation.id}`;
+
+    const context = {
+      workspace_id:f.workspace.id as string,
+      contact_id:f.contact.id as string,
+      conversation_id:f.conversation.id as string,
+      source_turn_id:f.inbound.id as string,
+    };
+    await expect(recordPromotionConversationContextV1(db!, {
+      ...context, discussed_offering_code:f.paid.code as string, records_price_objection:true,
+    })).resolves.toEqual({interest_offering_code:f.paid.code, price_objection_count:1});
+    await expect(recordPromotionConversationContextV1(db!, {
+      ...context, discussed_offering_code:null, records_price_objection:true,
+    })).resolves.toEqual({interest_offering_code:f.paid.code, price_objection_count:2});
+    await expect(recordPromotionConversationContextV1(db!, {
+      ...context, discussed_offering_code:null, records_price_objection:true,
+    })).resolves.toEqual({interest_offering_code:f.paid.code, price_objection_count:2});
+    await expect(readCourseBonusCapabilityV1({
+      workspace_slug:f.workspace.slug as string,
+      contact_id:f.contact.id as string,
+      conversation_id:f.conversation.id as string,
+      channel:'text',
+      selected_offering_code:null,
+    }, {db:db!})).resolves.toMatchObject({
+      status:'review_available',
+      may_request_review:true,
+      interest_offering_code:f.paid.code,
+    });
+
+    await expect(recordPromotionConversationContextV1(db!, {
+      ...context, discussed_offering_code:f.bonus.code as string, records_price_objection:false,
+    })).resolves.toEqual({interest_offering_code:f.bonus.code, price_objection_count:0});
+  });
+
   it('does not create reviews or offers while the feature flag is disabled', async () => {
     const f = await fixture();
     process.env.CENTRAL_CARGA_BONUS_ENABLED = 'false';
@@ -94,14 +135,14 @@ run('durable commercial course-bonus follow-up', () => {
     let sentText='';
     const result = await deliverCommercialFollowupV1(first.followup!.id,{
       claim_token:claim.claim_token,botpress_conversation_id:f.botpressId,
-      narrative:{message:'Así puedes avanzar con una base y continuar con el siguiente nivel.'},
+      narrative:{kind:'promotion_review',value_angle:'progression',cta:'advance',treatment:'tu'},
     },{db:db!,sender:async(request)=>{sends++; sentText=request.text; return {outcome:'sent' as const,channel:'whatsapp' as const,providerMessageId:'wamid.1',deliveryId:null,reason:null};}});
     expect(result).toEqual({outcome:'sent'});
     expect(sends).toBe(1);
-    expect(sentText).toBe('Pude habilitarte Inglés 2 sin costo adicional junto con Inglés 1; el precio de Inglés 1 no cambia. Así puedes avanzar con una base y continuar con el siguiente nivel.');
+    expect(sentText).toBe('Pude habilitarte Inglés 2 sin costo adicional junto con Inglés 1; el precio de Inglés 1 no cambia. Así puedes empezar por la base y seguir avanzando con una formación complementaria. Si te sirve, avanzamos.');
     expect(await deliverCommercialFollowupV1(first.followup!.id,{
       claim_token:claim.claim_token,botpress_conversation_id:f.botpressId,
-      narrative:{message:'Así puedes seguir avanzando paso a paso.'},
+      narrative:{kind:'promotion_review',value_angle:'goal_alignment',cta:'advance',treatment:'tu'},
     },{db:db!,sender:async()=>{sends++; return {outcome:'sent' as const,channel:'whatsapp' as const,providerMessageId:'wamid.2',deliveryId:null,reason:null};}}))
       .toEqual({outcome:'claim_lost'});
     expect(sends).toBe(1);
@@ -217,7 +258,7 @@ run('durable commercial course-bonus follow-up', () => {
       let sends = 0;
       await expect(deliverCommercialFollowupV1(committed.followup!.id, {
         claim_token:claim.claim_token, botpress_conversation_id:f.botpressId,
-        narrative:{message:'Así puedes seguir avanzando paso a paso.'},
+        narrative:{kind:'promotion_review',value_angle:'goal_alignment',cta:'advance',treatment:'tu'},
       }, {db:db!,sender:async()=>{
         sends += 1;
         return {outcome:'sent' as const,channel:'whatsapp' as const,providerMessageId:'wamid.race',

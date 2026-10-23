@@ -138,6 +138,7 @@ export interface AgentAContextV1 {
       readonly may_accept_offer: boolean;
       readonly may_send_promoted_payment: boolean;
       readonly promotion_code: string | null;
+      readonly interest_offering_code?: string | null;
       readonly bonus_offerings: ReadonlyArray<{
         readonly code: string;
         readonly display_name: string;

@@ -6,7 +6,10 @@ import {
   commitCommercialActionV1,
   deliverCommercialFollowupV1,
 } from '@/features/promotions/application/commercial-followup-service';
-import { readCourseBonusCapabilityV1 } from '@/features/promotions/application/read-course-bonus-capability';
+import {
+  readCourseBonusCapabilityV1,
+  recordPromotionConversationContextV1,
+} from '@/features/promotions/application/read-course-bonus-capability';
 import { reservePaymentLink } from '@/features/payments/application/reserve-payment-link';
 import { runEnrollmentWorker } from '@/features/fulfillment/central-carga/worker';
 import { assemblePostSaleMessage } from '@/features/fulfillment/post-sale/service';
@@ -59,15 +62,15 @@ run('carries one authorized price-objection bonus through payment, Central v2 an
     RETURNING id`;
   await db!`INSERT INTO conversation_sales_context_states_v1(workspace_id,conversation_id,contact_id,
       selected_offering_code,source_turn_id)
-    VALUES (${workspace.id},${conversation.id},${contact.id},${paid.code},${inbound.id})`;
+    VALUES (${workspace.id},${conversation.id},${contact.id},NULL,${inbound.id})`;
 
-  await commitCommercialActionV1(db!,{workspace_id:workspace.id,contact_id:contact.id,
-    conversation_id:conversation.id,paid_offering_code:paid.code,source_turn_id:inbound.id,
-    source_outbound_message_id:outbound.id,
-    action:{type:'schedule_price_objection_checkin',reason:'price_objection'}});
+  await expect(recordPromotionConversationContextV1(db!, {
+    workspace_id:workspace.id, contact_id:contact.id, conversation_id:conversation.id,
+    source_turn_id:inbound.id, discussed_offering_code:paid.code, records_price_objection:true,
+  })).resolves.toEqual({interest_offering_code:paid.code, price_objection_count:1});
   await expect(readCourseBonusCapabilityV1({workspace_slug:workspace.slug,contact_id:contact.id,
-    conversation_id:conversation.id,channel:'text',selected_offering_code:paid.code},{db:db!})).resolves.toMatchObject({
-      status:'review_available',may_request_review:true,bonus_offerings:[],
+    conversation_id:conversation.id,channel:'text',selected_offering_code:null},{db:db!})).resolves.toMatchObject({
+      status:'review_available',may_request_review:true,interest_offering_code:paid.code,bonus_offerings:[],
     });
   const review = await commitCommercialActionV1(db!,{workspace_id:workspace.id,contact_id:contact.id,
     conversation_id:conversation.id,paid_offering_code:paid.code,source_turn_id:inbound.id,
@@ -76,7 +79,7 @@ run('carries one authorized price-objection bonus through payment, Central v2 an
   const claim = await claimCommercialFollowupV1(review.followup!.id,botpressId,`event-${suffix}`,{db:db!});
   if(!claim.claimed) throw new Error('promotion review claim failed');
   expect(await deliverCommercialFollowupV1(review.followup!.id,{claim_token:claim.claim_token,
-    botpress_conversation_id:botpressId,narrative:{message:'Así puedes empezar por la base y continuar avanzando paso a paso.'}},
+    botpress_conversation_id:botpressId,narrative:{kind:'promotion_review',value_angle:'progression',cta:'advance',treatment:'tu'}},
     {db:db!,sender:async()=>({outcome:'sent' as const,channel:'whatsapp' as const,providerMessageId:`wamid.${suffix}`,
       deliveryId:null,reason:null})})).toEqual({outcome:'sent'});
   await commitCommercialActionV1(db!,{workspace_id:workspace.id,contact_id:contact.id,

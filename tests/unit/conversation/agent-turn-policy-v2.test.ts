@@ -402,6 +402,7 @@ describe('plannerless Agent A authority', () => {
         may_accept_offer: false,
         may_send_promoted_payment: true,
         promotion_code: 'redes_con_excel',
+        interest_offering_code: 'redes_informaticas',
         bonus_offerings: [{ code:'excel_integral',display_name:'Excel Integral',position:1 }],
       },
       proposal: proposal({
@@ -1626,6 +1627,30 @@ it('allows citing a workspace plan while preserving the absence of a purchase se
   if (!result.ok) return;
   expect(result.transition.selected_offering_code).toBeNull();
   expect(result.transition.selected_payment_plan).toBeNull();
+});
+
+it('keeps an exact discussed course as commercial interest without selecting it for purchase', () => {
+  const result = authorize({
+    customerText: 'Estoy mirando el curso de redes, pero todavía no elegí',
+    state: state(),
+    proposal: proposal({
+      move: {
+        schema_version: 1,
+        move: 'ask_course_information',
+        secondary_moves: [],
+        vetoes: [],
+        course_reference: 'redes',
+        confidence: 1,
+      },
+      response: { messages: ['Redes Informáticas puede servirte para aprender una base práctica.'] },
+    }),
+  });
+
+  expect(result).toMatchObject({
+    ok: true,
+    discussed_offering_code: 'redes_informaticas',
+    transition: { selected_offering_code: null },
+  });
 });
 
 it('keeps payment confirmation when a historically accepted call coexists with a new plan selection', () => {

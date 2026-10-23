@@ -6,10 +6,10 @@ import { resolveCanonicalPromptIdentityV1 } from '../prompts/agent-a-identity'
 import {
   buildCommercialFollowupInstructions,
   CommercialFollowupClaimSchema,
+  CommercialFollowupNarrativeSchema,
   fallbackCommercialFollowupNarrative,
 } from '../utils/commercial-followup-instructions'
 
-const Narrative = z.object({ message: z.string().trim().min(1).max(900) }).strict()
 const Delivery = z.object({ outcome: z.string(), reason: z.string().optional() })
 
 function responseText(payload: unknown): string | null {
@@ -42,7 +42,7 @@ export default new Trigger({
     })
     if (!claimed.claimed) return
 
-    let narrative: z.infer<typeof Narrative>
+    let narrative: z.infer<typeof CommercialFollowupNarrativeSchema>
     let usedFallback = false
     try {
       const identity = resolveCanonicalPromptIdentityV1(STUDYX_AGENT_A_CANONICAL_PROMPT, {
@@ -56,6 +56,26 @@ export default new Trigger({
       if (identity.unresolved.length > 0 || !secrets.DEEPSEEK_API_KEY) {
         throw new Error('COMMERCIAL_FOLLOWUP_IDENTITY_OR_MODEL_MISSING')
       }
+      const outputSchema = claimed.kind === 'promotion_review'
+        ? {
+            type: 'object', additionalProperties: false,
+            required: ['kind', 'value_angle', 'cta', 'treatment'],
+            properties: {
+              kind: { type: 'string', const: 'promotion_review' },
+              value_angle: { type: 'string', enum: [
+                'progression', 'practical_value', 'career_possibilities', 'confidence', 'goal_alignment',
+              ] },
+              cta: { type: 'string', enum: ['advance', 'explain_next_step', 'resolve_doubt'] },
+              treatment: { type: 'string', enum: ['tu', 'vos'] },
+            },
+          }
+        : {
+            type: 'object', additionalProperties: false, required: ['kind', 'message'],
+            properties: {
+              kind: { type: 'string', const: 'price_objection_checkin' },
+              message: { type: 'string', minLength: 1, maxLength: 900 },
+            },
+          }
       const response = await fetch('https://api.deepseek.com/responses', {
         method: 'POST',
         signal: AbortSignal.timeout(6_000),
@@ -71,16 +91,13 @@ export default new Trigger({
           temperature: 0.45,
           stream: false,
           max_output_tokens: 300,
-          text: { format: { type: 'json_schema', name: 'studyx_commercial_followup', schema: {
-            type: 'object', additionalProperties: false, required: ['message'],
-            properties: { message: { type: 'string', minLength: 1, maxLength: 900 } },
-          } } },
+          text: { format: { type: 'json_schema', name: 'studyx_commercial_followup', schema: outputSchema } },
         }),
       })
       if (!response.ok) throw new Error(`COMMERCIAL_FOLLOWUP_MODEL_HTTP_${response.status}`)
       const raw = responseText(await response.json())
       if (!raw) throw new Error('COMMERCIAL_FOLLOWUP_MODEL_EMPTY')
-      narrative = Narrative.parse(JSON.parse(raw))
+      narrative = CommercialFollowupNarrativeSchema.parse(JSON.parse(raw))
     } catch {
       narrative = fallbackCommercialFollowupNarrative(claimed)
       usedFallback = true

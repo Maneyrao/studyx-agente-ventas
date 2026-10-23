@@ -15,9 +15,32 @@ async function defaultDatabase(): Promise<postgres.Sql> {
   return database.sql;
 }
 
-export const CommercialFollowupNarrativeSchema = z.object({
-  message: z.string().trim().min(1).max(900),
-}).strict();
+const CommercialFollowupValueAngleSchema = z.enum([
+  'progression',
+  'practical_value',
+  'career_possibilities',
+  'confidence',
+  'goal_alignment',
+]);
+const CommercialFollowupCtaSchema = z.enum([
+  'advance',
+  'explain_next_step',
+  'resolve_doubt',
+]);
+const CommercialFollowupTreatmentSchema = z.enum(['tu', 'vos']);
+
+export const CommercialFollowupNarrativeSchema = z.discriminatedUnion('kind', [
+  z.object({
+    kind: z.literal('price_objection_checkin'),
+    message: z.string().trim().min(1).max(900),
+  }).strict(),
+  z.object({
+    kind: z.literal('promotion_review'),
+    value_angle: CommercialFollowupValueAngleSchema,
+    cta: CommercialFollowupCtaSchema,
+    treatment: CommercialFollowupTreatmentSchema,
+  }).strict(),
+]);
 
 type FollowupKind = 'price_objection_checkin' | 'promotion_review';
 type PromotionAction =
@@ -239,6 +262,7 @@ interface FollowupSource {
   consent_status: string | null;
   deleted_at: Date | null;
   selected_offering_code: string | null;
+  promotion_interest_offering_code: string | null;
   botpress_conversation_id: string;
   academy_name: string;
   customer_name: string | null;
@@ -256,6 +280,7 @@ async function followupSource(db: DbClient, id: string): Promise<FollowupSource 
       p.channels, p.max_redemptions_per_contact,
       c.status AS contact_status, permission.consent_status, c.deleted_at,
       state.selected_offering_code,
+      promotion_context.interest_offering_code AS promotion_interest_offering_code,
       thread.metadata->>'botpress_conversation_id' AS botpress_conversation_id,
       w.display_name AS academy_name, c.name AS customer_name
     FROM course_bonus_followups f
@@ -270,6 +295,10 @@ async function followupSource(db: DbClient, id: string): Promise<FollowupSource 
       ON permission.contact_id = c.id AND permission.channel = conversation.channel
     LEFT JOIN conversation_sales_context_states_v1 state
       ON state.workspace_id = po.workspace_id AND state.conversation_id = po.conversation_id
+    LEFT JOIN conversation_promotion_context_v1 promotion_context
+      ON promotion_context.workspace_id = po.workspace_id
+     AND promotion_context.conversation_id = po.conversation_id
+     AND promotion_context.contact_id = po.contact_id
     WHERE f.id = ${id}::uuid
     LIMIT 1
   `;
@@ -286,7 +315,8 @@ async function cancellationReason(db: DbClient, source: FollowupSource): Promise
   if (source.contact_status === 'inactivo' || source.deleted_at || source.consent_status === 'revoked') {
     return 'CONTACT_NOT_ELIGIBLE';
   }
-  if (source.selected_offering_code !== source.paid_offering_code) return 'COURSE_CHANGED';
+  const currentInterest = source.promotion_interest_offering_code ?? source.selected_offering_code;
+  if (currentInterest !== source.paid_offering_code) return 'COURSE_CHANGED';
   if (source.expires_at && source.expires_at.getTime() <= now) return 'OFFER_EXPIRED';
   if (source.kind === 'promotion_review' && source.offer_status !== 'pending_review') return 'OFFER_NOT_PENDING';
   if (source.kind === 'price_objection_checkin' && source.offer_status !== 'cancelled') return 'CHECKIN_INVALID';
@@ -446,7 +476,7 @@ export type PreparedCommercialFollowupMessageV1 = { ok: true; message: string } 
   ok: false;
   reason:
     | Exclude<CommercialFollowupContentResult, { ok: true }>['reason']
-    | 'PROMOTION_PERSONALIZATION_FACT_NOT_ALLOWED';
+    | 'PROMOTION_NARRATIVE_SHAPE_INVALID';
 };
 
 export function validateCommercialFollowupNarrativeV1(
@@ -551,6 +581,50 @@ function naturalCourseList(names: readonly string[]): string {
   return `${names.slice(0, -1).join(', ')} y ${names.at(-1)}`;
 }
 
+const PROMOTION_VALUE_COPY: Record<
+  z.infer<typeof CommercialFollowupValueAngleSchema>,
+  Record<z.infer<typeof CommercialFollowupTreatmentSchema>, string>
+> = {
+  progression: {
+    tu: 'Así puedes empezar por la base y seguir avanzando con una formación complementaria.',
+    vos: 'Así podés empezar por la base y seguir avanzando con una formación complementaria.',
+  },
+  practical_value: {
+    tu: 'Así sumas una formación complementaria para aplicar lo aprendido de una manera más completa.',
+    vos: 'Así sumás una formación complementaria para aplicar lo aprendido de una manera más completa.',
+  },
+  career_possibilities: {
+    tu: 'Eso amplía tu preparación y puede abrirte más posibilidades para aprovechar lo aprendido.',
+    vos: 'Eso amplía tu preparación y puede abrirte más posibilidades para aprovechar lo aprendido.',
+  },
+  confidence: {
+    tu: 'Así construyes una base más completa y puedes avanzar con mayor seguridad.',
+    vos: 'Así construís una base más completa y podés avanzar con mayor seguridad.',
+  },
+  goal_alignment: {
+    tu: 'Por lo que me contaste, es una forma más completa de acercarte a tu objetivo.',
+    vos: 'Por lo que me contaste, es una forma más completa de acercarte a tu objetivo.',
+  },
+};
+
+const PROMOTION_CTA_COPY: Record<
+  z.infer<typeof CommercialFollowupCtaSchema>,
+  Record<z.infer<typeof CommercialFollowupTreatmentSchema>, string>
+> = {
+  advance: {
+    tu: 'Si te sirve, avanzamos.',
+    vos: 'Si te sirve, avanzamos.',
+  },
+  explain_next_step: {
+    tu: 'Si quieres, te cuento cómo seguir.',
+    vos: 'Si querés, te cuento cómo seguir.',
+  },
+  resolve_doubt: {
+    tu: '¿Quieres que resolvamos alguna duda antes de avanzar?',
+    vos: '¿Querés que resolvamos alguna duda antes de avanzar?',
+  },
+};
+
 export function prepareCommercialFollowupMessageV1(
   source: {
     readonly kind: FollowupKind;
@@ -558,30 +632,27 @@ export function prepareCommercialFollowupMessageV1(
     readonly bonus_offerings: ReadonlyArray<{ display_name: string }>;
     readonly all_offering_names: readonly string[];
   },
-  proposedMessage: string,
+  proposedNarrative: unknown,
 ): PreparedCommercialFollowupMessageV1 {
-  const personalizedReason = proposedMessage.replace(/\s+/gu, ' ').trim();
-  if (source.kind === 'price_objection_checkin') {
-    const validation = validateCommercialFollowupNarrativeV1(source, personalizedReason);
-    return validation.ok ? { ok: true, message: personalizedReason } : validation;
+  const parsed = CommercialFollowupNarrativeSchema.safeParse(proposedNarrative);
+  if (!parsed.success || parsed.data.kind !== source.kind) {
+    return { ok: false, reason: 'PROMOTION_NARRATIVE_SHAPE_INVALID' };
   }
-
-  const normalized = personalizedReason.toLocaleLowerCase('es');
-  const mentionsKnownOffering = source.all_offering_names.some((name) => (
-    normalized.includes(name.toLocaleLowerCase('es'))
-  ));
-  const introducesCommercialFact = mentionsKnownOffering
-    || /https?:\/\/|www\./iu.test(personalizedReason)
-    || /\d|[$€£]|\b(?:usd|u\$s|d[oó]lares?|pesos?|euros?)\b/iu.test(personalizedReason)
-    || /\b(?:precio|cuotas?|pag(?:a|ar|ando|as|ás|o|ó)|abon\w*|cobr\w*|gratis|sin costo|sin cargo|regal\w*|bonific\w*|descuento|rebaja|promoci[oó]n|oferta|dos por uno|mitad del precio)\b/iu.test(personalizedReason)
-    || /\b(?:lucas|supervisor(?:a)?|gerencia|director(?:a)?|jef[ea])\b.{0,45}\b(?:autoriz|aprob|permit)/iu.test(personalizedReason)
-    || /\b(?:autoriz|aprob|permit)\w*\b.{0,45}\b(?:lucas|supervisor(?:a)?|gerencia|director(?:a)?|jef[ea])\b/iu.test(personalizedReason);
-  if (!personalizedReason || introducesCommercialFact) {
-    return { ok: false, reason: 'PROMOTION_PERSONALIZATION_FACT_NOT_ALLOWED' };
+  if (source.kind === 'price_objection_checkin') {
+    if (parsed.data.kind !== 'price_objection_checkin') {
+      return { ok: false, reason: 'PROMOTION_NARRATIVE_SHAPE_INVALID' };
+    }
+    const validation = validateCommercialFollowupNarrativeV1(source, parsed.data.message);
+    return validation.ok ? { ok: true, message: parsed.data.message } : validation;
+  }
+  if (parsed.data.kind !== 'promotion_review') {
+    return { ok: false, reason: 'PROMOTION_NARRATIVE_SHAPE_INVALID' };
   }
 
   const gifts = naturalCourseList(source.bonus_offerings.map((bonus) => bonus.display_name));
-  const rendered = `Pude habilitarte ${gifts} sin costo adicional junto con ${source.paid_offering_name}; el precio de ${source.paid_offering_name} no cambia. ${personalizedReason}`;
+  const valueCopy = PROMOTION_VALUE_COPY[parsed.data.value_angle][parsed.data.treatment];
+  const ctaCopy = PROMOTION_CTA_COPY[parsed.data.cta][parsed.data.treatment];
+  const rendered = `Pude habilitarte ${gifts} sin costo adicional junto con ${source.paid_offering_name}; el precio de ${source.paid_offering_name} no cambia. ${valueCopy} ${ctaCopy}`;
   const validation = validateCommercialFollowupNarrativeV1(source, rendered);
   return validation.ok ? { ok: true, message: rendered } : validation;
 }
@@ -636,7 +707,7 @@ export async function deliverCommercialFollowupV1(
       paid_offering_name: source.paid_offering_name,
       bonus_offerings: bonuses,
       all_offering_names: offerings.map((offering) => offering.display_name),
-    }, narrative.message);
+    }, narrative);
     if (!renderedMessage.ok) {
       return { outcome: 'invalid_content' as const, reason: renderedMessage.reason };
     }
