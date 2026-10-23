@@ -105,6 +105,31 @@ run('durable commercial course-bonus follow-up', () => {
     expect(await db!`SELECT status FROM promotion_offers WHERE id=${first.offer_id}`).toEqual([{status:'offered'}]);
   });
 
+  it('uses the final bubble of the same agent turn as the follow-up activity boundary', async () => {
+    const f = await fixture();
+    const [lastBubble] = await db!`INSERT INTO messages(
+        conversation_id,contact_id,direction,content,in_reply_to,part_index)
+      VALUES (${f.conversation.id},${f.contact.id},'outbound',
+        'Mientras tanto, te explico por qué puede servirte.',${f.inbound.id},1)
+      RETURNING id,conversation_seq`;
+    const committed = await commitCommercialActionV1(db!, {
+      workspace_id:f.workspace.id as string, contact_id:f.contact.id as string,
+      conversation_id:f.conversation.id as string, paid_offering_code:f.paid.code as string,
+      source_turn_id:f.inbound.id as string, source_outbound_message_id:f.outbound.id as string,
+      action:{type:'request_promotion_review',reason:'persistent_price_objection'}, now:new Date(),
+    });
+    expect(await db!`SELECT source_outbound_message_id,expected_conversation_seq
+      FROM course_bonus_followups WHERE id=${committed.followup!.id}`).toEqual([{
+        source_outbound_message_id:lastBubble.id,
+        expected_conversation_seq:lastBubble.conversation_seq,
+      }]);
+    await db!`UPDATE course_bonus_followups SET due_at=now()-interval '1 second'
+      WHERE id=${committed.followup!.id}`;
+    expect(await claimCommercialFollowupV1(
+      committed.followup!.id, f.botpressId, `event-multibubble-${randomUUID()}`, {db:db!},
+    )).toMatchObject({claimed:true});
+  });
+
   it('cancels on newer customer input, course change, opt-out, purchase or inactive rule', async () => {
     for (const mutation of ['newer','course','optout','purchase','inactive'] as const) {
       const f = await fixture();
@@ -315,6 +340,34 @@ run('durable commercial course-bonus follow-up', () => {
     expect(await db!`SELECT status,terminal_reason FROM course_bonus_followups
       WHERE id=${committed.followup!.id}`).toEqual([{
         status:'ambiguous',terminal_reason:'EVENT_SCHEDULE_UNCONFIRMED',
+      }]);
+  });
+
+  it('terminalizes an expired processing lease when the scheduling budget is exhausted', async () => {
+    const f = await fixture();
+    const committed = await commitCommercialActionV1(db!, {
+      workspace_id:f.workspace.id as string, contact_id:f.contact.id as string,
+      conversation_id:f.conversation.id as string, paid_offering_code:f.paid.code as string,
+      source_turn_id:f.inbound.id as string, source_outbound_message_id:f.outbound.id as string,
+      action:{type:'request_promotion_review',reason:'persistent_price_objection'}, now:new Date(),
+    });
+    await db!`UPDATE course_bonus_followups SET due_at=now()-interval '1 second'
+      WHERE id=${committed.followup!.id}`;
+    const claim = await claimCommercialFollowupV1(
+      committed.followup!.id, f.botpressId, `event-budget-${randomUUID()}`, {db:db!},
+    );
+    if (!claim.claimed) throw new Error('claim expected');
+    await db!`UPDATE course_bonus_followups
+      SET lease_until=now()-interval '1 second',schedule_attempt_count=max_schedule_attempts
+      WHERE id=${committed.followup!.id}`;
+    expect(await dispatchDueCommercialFollowupsV1(
+      {limit:10,lookahead_seconds:0,retry_after_seconds:0},
+      {db:db!,schedule:async()=>({scheduled:true,provider_event_id:`event-${randomUUID()}`})},
+    )).toEqual({reserved:0,scheduled:0,failed:0,ambiguous:1});
+    expect(await db!`SELECT status,provider_event_id,claim_token,lease_until,terminal_reason
+      FROM course_bonus_followups WHERE id=${committed.followup!.id}`).toEqual([{
+        status:'ambiguous',provider_event_id:null,claim_token:null,lease_until:null,
+        terminal_reason:'EVENT_SCHEDULE_UNCONFIRMED',
       }]);
   });
 

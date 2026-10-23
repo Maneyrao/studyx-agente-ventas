@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import Stripe from 'stripe';
 import { afterAll, afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { openLocalTestDatabase } from '../helpers/db';
+import { openIndependentLocalTestDatabases, openLocalTestDatabase } from '../helpers/db';
 import { reservePaymentLink } from '@/features/payments/application/reserve-payment-link';
 import { processStripeWebhook } from '@/features/payments/application/process-stripe-webhook';
 
@@ -96,6 +96,54 @@ run('course bonus payment correlation', () => {
       .rejects.toMatchObject({code:'IDEMPOTENCY_KEY_CONFLICT'});
     await expect(reservePaymentLink(db!,{...input,promotion_code:undefined}))
       .rejects.toMatchObject({code:'IDEMPOTENCY_KEY_CONFLICT'});
+  });
+
+  it('atomically enforces the redemption limit across concurrent conversations', async () => {
+    const f=await fixture();
+    const secondExternalId=`second-${randomUUID()}`;
+    const [secondThread]=await db!`INSERT INTO channel_threads(
+        contact_id,provider,integration_id,channel,external_conversation_id,metadata)
+      VALUES (${f.contact.id},'botpress','whatsapp','whatsapp',${secondExternalId},
+        ${db!.json({botpress_conversation_id:secondExternalId})}) RETURNING id`;
+    const [secondConversation]=await db!`INSERT INTO conversations(
+        contact_id,channel,workspace_id,channel_thread_id)
+      VALUES (${f.contact.id},'whatsapp',${f.workspace.id},${secondThread.id}) RETURNING id`;
+    const [secondOffer]=await db!`INSERT INTO promotion_offers(
+        workspace_id,contact_id,conversation_id,promotion_id,paid_offering_id,status,offered_at,accepted_at)
+      VALUES (${f.workspace.id},${f.contact.id},${secondConversation.id},${f.promotion.id},
+        ${f.paid.id},'accepted',now(),now()) RETURNING id`;
+    await db!`INSERT INTO promotion_offer_bonus_offerings(
+        offer_id,promotion_id,offering_id,promotion_code_snapshot,offering_code_snapshot,
+        offering_display_name_snapshot,position)
+      VALUES (${secondOffer.id},${f.promotion.id},${f.bonus.id},${f.promotion.promotion_code},
+        ${f.bonus.code},${f.bonus.display_name},1)`;
+    await db!`UPDATE promotion_offers SET bonus_snapshot_sealed_at=now() WHERE id=${secondOffer.id}`;
+
+    const [firstDb,secondDb]=openIndependentLocalTestDatabases(2);
+    try {
+      const common={workspace_id:f.workspace.id as string,contact_id:f.contact.id as string,
+        offering_id:f.paid.id as string,plan_code:'one_time' as const,
+        payment_link_url:'https://buy.stripe.com/test_bonus',
+        promotion_code:f.promotion.promotion_code as string};
+      const outcomes=await Promise.allSettled([
+        reservePaymentLink(firstDb,{...common,conversation_id:f.conversation.id as string,
+          idempotency_key:`concurrent-a:${randomUUID()}`}),
+        reservePaymentLink(secondDb,{...common,conversation_id:secondConversation.id as string,
+          idempotency_key:`concurrent-b:${randomUUID()}`}),
+      ]);
+      expect(outcomes.filter((result)=>result.status==='fulfilled')).toHaveLength(1);
+      const rejected=outcomes.find((result)=>result.status==='rejected');
+      expect(rejected).toMatchObject({status:'rejected',reason:{code:'PROMOTION_NOT_AUTHORIZED'}});
+      expect(await db!`SELECT count(*)::integer AS count FROM promotion_offers
+        WHERE promotion_id=${f.promotion.id} AND contact_id=${f.contact.id} AND status='attached'`)
+        .toEqual([{count:1}]);
+      expect(await db!`SELECT count(*)::integer AS count FROM payment_bonus_offerings snapshot
+        JOIN payments payment ON payment.id=snapshot.payment_id
+        WHERE payment.contact_id=${f.contact.id} AND snapshot.promotion_id=${f.promotion.id}`)
+        .toEqual([{count:1}]);
+    } finally {
+      await Promise.all([firstDb.end(),secondDb.end()]);
+    }
   });
 
   it('uses the immutable offered gift even if the live promotion is edited before payment', async () => {

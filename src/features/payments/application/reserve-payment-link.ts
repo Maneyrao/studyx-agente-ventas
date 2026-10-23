@@ -131,6 +131,18 @@ export async function reservePaymentLink(
   } | null = null;
   if (input.promotion_code) {
     if (!input.conversation_id) throw new PaymentLinkReservationError('PROMOTION_NOT_AUTHORIZED');
+    // Offers are conversation-scoped, but the redemption limit is shared by
+    // every conversation for this contact and promotion. Serialize that
+    // aggregate decision before counting attached offers.
+    const redemptionLockKey = [
+      'course-bonus-redemption',
+      input.workspace_id,
+      input.contact_id,
+      input.promotion_code,
+    ].join(':');
+    await db`
+      SELECT pg_advisory_xact_lock(hashtextextended(${redemptionLockKey}, 0))
+    `;
     const promotions = await db<Array<{
       promotion_id: string;
       offer_id: string;

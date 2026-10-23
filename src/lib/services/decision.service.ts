@@ -1681,6 +1681,7 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
       }
 
       const firstMessage = persistedParts[0]!.message;
+      const lastMessage = persistedParts[persistedParts.length - 1]!.message;
       await db`
         UPDATE agent_decisions
         SET outbound_message_id = ${firstMessage.id}::uuid
@@ -1789,7 +1790,7 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
             conversation_id: turn.conversation_id,
             paid_offering_code: paidOfferingCode,
             source_turn_id: turn.id,
-            source_outbound_message_id: firstMessage.id,
+            source_outbound_message_id: lastMessage.id,
             action: committedBusinessAction as
               | { type: 'schedule_price_objection_checkin'; reason: 'price_objection' }
               | { type: 'request_promotion_review'; reason: 'persistent_price_objection' }

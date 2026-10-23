@@ -115,15 +115,25 @@ export async function commitCommercialActionV1(
     : 'price_objection_checkin';
   const offerStatus = kind === 'promotion_review' ? 'pending_review' : 'cancelled';
   const cancelReason = kind === 'promotion_review' ? null : 'CHECKIN_ONLY';
-  const source = await db<Array<{ conversation_seq: number; version: number | null }>>`
-    SELECT outbound.conversation_seq, state.version
-    FROM messages outbound
+  const source = await db<Array<{ id: string; conversation_seq: number; version: number | null }>>`
+    SELECT final_outbound.id, final_outbound.conversation_seq, state.version
+    FROM messages requested_outbound
+    JOIN LATERAL (
+      SELECT sibling.id, sibling.conversation_seq
+      FROM messages sibling
+      WHERE sibling.conversation_id = requested_outbound.conversation_id
+        AND sibling.direction = 'outbound'
+        AND sibling.in_reply_to = requested_outbound.in_reply_to
+      ORDER BY sibling.conversation_seq DESC, sibling.created_at DESC, sibling.id DESC
+      LIMIT 1
+    ) final_outbound ON true
     LEFT JOIN conversation_sales_context_states_v1 state
       ON state.workspace_id = ${input.workspace_id}::uuid
      AND state.conversation_id = ${input.conversation_id}::uuid
-    WHERE outbound.id = ${input.source_outbound_message_id}::uuid
-      AND outbound.conversation_id = ${input.conversation_id}::uuid
-      AND outbound.direction = 'outbound'
+    WHERE requested_outbound.id = ${input.source_outbound_message_id}::uuid
+      AND requested_outbound.conversation_id = ${input.conversation_id}::uuid
+      AND requested_outbound.direction = 'outbound'
+      AND requested_outbound.in_reply_to = ${input.source_turn_id}::uuid
     LIMIT 1
   `;
   if (!source[0]) return { offer_id: null, followup: null };
@@ -183,7 +193,7 @@ export async function commitCommercialActionV1(
       source_outbound_message_id
     ) VALUES (
       ${offer.id}::uuid, ${kind}, ${dueAt.toISOString()}::timestamptz, ${idempotencyKey},
-      ${source[0].conversation_seq}, ${input.source_outbound_message_id}::uuid
+      ${source[0].conversation_seq}, ${source[0].id}::uuid
     )
     ON CONFLICT (idempotency_key) DO UPDATE SET updated_at = course_bonus_followups.updated_at
     RETURNING id, kind, due_at
@@ -446,7 +456,7 @@ export function validateCommercialFollowupNarrativeV1(
     /\b(?:no hay|sin|ning[uú]n|ninguna)\s+(?:descuento|rebaja)\b/giu,
     '',
   );
-  if (/\b(?:descuento|rebaja|bajar(?:te)? el precio|precio (?:más |mas )?bajo|por menos|te cobro menos)\b/iu.test(pricePolicyText)) {
+  if (/\b(?:descuento|rebaja|bajar(?:te)? el precio|precio (?:más |mas )?bajo|por menos|te cobro menos|precio (?:especial|promocional|reducido)|tarifa (?:especial|promocional|reducida)|(?:a|por) (?:la )?mitad(?: del precio)?|(?:mitad|tercio|cuarto) del precio|dos por uno)\b/iu.test(pricePolicyText)) {
     return { ok: false, reason: 'PROMOTION_PRICE_CHANGED' };
   }
   if (/\b(?:lucas|supervisor(?:a)?|gerencia|director(?:a)?|jef[ea])\b.{0,45}\b(?:autoriz|aprob|permit)/iu.test(message)
@@ -462,16 +472,20 @@ export function validateCommercialFollowupNarrativeV1(
     (text, name) => text.split(name).join(' '),
     normalized,
   );
-  const numberWord = '(?:cero|un[oa]?|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|once|doce|trece|catorce|quince|veinte|treinta|cuarenta|cincuenta|sesenta|setenta|ochenta|noventa|cien(?:to)?|mil)';
+  const priceCandidate = withoutCourseNames.replace(
+    /\bpag(?:a|ar|ando|as|ás|o|ó)\s+(?:(?:solo|solamente|[uú]nicamente)\s+)?(?:el\s+|un\s+)?(?:(?:solo|solamente|[uú]nicamente)\s+)?curso(?:\s+principal)?\b/giu,
+    '',
+  );
+  const numberWord = '(?:cero|un(?:o|a)?|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|once|doce|trece|catorce|quince|diecis[eé]is|diecisiete|dieciocho|diecinueve|veinte|veinti(?:uno|una|d[oó]s|tr[eé]s|cuatro|cinco|s[eé]is|siete|ocho|nueve)|treinta|cuarenta|cincuenta|sesenta|setenta|ochenta|noventa|cien(?:to)?|doscientos?|trescientos?|cuatrocientos?|quinientos?|seiscientos?|setecientos?|ochocientos?|novecientos?|mil|mill[oó]n(?:es)?)';
   const paymentVerb = '(?:pag(?:a|ar|ando|as|ás|o|ó)|abon(?:a|ar|ando|as|ás|o|ó)|cuesta|sale)';
   const period = '(?:mensual(?:es)?|anual(?:es)?|al mes|al año|por mes|por año)';
   const wordAmount = new RegExp(
     `(?:${paymentVerb}.{0,20}\\b${numberWord}\\b|\\b${numberWord}\\b.{0,12}${period}|(?:precio|total|cuota)\\s*(?:es|de|:)?\\s*\\b${numberWord}\\b)`,
     'iu',
   );
-  if (/\d/u.test(withoutCourseNames)
-    || /[$€£]|\b(?:usd|u\$s|d[oó]lares?|pesos?|euros?)\b/iu.test(withoutCourseNames)
-    || wordAmount.test(withoutCourseNames)) {
+  if (/\d/u.test(priceCandidate)
+    || /[$€£]|\b(?:usd|u\$s|d[oó]lares?|pesos?|euros?)\b/iu.test(priceCandidate)
+    || wordAmount.test(priceCandidate)) {
     return { ok: false, reason: 'PROMOTION_PRICE_CHANGED' };
   }
   const namedBonuses = source.bonus_offerings.filter((bonus) => (
@@ -747,8 +761,10 @@ export async function dispatchDueCommercialFollowupsV1(
   `;
   const exhaustedSchedules = await db<Array<{ id: string }>>`
     UPDATE course_bonus_followups
-    SET status = 'ambiguous', terminal_reason = 'EVENT_SCHEDULE_UNCONFIRMED'
-    WHERE status = 'pending' AND provider_event_id IS NULL
+    SET status = 'ambiguous', claim_token = NULL, claimed_by = NULL, lease_until = NULL,
+      provider_event_id = NULL, terminal_reason = 'EVENT_SCHEDULE_UNCONFIRMED'
+    WHERE ((status = 'pending' AND provider_event_id IS NULL)
+        OR (status = 'processing' AND lease_until <= now()))
       AND schedule_attempt_count >= max_schedule_attempts
     RETURNING id
   `;
