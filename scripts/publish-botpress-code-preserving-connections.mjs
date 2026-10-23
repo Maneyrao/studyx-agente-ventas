@@ -8,6 +8,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { createHash } from 'node:crypto';
+import {
+  buildBotpressAdditiveEventUpdate,
+  planBotpressAdditiveConversationTagPatch,
+  planBotpressAdditiveEventPatch,
+} from './lib/botpress-additive-event-contract.mjs';
 
 const expectedBotId = '0d7c9ecb-4781-4c65-913d-f7e947fa14d4';
 const expectedWorkspaceId = 'wkspace_01M4XEBZNC10HX2KDHKY36T6R0';
@@ -26,7 +31,7 @@ const record = (filename, data) => fs.writeFileSync(path.join(outputDirectory, f
   JSON.stringify(data, null, 2), { mode: 0o600, flag: 'wx' });
 const protectedConfiguration = (bot) => ({
   integrations: bot.integrations, plugins: bot.plugins, configuration: bot.configuration,
-  secretNames: [...bot.secrets].sort(), name: bot.name, blocked: bot.blocked,
+  subscriptions: bot.subscriptions, secretNames: [...bot.secrets].sort(), name: bot.name, blocked: bot.blocked,
 });
 const normalizedIntegrationField = (alias, field, value) => {
   if (alias === 'whatsapp' && field === 'configuration') {
@@ -68,7 +73,7 @@ try {
       }
     }
   }
-  for (const field of ['actions', 'events']) {
+  for (const field of ['actions']) {
     assert(equal(Object.keys(body[field] ?? {}).sort(), Object.keys(before[field] ?? {}).sort()), `CONTRACT_KEYS_CHANGED:${field}`);
     for (const [key, value] of Object.entries(body[field] ?? {})) {
       for (const property of field === 'actions' ? ['input', 'output', 'billable', 'cacheable'] : ['schema']) {
@@ -78,12 +83,22 @@ try {
       }
     }
   }
+  const additiveEventPatch = planBotpressAdditiveEventPatch({
+    remoteEvents: before.events ?? {},
+    generatedEvents: body.events ?? {},
+  });
+  const additiveEventKeys = Object.keys(additiveEventPatch).sort();
   if (!equal(body.configuration?.schema, before.configuration?.schema)) contractDifferences.push('configuration.schema');
-  for (const field of ['user', 'message', 'conversation']) {
+  for (const field of ['user', 'message']) {
     if (!equal(Object.keys(body[field]?.tags ?? {}).sort(), Object.keys(before[field]?.tags ?? {}).sort())) {
       contractDifferences.push(`${field}.tags`);
     }
   }
+  const conversationTagPatch = planBotpressAdditiveConversationTagPatch({
+    remoteTags: before.conversation?.tags ?? {},
+    generatedTags: body.conversation?.tags ?? {},
+  });
+  const additiveConversationTagKeys = Object.keys(conversationTagPatch).sort();
   assert(contractDifferences.length === 0, `CONTRACT_CHANGED:${contractDifferences.join(',')}`);
   assert(Object.keys(definition.integrations).length === Object.keys(before.integrations).length, 'INTEGRATION_COUNT_CHANGED');
   const aliasesPreserved = [];
@@ -119,22 +134,51 @@ try {
     assert(bundle.includes(Buffer.from(marker)), `BUNDLE_MARKER_MISSING:${marker}`);
   }
   const current = (await client.getBot({ id: ctx.botId })).bot;
-  assert(equal(protectedConfiguration(before), protectedConfiguration(current)) && before.deployedAt === current.deployedAt,
+  assert(equal(protectedConfiguration(before), protectedConfiguration(current))
+    && equal(before.events ?? {}, current.events ?? {})
+    && equal(before.actions ?? {}, current.actions ?? {})
+    && equal(before.states ?? {}, current.states ?? {})
+    && equal(before.recurringEvents ?? {}, current.recurringEvents ?? {})
+    && equal(before.conversation?.tags ?? {}, current.conversation?.tags ?? {})
+    && before.deployedAt === current.deployedAt,
     'REMOTE_CHANGED_DURING_BUILD');
   const preflight = { at: new Date().toISOString(), botId: ctx.botId, workspaceId: ctx.workspaceId,
     bundleSha256: createHash('sha256').update(bundle).digest('hex'), integrationCount: aliasesPreserved.length,
-    pluginCount: Object.keys(definition.plugins).length, aliasesPreserved, contractsMatch: true, publish };
+    pluginCount: Object.keys(definition.plugins).length, aliasesPreserved, contractsMatch: true,
+    additiveEventKeys, additiveConversationTagKeys,
+    publicationMode: additiveEventKeys.length > 0 || additiveConversationTagKeys.length > 0
+      ? 'code+additive-contract' : 'code-only', publish };
   record('preflight.json', preflight);
   if (publish) {
-    // Omitting integrations/plugins is deliberate. Never run missing-dependency deletion here.
-    await client.updateBot({ id: ctx.botId, code: bundle.toString('utf8') });
+    // Omitting integrations/plugins/configuration/secrets is deliberate. Never
+    // run missing-dependency deletion here. The only permitted contract change
+    // is the reviewed additive commercial-followup event.
+    const update = buildBotpressAdditiveEventUpdate({
+      botId: ctx.botId,
+      code: bundle.toString('utf8'),
+      eventPatch: additiveEventPatch,
+      conversationTagPatch,
+    });
+    await client.updateBot(update);
     const after = (await client.getBot({ id: ctx.botId })).bot;
     record('bot-after.private.json', after);
     const configurationUnchanged = equal(protectedConfiguration(before), protectedConfiguration(after));
+    const eventContractCurrent = Object.keys(planBotpressAdditiveEventPatch({
+      remoteEvents: after.events ?? {},
+      generatedEvents: body.events ?? {},
+    })).length === 0;
+    const conversationTagContractCurrent = Object.keys(planBotpressAdditiveConversationTagPatch({
+      remoteTags: after.conversation?.tags ?? {},
+      generatedTags: body.conversation?.tags ?? {},
+    })).length === 0;
+    const remoteCodeMatches = typeof after.code !== 'string'
+      || createHash('sha256').update(after.code).digest('hex') === preflight.bundleSha256;
     const result = { ...preflight, deployedAt: after.deployedAt, previousDeployedAt: before.deployedAt,
-      configurationUnchanged, codeOnly: true };
+      configurationUnchanged, eventContractCurrent, conversationTagContractCurrent, remoteCodeMatches,
+      codeOnly: additiveEventKeys.length === 0 && additiveConversationTagKeys.length === 0 };
     record('publication.json', result);
-    assert(configurationUnchanged && after.deployedAt !== before.deployedAt, 'POST_PUBLICATION_PARITY_FAILED');
+    assert(configurationUnchanged && eventContractCurrent && conversationTagContractCurrent && remoteCodeMatches
+      && after.deployedAt !== before.deployedAt, 'POST_PUBLICATION_PARITY_FAILED');
     console.log(JSON.stringify(result));
   } else console.log(JSON.stringify(preflight));
 } catch (error) {
