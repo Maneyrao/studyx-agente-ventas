@@ -86,6 +86,8 @@ export async function recordPromotionConversationContextV1(
           AND EXCLUDED.interest_offering_code IS DISTINCT FROM
             conversation_promotion_context_v1.interest_offering_code
           THEN EXCLUDED.price_objection_count
+        WHEN EXCLUDED.source_turn_id = conversation_promotion_context_v1.source_turn_id
+          THEN conversation_promotion_context_v1.price_objection_count
         ELSE LEAST(
           2,
           conversation_promotion_context_v1.price_objection_count

@@ -1,7 +1,10 @@
 import type { BusinessContextView, CatalogIndexView } from '@/features/orchestration/domain/business-context';
 import type { DecisionV4 } from '@/features/orchestration/domain/decision-v4';
 import type { ProtectedFactRef } from '@/features/orchestration/domain/egress-guard';
-import { materializeCanonicalCatalogFacts } from '@/features/orchestration/domain/canonical-offering-egress';
+import {
+  materializeCanonicalCatalogFacts,
+  singleCanonicalOfferingReferenceV1,
+} from '@/features/orchestration/domain/canonical-offering-egress';
 import type { OrchestrationStore } from '@/features/orchestration/ports/orchestration-store';
 import { classifyBatchSalesSignal } from '@/features/orchestration/domain/sales-signal';
 import { loadConversationSessionConfig } from '@/lib/config';
@@ -394,7 +397,12 @@ export async function prepareAgentTurnV2(input: {
     content: authority.response,
     offerings: offerings.map((offering) => ({ code: offering.code, display_name: offering.display_name })),
   });
+  const responseOfferingCode = singleCanonicalOfferingReferenceV1({
+    content: authority.response,
+    offerings: offerings.map((offering) => ({ code: offering.code, display_name: offering.display_name })),
+  });
   const commercialInterestOfferingCode = authority.discussed_offering_code
+    ?? responseOfferingCode
     ?? input.course_bonus_capability?.interest_offering_code
     ?? state.selected_offering_code;
   const recordsPriceObjection = commercialInterestOfferingCode !== null && (

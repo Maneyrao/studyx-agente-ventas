@@ -75,9 +75,17 @@ run('durable commercial course-bonus follow-up', () => {
     })).resolves.toEqual({interest_offering_code:f.paid.code, price_objection_count:1});
     await expect(recordPromotionConversationContextV1(db!, {
       ...context, discussed_offering_code:null, records_price_objection:true,
+    })).resolves.toEqual({interest_offering_code:f.paid.code, price_objection_count:1});
+
+    const [secondObjection] = await db!`INSERT INTO messages(conversation_id,contact_id,direction,content)
+      VALUES (${f.conversation.id},${f.contact.id},'inbound','El monto todavía me frena') RETURNING id`;
+    await expect(recordPromotionConversationContextV1(db!, {
+      ...context, source_turn_id:secondObjection.id as string,
+      discussed_offering_code:null, records_price_objection:true,
     })).resolves.toEqual({interest_offering_code:f.paid.code, price_objection_count:2});
     await expect(recordPromotionConversationContextV1(db!, {
-      ...context, discussed_offering_code:null, records_price_objection:true,
+      ...context, source_turn_id:secondObjection.id as string,
+      discussed_offering_code:null, records_price_objection:true,
     })).resolves.toEqual({interest_offering_code:f.paid.code, price_objection_count:2});
     await expect(readCourseBonusCapabilityV1({
       workspace_slug:f.workspace.slug as string,

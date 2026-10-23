@@ -1359,6 +1359,38 @@ describe('prepareAgentTurnV2', () => {
     });
   });
 
+  it('binds one canonical course named by Agent A to a model-owned price objection without selecting it', async () => {
+    const prepared = await prepareAgentTurnV2({
+      turn: { id: ids.turn, workspace_id: ids.workspace, conversation_id: ids.conversation, contact_id: ids.contact },
+      workspace_slug: 'studyx', business_context: business, catalog_index: index,
+      current_customer_messages: ['Sigue fuera de mi presupuesto'],
+      proposal: proposal({
+        move: {
+          schema_version: 1,
+          move: 'ask_course_information',
+          secondary_moves: [],
+          vetoes: [],
+          confidence: 1,
+        },
+        response: { messages: ['Redes Informáticas puede servirte para empezar por una base concreta.'] },
+        memory_candidates: [{
+          type: 'objection',
+          key: 'price_objection',
+          value: 'El precio sigue fuera de su presupuesto',
+          source_quote: 'Sigue fuera de mi presupuesto',
+          confidence: 1,
+        }],
+      }),
+    }, { state_store: store(state()), now: () => Date.parse(index.as_of) });
+
+    expect(prepared).toMatchObject({
+      discussed_offering_code: null,
+      commercial_interest_offering_code: 'redes_informaticas',
+      records_price_objection: true,
+      transition: { selected_offering_code: null },
+    });
+  });
+
   it('does not transfer a rejected promotion review into price-objection evidence for a new course', async () => {
     const prepared = await prepareAgentTurnV2({
       turn: { id: ids.turn, workspace_id: ids.workspace, conversation_id: ids.conversation, contact_id: ids.contact },

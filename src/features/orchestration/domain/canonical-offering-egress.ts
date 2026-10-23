@@ -29,6 +29,27 @@ export interface CanonicalCatalogOfferingSource {
   readonly display_name: string;
 }
 
+/**
+ * Resolve only an exact, unambiguous course name from Agent A's own accepted
+ * response. This is a grounding fallback for durable commercial context, not
+ * an intent classifier: generic areas, aliases and customer prose are outside
+ * its scope, and naming more than one canonical offering returns no result.
+ */
+export function singleCanonicalOfferingReferenceV1(input: {
+  readonly content: string;
+  readonly offerings: readonly CanonicalCatalogOfferingSource[];
+}): string | null {
+  const content = normalize(input.content);
+  const mentioned = input.offerings.filter((offering) => {
+    const name = normalize(offering.display_name);
+    if (!name) return false;
+    return new RegExp(`(?<![\\p{L}\\p{N}])${escapeRegExp(name)}(?![\\p{L}\\p{N}])`, 'u')
+      .test(content);
+  });
+  const codes = [...new Set(mentioned.map((offering) => offering.code))];
+  return codes.length === 1 ? codes[0]! : null;
+}
+
 function normalize(value: string): string {
   return value.normalize('NFKC').toLowerCase().replace(/\s+/gu, ' ').trim();
 }
