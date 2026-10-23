@@ -36,7 +36,7 @@ import {
   buildAgentASalesBridgeCompactInstructions,
   buildAgentASalesBridgeInstructions,
 } from '../prompts/agent-a-sales-bridge'
-import { StudyxHttpError } from '../utils/http'
+import { requestStudyxJson, StudyxHttpError } from '../utils/http'
 import {
   applyDecisionPolicy,
   classifyBrainFailureReason,
@@ -2419,6 +2419,13 @@ export const processInboundTurn = new Workflow({
             }),
             { maxAttempts: 3 },
           )
+          await requestStudyxJson({
+            path: `/api/agent/commercial-followups/${followup.id}/scheduled`,
+            body: { provider_event_id: scheduled.event.id },
+            traceId: input.trace_id,
+            idempotencyKey: `commercial-followup-scheduled:${followup.id}:${scheduled.event.id}`,
+            responseSchema: z.object({ recorded: z.boolean(), provider_event_id: z.string().nullable() }),
+          })
           safeLog('studyx.turn.commercial_followup_scheduled', {
             trace_id: input.trace_id,
             turn_id: owned.turn_id,

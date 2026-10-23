@@ -31,6 +31,12 @@ describe('commercial course-bonus follow-up content', () => {
     expect(validateCommercialFollowupNarrativeV1(review,
       'Mira https://example.com y te sumo Inglés 2.'))
       .toEqual({ ok: false, reason: 'PROMOTION_URL_NOT_ALLOWED' });
+    expect(validateCommercialFollowupNarrativeV1(review,
+      'Te habilito Inglés 1 con Inglés 2 por USD 10 en total.'))
+      .toEqual({ ok: false, reason: 'PROMOTION_PRICE_CHANGED' });
+    expect(validateCommercialFollowupNarrativeV1(review,
+      'Te habilito Inglés 1 junto con Inglés 2 y no hay descuento: el precio no cambia.'))
+      .toEqual({ ok: true });
   });
 
   it('keeps the first-objection check-in free of gift disclosure', () => {

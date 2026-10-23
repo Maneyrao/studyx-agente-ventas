@@ -90,9 +90,11 @@ export async function reservePaymentLink(
     checkout_url: string | null;
     environment: 'test' | 'live';
     promotion_codes: string[];
+    bonus_snapshot_sealed_at: Date | null;
   }>>`
     SELECT payment.id, payment.status, payment.workspace_id, payment.contact_id,
       payment.offering_id, payment.plan_code, payment.checkout_url, payment.environment,
+      payment.bonus_snapshot_sealed_at,
       COALESCE((
         SELECT array_agg(DISTINCT snapshot.promotion_code_snapshot ORDER BY snapshot.promotion_code_snapshot)
         FROM payment_bonus_offerings snapshot WHERE snapshot.payment_id = payment.id
@@ -115,6 +117,10 @@ export async function reservePaymentLink(
     ) {
       throw new PaymentLinkReservationError('IDEMPOTENCY_KEY_CONFLICT');
     }
+    if (!found.bonus_snapshot_sealed_at) await db`
+      UPDATE payments SET bonus_snapshot_sealed_at = now()
+      WHERE id = ${found.id}::uuid AND bonus_snapshot_sealed_at IS NULL
+    `;
     return { payment_id: found.id, status: found.status, url: found.checkout_url };
   }
 
@@ -131,8 +137,8 @@ export async function reservePaymentLink(
       bonus_count: number;
     }>>`
       SELECT promotion.id AS promotion_id, offer.id AS offer_id,
-        (SELECT count(*)::integer FROM promotion_bonus_offerings candidate
-          WHERE candidate.promotion_id = promotion.id) AS bonus_count
+        (SELECT count(*)::integer FROM promotion_offer_bonus_offerings candidate
+          WHERE candidate.offer_id = offer.id) AS bonus_count
       FROM promotions promotion
       JOIN promotion_offers offer ON offer.promotion_id = promotion.id
       WHERE promotion.workspace_id = ${input.workspace_id}::uuid
@@ -147,14 +153,15 @@ export async function reservePaymentLink(
         AND offer.conversation_id = ${input.conversation_id}::uuid
         AND offer.paid_offering_id = ${input.offering_id}::uuid
         AND offer.status = 'accepted'
+        AND offer.bonus_snapshot_sealed_at IS NOT NULL
         AND offer.payment_id IS NULL
         AND (offer.expires_at IS NULL OR offer.expires_at > now())
         AND (SELECT count(*) FROM promotion_offers used
           WHERE used.promotion_id = promotion.id
             AND used.contact_id = ${input.contact_id}::uuid
             AND used.status = 'attached') < promotion.max_redemptions_per_contact
-        AND (SELECT count(*) FROM promotion_bonus_offerings candidate
-          WHERE candidate.promotion_id = promotion.id) BETWEEN 1 AND 3
+        AND (SELECT count(*) FROM promotion_offer_bonus_offerings candidate
+          WHERE candidate.offer_id = offer.id) BETWEEN 1 AND 3
       FOR UPDATE OF offer
     `;
     authorizedPromotion = promotions[0] ?? null;
@@ -219,13 +226,12 @@ export async function reservePaymentLink(
         payment_id, promotion_id, offering_id, promotion_code_snapshot,
         offering_code_snapshot, offering_display_name_snapshot, position
       )
-      SELECT ${paymentId}::uuid, promotion.id, offering.id, promotion.promotion_code,
-        offering.code, offering.display_name, bonus.position
-      FROM promotions promotion
-      JOIN promotion_bonus_offerings bonus ON bonus.promotion_id = promotion.id
-      JOIN offerings offering ON offering.id = bonus.offering_id
-      WHERE promotion.id = ${authorizedPromotion.promotion_id}::uuid
-      ORDER BY bonus.position
+      SELECT ${paymentId}::uuid, snapshot.promotion_id, snapshot.offering_id,
+        snapshot.promotion_code_snapshot, snapshot.offering_code_snapshot,
+        snapshot.offering_display_name_snapshot, snapshot.position
+      FROM promotion_offer_bonus_offerings snapshot
+      WHERE snapshot.offer_id = ${authorizedPromotion.offer_id}::uuid
+      ORDER BY snapshot.position
       RETURNING id
     `;
     if (snapshots.length !== authorizedPromotion.bonus_count) {
@@ -239,6 +245,13 @@ export async function reservePaymentLink(
     `;
     if (!attached[0]) throw new PaymentLinkReservationError('PROMOTION_NOT_AUTHORIZED');
   }
+
+  const sealed = await db<Array<{ id: string }>>`
+    UPDATE payments SET bonus_snapshot_sealed_at = now()
+    WHERE id = ${paymentId}::uuid AND status = 'reserved' AND bonus_snapshot_sealed_at IS NULL
+    RETURNING id
+  `;
+  if (!sealed[0]) throw new PaymentLinkReservationError('PROMOTION_SNAPSHOT_NOT_SEALED');
 
   return { payment_id: paymentId, status: inserted[0].status, url: inserted[0].checkout_url };
 }

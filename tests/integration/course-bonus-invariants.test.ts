@@ -146,32 +146,33 @@ run('authorized course bonus database invariants', () => {
       ) RETURNING id
     `;
     const key = `followup:${offer.id}:review`;
-    await db!`
+    const [followup] = await db!<Array<{ id: string }>>`
       INSERT INTO course_bonus_followups (offer_id, kind, due_at, idempotency_key)
       VALUES (${offer.id}::uuid, 'promotion_review', now() - interval '1 second', ${key})
+      RETURNING id
     `;
     await expect(db!`
       INSERT INTO course_bonus_followups (offer_id, kind, due_at, idempotency_key)
       VALUES (${offer.id}::uuid, 'promotion_review', now(), ${key})
     `).rejects.toThrow();
 
-    const first = await db!<Array<{ status: string; claim_token: string }>>`
-      SELECT status, claim_token FROM claim_course_bonus_followups('worker-a', 10, 60)
+    const first = await db!<Array<{ id: string; status: string; claim_token: string }>>`
+      SELECT id, status, claim_token FROM claim_course_bonus_followups('worker-a', 100, 60)
     `;
-    expect(first).toHaveLength(1);
-    expect(first[0]).toMatchObject({ status: 'processing' });
-    const second = await db!`
-      SELECT id FROM claim_course_bonus_followups('worker-b', 10, 60)
+    expect(first.find((candidate) => candidate.id === followup.id)).toMatchObject({ status: 'processing' });
+    const second = await db!<Array<{ id: string }>>`
+      SELECT id FROM claim_course_bonus_followups('worker-b', 100, 60)
     `;
-    expect(second).toHaveLength(0);
+    expect(second.some((candidate) => candidate.id === followup.id)).toBe(false);
     await db!`
       UPDATE course_bonus_followups SET lease_until = now() - interval '1 second'
       WHERE offer_id = ${offer.id}::uuid
     `;
-    const reclaimed = await db!<Array<{ claimed_by: string; attempt_count: number }>>`
-      SELECT claimed_by, attempt_count FROM claim_course_bonus_followups('worker-b', 10, 60)
+    const reclaimed = await db!<Array<{ id: string; claimed_by: string; attempt_count: number }>>`
+      SELECT id, claimed_by, attempt_count FROM claim_course_bonus_followups('worker-b', 100, 60)
     `;
-    expect(reclaimed).toEqual([{ claimed_by: 'worker-b', attempt_count: 2 }]);
+    expect(reclaimed.find((candidate) => candidate.id === followup.id))
+      .toMatchObject({ claimed_by: 'worker-b', attempt_count: 2 });
   });
 
   it('freezes a payment bonus only while reserved and refuses snapshot mutation', async () => {
@@ -216,7 +217,7 @@ run('authorized course bonus database invariants', () => {
         ${payment.id}::uuid, ${promotion.id}::uuid, ${f.giftB.id}::uuid, 'snapshot-promo',
         ${f.giftB.code}, 'Gift B', 2
       )
-    `).rejects.toThrow(/payment must be reserved/i);
+    `).rejects.toThrow(/snapshot is sealed|payment must be reserved/i);
   });
 
   it('records each Central bonus enrollment exactly once and append-only', async () => {

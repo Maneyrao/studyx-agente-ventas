@@ -255,6 +255,18 @@ run('Central de Carga enrollment worker', () => {
     expect((await enrollments(f.paymentId))[0].welcome_sent).toBe(true);
   });
 
+  it('persists the immutable snapshot position instead of inventing an array index', async () => {
+    const code = `BONUS-GAP-${randomUUID().slice(0, 6)}`;
+    const f = await fixture({ bonusCourses: [{ code, displayName: 'Bonus gap', position: 2 }] });
+    const central = mockCentral((call) => json(201, body(call.paymentId, {
+      bonus_enrollments: [{ offering_code: code, enrollment_status: 'active' }],
+    })));
+    expect(await work(central.fetchImpl)).toMatchObject({ completed: 1 });
+    expect(await bonusEnrollments(f.paymentId)).toEqual([{
+      offering_code:code,enrollment_status:'active',position:2,
+    }]);
+  });
+
   it('does not complete a v2 job when Central omits, adds, duplicates or leaves a bonus non-active', async () => {
     for (const variant of ['missing','extra','duplicate','processing'] as const) {
       const f = await fixture({ bonusCourses: [

@@ -259,6 +259,8 @@ bonificado, pendiente de que Central confirme los códigos exactos.
 | P10 | Llamada | B ve sólo promociones activas para `voice`; reutiliza el mismo puente de pago por WhatsApp. | Retell tools/store |
 | P11 | Código inventado | Se rechaza y no se envía link. | Retell/PostgreSQL |
 | P12 | Postventa | Confirma curso principal y bonificado sólo con evidencia v2 completa; no envía invoice. | post-sale |
+| P13 | Falla al programar la espera | La fila durable queda recuperable; el cron vuelve a crear el evento con intentos acotados y el claim evita duplicados. | follow-up dispatch integration |
+| P14 | Cambia la promoción después de ofrecerla | El conjunto mostrado queda sellado; el pago conserva exactamente esos cursos y rechaza cualquier agregado tardío. | offer/payment snapshot integration |
 
 La habilitación externa sigue bloqueada hasta contar con: identificador de
 commit y despliegue de Central v2; mapeo efectivo de `ingles_1`/`ingles_2`;

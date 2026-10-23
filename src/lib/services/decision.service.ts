@@ -66,10 +66,7 @@ import {
   stripePaymentLinkEnvironment,
   stripUnauthorizedUrls,
 } from '@/features/payments/domain/payment-link';
-import {
-  countPriceObjectionInterventionsV1,
-  readCourseBonusCapabilityV1,
-} from '@/features/promotions/application/read-course-bonus-capability';
+import { readCourseBonusCapabilityV1 } from '@/features/promotions/application/read-course-bonus-capability';
 import {
   commitCommercialActionV1,
   type ScheduledCommercialFollowupV1,
@@ -815,31 +812,12 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
               WHERE batch_id = ${turn.batch_id}::uuid AND direction = 'inbound'
               ORDER BY conversation_seq ASC, created_at ASC, id ASC
             `;
-        const priorInterventions = await db<Array<{ intervention_id: string; messages: string[] }>>`
-          SELECT
-            COALESCE(batch_id::text, id::text) AS intervention_id,
-            array_agg(content ORDER BY conversation_seq ASC, created_at ASC, id ASC) AS messages
-          FROM messages
-          WHERE conversation_id = ${turn.conversation_id}::uuid
-            AND contact_id = ${turn.contact_id}::uuid
-            AND direction = 'inbound'
-            AND id <> ${turn.id}::uuid
-            AND (${turn.batch_id}::uuid IS NULL OR batch_id IS DISTINCT FROM ${turn.batch_id}::uuid)
-          GROUP BY COALESCE(batch_id::text, id::text)
-          ORDER BY max(conversation_seq) DESC
-          LIMIT 12
-        `;
-        const priceObjectionInterventions = countPriceObjectionInterventionsV1([
-          ...priorInterventions.map((row) => row.messages),
-          currentMessages.map((message) => message.content),
-        ]);
         const courseBonusCapability = await readCourseBonusCapabilityV1({
           workspace_slug: workspaceSlug,
           contact_id: turn.contact_id,
           conversation_id: turn.conversation_id,
           channel: 'text',
           selected_offering_code: pipelineStateBefore?.selected_offering_code ?? null,
-          price_objection_interventions: priceObjectionInterventions,
         }, { db });
         preparedAgentTurn = await prepareAgentTurnV2({
           turn: {

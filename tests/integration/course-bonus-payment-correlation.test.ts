@@ -36,10 +36,34 @@ async function fixture() {
     VALUES (${promotion.id},${workspace.id},${bonus.id},1)`;
   const [offer]=await db!`INSERT INTO promotion_offers(workspace_id,contact_id,conversation_id,promotion_id,paid_offering_id,status,offered_at,accepted_at)
     VALUES (${workspace.id},${contact.id},${conversation.id},${promotion.id},${paid.id},'accepted',now(),now()) RETURNING id`;
+  await db!`INSERT INTO promotion_offer_bonus_offerings(
+      offer_id,promotion_id,offering_id,promotion_code_snapshot,offering_code_snapshot,
+      offering_display_name_snapshot,position)
+    VALUES (${offer.id},${promotion.id},${bonus.id},${promotion.promotion_code},${bonus.code},${bonus.display_name},1)`;
+  await db!`UPDATE promotion_offers SET bonus_snapshot_sealed_at=now() WHERE id=${offer.id}`;
   return {workspace,contact,conversation,paid,bonus,promotion,offer};
 }
 
 run('course bonus payment correlation', () => {
+  it('seals the complete promised gift set before payment authorization', async () => {
+    const f=await fixture();
+    const [lateBonus]=await db!`INSERT INTO offerings(
+        workspace_id,code,display_name,offering_type,status,description,price_type)
+      VALUES (${f.workspace.id},${`late-${randomUUID().slice(0,8)}`},'Inglés 3','course','active','Continuación','free')
+      RETURNING id,code,display_name`;
+    await db!`INSERT INTO promotion_bonus_offerings(promotion_id,workspace_id,offering_id,position)
+      VALUES (${f.promotion.id},${f.workspace.id},${lateBonus.id},2)`;
+    await expect(db!`INSERT INTO promotion_offer_bonus_offerings(
+        offer_id,promotion_id,offering_id,promotion_code_snapshot,offering_code_snapshot,
+        offering_display_name_snapshot,position)
+      VALUES (${f.offer.id},${f.promotion.id},${lateBonus.id},${f.promotion.promotion_code},
+        ${lateBonus.code},${lateBonus.display_name},2)`)
+      .rejects.toThrow(/offer bonus snapshot is sealed/i);
+    expect(await db!`SELECT offering_code_snapshot,position
+      FROM promotion_offer_bonus_offerings WHERE offer_id=${f.offer.id} ORDER BY position`)
+      .toEqual([{offering_code_snapshot:f.bonus.code,position:1}]);
+  });
+
   it('freezes the accepted offer into the correlated static Payment Link and replays identically', async () => {
     const f=await fixture();
     const input={workspace_id:f.workspace.id as string,contact_id:f.contact.id as string,
@@ -58,10 +82,37 @@ run('course bonus payment correlation', () => {
       .toEqual([{status:'attached',payment_id:reserved.payment_id}]);
     const [event]=await db!`SELECT payload FROM payment_events WHERE payment_id=${reserved.payment_id} AND event_type='reserved'`;
     expect(event.payload).toMatchObject({promotion_code:f.promotion.promotion_code});
+    const [lateBonus]=await db!`INSERT INTO offerings(
+        workspace_id,code,display_name,offering_type,status,description,price_type)
+      VALUES (${f.workspace.id},${`late-${randomUUID().slice(0,8)}`},'Regalo tardío','course','active','Tardío','free')
+      RETURNING id,code`;
+    await expect(db!`INSERT INTO payment_bonus_offerings(
+        payment_id,promotion_id,offering_id,promotion_code_snapshot,offering_code_snapshot,
+        offering_display_name_snapshot,position)
+      VALUES (${reserved.payment_id},${f.promotion.id},${lateBonus.id},${f.promotion.promotion_code},
+        ${lateBonus.code},'Regalo tardío',2)`)
+      .rejects.toThrow(/snapshot is sealed/i);
     await expect(reservePaymentLink(db!,{...input,promotion_code:'another-promotion'}))
       .rejects.toMatchObject({code:'IDEMPOTENCY_KEY_CONFLICT'});
     await expect(reservePaymentLink(db!,{...input,promotion_code:undefined}))
       .rejects.toMatchObject({code:'IDEMPOTENCY_KEY_CONFLICT'});
+  });
+
+  it('uses the immutable offered gift even if the live promotion is edited before payment', async () => {
+    const f=await fixture();
+    const [replacement]=await db!`INSERT INTO offerings(
+        workspace_id,code,display_name,offering_type,status,description,price_type)
+      VALUES (${f.workspace.id},${`replacement-${randomUUID().slice(0,8)}`},'Marketing','course','active','Otro','free')
+      RETURNING id`;
+    await db!`DELETE FROM promotion_bonus_offerings WHERE promotion_id=${f.promotion.id}`;
+    await db!`INSERT INTO promotion_bonus_offerings(promotion_id,workspace_id,offering_id,position)
+      VALUES (${f.promotion.id},${f.workspace.id},${replacement.id},1)`;
+    const reserved=await reservePaymentLink(db!,{workspace_id:f.workspace.id,contact_id:f.contact.id,
+      offering_id:f.paid.id,conversation_id:f.conversation.id,plan_code:'one_time',
+      idempotency_key:`offered-snapshot:${randomUUID()}`,payment_link_url:'https://buy.stripe.com/test_bonus',
+      promotion_code:f.promotion.promotion_code});
+    expect(await db!`SELECT offering_code_snapshot FROM payment_bonus_offerings
+      WHERE payment_id=${reserved.payment_id}`).toEqual([{offering_code_snapshot:f.bonus.code}]);
   });
 
   it('fails closed for a wrong conversation, course, contact, inactive offer or disabled v2', async () => {

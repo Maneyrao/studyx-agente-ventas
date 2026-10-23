@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import {
-  countPriceObjectionInterventionsV1,
   deriveCourseBonusCapabilityV1,
   readCourseBonusCapabilityV1,
 } from '@/features/promotions/application/read-course-bonus-capability';
@@ -20,7 +19,7 @@ function capability(overrides: Record<string, unknown> = {}) {
   return deriveCourseBonusCapabilityV1({
     channel: 'text',
     selected_offering_code: 'ingles_1',
-    price_objection_interventions: 0,
+    prior_price_objection_checkin: false,
     promotion,
     active_offer: null,
     now: new Date('2026-10-23T12:00:00Z'),
@@ -44,7 +43,6 @@ describe('course bonus capability', () => {
         conversation_id: '00000000-0000-0000-0000-000000000002',
         channel: 'text',
         selected_offering_code: 'ingles_1',
-        price_objection_interventions: 3,
       }, { db })).resolves.toMatchObject({
         status: 'unavailable',
         may_request_review: false,
@@ -57,17 +55,8 @@ describe('course bonus capability', () => {
     }
   });
 
-  it('counts split messages as one semantic price-objection intervention', () => {
-    expect(countPriceObjectionInterventionsV1([
-      ['mmm', 'me sigue pareciendo caro', 'vale la pena?'],
-      ['sigue fuera de mi presupuesto'],
-      ['cuánto cuesta?'],
-    ])).toBe(2);
-  });
-
-  it('does not reveal or review a gift on a price question or first objection', () => {
-    expect(capability()).toMatchObject({ status: 'not_eligible', may_request_review: false });
-    expect(capability({ price_objection_interventions: 1 })).toEqual({
+  it('lets Agent A classify the first objection without revealing or reviewing a gift', () => {
+    expect(capability()).toEqual({
       status: 'checkin_available',
       may_schedule_checkin: true,
       may_request_review: false,
@@ -78,22 +67,31 @@ describe('course bonus capability', () => {
     });
   });
 
-  it('allows review only after persistent resistance with exact course interest', () => {
-    expect(capability({ price_objection_interventions: 2 })).toMatchObject({
+  it('allows review only after Agent A committed the first-objection check-in for the exact interest', () => {
+    expect(capability({ prior_price_objection_checkin: true })).toMatchObject({
       status: 'review_available', may_request_review: true, promotion_code: null, bonus_offerings: [],
     });
-    expect(capability({ selected_offering_code: null, price_objection_interventions: 3 })).toMatchObject({
+    expect(capability({ selected_offering_code: null, prior_price_objection_checkin: true })).toMatchObject({
       status: 'needs_interest', may_request_review: false,
+    });
+  });
+
+  it('does not reinterpret customer wording with backend regexes', () => {
+    expect(capability({ prior_price_objection_checkin: false })).toMatchObject({
+      status: 'checkin_available', may_request_review: false,
+    });
+    expect(capability({ prior_price_objection_checkin: true })).toMatchObject({
+      status: 'review_available', may_request_review: true,
     });
   });
 
   it('exposes course names only after an authorized offer was delivered', () => {
     expect(capability({
-      price_objection_interventions: 2,
+      prior_price_objection_checkin: true,
       active_offer: { status: 'pending_review', promotion_code: promotion.promotion_code, expires_at: null },
     })).toMatchObject({ status: 'review_pending', promotion_code: null, bonus_offerings: [] });
     expect(capability({
-      price_objection_interventions: 2,
+      prior_price_objection_checkin: true,
       active_offer: { status: 'offered', promotion_code: promotion.promotion_code, expires_at: null },
     })).toMatchObject({
       status: 'offer_available', may_accept_offer: true,
@@ -104,11 +102,11 @@ describe('course bonus capability', () => {
 
   it('authorizes promoted payment only for an accepted, unexpired delivered offer', () => {
     expect(capability({
-      price_objection_interventions: 2,
+      prior_price_objection_checkin: true,
       active_offer: { status: 'accepted', promotion_code: promotion.promotion_code, expires_at: '2026-10-24T00:00:00Z' },
     })).toMatchObject({ status: 'accepted', may_send_promoted_payment: true });
     expect(capability({
-      price_objection_interventions: 2,
+      prior_price_objection_checkin: true,
       active_offer: { status: 'accepted', promotion_code: promotion.promotion_code, expires_at: '2026-10-23T11:59:59Z' },
     })).toMatchObject({ status: 'not_eligible', may_send_promoted_payment: false });
   });

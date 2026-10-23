@@ -59,9 +59,12 @@ run('carries one authorized price-objection bonus through payment, Central v2 an
       selected_offering_code,source_turn_id)
     VALUES (${workspace.id},${conversation.id},${contact.id},${paid.code},${inbound.id})`;
 
+  await commitCommercialActionV1(db!,{workspace_id:workspace.id,contact_id:contact.id,
+    conversation_id:conversation.id,paid_offering_code:paid.code,source_turn_id:inbound.id,
+    source_outbound_message_id:outbound.id,
+    action:{type:'schedule_price_objection_checkin',reason:'price_objection'}});
   await expect(readCourseBonusCapabilityV1({workspace_slug:workspace.slug,contact_id:contact.id,
-    conversation_id:conversation.id,channel:'text',selected_offering_code:paid.code,
-    price_objection_interventions:2},{db:db!})).resolves.toMatchObject({
+    conversation_id:conversation.id,channel:'text',selected_offering_code:paid.code},{db:db!})).resolves.toMatchObject({
       status:'review_available',may_request_review:true,bonus_offerings:[],
     });
   const review = await commitCommercialActionV1(db!,{workspace_id:workspace.id,contact_id:contact.id,

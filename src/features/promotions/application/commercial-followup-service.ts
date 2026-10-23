@@ -80,24 +80,35 @@ export async function commitCommercialActionV1(
   },
 ): Promise<CommitCommercialActionResultV1> {
   if (!loadCentralCargaBonusConfig().enabled) return { offer_id: null, followup: null };
-  const promotion = await activePromotion(db, input);
-  if (!promotion) return { offer_id: null, followup: null };
-
   if (input.action.type === 'accept_promotion') {
     const accepted = await db<Array<{ id: string }>>`
-      UPDATE promotion_offers
-      SET status = 'accepted', accepted_at = COALESCE(accepted_at, now())
-      WHERE workspace_id = ${input.workspace_id}::uuid
-        AND contact_id = ${input.contact_id}::uuid
-        AND conversation_id = ${input.conversation_id}::uuid
-        AND promotion_id = ${promotion.id}::uuid
-        AND paid_offering_id = ${promotion.paid_offering_id}::uuid
-        AND status IN ('offered','accepted')
-        AND (expires_at IS NULL OR expires_at > now())
-      RETURNING id
+      UPDATE promotion_offers offer
+      SET status = 'accepted', accepted_at = COALESCE(offer.accepted_at, now())
+      FROM promotions promotion, offerings paid
+      WHERE offer.workspace_id = ${input.workspace_id}::uuid
+        AND offer.contact_id = ${input.contact_id}::uuid
+        AND offer.conversation_id = ${input.conversation_id}::uuid
+        AND promotion.id = offer.promotion_id
+        AND promotion.workspace_id = offer.workspace_id
+        AND promotion.active = true
+        AND 'text' = ANY(promotion.channels)
+        AND (promotion.valid_from IS NULL OR promotion.valid_from <= now())
+        AND (promotion.valid_until IS NULL OR promotion.valid_until > now())
+        AND paid.id = offer.paid_offering_id
+        AND paid.workspace_id = offer.workspace_id
+        AND paid.code = ${input.paid_offering_code}
+        AND offer.status IN ('offered','accepted')
+        AND offer.bonus_snapshot_sealed_at IS NOT NULL
+        AND (offer.expires_at IS NULL OR offer.expires_at > now())
+        AND (SELECT count(*) FROM promotion_offer_bonus_offerings snapshot
+          WHERE snapshot.offer_id = offer.id) BETWEEN 1 AND 3
+      RETURNING offer.id
     `;
     return { offer_id: accepted[0]?.id ?? null, followup: null };
   }
+
+  const promotion = await activePromotion(db, input);
+  if (!promotion) return { offer_id: null, followup: null };
 
   const kind: FollowupKind = input.action.type === 'request_promotion_review'
     ? 'promotion_review'
@@ -204,6 +215,7 @@ interface FollowupSource {
   promotion_id: string;
   offer_status: string;
   expires_at: Date | null;
+  bonus_snapshot_sealed_at: Date | null;
   paid_offering_id: string;
   paid_offering_code: string;
   paid_offering_name: string;
@@ -227,7 +239,8 @@ async function followupSource(db: DbClient, id: string): Promise<FollowupSource 
     SELECT f.id, f.offer_id, f.kind, f.status, f.claim_token, f.attempt_count,
       f.max_attempts, f.due_at, f.expected_conversation_seq, f.source_outbound_message_id,
       po.workspace_id, po.contact_id, po.conversation_id, po.promotion_id,
-      po.status AS offer_status, po.expires_at, po.paid_offering_id,
+      po.status AS offer_status, po.expires_at, po.bonus_snapshot_sealed_at,
+      po.paid_offering_id,
       paid.code AS paid_offering_code, paid.display_name AS paid_offering_name,
       p.promotion_code, p.active AS promotion_active, p.valid_from, p.valid_until,
       p.channels, p.max_redemptions_per_contact,
@@ -254,6 +267,7 @@ async function followupSource(db: DbClient, id: string): Promise<FollowupSource 
 }
 
 async function cancellationReason(db: DbClient, source: FollowupSource): Promise<string | null> {
+  if (!loadCentralCargaBonusConfig().enabled) return 'COURSE_BONUS_DISABLED';
   const now = Date.now();
   if (!source.promotion_active
     || (source.valid_from && source.valid_from.getTime() > now)
@@ -334,23 +348,64 @@ export async function claimCommercialFollowupV1(
       RETURNING id
     `;
     if (!rows[0]) return { claimed: false as const };
-    const bonuses = await tx<Array<{ code: string; display_name: string; position: number }>>`
-      SELECT offering.code, offering.display_name, bonus.position
-      FROM promotion_bonus_offerings bonus
-      JOIN offerings offering ON offering.id = bonus.offering_id
-      WHERE bonus.promotion_id = ${source.promotion_id}::uuid
-      ORDER BY bonus.position
-    `;
+    if (source.kind === 'promotion_review' && !source.bonus_snapshot_sealed_at) {
+      await tx`
+        INSERT INTO promotion_offer_bonus_offerings (
+          offer_id, promotion_id, offering_id, promotion_code_snapshot,
+          offering_code_snapshot, offering_display_name_snapshot, position
+        )
+        SELECT ${source.offer_id}::uuid, promotion.id, offering.id, promotion.promotion_code,
+          offering.code, offering.display_name, bonus.position
+        FROM promotions promotion
+        JOIN promotion_bonus_offerings bonus ON bonus.promotion_id = promotion.id
+        JOIN offerings offering ON offering.id = bonus.offering_id
+        WHERE promotion.id = ${source.promotion_id}::uuid
+        ORDER BY bonus.position
+        ON CONFLICT DO NOTHING
+      `;
+      await tx`
+        UPDATE promotion_offers SET bonus_snapshot_sealed_at = now()
+        WHERE id = ${source.offer_id}::uuid AND bonus_snapshot_sealed_at IS NULL
+      `;
+    }
+    const bonuses = source.kind === 'promotion_review'
+      ? await tx<Array<{ code: string; display_name: string; position: number }>>`
+          SELECT offering_code_snapshot AS code, offering_display_name_snapshot AS display_name, position
+          FROM promotion_offer_bonus_offerings
+          WHERE offer_id = ${source.offer_id}::uuid
+          ORDER BY position
+        `
+      : [];
+    if (source.kind === 'promotion_review' && (bonuses.length < 1 || bonuses.length > 3)) {
+      await tx`
+        UPDATE course_bonus_followups SET status = 'cancelled', terminal_reason = 'PROMOTION_SNAPSHOT_INVALID',
+          claim_token = NULL, claimed_by = NULL, lease_until = NULL
+        WHERE id = ${id}::uuid AND status = 'processing' AND claim_token = ${token}::uuid
+      `;
+      await tx`
+        UPDATE promotion_offers SET status = 'cancelled', cancel_reason = 'PROMOTION_SNAPSHOT_INVALID'
+        WHERE id = ${source.offer_id}::uuid AND status = 'pending_review'
+      `;
+      return { claimed: false as const };
+    }
     const history = await tx<Array<{ direction: string; content: string }>>`
       SELECT direction, content FROM messages
       WHERE conversation_id = ${source.conversation_id}::uuid
       ORDER BY created_at DESC, id DESC LIMIT 8
     `;
     const memories = await tx<Array<{ text: string }>>`
-      SELECT value_normalized AS text FROM selected_memories
-      WHERE contact_id = ${source.contact_id}::uuid AND status = 'active'
-        AND memory_type IN ('study_goal','study_context','timeline')
-      ORDER BY updated_at DESC LIMIT 1
+      SELECT memory.value_normalized AS text
+      FROM selected_memories memory
+      JOIN conversation_sales_context_states_v1 origin
+        ON origin.conversation_id = memory.conversation_id
+       AND origin.contact_id = memory.contact_id
+       AND origin.workspace_id = ${source.workspace_id}::uuid
+      WHERE memory.contact_id = ${source.contact_id}::uuid
+        AND memory.status = 'active'
+        AND memory.memory_type IN ('study_goal','study_context','timeline')
+        AND memory.valid_from <= now()
+        AND (memory.valid_until IS NULL OR memory.valid_until > now())
+      ORDER BY memory.updated_at DESC LIMIT 1
     `;
     return {
       claimed: true as const,
@@ -387,7 +442,11 @@ export function validateCommercialFollowupNarrativeV1(
   message: string,
 ): CommercialFollowupContentResult {
   if (/https?:\/\/|www\./iu.test(message)) return { ok: false, reason: 'PROMOTION_URL_NOT_ALLOWED' };
-  if (/\b(?:descuento|rebaja|bajar(?:te)? el precio|precio (?:más |mas )?bajo|por menos|te cobro menos)\b/iu.test(message)) {
+  const pricePolicyText = message.replace(
+    /\b(?:no hay|sin|ning[uú]n|ninguna)\s+(?:descuento|rebaja)\b/giu,
+    '',
+  );
+  if (/\b(?:descuento|rebaja|bajar(?:te)? el precio|precio (?:más |mas )?bajo|por menos|te cobro menos)\b/iu.test(pricePolicyText)) {
     return { ok: false, reason: 'PROMOTION_PRICE_CHANGED' };
   }
   if (/\b(?:lucas|supervisor(?:a)?|gerencia|director(?:a)?|jef[ea])\b.{0,45}\b(?:autoriz|aprob|permit)/iu.test(message)
@@ -395,6 +454,18 @@ export function validateCommercialFollowupNarrativeV1(
     return { ok: false, reason: 'PROMOTION_FAKE_APPROVAL' };
   }
   const normalized = message.toLocaleLowerCase('es');
+  const courseNames = [
+    source.paid_offering_name,
+    ...source.bonus_offerings.map((bonus) => bonus.display_name),
+  ].map((name) => name.toLocaleLowerCase('es'));
+  const withoutCourseNames = courseNames.reduce(
+    (text, name) => text.split(name).join(' '),
+    normalized,
+  );
+  if (/(?:[$€£]\s*\d|\b(?:usd|u\$s|d[oó]lares?|pesos?)\s*\d|\b\d[\d.,]*\s*(?:usd|u\$s|d[oó]lares?|pesos?|al mes|mensuales?|cuotas?)\b|\b(?:por|total|precio|cuota|pago|cuesta|sale)\b.{0,25}\b\d[\d.,]*)/iu
+    .test(withoutCourseNames)) {
+    return { ok: false, reason: 'PROMOTION_PRICE_CHANGED' };
+  }
   const namedBonuses = source.bonus_offerings.filter((bonus) => (
     normalized.includes(bonus.display_name.toLocaleLowerCase('es'))
   ));
@@ -428,42 +499,68 @@ export async function deliverCommercialFollowupV1(
   deps: { readonly db?: postgres.Sql; readonly sender?: ManagedOutboundSender } = {},
 ) {
   const db = deps.db ?? await defaultDatabase();
-  const source = await followupSource(db, id);
-  if (!source || source.botpress_conversation_id !== input.botpress_conversation_id) {
-    return { outcome: 'not_authorized' as const };
-  }
   const narrative = CommercialFollowupNarrativeSchema.parse(input.narrative);
-  const bonuses = await db<Array<{ code: string; display_name: string; position: number }>>`
-    SELECT offering.code, offering.display_name, bonus.position
-    FROM promotion_bonus_offerings bonus JOIN offerings offering ON offering.id = bonus.offering_id
-    WHERE bonus.promotion_id = ${source.promotion_id}::uuid ORDER BY bonus.position
-  `;
-  const offerings = await db<Array<{ display_name: string }>>`
-    SELECT display_name FROM offerings WHERE workspace_id = ${source.workspace_id}::uuid
-  `;
-  const validation = validateCommercialFollowupNarrativeV1({
-    kind: source.kind,
-    paid_offering_name: source.paid_offering_name,
-    bonus_offerings: bonuses,
-    all_offering_names: offerings.map((offering) => offering.display_name),
-  }, narrative.message);
-  if (!validation.ok) return { outcome: 'invalid_content' as const, reason: validation.reason };
+  const prepared = await db.begin(async (tx) => {
+    const source = await followupSource(tx, id);
+    if (!source || source.botpress_conversation_id !== input.botpress_conversation_id) {
+      return { outcome: 'not_authorized' as const };
+    }
+    if (source.status !== 'processing' || source.claim_token !== input.claim_token) {
+      return { outcome: 'claim_lost' as const };
+    }
+    const reason = await cancellationReason(tx, source);
+    if (reason) {
+      const cancelled = await tx<Array<{ id: string }>>`
+        UPDATE course_bonus_followups SET status = 'cancelled', terminal_reason = ${reason},
+          claim_token = NULL, claimed_by = NULL, lease_until = NULL
+        WHERE id = ${id}::uuid AND status = 'processing'
+          AND claim_token = ${input.claim_token}::uuid AND lease_until > now()
+        RETURNING id
+      `;
+      if (!cancelled[0]) return { outcome: 'claim_lost' as const };
+      if (source.kind === 'promotion_review') await tx`
+        UPDATE promotion_offers SET status = 'cancelled', cancel_reason = ${reason}
+        WHERE id = ${source.offer_id}::uuid AND status = 'pending_review'
+      `;
+      return { outcome: 'cancelled' as const };
+    }
+    const bonuses = source.kind === 'promotion_review'
+      ? await tx<Array<{ code: string; display_name: string; position: number }>>`
+          SELECT offering_code_snapshot AS code, offering_display_name_snapshot AS display_name, position
+          FROM promotion_offer_bonus_offerings
+          WHERE offer_id = ${source.offer_id}::uuid ORDER BY position
+        `
+      : [];
+    const offerings = await tx<Array<{ display_name: string }>>`
+      SELECT display_name FROM offerings WHERE workspace_id = ${source.workspace_id}::uuid
+    `;
+    const validation = validateCommercialFollowupNarrativeV1({
+      kind: source.kind,
+      paid_offering_name: source.paid_offering_name,
+      bonus_offerings: bonuses,
+      all_offering_names: offerings.map((offering) => offering.display_name),
+    }, narrative.message);
+    if (!validation.ok) return { outcome: 'invalid_content' as const, reason: validation.reason };
 
-  const authorization = buildAuthorizedEgress({
-    content: narrative.message,
-    authorized_urls: [],
-    protected_facts: protectedFactsInContentV1(narrative.message),
+    const authorization = buildAuthorizedEgress({
+      content: narrative.message,
+      authorized_urls: [],
+      protected_facts: protectedFactsInContentV1(narrative.message),
+    });
+    if (!verifyAuthorizedEgress({ content: narrative.message, manifest: authorization }).ok) {
+      return { outcome: 'invalid_content' as const, reason: 'PROMOTION_EGRESS_INVALID' as const };
+    }
+    const locked = await tx<Array<{ id: string }>>`
+      UPDATE course_bonus_followups SET status = 'ambiguous', terminal_reason = 'SEND_IN_PROGRESS'
+      WHERE id = ${id}::uuid AND status = 'processing'
+        AND claim_token = ${input.claim_token}::uuid AND lease_until > now()
+      RETURNING id
+    `;
+    if (!locked[0]) return { outcome: 'claim_lost' as const };
+    return { outcome: 'ready' as const, source, authorization };
   });
-  if (!verifyAuthorizedEgress({ content: narrative.message, manifest: authorization }).ok) {
-    return { outcome: 'invalid_content' as const, reason: 'PROMOTION_EGRESS_INVALID' as const };
-  }
-  const locked = await db<Array<{ id: string }>>`
-    UPDATE course_bonus_followups SET status = 'ambiguous', terminal_reason = 'SEND_IN_PROGRESS'
-    WHERE id = ${id}::uuid AND status = 'processing'
-      AND claim_token = ${input.claim_token}::uuid AND lease_until > now()
-    RETURNING id
-  `;
-  if (!locked[0]) return { outcome: 'claim_lost' as const };
+  if (prepared.outcome !== 'ready') return prepared;
+  const { source, authorization } = prepared;
 
   const sender = deps.sender ?? (await import('@/features/messaging/adapters/managed-outbound'))
     .createManagedOutboundSender(db, source.botpress_conversation_id);
@@ -549,10 +646,10 @@ export async function scheduleCommercialFollowupRetryV1(
 ) {
   const db = deps.db ?? await defaultDatabase();
   const source = await followupSource(db, id);
-  if (!source) return { scheduled: false as const };
+  if (!source?.botpress_conversation_id) return { scheduled: false as const, provider_event_id: null };
   const { loadBotpressManagedMessagingConfig } = await import('@/lib/config');
   const managed = loadBotpressManagedMessagingConfig();
-  if (!managed) return { scheduled: false as const };
+  if (!managed) return { scheduled: false as const, provider_event_id: null };
   const response = await (deps.fetchImpl ?? fetch)(`${managed.apiUrl}/v1/chat/events`, {
     method: 'POST',
     redirect: 'manual',
@@ -569,5 +666,121 @@ export async function scheduleCommercialFollowupRetryV1(
       schedule: { delay: Math.max(0, delayMs) },
     }),
   });
-  return { scheduled: response.ok as boolean };
+  if (!response.ok) return { scheduled: false as const, provider_event_id: null };
+  const payload = await response.json().catch(() => null) as {
+    id?: unknown;
+    event?: { id?: unknown };
+  } | null;
+  const providerEventId = typeof payload?.event?.id === 'string'
+    ? payload.event.id
+    : typeof payload?.id === 'string' ? payload.id : null;
+  if (providerEventId) await recordCommercialFollowupScheduledV1(id, providerEventId, { db });
+  return { scheduled: true as const, provider_event_id: providerEventId };
+}
+
+export async function recordCommercialFollowupScheduledV1(
+  id: string,
+  providerEventId: string,
+  deps: { readonly db?: postgres.Sql } = {},
+) {
+  const db = deps.db ?? await defaultDatabase();
+  const rows = await db<Array<{ provider_event_id: string }>>`
+    UPDATE course_bonus_followups
+    SET provider_event_id = COALESCE(provider_event_id, ${providerEventId}),
+        terminal_reason = NULL
+    WHERE id = ${id}::uuid
+      AND status = 'pending'
+      AND (provider_event_id IS NULL OR provider_event_id = ${providerEventId})
+    RETURNING provider_event_id
+  `;
+  return rows[0]
+    ? { recorded: true as const, provider_event_id: rows[0].provider_event_id }
+    : { recorded: false as const, provider_event_id: null };
+}
+
+export interface CommercialFollowupDispatchResultV1 {
+  reserved: number;
+  scheduled: number;
+  failed: number;
+  ambiguous: number;
+}
+
+export async function dispatchDueCommercialFollowupsV1(
+  input: { readonly limit?: number; readonly lookahead_seconds?: number; readonly retry_after_seconds?: number } = {},
+  deps: {
+    readonly db?: postgres.Sql;
+    readonly schedule?: (id: string, delayMs: number) => Promise<{
+      readonly scheduled: boolean;
+      readonly provider_event_id: string | null;
+    }>;
+  } = {},
+): Promise<CommercialFollowupDispatchResultV1> {
+  const result: CommercialFollowupDispatchResultV1 = { reserved: 0, scheduled: 0, failed: 0, ambiguous: 0 };
+  if (!loadCentralCargaBonusConfig().enabled) return result;
+  const db = deps.db ?? await defaultDatabase();
+  const limit = Math.min(Math.max(input.limit ?? 25, 1), 100);
+  const lookaheadSeconds = Math.min(Math.max(input.lookahead_seconds ?? 60, 0), 300);
+  const retryAfterSeconds = Math.min(Math.max(input.retry_after_seconds ?? 30, 0), 600);
+  const reserved = await db<Array<{
+    id: string;
+    due_at: Date;
+    schedule_attempt_count: number;
+    max_schedule_attempts: number;
+  }>>`
+    WITH candidates AS (
+      SELECT followup.id
+      FROM course_bonus_followups followup
+      WHERE followup.status = 'pending'
+        AND followup.provider_event_id IS NULL
+        AND followup.schedule_attempt_count < followup.max_schedule_attempts
+        AND followup.due_at <= now() + make_interval(secs => ${lookaheadSeconds})
+        AND (followup.last_schedule_at IS NULL
+          OR followup.last_schedule_at <= now() - make_interval(secs => ${retryAfterSeconds}))
+      ORDER BY followup.due_at, followup.created_at, followup.id
+      FOR UPDATE SKIP LOCKED
+      LIMIT ${limit}
+    )
+    UPDATE course_bonus_followups followup
+    SET schedule_attempt_count = followup.schedule_attempt_count + 1,
+        last_schedule_at = now(),
+        terminal_reason = 'EVENT_SCHEDULE_RESERVED'
+    FROM candidates
+    WHERE followup.id = candidates.id
+    RETURNING followup.id, followup.due_at, followup.schedule_attempt_count,
+      followup.max_schedule_attempts
+  `;
+  result.reserved = reserved.length;
+  const schedule = deps.schedule ?? ((id, delayMs) => scheduleCommercialFollowupRetryV1(id, delayMs, { db }));
+  for (const followup of reserved) {
+    const delayMs = Math.max(0, followup.due_at.getTime() - Date.now());
+    try {
+      const outcome = await schedule(followup.id, delayMs);
+      if (outcome.scheduled) {
+        if (outcome.provider_event_id) {
+          await recordCommercialFollowupScheduledV1(followup.id, outcome.provider_event_id, { db });
+        } else {
+          await db`
+            UPDATE course_bonus_followups SET terminal_reason = 'EVENT_SCHEDULED_UNCONFIRMED'
+            WHERE id = ${followup.id}::uuid AND status = 'pending' AND provider_event_id IS NULL
+          `;
+        }
+        result.scheduled += 1;
+        continue;
+      }
+    } catch {
+      // A thrown request is as uncertain as a false response. Retry only while
+      // the persisted scheduling budget remains.
+    }
+    const terminal = followup.schedule_attempt_count >= followup.max_schedule_attempts;
+    await db`
+      UPDATE course_bonus_followups
+      SET status = CASE WHEN ${terminal} THEN 'ambiguous' ELSE status END,
+          terminal_reason = CASE WHEN ${terminal}
+            THEN 'EVENT_SCHEDULE_UNCONFIRMED' ELSE 'EVENT_SCHEDULE_FAILED' END
+      WHERE id = ${followup.id}::uuid AND status = 'pending' AND provider_event_id IS NULL
+    `;
+    result.failed += 1;
+    if (terminal) result.ambiguous += 1;
+  }
+  return result;
 }

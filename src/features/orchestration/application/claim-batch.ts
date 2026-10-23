@@ -52,10 +52,7 @@ import {
   unknownCallIntakeReadinessV1,
   type CallIntakeReadinessV1,
 } from '@/features/calls/domain/call-intake-readiness';
-import {
-  countPriceObjectionInterventionsV1,
-  type CourseBonusCapabilityV1,
-} from '@/features/promotions/application/read-course-bonus-capability';
+import type { CourseBonusCapabilityV1 } from '@/features/promotions/application/read-course-bonus-capability';
 
 /**
  * Claim a batch and, only if this caller won it, build the one controlled
@@ -126,7 +123,6 @@ export interface ClaimBatchDependencies {
     conversation_id: string;
     channel: 'text' | 'voice';
     selected_offering_code: string | null;
-    price_objection_interventions: number;
   }) => Promise<CourseBonusCapabilityV1 | null>;
   readonly agentABrainShadow?: boolean;
   /** Runtime rollout resolved after the batch is owned and its contact is canonical. */
@@ -1167,23 +1163,11 @@ export async function claimBatch(
       ? async (contactId: string) => unknownCallIntakeReadinessV1(await readIntake(contactId))
       : (await import('@/lib/repositories/call-intake-readiness.repository')).loadCallIntakeReadinessV1);
   const readPaymentVerification = deps.paymentVerification ?? (async () => null);
-  const objectionInterventions = [
-    ...logicalRecentTurns
-      .filter((turn) => turn.direction === 'inbound' && turn.batch_id !== claim.batch_id)
-      .map((turn) => [turn.content]),
-    [
-      ...batchMessages
-        .filter((message) => message.message_type === 'text')
-        .map((message) => message.content),
-    ],
-  ];
-  const priceObjectionInterventions = countPriceObjectionInterventionsV1(objectionInterventions);
   const courseBonusTask = deps.courseBonusCapability?.({
     contact_id: facts.contact.id,
     conversation_id: claim.conversation_id!,
     channel: 'text',
     selected_offering_code: conversationStateV1?.selected_offering_code ?? null,
-    price_objection_interventions: priceObjectionInterventions,
   }).catch((error) => {
     log('orchestration.claim.course_bonus_unavailable', {
       trace_id: input.trace_id,

@@ -37,6 +37,7 @@
 
 **Files:**
 - Create: `supabase/migrations/20261023010001_authorized_course_bonus_promotions.sql`
+- Create: `supabase/migrations/20261023010004_course_bonus_offer_snapshot.sql`
 - Create: `src/features/promotions/domain/course-bonus.ts`
 - Test: `tests/integration/course-bonus-invariants.test.ts`
 
@@ -130,10 +131,14 @@ git commit -m "feat(agent-a): authorize configured course bonus offers"
 - Create: `src/app/api/agent/commercial-followups/[id]/claim/route.ts`
 - Create: `src/app/api/agent/commercial-followups/[id]/deliver/route.ts`
 - Create: `src/app/api/agent/commercial-followups/[id]/release/route.ts`
+- Create: `src/app/api/agent/commercial-followups/[id]/scheduled/route.ts`
+- Create: `src/app/api/cron/course-bonus-followups/route.ts`
+- Create: `supabase/migrations/20261023010003_course_bonus_followup_dispatch.sql`
 - Create: `botpress-agent/src/triggers/commercialFollowup.ts`
 - Modify: `botpress-agent/agent.config.ts`
 - Modify: `botpress-agent/src/workflows/processInboundTurn.ts`
 - Modify: `src/features/conversation/application/commit-agent-turn-v3.ts`
+- Modify: `vercel.json`
 - Test: `tests/unit/promotions/commercial-followup-service.test.ts`
 - Test: `tests/unit/botpress/commercial-followup-trigger.test.ts`
 - Test: `tests/integration/course-bonus-followup.test.ts`
@@ -154,7 +159,7 @@ Expected: FAIL because the service/event does not exist.
 
 - [x] **Step 3: Implement atomic action commit and Botpress scheduling**
 
-Commit the ordinary outbound and durable follow-up together. Schedule Botpress after the outbound is accepted. Event payload contains only `followup_id`; claim reloads latest state and promotion facts.
+Commit the ordinary outbound and durable follow-up together. Schedule Botpress after the outbound is accepted and persist the provider event receipt. A minute-level database dispatcher recovers failed or interrupted scheduling with a bounded retry budget. Event payload contains only `followup_id`; claim reloads latest state and promotion facts.
 
 - [x] **Step 4: Implement Agent A follow-up narrative and fenced delivery**
 
@@ -177,6 +182,7 @@ git commit -m "feat(promotions): deliver durable course bonus reviews"
 
 **Files:**
 - Modify: `src/features/payments/application/reserve-payment-link.ts`
+- Use: `supabase/migrations/20261023010004_course_bonus_offer_snapshot.sql`
 - Modify: `src/features/payments/application/materialize-payment-link-action.ts`
 - Modify: `src/lib/services/decision.service.ts`
 - Modify: `src/features/payments/application/process-stripe-webhook.ts`
@@ -200,7 +206,7 @@ Expected: FAIL because payment reservation has no promotion input or snapshot.
 
 - [x] **Step 3: Extend `reservePaymentLink` with backend-authorized promotion identity**
 
-Resolve and copy the paid/bonus offering facts inside the reservation transaction before returning the URL. Validate the stored promotion set on every idempotent replay. Store `promotion_code` in the internal payment event; do not make Stripe metadata authoritative.
+Resolve the bonus facts only from the sealed offer snapshot and copy them inside the reservation transaction before returning the URL. Seal the payment snapshot before the URL can leave the transaction, validate the stored promotion set on every idempotent replay, and reject late additions. Store `promotion_code` in the internal payment event; do not make Stripe metadata authoritative.
 
 - [x] **Step 4: Preserve the existing static-link correlation**
 

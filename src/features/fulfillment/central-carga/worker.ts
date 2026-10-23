@@ -347,13 +347,23 @@ async function settle(
         `;
         const centralEnrollmentId = enrollmentRows[0]?.id;
         if (!centralEnrollmentId) throw new Error('central enrollment persistence failed');
-        for (const [index, bonus] of body.bonus_enrollments.entries()) {
+        const snapshotPositions = await tx<Array<{ offering_code_snapshot: string; position: number }>>`
+          SELECT offering_code_snapshot, position
+          FROM payment_bonus_offerings
+          WHERE payment_id = ${job.payment_id}::uuid
+        `;
+        const positionByCode = new Map(snapshotPositions.map((snapshot) => (
+          [snapshot.offering_code_snapshot, snapshot.position] as const
+        )));
+        for (const bonus of body.bonus_enrollments) {
+          const position = positionByCode.get(bonus.offering_code);
+          if (position === undefined) throw new Error('central bonus position not found in payment snapshot');
           await tx`
             INSERT INTO central_bonus_enrollment_items (
               central_enrollment_id, payment_id, offering_code, enrollment_status, position
             ) VALUES (
               ${centralEnrollmentId}::uuid, ${job.payment_id}::uuid, ${bonus.offering_code},
-              ${bonus.enrollment_status}, ${index + 1}
+              ${bonus.enrollment_status}, ${position}
             )
             ON CONFLICT (payment_id, offering_code) DO NOTHING
           `;

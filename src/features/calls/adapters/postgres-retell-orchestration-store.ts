@@ -240,7 +240,11 @@ export class PostgresRetellOrchestrationStore implements RetellOrchestrationStor
             SELECT id FROM payments WHERE idempotency_key = ${idempotencyKey} LIMIT 1
           `;
           if (!existing[0]) {
-            const accepted = await tx<Array<{ id: string }>>`
+            const accepted = await tx<Array<{
+              id: string;
+              promotion_id: string;
+              bonus_snapshot_sealed_at: Date | null;
+            }>>`
               INSERT INTO promotion_offers (
                 workspace_id, contact_id, conversation_id, promotion_id, paid_offering_id,
                 status, source_turn_id, source_conversation_version, source_state_version,
@@ -263,9 +267,30 @@ export class PostgresRetellOrchestrationStore implements RetellOrchestrationStor
               ON CONFLICT (conversation_id, promotion_id)
                 WHERE status IN ('pending_review','offered','accepted')
               DO UPDATE SET status = 'accepted', accepted_at = COALESCE(promotion_offers.accepted_at, now())
-              RETURNING id
+              RETURNING id, promotion_id, bonus_snapshot_sealed_at
             `;
             if (!accepted[0]) throw new PaymentLinkReservationError('PROMOTION_NOT_AUTHORIZED');
+            if (!accepted[0].bonus_snapshot_sealed_at) {
+              await tx`
+                INSERT INTO promotion_offer_bonus_offerings (
+                  offer_id, promotion_id, offering_id, promotion_code_snapshot,
+                  offering_code_snapshot, offering_display_name_snapshot, position
+                )
+                SELECT accepted.id, promotion.id, bonus_offering.id, promotion.promotion_code,
+                  bonus_offering.code, bonus_offering.display_name, configured.position
+                FROM promotion_offers accepted
+                JOIN promotions promotion ON promotion.id = accepted.promotion_id
+                JOIN promotion_bonus_offerings configured ON configured.promotion_id = promotion.id
+                JOIN offerings bonus_offering ON bonus_offering.id = configured.offering_id
+                WHERE accepted.id = ${accepted[0].id}::uuid
+                ORDER BY configured.position
+                ON CONFLICT DO NOTHING
+              `;
+              await tx`
+                UPDATE promotion_offers SET bonus_snapshot_sealed_at = now()
+                WHERE id = ${accepted[0].id}::uuid AND bonus_snapshot_sealed_at IS NULL
+              `;
+            }
           }
         }
         return reservePaymentLink(tx, {

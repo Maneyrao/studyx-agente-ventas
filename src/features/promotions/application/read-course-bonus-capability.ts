@@ -41,15 +41,6 @@ export interface CourseBonusOfferProjectionV1 {
   readonly expires_at: string | Date | null;
 }
 
-const PRICE_OBJECTION = /\b(caro|carísimo|costoso|fuera de (?:mi )?presupuesto|no me alcanza|no (?:lo )?puedo pagar|demasiad[oa]|much[oa] (?:dinero|plata)|se me hace mucho)\b/iu;
-
-/** One inbound intervention counts once even when WhatsApp delivered it in fragments. */
-export function countPriceObjectionInterventionsV1(
-  interventions: ReadonlyArray<readonly string[]>,
-): number {
-  return interventions.filter((messages) => PRICE_OBJECTION.test(messages.join(' '))).length;
-}
-
 const hidden = (
   status: CourseBonusCapabilityStatus,
   extras: Partial<CourseBonusCapabilityV1> = {},
@@ -73,7 +64,9 @@ function timestamp(value: string | Date | null): number | null {
 export function deriveCourseBonusCapabilityV1(input: {
   readonly channel: 'text' | 'voice';
   readonly selected_offering_code: string | null;
-  readonly price_objection_interventions: number;
+  /** Durable evidence that Agent A already classified and handled a first
+   * price objection for this exact conversation, promotion, and paid course. */
+  readonly prior_price_objection_checkin: boolean;
   readonly promotion: CourseBonusPromotionProjectionV1 | null;
   readonly active_offer: CourseBonusOfferProjectionV1 | null;
   readonly now?: Date;
@@ -117,13 +110,10 @@ export function deriveCourseBonusCapabilityV1(input: {
     }
   }
 
-  if (input.price_objection_interventions >= 2) {
+  if (input.prior_price_objection_checkin) {
     return hidden('review_available', { may_request_review: true });
   }
-  if (input.price_objection_interventions === 1) {
-    return hidden('checkin_available', { may_schedule_checkin: true });
-  }
-  return hidden('not_eligible');
+  return hidden('checkin_available', { may_schedule_checkin: true });
 }
 
 interface CapabilityRow {
@@ -137,6 +127,7 @@ interface CapabilityRow {
   offer_status: CourseBonusOfferProjectionV1['status'] | null;
   offer_promotion_code: string | null;
   offer_expires_at: Date | null;
+  prior_price_objection_checkin: boolean;
 }
 
 export async function readCourseBonusCapabilityV1(input: {
@@ -145,7 +136,6 @@ export async function readCourseBonusCapabilityV1(input: {
   readonly conversation_id: string;
   readonly channel: 'text' | 'voice';
   readonly selected_offering_code: string | null;
-  readonly price_objection_interventions: number;
   readonly now?: Date;
 }, deps: { readonly db: DbClient }): Promise<CourseBonusCapabilityV1> {
   if (!loadCentralCargaBonusConfig().enabled) return hidden('unavailable');
@@ -158,19 +148,44 @@ export async function readCourseBonusCapabilityV1(input: {
       p.active,
       p.valid_from,
       p.valid_until,
-      COALESCE((
-        SELECT jsonb_agg(jsonb_build_object(
-          'code', bonus.code,
-          'display_name', bonus.display_name,
-          'position', pbo.position
-        ) ORDER BY pbo.position)
-        FROM public.promotion_bonus_offerings pbo
-        JOIN public.offerings bonus ON bonus.id = pbo.offering_id
-        WHERE pbo.promotion_id = p.id
-      ), '[]'::jsonb) AS bonus_offerings,
+      CASE
+        WHEN po.id IS NOT NULL AND po.status IN ('offered','accepted','attached') THEN
+          COALESCE((
+            SELECT jsonb_agg(jsonb_build_object(
+              'code', snapshot.offering_code_snapshot,
+              'display_name', snapshot.offering_display_name_snapshot,
+              'position', snapshot.position
+            ) ORDER BY snapshot.position)
+            FROM public.promotion_offer_bonus_offerings snapshot
+            WHERE snapshot.offer_id = po.id
+          ), '[]'::jsonb)
+        ELSE COALESCE((
+          SELECT jsonb_agg(jsonb_build_object(
+            'code', bonus.code,
+            'display_name', bonus.display_name,
+            'position', pbo.position
+          ) ORDER BY pbo.position)
+          FROM public.promotion_bonus_offerings pbo
+          JOIN public.offerings bonus ON bonus.id = pbo.offering_id
+          WHERE pbo.promotion_id = p.id
+        ), '[]'::jsonb)
+      END AS bonus_offerings,
       po.status AS offer_status,
       offer_promotion.promotion_code AS offer_promotion_code,
-      po.expires_at AS offer_expires_at
+      po.expires_at AS offer_expires_at,
+      EXISTS (
+        SELECT 1
+        FROM public.promotion_offers prior_offer
+        JOIN public.course_bonus_followups prior_followup
+          ON prior_followup.offer_id = prior_offer.id
+         AND prior_followup.kind = 'price_objection_checkin'
+        WHERE prior_offer.workspace_id = p.workspace_id
+          AND prior_offer.contact_id = ${input.contact_id}::uuid
+          AND prior_offer.conversation_id = ${input.conversation_id}::uuid
+          AND prior_offer.promotion_id = p.id
+          AND prior_offer.paid_offering_id = p.paid_offering_id
+          AND prior_offer.cancel_reason = 'CHECKIN_ONLY'
+      ) AS prior_price_objection_checkin
     FROM public.promotions p
     JOIN public.workspaces workspace ON workspace.id = p.workspace_id
     JOIN public.offerings paid ON paid.id = p.paid_offering_id
@@ -195,7 +210,7 @@ export async function readCourseBonusCapabilityV1(input: {
   return deriveCourseBonusCapabilityV1({
     channel: input.channel,
     selected_offering_code: input.selected_offering_code,
-    price_objection_interventions: input.price_objection_interventions,
+    prior_price_objection_checkin: row?.prior_price_objection_checkin ?? false,
     promotion: row ? {
       promotion_code: row.promotion_code,
       paid_offering_code: row.paid_offering_code,

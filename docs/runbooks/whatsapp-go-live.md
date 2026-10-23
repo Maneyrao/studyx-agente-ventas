@@ -180,12 +180,15 @@ release record:
    `CENTRAL_CARGA_BONUS_ENABLED=false`; keep every promotion inactive.
 2. Prove an ordinary Central v1 payment still completes unchanged.
 3. Verify every external evidence item above against the intended environment.
-4. Activate only the English promotion and enable the flag for one supervised
+4. Verify the authenticated `/api/cron/course-bonus-followups` run: a pending
+   row without a provider event must be scheduled, receive its provider event
+   id, and remain single-send under a duplicate event.
+5. Activate only the English promotion and enable the flag for one supervised
    canary; do not activate any other mapping.
-5. Verify the accepted offer, immutable payment snapshot, one Central v2 job,
-   complete Moodle access, and the deterministic post-sale message. No invoice
-   is part of this flow.
-6. Expand only after the canary evidence is reviewed explicitly.
+6. Verify the sealed offered-course set, immutable payment snapshot, one
+   Central v2 job, complete Moodle access, and the deterministic post-sale
+   message. No invoice is part of this flow.
+7. Expand only after the canary evidence is reviewed explicitly.
 
 ### Promotion-specific rollback
 
