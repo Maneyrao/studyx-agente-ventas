@@ -472,9 +472,20 @@ export function validateCommercialFollowupNarrativeV1(
     .replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')
     .replace(/\s+/gu, '\\s+');
   const principalMadeFree = new RegExp(
-    `(?:${paidOfferingPattern}\\s+(?:(?:es|ser[aá]|queda|quedar[ií]a|va a ser|tambi[eé]n)\\s+)?(?:gratis|sin costo|bonificad[oa])\\b|(?:regal|bonific)\\w*.{0,18}\\b${paidOfferingPattern}\\b|(?:gratis|sin costo)\\s+(?:el curso\\s+)?${paidOfferingPattern}\\b|(?:no (?:tienes|ten[eé]s|hay) que|sin)\\s+pagar\\s+(?:nada|${paidOfferingPattern}))`,
+    `(?:${paidOfferingPattern}\\s*[,;:]?\\s+(?:(?:(?:te|lo|la)\\s+)?(?:(?:es|ser[aá]|queda|quedar[ií]a|sale|saldr[ií]a|resulta|tienes|ten[eé]s|tenes|tendr[ií]as?|va a ser|tambi[eé]n)\\s+)?(?:totalmente\\s+)?(?:gratis|sin costo|bonificad[oa])\\b|(?:te\\s+)?(?:lo\\s+)?(?:regal|bonific)\\w*\\b)|(?:regal|bonific)\\w*.{0,18}\\b${paidOfferingPattern}\\b|(?:gratis|sin costo)\\s+(?:el curso\\s+)?${paidOfferingPattern}\\b|(?:no (?:tienes|ten[eé]s|hay) que|sin)\\s+pagar\\s+(?:nada|${paidOfferingPattern}))`,
     'iu',
   );
+  const unassignedFreeClaim = source.kind === 'promotion_review'
+    ? source.bonus_offerings.reduce((text, bonus) => {
+        const bonusPattern = bonus.display_name.toLocaleLowerCase('es')
+          .replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')
+          .replace(/\s+/gu, '\\s+');
+        return text.replace(new RegExp(
+          `(?:${bonusPattern}\\s*[,;:]?\\s+(?:(?:(?:te|lo|la)\\s+)?(?:(?:es|queda|sale|resulta|va a ser|tienes|ten[eé]s|tenes)\\s+)?(?:totalmente\\s+)?(?:gratis|sin costo|bonificad[oa])\\b|(?:de\\s+)?regalo\\b)|(?:regal|bonific)\\w*.{0,18}\\b${bonusPattern}\\b|(?:gratis|sin costo)\\s+(?:el curso\\s+)?${bonusPattern}\\b)`,
+          'giu',
+        ), ' ');
+      }, normalized)
+    : '';
   const withoutCourseNames = courseNames.reduce(
     (text, name) => text.split(name).join(' '),
     normalized,
@@ -500,7 +511,8 @@ export function validateCommercialFollowupNarrativeV1(
     || /[$€£]|\b(?:usd|u\$s|d[oó]lares?|pesos?|euros?)\b/iu.test(priceCandidate)
     || wordAmount.test(priceCandidate)
     || /\b(?:ambos?|los dos|todo(?:s)?)\s+(?:(?:son|quedan)\s+)?(?:gratis|sin costo|bonificad[oa]s?)\b/iu.test(normalized)
-    || principalMadeFree.test(normalized)) {
+    || principalMadeFree.test(normalized)
+    || /\b(?:gratis|sin costo|regal\w*|bonific\w*)\b/iu.test(unassignedFreeClaim)) {
     return { ok: false, reason: 'PROMOTION_PRICE_CHANGED' };
   }
   const namedBonuses = source.bonus_offerings.filter((bonus) => (

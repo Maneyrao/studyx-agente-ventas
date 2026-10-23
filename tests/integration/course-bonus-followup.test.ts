@@ -20,7 +20,7 @@ afterEach(() => {
 });
 afterAll(async () => db?.end());
 
-async function fixture() {
+async function fixture(options: { workspaceScopedConversation?: boolean } = {}) {
   const suffix = randomUUID();
   const botpressId = `bp-${suffix}`;
   const [workspace] = await db!`INSERT INTO workspaces(slug,display_name)
@@ -34,7 +34,8 @@ async function fixture() {
   const [thread] = await db!`INSERT INTO channel_threads(contact_id,provider,integration_id,channel,external_conversation_id,metadata)
     VALUES (${contact.id},'botpress','whatsapp','whatsapp',${botpressId},${db!.json({botpress_conversation_id:botpressId})}) RETURNING id`;
   const [conversation] = await db!`INSERT INTO conversations(contact_id,channel,workspace_id,channel_thread_id)
-    VALUES (${contact.id},'whatsapp',${workspace.id},${thread.id}) RETURNING id`;
+    VALUES (${contact.id},'whatsapp',${options.workspaceScopedConversation === false ? null : workspace.id}::uuid,
+      ${thread.id}) RETURNING id`;
   const offerings = await db!`INSERT INTO offerings(workspace_id,code,display_name,offering_type,status,description,price_type,price_amount,currency,billing_interval)
     VALUES (${workspace.id},${`ingles_1_${suffix.slice(0,8)}`},'Inglés 1','course','active','Base','fixed',360,'USD','annual'),
       (${workspace.id},${`ingles_2_${suffix.slice(0,8)}`},'Inglés 2','course','active','Continuación','free',NULL,NULL,NULL)
@@ -103,6 +104,22 @@ run('durable commercial course-bonus follow-up', () => {
       .toEqual({outcome:'claim_lost'});
     expect(sends).toBe(1);
     expect(await db!`SELECT status FROM promotion_offers WHERE id=${first.offer_id}`).toEqual([{status:'offered'}]);
+  });
+
+  it('commits the review for a legacy Botpress conversation bound by commercial state', async () => {
+    const f = await fixture({ workspaceScopedConversation:false });
+    expect(await db!`SELECT workspace_id FROM conversations WHERE id=${f.conversation.id}`)
+      .toEqual([{workspace_id:null}]);
+    const committed = await commitCommercialActionV1(db!, {
+      workspace_id:f.workspace.id as string, contact_id:f.contact.id as string,
+      conversation_id:f.conversation.id as string, paid_offering_code:f.paid.code as string,
+      source_turn_id:f.inbound.id as string, source_outbound_message_id:f.outbound.id as string,
+      action:{type:'request_promotion_review',reason:'persistent_price_objection'}, now:new Date(),
+    });
+    expect(committed).toMatchObject({
+      offer_id:expect.any(String),
+      followup:{kind:'promotion_review'},
+    });
   });
 
   it('uses the final bubble of the same agent turn as the follow-up activity boundary', async () => {

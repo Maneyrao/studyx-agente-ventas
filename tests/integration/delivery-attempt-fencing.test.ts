@@ -559,14 +559,22 @@ run('la entrega gobierna la proyección payment_link_sent', () => {
         occurred_at:new Date(Date.now()+1_000).toISOString(),
         reply_to_external_message_id:firstEnvelope.external_message_id},
     });
-    // Legacy channel ingestion intentionally starts with an unscoped
-    // conversation. The promotion identity invariant requires the commercial
-    // workspace to be bound before an offer can be persisted. Bind it only
-    // after both inbound turns have resolved to the same conversation so this
-    // fixture mirrors the later commercial-context transition without
-    // accidentally creating a second open conversation.
-    await sql`UPDATE conversations SET workspace_id=${paymentWorkspaceId}::uuid
-      WHERE id=${firstContext.conversation_id}::uuid`;
+    await new PostgresConversationStateStoreV1(sql).transition({
+      workspace_slug: PAYMENT_WORKSPACE_SLUG,
+      conversation_id: firstContext.conversation_id,
+      contact_id: firstContext.contact.id,
+      selected_offering_code: 'course_fence',
+      selected_payment_plan: 'monthly_12',
+      stage: 'plan_selected',
+      call_preference: 'unknown',
+      call_offer_status: 'not_offered',
+      awaiting_reply: 'payment_confirmation',
+      payment_reported: false,
+      source_turn_id: promotedContext.turn_id,
+    });
+    expect(await sql<Array<{ workspace_id:string|null }>>`
+      SELECT workspace_id FROM conversations WHERE id=${firstContext.conversation_id}::uuid
+    `).toEqual([{workspace_id:null}]);
 
     const [paid] = await sql<Array<{ id:string }>>`SELECT id FROM offerings
       WHERE workspace_id=${paymentWorkspaceId}::uuid AND code='course_fence'`;
@@ -620,6 +628,16 @@ run('la entrega gobierna la proyección payment_link_sent', () => {
         expect.objectContaining({bonuses:0}),
         expect.objectContaining({bonuses:1}),
     ]));
+
+    const continued = await processInboundMessage({
+      ...firstEnvelope,
+      external_message_id:`message-${randomUUID()}`,
+      trace_id:randomUUID(),
+      message:{...firstEnvelope.message,text:'Gracias, ¿cómo sigo?',
+        occurred_at:new Date(Date.now()+2_000).toISOString(),
+        reply_to_external_message_id:promotedContext.turn_id},
+    });
+    expect(continued.conversation_id).toBe(firstContext.conversation_id);
   });
 
   it('keeps the progressive phone lead when a later delivery fails', async () => {

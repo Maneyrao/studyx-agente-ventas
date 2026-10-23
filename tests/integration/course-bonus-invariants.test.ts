@@ -134,6 +134,44 @@ run('authorized course bonus database invariants', () => {
     `).rejects.toThrow(/identity mismatch/i);
   });
 
+  it('accepts a legacy unscoped conversation only through its canonical commercial state', async () => {
+    const f = await fixture();
+    const promotion = await createPromotion(f);
+    await db!`
+      INSERT INTO promotion_bonus_offerings (promotion_id, workspace_id, offering_id, position)
+      VALUES (${promotion.id}::uuid, ${f.workspace.id}::uuid, ${f.giftA.id}::uuid, 1)
+    `;
+    await db!`UPDATE conversations SET workspace_id=NULL WHERE id=${f.conversation.id}::uuid`;
+
+    await expect(db!`
+      INSERT INTO promotion_offers (
+        workspace_id, contact_id, conversation_id, promotion_id, paid_offering_id, status
+      ) VALUES (
+        ${f.workspace.id}::uuid, ${f.contact.id}::uuid, ${f.conversation.id}::uuid,
+        ${promotion.id}::uuid, ${f.paid.id}::uuid, 'pending_review'
+      )
+    `).rejects.toThrow(/identity mismatch/i);
+
+    await db!`
+      INSERT INTO conversation_sales_context_states_v1 (
+        workspace_id, conversation_id, contact_id, selected_offering_code
+      ) VALUES (
+        ${f.workspace.id}::uuid, ${f.conversation.id}::uuid, ${f.contact.id}::uuid,
+        ${f.paid.code}
+      )
+    `;
+    const [offer] = await db!<Array<{ id:string }>>`
+      INSERT INTO promotion_offers (
+        workspace_id, contact_id, conversation_id, promotion_id, paid_offering_id, status
+      ) VALUES (
+        ${f.workspace.id}::uuid, ${f.contact.id}::uuid, ${f.conversation.id}::uuid,
+        ${promotion.id}::uuid, ${f.paid.id}::uuid, 'pending_review'
+      )
+      RETURNING id
+    `;
+    expect(offer.id).toBeTruthy();
+  });
+
   it('provides idempotent durable follow-ups with expiring leases', async () => {
     const f = await fixture();
     const promotion = await createPromotion(f);

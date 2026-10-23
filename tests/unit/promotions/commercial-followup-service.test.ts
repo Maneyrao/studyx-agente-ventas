@@ -18,6 +18,9 @@ describe('commercial course-bonus follow-up content', () => {
     expect(validateCommercialFollowupNarrativeV1(review,
       'Pude habilitarte Inglés 2 gratis junto con Inglés 1; el precio de Inglés 1 no cambia.'))
       .toEqual({ ok: true });
+    expect(validateCommercialFollowupNarrativeV1(review,
+      'Te regalo Inglés 2 junto con Inglés 1, sin cambiar el precio de Inglés 1.'))
+      .toEqual({ ok: true });
 
     expect(validateCommercialFollowupNarrativeV1(review,
       'Te conseguí una promoción especial para que avances con inglés.'))
@@ -66,6 +69,18 @@ describe('commercial course-bonus follow-up content', () => {
       .toEqual({ ok: false, reason: 'PROMOTION_PRICE_CHANGED' });
     expect(validateCommercialFollowupNarrativeV1(review,
       'Te regalo Inglés 1 y también Inglés 2; no tienes que pagar nada.'))
+      .toEqual({ ok: false, reason: 'PROMOTION_PRICE_CHANGED' });
+    expect(validateCommercialFollowupNarrativeV1(review,
+      'Inglés 1 te queda gratis y te incluyo Inglés 2.'))
+      .toEqual({ ok: false, reason: 'PROMOTION_PRICE_CHANGED' });
+    expect(validateCommercialFollowupNarrativeV1(review,
+      'Inglés 1 te sale gratis y te incluyo Inglés 2.'))
+      .toEqual({ ok: false, reason: 'PROMOTION_PRICE_CHANGED' });
+    expect(validateCommercialFollowupNarrativeV1(review,
+      'Te incluyo Inglés 2 e Inglés 1 lo tienes gratis.'))
+      .toEqual({ ok: false, reason: 'PROMOTION_PRICE_CHANGED' });
+    expect(validateCommercialFollowupNarrativeV1(review,
+      'Inglés 1 te lo bonifico y además te incluyo Inglés 2.'))
       .toEqual({ ok: false, reason: 'PROMOTION_PRICE_CHANGED' });
     expect(validateCommercialFollowupNarrativeV1(review,
       'Te incluyo Inglés 2 con Inglés 1 y pagás 10 al año.'))
