@@ -43,11 +43,21 @@ export function singleCanonicalOfferingReferenceV1(input: {
   const mentioned = input.offerings.filter((offering) => {
     const name = normalize(offering.display_name);
     if (!name) return false;
-    return new RegExp(`(?<![\\p{L}\\p{N}])${escapeRegExp(name)}(?![\\p{L}\\p{N}])`, 'u')
-      .test(content);
+    const matches = [...content.matchAll(
+      new RegExp(`(?<![\\p{L}\\p{N}])${escapeRegExp(name)}(?![\\p{L}\\p{N}])`, 'gu'),
+    )];
+    return matches.some((match) => !isRejectedOfferingOccurrence(content, match.index, name.length));
   });
   const codes = [...new Set(mentioned.map((offering) => offering.code))];
   return codes.length === 1 ? codes[0]! : null;
+}
+
+function isRejectedOfferingOccurrence(content: string, start: number, length: number): boolean {
+  const before = content.slice(Math.max(0, start - 96), start);
+  const after = content.slice(start + length, start + length + 72);
+  const rejectsBefore = /(?:\bno\s+(?:te\s+)?(?:recomiendo|elegir[ií]a|elegir|ofrecemos|tenemos|considerar[ií]a)|\bdescart(?:o|amos|ar[ií]a)|\bdej(?:a|á|amos)\s+de\s+lado)\s+(?:el\s+curso\s+de\s+)?$/u;
+  const rejectsAfter = /^(?:\s|[:,;—-])*(?:no\s+(?:te\s+)?(?:conviene|sirve|encaja|aplica)|queda\s+descartad[oa]|no\s+es\s+para\s+(?:vos|ti))\b/u;
+  return rejectsBefore.test(before) || rejectsAfter.test(after);
 }
 
 function normalize(value: string): string {

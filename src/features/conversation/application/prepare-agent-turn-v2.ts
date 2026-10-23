@@ -402,9 +402,9 @@ export async function prepareAgentTurnV2(input: {
     offerings: offerings.map((offering) => ({ code: offering.code, display_name: offering.display_name })),
   });
   const commercialInterestOfferingCode = authority.discussed_offering_code
-    ?? responseOfferingCode
     ?? input.course_bonus_capability?.interest_offering_code
-    ?? state.selected_offering_code;
+    ?? state.selected_offering_code
+    ?? responseOfferingCode;
   const recordsPriceObjection = commercialInterestOfferingCode !== null && (
     authority.action.type === 'schedule_price_objection_checkin'
     || authority.action.type === 'request_promotion_review'

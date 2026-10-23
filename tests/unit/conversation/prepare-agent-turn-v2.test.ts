@@ -1391,6 +1391,70 @@ describe('prepareAgentTurnV2', () => {
     });
   });
 
+  it.each(['offer_available', 'accepted'] as const)(
+    'keeps the paid course when an %s promotion response names only the bonus course', async status => {
+      const englishIndex: CatalogIndexView = {
+        ...index,
+        offerings_total: 2,
+        offerings: [
+          { code: 'ingles_1', display_name: 'Inglés 1', academy: 'Academia Cultural', aliases: [] },
+          { code: 'ingles_2', display_name: 'Inglés 2', academy: 'Academia Cultural', aliases: [] },
+        ],
+      };
+      const englishBusiness: BusinessContextView = {
+        ...business,
+        offerings: [
+          { ...business.offerings[0], code: 'ingles_1', display_name: 'Inglés 1' },
+          { ...business.offerings[0], code: 'ingles_2', display_name: 'Inglés 2' },
+        ],
+      };
+      const prepared = await prepareAgentTurnV2({
+        turn: { id: ids.turn, workspace_id: ids.workspace, conversation_id: ids.conversation, contact_id: ids.contact },
+        workspace_slug: 'studyx', business_context: englishBusiness, catalog_index: englishIndex,
+        current_customer_messages: ['¿Qué incluye la propuesta?'],
+        course_bonus_capability: {
+          status,
+          may_schedule_checkin: false,
+          may_request_review: false,
+          may_accept_offer: status === 'offer_available',
+          may_send_promoted_payment: status === 'accepted',
+          promotion_code: 'ingles_1_mas_ingles_2',
+          interest_offering_code: 'ingles_1',
+          bonus_offerings: [{ code: 'ingles_2', display_name: 'Inglés 2', position: 1 }],
+        },
+        proposal: proposal({
+          response: { messages: ['Inglés 2 puede complementar tu formación.'] },
+        }),
+      }, { state_store: store(state()), now: () => Date.parse(index.as_of) });
+
+      expect(prepared).toMatchObject({
+        discussed_offering_code: null,
+        commercial_interest_offering_code: 'ingles_1',
+      });
+    },
+  );
+
+  it('does not turn a rejected canonical course mention into commercial interest', async () => {
+    const prepared = await prepareAgentTurnV2({
+      turn: { id: ids.turn, workspace_id: ids.workspace, conversation_id: ids.conversation, contact_id: ids.contact },
+      workspace_slug: 'studyx', business_context: business, catalog_index: index,
+      current_customer_messages: ['Sigue fuera de mi presupuesto'],
+      proposal: proposal({
+        response: { messages: ['No te recomiendo Redes Informáticas para lo que buscas.'] },
+        memory_candidates: [{
+          type: 'objection', key: 'price_objection', value: 'El precio sigue fuera de su presupuesto',
+          source_quote: 'Sigue fuera de mi presupuesto', confidence: 1,
+        }],
+      }),
+    }, { state_store: store(state()), now: () => Date.parse(index.as_of) });
+
+    expect(prepared).toMatchObject({
+      discussed_offering_code: null,
+      commercial_interest_offering_code: null,
+      records_price_objection: false,
+    });
+  });
+
   it('does not transfer a rejected promotion review into price-objection evidence for a new course', async () => {
     const prepared = await prepareAgentTurnV2({
       turn: { id: ids.turn, workspace_id: ids.workspace, conversation_id: ids.conversation, contact_id: ids.contact },

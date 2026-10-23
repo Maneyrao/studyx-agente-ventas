@@ -1794,7 +1794,7 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
           contact_id: turn.contact_id,
           conversation_id: turn.conversation_id,
           source_turn_id: turn.id,
-          discussed_offering_code: preparedAgentTurn.discussed_offering_code,
+          discussed_offering_code: preparedAgentTurn.commercial_interest_offering_code,
           records_price_objection: preparedAgentTurn.records_price_objection,
         });
       }
