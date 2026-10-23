@@ -41,13 +41,13 @@ promotion entry point while the global feature flag stays off.
 - Test: `tests/unit/botpress/agent-a-brain-prompt.test.ts`
 - Test: `tests/unit/botpress/agent-a-action-feedback.test.ts`
 
-- [ ] Add RED tests for an unavailable-promo repair and an authorized review
+- [x] Add RED tests for an unavailable-promo repair and an authorized review
   repair.
-- [ ] Add exact `forbidden_promise` guidance without customer-facing canned
+- [x] Add exact `forbidden_promise` guidance without customer-facing canned
   copy.
-- [ ] Remove the turn-specific contradiction that bans an already-authorized
+- [x] Remove the turn-specific contradiction that bans an already-authorized
   bonus offer.
-- [ ] Bump prompt versions and regenerate both mirrors.
+- [x] Bump prompt versions and regenerate both mirrors.
 
 ### Task 3: Fence a one-contact promotion canary
 

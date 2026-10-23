@@ -88,8 +88,8 @@ describe('Agent A Brain prompt', () => {
     const encoded = instructions.split('<authorized_context>')[1]!.split('</authorized_context>')[0]!;
     expect(JSON.parse(encoded)).toEqual(current);
     expect(instructions).not.toContain('<current_turn_guidance>');
-    expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v92');
-    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v125');
+    expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v93');
+    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v126');
   });
 
   it('adds turn-specific guidance for a repeated price objection without forcing a script', () => {
@@ -113,6 +113,63 @@ describe('Agent A Brain prompt', () => {
     expect(instructions).toContain('Do not merely repeat the price, installment amounts or class count');
     expect(instructions).toContain('Do not use payment plans, installment amounts, cost-per-day comparisons, discounts or bonus courses to make the price feel lower');
     expect(instructions).toContain('Choose the wording and structure yourself');
+  });
+
+  it('repairs a forbidden commercial promise without repeating an unavailable promotion', () => {
+    const current = context();
+    current.turn.batch_messages = [{ id: 'current-1', text: 'No hay una promo que me puedas ofrecer?' }];
+    current.capabilities.course_bonus = {
+      status: 'unavailable',
+      may_schedule_checkin: false,
+      may_request_review: false,
+      may_accept_offer: false,
+      may_send_promoted_payment: false,
+      promotion_code: null,
+      interest_offering_code: 'ingles_1',
+      bonus_offerings: [],
+    };
+    current.turn_rejection = {
+      schema_version: 1,
+      rejection_id: '00000000-0000-4000-8000-000000000001',
+      attempt: 1,
+      rejections: [{ code: 'FACT_VALUE_MISMATCH', subject: 'forbidden_promise' }],
+      authorized_alternatives: { fact_ids: [], actions: ['none'], missing_information: [] },
+    };
+
+    const repair = buildAgentABrainInstructionsV1(current)
+      .split('<mandatory_repair')[1]!
+      .split('</mandatory_repair>')[0]!;
+
+    expect(repair).toContain('remove the unauthorized promise completely');
+    expect(repair).toContain('do not claim a discount, promotion, gift or approval');
+    expect(repair).toContain('answer the objection through contextual value');
+  });
+
+  it('lets a persistent-objection repair request an authorized review without naming the gift', () => {
+    const current = context();
+    current.turn.batch_messages = [{ id: 'current-1', text: 'Me sigue pareciendo caro' }];
+    current.turn.recent_turns = [
+      { id: 'prior-1', direction: 'inbound', content: 'Me parece caro' },
+      { id: 'prior-2', direction: 'outbound', content: 'Veamos si el curso encaja con tu objetivo.' },
+    ];
+    current.capabilities.course_bonus = {
+      status: 'review_available',
+      may_schedule_checkin: false,
+      may_request_review: true,
+      may_accept_offer: false,
+      may_send_promoted_payment: false,
+      promotion_code: null,
+      interest_offering_code: 'ingles_1',
+      bonus_offerings: [],
+    };
+
+    const guidance = buildAgentABrainInstructionsV1(current)
+      .split('<current_commercial_guidance kind="repeated_price_objection">')[1]!
+      .split('</current_commercial_guidance>')[0]!;
+
+    expect(guidance).toContain('request_promotion_review');
+    expect(guidance).toContain('do not name or imply a specific gift yet');
+    expect(guidance).not.toContain('discounts or bonus courses to make the price feel lower');
   });
 
   it('separates a value gap from a real budget limit without changing the price', () => {

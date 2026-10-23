@@ -6,7 +6,7 @@ import {
 import { resolveCanonicalPromptIdentityV1 } from './agent-a-identity';
 import { evaluateSalesObjectionTurnV1 } from '../lib/conversation/sales-objection-turn-policy';
 
-export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v125' as const;
+export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v126' as const;
 
 /**
  * Runtime contract only. The sales behavior lives in the canonical prompt so
@@ -61,6 +61,19 @@ For an unresolved or non-canonical offering, remove that offering claim complete
 Online alone does not authorize self-paced study or access from any location.
 Omit those logistics claims unless their exact values appear in authorized facts.
 Answer the customer from the remaining verified course facts; do not replace the rejected detail with another inferred logistical promise.` : '';
+  const repairsForbiddenPromise = rejection.rejections.some(reason => (
+    reason.code === 'FACT_VALUE_MISMATCH' && reason.subject === 'forbidden_promise'
+  ));
+  const courseBonus = context.capabilities.course_bonus;
+  const forbiddenPromiseRepair = repairsForbiddenPromise ? courseBonus?.may_request_review
+    ? `
+For forbidden_promise, remove the unauthorized promise completely. You may say naturally that you will check an alternative only if you use proposed_action=request_promotion_review in this rewrite. Do not name or imply a specific gift yet, and do not claim approval, a discount, income or results.`
+    : courseBonus?.status === 'offer_available' || courseBonus?.status === 'accepted'
+      ? `
+For forbidden_promise, remove the unauthorized promise completely. Mention only the exact promotion_code and bonus_offerings exposed by capabilities.course_bonus; do not add a discount, another gift, approval, income or results.`
+      : `
+For forbidden_promise, remove the unauthorized promise completely. No promotion effect is authorized: do not claim a discount, promotion, gift or approval. Keep selling: answer the objection through contextual value and verified facts, without promising income or results.`
+    : '';
   return `
 <mandatory_repair attempt="1" rejection_id="${rejection.rejection_id}">
 Use repair_of with this rejection_id and attempt 1. This is the only rewrite.
@@ -68,6 +81,7 @@ Correct only the facts or effects identified in turn_rejection, preserving the c
 ${callRepair}
 ${offeringRepair}
 ${courseLogisticsRepair}
+${forbiddenPromiseRepair}
 If an action did not occur, do not claim it; continue naturally from the permitted facts and effects.
 Do not repeat confirmed data or an earlier opening or question. Ask only for truly missing information.
 Keep prose and metadata consistent. Preserve accepted observations. Never expose validation to the customer.
@@ -88,11 +102,17 @@ function currentCommercialGuidanceDirectiveV1(context: AgentAContextV1): string 
   const objection = evaluateSalesObjectionTurnV1(context);
   if (objection.kind === 'none') return '';
 
+  const courseBonus = context.capabilities.course_bonus;
+  const repeatedPriceGuidance = courseBonus?.may_request_review
+    ? `This is a persistent price objection. Do not merely repeat the price, installment amounts or class count. Change the argument dimension using recent conversation evidence, then say naturally that you will check an alternative and use proposed_action=request_promotion_review. The review is the authorized next step: do not name or imply a specific gift yet.`
+    : courseBonus?.status === 'offer_available' || courseBonus?.status === 'accepted'
+      ? `This is a persistent price objection. Use only the authorized promotion_code and bonus_offerings from capabilities.course_bonus, connect the complementary course to the customer's stated goal, and make clear that the paid course price does not change. Do not add any other discount, gift or promised result.`
+      : `This is a persistent price objection. Do not merely repeat the price, installment amounts or class count. Change the argument dimension using recent conversation evidence: connect a different authorized fact to the customer's intended use with conditional language, or ask one concrete question that isolates budget, timing, confidence or value. Do not use payment plans, installment amounts, cost-per-day comparisons, discounts or bonus courses to make the price feel lower.`;
   const guidanceByKind: Record<Exclude<typeof objection.kind, 'none'>, string> = {
     price_question: `Answer the price question promptly with the authorized plans; do not delay it behind a presentation or diagnostic. You may connect one relevant benefit afterward when the customer's intended use is already known.`,
     price_question_with_objection: `Answer the requested authorized price or payment terms exactly; the customer must not lose a direct answer because they also expressed concern. Then address the concern through contextual value or, when it is a real budget limit, acknowledge it without pressure. Do not use that answer as a separate tactic to make the price feel lower, and never add cost-per-day comparisons, discounts or bonus courses.`,
     price_objection: `Distinguish a perceived-value gap from a real inability to pay, but only ask one brief discriminating question when existing context does not already make that clear. For a value gap, connect the customer's stated goal or constraint to one authorized course capability and describe a possible application conditionally. For a real budget limit, acknowledge it without pressure or an invented workaround. Do not use payment plans, installment amounts, cost-per-day comparisons, discounts or bonus courses to make the price feel lower.`,
-    repeated_price_objection: `This is a persistent price objection. Do not merely repeat the price, installment amounts or class count. Change the argument dimension using recent conversation evidence: connect a different authorized fact to the customer's intended use with conditional language, or ask one concrete question that isolates budget, timing, confidence or value. Do not use payment plans, installment amounts, cost-per-day comparisons, discounts or bonus courses to make the price feel lower.`,
+    repeated_price_objection: repeatedPriceGuidance,
     payment_terms_question: `Answer the payment-terms question directly. Do not infer how payment cadence affects study, access or certification; state that relationship only when authorized_context explicitly supports it.`,
     time_or_schedule_objection: `Separate a real schedule conflict from fear of sustaining the course only when the context does not make it clear. Use only authorized duration, modality, schedule, recording, access or dedication facts. If the needed detail is absent, say you cannot confirm it instead of filling the gap.`,
     readiness_or_requirements_objection: `Respond to the concrete readiness concern with authorized prerequisites, level, equipment or course-description facts. Do not claim beginner suitability or that equipment is unnecessary unless authorized_context explicitly supports it.`,

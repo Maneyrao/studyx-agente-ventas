@@ -32,11 +32,16 @@ export function plannerlessActionFeedbackV1(input: {
     : subjects.some(subject => subject.includes('payment') || subject.includes('send_test_payment_link'))
       ? requirements?.payment
       : requirements?.identity
+  const actions = ['none']
+  const courseBonus = input.context.capabilities.course_bonus
+  if (courseBonus?.may_schedule_checkin) actions.push('schedule_price_objection_checkin')
+  if (courseBonus?.may_request_review) actions.push('request_promotion_review')
+  if (courseBonus?.may_accept_offer) actions.push('accept_promotion')
   return {
     schema_version: 1, rejection_id: input.rejection_id, attempt: 1,
     rejections: reasons.length ? reasons : [{ code: 'ACTION_NOT_AUTHORIZED', subject: 'action' }],
     authorized_alternatives: {
-      fact_ids: [], actions: ['none'],
+      fact_ids: [], actions,
       missing_information: [...new Set([
         ...(purposeMissing ?? input.context.capabilities.intake_missing ?? []),
         ...missing,
