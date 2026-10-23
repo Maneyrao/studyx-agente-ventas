@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { afterAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { openLocalTestDatabase } from '../helpers/db';
 import {
   claimCommercialFollowupV1,
@@ -10,6 +10,12 @@ import {
 
 const run = process.env.TEST_DATABASE_URL ? describe : describe.skip;
 const db = process.env.TEST_DATABASE_URL ? openLocalTestDatabase() : null;
+const priorBonusFlag = process.env.CENTRAL_CARGA_BONUS_ENABLED;
+beforeEach(() => { process.env.CENTRAL_CARGA_BONUS_ENABLED = 'true'; });
+afterEach(() => {
+  if (priorBonusFlag === undefined) delete process.env.CENTRAL_CARGA_BONUS_ENABLED;
+  else process.env.CENTRAL_CARGA_BONUS_ENABLED = priorBonusFlag;
+});
 afterAll(async () => db?.end());
 
 async function fixture() {
@@ -47,6 +53,20 @@ async function fixture() {
 }
 
 run('durable commercial course-bonus follow-up', () => {
+  it('does not create reviews or offers while the feature flag is disabled', async () => {
+    const f = await fixture();
+    process.env.CENTRAL_CARGA_BONUS_ENABLED = 'false';
+    expect(await commitCommercialActionV1(db!, {
+      workspace_id: f.workspace.id as string,
+      contact_id: f.contact.id as string,
+      conversation_id: f.conversation.id as string,
+      paid_offering_code: f.paid.code as string,
+      source_turn_id: f.inbound.id as string,
+      source_outbound_message_id: f.outbound.id as string,
+      action: { type: 'request_promotion_review', reason: 'persistent_price_objection' },
+    })).toEqual({ offer_id: null, followup: null });
+  });
+
   it('commits one review, claims once and marks the authorized offer delivered once', async () => {
     const f = await fixture();
     const input = { workspace_id:f.workspace.id as string, contact_id:f.contact.id as string,

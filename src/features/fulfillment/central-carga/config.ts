@@ -31,6 +31,20 @@ export type CentralCargaConfig =
       sandboxLiveUntil?: Date;
     };
 
+export interface CentralCargaBonusConfig {
+  readonly enabled: boolean;
+  readonly fulfillmentPaused: boolean;
+}
+
+export function loadCentralCargaBonusConfig(
+  environment: Readonly<Record<string, string | undefined>> = process.env,
+): CentralCargaBonusConfig {
+  return {
+    enabled: environment.CENTRAL_CARGA_BONUS_ENABLED?.trim().toLowerCase() === 'true',
+    fulfillmentPaused: environment.CENTRAL_CARGA_BONUS_FULFILLMENT_PAUSED?.trim().toLowerCase() === 'true',
+  };
+}
+
 /**
  * The worker is off unless CENTRAL_CARGA_ENABLED is exactly "true". When on,
  * every other setting is mandatory: a missing cutoff would let the worker

@@ -1120,6 +1120,7 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
             idempotency_key: `agent-a-payment-link:${turn.id}`,
             payment_link_url: materialized.block.url,
             conversation_id: turn.conversation_id,
+            ...(action.promotion_code ? { promotion_code: action.promotion_code } : {}),
           });
           const configuredUrl = materialized.block.url;
           materialized = {

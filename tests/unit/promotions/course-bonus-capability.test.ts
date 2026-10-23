@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 import {
   countPriceObjectionInterventionsV1,
   deriveCourseBonusCapabilityV1,
+  readCourseBonusCapabilityV1,
 } from '@/features/promotions/application/read-course-bonus-capability';
+import type { DbClient } from '@/lib/db/types';
 
 const promotion = {
   promotion_code: 'ingles_1_mas_ingles_2',
@@ -27,6 +29,34 @@ function capability(overrides: Record<string, unknown> = {}) {
 }
 
 describe('course bonus capability', () => {
+  it('hides the entire capability while the Central v2 feature flag is disabled', async () => {
+    const prior = process.env.CENTRAL_CARGA_BONUS_ENABLED;
+    delete process.env.CENTRAL_CARGA_BONUS_ENABLED;
+    let queried = false;
+    const db = (() => {
+      queried = true;
+      throw new Error('database must not be queried while disabled');
+    }) as unknown as DbClient;
+    try {
+      await expect(readCourseBonusCapabilityV1({
+        workspace_slug: 'studyx',
+        contact_id: '00000000-0000-0000-0000-000000000001',
+        conversation_id: '00000000-0000-0000-0000-000000000002',
+        channel: 'text',
+        selected_offering_code: 'ingles_1',
+        price_objection_interventions: 3,
+      }, { db })).resolves.toMatchObject({
+        status: 'unavailable',
+        may_request_review: false,
+        may_send_promoted_payment: false,
+      });
+      expect(queried).toBe(false);
+    } finally {
+      if (prior === undefined) delete process.env.CENTRAL_CARGA_BONUS_ENABLED;
+      else process.env.CENTRAL_CARGA_BONUS_ENABLED = prior;
+    }
+  });
+
   it('counts split messages as one semantic price-objection intervention', () => {
     expect(countPriceObjectionInterventionsV1([
       ['mmm', 'me sigue pareciendo caro', 'vale la pena?'],

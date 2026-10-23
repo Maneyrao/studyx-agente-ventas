@@ -3,6 +3,7 @@ import type postgres from 'postgres';
 import { z } from 'zod';
 import type { DbClient } from '@/lib/db/types';
 import type { ManagedOutboundSender } from '@/features/messaging/adapters/managed-outbound';
+import { loadCentralCargaBonusConfig } from '@/features/fulfillment/central-carga/config';
 import {
   buildAuthorizedEgress,
   protectedFactsInContentV1,
@@ -78,6 +79,7 @@ export async function commitCommercialActionV1(
     readonly now?: Date;
   },
 ): Promise<CommitCommercialActionResultV1> {
+  if (!loadCentralCargaBonusConfig().enabled) return { offer_id: null, followup: null };
   const promotion = await activePromotion(db, input);
   if (!promotion) return { offer_id: null, followup: null };
 

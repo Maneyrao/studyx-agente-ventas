@@ -8,6 +8,7 @@ import {
   stripePaymentLinkEnvironment,
   type PaymentPlanCode,
 } from '../domain/payment-link';
+import { loadCentralCargaBonusConfig } from '@/features/fulfillment/central-carga/config';
 
 export class PaymentLinkReservationError extends Error {
   constructor(readonly code: string) {
@@ -24,6 +25,7 @@ export interface ReservePaymentLinkInput {
   readonly idempotency_key: string;
   readonly payment_link_url: string;
   readonly conversation_id?: string;
+  readonly promotion_code?: string;
 }
 
 export interface ReservedPaymentLink {
@@ -66,6 +68,16 @@ export async function reservePaymentLink(
   }
   const environment = stripePaymentLinkEnvironment(input.payment_link_url);
   if (!environment) throw new PaymentLinkReservationError('PAYMENT_LINK_INVALID');
+  if (input.promotion_code && !loadCentralCargaBonusConfig().enabled) {
+    throw new PaymentLinkReservationError('COURSE_BONUS_DISABLED');
+  }
+
+  const begin = (db as DbClient & {
+    begin?: <T>(fn: (transaction: DbClient) => Promise<T>) => Promise<T>;
+  }).begin;
+  if (typeof begin === 'function') {
+    return (await begin.call(db, (transaction) => reservePaymentLink(transaction, input))) as ReservedPaymentLink;
+  }
 
   const existing = await db<Array<{
     id: string;
@@ -76,10 +88,16 @@ export async function reservePaymentLink(
     plan_code: PaymentPlanCode | null;
     checkout_url: string | null;
     environment: 'test' | 'live';
+    promotion_codes: string[];
   }>>`
-    SELECT id, status, workspace_id, contact_id, offering_id, plan_code, checkout_url, environment
-    FROM payments
-    WHERE idempotency_key = ${input.idempotency_key}
+    SELECT payment.id, payment.status, payment.workspace_id, payment.contact_id,
+      payment.offering_id, payment.plan_code, payment.checkout_url, payment.environment,
+      COALESCE((
+        SELECT array_agg(DISTINCT snapshot.promotion_code_snapshot ORDER BY snapshot.promotion_code_snapshot)
+        FROM payment_bonus_offerings snapshot WHERE snapshot.payment_id = payment.id
+      ), ARRAY[]::text[]) AS promotion_codes
+    FROM payments payment
+    WHERE payment.idempotency_key = ${input.idempotency_key}
   `;
   if (existing[0]) {
     const found = existing[0];
@@ -90,10 +108,56 @@ export async function reservePaymentLink(
       || found.plan_code !== input.plan_code
       || found.environment !== environment
       || !found.checkout_url
+      || (input.promotion_code === undefined
+        ? found.promotion_codes.length !== 0
+        : found.promotion_codes.length !== 1 || found.promotion_codes[0] !== input.promotion_code)
     ) {
       throw new PaymentLinkReservationError('IDEMPOTENCY_KEY_CONFLICT');
     }
     return { payment_id: found.id, status: found.status, url: found.checkout_url };
+  }
+
+  let authorizedPromotion: {
+    promotion_id: string;
+    offer_id: string;
+    bonus_count: number;
+  } | null = null;
+  if (input.promotion_code) {
+    if (!input.conversation_id) throw new PaymentLinkReservationError('PROMOTION_NOT_AUTHORIZED');
+    const promotions = await db<Array<{
+      promotion_id: string;
+      offer_id: string;
+      bonus_count: number;
+    }>>`
+      SELECT promotion.id AS promotion_id, offer.id AS offer_id,
+        (SELECT count(*)::integer FROM promotion_bonus_offerings candidate
+          WHERE candidate.promotion_id = promotion.id) AS bonus_count
+      FROM promotions promotion
+      JOIN promotion_offers offer ON offer.promotion_id = promotion.id
+      WHERE promotion.workspace_id = ${input.workspace_id}::uuid
+        AND promotion.promotion_code = ${input.promotion_code}
+        AND promotion.paid_offering_id = ${input.offering_id}::uuid
+        AND promotion.active = true
+        AND 'text' = ANY(promotion.channels)
+        AND (promotion.valid_from IS NULL OR promotion.valid_from <= now())
+        AND (promotion.valid_until IS NULL OR promotion.valid_until > now())
+        AND offer.workspace_id = ${input.workspace_id}::uuid
+        AND offer.contact_id = ${input.contact_id}::uuid
+        AND offer.conversation_id = ${input.conversation_id}::uuid
+        AND offer.paid_offering_id = ${input.offering_id}::uuid
+        AND offer.status = 'accepted'
+        AND offer.payment_id IS NULL
+        AND (offer.expires_at IS NULL OR offer.expires_at > now())
+        AND (SELECT count(*) FROM promotion_offers used
+          WHERE used.promotion_id = promotion.id
+            AND used.contact_id = ${input.contact_id}::uuid
+            AND used.status = 'attached') < promotion.max_redemptions_per_contact
+        AND (SELECT count(*) FROM promotion_bonus_offerings candidate
+          WHERE candidate.promotion_id = promotion.id) BETWEEN 1 AND 3
+      FOR UPDATE OF offer
+    `;
+    authorizedPromotion = promotions[0] ?? null;
+    if (!authorizedPromotion) throw new PaymentLinkReservationError('PROMOTION_NOT_AUTHORIZED');
   }
 
   const offering = await db<Array<{ id: string }>>`
@@ -134,6 +198,7 @@ export async function reservePaymentLink(
           idempotency_key: input.idempotency_key,
           plan_code: input.plan_code,
           source: 'stripe_payment_link',
+          ...(input.promotion_code ? { promotion_code: input.promotion_code } : {}),
         })}
       FROM inserted_payment
       ON CONFLICT (provider, provider_event_id) DO NOTHING
@@ -145,6 +210,33 @@ export async function reservePaymentLink(
 
   if (!inserted[0]) {
     return reservePaymentLink(db, input);
+  }
+
+  if (authorizedPromotion && input.promotion_code) {
+    const snapshots = await db<Array<{ id: string }>>`
+      INSERT INTO payment_bonus_offerings (
+        payment_id, promotion_id, offering_id, promotion_code_snapshot,
+        offering_code_snapshot, offering_display_name_snapshot, position
+      )
+      SELECT ${paymentId}::uuid, promotion.id, offering.id, promotion.promotion_code,
+        offering.code, offering.display_name, bonus.position
+      FROM promotions promotion
+      JOIN promotion_bonus_offerings bonus ON bonus.promotion_id = promotion.id
+      JOIN offerings offering ON offering.id = bonus.offering_id
+      WHERE promotion.id = ${authorizedPromotion.promotion_id}::uuid
+      ORDER BY bonus.position
+      RETURNING id
+    `;
+    if (snapshots.length !== authorizedPromotion.bonus_count) {
+      throw new PaymentLinkReservationError('PROMOTION_SNAPSHOT_INCOMPLETE');
+    }
+    const attached = await db<Array<{ id: string }>>`
+      UPDATE promotion_offers SET status = 'attached', payment_id = ${paymentId}::uuid
+      WHERE id = ${authorizedPromotion.offer_id}::uuid
+        AND status = 'accepted' AND payment_id IS NULL
+      RETURNING id
+    `;
+    if (!attached[0]) throw new PaymentLinkReservationError('PROMOTION_NOT_AUTHORIZED');
   }
 
   return { payment_id: paymentId, status: inserted[0].status, url: inserted[0].checkout_url };

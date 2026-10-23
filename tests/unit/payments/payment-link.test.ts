@@ -59,6 +59,21 @@ function action(overrides: Partial<SendPaymentLinkAction> = {}): SendPaymentLink
   };
 }
 
+describe('promoted payment action', () => {
+  it('carries only an opaque promotion code and leaves price/link authority unchanged', () => {
+    const result = materializePaymentLinkAction({
+      action: action({ promotion_code: 'ingles_1_mas_ingles_2' }),
+      authorizedOfferingCode: CANONICAL_OFFERING_SKU,
+      backendAuthorizedPlanCode: 'monthly_12',
+      batchMessages: [msg('Quiero 12 cuotas')],
+      businessSnapshot: { offerings: [{ code: CANONICAL_OFFERING_SKU }] },
+      contact: allowedContact(), modelResponseText: 'Avancemos.',
+      resolver: createConfigPaymentLinkResolver(FULL_ENV),
+    });
+    expect(result).toMatchObject({ ok: true, block: { url: LINK_12M } });
+  });
+});
+
 describe('PAYMENT_PLAN_PRESENTATIONS', () => {
   it('presents exactly the three owner-approved plans from the contract', () => {
     expect(PAYMENT_PLAN_PRESENTATIONS.monthly_12).toMatchObject({

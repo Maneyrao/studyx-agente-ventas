@@ -166,7 +166,7 @@ Run the Step 2 command plus `npm --prefix botpress-agent run build && npm --pref
 
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/features/promotions src/app/api/agent/commercial-followups src/features/conversation/application/commit-agent-turn-v3.ts botpress-agent tests
@@ -188,31 +188,31 @@ git commit -m "feat(promotions): deliver durable course bonus reviews"
 - Consumes: Task 2 `promotion_code`, Task 1 accepted offer/rule, and the existing canonical payment reservation.
 - Produces: the existing correlated Payment Link plus immutable `payment_bonus_offerings` rows for that payment.
 
-- [ ] **Step 1: Write failing reservation and replay tests**
+- [x] **Step 1: Write failing reservation and replay tests**
 
 Assert same workspace/contact/conversation/offering/channel, valid accepted offer, snapshot in the same transaction, one-to-three gifts, identical replay success, different-promotion replay failure, flag-off refusal before URL delivery, webhook correlation, and unpromoted flow unchanged.
 
-- [ ] **Step 2: Run focused tests and verify RED**
+- [x] **Step 2: Run focused tests and verify RED**
 
 Run: `npx vitest run --config vitest.config.mts tests/unit/payments/payment-link.test.ts && npx vitest run --config vitest.integration.config.mts tests/integration/course-bonus-payment-correlation.test.ts tests/integration/stripe-webhook.test.ts`
 
 Expected: FAIL because payment reservation has no promotion input or snapshot.
 
-- [ ] **Step 3: Extend `reservePaymentLink` with backend-authorized promotion identity**
+- [x] **Step 3: Extend `reservePaymentLink` with backend-authorized promotion identity**
 
 Resolve and copy the paid/bonus offering facts inside the reservation transaction before returning the URL. Validate the stored promotion set on every idempotent replay. Store `promotion_code` in the internal payment event; do not make Stripe metadata authoritative.
 
-- [ ] **Step 4: Preserve the existing static-link correlation**
+- [x] **Step 4: Preserve the existing static-link correlation**
 
 Keep `client_reference_id=<payment_id>` and the three configured links. Add a regression proving it survives materialization and signed webhook processing. Do not switch to dynamic live checkout unless this regression fails against the deployed Stripe configuration.
 
-- [ ] **Step 5: Run tests and verify GREEN**
+- [x] **Step 5: Run tests and verify GREEN**
 
 Run the Step 2 command.
 
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/features/payments src/lib/services/decision.service.ts tests/unit/payments/payment-link.test.ts tests/integration/course-bonus-payment-correlation.test.ts tests/integration/stripe-webhook.test.ts
