@@ -65,6 +65,48 @@ async function fixture() {
 }
 
 run('durable commercial course-bonus follow-up', () => {
+  it.each([
+    { type: 'schedule_price_objection_checkin', reason: 'price_objection' },
+    { type: 'request_promotion_review', reason: 'persistent_price_objection' },
+    { type: 'accept_promotion' },
+  ])('persists the authorized v4 action $type through the decision-table boundary', async (action) => {
+    const f = await fixture();
+    const [decision] = await db!`INSERT INTO agent_decisions(
+        turn_id,trace_id,schema_version,intent,decision_kind,response,response_type,
+        business_action,memory_candidates,missing_information,next_state,reason_code,
+        confidence,model_provider,model_name,prompt_version,payload_hash,outbound_message_id)
+      VALUES (${f.inbound.id},${randomUUID()},4,'commercial','reply',
+        'Voy a revisar la alternativa autorizada para este caso.','commercial_reply',
+        ${db!.json(action)},'[]'::jsonb,ARRAY[]::text[],'waiting_user','PROMOTION_ACTION_TEST',
+        1,'test','test-model','promotion-action-test',decode(repeat('00',32),'hex'),${f.outbound.id})
+      RETURNING business_action`;
+    expect(decision.business_action).toEqual(action);
+  });
+
+  it('keeps promotional actions unavailable to v3 and unknown v4 action types', async () => {
+    const legacy = await fixture();
+    await expect(db!`INSERT INTO agent_decisions(
+        turn_id,trace_id,schema_version,intent,decision_kind,response,response_type,
+        business_action,memory_candidates,missing_information,next_state,reason_code,
+        confidence,model_provider,model_name,prompt_version,payload_hash,outbound_message_id)
+      VALUES (${legacy.inbound.id},${randomUUID()},3,'commercial','reply','Respuesta','commercial_reply',
+        ${db!.json({type:'request_promotion_review',reason:'persistent_price_objection'})},
+        '[]'::jsonb,ARRAY[]::text[],'waiting_user','PROMOTION_ACTION_V3_REFUSED',
+        1,'test','test-model','promotion-action-test',decode(repeat('01',32),'hex'),${legacy.outbound.id})`)
+      .rejects.toMatchObject({code:'23514'});
+
+    const unknown = await fixture();
+    await expect(db!`INSERT INTO agent_decisions(
+        turn_id,trace_id,schema_version,intent,decision_kind,response,response_type,
+        business_action,memory_candidates,missing_information,next_state,reason_code,
+        confidence,model_provider,model_name,prompt_version,payload_hash,outbound_message_id)
+      VALUES (${unknown.inbound.id},${randomUUID()},4,'commercial','reply','Respuesta','commercial_reply',
+        ${db!.json({type:'invent_promotion'})},'[]'::jsonb,ARRAY[]::text[],
+        'waiting_user','UNKNOWN_PROMOTION_ACTION_REFUSED',1,'test','test-model',
+        'promotion-action-test',decode(repeat('02',32),'hex'),${unknown.outbound.id})`)
+      .rejects.toMatchObject({code:'23514'});
+  });
+
   it('persists discussion interest separately, counts objections and resets them when the course changes', async () => {
     const f = await fixture();
     await db!`UPDATE conversation_sales_context_states_v1 SET selected_offering_code=NULL
