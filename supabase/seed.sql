@@ -6,3 +6,4 @@
 \ir seed/studyx.sql
 \ir seed/studyx-temarios.sql
 \ir seed/studyx-manual.sql
+\ir seed/studyx-promotions.sql
