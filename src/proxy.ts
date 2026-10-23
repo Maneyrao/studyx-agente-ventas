@@ -40,6 +40,8 @@ function expectedIdempotencyKey(pathname: string, body: Record<string, unknown>)
   if (claim) return `claim:${claim[1]}`;
   const recovery = pathname.match(/^\/api\/agent\/batches\/([^/]+)\/recovery$/);
   if (recovery) return `recovery:${recovery[1]}:${String(body.claim_token)}`;
+  const repair = pathname.match(/^\/api\/agent\/batches\/([^/]+)\/repair$/);
+  if (repair) return `repair:${repair[1]}:${String(body.turn_id)}`;
   const decision = pathname.match(/^\/api\/agent\/turns\/([^/]+)\/decision$/);
   if (decision) return `decision:${decision[1]}`;
   const delivery = pathname.match(/^\/api\/agent\/outbounds\/([^/]+)\/delivery$/);
