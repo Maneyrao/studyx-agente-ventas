@@ -879,6 +879,11 @@ export const CommitDecisionResponseSchema = z.object({
     })
     .nullable()
     .default(null),
+  commercial_followups: z.array(z.object({
+    id: z.string().uuid(),
+    kind: z.enum(['price_objection_checkin', 'promotion_review']),
+    due_at: z.string().datetime(),
+  }).strict()).max(1).default([]),
   conversation_effects: z.object({
     technical_fallback_reason: z.enum([
       'EGRESS_UNAUTHORIZED_PROTECTED_FACT_SUPPRESSED',

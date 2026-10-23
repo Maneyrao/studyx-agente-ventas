@@ -142,25 +142,25 @@ git commit -m "feat(agent-a): authorize configured course bonus offers"
 - Consumes: Task 2 review/check-in actions and Task 1 rule/offer tables.
 - Produces: durable `studyxCommercialFollowup` events and one delivered authorized offer with auditable acceptance state.
 
-- [ ] **Step 1: Write failing commit, scheduling, and revalidation tests**
+- [x] **Step 1: Write failing commit, scheduling, and revalidation tests**
 
 Cover one 60-second review, one optional 10-minute first-objection check-in, duplicate events, crash before/after send, course change, purchase, rejection, opt-out, inactive rule, and a rejected action that still delivers the safe Agent A response.
 
-- [ ] **Step 2: Run focused tests and verify RED**
+- [x] **Step 2: Run focused tests and verify RED**
 
 Run: `npx vitest run --config vitest.config.mts tests/unit/promotions/commercial-followup-service.test.ts tests/unit/botpress/commercial-followup-trigger.test.ts && npx vitest run --config vitest.integration.config.mts tests/integration/course-bonus-followup.test.ts`
 
 Expected: FAIL because the service/event does not exist.
 
-- [ ] **Step 3: Implement atomic action commit and Botpress scheduling**
+- [x] **Step 3: Implement atomic action commit and Botpress scheduling**
 
 Commit the ordinary outbound and durable follow-up together. Schedule Botpress after the outbound is accepted. Event payload contains only `followup_id`; claim reloads latest state and promotion facts.
 
-- [ ] **Step 4: Implement Agent A follow-up narrative and fenced delivery**
+- [x] **Step 4: Implement Agent A follow-up narrative and fenced delivery**
 
 Agent A writes the offer using the lead's goal and authorized course names. Backend-owned delivery records prevent duplicate sends. Cancellation returns `claimed:false` and never fabricates replacement copy.
 
-- [ ] **Step 5: Verify GREEN and ADK bundle integrity**
+- [x] **Step 5: Verify GREEN and ADK bundle integrity**
 
 Run the Step 2 command plus `npm --prefix botpress-agent run build && npm --prefix botpress-agent run check`.
 

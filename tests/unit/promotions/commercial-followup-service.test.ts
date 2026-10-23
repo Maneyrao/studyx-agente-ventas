@@ -1,0 +1,45 @@
+import { describe, expect, it } from 'vitest';
+import {
+  validateCommercialFollowupNarrativeV1,
+} from '@/features/promotions/application/commercial-followup-service';
+
+describe('commercial course-bonus follow-up content', () => {
+  const review = {
+    kind: 'promotion_review' as const,
+    paid_offering_name: 'Inglés 1',
+    bonus_offerings: [{ code: 'ingles_2', display_name: 'Inglés 2', position: 1 }],
+    all_offering_names: ['Inglés 1', 'Inglés 2', 'Marketing Digital'],
+  };
+
+  it('requires the exact authorized gift and preserves the paid price', () => {
+    expect(validateCommercialFollowupNarrativeV1(review,
+      'Pude habilitarte Inglés 2 junto con Inglés 1, sin cambiar el precio de Inglés 1. Así puedes avanzar desde la base y seguir con el siguiente nivel.'))
+      .toEqual({ ok: true });
+
+    expect(validateCommercialFollowupNarrativeV1(review,
+      'Te conseguí una promoción especial para que avances con inglés.'))
+      .toEqual({ ok: false, reason: 'PROMOTION_BONUS_NOT_NAMED' });
+  });
+
+  it('rejects discounts, invented courses, URLs and fake approvals', () => {
+    expect(validateCommercialFollowupNarrativeV1(review,
+      'Te bajo el precio y te regalo Marketing Digital.'))
+      .toMatchObject({ ok: false });
+    expect(validateCommercialFollowupNarrativeV1(review,
+      'Lucas me autorizó Inglés 2 para ti.'))
+      .toEqual({ ok: false, reason: 'PROMOTION_FAKE_APPROVAL' });
+    expect(validateCommercialFollowupNarrativeV1(review,
+      'Mira https://example.com y te sumo Inglés 2.'))
+      .toEqual({ ok: false, reason: 'PROMOTION_URL_NOT_ALLOWED' });
+  });
+
+  it('keeps the first-objection check-in free of gift disclosure', () => {
+    const checkin = { ...review, kind: 'price_objection_checkin' as const };
+    expect(validateCommercialFollowupNarrativeV1(checkin,
+      'Pensándolo por lo que quieres lograr, Inglés 1 te da una base práctica para empezar. Si quieres, vemos juntos si te encaja.'))
+      .toEqual({ ok: true });
+    expect(validateCommercialFollowupNarrativeV1(checkin,
+      'También puedo sumarte Inglés 2 gratis.'))
+      .toEqual({ ok: false, reason: 'PROMOTION_PREMATURE_DISCLOSURE' });
+  });
+});

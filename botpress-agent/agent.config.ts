@@ -92,6 +92,10 @@ export default defineConfig({
   },
 
   events: {
+    studyxCommercialFollowup: {
+      description: "Durable objection follow-up or authorized course-bonus review.",
+      schema: z.object({ followup_id: z.string().uuid() }),
+    },
     studyxPostSale: {
       description: "Verified payment/enrollment follow-up, claimed from StudyX backend.",
       schema: z.object({ notification_id: z.string().uuid() }),

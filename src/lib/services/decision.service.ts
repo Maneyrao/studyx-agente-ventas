@@ -71,6 +71,10 @@ import {
   readCourseBonusCapabilityV1,
 } from '@/features/promotions/application/read-course-bonus-capability';
 import {
+  commitCommercialActionV1,
+  type ScheduledCommercialFollowupV1,
+} from '@/features/promotions/application/commercial-followup-service';
+import {
   classifyCurrentPaymentIntent,
   deriveDeferredPaymentChoiceFromBatch,
   derivePaymentPlanSelectionFromBatch,
@@ -210,6 +214,8 @@ export interface CommitDecisionResult {
    * with it idempotently, and never learns the phone number.
    */
   call_request: ReservedCallRequest | null;
+  /** Durable events to schedule only after the ordinary outbound is accepted. */
+  commercial_followups: ScheduledCommercialFollowupV1[];
   /** Structured evaluator/observability evidence; never inferred from copy. */
   conversation_effects?: {
     readonly technical_fallback_reason:
@@ -362,6 +368,21 @@ async function loadDecisionOutbounds(
     part_index: Number(row.part_index),
     part_count: rows.length,
   }));
+}
+
+async function loadDecisionCommercialFollowups(
+  decision: DecisionRow,
+  db: DbClient,
+): Promise<ScheduledCommercialFollowupV1[]> {
+  const rows = await db<Array<{ id: string; kind: ScheduledCommercialFollowupV1['kind']; due_at: Date }>>`
+    SELECT followup.id, followup.kind, followup.due_at
+    FROM promotion_offers offer
+    JOIN course_bonus_followups followup ON followup.offer_id = offer.id
+    WHERE offer.source_turn_id = ${decision.turn_id}::uuid
+      AND followup.status IN ('pending','processing')
+    ORDER BY followup.created_at
+  `;
+  return rows.map((row) => ({ id: row.id, kind: row.kind, due_at: row.due_at.toISOString() }));
 }
 
 async function loadTurnPolicy(turnId: string, db: DbClient): Promise<TurnPolicyRow> {
@@ -531,6 +552,7 @@ async function duplicateDecisionResult(
 ): Promise<CommitDecisionResult> {
   if (existing.payload_hash_hex !== payloadHash) throw new DecisionConflictError();
   const outbounds = await loadDecisionOutbounds(existing, db);
+  const commercialFollowups = await loadDecisionCommercialFollowups(existing, db);
   const firstOutbound = outbounds[0] ?? null;
   return {
     status: 'duplicate',
@@ -548,6 +570,7 @@ async function duplicateDecisionResult(
     } : null,
     outbounds,
     call_request: callRequest,
+    commercial_followups: commercialFollowups,
   };
 }
 
@@ -659,6 +682,7 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
           outbound: null,
           outbounds: [],
           call_request: null,
+          commercial_followups: [],
         };
       }
     }
@@ -1525,6 +1549,7 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
     }
     let outbound: CommitDecisionResult['outbound'] = null;
     const outbounds: CommitDecisionResult['outbounds'] = [];
+    const commercialFollowups: ScheduledCommercialFollowupV1[] = [];
 
     // A non-empty list here is an injection/jailbreak signal: the model
     // wrote a URL it has no authority to write, and it was silently removed
@@ -1759,6 +1784,49 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
         authorized_egress: firstOutbound.authorized_egress,
       };
 
+      if (canonicalWorkspaceId === null && preparedAgentTurn) {
+        const workspaceRows = await db<Array<{ id: string }>>`
+          SELECT workspace.id
+          FROM workspaces workspace
+          JOIN workspace_contacts membership
+            ON membership.workspace_id = workspace.id
+           AND membership.contact_id = ${turn.contact_id}::uuid
+          WHERE workspace.slug = ${workspaceSlug} AND workspace.status = 'active'
+          LIMIT 1
+        `;
+        canonicalWorkspaceId = workspaceRows[0]?.id ?? null;
+      }
+      if (preparedAgentTurn && canonicalWorkspaceId && committedBusinessAction
+        && ['schedule_price_objection_checkin','request_promotion_review','accept_promotion']
+          .includes(committedBusinessAction.type)) {
+        const paidOfferingCode = effectiveAuthorizedOfferingCode
+          ?? pipelineStateBefore?.selected_offering_code
+          ?? existingSalesContext?.selected_offering_code
+          ?? null;
+        if (paidOfferingCode) {
+          const promotionResult = await commitCommercialActionV1(db, {
+            workspace_id: canonicalWorkspaceId,
+            contact_id: turn.contact_id,
+            conversation_id: turn.conversation_id,
+            paid_offering_code: paidOfferingCode,
+            source_turn_id: turn.id,
+            source_outbound_message_id: firstMessage.id,
+            action: committedBusinessAction as
+              | { type: 'schedule_price_objection_checkin'; reason: 'price_objection' }
+              | { type: 'request_promotion_review'; reason: 'persistent_price_objection' }
+              | { type: 'accept_promotion' },
+          });
+          if (promotionResult.followup) commercialFollowups.push(promotionResult.followup);
+          if (!promotionResult.offer_id) {
+            committedBusinessAction = null;
+            await db`UPDATE agent_decisions SET business_action = NULL WHERE id = ${decisionId}::uuid`;
+          }
+        } else {
+          committedBusinessAction = null;
+          await db`UPDATE agent_decisions SET business_action = NULL WHERE id = ${decisionId}::uuid`;
+        }
+      }
+
       if (committedBusinessAction?.type === 'send_payment_link' && canonicalWorkspaceId) {
         const paymentMessage = persistedParts.find(({ message }) => (
           authorizedUrls.some((url) => message.content.includes(url))
@@ -1916,6 +1984,7 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
         outbound,
         outbounds,
         call_request: callRequest,
+        commercial_followups: commercialFollowups,
         ...(technicalFallback && technicalFallbackReasonCode ? {
           conversation_effects: {
             technical_fallback_reason: technicalFallbackReasonCode,

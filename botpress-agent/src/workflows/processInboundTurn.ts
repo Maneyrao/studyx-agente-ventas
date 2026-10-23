@@ -2404,6 +2404,43 @@ export const processInboundTurn = new Workflow({
       }
     }
 
+    const scheduleCommercialFollowups = async (messageId: string | null): Promise<void> => {
+      for (const followup of committed.commercial_followups ?? []) {
+        try {
+          const delay = Math.max(0, Date.parse(followup.due_at) - Date.now())
+          const scheduled = await step(
+            `schedule-commercial-followup-${followup.id}`,
+            () => client.createEvent({
+              type: 'studyxCommercialFollowup',
+              payload: { followup_id: followup.id },
+              conversationId: input.botpress_conversation_id,
+              ...(messageId ? { messageId } : {}),
+              schedule: { delay },
+            }),
+            { maxAttempts: 3 },
+          )
+          safeLog('studyx.turn.commercial_followup_scheduled', {
+            trace_id: input.trace_id,
+            turn_id: owned.turn_id,
+            followup_id: followup.id,
+            followup_kind: followup.kind,
+            provider_event_id: scheduled.event.id,
+            delay_ms: delay,
+          })
+        } catch (error) {
+          if (!(error instanceof Error)) throw error
+          // The visible answer and the rest of the sale are never rolled back
+          // because a secondary follow-up could not be scheduled.
+          safeLog('studyx.turn.commercial_followup_schedule_failed', {
+            trace_id: input.trace_id,
+            turn_id: owned.turn_id,
+            followup_id: followup.id,
+            error_code: errorCode(error),
+          })
+        }
+      }
+    }
+
     const markDeliveryRecoveryPending = (outboundId: string, botpressMessageId: string | null,
       failure: PendingDeliveryReport): void => {
         state.phase = 'retry_pending'
@@ -2735,6 +2772,7 @@ export const processInboundTurn = new Workflow({
       }
       state.deliveryStatus = 'submitted_to_botpress'
       await dispatchAcknowledgedCall()
+      await scheduleCommercialFollowups(lastBotpressMessageId)
       try {
         await step(
           'flush-lead-projection-multi',
@@ -2961,6 +2999,7 @@ export const processInboundTurn = new Workflow({
       timings.delivery_report_ms = Date.now() - reportStartedAt
 
     await dispatchAcknowledgedCall()
+    await scheduleCommercialFollowups(delivery.message.id)
 
     // ---- Opcional: adelantar el flush de Sheets ---------------------------
     // El backend ya encoló la proyección `payment_link_sent` (si corresponde)
