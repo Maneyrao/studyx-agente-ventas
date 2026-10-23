@@ -146,6 +146,54 @@ run('course bonus payment correlation', () => {
     }
   });
 
+  it('returns the same promoted payment for concurrent identical reservations', async () => {
+    const f=await fixture();
+    const [firstDb,secondDb]=openIndependentLocalTestDatabases(2);
+    try {
+      const input={workspace_id:f.workspace.id as string,contact_id:f.contact.id as string,
+        offering_id:f.paid.id as string,conversation_id:f.conversation.id as string,
+        plan_code:'one_time' as const,idempotency_key:`concurrent-replay:${randomUUID()}`,
+        payment_link_url:'https://buy.stripe.com/test_bonus',
+        promotion_code:f.promotion.promotion_code as string};
+      const [first,second]=await Promise.all([
+        reservePaymentLink(firstDb,input),
+        reservePaymentLink(secondDb,input),
+      ]);
+      expect(second).toEqual(first);
+      expect(await db!`SELECT count(*)::integer AS count FROM payments
+        WHERE idempotency_key=${input.idempotency_key}`).toEqual([{count:1}]);
+      expect(await db!`SELECT count(*)::integer AS count FROM payment_bonus_offerings
+        WHERE payment_id=${first.payment_id}`).toEqual([{count:1}]);
+    } finally {
+      await Promise.all([firstDb.end(),secondDb.end()]);
+    }
+  });
+
+  it('serializes simultaneous voice and text reservations without inverted locks', async () => {
+    const f=await fixture();
+    await db!`UPDATE promotion_offers SET voice_exposed_at=now() WHERE id=${f.offer.id}`;
+    await db!`UPDATE promotions SET channels=ARRAY['text','voice']::text[] WHERE id=${f.promotion.id}`;
+    const [textDb,voiceDb]=openIndependentLocalTestDatabases(2);
+    try {
+      const common={workspace_id:f.workspace.id as string,contact_id:f.contact.id as string,
+        offering_id:f.paid.id as string,conversation_id:f.conversation.id as string,
+        plan_code:'one_time' as const,payment_link_url:'https://buy.stripe.com/test_bonus',
+        promotion_code:f.promotion.promotion_code as string};
+      const outcomes=await Promise.allSettled([
+        reservePaymentLink(textDb,{...common,promotion_channel:'text',
+          idempotency_key:`voice-text-a:${randomUUID()}`}),
+        reservePaymentLink(voiceDb,{...common,promotion_channel:'voice',
+          idempotency_key:`voice-text-b:${randomUUID()}`}),
+      ]);
+      expect(outcomes.filter((result)=>result.status==='fulfilled')).toHaveLength(1);
+      expect(outcomes.filter((result)=>result.status==='rejected')).toHaveLength(1);
+      expect(await db!`SELECT count(*)::integer AS count FROM promotion_offers
+        WHERE id=${f.offer.id} AND status='attached'`).toEqual([{count:1}]);
+    } finally {
+      await Promise.all([textDb.end(),voiceDb.end()]);
+    }
+  });
+
   it('uses the immutable offered gift even if the live promotion is edited before payment', async () => {
     const f=await fixture();
     const [replacement]=await db!`INSERT INTO offerings(

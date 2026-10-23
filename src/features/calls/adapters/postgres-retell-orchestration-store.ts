@@ -287,49 +287,18 @@ export class PostgresRetellOrchestrationStore implements RetellOrchestrationStor
     let payment: Awaited<ReturnType<typeof reservePaymentLink>>;
     const idempotencyKey = `retell-payment-link:${workspace.id}:${input.callId}`;
     try {
-      payment = await this.db.begin(async (tx) => {
-        if (input.promotionCode) {
-          const existing = await tx<Array<{ id: string }>>`
-            SELECT id FROM payments WHERE idempotency_key = ${idempotencyKey} LIMIT 1
-          `;
-          if (!existing[0]) {
-            const accepted = await tx<Array<{ id: string }>>`
-              UPDATE promotion_offers offer
-              SET status = 'accepted', accepted_at = COALESCE(offer.accepted_at, now())
-              FROM promotions promotion
-              WHERE offer.workspace_id = ${workspace.id}::uuid
-                AND offer.contact_id = ${input.contactId}::uuid
-                AND offer.conversation_id = ${input.conversationId}::uuid
-                AND offer.promotion_id = promotion.id
-                AND promotion.promotion_code = ${input.promotionCode}
-                AND offer.paid_offering_id = ${offering.id}::uuid
-                AND promotion.active = true
-                AND 'voice' = ANY(promotion.channels)
-                AND (promotion.valid_from IS NULL OR promotion.valid_from <= now())
-                AND (promotion.valid_until IS NULL OR promotion.valid_until > now())
-                AND offer.status IN ('pending_review','offered','accepted')
-                AND (offer.voice_exposed_at IS NOT NULL OR offer.status IN ('offered','accepted'))
-                AND offer.bonus_snapshot_sealed_at IS NOT NULL
-                AND (SELECT count(*) FROM promotion_offer_bonus_offerings snapshot
-                  WHERE snapshot.offer_id = offer.id) BETWEEN 1 AND 3
-              RETURNING offer.id
-            `;
-            if (!accepted[0]) throw new PaymentLinkReservationError('PROMOTION_NOT_AUTHORIZED');
-          }
-        }
-        return reservePaymentLink(tx, {
-          workspace_id: workspace.id,
-          contact_id: input.contactId,
-          offering_id: offering.id,
-          conversation_id: input.conversationId,
-          plan_code: paymentPlan.planCode,
-          idempotency_key: idempotencyKey,
-          payment_link_url: configuredUrl,
-          ...(input.promotionCode ? {
-            promotion_code: input.promotionCode,
-            promotion_channel: 'voice' as const,
-          } : {}),
-        });
+      payment = await reservePaymentLink(this.db, {
+        workspace_id: workspace.id,
+        contact_id: input.contactId,
+        offering_id: offering.id,
+        conversation_id: input.conversationId,
+        plan_code: paymentPlan.planCode,
+        idempotency_key: idempotencyKey,
+        payment_link_url: configuredUrl,
+        ...(input.promotionCode ? {
+          promotion_code: input.promotionCode,
+          promotion_channel: 'voice' as const,
+        } : {}),
       });
     } catch (error) {
       if (error instanceof PaymentLinkReservationError) {

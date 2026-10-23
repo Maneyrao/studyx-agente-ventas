@@ -52,6 +52,21 @@ export function addPaymentReference(url: string, paymentId: string): string {
   return referenced.toString();
 }
 
+async function lockPromotionRedemptionV1(
+  db: DbClient,
+  input: Pick<ReservePaymentLinkInput, 'workspace_id' | 'contact_id'> & { readonly promotion_code: string },
+): Promise<void> {
+  const redemptionLockKey = [
+    'course-bonus-redemption',
+    input.workspace_id,
+    input.contact_id,
+    input.promotion_code,
+  ].join(':');
+  await db`
+    SELECT pg_advisory_xact_lock(hashtextextended(${redemptionLockKey}, 0))
+  `;
+}
+
 /**
  * Reserves the ledger row before an approved static Stripe Payment Link is
  * delivered. `client_reference_id` is returned by Checkout in the signed
@@ -78,6 +93,17 @@ export async function reservePaymentLink(
   }).begin;
   if (typeof begin === 'function') {
     return (await begin.call(db, (transaction) => reservePaymentLink(transaction, input))) as ReservedPaymentLink;
+  }
+
+  // The replay read must happen after the shared promotion lock. Otherwise a
+  // concurrent identical request can observe no payment, wait for the first
+  // reservation, then incorrectly reject the now-attached offer.
+  if (input.promotion_code) {
+    await lockPromotionRedemptionV1(db, {
+      workspace_id: input.workspace_id,
+      contact_id: input.contact_id,
+      promotion_code: input.promotion_code,
+    });
   }
 
   const existing = await db<Array<{
@@ -131,18 +157,6 @@ export async function reservePaymentLink(
   } | null = null;
   if (input.promotion_code) {
     if (!input.conversation_id) throw new PaymentLinkReservationError('PROMOTION_NOT_AUTHORIZED');
-    // Offers are conversation-scoped, but the redemption limit is shared by
-    // every conversation for this contact and promotion. Serialize that
-    // aggregate decision before counting attached offers.
-    const redemptionLockKey = [
-      'course-bonus-redemption',
-      input.workspace_id,
-      input.contact_id,
-      input.promotion_code,
-    ].join(':');
-    await db`
-      SELECT pg_advisory_xact_lock(hashtextextended(${redemptionLockKey}, 0))
-    `;
     const promotions = await db<Array<{
       promotion_id: string;
       offer_id: string;
@@ -164,7 +178,12 @@ export async function reservePaymentLink(
         AND offer.contact_id = ${input.contact_id}::uuid
         AND offer.conversation_id = ${input.conversation_id}::uuid
         AND offer.paid_offering_id = ${input.offering_id}::uuid
-        AND offer.status = 'accepted'
+        AND (
+          (${input.promotion_channel ?? 'text'}::text = 'text' AND offer.status = 'accepted')
+          OR (${input.promotion_channel ?? 'text'}::text = 'voice'
+            AND offer.status IN ('pending_review','offered','accepted')
+            AND (offer.voice_exposed_at IS NOT NULL OR offer.status IN ('offered','accepted')))
+        )
         AND offer.bonus_snapshot_sealed_at IS NOT NULL
         AND offer.payment_id IS NULL
         AND (offer.expires_at IS NULL OR offer.expires_at > now())
@@ -250,9 +269,15 @@ export async function reservePaymentLink(
       throw new PaymentLinkReservationError('PROMOTION_SNAPSHOT_INCOMPLETE');
     }
     const attached = await db<Array<{ id: string }>>`
-      UPDATE promotion_offers SET status = 'attached', payment_id = ${paymentId}::uuid
+      UPDATE promotion_offers SET status = 'attached', payment_id = ${paymentId}::uuid,
+        accepted_at = COALESCE(accepted_at, now())
       WHERE id = ${authorizedPromotion.offer_id}::uuid
-        AND status = 'accepted' AND payment_id IS NULL
+        AND payment_id IS NULL
+        AND (status = 'accepted' OR (
+          ${input.promotion_channel ?? 'text'}::text = 'voice'
+          AND status IN ('pending_review','offered')
+          AND (voice_exposed_at IS NOT NULL OR status = 'offered')
+        ))
       RETURNING id
     `;
     if (!attached[0]) throw new PaymentLinkReservationError('PROMOTION_NOT_AUTHORIZED');

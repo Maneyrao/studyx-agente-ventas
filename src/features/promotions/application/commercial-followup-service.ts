@@ -475,17 +475,24 @@ export function validateCommercialFollowupNarrativeV1(
   const priceCandidate = withoutCourseNames.replace(
     /\bpag(?:a|ar|ando|as|ás|o|ó)\s+(?:(?:solo|solamente|[uú]nicamente)\s+)?(?:el\s+|un\s+)?(?:(?:solo|solamente|[uú]nicamente)\s+)?curso(?:\s+principal)?\b/giu,
     '',
+  ).replace(
+    /\b(?:por|al)\s+(?:el\s+)?precio\s+de\s+(?:un[oa]?\s+)?(?:(?:solo|[uú]nico)\s+)?curso(?:\s+principal)?\b/giu,
+    '',
+  ).replace(
+    /\bpor\s+(?:un[oa]?\s+)?(?:(?:solo|[uú]nico)\s+)?curso(?:\s+principal)?\b/giu,
+    '',
   );
   const numberWord = '(?:cero|un(?:o|a)?|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|once|doce|trece|catorce|quince|diecis[eé]is|diecisiete|dieciocho|diecinueve|veinte|veinti(?:uno|una|d[oó]s|tr[eé]s|cuatro|cinco|s[eé]is|siete|ocho|nueve)|treinta|cuarenta|cincuenta|sesenta|setenta|ochenta|noventa|cien(?:to)?|doscientos?|trescientos?|cuatrocientos?|quinientos?|seiscientos?|setecientos?|ochocientos?|novecientos?|mil|mill[oó]n(?:es)?)';
   const paymentVerb = '(?:pag(?:a|ar|ando|as|ás|o|ó)|abon(?:a|ar|ando|as|ás|o|ó)|cuesta|sale)';
   const period = '(?:mensual(?:es)?|anual(?:es)?|al mes|al año|por mes|por año)';
   const wordAmount = new RegExp(
-    `(?:${paymentVerb}.{0,20}\\b${numberWord}\\b|\\b${numberWord}\\b.{0,12}${period}|(?:precio|total|cuota)\\s*(?:es|de|:)?\\s*\\b${numberWord}\\b)`,
+    `(?:${paymentVerb}.{0,20}\\b${numberWord}\\b|\\bpor\\s+${numberWord}\\b|\\b${numberWord}\\b.{0,12}(?:${period}|en total|de total)|(?:precio|total|cuota)\\s*(?:es|de|:)?\\s*\\b${numberWord}\\b)`,
     'iu',
   );
   if (/\d/u.test(priceCandidate)
     || /[$€£]|\b(?:usd|u\$s|d[oó]lares?|pesos?|euros?)\b/iu.test(priceCandidate)
-    || wordAmount.test(priceCandidate)) {
+    || wordAmount.test(priceCandidate)
+    || /\b(?:ambos?|los dos|todo(?:s)?)\s+(?:(?:son|quedan)\s+)?(?:gratis|sin costo|bonificad[oa]s?)\b/iu.test(normalized)) {
     return { ok: false, reason: 'PROMOTION_PRICE_CHANGED' };
   }
   const namedBonuses = source.bonus_offerings.filter((bonus) => (
