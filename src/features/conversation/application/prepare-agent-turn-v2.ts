@@ -398,8 +398,8 @@ export async function prepareAgentTurnV2(input: {
     ?? input.course_bonus_capability?.interest_offering_code
     ?? state.selected_offering_code;
   const recordsPriceObjection = commercialInterestOfferingCode !== null && (
-    effectiveProposal.proposed_action.type === 'schedule_price_objection_checkin'
-    || effectiveProposal.proposed_action.type === 'request_promotion_review'
+    authority.action.type === 'schedule_price_objection_checkin'
+    || authority.action.type === 'request_promotion_review'
     || effectiveProposal.memory_candidates.some((candidate) => (
       candidate.type === 'objection' && candidate.key === 'price_objection'
     ))

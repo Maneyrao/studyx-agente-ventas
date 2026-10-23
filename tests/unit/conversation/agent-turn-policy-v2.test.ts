@@ -429,6 +429,44 @@ describe('plannerless Agent A authority', () => {
     });
   });
 
+  it('preserves an accepted promotion when a generic link request omits the redundant action', () => {
+    const result = authorize({
+      state: state({
+        selected_offering_code: 'redes_informaticas',
+        selected_payment_plan: 'monthly_6',
+        stage: 'plan_selected',
+        awaiting_reply: 'payment_confirmation',
+      }),
+      intake: completeIntake,
+      customerText: 'Pasame el link',
+      courseBonus: {
+        status: 'accepted',
+        may_schedule_checkin: false,
+        may_request_review: false,
+        may_accept_offer: false,
+        may_send_promoted_payment: true,
+        promotion_code: 'redes_con_excel',
+        interest_offering_code: 'redes_informaticas',
+        bonus_offerings: [{ code: 'excel_integral', display_name: 'Excel Integral', position: 1 }],
+      },
+      proposal: proposal({
+        move: {
+          schema_version: 1, move: 'request_payment_link', secondary_moves: [], vetoes: [],
+          confidence: 1,
+        },
+        response: { messages: ['Acá tenés el enlace para avanzar.'] },
+      }),
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      action: {
+        type: 'send_payment_link', offering_code: 'redes_informaticas',
+        payment_plan: 'monthly_6', promotion_code: 'redes_con_excel',
+      },
+    });
+  });
+
   it('does not carry an accepted promotion into checkout for another course', () => {
     const result = authorize({
       state: state({

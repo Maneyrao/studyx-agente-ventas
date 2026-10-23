@@ -175,6 +175,12 @@ export function authorizeAgentTurnV2(input: {
     && currentCommercialInterest === capabilityInterestOffering;
   const promotionMatchesSelectedPurchase = capabilityInterestOffering !== null
     && selectedOffering === capabilityInterestOffering;
+  const promotionEligibleForPurchase = input.course_bonus?.may_send_promoted_payment === true
+    && promotionMatchesSelectedPurchase
+    && promotionMatchesCurrentInterest;
+  const authorizedPromotionCode = promotionEligibleForPurchase
+    ? input.course_bonus.promotion_code
+    : null;
   const factOffering = moves.has('ask_course_information') && requestedOffering !== null
     ? requestedOffering
     : selectedOffering;
@@ -387,12 +393,6 @@ export function authorizeAgentTurnV2(input: {
       : proposal.proposed_action;
   }
   if (proposal.proposed_action.type === 'send_payment_link') {
-    const promotionEligibleForPurchase = input.course_bonus?.may_send_promoted_payment === true
-      && promotionMatchesSelectedPurchase
-      && promotionMatchesCurrentInterest;
-    const authorizedPromotionCode = promotionEligibleForPurchase
-      ? input.course_bonus.promotion_code
-      : null;
     const matchesState = selectedOffering !== null
       && proposal.proposed_action.offering_code === selectedOffering
       && selectedPlan !== null
@@ -466,6 +466,7 @@ export function authorizeAgentTurnV2(input: {
       type: 'send_payment_link',
       offering_code: selectedOffering,
       payment_plan: selectedPlan,
+      ...(authorizedPromotionCode ? { promotion_code: authorizedPromotionCode } : {}),
     };
   }
 

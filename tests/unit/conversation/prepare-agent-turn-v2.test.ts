@@ -1358,6 +1358,46 @@ describe('prepareAgentTurnV2', () => {
       transition: { selected_offering_code: null },
     });
   });
+
+  it('does not transfer a rejected promotion review into price-objection evidence for a new course', async () => {
+    const prepared = await prepareAgentTurnV2({
+      turn: { id: ids.turn, workspace_id: ids.workspace, conversation_id: ids.conversation, contact_id: ids.contact },
+      workspace_slug: 'studyx', business_context: business, catalog_index: index,
+      current_customer_messages: ['Ahora quiero saber por Redes'],
+      course_bonus_capability: {
+        status: 'review_available',
+        may_schedule_checkin: false,
+        may_request_review: true,
+        may_accept_offer: false,
+        may_send_promoted_payment: false,
+        promotion_code: null,
+        interest_offering_code: 'excel_integral',
+        bonus_offerings: [],
+      },
+      proposal: proposal({
+        move: {
+          schema_version: 1,
+          move: 'ask_course_information',
+          secondary_moves: [],
+          vetoes: [],
+          course_reference: 'redes',
+          confidence: 1,
+        },
+        response: { messages: ['Claro, veamos Redes según lo que necesitas.'] },
+        proposed_action: { type: 'request_promotion_review', reason: 'persistent_price_objection' },
+      }),
+    }, { state_store: store(state()), now: () => Date.parse(index.as_of) });
+
+    expect(prepared).toMatchObject({
+      response_messages: ['Claro, veamos Redes según lo que necesitas.'],
+      discussed_offering_code: 'redes_informaticas',
+      commercial_interest_offering_code: 'redes_informaticas',
+      records_price_objection: false,
+      transition: { selected_offering_code: null },
+      action_rejection: { action: 'request_promotion_review', codes: ['ACTION_NOT_AUTHORIZED'] },
+    });
+    expect(prepared.decision.business_action).toBeNull();
+  });
 });
 
 it('persists semantic call acceptance when the channel has no callable phone', async () => {
