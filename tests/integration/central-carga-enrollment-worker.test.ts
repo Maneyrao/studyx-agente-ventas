@@ -126,7 +126,7 @@ async function fixture(options: {
   const [job] = await db!<Array<{ id: string }>>`
     INSERT INTO fulfillment_jobs (payment_id, workspace_id, max_attempts)
     VALUES (${payment.id}::uuid, ${workspace.id}::uuid, ${options.maxAttempts ?? 3}) RETURNING id`;
-  return { paymentId: payment.id, jobId: job.id, workspaceId: workspace.id,
+  return { paymentId: payment.id, jobId: job.id, workspaceId: workspace.id, contactId: contact.id,
     bonusCodes: bonusRows.sort((a,b)=>a.position-b.position).map((row)=>row.code) };
 }
 
@@ -321,6 +321,24 @@ run('Central de Carga enrollment worker', () => {
       bonusConfig: { enabled: true, fulfillmentPaused: true } })).toMatchObject({ dead_lettered: 1 });
     expect(central.calls).toHaveLength(0);
     expect(await job(f.jobId)).toMatchObject({ last_error_code: 'bonus_fulfillment_paused' });
+  });
+
+  it('lets the exact canary contact fulfill a paid bonus while the global pause protects everyone else', async () => {
+    const f = await fixture({ bonusCourses: [
+      { code: `BONUS-CANARY-${randomUUID().slice(0, 6)}`, displayName: 'Bonus Canary', position: 1 },
+    ] });
+    const central = mockCentral((call) => json(201, body(call.paymentId, {
+      bonus_enrollments: f.bonusCodes.map((offering_code) => ({ offering_code, enrollment_status: 'active' })),
+    })));
+
+    expect(await runEnrollmentWorker({}, { sql: db!, config, fetchImpl: central.fetchImpl,
+      bonusConfig: {
+        enabled: false,
+        fulfillmentPaused: true,
+        canaryContactIds: [f.contactId],
+      },
+    })).toMatchObject({ completed: 1, dead_lettered: 0 });
+    expect(central.calls.map((call) => call.method)).toEqual(['POST']);
   });
 
   it('two concurrent workers never take the same job', async () => {

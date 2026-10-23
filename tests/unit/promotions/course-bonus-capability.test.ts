@@ -4,6 +4,10 @@ import {
   readCourseBonusCapabilityV1,
 } from '@/features/promotions/application/read-course-bonus-capability';
 import type { DbClient } from '@/lib/db/types';
+import {
+  isCentralCargaBonusEnabledForContact,
+  loadCentralCargaBonusConfig,
+} from '@/features/fulfillment/central-carga/config';
 
 const promotion = {
   promotion_code: 'ingles_1_mas_ingles_2',
@@ -30,6 +34,64 @@ function capability(overrides: Record<string, unknown> = {}) {
 }
 
 describe('course bonus capability', () => {
+  it('enables a promotion only for the exact canary contact while the global flag is off', () => {
+    const canary = '00000000-0000-4000-8000-000000000001';
+    const config = loadCentralCargaBonusConfig({
+      CENTRAL_CARGA_BONUS_ENABLED: 'false',
+      CENTRAL_CARGA_BONUS_FULFILLMENT_PAUSED: 'true',
+      CENTRAL_CARGA_BONUS_CANARY_CONTACT_IDS: ` ${canary},00000000-0000-4000-8000-000000000002 `,
+    });
+
+    expect(isCentralCargaBonusEnabledForContact(config, canary)).toBe(true);
+    expect(isCentralCargaBonusEnabledForContact(config, '00000000-0000-4000-8000-000000000003')).toBe(false);
+  });
+
+  it('reads the promotion capability for the exact canary contact while the global flag is off', async () => {
+    const canary = '00000000-0000-4000-8000-000000000001';
+    const priorEnabled = process.env.CENTRAL_CARGA_BONUS_ENABLED;
+    const priorCanaries = process.env.CENTRAL_CARGA_BONUS_CANARY_CONTACT_IDS;
+    process.env.CENTRAL_CARGA_BONUS_ENABLED = 'false';
+    process.env.CENTRAL_CARGA_BONUS_CANARY_CONTACT_IDS = canary;
+    let queryCount = 0;
+    const db = (async () => {
+      queryCount += 1;
+      if (queryCount === 1) return [{ interest_offering_code: 'ingles_1', price_objection_count: 1 }];
+      return [{
+        promotion_code: 'ingles_1_mas_ingles_2',
+        paid_offering_code: 'ingles_1',
+        channels: ['text'],
+        active: true,
+        valid_from: null,
+        valid_until: null,
+        bonus_offerings: [{ code: 'ingles_2', display_name: 'Inglés 2', position: 1 }],
+        offer_status: null,
+        offer_promotion_code: null,
+        offer_expires_at: null,
+        prior_price_objection_checkin: false,
+      }];
+    }) as unknown as DbClient;
+
+    try {
+      await expect(readCourseBonusCapabilityV1({
+        workspace_slug: 'studyx',
+        contact_id: canary,
+        conversation_id: '00000000-0000-4000-8000-000000000002',
+        channel: 'text',
+        selected_offering_code: null,
+      }, { db })).resolves.toMatchObject({
+        status: 'review_available',
+        may_request_review: true,
+        interest_offering_code: 'ingles_1',
+      });
+      expect(queryCount).toBe(2);
+    } finally {
+      if (priorEnabled === undefined) delete process.env.CENTRAL_CARGA_BONUS_ENABLED;
+      else process.env.CENTRAL_CARGA_BONUS_ENABLED = priorEnabled;
+      if (priorCanaries === undefined) delete process.env.CENTRAL_CARGA_BONUS_CANARY_CONTACT_IDS;
+      else process.env.CENTRAL_CARGA_BONUS_CANARY_CONTACT_IDS = priorCanaries;
+    }
+  });
+
   it('hides the entire capability while the Central v2 feature flag is disabled', async () => {
     const prior = process.env.CENTRAL_CARGA_BONUS_ENABLED;
     delete process.env.CENTRAL_CARGA_BONUS_ENABLED;

@@ -34,6 +34,36 @@ export type CentralCargaConfig =
 export interface CentralCargaBonusConfig {
   readonly enabled: boolean;
   readonly fulfillmentPaused: boolean;
+  readonly canaryContactIds?: readonly string[];
+}
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
+
+function parseCanaryContactIds(value: string | undefined): readonly string[] {
+  return [...new Set((value ?? '')
+    .split(',')
+    .map((candidate) => candidate.trim().toLowerCase())
+    .filter((candidate) => UUID.test(candidate)))];
+}
+
+export function isCentralCargaBonusEnabledForContact(
+  config: CentralCargaBonusConfig,
+  contactId: string,
+): boolean {
+  if (config.enabled) return true;
+  return (config.canaryContactIds ?? []).includes(contactId.trim().toLowerCase());
+}
+
+export function isCentralCargaBonusConfigured(config: CentralCargaBonusConfig): boolean {
+  return config.enabled || (config.canaryContactIds?.length ?? 0) > 0;
+}
+
+export function isCentralCargaBonusFulfillmentAllowedForContact(
+  config: CentralCargaBonusConfig,
+  contactId: string,
+): boolean {
+  return !config.fulfillmentPaused
+    || (config.canaryContactIds ?? []).includes(contactId.trim().toLowerCase());
 }
 
 export function loadCentralCargaBonusConfig(
@@ -42,6 +72,7 @@ export function loadCentralCargaBonusConfig(
   return {
     enabled: environment.CENTRAL_CARGA_BONUS_ENABLED?.trim().toLowerCase() === 'true',
     fulfillmentPaused: environment.CENTRAL_CARGA_BONUS_FULFILLMENT_PAUSED?.trim().toLowerCase() === 'true',
+    canaryContactIds: parseCanaryContactIds(environment.CENTRAL_CARGA_BONUS_CANARY_CONTACT_IDS),
   };
 }
 

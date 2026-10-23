@@ -1,5 +1,8 @@
 import type { DbClient } from '@/lib/db/types';
-import { loadCentralCargaBonusConfig } from '@/features/fulfillment/central-carga/config';
+import {
+  isCentralCargaBonusEnabledForContact,
+  loadCentralCargaBonusConfig,
+} from '@/features/fulfillment/central-carga/config';
 
 export type CourseBonusCapabilityStatus =
   | 'unavailable'
@@ -214,7 +217,10 @@ export async function readCourseBonusCapabilityV1(input: {
   readonly selected_offering_code: string | null;
   readonly now?: Date;
 }, deps: { readonly db: DbClient }): Promise<CourseBonusCapabilityV1> {
-  if (!loadCentralCargaBonusConfig().enabled) return hidden('unavailable');
+  if (!isCentralCargaBonusEnabledForContact(
+    loadCentralCargaBonusConfig(),
+    input.contact_id,
+  )) return hidden('unavailable');
   const contexts = await deps.db<Array<{
     interest_offering_code: string | null;
     price_objection_count: number;

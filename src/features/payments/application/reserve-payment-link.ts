@@ -8,7 +8,10 @@ import {
   stripePaymentLinkEnvironment,
   type PaymentPlanCode,
 } from '../domain/payment-link';
-import { loadCentralCargaBonusConfig } from '@/features/fulfillment/central-carga/config';
+import {
+  isCentralCargaBonusEnabledForContact,
+  loadCentralCargaBonusConfig,
+} from '@/features/fulfillment/central-carga/config';
 
 export class PaymentLinkReservationError extends Error {
   constructor(readonly code: string) {
@@ -84,7 +87,10 @@ export async function reservePaymentLink(
   }
   const environment = stripePaymentLinkEnvironment(input.payment_link_url);
   if (!environment) throw new PaymentLinkReservationError('PAYMENT_LINK_INVALID');
-  if (input.promotion_code && !loadCentralCargaBonusConfig().enabled) {
+  if (input.promotion_code && !isCentralCargaBonusEnabledForContact(
+    loadCentralCargaBonusConfig(),
+    input.contact_id,
+  )) {
     throw new PaymentLinkReservationError('COURSE_BONUS_DISABLED');
   }
 

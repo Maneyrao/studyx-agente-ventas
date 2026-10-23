@@ -25,7 +25,10 @@ import type { RetellOrchestrationStore } from '../application/retell-tools';
 import type { RetellPaymentPlanRequest } from '../application/retell-tools';
 import { logger } from '@/lib/observability/structured-log';
 import { splitFullName } from '@/lib/heuristics/contact-identity';
-import { loadCentralCargaBonusConfig } from '@/features/fulfillment/central-carga/config';
+import {
+  isCentralCargaBonusEnabledForContact,
+  loadCentralCargaBonusConfig,
+} from '@/features/fulfillment/central-carga/config';
 
 export type RetellOutboundSender = (
   input: Parameters<typeof sendOutboundMessage>[0],
@@ -50,7 +53,10 @@ export class PostgresRetellOrchestrationStore implements RetellOrchestrationStor
   async readCourseBonusPromotion(
     input: Parameters<NonNullable<RetellOrchestrationStore['readCourseBonusPromotion']>>[0],
   ) {
-    if (!loadCentralCargaBonusConfig().enabled) return null;
+    if (!isCentralCargaBonusEnabledForContact(
+      loadCentralCargaBonusConfig(),
+      input.contactId,
+    )) return null;
     const workspace = await this.workspaceForContact(input.workspaceSlug, input.contactId, input.callId);
     if (!workspace || workspace.conversation_id !== input.conversationId) return null;
     const promotion = await this.db.begin(async (tx) => {

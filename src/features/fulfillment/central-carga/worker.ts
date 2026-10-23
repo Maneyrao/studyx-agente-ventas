@@ -5,6 +5,7 @@ import type postgres from 'postgres';
 import { logger } from '@/lib/observability/structured-log';
 import { CentralCargaClient, type EnrollmentCallOutcome } from './client';
 import {
+  isCentralCargaBonusFulfillmentAllowedForContact,
   loadCentralCargaBonusConfig,
   loadCentralCargaConfig,
   type CentralCargaBonusConfig,
@@ -216,7 +217,8 @@ async function decide(
 ): Promise<Terminal> {
   const source = await loadSource(sql, job.payment_id);
   if (!source) return { kind: 'dead_letter', code: 'payment_not_found' };
-  if (source.bonus_offerings.length > 0 && bonusConfig.fulfillmentPaused) {
+  if (source.bonus_offerings.length > 0
+    && !isCentralCargaBonusFulfillmentAllowedForContact(bonusConfig, source.contact_id)) {
     return { kind: 'dead_letter', code: 'bonus_fulfillment_paused' };
   }
 

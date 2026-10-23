@@ -3,7 +3,11 @@ import type postgres from 'postgres';
 import { z } from 'zod';
 import type { DbClient } from '@/lib/db/types';
 import type { ManagedOutboundSender } from '@/features/messaging/adapters/managed-outbound';
-import { loadCentralCargaBonusConfig } from '@/features/fulfillment/central-carga/config';
+import {
+  isCentralCargaBonusConfigured,
+  isCentralCargaBonusEnabledForContact,
+  loadCentralCargaBonusConfig,
+} from '@/features/fulfillment/central-carga/config';
 import {
   buildAuthorizedEgress,
   protectedFactsInContentV1,
@@ -102,7 +106,10 @@ export async function commitCommercialActionV1(
     readonly now?: Date;
   },
 ): Promise<CommitCommercialActionResultV1> {
-  if (!loadCentralCargaBonusConfig().enabled) return { offer_id: null, followup: null };
+  if (!isCentralCargaBonusEnabledForContact(
+    loadCentralCargaBonusConfig(),
+    input.contact_id,
+  )) return { offer_id: null, followup: null };
   if (input.action.type === 'accept_promotion') {
     const accepted = await db<Array<{ id: string }>>`
       UPDATE promotion_offers offer
@@ -306,7 +313,10 @@ async function followupSource(db: DbClient, id: string): Promise<FollowupSource 
 }
 
 async function cancellationReason(db: DbClient, source: FollowupSource): Promise<string | null> {
-  if (!loadCentralCargaBonusConfig().enabled) return 'COURSE_BONUS_DISABLED';
+  if (!isCentralCargaBonusEnabledForContact(
+    loadCentralCargaBonusConfig(),
+    source.contact_id,
+  )) return 'COURSE_BONUS_DISABLED';
   const now = Date.now();
   if (!source.promotion_active
     || (source.valid_from && source.valid_from.getTime() > now)
@@ -896,7 +906,7 @@ export async function dispatchDueCommercialFollowupsV1(
   } = {},
 ): Promise<CommercialFollowupDispatchResultV1> {
   const result: CommercialFollowupDispatchResultV1 = { reserved: 0, scheduled: 0, failed: 0, ambiguous: 0 };
-  if (!loadCentralCargaBonusConfig().enabled) return result;
+  if (!isCentralCargaBonusConfigured(loadCentralCargaBonusConfig())) return result;
   const db = deps.db ?? await defaultDatabase();
   const limit = Math.min(Math.max(input.limit ?? 25, 1), 100);
   const lookaheadSeconds = Math.min(Math.max(input.lookahead_seconds ?? 60, 0), 300);

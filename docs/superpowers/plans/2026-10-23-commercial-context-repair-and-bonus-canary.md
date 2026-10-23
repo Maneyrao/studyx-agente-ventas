@@ -64,11 +64,11 @@ promotion entry point while the global feature flag stays off.
 - Test: `tests/integration/course-bonus-payment-correlation.test.ts`
 - Test: `tests/integration/central-carga-enrollment-worker.test.ts`
 
-- [ ] Add RED tests proving global-off/non-canary denial and exact-canary
+- [x] Add RED tests proving global-off/non-canary denial and exact-canary
   permission across capability, actions, payment, and fulfillment.
-- [ ] Implement one shared contact-scope policy and replace direct global-flag
+- [x] Implement one shared contact-scope policy and replace direct global-flag
   checks at every promotion entry point.
-- [ ] Keep normal enrollments and already-paid obligations unchanged.
+- [x] Keep normal enrollments and already-paid obligations unchanged.
 
 ### Task 4: Regression, deploy, and canary readiness
 

@@ -9,10 +9,16 @@ const run = process.env.TEST_DATABASE_URL ? describe : describe.skip;
 const db = process.env.TEST_DATABASE_URL ? openLocalTestDatabase() : null;
 afterAll(async () => db?.end());
 const priorFlag = process.env.CENTRAL_CARGA_BONUS_ENABLED;
-beforeEach(() => { process.env.CENTRAL_CARGA_BONUS_ENABLED = 'true'; });
+const priorCanaryContacts = process.env.CENTRAL_CARGA_BONUS_CANARY_CONTACT_IDS;
+beforeEach(() => {
+  process.env.CENTRAL_CARGA_BONUS_ENABLED = 'true';
+  delete process.env.CENTRAL_CARGA_BONUS_CANARY_CONTACT_IDS;
+});
 afterEach(() => {
   if (priorFlag === undefined) delete process.env.CENTRAL_CARGA_BONUS_ENABLED;
   else process.env.CENTRAL_CARGA_BONUS_ENABLED = priorFlag;
+  if (priorCanaryContacts === undefined) delete process.env.CENTRAL_CARGA_BONUS_CANARY_CONTACT_IDS;
+  else process.env.CENTRAL_CARGA_BONUS_CANARY_CONTACT_IDS = priorCanaryContacts;
 });
 
 async function fixture() {
@@ -233,6 +239,26 @@ run('course bonus payment correlation', () => {
       });
       process.env.CENTRAL_CARGA_BONUS_ENABLED='true';
     }
+  });
+
+  it('reserves a promoted payment for the exact canary contact while global bonus visibility is off', async () => {
+    const f = await fixture();
+    process.env.CENTRAL_CARGA_BONUS_ENABLED = 'false';
+    process.env.CENTRAL_CARGA_BONUS_CANARY_CONTACT_IDS = f.contact.id as string;
+
+    const reserved = await reservePaymentLink(db!, {
+      workspace_id: f.workspace.id as string,
+      contact_id: f.contact.id as string,
+      offering_id: f.paid.id as string,
+      conversation_id: f.conversation.id as string,
+      plan_code: 'one_time',
+      idempotency_key: `promoted-canary:${randomUUID()}`,
+      payment_link_url: 'https://buy.stripe.com/test_bonus',
+      promotion_code: f.promotion.promotion_code as string,
+    });
+
+    expect(await db!`SELECT offering_code_snapshot FROM payment_bonus_offerings
+      WHERE payment_id=${reserved.payment_id}`).toEqual([{ offering_code_snapshot: f.bonus.code }]);
   });
 
   it('keeps the frozen gift attached when Stripe pays by client_reference_id', async () => {

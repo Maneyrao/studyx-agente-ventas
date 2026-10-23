@@ -17,10 +17,16 @@ import {
 const run = process.env.TEST_DATABASE_URL ? describe : describe.skip;
 const db = process.env.TEST_DATABASE_URL ? openLocalTestDatabase() : null;
 const priorBonusFlag = process.env.CENTRAL_CARGA_BONUS_ENABLED;
-beforeEach(() => { process.env.CENTRAL_CARGA_BONUS_ENABLED = 'true'; });
+const priorCanaryContacts = process.env.CENTRAL_CARGA_BONUS_CANARY_CONTACT_IDS;
+beforeEach(() => {
+  process.env.CENTRAL_CARGA_BONUS_ENABLED = 'true';
+  delete process.env.CENTRAL_CARGA_BONUS_CANARY_CONTACT_IDS;
+});
 afterEach(() => {
   if (priorBonusFlag === undefined) delete process.env.CENTRAL_CARGA_BONUS_ENABLED;
   else process.env.CENTRAL_CARGA_BONUS_ENABLED = priorBonusFlag;
+  if (priorCanaryContacts === undefined) delete process.env.CENTRAL_CARGA_BONUS_CANARY_CONTACT_IDS;
+  else process.env.CENTRAL_CARGA_BONUS_CANARY_CONTACT_IDS = priorCanaryContacts;
 });
 afterAll(async () => db?.end());
 
@@ -116,6 +122,24 @@ run('durable commercial course-bonus follow-up', () => {
       source_outbound_message_id: f.outbound.id as string,
       action: { type: 'request_promotion_review', reason: 'persistent_price_objection' },
     })).toEqual({ offer_id: null, followup: null });
+  });
+
+  it('creates a review only for the exact canary contact while the global flag is disabled', async () => {
+    const f = await fixture();
+    process.env.CENTRAL_CARGA_BONUS_ENABLED = 'false';
+    process.env.CENTRAL_CARGA_BONUS_CANARY_CONTACT_IDS = f.contact.id as string;
+
+    const result = await commitCommercialActionV1(db!, {
+      workspace_id: f.workspace.id as string,
+      contact_id: f.contact.id as string,
+      conversation_id: f.conversation.id as string,
+      paid_offering_code: f.paid.code as string,
+      source_turn_id: f.inbound.id as string,
+      source_outbound_message_id: f.outbound.id as string,
+      action: { type: 'request_promotion_review', reason: 'persistent_price_objection' },
+    });
+
+    expect(result.followup).toMatchObject({ kind: 'promotion_review' });
   });
 
   it('commits one review, claims once and marks the authorized offer delivered once', async () => {
