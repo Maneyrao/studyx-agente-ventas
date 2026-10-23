@@ -4,11 +4,16 @@ import { jsonbParam } from '@/lib/db/json';
 import type postgres from 'postgres';
 import { logger } from '@/lib/observability/structured-log';
 import { CentralCargaClient, type EnrollmentCallOutcome } from './client';
-import { loadCentralCargaConfig, type CentralCargaConfig } from './config';
+import {
+  loadCentralCargaBonusConfig,
+  loadCentralCargaConfig,
+  type CentralCargaBonusConfig,
+  type CentralCargaConfig,
+} from './config';
 import {
   buildEnrollmentRequest,
   issuePaths,
-  type EnrollmentResponseV1,
+  type EnrollmentResponse,
   type EnrollmentSource,
 } from './contract';
 import { computeBackoffSeconds, effectiveMaxAttempts, preflight, sandboxLiveBridgeState } from './policy';
@@ -58,10 +63,11 @@ export interface EnrollmentWorkerDeps {
   fetchImpl?: typeof fetch;
   now?: () => number;
   random?: () => number;
+  bonusConfig?: CentralCargaBonusConfig;
 }
 
 type Terminal =
-  | { kind: 'completed'; body: EnrollmentResponseV1 }
+  | { kind: 'completed'; body: EnrollmentResponse }
   | { kind: 'retry'; code: string; delaySeconds?: number }
   | { kind: 'skipped'; code: string }
   | { kind: 'dead_letter'; code: string };
@@ -94,6 +100,7 @@ export async function runEnrollmentWorker(
   }
   if (!config.enabled) return result;
   result.enabled = true;
+  const bonusConfig = deps.bonusConfig ?? loadCentralCargaBonusConfig();
 
   const sql = deps.sql ?? orchestratorSql;
   const workerId = input.worker_id ?? `central-carga-enrollment:${randomUUID()}`;
@@ -126,7 +133,7 @@ export async function runEnrollmentWorker(
 
     let terminal: Terminal;
     try {
-      terminal = await decide(sql, job, config, client, now);
+      terminal = await decide(sql, job, config, bonusConfig, client, now);
     } catch (error) {
       // Unexpected local failure (DB read etc.): the Central outcome is
       // unknown, so retry rather than assume anything.
@@ -165,6 +172,16 @@ async function loadSource(sql: postgres.Sql, paymentId: string): Promise<SourceR
       COALESCE(p.registration_email, c.email) AS contact_email, c.phone AS contact_phone,
       c.declared_phone AS contact_declared_phone,
       o.code AS offering_code, o.display_name AS offering_display_name,
+      COALESCE((
+        SELECT jsonb_agg(jsonb_build_object(
+          'code', bonus.offering_code_snapshot,
+          'display_name', bonus.offering_display_name_snapshot,
+          'promotion_code', bonus.promotion_code_snapshot,
+          'position', bonus.position
+        ) ORDER BY bonus.position)
+        FROM payment_bonus_offerings bonus
+        WHERE bonus.payment_id = p.id
+      ), '[]'::jsonb) AS bonus_offerings,
       EXISTS (SELECT 1 FROM sandbox_identities s WHERE s.contact_id = c.id) AS sandbox_contact
     FROM payments p
     JOIN contacts c ON c.id = p.contact_id
@@ -193,11 +210,15 @@ async function decide(
   sql: postgres.Sql,
   job: ClaimedJob,
   config: Extract<CentralCargaConfig, { enabled: true }>,
+  bonusConfig: CentralCargaBonusConfig,
   client: CentralCargaClient,
   now: () => number,
 ): Promise<Terminal> {
   const source = await loadSource(sql, job.payment_id);
   if (!source) return { kind: 'dead_letter', code: 'payment_not_found' };
+  if (source.bonus_offerings.length > 0 && bonusConfig.fulfillmentPaused) {
+    return { kind: 'dead_letter', code: 'bonus_fulfillment_paused' };
+  }
 
   const decision = preflight({
     source,
@@ -227,7 +248,10 @@ async function decide(
 
   if (job.attempt_count > 1) {
     // Previous attempt may have reached the Central (timeout, lost response).
-    const existing = await client.getEnrollment(job.payment_id);
+    const expectedBonusCodes = request.data.schema_version === 2
+      ? request.data.bonus_offerings.map((offering) => offering.code)
+      : [];
+    const existing = await client.getEnrollment(job.payment_id, expectedBonusCodes);
     if (existing.kind === 'success' || existing.kind === 'processing'
       || existing.kind === 'retry' || existing.kind === 'dead_letter') {
       return fromOutcome(existing, null);
@@ -317,6 +341,24 @@ async function settle(
         )
         ON CONFLICT (payment_id) DO NOTHING
       `;
+      if ('bonus_enrollments' in body) {
+        const enrollmentRows = await tx<Array<{ id: string }>>`
+          SELECT id FROM central_enrollments WHERE payment_id = ${job.payment_id}::uuid LIMIT 1
+        `;
+        const centralEnrollmentId = enrollmentRows[0]?.id;
+        if (!centralEnrollmentId) throw new Error('central enrollment persistence failed');
+        for (const [index, bonus] of body.bonus_enrollments.entries()) {
+          await tx`
+            INSERT INTO central_bonus_enrollment_items (
+              central_enrollment_id, payment_id, offering_code, enrollment_status, position
+            ) VALUES (
+              ${centralEnrollmentId}::uuid, ${job.payment_id}::uuid, ${bonus.offering_code},
+              ${bonus.enrollment_status}, ${index + 1}
+            )
+            ON CONFLICT (payment_id, offering_code) DO NOTHING
+          `;
+        }
+      }
       return true;
     });
     if (!done) return null;

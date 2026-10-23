@@ -226,6 +226,7 @@ git commit -m "feat(payments): freeze authorized bonus courses"
 - Modify: `src/features/fulfillment/central-carga/client.ts`
 - Modify: `src/features/fulfillment/central-carga/config.ts`
 - Modify: `src/features/fulfillment/central-carga/worker.ts`
+- Create: `supabase/migrations/20261023010002_align_central_bonus_response.sql`
 - Modify: `.env.example`
 - Test: `tests/unit/fulfillment/central-carga-contract.test.ts`
 - Test: `tests/integration/central-carga-enrollment-worker.test.ts`
@@ -234,34 +235,34 @@ git commit -m "feat(payments): freeze authorized bonus courses"
 - Consumes: Task 4 payment snapshots and Lucas contract `cd45ce5`.
 - Produces: strict `EnrollmentRequestV2`, `EnrollmentResponseV2`, stored bonus enrollment items, and the existing worker outcome using the same payment id/job/endpoint.
 
-- [ ] **Step 1: Write failing v1/v2 contract and worker tests**
+- [x] **Step 1: Write failing v1/v2 contract and worker tests**
 
 Cover v1 unchanged, deterministic gift order, exact response-set validation, 202 polling, identical replay, unknown offering, unsupported version, changed-set 409, timeout/reconciliation, partial Moodle resumption, and one welcome email.
 
-- [ ] **Step 2: Run focused tests and verify RED**
+- [x] **Step 2: Run focused tests and verify RED**
 
 Run: `npx vitest run --config vitest.config.mts tests/unit/fulfillment/central-carga-contract.test.ts && npx vitest run --config vitest.integration.config.mts tests/integration/central-carga-enrollment-worker.test.ts`
 
 Expected: FAIL because the worker only emits schema v1.
 
-- [ ] **Step 3: Implement v2 schema selection and strict response validation**
+- [x] **Step 3: Implement v2 schema selection and strict response validation**
 
 `buildEnrollmentRequest` reads the payment snapshot, sends v1 when empty and v2 when non-empty, and never reads current promotion/catalog state. `classifyResponse` accepts v2 success only when every requested code appears exactly once and is active.
 
-- [ ] **Step 4: Add fail-closed offer/reservation gating and state-aware fulfillment controls**
+- [x] **Step 4: Add fail-closed offer/reservation gating and state-aware fulfillment controls**
 
 When `CENTRAL_CARGA_BONUS_ENABLED` is false, Task 4 prevents new offer and link delivery. The worker continues already-paid v2 snapshots while Central is healthy. A separate emergency fulfillment pause moves work to an alerted/manual state and never sends v1. Record specific dead-letter codes without PII.
 
-- [ ] **Step 5: Run tests and verify GREEN**
+- [x] **Step 5: Run tests and verify GREEN**
 
 Run the Step 2 command plus `npm run typecheck`.
 
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
-git add src/features/fulfillment/central-carga .env.example tests/unit/fulfillment/central-carga-contract.test.ts tests/integration/central-carga-enrollment-worker.test.ts
+git add src/features/fulfillment/central-carga supabase/migrations/20261023010002_align_central_bonus_response.sql .env.example tests/unit/fulfillment/central-carga-contract.test.ts tests/integration/central-carga-enrollment-worker.test.ts
 git commit -m "feat(fulfillment): enroll paid and bonus courses atomically"
 ```
 

@@ -31,6 +31,26 @@ export const EnrollmentRequestV1 = z.object({
 });
 export type EnrollmentRequestV1 = z.infer<typeof EnrollmentRequestV1>;
 
+export const EnrollmentRequestV2 = EnrollmentRequestV1.extend({
+  schema_version: z.literal(2),
+  bonus_offerings: z.array(z.object({
+    code: z.string().min(1),
+    display_name: z.string().min(1),
+    promotion_code: z.string().min(1).max(64),
+  })).min(1).max(3),
+}).superRefine((request, context) => {
+  const codes = request.bonus_offerings.map((offering) => offering.code);
+  if (new Set(codes).size !== codes.length || codes.includes(request.offering.code)) {
+    context.addIssue({
+      code: 'custom',
+      path: ['bonus_offerings'],
+      message: 'bonus codes must be unique and different from offering.code',
+    });
+  }
+});
+export type EnrollmentRequestV2 = z.infer<typeof EnrollmentRequestV2>;
+export type EnrollmentRequest = EnrollmentRequestV1 | EnrollmentRequestV2;
+
 export const EnrollmentResponseV1 = z.object({
   payment_id: z.string().uuid(),
   enrollment_id: z.string().min(1),
@@ -45,6 +65,15 @@ export const EnrollmentResponseV1 = z.object({
   created_at: z.string().datetime().optional(),
 });
 export type EnrollmentResponseV1 = z.infer<typeof EnrollmentResponseV1>;
+
+export const EnrollmentResponseV2 = EnrollmentResponseV1.extend({
+  bonus_enrollments: z.array(z.object({
+    offering_code: z.string().min(1),
+    enrollment_status: z.literal('active'),
+  })).min(1).max(3),
+});
+export type EnrollmentResponseV2 = z.infer<typeof EnrollmentResponseV2>;
+export type EnrollmentResponse = EnrollmentResponseV1 | EnrollmentResponseV2;
 
 /** Everything the worker reads from PostgreSQL to build one request. */
 export interface EnrollmentSource {
@@ -64,6 +93,12 @@ export interface EnrollmentSource {
   contact_declared_phone: string | null;
   offering_code: string | null;
   offering_display_name: string | null;
+  bonus_offerings: Array<{
+    code: string;
+    display_name: string;
+    promotion_code: string;
+    position: number;
+  }>;
 }
 
 /** numeric(14,2) text -> the contract's exactly-two-decimals string. */
@@ -86,8 +121,7 @@ function present(value: string | null | undefined): string | null {
  * paths are safe to log; values (PII) are never exposed.
  */
 export function buildEnrollmentRequest(source: EnrollmentSource) {
-  return EnrollmentRequestV1.safeParse({
-    schema_version: 1,
+  const base = {
     payment_id: source.payment_id,
     workspace_id: source.workspace_id,
     contact_id: source.contact_id,
@@ -109,6 +143,17 @@ export function buildEnrollmentRequest(source: EnrollmentSource) {
       provider_session_id: source.provider_session_id,
       paid_at: source.paid_at?.toISOString(),
     },
+  };
+  if (source.bonus_offerings.length === 0) {
+    return EnrollmentRequestV1.safeParse({ schema_version: 1, ...base });
+  }
+  const bonusOfferings = [...source.bonus_offerings]
+    .sort((left, right) => left.position - right.position)
+    .map(({ code, display_name, promotion_code }) => ({ code, display_name, promotion_code }));
+  return EnrollmentRequestV2.safeParse({
+    schema_version: 2,
+    ...base,
+    bonus_offerings: bonusOfferings,
   });
 }
 
