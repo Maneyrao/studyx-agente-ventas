@@ -36,6 +36,9 @@ export type RetellToolName = RetellP0ToolName | RetellOrchestrationToolName;
 
 export interface RetellOrchestrationStore {
   readCourseBonusPromotion?(input: {
+    readonly callId: string;
+    readonly contactId: string;
+    readonly conversationId: string;
     readonly workspaceSlug: string;
     readonly course: string;
   }): Promise<{
@@ -577,6 +580,8 @@ async function consultCourse(
 
 async function consultOffer(
   args: z.infer<typeof ToolArgsSchemas.consultar_oferta>,
+  callId: string,
+  identity: { readonly contactId: string; readonly conversationId: string },
   dependencies: RetellToolDependencies,
 ): Promise<Response> {
   if (args.cursos.length !== 1) return resultError('OFFER_UNAVAILABLE');
@@ -598,6 +603,9 @@ async function consultOffer(
   if (!coherent) return resultError('OFFER_UNAVAILABLE');
   const promotion = dependencies.orchestration?.readCourseBonusPromotion
     ? await dependencies.orchestration.readCourseBonusPromotion({
+        callId,
+        contactId: identity.contactId,
+        conversationId: identity.conversationId,
         workspaceSlug: dependencies.workspaceSlug,
         course: course.code,
       })
@@ -930,6 +938,8 @@ export async function handleRetellToolRequest(
     } else if (expectedName === 'consultar_oferta') {
       response = await consultOffer(
         envelope.args as z.infer<typeof ToolArgsSchemas.consultar_oferta>,
+        callId,
+        { contactId, conversationId },
         dependencies,
       );
     } else if (expectedName === 'guardar_datos_contacto') {

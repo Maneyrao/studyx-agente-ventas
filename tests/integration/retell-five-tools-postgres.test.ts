@@ -194,6 +194,20 @@ run('Retell five tools PostgreSQL adapter', () => {
         sendOutbound: outbound.send,
       });
       await expect(store.readCourseBonusPromotion({
+        callId:ids.callId,contactId:ids.contactId,conversationId:ids.conversationId,
+        workspaceSlug: ids.workspaceSlug, course: 'retell_course',
+      })).resolves.toEqual({
+        promotionCode: promotion.promotion_code,
+        bonusOfferings: [{ code: bonus.code, displayName: 'Retell Bonus' }],
+      });
+      const [lateBonus] = await db!<Array<{ id: string; code: string }>>`
+        INSERT INTO offerings(workspace_id,code,display_name,offering_type,status,description,price_type)
+        VALUES (${ids.workspaceId}::uuid,${`retell_late_${randomUUID().slice(0,8)}`},'Late Bonus',
+          'course','active','Late','free') RETURNING id,code`;
+      await db!`INSERT INTO promotion_bonus_offerings(promotion_id,workspace_id,offering_id,position)
+        VALUES (${promotion.id}::uuid,${ids.workspaceId}::uuid,${lateBonus.id}::uuid,2)`;
+      await expect(store.readCourseBonusPromotion({
+        callId:ids.callId,contactId:ids.contactId,conversationId:ids.conversationId,
         workspaceSlug: ids.workspaceSlug, course: 'retell_course',
       })).resolves.toEqual({
         promotionCode: promotion.promotion_code,

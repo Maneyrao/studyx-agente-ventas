@@ -188,7 +188,10 @@ release record:
 6. Verify the sealed offered-course set, immutable payment snapshot, one
    Central v2 job, complete Moodle access, and the deterministic post-sale
    message. No invoice is part of this flow.
-7. Expand only after the canary evidence is reviewed explicitly.
+7. If voice is included in the canary, change the live promotion mapping after
+   `consultar_oferta` and before payment in a controlled test; the payment must
+   retain the originally exposed set.
+8. Expand only after the canary evidence is reviewed explicitly.
 
 ### Promotion-specific rollback
 

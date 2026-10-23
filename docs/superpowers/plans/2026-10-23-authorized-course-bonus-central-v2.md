@@ -337,7 +337,7 @@ Assert voice can discover only active voice-channel promotions, an accepted prom
 
 - [x] **Step 2: Implement the minimal voice propagation**
 
-Extend the existing tools/store inputs with backend-authorized `promotion_code`. Do not create a second voice checkout path.
+Extend the existing tools/store inputs with backend-authorized `promotion_code`. Freeze the exact gift set when the correlated `consultar_oferta` exposes it, reuse an already delivered text snapshot, and require that same sealed offer when `enviar_link_pago` accepts it. Do not create a second voice checkout path.
 
 - [x] **Step 3: Run targeted and full release gates**
 

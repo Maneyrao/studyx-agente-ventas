@@ -51,45 +51,98 @@ export class PostgresRetellOrchestrationStore implements RetellOrchestrationStor
     input: Parameters<NonNullable<RetellOrchestrationStore['readCourseBonusPromotion']>>[0],
   ) {
     if (!loadCentralCargaBonusConfig().enabled) return null;
-    const rows = await this.db<Array<{
-      promotion_code: string;
-      bonus_offerings: Array<{ code: string; display_name: string; position: number }>;
-    }>>`
-      SELECT promotion.promotion_code,
-        COALESCE((
-          SELECT jsonb_agg(jsonb_build_object(
-            'code', bonus.code,
-            'display_name', bonus.display_name,
-            'position', configured.position
-          ) ORDER BY configured.position)
-          FROM promotion_bonus_offerings configured
-          JOIN offerings bonus ON bonus.id = configured.offering_id
-          WHERE configured.promotion_id = promotion.id
-        ), '[]'::jsonb) AS bonus_offerings
-      FROM promotions promotion
-      JOIN workspaces workspace ON workspace.id = promotion.workspace_id
-      JOIN offerings paid ON paid.id = promotion.paid_offering_id
-      WHERE workspace.slug = ${input.workspaceSlug}
-        AND workspace.status = 'active'
-        AND paid.code = ${input.course}
-        AND paid.status = 'active'
-        AND promotion.active = true
-        AND 'voice' = ANY(promotion.channels)
-        AND (promotion.valid_from IS NULL OR promotion.valid_from <= now())
-        AND (promotion.valid_until IS NULL OR promotion.valid_until > now())
-        AND EXISTS (SELECT 1 FROM promotion_bonus_offerings item WHERE item.promotion_id = promotion.id)
-      ORDER BY promotion.created_at DESC
-      LIMIT 1
-    `;
-    const promotion = rows[0];
-    if (!promotion || promotion.bonus_offerings.length === 0) return null;
-    const safe = promotion.bonus_offerings.every((bonus) => {
-      const code = sanitizeRetrievedText(bonus.code, 128);
-      const name = sanitizeRetrievedText(bonus.display_name, 128);
-      return !code.injection_suspected && !code.truncated && code.text === bonus.code
-        && !name.injection_suspected && !name.truncated && name.text === bonus.display_name;
+    const workspace = await this.workspaceForContact(input.workspaceSlug, input.contactId, input.callId);
+    if (!workspace || workspace.conversation_id !== input.conversationId) return null;
+    const promotion = await this.db.begin(async (tx) => {
+      const promotions = await tx<Array<{
+        id: string;
+        promotion_code: string;
+        paid_offering_id: string;
+      }>>`
+        SELECT promotion.id, promotion.promotion_code, promotion.paid_offering_id
+        FROM promotions promotion
+        JOIN offerings paid ON paid.id = promotion.paid_offering_id
+        WHERE promotion.workspace_id = ${workspace.id}::uuid
+          AND paid.code = ${input.course}
+          AND paid.status = 'active'
+          AND promotion.active = true
+          AND 'voice' = ANY(promotion.channels)
+          AND (promotion.valid_from IS NULL OR promotion.valid_from <= now())
+          AND (promotion.valid_until IS NULL OR promotion.valid_until > now())
+          AND (SELECT count(*) FROM promotion_bonus_offerings item
+            WHERE item.promotion_id = promotion.id) BETWEEN 1 AND 3
+          AND (SELECT count(*) FROM promotion_offers used
+            WHERE used.promotion_id = promotion.id
+              AND used.contact_id = ${input.contactId}::uuid
+              AND used.status = 'attached') < promotion.max_redemptions_per_contact
+        ORDER BY promotion.created_at DESC
+        LIMIT 1
+        FOR UPDATE OF promotion
+      `;
+      const configured = promotions[0];
+      if (!configured) return null;
+      const offers = await tx<Array<{ id: string; bonus_snapshot_sealed_at: Date | null }>>`
+        INSERT INTO promotion_offers (
+          workspace_id, contact_id, conversation_id, promotion_id, paid_offering_id,
+          status, source_turn_id, source_conversation_version, source_state_version,
+          expires_at
+        ) VALUES (
+          ${workspace.id}::uuid, ${input.contactId}::uuid, ${input.conversationId}::uuid,
+          ${configured.id}::uuid, ${configured.paid_offering_id}::uuid, 'pending_review',
+          ${workspace.source_turn_id}::uuid, ${workspace.source_conversation_version},
+          ${workspace.state_version}, now() + interval '48 hours'
+        )
+        ON CONFLICT (conversation_id, promotion_id)
+          WHERE status IN ('pending_review','offered','accepted')
+        DO UPDATE SET updated_at = now()
+        RETURNING id, bonus_snapshot_sealed_at
+      `;
+      const offer = offers[0];
+      if (!offer) return null;
+      if (!offer.bonus_snapshot_sealed_at) {
+        await tx`
+          INSERT INTO promotion_offer_bonus_offerings (
+            offer_id, promotion_id, offering_id, promotion_code_snapshot,
+            offering_code_snapshot, offering_display_name_snapshot, position
+          )
+          SELECT ${offer.id}::uuid, promotion.id, bonus.id, promotion.promotion_code,
+            bonus.code, bonus.display_name, configured_bonus.position
+          FROM promotions promotion
+          JOIN promotion_bonus_offerings configured_bonus
+            ON configured_bonus.promotion_id = promotion.id
+          JOIN offerings bonus ON bonus.id = configured_bonus.offering_id
+          WHERE promotion.id = ${configured.id}::uuid
+          ORDER BY configured_bonus.position
+          ON CONFLICT DO NOTHING
+        `;
+        await tx`
+          UPDATE promotion_offers
+          SET bonus_snapshot_sealed_at = now()
+          WHERE id = ${offer.id}::uuid AND bonus_snapshot_sealed_at IS NULL
+        `;
+      }
+      const bonuses = await tx<Array<{ code: string; display_name: string; position: number }>>`
+        SELECT offering_code_snapshot AS code,
+          offering_display_name_snapshot AS display_name, position
+        FROM promotion_offer_bonus_offerings
+        WHERE offer_id = ${offer.id}::uuid
+        ORDER BY position
+      `;
+      if (bonuses.length < 1 || bonuses.length > 3) return null;
+      const safe = bonuses.every((bonus) => {
+        const code = sanitizeRetrievedText(bonus.code, 128);
+        const name = sanitizeRetrievedText(bonus.display_name, 128);
+        return !code.injection_suspected && !code.truncated && code.text === bonus.code
+          && !name.injection_suspected && !name.truncated && name.text === bonus.display_name;
+      });
+      if (!safe) return null;
+      await tx`
+        UPDATE promotion_offers SET voice_exposed_at = COALESCE(voice_exposed_at, now())
+        WHERE id = ${offer.id}::uuid AND bonus_snapshot_sealed_at IS NOT NULL
+      `;
+      return { promotion_code: configured.promotion_code, bonus_offerings: bonuses };
     });
-    if (!safe) return null;
+    if (!promotion || promotion.bonus_offerings.length === 0) return null;
     return {
       promotionCode: promotion.promotion_code,
       bonusOfferings: promotion.bonus_offerings.map((bonus) => ({
@@ -240,57 +293,28 @@ export class PostgresRetellOrchestrationStore implements RetellOrchestrationStor
             SELECT id FROM payments WHERE idempotency_key = ${idempotencyKey} LIMIT 1
           `;
           if (!existing[0]) {
-            const accepted = await tx<Array<{
-              id: string;
-              promotion_id: string;
-              bonus_snapshot_sealed_at: Date | null;
-            }>>`
-              INSERT INTO promotion_offers (
-                workspace_id, contact_id, conversation_id, promotion_id, paid_offering_id,
-                status, source_turn_id, source_conversation_version, source_state_version,
-                offered_at, accepted_at, expires_at
-              )
-              SELECT
-                ${workspace.id}::uuid, ${input.contactId}::uuid, ${input.conversationId}::uuid,
-                promotion.id, promotion.paid_offering_id, 'accepted', ${workspace.source_turn_id}::uuid,
-                ${workspace.source_conversation_version}, ${workspace.state_version}, now(), now(),
-                now() + interval '48 hours'
+            const accepted = await tx<Array<{ id: string }>>`
+              UPDATE promotion_offers offer
+              SET status = 'accepted', accepted_at = COALESCE(offer.accepted_at, now())
               FROM promotions promotion
-              WHERE promotion.workspace_id = ${workspace.id}::uuid
+              WHERE offer.workspace_id = ${workspace.id}::uuid
+                AND offer.contact_id = ${input.contactId}::uuid
+                AND offer.conversation_id = ${input.conversationId}::uuid
+                AND offer.promotion_id = promotion.id
                 AND promotion.promotion_code = ${input.promotionCode}
-                AND promotion.paid_offering_id = ${offering.id}::uuid
+                AND offer.paid_offering_id = ${offering.id}::uuid
                 AND promotion.active = true
                 AND 'voice' = ANY(promotion.channels)
                 AND (promotion.valid_from IS NULL OR promotion.valid_from <= now())
                 AND (promotion.valid_until IS NULL OR promotion.valid_until > now())
-                AND EXISTS (SELECT 1 FROM promotion_bonus_offerings item WHERE item.promotion_id = promotion.id)
-              ON CONFLICT (conversation_id, promotion_id)
-                WHERE status IN ('pending_review','offered','accepted')
-              DO UPDATE SET status = 'accepted', accepted_at = COALESCE(promotion_offers.accepted_at, now())
-              RETURNING id, promotion_id, bonus_snapshot_sealed_at
+                AND offer.status IN ('pending_review','offered','accepted')
+                AND (offer.voice_exposed_at IS NOT NULL OR offer.status IN ('offered','accepted'))
+                AND offer.bonus_snapshot_sealed_at IS NOT NULL
+                AND (SELECT count(*) FROM promotion_offer_bonus_offerings snapshot
+                  WHERE snapshot.offer_id = offer.id) BETWEEN 1 AND 3
+              RETURNING offer.id
             `;
             if (!accepted[0]) throw new PaymentLinkReservationError('PROMOTION_NOT_AUTHORIZED');
-            if (!accepted[0].bonus_snapshot_sealed_at) {
-              await tx`
-                INSERT INTO promotion_offer_bonus_offerings (
-                  offer_id, promotion_id, offering_id, promotion_code_snapshot,
-                  offering_code_snapshot, offering_display_name_snapshot, position
-                )
-                SELECT accepted.id, promotion.id, bonus_offering.id, promotion.promotion_code,
-                  bonus_offering.code, bonus_offering.display_name, configured.position
-                FROM promotion_offers accepted
-                JOIN promotions promotion ON promotion.id = accepted.promotion_id
-                JOIN promotion_bonus_offerings configured ON configured.promotion_id = promotion.id
-                JOIN offerings bonus_offering ON bonus_offering.id = configured.offering_id
-                WHERE accepted.id = ${accepted[0].id}::uuid
-                ORDER BY configured.position
-                ON CONFLICT DO NOTHING
-              `;
-              await tx`
-                UPDATE promotion_offers SET bonus_snapshot_sealed_at = now()
-                WHERE id = ${accepted[0].id}::uuid AND bonus_snapshot_sealed_at IS NULL
-              `;
-            }
           }
         }
         return reservePaymentLink(tx, {

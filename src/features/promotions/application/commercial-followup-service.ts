@@ -462,8 +462,16 @@ export function validateCommercialFollowupNarrativeV1(
     (text, name) => text.split(name).join(' '),
     normalized,
   );
-  if (/(?:[$€£]\s*\d|\b(?:usd|u\$s|d[oó]lares?|pesos?)\s*\d|\b\d[\d.,]*\s*(?:usd|u\$s|d[oó]lares?|pesos?|al mes|mensuales?|cuotas?)\b|\b(?:por|total|precio|cuota|pago|cuesta|sale)\b.{0,25}\b\d[\d.,]*)/iu
-    .test(withoutCourseNames)) {
+  const numberWord = '(?:cero|un[oa]?|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|once|doce|trece|catorce|quince|veinte|treinta|cuarenta|cincuenta|sesenta|setenta|ochenta|noventa|cien(?:to)?|mil)';
+  const paymentVerb = '(?:pag(?:a|ar|ando|as|ás|o|ó)|abon(?:a|ar|ando|as|ás|o|ó)|cuesta|sale)';
+  const period = '(?:mensual(?:es)?|anual(?:es)?|al mes|al año|por mes|por año)';
+  const wordAmount = new RegExp(
+    `(?:${paymentVerb}.{0,20}\\b${numberWord}\\b|\\b${numberWord}\\b.{0,12}${period}|(?:precio|total|cuota)\\s*(?:es|de|:)?\\s*\\b${numberWord}\\b)`,
+    'iu',
+  );
+  if (/\d/u.test(withoutCourseNames)
+    || /[$€£]|\b(?:usd|u\$s|d[oó]lares?|pesos?|euros?)\b/iu.test(withoutCourseNames)
+    || wordAmount.test(withoutCourseNames)) {
     return { ok: false, reason: 'PROMOTION_PRICE_CHANGED' };
   }
   const namedBonuses = source.bonus_offerings.filter((bonus) => (
@@ -631,12 +639,21 @@ export async function releaseCommercialFollowupV1(
   deps: { readonly db?: postgres.Sql } = {},
 ) {
   const db = deps.db ?? await defaultDatabase();
-  await db`
-    UPDATE course_bonus_followups SET status = 'pending', claim_token = NULL, claimed_by = NULL,
-      lease_until = NULL, due_at = now() + interval '30 seconds', terminal_reason = 'NARRATIVE_GENERATION_FAILED'
+  const rows = await db<Array<{ status: string }>>`
+    UPDATE course_bonus_followups
+    SET status = CASE WHEN attempt_count >= max_attempts THEN 'ambiguous' ELSE 'pending' END,
+      claim_token = NULL, claimed_by = NULL, lease_until = NULL,
+      provider_event_id = NULL, last_schedule_at = NULL,
+      due_at = now() + interval '30 seconds',
+      terminal_reason = CASE WHEN attempt_count >= max_attempts
+        THEN 'CLAIM_ATTEMPTS_EXHAUSTED' ELSE 'NARRATIVE_GENERATION_FAILED' END
     WHERE id = ${id}::uuid AND status = 'processing' AND claim_token = ${claimToken}::uuid
+    RETURNING status
   `;
-  return { outcome: 'released' as const };
+  if (!rows[0]) return { outcome: 'claim_lost' as const };
+  return rows[0].status === 'pending'
+    ? { outcome: 'released' as const }
+    : { outcome: 'exhausted' as const };
 }
 
 export async function scheduleCommercialFollowupRetryV1(
@@ -721,6 +738,21 @@ export async function dispatchDueCommercialFollowupsV1(
   const limit = Math.min(Math.max(input.limit ?? 25, 1), 100);
   const lookaheadSeconds = Math.min(Math.max(input.lookahead_seconds ?? 60, 0), 300);
   const retryAfterSeconds = Math.min(Math.max(input.retry_after_seconds ?? 30, 0), 600);
+  const exhaustedClaims = await db<Array<{ id: string }>>`
+    UPDATE course_bonus_followups
+    SET status = 'ambiguous', claim_token = NULL, claimed_by = NULL, lease_until = NULL,
+      provider_event_id = NULL, terminal_reason = 'CLAIM_ATTEMPTS_EXHAUSTED'
+    WHERE status = 'processing' AND lease_until <= now() AND attempt_count >= max_attempts
+    RETURNING id
+  `;
+  const exhaustedSchedules = await db<Array<{ id: string }>>`
+    UPDATE course_bonus_followups
+    SET status = 'ambiguous', terminal_reason = 'EVENT_SCHEDULE_UNCONFIRMED'
+    WHERE status = 'pending' AND provider_event_id IS NULL
+      AND schedule_attempt_count >= max_schedule_attempts
+    RETURNING id
+  `;
+  result.ambiguous = exhaustedClaims.length + exhaustedSchedules.length;
   const reserved = await db<Array<{
     id: string;
     due_at: Date;
@@ -730,18 +762,23 @@ export async function dispatchDueCommercialFollowupsV1(
     WITH candidates AS (
       SELECT followup.id
       FROM course_bonus_followups followup
-      WHERE followup.status = 'pending'
-        AND followup.provider_event_id IS NULL
+      WHERE (
+          (followup.status = 'pending' AND followup.provider_event_id IS NULL)
+          OR (followup.status = 'processing' AND followup.lease_until <= now()
+            AND followup.attempt_count < followup.max_attempts)
+        )
         AND followup.schedule_attempt_count < followup.max_schedule_attempts
         AND followup.due_at <= now() + make_interval(secs => ${lookaheadSeconds})
-        AND (followup.last_schedule_at IS NULL
+        AND (followup.status = 'processing' OR followup.last_schedule_at IS NULL
           OR followup.last_schedule_at <= now() - make_interval(secs => ${retryAfterSeconds}))
       ORDER BY followup.due_at, followup.created_at, followup.id
       FOR UPDATE SKIP LOCKED
       LIMIT ${limit}
     )
     UPDATE course_bonus_followups followup
-    SET schedule_attempt_count = followup.schedule_attempt_count + 1,
+    SET status = 'pending', claim_token = NULL, claimed_by = NULL, lease_until = NULL,
+        provider_event_id = NULL,
+        schedule_attempt_count = followup.schedule_attempt_count + 1,
         last_schedule_at = now(),
         terminal_reason = 'EVENT_SCHEDULE_RESERVED'
     FROM candidates

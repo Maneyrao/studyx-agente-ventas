@@ -35,6 +35,12 @@ describe('commercial course-bonus follow-up content', () => {
       'Te habilito Inglés 1 con Inglés 2 por USD 10 en total.'))
       .toEqual({ ok: false, reason: 'PROMOTION_PRICE_CHANGED' });
     expect(validateCommercialFollowupNarrativeV1(review,
+      'Puedes llevar Inglés 1 e Inglés 2 pagando diez dólares al mes.'))
+      .toEqual({ ok: false, reason: 'PROMOTION_PRICE_CHANGED' });
+    expect(validateCommercialFollowupNarrativeV1(review,
+      'Te incluyo Inglés 2 con Inglés 1 y pagás 10 al año.'))
+      .toEqual({ ok: false, reason: 'PROMOTION_PRICE_CHANGED' });
+    expect(validateCommercialFollowupNarrativeV1(review,
       'Te habilito Inglés 1 junto con Inglés 2 y no hay descuento: el precio no cambia.'))
       .toEqual({ ok: true });
   });

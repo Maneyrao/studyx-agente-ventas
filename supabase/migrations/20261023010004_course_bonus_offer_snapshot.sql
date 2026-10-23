@@ -15,7 +15,8 @@ CREATE TABLE public.promotion_offer_bonus_offerings (
 );
 
 ALTER TABLE public.promotion_offers
-  ADD COLUMN bonus_snapshot_sealed_at timestamptz;
+  ADD COLUMN bonus_snapshot_sealed_at timestamptz,
+  ADD COLUMN voice_exposed_at timestamptz;
 
 -- Offers that predate this migration may already have been exposed externally.
 -- Do not let a gift set be attached retroactively. Pending reviews are safe to
@@ -155,5 +156,7 @@ COMMENT ON TABLE public.promotion_offer_bonus_offerings IS
   'Immutable exact gift set authorized at follow-up claim and later copied into the correlated payment.';
 COMMENT ON COLUMN public.promotion_offers.bonus_snapshot_sealed_at IS
   'Set in the same transaction that freezes the complete promised gift set; blocks later additions.';
+COMMENT ON COLUMN public.promotion_offers.voice_exposed_at IS
+  'Evidence that the sealed offer was returned to the voice agent before it could be accepted for payment.';
 COMMENT ON COLUMN public.payments.bonus_snapshot_sealed_at IS
   'Set in the reservation transaction before the checkout URL is returned; blocks later gift insertion.';

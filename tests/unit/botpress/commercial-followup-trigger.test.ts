@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildCommercialFollowupInstructions,
+  CommercialFollowupClaimSchema,
   fallbackCommercialFollowupNarrative,
 } from '../../../botpress-agent/src/utils/commercial-followup-instructions';
 
@@ -31,5 +32,27 @@ describe('commercial follow-up Agent A instructions', () => {
     expect(fallback.message).toContain('Inglés 1');
     expect(fallback.message).toContain('no cambia');
     expect(fallback.message).not.toMatch(/descuento|rebaja/iu);
+  });
+
+  it('accepts a check-in without gift names but requires gifts for a promotion review', () => {
+    const base = {
+      claimed: true as const,
+      claim_token: '6ef90556-91a8-4df0-8e18-72bb98643be1',
+      academy_name: 'Studyx',
+      customer_first_name: 'Ana',
+      paid_offering_name: 'Inglés 1',
+      customer_goal: null,
+      history: [],
+    };
+    expect(CommercialFollowupClaimSchema.safeParse({
+      ...base,
+      kind: 'price_objection_checkin',
+      bonus_offerings: [],
+    }).success).toBe(true);
+    expect(CommercialFollowupClaimSchema.safeParse({
+      ...base,
+      kind: 'promotion_review',
+      bonus_offerings: [],
+    }).success).toBe(false);
   });
 });

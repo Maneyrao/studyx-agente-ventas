@@ -8,17 +8,30 @@ const BonusOffering = z.object({
 
 export const CommercialFollowupClaimSchema = z.union([
   z.object({ claimed: z.literal(false) }),
-  z.object({
-    claimed: z.literal(true),
-    claim_token: z.string().uuid(),
-    kind: z.enum(['price_objection_checkin', 'promotion_review']),
-    academy_name: z.string().min(1),
-    customer_first_name: z.string(),
-    paid_offering_name: z.string().min(1),
-    bonus_offerings: z.array(BonusOffering).min(1).max(3),
-    customer_goal: z.string().nullable(),
-    history: z.array(z.object({ direction: z.string(), content: z.string() })),
-  }),
+  z.union([
+    z.object({
+      claimed: z.literal(true),
+      claim_token: z.string().uuid(),
+      kind: z.literal('price_objection_checkin'),
+      academy_name: z.string().min(1),
+      customer_first_name: z.string(),
+      paid_offering_name: z.string().min(1),
+      bonus_offerings: z.array(BonusOffering).max(0),
+      customer_goal: z.string().nullable(),
+      history: z.array(z.object({ direction: z.string(), content: z.string() })),
+    }),
+    z.object({
+      claimed: z.literal(true),
+      claim_token: z.string().uuid(),
+      kind: z.literal('promotion_review'),
+      academy_name: z.string().min(1),
+      customer_first_name: z.string(),
+      paid_offering_name: z.string().min(1),
+      bonus_offerings: z.array(BonusOffering).min(1).max(3),
+      customer_goal: z.string().nullable(),
+      history: z.array(z.object({ direction: z.string(), content: z.string() })),
+    }),
+  ]),
 ])
 
 export type CommercialFollowupClaim = Extract<z.infer<typeof CommercialFollowupClaimSchema>, { claimed: true }>

@@ -9,5 +9,9 @@ CREATE INDEX course_bonus_followups_dispatch_due_idx
   ON public.course_bonus_followups (due_at, last_schedule_at, created_at)
   WHERE status = 'pending' AND provider_event_id IS NULL;
 
+CREATE INDEX course_bonus_followups_expired_claim_idx
+  ON public.course_bonus_followups (lease_until, created_at)
+  WHERE status = 'processing';
+
 COMMENT ON COLUMN public.course_bonus_followups.provider_event_id IS
   'Botpress schedule receipt. NULL remains recoverable by the cron dispatcher; duplicate events are fenced at claim.';

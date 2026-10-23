@@ -148,8 +148,11 @@ and `idempotency_conflict` outcomes.
 
 Voice already has `enviar_link_pago`, which routes the link back to the original
 WhatsApp or Telegram conversation. The voice work is an extension: return active
-promotions from `consultar_oferta`, persist the accepted promotion, and pass its
-code through the existing payment-link bridge. It is not a new checkout system.
+promotions from `consultar_oferta`, but freeze and seal the exact course set for
+the correlated call/conversation before returning it. `enviar_link_pago` may
+accept only that exposed snapshot (or the same previously delivered text offer)
+and passes its code through the existing payment-link bridge. A later catalog
+change cannot alter what the lead heard. It is not a new checkout system.
 
 ## Enablement and external gate
 

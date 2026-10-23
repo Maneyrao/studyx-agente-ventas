@@ -256,11 +256,12 @@ bonificado, pendiente de que Central confirme los códigos exactos.
 | P7 | Central sin bonificación | El contrato v1 permanece idéntico. | Central worker |
 | P8 | Central con bonificación | Emite v2 con el curso pago y los bonificados en orden determinista. | Central worker |
 | P9 | Respuesta incompleta de Central | No confirma acceso ni anuncia el regalo; queda para reintento/reconciliación. | Central/post-sale |
-| P10 | Llamada | B ve sólo promociones activas para `voice`; reutiliza el mismo puente de pago por WhatsApp. | Retell tools/store |
+| P10 | Llamada | B ve sólo promociones activas para `voice`; el conjunto se sella al consultarlo y reutiliza el mismo puente de pago por WhatsApp. | Retell tools/store |
 | P11 | Código inventado | Se rechaza y no se envía link. | Retell/PostgreSQL |
 | P12 | Postventa | Confirma curso principal y bonificado sólo con evidencia v2 completa; no envía invoice. | post-sale |
 | P13 | Falla al programar la espera | La fila durable queda recuperable; el cron vuelve a crear el evento con intentos acotados y el claim evita duplicados. | follow-up dispatch integration |
 | P14 | Cambia la promoción después de ofrecerla | El conjunto mostrado queda sellado; el pago conserva exactamente esos cursos y rechaza cualquier agregado tardío. | offer/payment snapshot integration |
+| P15 | Muere el trigger después del claim | La lease vencida vuelve a `pending`, crea otro evento y conserva envío único; con presupuestos agotados queda `ambiguous` y observable. | follow-up dispatch integration |
 
 La habilitación externa sigue bloqueada hasta contar con: identificador de
 commit y despliegue de Central v2; mapeo efectivo de `ingles_1`/`ingles_2`;
