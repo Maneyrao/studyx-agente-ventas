@@ -164,6 +164,17 @@ export function authorizeAgentTurnV2(input: {
     : state.selected_offering_code;
   const selectedOffering = input.offerings.some(offering => offering.code === selectedOfferingCandidate)
     ? selectedOfferingCandidate : null;
+  const capabilityInterestOffering = input.course_bonus?.interest_offering_code ?? null;
+  // A promotion capability belongs to the exact course that produced it. A
+  // new canonical course reference wins for this turn, so an old review,
+  // accepted offer, or checkout benefit cannot move across courses.
+  const currentCommercialInterest = requestedOffering
+    ?? capabilityInterestOffering
+    ?? selectedOffering;
+  const promotionMatchesCurrentInterest = capabilityInterestOffering !== null
+    && currentCommercialInterest === capabilityInterestOffering;
+  const promotionMatchesSelectedPurchase = capabilityInterestOffering !== null
+    && selectedOffering === capabilityInterestOffering;
   const factOffering = moves.has('ask_course_information') && requestedOffering !== null
     ? requestedOffering
     : selectedOffering;
@@ -376,7 +387,10 @@ export function authorizeAgentTurnV2(input: {
       : proposal.proposed_action;
   }
   if (proposal.proposed_action.type === 'send_payment_link') {
-    const authorizedPromotionCode = input.course_bonus?.may_send_promoted_payment === true
+    const promotionEligibleForPurchase = input.course_bonus?.may_send_promoted_payment === true
+      && promotionMatchesSelectedPurchase
+      && promotionMatchesCurrentInterest;
+    const authorizedPromotionCode = promotionEligibleForPurchase
       ? input.course_bonus.promotion_code
       : null;
     const matchesState = selectedOffering !== null
@@ -386,7 +400,7 @@ export function authorizeAgentTurnV2(input: {
     const matchesPromotion = proposal.proposed_action.promotion_code === undefined
       || authorizedPromotionCode === proposal.proposed_action.promotion_code;
     if (!paymentLinkRequested || !matchesState || !matchesPromotion
-      || (input.course_bonus?.may_send_promoted_payment === true && authorizedPromotionCode === null)
+      || (promotionEligibleForPurchase && authorizedPromotionCode === null)
       || proposal.move.vetoes.includes('payment_link')
       || proposal.move.vetoes.includes('purchase')) {
       reasons.push('ACTION_NOT_AUTHORIZED');
@@ -414,15 +428,21 @@ export function authorizeAgentTurnV2(input: {
     else action = proposal.proposed_action;
   }
   if (proposal.proposed_action.type === 'schedule_price_objection_checkin') {
-    if (input.course_bonus?.may_schedule_checkin === true) action = proposal.proposed_action;
+    if (input.course_bonus?.may_schedule_checkin === true && promotionMatchesCurrentInterest) {
+      action = proposal.proposed_action;
+    }
     else reasons.push('ACTION_NOT_AUTHORIZED');
   }
   if (proposal.proposed_action.type === 'request_promotion_review') {
-    if (input.course_bonus?.may_request_review === true) action = proposal.proposed_action;
+    if (input.course_bonus?.may_request_review === true && promotionMatchesCurrentInterest) {
+      action = proposal.proposed_action;
+    }
     else reasons.push('ACTION_NOT_AUTHORIZED');
   }
   if (proposal.proposed_action.type === 'accept_promotion') {
-    if (input.course_bonus?.may_accept_offer === true) action = proposal.proposed_action;
+    if (input.course_bonus?.may_accept_offer === true && promotionMatchesCurrentInterest) {
+      action = proposal.proposed_action;
+    }
     else reasons.push('ACTION_NOT_AUTHORIZED');
   }
   if (

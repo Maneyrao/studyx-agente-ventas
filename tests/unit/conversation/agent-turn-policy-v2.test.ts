@@ -81,6 +81,7 @@ function authorize(input: {
   mayRequestCall?: boolean;
   customerText?: string;
   semanticRejections?: 'blocking' | 'advisory';
+  actionRejections?: 'blocking' | 'structured';
   paymentVerified?: boolean;
   courseBonus?: Parameters<typeof authorizeAgentTurnV2>[0]['course_bonus'];
 }) {
@@ -92,6 +93,7 @@ function authorize(input: {
     contact_intake: input.intake,
     current_customer_messages: input.customerText ? [input.customerText] : [],
     semantic_rejections: input.semanticRejections,
+    action_rejections: input.actionRejections,
     payment_verified: input.paymentVerified,
     course_bonus: input.courseBonus,
     call_policy: {
@@ -424,6 +426,90 @@ describe('plannerless Agent A authority', () => {
         type: 'send_payment_link', offering_code: 'redes_informaticas',
         payment_plan: 'monthly_6', promotion_code: 'redes_con_excel',
       },
+    });
+  });
+
+  it('does not carry an accepted promotion into checkout for another course', () => {
+    const result = authorize({
+      state: state({
+        selected_offering_code: 'redes_informaticas',
+        selected_payment_plan: 'monthly_6',
+        stage: 'plan_selected',
+        awaiting_reply: 'payment_confirmation',
+      }),
+      intake: completeIntake,
+      customerText: 'Pasame el link',
+      courseBonus: {
+        status: 'accepted',
+        may_schedule_checkin: false,
+        may_request_review: false,
+        may_accept_offer: false,
+        may_send_promoted_payment: true,
+        promotion_code: 'excel_con_redes',
+        interest_offering_code: 'excel_integral',
+        bonus_offerings: [{ code: 'redes_informaticas', display_name: 'Redes Informáticas', position: 1 }],
+      },
+      proposal: proposal({
+        move: {
+          schema_version: 1, move: 'request_payment_link', secondary_moves: [], vetoes: [],
+          confidence: 1,
+        },
+        response: { messages: ['Acá tenés el enlace para avanzar.'] },
+        proposed_action: {
+          type: 'send_payment_link', offering_code: 'redes_informaticas', payment_plan: 'monthly_6',
+        },
+      }),
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      action: {
+        type: 'send_payment_link', offering_code: 'redes_informaticas', payment_plan: 'monthly_6',
+      },
+    });
+    if (!result.ok || result.action.type !== 'send_payment_link') return;
+    expect(result.action).not.toHaveProperty('promotion_code');
+  });
+
+  it('rejects an explicit promotion code that belongs to another course without dropping the reply', () => {
+    const result = authorize({
+      state: state({
+        selected_offering_code: 'redes_informaticas',
+        selected_payment_plan: 'monthly_6',
+        stage: 'plan_selected',
+        awaiting_reply: 'payment_confirmation',
+      }),
+      intake: completeIntake,
+      customerText: 'Pasame el link',
+      actionRejections: 'structured',
+      courseBonus: {
+        status: 'accepted',
+        may_schedule_checkin: false,
+        may_request_review: false,
+        may_accept_offer: false,
+        may_send_promoted_payment: true,
+        promotion_code: 'excel_con_redes',
+        interest_offering_code: 'excel_integral',
+        bonus_offerings: [{ code: 'redes_informaticas', display_name: 'Redes Informáticas', position: 1 }],
+      },
+      proposal: proposal({
+        move: {
+          schema_version: 1, move: 'request_payment_link', secondary_moves: [], vetoes: [],
+          confidence: 1,
+        },
+        response: { messages: ['Te acompaño con la inscripción.'] },
+        proposed_action: {
+          type: 'send_payment_link', offering_code: 'redes_informaticas',
+          payment_plan: 'monthly_6', promotion_code: 'excel_con_redes',
+        },
+      }),
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      response: 'Te acompaño con la inscripción.',
+      action: { type: 'none' },
+      advisory_reasons: ['ACTION_NOT_AUTHORIZED'],
     });
   });
 
@@ -1649,6 +1735,68 @@ it('keeps an exact discussed course as commercial interest without selecting it 
   expect(result).toMatchObject({
     ok: true,
     discussed_offering_code: 'redes_informaticas',
+    transition: { selected_offering_code: null },
+  });
+});
+
+it.each([
+  [
+    'review',
+    {
+      status: 'review_available' as const,
+      may_schedule_checkin: false,
+      may_request_review: true,
+      may_accept_offer: false,
+      may_send_promoted_payment: false,
+      promotion_code: null,
+      interest_offering_code: 'redes_informaticas',
+      bonus_offerings: [],
+    },
+    { type: 'request_promotion_review' as const, reason: 'persistent_price_objection' as const },
+  ],
+  [
+    'acceptance',
+    {
+      status: 'offer_available' as const,
+      may_schedule_checkin: false,
+      may_request_review: false,
+      may_accept_offer: true,
+      may_send_promoted_payment: false,
+      promotion_code: 'redes_con_excel',
+      interest_offering_code: 'redes_informaticas',
+      bonus_offerings: [{ code: 'excel_integral', display_name: 'Excel Integral', position: 1 }],
+    },
+    { type: 'accept_promotion' as const },
+  ],
+] as const)('keeps the reply and strips stale promotion %s when the discussed course changes', (
+  _scenario,
+  courseBonus,
+  proposedAction,
+) => {
+  const result = authorize({
+    customerText: 'En realidad quiero saber por Excel',
+    actionRejections: 'structured',
+    courseBonus,
+    proposal: proposal({
+      move: {
+        schema_version: 1,
+        move: 'ask_course_information',
+        secondary_moves: [],
+        vetoes: [],
+        course_reference: 'excel',
+        confidence: 1,
+      },
+      response: { messages: ['Claro, veamos Excel según lo que necesitas.'] },
+      proposed_action: proposedAction,
+    }),
+  });
+
+  expect(result).toMatchObject({
+    ok: true,
+    response: 'Claro, veamos Excel según lo que necesitas.',
+    action: { type: 'none' },
+    advisory_reasons: ['ACTION_NOT_AUTHORIZED'],
+    discussed_offering_code: 'excel_integral',
     transition: { selected_offering_code: null },
   });
 });
