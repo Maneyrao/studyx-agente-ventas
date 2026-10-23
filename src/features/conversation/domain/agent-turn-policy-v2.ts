@@ -1,5 +1,6 @@
 import { supportsChatPreferenceV1 } from './channel-preference-evidence';
 import type { AgentAProposedActionV1, AgentATurnProposalV1 } from './agent-a-brain';
+import type { CourseBonusCapabilityV1 } from '@/features/promotions/application/read-course-bonus-capability';
 import type {
   AwaitingReplyV1,
   CallOfferStatusV1,
@@ -128,6 +129,7 @@ export function authorizeAgentTurnV2(input: {
   readonly payment_verified?: boolean;
   readonly paid_purchase?: { readonly offering_code: string; readonly plan_code: SalesPaymentPlan | null };
   readonly current_customer_messages?: readonly string[];
+  readonly course_bonus?: CourseBonusCapabilityV1;
   /** A continuation retains its semantic transition without executing effects. */
   readonly effects_allowed?: boolean;
   /**
@@ -375,7 +377,10 @@ export function authorizeAgentTurnV2(input: {
       && proposal.proposed_action.offering_code === selectedOffering
       && selectedPlan !== null
       && (resumesDurablePlan || proposal.proposed_action.payment_plan === selectedPlan);
-    if (!paymentLinkRequested || !matchesState
+    const matchesPromotion = proposal.proposed_action.promotion_code === undefined
+      || (input.course_bonus?.may_send_promoted_payment === true
+        && input.course_bonus.promotion_code === proposal.proposed_action.promotion_code);
+    if (!paymentLinkRequested || !matchesState || !matchesPromotion
       || proposal.move.vetoes.includes('payment_link')
       || proposal.move.vetoes.includes('purchase')) {
       reasons.push('ACTION_NOT_AUTHORIZED');
@@ -402,6 +407,18 @@ export function authorizeAgentTurnV2(input: {
     if (!explicitlyRequested || !matchesOffering) reasons.push('ACTION_NOT_AUTHORIZED');
     else if (!stateFacts.has('state:intake_recorded:v1')) reasons.push('MISSING_INTAKE');
     else action = proposal.proposed_action;
+  }
+  if (proposal.proposed_action.type === 'schedule_price_objection_checkin') {
+    if (input.course_bonus?.may_schedule_checkin === true) action = proposal.proposed_action;
+    else reasons.push('ACTION_NOT_AUTHORIZED');
+  }
+  if (proposal.proposed_action.type === 'request_promotion_review') {
+    if (input.course_bonus?.may_request_review === true) action = proposal.proposed_action;
+    else reasons.push('ACTION_NOT_AUTHORIZED');
+  }
+  if (proposal.proposed_action.type === 'accept_promotion') {
+    if (input.course_bonus?.may_accept_offer === true) action = proposal.proposed_action;
+    else reasons.push('ACTION_NOT_AUTHORIZED');
   }
   if (
     proposal.proposed_action.type === 'none'

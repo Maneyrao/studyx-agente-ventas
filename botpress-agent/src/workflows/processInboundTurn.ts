@@ -444,6 +444,9 @@ function backendCommitTurnRejectionV1(input: {
   ]
   const actions = ['none']
   if (input.context.capabilities.may_send_payment_link) actions.push('send_payment_link')
+  if (input.context.capabilities.course_bonus?.may_schedule_checkin) actions.push('schedule_price_objection_checkin')
+  if (input.context.capabilities.course_bonus?.may_request_review) actions.push('request_promotion_review')
+  if (input.context.capabilities.course_bonus?.may_accept_offer) actions.push('accept_promotion')
   if ((input.context.catalog.test_payment_options?.length ?? 0) > 0) actions.push('send_test_payment_link')
   if (input.context.capabilities.may_request_call_now) actions.push('request_call_now')
 

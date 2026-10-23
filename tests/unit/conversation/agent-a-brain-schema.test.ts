@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { AgentATurnProposalV1Schema } from '@/features/conversation/adapters/agent-a-brain-schema';
+import { AgentATurnProposalV1Schema as BotpressAgentATurnProposalV1Schema } from '../../../botpress-agent/src/schemas/agent-a-brain';
 
 function proposal(overrides: Record<string, unknown> = {}) {
   return {
@@ -58,5 +59,32 @@ describe('AgentATurnProposalV1Schema', () => {
     expect(AgentATurnProposalV1Schema.safeParse(proposal({
       used_memory_ids: ['memory-1', 'memory-1'],
     })).success).toBe(false);
+  });
+
+  it.each([
+    { type: 'schedule_price_objection_checkin', reason: 'price_objection' },
+    { type: 'request_promotion_review', reason: 'persistent_price_objection' },
+    { type: 'accept_promotion' },
+    {
+      type: 'send_payment_link', offering_code: 'ingles_1', payment_plan: 'monthly_12',
+      promotion_code: 'ingles_1_mas_ingles_2',
+    },
+  ])('keeps backend and Botpress promotion action schemas in parity: $type', (proposed_action) => {
+    const input = proposal({ proposed_action });
+    expect(AgentATurnProposalV1Schema.safeParse(input).success).toBe(true);
+    expect(BotpressAgentATurnProposalV1Schema.safeParse(input).success).toBe(true);
+  });
+
+  it('rejects model-authored gift codes, delays, prices, URLs and identities on review actions', () => {
+    for (const extra of [
+      { bonus_offering_code: 'ingles_2' }, { delay_seconds: 60 }, { amount: 360 },
+      { url: 'https://example.test' }, { contact_id: '00000000-0000-4000-8000-000000000001' },
+    ]) {
+      const input = proposal({
+        proposed_action: { type: 'request_promotion_review', reason: 'persistent_price_objection', ...extra },
+      });
+      expect(AgentATurnProposalV1Schema.safeParse(input).success).toBe(false);
+      expect(BotpressAgentATurnProposalV1Schema.safeParse(input).success).toBe(false);
+    }
   });
 });

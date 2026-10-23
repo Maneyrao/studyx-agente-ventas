@@ -27,6 +27,7 @@ import {
 import { claimsImmediateCallDispatchV1, claimsImmediatePaymentLinkDelivery, solicitsACall } from '../domain/operational-promise-guard';
 import type { ConversationStateStoreV1 } from '../ports/conversation-state-store';
 import type { PaymentVerificationV1 } from '@/features/payments/application/read-payment-verification';
+import type { CourseBonusCapabilityV1 } from '@/features/promotions/application/read-course-bonus-capability';
 import {
   evaluateCallIntakeReadinessV1,
   type CallIntakeReadinessV1,
@@ -45,7 +46,8 @@ export class AgentTurnV2RejectedError extends Error {
 }
 
 export interface AgentActionRejectionV1 {
-  readonly action: 'request_call_now' | 'send_payment_link' | 'send_test_payment_link';
+  readonly action: 'request_call_now' | 'send_payment_link' | 'send_test_payment_link'
+    | 'schedule_price_objection_checkin' | 'request_promotion_review' | 'accept_promotion';
   readonly status: 'needs_input' | 'rejected';
   readonly code: string;
   readonly codes: readonly string[];
@@ -142,10 +144,19 @@ function decisionFromAuthorizedTurn(input: {
         ...(input.selected_offering_code ? { course_of_interest: input.selected_offering_code } : {}),
       }
     : action.type === 'send_payment_link'
-      ? { type: 'send_payment_link', offering_sku: action.offering_code, plan_code: action.payment_plan }
+      ? {
+          type: 'send_payment_link', offering_sku: action.offering_code, plan_code: action.payment_plan,
+          ...(action.promotion_code ? { promotion_code: action.promotion_code } : {}),
+        }
       : action.type === 'send_test_payment_link'
         ? { type: 'send_test_payment_link', offering_sku: action.offering_code }
-      : null;
+        : action.type === 'schedule_price_objection_checkin'
+          ? action
+          : action.type === 'request_promotion_review'
+            ? action
+            : action.type === 'accept_promotion'
+              ? action
+              : null;
   return {
     schema_version: 4,
     intent: input.proposal.move.move === 'greeting'
@@ -189,6 +200,7 @@ export async function prepareAgentTurnV2(input: {
   readonly semantic_rejections?: 'blocking' | 'advisory';
   readonly business_context: BusinessContextView | null;
   readonly catalog_index: CatalogIndexView | null;
+  readonly course_bonus_capability?: CourseBonusCapabilityV1;
 }, deps: {
   readonly state_store: Pick<ConversationStateStoreV1, 'load'>;
   readonly call_facts?: Pick<OrchestrationStore, 'loadClaimedCallFacts'>;
@@ -290,6 +302,7 @@ export async function prepareAgentTurnV2(input: {
       && (state.selected_payment_plan === null
         || paymentVerification.plan_code === state.selected_payment_plan),
     current_customer_messages: input.current_customer_messages,
+    course_bonus: input.course_bonus_capability,
     semantic_rejections: semanticRejections,
     action_rejections: 'structured',
     effects_allowed: effectsAllowed,
@@ -326,7 +339,9 @@ export async function prepareAgentTurnV2(input: {
       const rejectedAction = effectiveProposal.proposed_action.type;
       const requiredFields = rejectedAction === 'request_call_now'
         ? callIntakeReadiness.requirements.map(({ field }) => field)
-        : (['nombre', 'apellido', 'correo', 'telefono'] as const);
+        : rejectedAction === 'send_payment_link' || rejectedAction === 'send_test_payment_link'
+          ? (['nombre', 'apellido', 'correo', 'telefono'] as const)
+          : [];
       actionRejection = actionRejectionV1({
         action: rejectedAction,
         codes: [...new Set(actionCodes)],

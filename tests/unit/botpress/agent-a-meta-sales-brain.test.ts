@@ -92,7 +92,7 @@ describe('Agent A Meta sales brain', () => {
     const staticInstructions = instructions.split('<authorized_context>')[0]!;
     // The canonical surface includes the adaptive voice, referent resolution,
     // contextual call and execution rules. Keep the complete prompt bounded.
-    expect(staticInstructions.trim().split(/\s+/u).length).toBeLessThan(2700);
+    expect(staticInstructions.trim().split(/\s+/u).length).toBeLessThan(2800);
     expect(JSON.parse(instructions.split('<authorized_context>')[1]!.split('</authorized_context>')[0]!)).toEqual(current);
   });
 });

@@ -52,6 +52,10 @@ import {
   unknownCallIntakeReadinessV1,
   type CallIntakeReadinessV1,
 } from '@/features/calls/domain/call-intake-readiness';
+import {
+  countPriceObjectionInterventionsV1,
+  type CourseBonusCapabilityV1,
+} from '@/features/promotions/application/read-course-bonus-capability';
 
 /**
  * Claim a batch and, only if this caller won it, build the one controlled
@@ -116,6 +120,14 @@ export interface ClaimBatchDependencies {
     offering_code: string | null;
     plan_code: 'monthly_12' | 'monthly_6' | 'one_time' | null;
   }) => Promise<PaymentVerificationV1 | null>;
+  /** Backend-authorized promotion projection. A failure must resolve to null, never block the turn. */
+  readonly courseBonusCapability?: (input: {
+    contact_id: string;
+    conversation_id: string;
+    channel: 'text' | 'voice';
+    selected_offering_code: string | null;
+    price_objection_interventions: number;
+  }) => Promise<CourseBonusCapabilityV1 | null>;
   readonly agentABrainShadow?: boolean;
   /** Runtime rollout resolved after the batch is owned and its contact is canonical. */
   readonly agentLoopRollout?: AgentLoopRolloutReaderV3;
@@ -206,6 +218,7 @@ export interface ClaimedTurn {
   readonly call_intake_readiness: Pick<CallIntakeReadinessV1, 'status' | 'requirements'>;
   readonly contact_profile?: ContactProfileContextV1 | null;
   readonly payment_verification: PaymentVerificationV1 | null;
+  readonly course_bonus_capability?: CourseBonusCapabilityV1 | null;
   readonly contact: {
     readonly id: string;
     readonly status: 'prospecto' | 'cliente' | 'inactivo';
@@ -1154,13 +1167,39 @@ export async function claimBatch(
       ? async (contactId: string) => unknownCallIntakeReadinessV1(await readIntake(contactId))
       : (await import('@/lib/repositories/call-intake-readiness.repository')).loadCallIntakeReadinessV1);
   const readPaymentVerification = deps.paymentVerification ?? (async () => null);
-  const [callIntakeReadiness, paymentVerification, contactProfile] = await Promise.all([
+  const objectionInterventions = [
+    ...logicalRecentTurns
+      .filter((turn) => turn.direction === 'inbound' && turn.batch_id !== claim.batch_id)
+      .map((turn) => [turn.content]),
+    [
+      ...batchMessages
+        .filter((message) => message.message_type === 'text')
+        .map((message) => message.content),
+    ],
+  ];
+  const priceObjectionInterventions = countPriceObjectionInterventionsV1(objectionInterventions);
+  const courseBonusTask = deps.courseBonusCapability?.({
+    contact_id: facts.contact.id,
+    conversation_id: claim.conversation_id!,
+    channel: 'text',
+    selected_offering_code: conversationStateV1?.selected_offering_code ?? null,
+    price_objection_interventions: priceObjectionInterventions,
+  }).catch((error) => {
+    log('orchestration.claim.course_bonus_unavailable', {
+      trace_id: input.trace_id,
+      batch_id: claim.batch_id,
+      error: String(error),
+    });
+    return null;
+  }) ?? Promise.resolve(null);
+  const [callIntakeReadiness, paymentVerification, contactProfile, courseBonusCapability] = await Promise.all([
     readCallIntakeReadiness(facts.contact.id, claim.conversation_id!),
     readPaymentVerification(facts.contact.id, {
       offering_code: conversationStateV1?.selected_offering_code ?? null,
       plan_code: conversationStateV1?.selected_payment_plan ?? null,
     }),
     deps.contactProfileContext?.({ contactId: facts.contact.id, conversationId: claim.conversation_id!, batchId: claim.batch_id }) ?? null,
+    courseBonusTask,
   ]);
   const contactIntake = callIntakeReadiness.intake;
   const contactIntakeMissing = missingContactIntakeFieldsV1(contactIntake);
@@ -1218,6 +1257,7 @@ export async function claimBatch(
     },
     ...(contactProfile ? { contact_profile: contactProfile } : {}),
     payment_verification: paymentVerification,
+    course_bonus_capability: courseBonusCapability,
     contact: {
       id: facts.contact.id,
       status: facts.contact.status,

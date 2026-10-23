@@ -8,13 +8,13 @@ describe('Agent A canonical sales prompt', () => {
   it('ships the complete approved prompt and a byte-equivalent generated module', () => {
     const prompt = readFileSync(PROMPT_PATH, 'utf8');
 
-    expect(prompt.match(/\n/g) ?? []).toHaveLength(65);
+    expect(prompt.match(/\n/g) ?? []).toHaveLength(67);
     expect(createHash('sha256').update(prompt).digest('hex')).toMatch(/^[a-f0-9]{64}$/u);
     expect(existsSync(GENERATED_PATH)).toBe(true);
 
     const generated = readFileSync(GENERATED_PATH, 'utf8');
     expect(generated).toContain(`export const STUDYX_AGENT_A_CANONICAL_PROMPT = ${JSON.stringify(prompt)} as const;`);
-    expect(generated).toContain("export const STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION = 'studyx-agent-a-canonical-v90' as const;");
+    expect(generated).toContain("export const STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION = 'studyx-agent-a-canonical-v91' as const;");
   });
 
   it('combines warm Meta-lead selling with autonomous objection and post-call handling', () => {
@@ -155,10 +155,13 @@ describe('Agent A canonical sales prompt', () => {
     const prompt = readFileSync(PROMPT_PATH, 'utf8');
 
     expect(prompt).toMatch(/pregunta directa[^.]*precio[^.]*responde[^.]*hechos autorizados/iu);
-    expect(prompt).toMatch(/objeci[oó]n de precio[^.]*no uses[^.]*cuotas[^.]*comparaciones[^.]*descuentos[^.]*bonificaciones/iu);
+    expect(prompt).toMatch(/objeci[oó]n de precio[^.]*no uses[^.]*cuotas[^.]*comparaciones/iu);
+    expect(prompt).toMatch(/no bajes ni cambies el precio/iu);
+    expect(prompt).toMatch(/consulta de precio[^.]*no la habilita/iu);
+    expect(prompt).toMatch(/resistencia persistente[^.]*request_promotion_review/iu);
     expect(prompt).toMatch(/sin prometer resultados[^.]*emprender[^.]*ampliar ingresos/iu);
-    expect(prompt).not.toMatch(/curso complementario can[oó]nico|curso gratis|por el mismo valor/iu);
-    expect(prompt).toMatch(/limitaci[oó]n real de presupuesto[^.]*sin presionar[^.]*atajo inventado/iu);
+    expect(prompt).not.toMatch(/curso gratis|por el mismo valor/iu);
+    expect(prompt).toMatch(/limitaci[oó]n real de presupuesto[^.]*sin presionar/iu);
   });
 
   it('adapts to the customer register and delays intake until it executes a chosen next step', () => {

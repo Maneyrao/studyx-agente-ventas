@@ -130,6 +130,20 @@ export interface AgentAContextV1 {
     readonly may_present_payment_options: boolean;
     readonly may_send_payment_link: boolean;
     readonly authorized_payment_plan: AgentAPaymentPlanV1 | null;
+    readonly course_bonus?: {
+      readonly status: 'unavailable' | 'needs_interest' | 'not_eligible' | 'checkin_available'
+        | 'review_available' | 'review_pending' | 'offer_available' | 'accepted';
+      readonly may_schedule_checkin: boolean;
+      readonly may_request_review: boolean;
+      readonly may_accept_offer: boolean;
+      readonly may_send_promoted_payment: boolean;
+      readonly promotion_code: string | null;
+      readonly bonus_offerings: ReadonlyArray<{
+        readonly code: string;
+        readonly display_name: string;
+        readonly position: number;
+      }>;
+    };
     readonly call_contact_requirements?: ReadonlyArray<{
       readonly field: 'nombre' | 'apellido' | 'correo' | 'telefono';
       readonly reason: 'missing' | 'written_whatsapp_confirmation_required';
@@ -140,6 +154,9 @@ export interface AgentAContextV1 {
 export type AgentAProposedActionV1 =
   | { readonly type: 'none' }
   | { readonly type: 'request_call_now'; readonly reason: 'direct_request' | 'accepted_offer' }
+  | { readonly type: 'schedule_price_objection_checkin'; readonly reason: 'price_objection' }
+  | { readonly type: 'request_promotion_review'; readonly reason: 'persistent_price_objection' }
+  | { readonly type: 'accept_promotion' }
   | {
       /** Temporary, hidden Stripe verification checkout. Never a commercial plan. */
       readonly type: 'send_test_payment_link';
@@ -149,6 +166,7 @@ export type AgentAProposedActionV1 =
       readonly type: 'send_payment_link';
       readonly offering_code: string;
       readonly payment_plan: AgentAPaymentPlanV1;
+      readonly promotion_code?: string;
     };
 
 export interface AgentATurnProposalV1 {

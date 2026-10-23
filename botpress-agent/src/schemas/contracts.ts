@@ -153,6 +153,21 @@ export const SendPaymentLinkActionSchema = z.object({
     .refine((value) => !/https?:\/\//i.test(value), 'OFFERING_SKU_LOOKS_LIKE_URL')
     .refine((value) => !/\d[.,]\d{2}|\busd\b|\bars\b|[$€£]/i.test(value), 'OFFERING_SKU_LOOKS_LIKE_AMOUNT')
     .nullable(),
+  promotion_code: z.string().regex(/^[a-z0-9][a-z0-9_-]{0,63}$/).optional(),
+}).strict()
+
+export const SchedulePriceObjectionCheckinActionSchema = z.object({
+  type: z.literal('schedule_price_objection_checkin'),
+  reason: z.literal('price_objection'),
+}).strict()
+
+export const RequestPromotionReviewActionSchema = z.object({
+  type: z.literal('request_promotion_review'),
+  reason: z.literal('persistent_price_objection'),
+}).strict()
+
+export const AcceptPromotionActionSchema = z.object({
+  type: z.literal('accept_promotion'),
 }).strict()
 
 export const DecisionBusinessActionSchema = z.discriminatedUnion('type', [
@@ -164,6 +179,9 @@ export const DecisionBusinessActionSchema = z.discriminatedUnion('type', [
   }).strict(),
   RequestCallNowActionSchema,
   SendPaymentLinkActionSchema,
+  SchedulePriceObjectionCheckinActionSchema,
+  RequestPromotionReviewActionSchema,
+  AcceptPromotionActionSchema,
 ])
 
 export const DecisionResponseTypeSchema = z.enum([
@@ -587,6 +605,22 @@ export const ClaimedTurnSchema = z.object({
       ]).nullable(),
       access_sent_at: z.string().nullable(),
     }).strict().nullable().optional(),
+  }).strict().nullable().optional(),
+  course_bonus_capability: z.object({
+    status: z.enum([
+      'unavailable', 'needs_interest', 'not_eligible', 'checkin_available',
+      'review_available', 'review_pending', 'offer_available', 'accepted',
+    ]),
+    may_schedule_checkin: z.boolean(),
+    may_request_review: z.boolean(),
+    may_accept_offer: z.boolean(),
+    may_send_promoted_payment: z.boolean(),
+    promotion_code: z.string().min(1).max(160).nullable(),
+    bonus_offerings: z.array(z.object({
+      code: z.string().min(1).max(160),
+      display_name: z.string().min(1).max(240),
+      position: z.number().int().min(1).max(3),
+    }).strict()).max(3),
   }).strict().nullable().optional(),
   context: z.object({
     batch_messages: z.array(BatchMessageSchema),

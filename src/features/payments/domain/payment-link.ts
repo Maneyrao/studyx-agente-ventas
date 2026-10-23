@@ -101,6 +101,7 @@ export interface SendPaymentLinkAction {
   readonly type: 'send_payment_link';
   readonly plan_code: PaymentPlanCode;
   readonly offering_sku: string | null;
+  readonly promotion_code?: string;
 }
 
 const URL_PATTERN = /https?:\/\/[^\s)\]}"']+/gi;

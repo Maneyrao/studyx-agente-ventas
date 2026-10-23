@@ -441,6 +441,9 @@ export type AgentActionRejectionActionV1 =
   | 'request_call_now'
   | 'send_payment_link'
   | 'send_test_payment_link'
+  | 'schedule_price_objection_checkin'
+  | 'request_promotion_review'
+  | 'accept_promotion'
 
 export interface AgentActionRejectionV1 {
   readonly action: AgentActionRejectionActionV1

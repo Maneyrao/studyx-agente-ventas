@@ -755,6 +755,9 @@ export function buildAgentAContextV1(
       may_present_payment_options: claimed.policy.may_respond
         && (claimed.business_context?.workspace.payment_options.length ?? 0) > 0,
       may_send_payment_link: hasReadableCurrentInput && maySendPaymentLink,
+      ...(claimed.course_bonus_capability
+        ? { course_bonus: claimed.course_bonus_capability }
+        : {}),
       intake_status: intakeStatus,
       authorized_payment_plan: selectedPlan,
       intake_missing: intakeMissing,

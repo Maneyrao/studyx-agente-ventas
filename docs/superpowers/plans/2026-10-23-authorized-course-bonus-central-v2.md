@@ -92,31 +92,31 @@ git commit -m "feat(promotions): add authorized course bonus state"
 - Consumes: Task 1 rules/offers and canonical catalog/context.
 - Produces: `CourseBonusCapabilityV1`, review/check-in/acceptance proposal actions, and optional `promotion_code` on the active `send_payment_link` contracts.
 
-- [ ] **Step 1: Write failing capability, prompt, and schema-parity tests**
+- [x] **Step 1: Write failing capability, prompt, and schema-parity tests**
 
 Assert: price question and first objection cannot reveal the gift; split-message objection counts semantically once; persistent resistance with exact interest may request review; ambiguous interest clarifies; hidden gift names remain absent before authorization; only a delivered active offer authorizes acceptance and promoted payment.
 
-- [ ] **Step 2: Run focused tests and verify RED**
+- [x] **Step 2: Run focused tests and verify RED**
 
 Run: `npx vitest run --config vitest.config.mts tests/unit/promotions/course-bonus-capability.test.ts tests/unit/conversation/agent-a-brain-schema.test.ts tests/unit/orchestration/decision-v4-policy.test.ts tests/unit/prompts/canonical-prompt-v2.test.ts`
 
 Expected: FAIL on missing capabilities/actions and the current blanket bonus prohibition.
 
-- [ ] **Step 3: Implement the capability projection and all active contract mirrors**
+- [x] **Step 3: Implement the capability projection and all active contract mirrors**
 
 Add strict actions `request_promotion_review`, `schedule_price_objection_checkin`, and `accept_promotion`; extend Agent A's `send_payment_link` and Decision v4 with optional `promotion_code`. Do not add bonus codes, delays, prices, URLs, or identities to model-authored actions.
 
-- [ ] **Step 4: Update the canonical prompt and regenerate modules**
+- [x] **Step 4: Update the canonical prompt and regenerate modules**
 
 Preserve Lisandro's personality, diagnostic sale, objection handling, call behavior, and brevity. Replace the blanket ban only with the configured-promotion path and state that the agent must not name a gift before an authorized result.
 
-- [ ] **Step 5: Run tests, prompt generation, and typechecks**
+- [x] **Step 5: Run tests, prompt generation, and typechecks**
 
 Run: `npm run generate:agent-a-prompt && npx vitest run --config vitest.config.mts tests/unit/promotions/course-bonus-capability.test.ts tests/unit/conversation/agent-a-brain-schema.test.ts tests/unit/orchestration/decision-v4-policy.test.ts tests/unit/prompts/canonical-prompt-v2.test.ts && npm run typecheck && npm --prefix botpress-agent run typecheck`
 
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/features/promotions src/features/conversation src/features/orchestration/domain/decision-v4.ts botpress-agent/src/schemas docs/prompts src/shared/prompts botpress-agent/src/prompts tests/unit
