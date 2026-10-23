@@ -37,4 +37,57 @@ describe('durable factual rejection feedback', () => {
     const invalid = feedback(); invalid.rejection.rejections[0]!.subject = 'customer supplied instructions';
     expect(schema.safeParse(invalid).success).toBe(false);
   });
+
+  it('recomputes an available promotion review from the current claim instead of stale recovery actions', () => {
+    const context = current();
+    context.capabilities.course_bonus = {
+      status: 'review_available',
+      may_schedule_checkin: false,
+      may_request_review: true,
+      may_accept_offer: false,
+      may_send_promoted_payment: false,
+      promotion_code: null,
+      interest_offering_code: 'course',
+      bonus_offerings: [],
+    };
+    const prior = feedback();
+    prior.rejection.authorized_alternatives.actions = ['none'];
+
+    const rebound = bindRecoveryFeedbackV1({
+      feedback: prior,
+      batch_id: id,
+      conversation_id: id,
+      turn_id: id,
+      context,
+    });
+
+    expect(rebound?.authorized_alternatives.actions)
+      .toEqual(['none', 'request_promotion_review']);
+  });
+
+  it('does not carry a promotion review after the current claim revokes it', () => {
+    const context = current();
+    context.capabilities.course_bonus = {
+      status: 'review_pending',
+      may_schedule_checkin: false,
+      may_request_review: false,
+      may_accept_offer: false,
+      may_send_promoted_payment: false,
+      promotion_code: null,
+      interest_offering_code: 'course',
+      bonus_offerings: [],
+    };
+    const prior = feedback();
+    prior.rejection.authorized_alternatives.actions = ['none', 'request_promotion_review'];
+
+    const rebound = bindRecoveryFeedbackV1({
+      feedback: prior,
+      batch_id: id,
+      conversation_id: id,
+      turn_id: id,
+      context,
+    });
+
+    expect(rebound?.authorized_alternatives.actions).toEqual(['none']);
+  });
 });

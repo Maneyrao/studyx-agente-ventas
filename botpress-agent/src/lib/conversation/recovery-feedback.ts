@@ -1,5 +1,6 @@
 import type { AgentAContextV1 } from '../../schemas/agent-a-brain'
 import type { TurnRejectionV1 } from '../../schemas/turn-rejection'
+import { authorizedPromotionActionsV1 } from './agent-a-action-feedback'
 import { authorizedFactIds } from './resolve-agent-a-plannerless'
 
 export interface RecoveryFeedbackV1 {
@@ -10,7 +11,7 @@ export interface RecoveryFeedbackV1 {
   rejection: TurnRejectionV1
 }
 
-/** A prior rejection is evidence, never a carried permission or stale state. */
+/** A prior rejection is evidence; permissions are recomputed from the current claim. */
 export function bindRecoveryFeedbackV1(input: {
   feedback: RecoveryFeedbackV1 | null | undefined
   batch_id: string
@@ -26,7 +27,7 @@ export function bindRecoveryFeedbackV1(input: {
     ...prior.rejection,
     authorized_alternatives: {
       fact_ids: authorizedFactIds(input.context),
-      actions: ['none'],
+      actions: authorizedPromotionActionsV1(input.context),
       missing_information: [...(input.context.capabilities.intake_missing ?? [])],
     },
   }

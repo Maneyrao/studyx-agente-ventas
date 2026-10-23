@@ -974,6 +974,8 @@ export const processInboundTurn = new Workflow({
       feedback: input.recovery_feedback, batch_id: owned.batch.id,
       conversation_id: owned.batch.conversation_id, turn_id: owned.turn_id, context: agentABrainContext,
     }) : null
+    const resumedEffectsAllowed = resumedRejection?.authorized_alternatives.actions
+      .some((action) => action !== 'none') === true
     let latestRejection: TurnRejectionV1 | null = resumedRejection
     if (agentABrainContext && resumedRejection) agentABrainContext.turn_rejection = resumedRejection
     if (agentABrainContext) {
@@ -1023,7 +1025,7 @@ export const processInboundTurn = new Workflow({
     let turnDiagnostics: TurnDiagnosticsV1 | null = null
     let agentAGenerationAttempts: 0 | 1 | 2 | 3 = 0
     let physicalAgentARequests = 0
-    let agentAConversationOnly = resumedRejection !== null
+    let agentAConversationOnly = resumedRejection !== null && !resumedEffectsAllowed
     const accountAgentAProviderRequest = () => {
       if (physicalAgentARequests >= 3) {
         throw new Error('PLANNERLESS_PROPOSAL_REJECTED:ACTION_NOT_AUTHORIZED:generation_budget')
@@ -1220,7 +1222,7 @@ export const processInboundTurn = new Workflow({
         }
         const generateDeepSeekProposal = () => generateDeepSeekAgentATurnProposalV1({
             context: agentABrainContext,
-            ...(resumedRejection ? { conversation_only: true } : {}),
+            ...(resumedRejection ? { conversation_only: agentAConversationOnly } : {}),
             on_provider_request: accountAgentAProviderRequest,
             apiKey: deepSeekApiKey,
             signal,
@@ -1639,25 +1641,36 @@ export const processInboundTurn = new Workflow({
                 const profileRejection = plannerlessActionFeedbackV1({ failure_code: failureCode,
                   context: agentABrainContext, rejection_id: randomUUID() })
                 latestRejection = profileRejection
+                const profileEffectsAllowed = profileRejection.authorized_alternatives.actions
+                  .some((action) => action !== 'none')
                 const continuation = await step('continue-agent-a-after-action-feedback-v1',
                   () => continueAgentAAfterActionFeedbackV1({
                     context: agentABrainContext,
                     on_provider_request: accountAgentAProviderRequest,
                     rejection: profileRejection,
+                    effects_allowed: profileEffectsAllowed,
                     apiKey: secrets.DEEPSEEK_API_KEY as string, signal,
                     generate: generateDeepSeekAgentATurnProposalV1,
                     model: typeof configuration.agentABrainDeepSeekModel === 'string'
                       ? configuration.agentABrainDeepSeekModel : DEFAULT_AGENT_A_BRAIN_DEEPSEEK_MODEL,
                   }), { maxAttempts: 1 })
                 await persistProfileProposal(continuation.proposal, profileRejection)
-                agentTurnV2Commit = { schema_version: 2, proposal: continuation.proposal, ...fencedAgentARequestV1() }
+                agentTurnV2Commit = {
+                  schema_version: 2,
+                  proposal: continuation.proposal,
+                  ...(!profileEffectsAllowed ? fencedAgentARequestV1() : {}),
+                }
                 pipelineMemoryCandidates = continuation.proposal.memory_candidates
                 pipelineDecisionProvider = continuation.provider
                 pipelineDecisionModel = continuation.model
                 pipelinePromptVersion = AGENT_A_BRAIN_PROMPT_VERSION
                 pipelineFailureDecision = null
                 turnDiagnostics = { ...turnDiagnostics,
-                  generation_attempts: agentAGenerationAttempts, action_status: 'none' }
+                  generation_attempts: agentAGenerationAttempts,
+                  action_status: continuation.proposal.proposed_action.type === 'none'
+                    ? 'none'
+                    : 'authorized',
+                }
               } catch (continuationError) {
                 if (!(continuationError instanceof Error)) throw continuationError
                 const continuationFailure = classifyAgentAAttemptFailure(continuationError)

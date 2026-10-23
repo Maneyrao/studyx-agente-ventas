@@ -548,6 +548,18 @@ function proposalJsonSchema(context: AgentAContextV1, conversationOnly = false):
     payment_plan: { anyOf: [{ type: 'string', enum: [...PAYMENT_PLANS] }, { type: 'null' }] },
     confidence: { type: 'number' },
   });
+  const courseBonus = context.capabilities.course_bonus;
+  const sendPaymentLinkProperties: Record<string, unknown> = {
+    type: { type: 'string', enum: ['send_payment_link'] },
+    offering_code: { type: 'string' },
+    payment_plan: { type: 'string', enum: [...PAYMENT_PLANS] },
+  };
+  if (courseBonus?.may_send_promoted_payment && courseBonus.promotion_code) {
+    sendPaymentLinkProperties.promotion_code = {
+      type: 'string',
+      enum: [courseBonus.promotion_code],
+    };
+  }
   const proposedAction = {
     anyOf: [
       closedObject({ type: { type: 'string', enum: ['none'] } }),
@@ -555,11 +567,18 @@ function proposalJsonSchema(context: AgentAContextV1, conversationOnly = false):
         type: { type: 'string', enum: ['request_call_now'] },
         reason: { type: 'string', enum: ['direct_request', 'accepted_offer'] },
       }),
-      closedObject({
-        type: { type: 'string', enum: ['send_payment_link'] },
-        offering_code: { type: 'string' },
-        payment_plan: { type: 'string', enum: [...PAYMENT_PLANS] },
-      }),
+      ...(courseBonus?.may_schedule_checkin ? [closedObject({
+        type: { type: 'string', enum: ['schedule_price_objection_checkin'] },
+        reason: { type: 'string', enum: ['price_objection'] },
+      })] : []),
+      ...(courseBonus?.may_request_review ? [closedObject({
+        type: { type: 'string', enum: ['request_promotion_review'] },
+        reason: { type: 'string', enum: ['persistent_price_objection'] },
+      })] : []),
+      ...(courseBonus?.may_accept_offer ? [closedObject({
+        type: { type: 'string', enum: ['accept_promotion'] },
+      })] : []),
+      closedObject(sendPaymentLinkProperties),
       closedObject({
         type: { type: 'string', enum: ['send_test_payment_link'] },
         offering_code: { type: 'string' },

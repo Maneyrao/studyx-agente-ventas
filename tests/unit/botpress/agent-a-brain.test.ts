@@ -1660,6 +1660,127 @@ describe('Agent A Brain V1', () => {
     expect(moveProperties.vetoes.description).toContain('current customer message explicitly refuses');
   });
 
+  it('exposes an authorized promotion review in the real DeepSeek wire schema and parses its response', async () => {
+    const current = context();
+    current.capabilities.course_bonus = {
+      status: 'review_available',
+      may_schedule_checkin: false,
+      may_request_review: true,
+      may_accept_offer: false,
+      may_send_promoted_payment: false,
+      promotion_code: null,
+      interest_offering_code: 'redes-informaticas',
+      bonus_offerings: [],
+    };
+    const reviewAction = {
+      type: 'request_promotion_review' as const,
+      reason: 'persistent_price_objection' as const,
+    };
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(providerResponse(
+      200,
+      responsesSuccessBody(proposal({ proposed_action: reviewAction })),
+    ));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await generateDeepSeekAgentATurnProposalV1({
+      context: current,
+      apiKey: 'deepseek-test-key',
+      signal: new AbortController().signal,
+    });
+
+    const body = JSON.parse(String(fetchMock.mock.calls[0]![1]?.body));
+    const alternatives = body.text.format.schema.properties.proposed_action.anyOf;
+    const actionTypes = alternatives.map((item: { properties: { type: { enum: string[] } } }) => (
+      item.properties.type.enum[0]
+    ));
+    expect(actionTypes).toContain('request_promotion_review');
+    expect(actionTypes).not.toContain('schedule_price_objection_checkin');
+    expect(actionTypes).not.toContain('accept_promotion');
+    expect(alternatives.find((item: { properties: { type: { enum: string[] } } }) => (
+      item.properties.type.enum.includes('request_promotion_review')
+    ))).toMatchObject({
+      properties: { reason: { enum: ['persistent_price_objection'] } },
+      required: ['type', 'reason'],
+      additionalProperties: false,
+    });
+    expect(result.proposal.proposed_action).toEqual(reviewAction);
+  });
+
+  it('omits a revoked promotion review from the real DeepSeek wire schema', async () => {
+    const current = context();
+    current.capabilities.course_bonus = {
+      status: 'review_pending',
+      may_schedule_checkin: false,
+      may_request_review: false,
+      may_accept_offer: false,
+      may_send_promoted_payment: false,
+      promotion_code: null,
+      interest_offering_code: 'redes-informaticas',
+      bonus_offerings: [],
+    };
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(providerResponse(
+      200,
+      responsesSuccessBody(proposal()),
+    ));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await generateDeepSeekAgentATurnProposalV1({
+      context: current,
+      apiKey: 'deepseek-test-key',
+      signal: new AbortController().signal,
+    });
+
+    const body = JSON.parse(String(fetchMock.mock.calls[0]![1]?.body));
+    const actionTypes = body.text.format.schema.properties.proposed_action.anyOf
+      .map((item: { properties: { type: { enum: string[] } } }) => item.properties.type.enum[0]);
+    expect(actionTypes).not.toContain('request_promotion_review');
+  });
+
+  it('requires the accepted promotion code in the real DeepSeek payment action schema and parses it', async () => {
+    const current = context();
+    current.capabilities.may_send_payment_link = true;
+    current.capabilities.authorized_payment_plan = 'monthly_12';
+    current.capabilities.course_bonus = {
+      status: 'accepted',
+      may_schedule_checkin: false,
+      may_request_review: false,
+      may_accept_offer: false,
+      may_send_promoted_payment: true,
+      promotion_code: 'ingles_1_mas_ingles_2',
+      interest_offering_code: 'redes-informaticas',
+      bonus_offerings: [{ code: 'ingles_2', display_name: 'Inglés 2', position: 1 }],
+    };
+    const promotedPayment = {
+      type: 'send_payment_link' as const,
+      offering_code: 'redes-informaticas',
+      payment_plan: 'monthly_12' as const,
+      promotion_code: 'ingles_1_mas_ingles_2',
+    };
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(providerResponse(
+      200,
+      responsesSuccessBody(proposal({ proposed_action: promotedPayment })),
+    ));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await generateDeepSeekAgentATurnProposalV1({
+      context: current,
+      apiKey: 'deepseek-test-key',
+      signal: new AbortController().signal,
+    });
+
+    const body = JSON.parse(String(fetchMock.mock.calls[0]![1]?.body));
+    const paymentAction = body.text.format.schema.properties.proposed_action.anyOf
+      .find((item: { properties: { type: { enum: string[] } } }) => (
+        item.properties.type.enum.includes('send_payment_link')
+      ));
+    expect(paymentAction).toMatchObject({
+      properties: { promotion_code: { type: 'string', enum: ['ingles_1_mas_ingles_2'] } },
+      required: ['type', 'offering_code', 'payment_plan', 'promotion_code'],
+      additionalProperties: false,
+    });
+    expect(result.proposal.proposed_action).toEqual(promotedPayment);
+  });
+
   it('fences a continuation effect without erasing Agent A semantic move', async () => {
     const ctx = context();
     ctx.turn.batch_messages = [{ id: 'message-1', text: 'Dale, llamame' }];

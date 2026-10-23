@@ -1563,7 +1563,10 @@ describe('processInboundTurn hot path', () => {
       delivery_status: 'submitted_to_botpress', error_code: null });
   });
 
-  async function runRecoveryFeedbackHotPath(mismatch?: 'batch_id' | 'turn_id') {
+  async function runRecoveryFeedbackHotPath(
+    mismatch?: 'batch_id' | 'turn_id',
+    promotionReview = false,
+  ) {
     const claimed = claimedResponse() as unknown as ClaimedTurn;
     claimed.features = { agent_loop_v3_mode: 'off', conversation_pipeline_v1_enabled: false,
       agent_a_brain_v1_enabled: true, agent_a_brain_v1_shadow: false, agent_a_repair_enabled: true };
@@ -1577,6 +1580,16 @@ describe('processInboundTurn hot path', () => {
     claimed.business_context = paymentBusinessContext();
     claimed.business_context.offerings[0]!.modality = 'online';
     claimed.business_context_available = true;
+    if (promotionReview) claimed.course_bonus_capability = {
+      status: 'review_available',
+      may_schedule_checkin: false,
+      may_request_review: true,
+      may_accept_offer: false,
+      may_send_promoted_payment: false,
+      promotion_code: null,
+      interest_offering_code: 'redes-informaticas',
+      bonus_offerings: [],
+    };
     actionSpies.claim.mockResolvedValue(claimed);
     configuration.agentAPlannerlessV2Enabled = true;
     const feedback = { batch_id: UUID, conversation_id: UUID, turn_id: UUID,
@@ -1590,7 +1603,10 @@ describe('processInboundTurn hot path', () => {
     actionSpies.agentABrainDeepSeek.mockReset().mockResolvedValue({
       proposal: { schema_version: 1,
         move: { schema_version: 1, move: 'unknown', secondary_moves: [], vetoes: [], confidence: 0.98 },
-        response: { messages: [safeText], call_offer: null }, proposed_action: { type: 'none' },
+        response: { messages: [safeText], call_offer: null },
+        proposed_action: promotionReview
+          ? { type: 'request_promotion_review', reason: 'persistent_price_objection' }
+          : { type: 'none' },
         used_fact_ids: [], used_memory_ids: [], memory_candidates: [],
         repair_of: mismatch ? null : { rejection_id: UUID, attempt: 1 } },
       provider: 'deepseek-direct', model: 'deepseek-v4-flash', latency_ms: 1, attempt_count: 1,
@@ -1601,7 +1617,11 @@ describe('processInboundTurn hot path', () => {
         authorized_urls: [], protected_facts: [] } };
     actionSpies.commit.mockReset().mockResolvedValue({ status: 'committed', replayed: false,
       trace_id: UUID, turn_id: UUID, decision_id: UUID, next_state: 'waiting_user',
-      outbound, outbounds: [outbound], call_request: null });
+      outbound, outbounds: [outbound], call_request: null,
+      commercial_followups: promotionReview
+        ? [{ id: UUID, kind: 'promotion_review', due_at: NOW }]
+        : [],
+    });
     actionSpies.delivery.mockClear();
     const createMessage = vi.fn(async () => ({ message: { id: 'bp-recovery-feedback-message' } }));
     const step = Object.assign(async (_name: string, run: () => Promise<unknown>) => run(),
@@ -1641,6 +1661,30 @@ describe('processInboundTurn hot path', () => {
     expect(createMessage).toHaveBeenCalledTimes(1);
     expect(actionSpies.delivery).toHaveBeenCalledTimes(1);
     expect(result).toMatchObject({ status: 'waiting_user', delivery_status: 'submitted_to_botpress', error_code: null });
+  });
+
+  it('re-authorizes a promotion review from the fresh recovery claim and persists the effect with the outbound', async () => {
+    const { result, createMessage } = await runRecoveryFeedbackHotPath(undefined, true);
+
+    expect(actionSpies.agentABrainDeepSeek).toHaveBeenCalledTimes(1);
+    expect(actionSpies.agentABrainDeepSeek.mock.calls[0]![0]).toMatchObject({
+      conversation_only: false,
+      context: { turn_rejection: { authorized_alternatives: {
+        actions: ['none', 'request_promotion_review'],
+      } } },
+    });
+    expect(actionSpies.commit.mock.calls[0]![0].input.agent_turn_v2).toMatchObject({
+      proposal: { proposed_action: {
+        type: 'request_promotion_review', reason: 'persistent_price_objection',
+      } },
+    });
+    expect(actionSpies.commit.mock.calls[0]![0].input.agent_turn_v2)
+      .not.toHaveProperty('conversation_only');
+    expect(createMessage).toHaveBeenCalledTimes(1);
+    expect(actionSpies.delivery).toHaveBeenCalledTimes(1);
+    expect(actionSpies.recovery).not.toHaveBeenCalled();
+    expect(result).toMatchObject({ status: 'waiting_user', delivery_status: 'submitted_to_botpress',
+      error_code: null });
   });
 
   it('ignores recovery feedback from a different origin batch or turn before the first generation', async () => {
@@ -2173,6 +2217,110 @@ describe('processInboundTurn hot path', () => {
     expect(actionSpies.commit).not.toHaveBeenCalled();
     expect(result).toMatchObject({ status: 'retry_pending', delivery_status: null,
       error_code: 'AGENT_A_CONTINUATION_REJECTED' });
+  });
+
+  it('keeps a currently authorized promotion review through invalid-schema continuation and delivers it', async () => {
+    const claimed = claimedResponse() as unknown as ClaimedTurn;
+    claimed.features = {
+      agent_loop_v3_mode: 'off',
+      conversation_pipeline_v1_enabled: false,
+      agent_a_brain_v1_enabled: true,
+      agent_a_brain_v1_shadow: false,
+      agent_a_repair_enabled: true,
+    };
+    claimed.context.batch_messages[0].content = 'No hay ninguna oferta que me puedas hacer?';
+    claimed.conversation_state_v1 = {
+      selected_offering_code: 'ingles_1', selected_payment_plan: null,
+      stage: 'course_selected', call_preference: 'unknown', call_offer_status: 'not_offered',
+      call_offer_count: 0, awaiting_reply: 'none', version: 3,
+    };
+    claimed.catalog_index = {
+      as_of: NOW, offerings_total: 1,
+      offerings: [{ code: 'ingles_1', display_name: 'Inglés 1', academy: 'Idiomas', aliases: ['ingles'] }],
+      injection_suspected_count: 0,
+    };
+    const business = paymentBusinessContext();
+    business.offerings[0] = {
+      ...business.offerings[0],
+      code: 'ingles_1',
+      display_name: 'Inglés 1',
+      academy: 'Idiomas',
+    };
+    claimed.business_context = business;
+    claimed.business_context_available = true;
+    claimed.course_bonus_capability = {
+      status: 'review_available',
+      may_schedule_checkin: false,
+      may_request_review: true,
+      may_accept_offer: false,
+      may_send_promoted_payment: false,
+      promotion_code: null,
+      interest_offering_code: 'ingles_1',
+      bonus_offerings: [],
+    };
+    actionSpies.claim.mockResolvedValue(claimed);
+    configuration.agentAPlannerlessV2Enabled = true;
+
+    const invalid = Object.assign(new Error('invalid proposal'), { code: 'BRAIN_INVALID_SCHEMA' });
+    const replyText = 'Dame un momento y reviso qué alternativa puedo habilitarte.';
+    actionSpies.agentABrainDeepSeek
+      .mockRejectedValueOnce(invalid)
+      .mockImplementationOnce(async ({ context }: { context: AgentAContextV1 }) => ({
+        proposal: {
+          schema_version: 1,
+          move: { schema_version: 1, move: 'ask_course_information', secondary_moves: [], vetoes: [],
+            course_reference: 'ingles_1', confidence: 1 },
+          response: { messages: [replyText], call_offer: null },
+          proposed_action: { type: 'request_promotion_review', reason: 'persistent_price_objection' },
+          used_fact_ids: [], used_memory_ids: [], memory_candidates: [],
+          repair_of: { rejection_id: context.turn_rejection!.rejection_id, attempt: 1 },
+        },
+        provider: 'deepseek-direct', model: 'deepseek-v4-flash', latency_ms: 1, attempt_count: 1,
+      }));
+    const outbound = {
+      id: UUID, content: replyText, status: 'pending', delivery_attempt: 1,
+      authorized_egress: { schema_version: 1,
+        content_hash: 'd8ef9ae0302bc639366919e442dfef275997b40106151c50a96408ef3d92e1a0',
+        authorized_urls: [], protected_facts: [] },
+    };
+    actionSpies.commit.mockResolvedValue({
+      status: 'committed', replayed: false, trace_id: UUID, turn_id: UUID,
+      decision_id: UUID, next_state: 'waiting_user', outbound, call_request: null,
+      commercial_followups: [{ id: UUID, kind: 'promotion_review', due_at: NOW }],
+    });
+    const createMessage = vi.fn(async () => ({ message: { id: 'bp-promotion-review-message' } }));
+    const step = Object.assign(async (_name: string, run: () => Promise<unknown>) => run(),
+      { sleep: vi.fn(async () => undefined) });
+    const handler = (processInboundTurn as unknown as {
+      definition: { handler: (args: Record<string, unknown>) => Promise<unknown> };
+    }).definition.handler;
+
+    const result = await handler({
+      input: workflowInput(), state: processingState(), step,
+      execute: vi.fn(async () => { throw new Error('LEGACY_MODEL_MUST_NOT_RUN'); }),
+      client: { createMessage }, signal: new AbortController().signal,
+      workflow: { id: 'workflow-promotion-review-after-schema-rejection' },
+    });
+    expect(actionSpies.agentABrainDeepSeek).toHaveBeenCalledTimes(2);
+    const continuationInput = actionSpies.agentABrainDeepSeek.mock.calls[1]![0];
+    expect(continuationInput).toMatchObject({
+      conversation_only: false,
+      context: { turn_rejection: { authorized_alternatives: {
+        actions: ['none', 'request_promotion_review'],
+      } } },
+    });
+    expect(actionSpies.commit).toHaveBeenCalledTimes(1);
+    expect(actionSpies.commit.mock.calls[0]![0].input.agent_turn_v2).toMatchObject({
+      proposal: { proposed_action: {
+        type: 'request_promotion_review', reason: 'persistent_price_objection',
+      } },
+    });
+    expect(actionSpies.commit.mock.calls[0]![0].input.agent_turn_v2)
+      .not.toHaveProperty('conversation_only');
+    expect(result).toMatchObject({ status: 'waiting_user', delivery_status: 'submitted_to_botpress',
+      error_code: null });
+    expect(createMessage).toHaveBeenCalledWith(expect.objectContaining({ payload: { text: replyText } }));
+    expect(actionSpies.recovery).not.toHaveBeenCalled();
   });
 
   it('retries one transient DeepSeek timeout before committing the model reply', async () => {
