@@ -53,6 +53,7 @@ describe('post-sale trigger', () => {
     });
     const request = JSON.parse(String(modelFetch.mock.calls[0]?.[1]?.body));
     expect(request.instructions).toContain('personalidad');
+    expect(request.instructions).toContain('No nombres cursos bonificados');
     expect(request.input).toContain('Marketing Digital');
   });
 

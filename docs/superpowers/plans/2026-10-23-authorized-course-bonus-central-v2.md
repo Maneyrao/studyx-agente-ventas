@@ -280,27 +280,27 @@ git commit -m "feat(fulfillment): enroll paid and bonus courses atomically"
 - Consumes: Task 5 verified bonus enrollment items and Task 4 payment snapshot.
 - Produces: deterministic paid/bonus course confirmation plus existing campus credentials and official contacts.
 
-- [ ] **Step 1: Write failing post-sale tests**
+- [x] **Step 1: Write failing post-sale tests**
 
 Cover no gift, promoted payment still processing, missing/extra/wrong gift response, complete v2 success, existing student, duplicate notification, protected-fact filtering, and no invoice.
 
-- [ ] **Step 2: Run focused tests and verify RED**
+- [x] **Step 2: Run focused tests and verify RED**
 
 Run: `npx vitest run --config vitest.config.mts tests/unit/fulfillment/post-sale.test.ts tests/unit/botpress/post-sale-trigger.test.ts && npx vitest run --config vitest.integration.config.mts tests/integration/post-sale.test.ts`
 
 Expected: FAIL because post-sale currently sees only one offering.
 
-- [ ] **Step 3: Add verified deterministic bonus blocks**
+- [x] **Step 3: Add verified deterministic bonus blocks**
 
 Name the gift only when a valid complete v2 result exists. Keep Agent A's intro natural, but keep course entitlement, campus, user, password, and official contacts backend-authored and protected.
 
-- [ ] **Step 4: Run tests and verify GREEN**
+- [x] **Step 4: Run tests and verify GREEN**
 
 Run the Step 2 command.
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/features/fulfillment/post-sale botpress-agent/src/triggers/postSale.ts botpress-agent/src/utils/post-sale-instructions.ts tests/unit/fulfillment tests/unit/botpress tests/integration/post-sale.test.ts
