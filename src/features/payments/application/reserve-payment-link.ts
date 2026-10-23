@@ -26,6 +26,7 @@ export interface ReservePaymentLinkInput {
   readonly payment_link_url: string;
   readonly conversation_id?: string;
   readonly promotion_code?: string;
+  readonly promotion_channel?: 'text' | 'voice';
 }
 
 export interface ReservedPaymentLink {
@@ -138,7 +139,7 @@ export async function reservePaymentLink(
         AND promotion.promotion_code = ${input.promotion_code}
         AND promotion.paid_offering_id = ${input.offering_id}::uuid
         AND promotion.active = true
-        AND 'text' = ANY(promotion.channels)
+        AND ${input.promotion_channel ?? 'text'} = ANY(promotion.channels)
         AND (promotion.valid_from IS NULL OR promotion.valid_from <= now())
         AND (promotion.valid_until IS NULL OR promotion.valid_until > now())
         AND offer.workspace_id = ${input.workspace_id}::uuid

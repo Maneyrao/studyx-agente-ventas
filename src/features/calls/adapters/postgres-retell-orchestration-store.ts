@@ -25,6 +25,7 @@ import type { RetellOrchestrationStore } from '../application/retell-tools';
 import type { RetellPaymentPlanRequest } from '../application/retell-tools';
 import { logger } from '@/lib/observability/structured-log';
 import { splitFullName } from '@/lib/heuristics/contact-identity';
+import { loadCentralCargaBonusConfig } from '@/features/fulfillment/central-carga/config';
 
 export type RetellOutboundSender = (
   input: Parameters<typeof sendOutboundMessage>[0],
@@ -45,6 +46,58 @@ export class PostgresRetellOrchestrationStore implements RetellOrchestrationStor
     private readonly db: postgres.Sql,
     private readonly options: PostgresRetellOrchestrationStoreOptions = {},
   ) {}
+
+  async readCourseBonusPromotion(
+    input: Parameters<NonNullable<RetellOrchestrationStore['readCourseBonusPromotion']>>[0],
+  ) {
+    if (!loadCentralCargaBonusConfig().enabled) return null;
+    const rows = await this.db<Array<{
+      promotion_code: string;
+      bonus_offerings: Array<{ code: string; display_name: string; position: number }>;
+    }>>`
+      SELECT promotion.promotion_code,
+        COALESCE((
+          SELECT jsonb_agg(jsonb_build_object(
+            'code', bonus.code,
+            'display_name', bonus.display_name,
+            'position', configured.position
+          ) ORDER BY configured.position)
+          FROM promotion_bonus_offerings configured
+          JOIN offerings bonus ON bonus.id = configured.offering_id
+          WHERE configured.promotion_id = promotion.id
+        ), '[]'::jsonb) AS bonus_offerings
+      FROM promotions promotion
+      JOIN workspaces workspace ON workspace.id = promotion.workspace_id
+      JOIN offerings paid ON paid.id = promotion.paid_offering_id
+      WHERE workspace.slug = ${input.workspaceSlug}
+        AND workspace.status = 'active'
+        AND paid.code = ${input.course}
+        AND paid.status = 'active'
+        AND promotion.active = true
+        AND 'voice' = ANY(promotion.channels)
+        AND (promotion.valid_from IS NULL OR promotion.valid_from <= now())
+        AND (promotion.valid_until IS NULL OR promotion.valid_until > now())
+        AND EXISTS (SELECT 1 FROM promotion_bonus_offerings item WHERE item.promotion_id = promotion.id)
+      ORDER BY promotion.created_at DESC
+      LIMIT 1
+    `;
+    const promotion = rows[0];
+    if (!promotion || promotion.bonus_offerings.length === 0) return null;
+    const safe = promotion.bonus_offerings.every((bonus) => {
+      const code = sanitizeRetrievedText(bonus.code, 128);
+      const name = sanitizeRetrievedText(bonus.display_name, 128);
+      return !code.injection_suspected && !code.truncated && code.text === bonus.code
+        && !name.injection_suspected && !name.truncated && name.text === bonus.display_name;
+    });
+    if (!safe) return null;
+    return {
+      promotionCode: promotion.promotion_code,
+      bonusOfferings: promotion.bonus_offerings.map((bonus) => ({
+        code: bonus.code,
+        displayName: bonus.display_name,
+      })),
+    };
+  }
 
   async recordConfirmedSelection(input: Parameters<RetellOrchestrationStore['recordConfirmedSelection']>[0]) {
     const workspace = await this.workspaceForContact(input.workspaceSlug, input.contactId, input.callId);
@@ -179,15 +232,55 @@ export class PostgresRetellOrchestrationStore implements RetellOrchestrationStor
     const configuredUrl = paymentLinkResolver.resolve(paymentPlan.planCode);
     if (!configuredUrl) return { sent: false, reference: null, reason: 'PAYMENT_LINK_NOT_CONFIGURED' };
     let payment: Awaited<ReturnType<typeof reservePaymentLink>>;
+    const idempotencyKey = `retell-payment-link:${workspace.id}:${input.callId}`;
     try {
-      payment = await reservePaymentLink(this.db, {
-        workspace_id: workspace.id,
-        contact_id: input.contactId,
-        offering_id: offering.id,
-        conversation_id: input.conversationId,
-        plan_code: paymentPlan.planCode,
-        idempotency_key: `retell-payment-link:${workspace.id}:${input.callId}`,
-        payment_link_url: configuredUrl,
+      payment = await this.db.begin(async (tx) => {
+        if (input.promotionCode) {
+          const existing = await tx<Array<{ id: string }>>`
+            SELECT id FROM payments WHERE idempotency_key = ${idempotencyKey} LIMIT 1
+          `;
+          if (!existing[0]) {
+            const accepted = await tx<Array<{ id: string }>>`
+              INSERT INTO promotion_offers (
+                workspace_id, contact_id, conversation_id, promotion_id, paid_offering_id,
+                status, source_turn_id, source_conversation_version, source_state_version,
+                offered_at, accepted_at, expires_at
+              )
+              SELECT
+                ${workspace.id}::uuid, ${input.contactId}::uuid, ${input.conversationId}::uuid,
+                promotion.id, promotion.paid_offering_id, 'accepted', ${workspace.source_turn_id}::uuid,
+                ${workspace.source_conversation_version}, ${workspace.state_version}, now(), now(),
+                now() + interval '48 hours'
+              FROM promotions promotion
+              WHERE promotion.workspace_id = ${workspace.id}::uuid
+                AND promotion.promotion_code = ${input.promotionCode}
+                AND promotion.paid_offering_id = ${offering.id}::uuid
+                AND promotion.active = true
+                AND 'voice' = ANY(promotion.channels)
+                AND (promotion.valid_from IS NULL OR promotion.valid_from <= now())
+                AND (promotion.valid_until IS NULL OR promotion.valid_until > now())
+                AND EXISTS (SELECT 1 FROM promotion_bonus_offerings item WHERE item.promotion_id = promotion.id)
+              ON CONFLICT (conversation_id, promotion_id)
+                WHERE status IN ('pending_review','offered','accepted')
+              DO UPDATE SET status = 'accepted', accepted_at = COALESCE(promotion_offers.accepted_at, now())
+              RETURNING id
+            `;
+            if (!accepted[0]) throw new PaymentLinkReservationError('PROMOTION_NOT_AUTHORIZED');
+          }
+        }
+        return reservePaymentLink(tx, {
+          workspace_id: workspace.id,
+          contact_id: input.contactId,
+          offering_id: offering.id,
+          conversation_id: input.conversationId,
+          plan_code: paymentPlan.planCode,
+          idempotency_key: idempotencyKey,
+          payment_link_url: configuredUrl,
+          ...(input.promotionCode ? {
+            promotion_code: input.promotionCode,
+            promotion_channel: 'voice' as const,
+          } : {}),
+        });
       });
     } catch (error) {
       if (error instanceof PaymentLinkReservationError) {
@@ -400,8 +493,13 @@ export class PostgresRetellOrchestrationStore implements RetellOrchestrationStor
       selected_payment_plan: PaymentPlanCode | null;
       contact_name: string | null;
       contact_email: string | null;
+      source_turn_id: string;
+      source_conversation_version: number;
+      state_version: number;
     }>>`
-      SELECT w.id, w.slug, w.metadata, cs.conversation_id,
+      SELECT w.id, w.slug, w.metadata, cs.conversation_id, cs.source_turn_id,
+             source.conversation_seq AS source_conversation_version,
+             state.version AS state_version,
              contact.name AS contact_name, contact.email AS contact_email,
              state.selected_payment_plan,
              COALESCE(
@@ -411,6 +509,7 @@ export class PostgresRetellOrchestrationStore implements RetellOrchestrationStor
              ) AS course_code
       FROM call_sessions AS cs
       JOIN workspaces AS w ON w.id = cs.workspace_id
+      JOIN messages AS source ON source.id = cs.source_turn_id
       JOIN contacts AS contact ON contact.id = cs.contact_id AND contact.deleted_at IS NULL
       JOIN workspace_contacts AS wc
         ON wc.workspace_id = cs.workspace_id

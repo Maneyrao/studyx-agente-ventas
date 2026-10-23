@@ -235,3 +235,33 @@ los tres modelos). Estado de evidencia al corte:
 
 La calidad conversacional NO se declara aprobada: falta la matriz verde
 completa de v2.1 y el E2E.
+
+---
+
+## Anexo — promoción de curso bonificado con Central v2 (2026-10-23)
+
+Este anexo documenta una capacidad **implementada localmente pero deshabilitada
+por defecto**. No cambia el estado general del piloto ni autoriza despliegue,
+activación o tráfico real. La regla inicial es `ingles_1` pago → `ingles_2`
+bonificado, pendiente de que Central confirme los códigos exactos.
+
+| # | Escenario | Resultado obligatorio | Evidencia local |
+|---|---|---|---|
+| P1 | Pregunta inicial de precio | Informa el valor canónico; no revela regalo. | capability/prompt |
+| P2 | Primera objeción de precio | Persuade con objetivo, utilidad y valor; no baja precio ni regala curso. | capability/workflow |
+| P3 | Objeción persistente e interés concreto | Puede pedir revisión; la respuesta normal nunca queda bloqueada. | follow-up/commit |
+| P4 | Espera de 60 s | Sólo ofrece una promoción activa y autorizada; un mensaje nuevo, cambio de curso, pago, rechazo u opt-out la cancela. | follow-up integration |
+| P5 | Aceptación | Congela el código y los cursos bonificados en el mismo pago antes de entregar el link. | payment correlation |
+| P6 | Reintento | El mismo pago y conjunto es idempotente; cambiar la promoción se rechaza. | payment/Central |
+| P7 | Central sin bonificación | El contrato v1 permanece idéntico. | Central worker |
+| P8 | Central con bonificación | Emite v2 con el curso pago y los bonificados en orden determinista. | Central worker |
+| P9 | Respuesta incompleta de Central | No confirma acceso ni anuncia el regalo; queda para reintento/reconciliación. | Central/post-sale |
+| P10 | Llamada | B ve sólo promociones activas para `voice`; reutiliza el mismo puente de pago por WhatsApp. | Retell tools/store |
+| P11 | Código inventado | Se rechaza y no se envía link. | Retell/PostgreSQL |
+| P12 | Postventa | Confirma curso principal y bonificado sólo con evidencia v2 completa; no envía invoice. | post-sale |
+
+La habilitación externa sigue bloqueada hasta contar con: identificador de
+commit y despliegue de Central v2; mapeo efectivo de `ingles_1`/`ingles_2`;
+alta Moodle E2E para alumno nuevo y existente; replay idéntico; recuperación de
+fallo parcial; y prueba de un único correo de bienvenida. Un mensaje verbal de
+“ya está” no reemplaza esas evidencias.

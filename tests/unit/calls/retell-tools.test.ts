@@ -510,6 +510,31 @@ describe('Retell P0 tool boundary', () => {
     });
   });
 
+  it('exposes only a backend-authorized active voice promotion with the canonical offer', async () => {
+    const deps = {
+      ...dependencies(),
+      orchestration: {
+        readCourseBonusPromotion: vi.fn(async () => ({
+          promotionCode: 'ingles_1_mas_ingles_2',
+          bonusOfferings: [{ code: 'ingles_2', displayName: 'Inglés 2' }],
+        })),
+      } as never,
+    };
+    const result = await invoke('consultar_oferta', envelope('consultar_oferta', {
+      cursos: ['reparacion_celulares'],
+    }), deps);
+
+    expect(result.body).toMatchObject({
+      ok: true,
+      oferta: {
+        promocion: {
+          codigo: 'ingles_1_mas_ingles_2',
+          cursos_bonificados: [{ codigo: 'ingles_2', nombre: 'Inglés 2' }],
+        },
+      },
+    });
+  });
+
   it('accepts Lucas\'s ISO country context without deriving or converting the canonical offer', async () => {
     const result = await invoke('consultar_oferta', envelope('consultar_oferta', {
       cursos: ['reparacion_celulares'],

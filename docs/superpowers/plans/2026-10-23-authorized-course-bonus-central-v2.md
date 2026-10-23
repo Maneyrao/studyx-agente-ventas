@@ -311,10 +311,13 @@ git commit -m "feat(post-sale): confirm verified course gifts"
 
 **Files:**
 - Modify: `src/features/calls/application/retell-tools.ts`
-- Modify: `src/features/calls/adapters/postgres-retell-tools.ts`
 - Modify: `src/features/calls/adapters/postgres-retell-orchestration-store.ts`
+- Modify: `src/features/payments/application/reserve-payment-link.ts`
 - Create: `tests/workflow/agent-a-course-bonus-negotiation.test.ts`
-- Modify: `tests/integration/agent-a-call-handoff.test.ts`
+- Modify: `tests/integration/retell-five-tools-postgres.test.ts`
+- Modify: `tests/unit/calls/retell-tools.test.ts`
+- Modify: `tests/unit/calls/retell-five-tools.test.ts`
+- Modify: `docs/contracts/agent-a-b-shared-orchestrator-v1.md`
 - Modify: `docs/PILOT_MATRIX.md`
 - Modify: `docs/runbooks/whatsapp-go-live.md`
 
@@ -322,21 +325,21 @@ git commit -m "feat(post-sale): confirm verified course gifts"
 - Consumes: Tasks 1–6 and Lucas's deployed Central v2.
 - Produces: promotion-aware `consultar_oferta`, existing `enviar_link_pago` handoff with promotion identity, end-to-end evidence, and reversible production enablement.
 
-- [ ] **Step 1: Write failing voice-bridge and workflow tests**
+- [x] **Step 1: Write failing voice-bridge and workflow tests**
 
 Assert voice can discover only active voice-channel promotions, an accepted promotion reaches the existing WhatsApp payment-link bridge, no invented gift is accepted, and the full WhatsApp negotiation/payment/v2/post-sale flow passes.
 
-- [ ] **Step 2: Implement the minimal voice propagation**
+- [x] **Step 2: Implement the minimal voice propagation**
 
 Extend the existing tools/store inputs with backend-authorized `promotion_code`. Do not create a second voice checkout path.
 
-- [ ] **Step 3: Run targeted and full release gates**
+- [x] **Step 3: Run targeted and full release gates**
 
 Run:
 
 ```bash
 npx vitest run --config vitest.workflow.config.mts tests/workflow/agent-a-course-bonus-negotiation.test.ts
-npx vitest run --config vitest.integration.config.mts tests/integration/course-bonus-invariants.test.ts tests/integration/course-bonus-followup.test.ts tests/integration/course-bonus-payment-correlation.test.ts tests/integration/central-carga-enrollment-worker.test.ts tests/integration/post-sale.test.ts tests/integration/agent-a-call-handoff.test.ts
+npx vitest run --config vitest.integration.config.mts tests/integration/course-bonus-invariants.test.ts tests/integration/course-bonus-followup.test.ts tests/integration/course-bonus-payment-correlation.test.ts tests/integration/central-carga-enrollment-worker.test.ts tests/integration/post-sale.test.ts tests/integration/agent-a-call-handoff.test.ts tests/integration/retell-five-tools-postgres.test.ts
 npm run typecheck
 npm run lint
 npm run build

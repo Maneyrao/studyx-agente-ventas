@@ -24,6 +24,7 @@ async function fixture(environment = 'test', options: { bonus?: boolean } = {}) 
       VALUES (${w.id},${`BONUS-${suffix.slice(0,8)}`},'Inglés 2','active','Continuación','free') RETURNING id,code,display_name`;
     [promotion] = await db!`INSERT INTO promotions(workspace_id,promotion_code,paid_offering_id,channels,active)
       VALUES (${w.id},${`promo-${suffix.slice(0,8)}`},${o.id},ARRAY['text']::text[],true) RETURNING id,promotion_code`;
+    if (!promotion || !bonus) throw new Error('bonus fixture creation failed');
     await db!`INSERT INTO promotion_bonus_offerings(promotion_id,workspace_id,offering_id,position)
       VALUES (${promotion.id},${w.id},${bonus.id},1)`;
   }
