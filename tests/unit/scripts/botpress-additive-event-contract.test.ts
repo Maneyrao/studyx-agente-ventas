@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   buildBotpressAdditiveEventUpdate,
+  inspectBotpressRemoteCode,
   planBotpressAdditiveConversationTagPatch,
   planBotpressAdditiveEventPatch,
 } from '../../../scripts/lib/botpress-additive-event-contract.mjs';
@@ -163,5 +164,29 @@ describe('Botpress additive event publication contract', () => {
       conversation: { tags: { triggerE5F2C: commercialFollowupTriggerTag } },
     });
     expect(JSON.stringify(update)).not.toContain('null');
+  });
+
+  it('reports unavailable instead of claiming a match when Botpress omits remote code', () => {
+    expect(inspectBotpressRemoteCode({
+      remoteCode: undefined,
+      expectedSha256: 'expected-sha',
+    })).toEqual({
+      status: 'unavailable',
+      type: 'undefined',
+      byteLength: null,
+      matches: null,
+    });
+  });
+
+  it('verifies the byte length and hash when Botpress returns remote code', () => {
+    expect(inspectBotpressRemoteCode({
+      remoteCode: 'compiled-code',
+      expectedSha256: '617dffca7824a53078ab80ddf2dd9f83394baf98d5a774810e17a6e3010402a2',
+    })).toEqual({
+      status: 'verified',
+      type: 'string',
+      byteLength: 13,
+      matches: true,
+    });
   });
 });

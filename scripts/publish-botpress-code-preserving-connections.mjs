@@ -10,6 +10,7 @@ import { pathToFileURL } from 'node:url';
 import { createHash } from 'node:crypto';
 import {
   buildBotpressAdditiveEventUpdate,
+  inspectBotpressRemoteCode,
   planBotpressAdditiveConversationTagPatch,
   planBotpressAdditiveEventPatch,
 } from './lib/botpress-additive-event-contract.mjs';
@@ -142,8 +143,12 @@ try {
     && equal(before.conversation?.tags ?? {}, current.conversation?.tags ?? {})
     && before.deployedAt === current.deployedAt,
     'REMOTE_CHANGED_DURING_BUILD');
+  const bundleSha256 = createHash('sha256').update(bundle).digest('hex');
   const preflight = { at: new Date().toISOString(), botId: ctx.botId, workspaceId: ctx.workspaceId,
-    bundleSha256: createHash('sha256').update(bundle).digest('hex'), integrationCount: aliasesPreserved.length,
+    bundleSha256, remoteCodeEvidence: inspectBotpressRemoteCode({
+      remoteCode: before.code,
+      expectedSha256: bundleSha256,
+    }), integrationCount: aliasesPreserved.length,
     pluginCount: Object.keys(definition.plugins).length, aliasesPreserved, contractsMatch: true,
     additiveEventKeys, additiveConversationTagKeys,
     publicationMode: additiveEventKeys.length > 0 || additiveConversationTagKeys.length > 0
@@ -171,13 +176,18 @@ try {
       remoteTags: after.conversation?.tags ?? {},
       generatedTags: body.conversation?.tags ?? {},
     })).length === 0;
-    const remoteCodeMatches = typeof after.code !== 'string'
-      || createHash('sha256').update(after.code).digest('hex') === preflight.bundleSha256;
+    const remoteCodeEvidence = inspectBotpressRemoteCode({
+      remoteCode: after.code,
+      expectedSha256: preflight.bundleSha256,
+    });
+    const remoteCodeMatches = remoteCodeEvidence.matches;
     const result = { ...preflight, deployedAt: after.deployedAt, previousDeployedAt: before.deployedAt,
-      configurationUnchanged, eventContractCurrent, conversationTagContractCurrent, remoteCodeMatches,
+      configurationUnchanged, eventContractCurrent, conversationTagContractCurrent,
+      remoteCodeEvidence, remoteCodeMatches,
       codeOnly: additiveEventKeys.length === 0 && additiveConversationTagKeys.length === 0 };
     record('publication.json', result);
-    assert(configurationUnchanged && eventContractCurrent && conversationTagContractCurrent && remoteCodeMatches
+    assert(configurationUnchanged && eventContractCurrent && conversationTagContractCurrent
+      && remoteCodeMatches !== false
       && after.deployedAt !== before.deployedAt, 'POST_PUBLICATION_PARITY_FAILED');
     console.log(JSON.stringify(result));
   } else console.log(JSON.stringify(preflight));

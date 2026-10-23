@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 const allowedEventName = 'studyxCommercialFollowup';
 const allowedConversationTagName = 'triggerE5F2C';
 
@@ -50,6 +52,25 @@ const assertRecord = (value, label) => {
     throw new Error(`INVALID_EVENT_CONTRACT:${label}`);
   }
 };
+
+export function inspectBotpressRemoteCode({ remoteCode, expectedSha256 }) {
+  if (typeof remoteCode !== 'string') {
+    return {
+      status: 'unavailable',
+      type: typeof remoteCode,
+      byteLength: null,
+      matches: null,
+    };
+  }
+
+  const matches = createHash('sha256').update(remoteCode).digest('hex') === expectedSha256;
+  return {
+    status: matches ? 'verified' : 'mismatch',
+    type: 'string',
+    byteLength: Buffer.byteLength(remoteCode),
+    matches,
+  };
+}
 
 export function planBotpressAdditiveEventPatch({ remoteEvents, generatedEvents }) {
   assertRecord(remoteEvents, 'remote');
