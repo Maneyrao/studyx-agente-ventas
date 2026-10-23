@@ -81,9 +81,9 @@ promotion entry point while the global feature flag stays off.
   payment snapshot.
 - [x] Run focused unit/integration/workflow suites, typecheck, build, and
   `adk check --format json`.
-- [ ] Deploy backend with the global flag off and the 4497 contact UUID as the
+- [x] Deploy backend with the global flag off and the 4497 contact UUID as the
   sole canary; publish Botpress through ADK.
-- [ ] Activate the existing `ingles_1_mas_ingles_2` row and verify non-canary
+- [x] Activate the existing `ingles_1_mas_ingles_2` row and verify non-canary
   denial plus canary capability from production reads.
-- [ ] Do not reset contacts, send WhatsApp messages, or create payments as part
+- [x] Do not reset contacts, send WhatsApp messages, or create payments as part
   of deployment verification.
