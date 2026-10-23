@@ -1,5 +1,7 @@
 # CONTRATO — Orquestador StudyX → Central de Carga mystudyx (alta de alumnos)
 
+> **Actualización 22-10-2026:** `schema_version: 2` agrega `bonus_offerings`, cursos de regalo que se inscriben en la misma alta que el curso pagado (§3.5). La Central lo implementó pero todavía no lo desplegó; el orquestador no lo implementó. La versión 1 sigue vigente sin cambios. Las decisiones nuevas están en §9.7–§9.9. La API v1 de la Central ya está en producción (el "sin desplegar" del antecedente del 06-10 quedó viejo).
+
 > **Actualización 09-10-2026:** worker y avisos del agente implementados. Por autorización explícita del usuario, los pagos Stripe sandbox deben crear usuarios reales con acceso al curso comprado en la plataforma actual. El primer intento recibió `central_environment_mismatch`. Para destrabar la prueba, el usuario autorizó hoy un parche temporal: el pedido de alta se envía como `live`, mientras el pago conserva `test` en el ledger. La excepción vence el 10-10-2026 a las 00:00 de Argentina (§5). El agente entrega credenciales en lista sólo después de confirmar el alta; cuentas existentes conservan su contraseña.
 >
 > **Corrección de credenciales:** el usuario confirmó que el alta funciona y la contraseña inicial efectiva de la central es `Escuela.123`. El agente debe comunicar esa contraseña para cuentas nuevas. La indicación anterior `Studyx.123` no coincidía con la central; no se modifica la contraseña de la plataforma desde el orquestador.
@@ -85,7 +87,7 @@ Fallos de auth → `401` (§4). Ver alternativa bearer en §9.
 
 | Campo | Tipo | Req. | Origen en el orquestador | Notas |
 |---|---|---|---|---|
-| `schema_version` | integer | sí | constante | Hoy `1`. La Central rechaza versiones que no conoce con `422`. |
+| `schema_version` | integer | sí | constante | `1`, o `2` si el request trae `bonus_offerings` (§3.5). La Central rechaza versiones que no conoce con `422`. |
 | `payment_id` | uuid | sí | `payments.id` | Clave de idempotencia. |
 | `workspace_id` | uuid | sí | `payments.workspace_id` | Tenant del orquestador. |
 | `contact_id` | uuid | sí | `payments.contact_id` | Id estable del lead en StudyX. Útil para soporte. |
@@ -146,7 +148,7 @@ La Central persiste `payment_id` con constraint UNIQUE **en la misma transacció
 | El alumno ya está inscripto en ese curso por otro `payment_id` | `201` con `enrollment_status: "already_enrolled"`. No se duplica la inscripción. |
 | La Central acepta el alta pero la completa de forma asíncrona | `202` con `enrollment_status: "processing"`. El orquestador consulta con el GET. |
 
-"Payload distinto" se evalúa sobre `student.email`, `offering.code`, `payment.amount`, `payment.currency` y `environment`. Diferencias en `full_name`, `phone` o `display_name` no son conflicto (el orquestador puede haber corregido un dato entre reintentos); la Central puede actualizarlas o ignorarlas.
+"Payload distinto" se evalúa sobre `student.email`, `offering.code`, `payment.amount`, `payment.currency`, `environment` y, en `schema_version: 2`, el conjunto de `bonus_offerings[].code` (sin importar el orden; ausente equivale a vacío). Diferencias en `full_name`, `phone` o `display_name` no son conflicto (el orquestador puede haber corregido un dato entre reintentos); la Central puede actualizarlas o ignorarlas.
 
 ### 3.4 Response body (200 / 201 / 202)
 
@@ -175,6 +177,83 @@ La Central persiste `payment_id` con constraint UNIQUE **en la misma transacció
 | `access.login_email` | string | Con qué email entra al campus. |
 | `access.welcome_sent` | boolean | Si la Central ya envió credenciales o bienvenida. El orquestador lo usa para decidir qué decirle al alumno por WhatsApp; el agente añade la contraseña inicial acordada únicamente para cuentas nuevas, después de confirmar el alta y la identidad del correo. No reinicia contraseñas existentes. |
 | `created_at` | ISO 8601 UTC | |
+| `bonus_enrollments` | array | Sólo en `schema_version: 2`. Ver §3.5. |
+
+### 3.5 Cursos de regalo (`schema_version: 2`)
+
+Para promociones del tipo "comprando un curso te regalamos otro". El regalo forma parte del **mismo pago** y del **mismo request**: un `payment_id`, un job y un alta que cubre todos los cursos. Así la idempotencia de §0 no cambia (un pago produce como máximo un alta) y el alumno no queda con el curso pagado sin el regalo, ni al revés.
+
+**Request.** Igual que la versión 1, con `schema_version: 2` y un campo más en la raíz:
+
+```json
+{
+  "schema_version": 2,
+  "payment_id": "6f1c2a9e-4b7d-4c1e-9a55-0d3e8b2f71aa",
+  "…": "resto igual que §3.1",
+  "offering": { "code": "ESTETICA-INTEGRAL", "display_name": "Estética Integral" },
+  "bonus_offerings": [
+    { "code": "MAQUILLAJE-SOCIAL", "display_name": "Maquillaje Social", "promotion_code": "2X1-OCT-2026" }
+  ]
+}
+```
+
+| Campo | Tipo | Req. | Notas |
+|---|---|---|---|
+| `bonus_offerings` | array, 1–3 elementos | sí en v2 | Si no hay regalo, el orquestador manda `schema_version: 1`. |
+| `bonus_offerings[].code` | string | sí | Mismo mapa que `offering.code`. No puede repetirse ni ser igual a `offering.code`. |
+| `bonus_offerings[].display_name` | string | sí | Sólo informativo. |
+| `bonus_offerings[].promotion_code` | string 1–64 | sí | Código de la promoción que justifica el regalo, para trazabilidad y reportes. La Central no lo valida contra nada. |
+
+Por qué una versión nueva y no un campo opcional en la v1: la Central ignora campos desconocidos (§3.2). Una Central sin soporte de regalos que recibiera `bonus_offerings` en la v1 daría de alta el curso pagado, respondería `201` y descartaría el regalo sin avisar. Con la v2, esa Central responde `422 unsupported_schema_version` y el job falla de forma visible.
+
+**Validación.** Se valida todo antes de tocar Moodle. Si cualquier `code` (el pagado o un regalo) no está mapeado, la respuesta es `422 unknown_offering` y no se crea nada. Un código repetido o igual a `offering.code` → `422 validation_failed`.
+
+**Proceso en la Central.**
+
+- El alumno se crea o se reutiliza una sola vez para toda el alta.
+- Cada curso (pagado y regalos) se inscribe con la misma lógica de §3.3. Si el alumno ya estaba inscripto en un curso de regalo, no es error y no se duplica la inscripción.
+- El alta está completa sólo cuando **todos** los cursos quedaron inscriptos. Hasta entonces el GET responde `202` o `404`, igual que §6. Un reintento vuelve a recorrer todos los cursos sin duplicar inscripciones.
+- Si el alumno es nuevo se envía **un solo** email de bienvenida (el email no nombra cursos).
+- En el panel de Inscripciones queda una fila por curso. El panel no guarda monto, `payment_id` ni `promotion_code`, así que la fila del regalo no se distingue de una venta.
+
+**Response.** El cuerpo de §3.4 se mantiene. `enrollment_id` y `enrollment_status` siguen describiendo el curso pagado. Se agrega:
+
+```json
+{
+  "…": "campos de §3.4",
+  "bonus_enrollments": [
+    { "offering_code": "MAQUILLAJE-SOCIAL", "enrollment_status": "active" }
+  ]
+}
+```
+
+| Campo | Tipo | Notas |
+|---|---|---|
+| `bonus_enrollments[].offering_code` | string | Eco de `bonus_offerings[].code`, en el mismo orden. |
+| `bonus_enrollments[].enrollment_status` | `"active"` | Siempre `"active"`, aunque el alumno ya estuviera inscripto en ese curso. Nunca `"processing"`: mientras falte algún curso, el estado general es `processing` (`202`). |
+
+Un `200`/`201` en la v2 garantiza que todos los cursos de `bonus_offerings` aparecen en `bonus_enrollments`. El agente puede decirle al alumno que tiene acceso al regalo sólo con esa respuesta (§7).
+
+**Referencia en Zod:**
+
+```ts
+export const EnrollmentRequestV2 = EnrollmentRequestV1.extend({
+  schema_version: z.literal(2),
+  bonus_offerings: z
+    .array(z.object({
+      code: z.string().min(1),
+      display_name: z.string().min(1),
+      promotion_code: z.string().min(1).max(64),
+    }))
+    .min(1)
+    .max(3),
+}).superRefine((req, ctx) => {
+  const codes = req.bonus_offerings.map((b) => b.code);
+  if (new Set(codes).size !== codes.length || codes.includes(req.offering.code)) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['bonus_offerings'], message: 'códigos repetidos o iguales a offering.code' });
+  }
+});
+```
 
 ## 4. Errores
 
@@ -257,6 +336,11 @@ Uso del orquestador: si un POST terminó en timeout, consulta el GET antes de re
 - [ ] `offering.code` desconocido devuelve `422 unknown_offering`.
 - [ ] Ningún log contiene email, teléfono o nombre en claro.
 - [ ] El GET devuelve `404` antes del alta y `200` después.
+- [ ] v2: un `bonus_offerings[].code` desconocido devuelve `422 unknown_offering` sin crear alumno ni inscripciones.
+- [ ] v2: si Moodle falla después de inscribir el curso pagado y antes de inscribir el regalo, el GET no devuelve `200`, y el reintento completa el regalo sin duplicar inscripciones.
+- [ ] v2: reintentar con otro conjunto de `bonus_offerings` para el mismo `payment_id` devuelve `409`.
+- [ ] v2: un alumno nuevo recibe un único email de bienvenida.
+- [ ] v2: `200`/`201` incluye un elemento en `bonus_enrollments` por cada regalo pedido.
 
 ## 9. Decisiones ABIERTAS (cerrar antes de producción)
 
@@ -266,3 +350,6 @@ Uso del orquestador: si un POST terminó en timeout, consulta el GET antes de re
 4. **Reembolsos y bajas.** `payments.status` admite `refunded`. Falta definir si un reembolso debe dar de baja (p. ej. `POST /api/v1/enrollments/{payment_id}/revoke`) y si las cuotas impagas de `monthly_*` suspenden el acceso. Fuera de `schema_version: 1`.
 5. **Auth.** HMAC (este contrato) vs. bearer token estático. HMAC protege contra replay y alteración; bearer es más simple. Recomendado: HMAC.
 6. **Bienvenida.** Quién envía las credenciales de acceso: la Central (email) o el orquestador (WhatsApp, con un link de activación que provee la Central). Decisión del 09-10-2026: el agente envía las credenciales en el chat original tras la confirmación de alta, independientemente del email de bienvenida.
+7. **Dónde vive la promoción en el orquestador.** Hoy no hay modelo de promociones. El regalo tiene que quedar fijado en el pago (o en el link de pago) **antes** de cobrar, para que el worker arme siempre el mismo request y los reintentos no den `409`. Un regalo que se ofrece después de pagar (p. ej. más adelante en la misma conversación de WhatsApp) no entra en este contrato: necesitaría su propio `payment_id` y un alta aparte.
+8. **Regalos y reembolsos.** Si se reembolsa el curso pagado, ¿se da de baja también el regalo? Va junto con §9.4.
+9. **Habilitación.** El orquestador manda la v2 sólo cuando la Central confirme que la desplegó. Mientras tanto, una venta con regalo debe frenarse antes de cobrar, no cobrarse y mandarse como v1.
