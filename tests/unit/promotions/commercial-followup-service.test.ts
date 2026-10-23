@@ -62,6 +62,12 @@ describe('commercial course-bonus follow-up content', () => {
       'Te doy Inglés 1 e Inglés 2, ambos gratis.'))
       .toEqual({ ok: false, reason: 'PROMOTION_PRICE_CHANGED' });
     expect(validateCommercialFollowupNarrativeV1(review,
+      'Inglés 1 será gratis y te incluyo Inglés 2.'))
+      .toEqual({ ok: false, reason: 'PROMOTION_PRICE_CHANGED' });
+    expect(validateCommercialFollowupNarrativeV1(review,
+      'Te regalo Inglés 1 y también Inglés 2; no tienes que pagar nada.'))
+      .toEqual({ ok: false, reason: 'PROMOTION_PRICE_CHANGED' });
+    expect(validateCommercialFollowupNarrativeV1(review,
       'Te incluyo Inglés 2 con Inglés 1 y pagás 10 al año.'))
       .toEqual({ ok: false, reason: 'PROMOTION_PRICE_CHANGED' });
     expect(validateCommercialFollowupNarrativeV1(review,

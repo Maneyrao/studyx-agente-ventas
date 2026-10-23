@@ -390,6 +390,7 @@ run('la entrega gobierna la proyección payment_link_sent', () => {
       'PAYMENT_LINK_CONTADO',
       'GOOGLE_SHEETS_SPREADSHEET_ID',
       'GOOGLE_SHEETS_TAB_NAME',
+      'CENTRAL_CARGA_BONUS_ENABLED',
     ]) {
       savedEnv[key] = process.env[key];
     }
@@ -399,6 +400,7 @@ run('la entrega gobierna la proyección payment_link_sent', () => {
     process.env.PAYMENT_LINK_CONTADO = 'https://buy.stripe.com/test_contado_fence';
     process.env.GOOGLE_SHEETS_SPREADSHEET_ID = SPREADSHEET_ID;
     process.env.GOOGLE_SHEETS_TAB_NAME = TAB_NAME;
+    process.env.CENTRAL_CARGA_BONUS_ENABLED = 'true';
   });
 
   afterAll(() => {
@@ -539,6 +541,86 @@ run('la entrega gobierna la proyección payment_link_sent', () => {
       WHERE projection_key = ${leadProjectionKey(paymentWorkspaceId, contactId)}
     `;
   }
+
+  it('creates a promoted link instead of reusing an earlier ordinary link', async () => {
+    const firstEnvelope = envelope('Confirmo 12 cuotas para Curso Fencing.');
+    const firstContext = await processInboundMessage(firstEnvelope);
+    const ordinary = await commitPaymentTurn(
+      firstContext.turn_id, 'course_fence', 'monthly_12', 'ordinary-before-promotion',
+    );
+    await sql`UPDATE inbound_batches SET state='completed',completed_at=now(),updated_at=now()
+      WHERE id=${firstContext.batch.id}::uuid`;
+
+    const promotedContext = await processInboundMessage({
+      ...firstEnvelope,
+      external_message_id:`message-${randomUUID()}`,
+      trace_id:randomUUID(),
+      message:{...firstEnvelope.message,text:'Pasame el link de las 12 cuotas con el curso adicional.',
+        occurred_at:new Date(Date.now()+1_000).toISOString(),
+        reply_to_external_message_id:firstEnvelope.external_message_id},
+    });
+    // Legacy channel ingestion intentionally starts with an unscoped
+    // conversation. The promotion identity invariant requires the commercial
+    // workspace to be bound before an offer can be persisted. Bind it only
+    // after both inbound turns have resolved to the same conversation so this
+    // fixture mirrors the later commercial-context transition without
+    // accidentally creating a second open conversation.
+    await sql`UPDATE conversations SET workspace_id=${paymentWorkspaceId}::uuid
+      WHERE id=${firstContext.conversation_id}::uuid`;
+
+    const [paid] = await sql<Array<{ id:string }>>`SELECT id FROM offerings
+      WHERE workspace_id=${paymentWorkspaceId}::uuid AND code='course_fence'`;
+    const [bonus] = await sql<Array<{ id:string; code:string; display_name:string }>>`
+      INSERT INTO offerings(workspace_id,code,display_name,offering_type,status,description,price_type)
+      VALUES (${paymentWorkspaceId}::uuid,${`bonus-${randomUUID().slice(0,8)}`},'Curso Bonus',
+        'course','active','Bonus','free') RETURNING id,code,display_name`;
+    const [promotion] = await sql<Array<{ id:string; promotion_code:string }>>`
+      INSERT INTO promotions(workspace_id,promotion_code,paid_offering_id,channels,active)
+      VALUES (${paymentWorkspaceId}::uuid,${`promo-${randomUUID().slice(0,8)}`},${paid.id}::uuid,
+        ARRAY['text']::text[],true) RETURNING id,promotion_code`;
+    await sql`INSERT INTO promotion_bonus_offerings(promotion_id,workspace_id,offering_id,position)
+      VALUES (${promotion.id}::uuid,${paymentWorkspaceId}::uuid,${bonus.id}::uuid,1)`;
+    const [offer] = await sql<Array<{ id:string }>>`
+      INSERT INTO promotion_offers(workspace_id,contact_id,conversation_id,promotion_id,
+        paid_offering_id,status,offered_at,accepted_at)
+      VALUES (${paymentWorkspaceId}::uuid,${firstContext.contact.id}::uuid,
+        ${firstContext.conversation_id}::uuid,${promotion.id}::uuid,${paid.id}::uuid,
+        'accepted',now(),now()) RETURNING id`;
+    await sql`INSERT INTO promotion_offer_bonus_offerings(offer_id,promotion_id,offering_id,
+        promotion_code_snapshot,offering_code_snapshot,offering_display_name_snapshot,position)
+      VALUES (${offer.id}::uuid,${promotion.id}::uuid,${bonus.id}::uuid,
+        ${promotion.promotion_code},${bonus.code},${bonus.display_name},1)`;
+    await sql`UPDATE promotion_offers SET bonus_snapshot_sealed_at=now() WHERE id=${offer.id}::uuid`;
+    const promoted = await commitAgentDecision({
+      turn_id:promotedContext.turn_id,trace_id:randomUUID(),authorized_offering_code:'course_fence',
+      decision:{schema_version:4,intent:'commercial',kind:'reply',
+        response:'Perfecto, te paso el link con el curso adicional incluido.',
+        response_type:'commercial_reply',business_action:{type:'send_payment_link',
+          plan_code:'monthly_12',offering_sku:'course_fence',promotion_code:promotion.promotion_code},
+        memory_candidates:[],missing_information:[],next_state:'completed',reason_code:'PLAN_CHOSEN',
+        confidence:0.95,retrieval_used:null},
+      model:{provider:'botpress',model:'test-model',prompt_version:'promoted-after-ordinary'},
+    });
+
+    const ordinaryUrl = ordinary.outbound?.content.match(/https?:\/\/\S+/u)?.[0];
+    const promotedUrl = promoted.outbound?.content.match(/https?:\/\/\S+/u)?.[0];
+    expect(promotedUrl).toBeDefined();
+    expect(promotedUrl).not.toBe(ordinaryUrl);
+    const paymentSnapshots = await sql<Array<{ id:string; bonuses:number }>>`
+      SELECT payment.id,(SELECT count(*)::integer FROM payment_bonus_offerings snapshot
+        WHERE snapshot.payment_id=payment.id) AS bonuses
+      FROM payments payment
+      WHERE payment.source_conversation_id=${firstContext.conversation_id}::uuid
+        AND payment.offering_id=${paid.id}::uuid`;
+    expect(paymentSnapshots.map(({ bonuses }) => bonuses).sort()).toEqual([
+      0,
+      1,
+    ]);
+    expect(paymentSnapshots).toEqual(expect.arrayContaining([
+        expect.objectContaining({bonuses:0}),
+        expect.objectContaining({bonuses:1}),
+    ]));
+  });
 
   it('keeps the progressive phone lead when a later delivery fails', async () => {
     const turn = await seedPaymentTurn('Quiero pagar en 12 cuotas, opción fallida');

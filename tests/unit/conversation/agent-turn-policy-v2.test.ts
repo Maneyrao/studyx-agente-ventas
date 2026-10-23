@@ -82,6 +82,7 @@ function authorize(input: {
   customerText?: string;
   semanticRejections?: 'blocking' | 'advisory';
   paymentVerified?: boolean;
+  courseBonus?: Parameters<typeof authorizeAgentTurnV2>[0]['course_bonus'];
 }) {
   return authorizeAgentTurnV2({
     proposal: input.proposal,
@@ -92,6 +93,7 @@ function authorize(input: {
     current_customer_messages: input.customerText ? [input.customerText] : [],
     semantic_rejections: input.semanticRejections,
     payment_verified: input.paymentVerified,
+    course_bonus: input.courseBonus,
     call_policy: {
       may_offer_call: input.mayOfferCall ?? true,
       may_request_call_now: input.mayRequestCall ?? true,
@@ -379,6 +381,47 @@ describe('plannerless Agent A authority', () => {
       },
       transition: {
         stage: 'payment_link_sent', awaiting_reply: 'none', payment_link_request: { status: 'consumed' },
+      },
+    });
+  });
+
+  it('preserves an accepted promotion when a generic link request resumes the durable plan', () => {
+    const result = authorize({
+      state: state({
+        selected_offering_code: 'redes_informaticas',
+        selected_payment_plan: 'monthly_6',
+        stage: 'plan_selected',
+        awaiting_reply: 'payment_confirmation',
+      }),
+      intake: completeIntake,
+      customerText: 'Pasame el link',
+      courseBonus: {
+        status: 'accepted',
+        may_schedule_checkin: false,
+        may_request_review: false,
+        may_accept_offer: false,
+        may_send_promoted_payment: true,
+        promotion_code: 'redes_con_excel',
+        bonus_offerings: [{ code:'excel_integral',display_name:'Excel Integral',position:1 }],
+      },
+      proposal: proposal({
+        move: {
+          schema_version: 1, move: 'request_payment_link', secondary_moves: [], vetoes: [],
+          confidence: 1,
+        },
+        response: { messages: ['Acá tenés el enlace para avanzar.'] },
+        proposed_action: {
+          type: 'send_payment_link', offering_code: 'redes_informaticas',
+          payment_plan: 'monthly_12', promotion_code: 'redes_con_excel',
+        },
+      }),
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      action: {
+        type: 'send_payment_link', offering_code: 'redes_informaticas',
+        payment_plan: 'monthly_6', promotion_code: 'redes_con_excel',
       },
     });
   });

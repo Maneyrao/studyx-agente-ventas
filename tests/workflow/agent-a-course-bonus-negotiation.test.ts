@@ -10,6 +10,8 @@ import { readCourseBonusCapabilityV1 } from '@/features/promotions/application/r
 import { reservePaymentLink } from '@/features/payments/application/reserve-payment-link';
 import { runEnrollmentWorker } from '@/features/fulfillment/central-carga/worker';
 import { assemblePostSaleMessage } from '@/features/fulfillment/post-sale/service';
+import { authorizeAgentTurnV2 } from '@/features/conversation/domain/agent-turn-policy-v2';
+import { createDefaultConversationStateV1 } from '@/features/conversation/domain/conversation-planner';
 
 const run = process.env.TEST_DATABASE_URL ? it : it.skip;
 const db = process.env.TEST_DATABASE_URL ? openLocalTestDatabase() : null;
@@ -81,10 +83,36 @@ run('carries one authorized price-objection bonus through payment, Central v2 an
     conversation_id:conversation.id,paid_offering_code:paid.code,source_turn_id:inbound.id,
     source_outbound_message_id:outbound.id,action:{type:'accept_promotion'}});
 
+  const acceptedCapability = await readCourseBonusCapabilityV1({workspace_slug:workspace.slug,
+    contact_id:contact.id,conversation_id:conversation.id,channel:'text',
+    selected_offering_code:paid.code},{db:db!});
+  const authorization = authorizeAgentTurnV2({
+    state:{...createDefaultConversationStateV1({workspace_id:workspace.id,conversation_id:conversation.id,
+      contact_id:contact.id}),selected_offering_code:paid.code,selected_payment_plan:'monthly_12',
+      stage:'plan_selected',awaiting_reply:'payment_confirmation'},
+    offerings:[{code:paid.code,display_name:paid.display_name},{code:bonus.code,display_name:bonus.display_name}],
+    facts:[{id:`payment:${paid.code}:monthly_12:label:v1`,kind:'payment_plan_label',
+      source:'business_snapshot',value:'12 pagos mensuales de USD 30',offering_code:paid.code,
+      payment_plan:'monthly_12'}],
+    contact_intake:{nombre:'Ana',apellido:'Prueba',correo:'ana@example.test',telefono:'+5491112345678'},
+    current_customer_messages:['Pasame el link'],course_bonus:acceptedCapability,
+    call_policy:{may_offer_call:true,may_request_call_now:true},
+    proposal:{schema_version:1,move:{schema_version:1,move:'request_payment_link',secondary_moves:[],
+      vetoes:[],confidence:1},response:{messages:['Acá tenés el enlace para avanzar.']},
+      proposed_action:{type:'send_payment_link',offering_code:paid.code,payment_plan:'monthly_6',
+        promotion_code:promotion.promotion_code},used_fact_ids:[],used_memory_ids:[],
+      memory_candidates:[],repair_of:null},
+  });
+  expect(authorization).toMatchObject({ok:true,action:{type:'send_payment_link',
+    offering_code:paid.code,payment_plan:'monthly_12',promotion_code:promotion.promotion_code}});
+  if (!authorization.ok || authorization.action.type !== 'send_payment_link') {
+    throw new Error('promoted payment authorization failed');
+  }
+
   const reservation = await reservePaymentLink(db!,{workspace_id:workspace.id,contact_id:contact.id,
-    offering_id:paid.id,conversation_id:conversation.id,plan_code:'monthly_12',
+    offering_id:paid.id,conversation_id:conversation.id,plan_code:authorization.action.payment_plan,
     idempotency_key:`workflow-bonus:${suffix}`,payment_link_url:'https://buy.stripe.com/test_workflow_bonus',
-    promotion_code:promotion.promotion_code});
+    promotion_code:authorization.action.promotion_code});
   await db!`UPDATE payments SET status='creating_checkout' WHERE id=${reservation.payment_id}`;
   await db!`UPDATE payments SET status='pending',provider_session_id=${`cs_test_${suffix}`} WHERE id=${reservation.payment_id}`;
   await db!`UPDATE payments SET status='paid',paid_at=now() WHERE id=${reservation.payment_id}`;

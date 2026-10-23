@@ -468,6 +468,13 @@ export function validateCommercialFollowupNarrativeV1(
     source.paid_offering_name,
     ...source.bonus_offerings.map((bonus) => bonus.display_name),
   ].map((name) => name.toLocaleLowerCase('es'));
+  const paidOfferingPattern = source.paid_offering_name.toLocaleLowerCase('es')
+    .replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')
+    .replace(/\s+/gu, '\\s+');
+  const principalMadeFree = new RegExp(
+    `(?:${paidOfferingPattern}\\s+(?:(?:es|ser[aá]|queda|quedar[ií]a|va a ser|tambi[eé]n)\\s+)?(?:gratis|sin costo|bonificad[oa])\\b|(?:regal|bonific)\\w*.{0,18}\\b${paidOfferingPattern}\\b|(?:gratis|sin costo)\\s+(?:el curso\\s+)?${paidOfferingPattern}\\b|(?:no (?:tienes|ten[eé]s|hay) que|sin)\\s+pagar\\s+(?:nada|${paidOfferingPattern}))`,
+    'iu',
+  );
   const withoutCourseNames = courseNames.reduce(
     (text, name) => text.split(name).join(' '),
     normalized,
@@ -492,7 +499,8 @@ export function validateCommercialFollowupNarrativeV1(
   if (/\d/u.test(priceCandidate)
     || /[$€£]|\b(?:usd|u\$s|d[oó]lares?|pesos?|euros?)\b/iu.test(priceCandidate)
     || wordAmount.test(priceCandidate)
-    || /\b(?:ambos?|los dos|todo(?:s)?)\s+(?:(?:son|quedan)\s+)?(?:gratis|sin costo|bonificad[oa]s?)\b/iu.test(normalized)) {
+    || /\b(?:ambos?|los dos|todo(?:s)?)\s+(?:(?:son|quedan)\s+)?(?:gratis|sin costo|bonificad[oa]s?)\b/iu.test(normalized)
+    || principalMadeFree.test(normalized)) {
     return { ok: false, reason: 'PROMOTION_PRICE_CHANGED' };
   }
   const namedBonuses = source.bonus_offerings.filter((bonus) => (

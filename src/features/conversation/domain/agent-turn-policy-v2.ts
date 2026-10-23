@@ -373,14 +373,17 @@ export function authorizeAgentTurnV2(input: {
       : proposal.proposed_action;
   }
   if (proposal.proposed_action.type === 'send_payment_link') {
+    const authorizedPromotionCode = input.course_bonus?.may_send_promoted_payment === true
+      ? input.course_bonus.promotion_code
+      : null;
     const matchesState = selectedOffering !== null
       && proposal.proposed_action.offering_code === selectedOffering
       && selectedPlan !== null
       && (resumesDurablePlan || proposal.proposed_action.payment_plan === selectedPlan);
     const matchesPromotion = proposal.proposed_action.promotion_code === undefined
-      || (input.course_bonus?.may_send_promoted_payment === true
-        && input.course_bonus.promotion_code === proposal.proposed_action.promotion_code);
+      || authorizedPromotionCode === proposal.proposed_action.promotion_code;
     if (!paymentLinkRequested || !matchesState || !matchesPromotion
+      || (input.course_bonus?.may_send_promoted_payment === true && authorizedPromotionCode === null)
       || proposal.move.vetoes.includes('payment_link')
       || proposal.move.vetoes.includes('purchase')) {
       reasons.push('ACTION_NOT_AUTHORIZED');
@@ -389,13 +392,12 @@ export function authorizeAgentTurnV2(input: {
     } else if (!paymentLinkBaseAuthorized) {
       reasons.push('ACTION_NOT_AUTHORIZED');
     } else if (paymentLinkAuthorized) {
-      action = resumesDurablePlan
-        ? {
-            type: 'send_payment_link',
-            offering_code: selectedOffering,
-            payment_plan: selectedPlan,
-          }
-        : proposal.proposed_action;
+      action = {
+        type: 'send_payment_link',
+        offering_code: selectedOffering,
+        payment_plan: selectedPlan,
+        ...(authorizedPromotionCode ? { promotion_code: authorizedPromotionCode } : {}),
+      };
     }
   }
   if (proposal.proposed_action.type === 'send_test_payment_link') {

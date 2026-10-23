@@ -1070,6 +1070,15 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
           AND ad.business_action ->> 'offering_sku' = ${action.offering_sku}
           AND COALESCE(prior_payment.environment, 'live') = ${stripePaymentLinkEnvironment(materialized.block.url) ?? 'live'}
           AND (prior_payment.id IS NULL OR prior_payment.status NOT IN ('failed', 'expired', 'refunded'))
+          AND COALESCE((
+            SELECT array_agg(DISTINCT snapshot.promotion_code_snapshot
+              ORDER BY snapshot.promotion_code_snapshot)
+            FROM payment_bonus_offerings snapshot
+            WHERE snapshot.payment_id = prior_payment.id
+          ), ARRAY[]::text[]) = CASE
+            WHEN ${action.promotion_code ?? null}::text IS NULL THEN ARRAY[]::text[]
+            ELSE ARRAY[${action.promotion_code ?? null}::text]
+          END
         ORDER BY ad.created_at DESC
         LIMIT 1
       `;
