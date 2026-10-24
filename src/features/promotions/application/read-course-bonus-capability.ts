@@ -298,15 +298,28 @@ export async function readCourseBonusCapabilityV1(input: {
     ) po ON true
     LEFT JOIN public.promotions offer_promotion ON offer_promotion.id = po.promotion_id
     WHERE workspace.slug = ${input.workspace_slug}
-      AND paid.code = ${interestOfferingCode}
-    ORDER BY p.active DESC, p.created_at DESC
+      AND (paid.code = ${interestOfferingCode} OR po.id IS NOT NULL)
+    ORDER BY
+      CASE
+        WHEN po.id IS NOT NULL AND (po.expires_at IS NULL OR po.expires_at > now()) THEN 0
+        WHEN paid.code = ${interestOfferingCode} THEN 1
+        ELSE 2
+      END,
+      p.active DESC,
+      p.created_at DESC
     LIMIT 1
   `;
   const row = rows[0];
+  // Once an offer has been delivered it owns its paid course durably. Merely
+  // discussing the included course must not hide the package or turn that
+  // bonus into the purchase identity.
+  const effectiveInterestOfferingCode = row?.offer_status
+    ? row.paid_offering_code
+    : discussedOfferingCode;
   return deriveCourseBonusCapabilityV1({
     channel: input.channel,
     selected_offering_code: input.selected_offering_code,
-    discussed_offering_code: discussedOfferingCode,
+    discussed_offering_code: effectiveInterestOfferingCode,
     recorded_price_objections: contexts[0]?.price_objection_count ?? 0,
     prior_price_objection_checkin: row?.prior_price_objection_checkin ?? false,
     promotion: row ? {

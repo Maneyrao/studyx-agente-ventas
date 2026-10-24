@@ -467,6 +467,50 @@ describe('plannerless Agent A authority', () => {
     });
   });
 
+  it('does not create a simple checkout while the offered package still needs acceptance', () => {
+    const result = authorize({
+      state: state({
+        selected_offering_code: 'redes_informaticas',
+        selected_payment_plan: 'monthly_6',
+        stage: 'plan_selected',
+        awaiting_reply: 'payment_confirmation',
+      }),
+      intake: completeIntake,
+      customerText: 'Claro, pasame el link y va también Excel',
+      actionRejections: 'structured',
+      courseBonus: {
+        status: 'offer_available',
+        may_schedule_checkin: false,
+        may_request_review: false,
+        may_accept_offer: true,
+        may_send_promoted_payment: false,
+        promotion_code: 'redes_con_excel',
+        interest_offering_code: 'redes_informaticas',
+        bonus_offerings: [{ code: 'excel_integral', display_name: 'Excel Integral', position: 1 }],
+      },
+      proposal: proposal({
+        move: {
+          schema_version: 1, move: 'request_payment_link', secondary_moves: [], vetoes: [],
+          confidence: 1,
+        },
+        response: { messages: ['Perfecto, te comparto el enlace del paquete.'] },
+        proposed_action: {
+          type: 'send_payment_link', offering_code: 'redes_informaticas', payment_plan: 'monthly_6',
+        },
+      }),
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      action: { type: 'none' },
+      advisory_reasons: ['ACTION_NOT_AUTHORIZED'],
+      transition: {
+        selected_offering_code: 'redes_informaticas',
+        selected_payment_plan: 'monthly_6',
+      },
+    });
+  });
+
   it('does not carry an accepted promotion into checkout for another course', () => {
     const result = authorize({
       state: state({
@@ -1774,6 +1818,48 @@ it('keeps an exact discussed course as commercial interest without selecting it 
     ok: true,
     discussed_offering_code: 'redes_informaticas',
     transition: { selected_offering_code: null },
+  });
+});
+
+it('accepts the offered package without replacing its paid course with the mentioned bonus', () => {
+  const result = authorize({
+    customerText: 'Sí, está excelente; va también Excel',
+    actionRejections: 'structured',
+    courseBonus: {
+      status: 'offer_available',
+      may_schedule_checkin: false,
+      may_request_review: false,
+      may_accept_offer: true,
+      may_send_promoted_payment: false,
+      promotion_code: 'redes_con_excel',
+      interest_offering_code: 'redes_informaticas',
+      bonus_offerings: [{ code: 'excel_integral', display_name: 'Excel Integral', position: 1 }],
+    },
+    proposal: proposal({
+      move: {
+        schema_version: 1,
+        move: 'select_payment_plan',
+        secondary_moves: ['select_course'],
+        vetoes: [],
+        course_reference: 'excel',
+        payment_plan: 'one_time',
+        confidence: 1,
+      },
+      response: { messages: ['Perfecto, queda Redes con Excel incluido y pago único.'] },
+      proposed_action: { type: 'accept_promotion' },
+    }),
+  });
+
+  expect(result).toMatchObject({
+    ok: true,
+    action: { type: 'accept_promotion' },
+    discussed_offering_code: 'redes_informaticas',
+    transition: {
+      selected_offering_code: 'redes_informaticas',
+      selected_payment_plan: 'one_time',
+      stage: 'plan_selected',
+      awaiting_reply: 'payment_confirmation',
+    },
   });
 });
 
