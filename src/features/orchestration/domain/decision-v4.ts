@@ -75,6 +75,7 @@ export interface SchedulePriceObjectionCheckinAction {
 export interface RequestPromotionReviewAction {
   type: 'request_promotion_review';
   reason: 'persistent_price_objection';
+  bonus_offering_code?: string;
 }
 
 export interface AcceptPromotionAction {
@@ -232,11 +233,20 @@ function parseV4BusinessAction(value: unknown): DecisionV4BusinessAction | null 
     return { type: 'schedule_price_objection_checkin', reason: 'price_objection' };
   }
   if (value.type === 'request_promotion_review') {
-    if (Object.keys(value).some((key) => key !== 'type' && key !== 'reason')
-      || value.reason !== 'persistent_price_objection') {
+    if (Object.keys(value).some((key) => !['type', 'reason', 'bonus_offering_code'].includes(key))
+      || value.reason !== 'persistent_price_objection'
+      || (value.bonus_offering_code !== undefined
+        && (typeof value.bonus_offering_code !== 'string'
+          || !isCanonicalOfferingSku(value.bonus_offering_code)))) {
       throw new DecisionValidationError('INVALID_BUSINESS_ACTION');
     }
-    return { type: 'request_promotion_review', reason: 'persistent_price_objection' };
+    return {
+      type: 'request_promotion_review',
+      reason: 'persistent_price_objection',
+      ...(typeof value.bonus_offering_code === 'string'
+        ? { bonus_offering_code: value.bonus_offering_code }
+        : {}),
+    };
   }
   if (value.type === 'accept_promotion') {
     if (Object.keys(value).some((key) => key !== 'type')) {

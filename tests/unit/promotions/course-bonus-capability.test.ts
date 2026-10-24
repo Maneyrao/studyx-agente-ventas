@@ -197,6 +197,21 @@ describe('course bonus capability', () => {
     });
   });
 
+  it('allows Agent A to choose one different active course when no fixed promotion exists', () => {
+    expect(capability({
+      promotion: null,
+      recorded_price_objections: 1,
+      allows_any_active_bonus: true,
+    })).toMatchObject({
+      status: 'review_available',
+      may_request_review: true,
+      bonus_selection_mode: 'any_active_course',
+      interest_offering_code: 'ingles_1',
+      promotion_code: null,
+      bonus_offerings: [],
+    });
+  });
+
   it('does not reinterpret customer wording with backend regexes', () => {
     expect(capability({ prior_price_objection_checkin: false })).toMatchObject({
       status: 'checkin_available', may_request_review: false,

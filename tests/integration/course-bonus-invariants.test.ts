@@ -1,4 +1,6 @@
 import { randomUUID } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
 import { openLocalTestDatabase } from '../helpers/db';
 
@@ -70,6 +72,39 @@ async function createPromotion(f: Awaited<ReturnType<typeof fixture>>, code = `p
 }
 
 run('authorized course bonus database invariants', () => {
+  it('migration cleanup preserves an accepted live package over a newer pending review', async () => {
+    const f = await fixture();
+    const acceptedPromotion = await createPromotion(f, `accepted-${f.suffix}`);
+    const pendingPromotion = await createPromotion(f, `pending-${f.suffix}`);
+    const migration = readFileSync(resolve(
+      process.cwd(),
+      'supabase/migrations/20261024143000_one_live_course_bonus_offer.sql',
+    ), 'utf8');
+
+    await db!.begin(async tx => {
+      await tx.unsafe('DROP INDEX public.promotion_offers_one_live_paid_course_uq');
+      const [accepted] = await tx<Array<{ id:string }>>`
+        INSERT INTO promotion_offers(
+          workspace_id,contact_id,conversation_id,promotion_id,paid_offering_id,status,
+          offered_at,accepted_at,created_at,expires_at)
+        VALUES (${f.workspace.id},${f.contact.id},${f.conversation.id},${acceptedPromotion.id},
+          ${f.paid.id},'accepted',now()-interval '2 hours',now()-interval '2 hours',
+          now()-interval '2 hours',now()+interval '24 hours') RETURNING id`;
+      const [pending] = await tx<Array<{ id:string }>>`
+        INSERT INTO promotion_offers(
+          workspace_id,contact_id,conversation_id,promotion_id,paid_offering_id,status,created_at,
+          expires_at)
+        VALUES (${f.workspace.id},${f.contact.id},${f.conversation.id},${pendingPromotion.id},
+          ${f.paid.id},'pending_review',now(),now()+interval '48 hours') RETURNING id`;
+
+      await tx.unsafe(migration);
+      const rows = await tx<Array<{ id:string; status:string }>>`
+        SELECT id,status FROM promotion_offers WHERE id IN (${accepted.id},${pending.id})`;
+      expect(rows.find(row => row.id === accepted.id)?.status).toBe('accepted');
+      expect(rows.find(row => row.id === pending.id)?.status).toBe('cancelled');
+    });
+  });
+
   it('keeps promotion codes unique per workspace and bonus offerings bounded, distinct and workspace-local', async () => {
     const f = await fixture();
     const promotion = await createPromotion(f, `bounded-${f.suffix}`);

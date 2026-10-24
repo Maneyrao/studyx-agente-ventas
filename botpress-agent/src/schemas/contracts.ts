@@ -164,6 +164,7 @@ export const SchedulePriceObjectionCheckinActionSchema = z.object({
 export const RequestPromotionReviewActionSchema = z.object({
   type: z.literal('request_promotion_review'),
   reason: z.literal('persistent_price_objection'),
+  bonus_offering_code: z.string().regex(/^[a-z0-9][a-z0-9_-]{0,127}$/).optional(),
 }).strict()
 
 export const AcceptPromotionActionSchema = z.object({
@@ -616,6 +617,7 @@ export const ClaimedTurnSchema = z.object({
     may_accept_offer: z.boolean(),
     may_send_promoted_payment: z.boolean(),
     promotion_code: z.string().min(1).max(160).nullable(),
+    bonus_selection_mode: z.enum(['configured', 'any_active_course']).optional(),
     interest_offering_code: z.string().min(1).max(160).nullable().optional(),
     bonus_offerings: z.array(z.object({
       code: z.string().min(1).max(160),

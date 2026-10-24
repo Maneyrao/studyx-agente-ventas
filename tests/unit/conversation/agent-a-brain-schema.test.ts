@@ -63,7 +63,10 @@ describe('AgentATurnProposalV1Schema', () => {
 
   it.each([
     { type: 'schedule_price_objection_checkin', reason: 'price_objection' },
-    { type: 'request_promotion_review', reason: 'persistent_price_objection' },
+    {
+      type: 'request_promotion_review', reason: 'persistent_price_objection',
+      bonus_offering_code: 'fotografia_celulares_tiendas_online',
+    },
     { type: 'accept_promotion' },
     {
       type: 'send_payment_link', offering_code: 'ingles_1', payment_plan: 'monthly_12',
@@ -75,9 +78,18 @@ describe('AgentATurnProposalV1Schema', () => {
     expect(BotpressAgentATurnProposalV1Schema.safeParse(input).success).toBe(true);
   });
 
-  it('rejects model-authored gift codes, delays, prices, URLs and identities on review actions', () => {
+  it('accepts one canonical gift choice but rejects operational details on review actions', () => {
+    const selected = proposal({
+      proposed_action: {
+        type: 'request_promotion_review', reason: 'persistent_price_objection',
+        bonus_offering_code: 'fotografia_celulares_tiendas_online',
+      },
+    });
+    expect(AgentATurnProposalV1Schema.safeParse(selected).success).toBe(true);
+    expect(BotpressAgentATurnProposalV1Schema.safeParse(selected).success).toBe(true);
+
     for (const extra of [
-      { bonus_offering_code: 'ingles_2' }, { delay_seconds: 60 }, { amount: 360 },
+      { bonus_offering_codes: ['ingles_2', 'ingles_3'] }, { delay_seconds: 60 }, { amount: 360 },
       { url: 'https://example.test' }, { contact_id: '00000000-0000-4000-8000-000000000001' },
     ]) {
       const input = proposal({

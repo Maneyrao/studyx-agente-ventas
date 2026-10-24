@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import type postgres from 'postgres';
 import { z } from 'zod';
 import type { DbClient } from '@/lib/db/types';
@@ -49,7 +49,11 @@ export const CommercialFollowupNarrativeSchema = z.discriminatedUnion('kind', [
 type FollowupKind = 'price_objection_checkin' | 'promotion_review';
 type PromotionAction =
   | { readonly type: 'schedule_price_objection_checkin'; readonly reason: 'price_objection' }
-  | { readonly type: 'request_promotion_review'; readonly reason: 'persistent_price_objection' }
+  | {
+      readonly type: 'request_promotion_review';
+      readonly reason: 'persistent_price_objection';
+      readonly bonus_offering_code?: string;
+    }
   | { readonly type: 'accept_promotion' };
 
 export interface ScheduledCommercialFollowupV1 {
@@ -91,6 +95,81 @@ async function activePromotion(
     LIMIT 1
   `;
   return rows[0] ?? null;
+}
+
+function dynamicPromotionCode(paidOfferingCode: string, bonusOfferingCode: string): string {
+  const digest = createHash('sha256')
+    .update(`${paidOfferingCode}\u0000${bonusOfferingCode}`)
+    .digest('hex')
+    .slice(0, 32);
+  return `any_bonus_${digest}`;
+}
+
+async function selectedCoursePromotion(
+  db: DbClient,
+  input: {
+    readonly workspace_id: string;
+    readonly paid_offering_code: string;
+    readonly bonus_offering_code: string;
+    readonly channel?: 'text' | 'voice';
+  },
+): Promise<PromotionRow | null> {
+  if (input.bonus_offering_code === input.paid_offering_code) return null;
+  const offerings = await db<Array<{
+    paid_offering_id: string;
+    paid_offering_name: string;
+    bonus_offering_id: string;
+  }>>`
+    SELECT paid.id AS paid_offering_id, paid.display_name AS paid_offering_name,
+      bonus.id AS bonus_offering_id
+    FROM offerings paid
+    JOIN offerings bonus ON bonus.workspace_id = paid.workspace_id
+    WHERE paid.workspace_id = ${input.workspace_id}::uuid
+      AND paid.code = ${input.paid_offering_code}
+      AND paid.status = 'active'
+      AND bonus.code = ${input.bonus_offering_code}
+      AND bonus.status = 'active'
+      AND bonus.id <> paid.id
+    LIMIT 1
+  `;
+  const offering = offerings[0];
+  if (!offering) return null;
+  const promotionCode = dynamicPromotionCode(
+    input.paid_offering_code,
+    input.bonus_offering_code,
+  );
+  const promotions = await db<Array<{ id: string }>>`
+    INSERT INTO promotions (
+      workspace_id, promotion_code, paid_offering_id, channels, active
+    ) VALUES (
+      ${input.workspace_id}::uuid, ${promotionCode}, ${offering.paid_offering_id}::uuid,
+      ARRAY['text']::text[], true
+    )
+    ON CONFLICT (workspace_id, promotion_code) DO UPDATE SET
+      active = true,
+      channels = ARRAY['text']::text[],
+      paid_offering_id = EXCLUDED.paid_offering_id,
+      updated_at = now()
+    RETURNING id
+  `;
+  const promotion = promotions[0];
+  if (!promotion) return null;
+  await db`
+    INSERT INTO promotion_bonus_offerings (
+      promotion_id, workspace_id, offering_id, position
+    ) VALUES (
+      ${promotion.id}::uuid, ${input.workspace_id}::uuid,
+      ${offering.bonus_offering_id}::uuid, 1
+    )
+    ON CONFLICT (promotion_id, offering_id) DO NOTHING
+  `;
+  return {
+    id: promotion.id,
+    promotion_code: promotionCode,
+    paid_offering_id: offering.paid_offering_id,
+    paid_offering_name: offering.paid_offering_name,
+    max_redemptions_per_contact: 1,
+  };
 }
 
 export async function commitCommercialActionV1(
@@ -137,7 +216,37 @@ export async function commitCommercialActionV1(
     return { offer_id: accepted[0]?.id ?? null, followup: null };
   }
 
-  const promotion = await activePromotion(db, input);
+  if (input.action.type === 'request_promotion_review') {
+    const accepted = await db<Array<{ id: string }>>`
+      SELECT offer.id
+      FROM promotion_offers offer
+      JOIN offerings paid ON paid.id = offer.paid_offering_id
+      WHERE offer.workspace_id = ${input.workspace_id}::uuid
+        AND offer.contact_id = ${input.contact_id}::uuid
+        AND offer.conversation_id = ${input.conversation_id}::uuid
+        AND paid.workspace_id = offer.workspace_id
+        AND paid.code = ${input.paid_offering_code}
+        AND offer.status = 'accepted'
+        AND offer.payment_id IS NULL
+        AND offer.bonus_snapshot_sealed_at IS NOT NULL
+        AND (offer.expires_at IS NULL OR offer.expires_at > now())
+        AND (SELECT count(*) FROM promotion_offer_bonus_offerings snapshot
+          WHERE snapshot.offer_id = offer.id) BETWEEN 1 AND 3
+      ORDER BY offer.accepted_at DESC NULLS LAST, offer.created_at DESC
+      LIMIT 1
+    `;
+    if (accepted[0]) return { offer_id: accepted[0].id, followup: null };
+  }
+
+  const promotion = input.action.type === 'request_promotion_review'
+    && input.action.bonus_offering_code
+    ? await selectedCoursePromotion(db, {
+        workspace_id: input.workspace_id,
+        paid_offering_code: input.paid_offering_code,
+        bonus_offering_code: input.action.bonus_offering_code,
+        channel: 'text',
+      })
+    : await activePromotion(db, input);
   if (!promotion) return { offer_id: null, followup: null };
 
   const kind: FollowupKind = input.action.type === 'request_promotion_review'
@@ -182,6 +291,17 @@ export async function commitCommercialActionV1(
 
   let offer: { id: string } | undefined;
   if (kind === 'promotion_review') {
+    await db`
+      UPDATE promotion_offers prior
+      SET status = 'cancelled', cancel_reason = 'REPLACED_BY_NEW_REVIEW'
+      WHERE prior.workspace_id = ${input.workspace_id}::uuid
+        AND prior.contact_id = ${input.contact_id}::uuid
+        AND prior.conversation_id = ${input.conversation_id}::uuid
+        AND prior.paid_offering_id = ${promotion.paid_offering_id}::uuid
+        AND prior.promotion_id <> ${promotion.id}::uuid
+        AND prior.payment_id IS NULL
+        AND prior.status IN ('pending_review','offered','accepted')
+    `;
     const inserted = await db<Array<{ id: string }>>`
       INSERT INTO promotion_offers (
         workspace_id, contact_id, conversation_id, promotion_id, paid_offering_id,
@@ -198,6 +318,30 @@ export async function commitCommercialActionV1(
       RETURNING id
     `;
     offer = inserted[0];
+    if (offer && input.action.type === 'request_promotion_review'
+      && input.action.bonus_offering_code) {
+      const snapshots = await db<Array<{ id: string }>>`
+        INSERT INTO promotion_offer_bonus_offerings (
+          offer_id, promotion_id, offering_id, promotion_code_snapshot,
+          offering_code_snapshot, offering_display_name_snapshot, position
+        )
+        SELECT ${offer.id}::uuid, promotion.id, bonus.id, promotion.promotion_code,
+          bonus.code, bonus.display_name, 1
+        FROM promotions promotion
+        JOIN offerings bonus ON bonus.workspace_id = promotion.workspace_id
+        WHERE promotion.id = ${promotion.id}::uuid
+          AND bonus.code = ${input.action.bonus_offering_code}
+          AND bonus.status = 'active'
+          AND bonus.id <> promotion.paid_offering_id
+        ON CONFLICT DO NOTHING
+        RETURNING id
+      `;
+      if (snapshots.length !== 1) return { offer_id: null, followup: null };
+      await db`
+        UPDATE promotion_offers SET bonus_snapshot_sealed_at = now()
+        WHERE id = ${offer.id}::uuid AND bonus_snapshot_sealed_at IS NULL
+      `;
+    }
   } else {
     const inserted = await db<Array<{ id: string }>>`
       INSERT INTO promotion_offers (

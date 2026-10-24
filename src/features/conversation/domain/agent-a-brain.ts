@@ -138,6 +138,7 @@ export interface AgentAContextV1 {
       readonly may_accept_offer: boolean;
       readonly may_send_promoted_payment: boolean;
       readonly promotion_code: string | null;
+      readonly bonus_selection_mode?: 'configured' | 'any_active_course';
       readonly interest_offering_code?: string | null;
       readonly bonus_offerings: ReadonlyArray<{
         readonly code: string;
@@ -156,7 +157,11 @@ export type AgentAProposedActionV1 =
   | { readonly type: 'none' }
   | { readonly type: 'request_call_now'; readonly reason: 'direct_request' | 'accepted_offer' }
   | { readonly type: 'schedule_price_objection_checkin'; readonly reason: 'price_objection' }
-  | { readonly type: 'request_promotion_review'; readonly reason: 'persistent_price_objection' }
+  | {
+      readonly type: 'request_promotion_review';
+      readonly reason: 'persistent_price_objection';
+      readonly bonus_offering_code?: string;
+    }
   | { readonly type: 'accept_promotion' }
   | {
       /** Temporary, hidden Stripe verification checkout. Never a commercial plan. */
