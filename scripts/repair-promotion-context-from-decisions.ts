@@ -10,12 +10,13 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-
 export interface PromotionContextRepairArgsV1 {
   readonly conversation_id: string;
   readonly offering_code: string;
-  readonly from_turn_id: string;
+  readonly evidence_turn_ids: readonly string[];
   readonly apply: boolean;
 }
 
 export function parsePromotionContextRepairArgsV1(argv: readonly string[]): PromotionContextRepairArgsV1 {
   const values = new Map<string, string>();
+  const evidenceTurnIds: string[] = [];
   let apply = false;
   for (let index = 0; index < argv.length; index += 1) {
     const token = argv[index]!;
@@ -23,27 +24,29 @@ export function parsePromotionContextRepairArgsV1(argv: readonly string[]): Prom
       apply = true;
       continue;
     }
-    if (!['--conversation-id', '--offering-code', '--from-turn-id'].includes(token)) {
+    if (!['--conversation-id', '--offering-code', '--evidence-turn-id'].includes(token)) {
       throw new Error(`REPAIR_UNKNOWN_ARGUMENT:${token}`);
     }
     const value = argv[index + 1];
     if (!value || value.startsWith('--')) throw new Error(`REPAIR_ARGUMENT_VALUE_REQUIRED:${token}`);
-    values.set(token, value);
+    if (token === '--evidence-turn-id') evidenceTurnIds.push(value);
+    else values.set(token, value);
     index += 1;
   }
   const conversationId = values.get('--conversation-id');
   const offeringCode = values.get('--offering-code');
-  const fromTurnId = values.get('--from-turn-id');
   if (!conversationId) throw new Error('REPAIR_CONVERSATION_ID_REQUIRED');
   if (!UUID.test(conversationId)) throw new Error('REPAIR_CONVERSATION_ID_INVALID');
   if (!offeringCode) throw new Error('REPAIR_OFFERING_CODE_REQUIRED');
   if (!/^[a-z0-9][a-z0-9_-]{1,127}$/u.test(offeringCode)) throw new Error('REPAIR_OFFERING_CODE_INVALID');
-  if (!fromTurnId) throw new Error('REPAIR_FROM_TURN_ID_REQUIRED');
-  if (!UUID.test(fromTurnId)) throw new Error('REPAIR_FROM_TURN_ID_INVALID');
+  if (evidenceTurnIds.length === 0) throw new Error('REPAIR_EVIDENCE_TURN_ID_REQUIRED');
+  if (evidenceTurnIds.some((turnId) => !UUID.test(turnId))) {
+    throw new Error('REPAIR_EVIDENCE_TURN_ID_INVALID');
+  }
   return {
     conversation_id: conversationId,
     offering_code: offeringCode,
-    from_turn_id: fromTurnId,
+    evidence_turn_ids: [...new Set(evidenceTurnIds)],
     apply,
   };
 }
@@ -55,12 +58,18 @@ interface AcceptedDecisionEvidenceRowV1 {
   readonly turn_id: string;
   readonly decision_kind: string;
   readonly outbound_message_id: string | null;
+  readonly selected_offering_code: string | null;
   readonly memory_candidates: unknown;
 }
 
 export function collectAcceptedPriceObjectionTurnIdsV1(
   rows: readonly AcceptedDecisionEvidenceRowV1[],
-  target: { readonly workspace_id: string; readonly conversation_id: string; readonly contact_id: string },
+  target: {
+    readonly workspace_id: string;
+    readonly conversation_id: string;
+    readonly contact_id: string;
+    readonly offering_code: string;
+  },
 ): string[] {
   const result: string[] = [];
   for (const row of rows) {
@@ -68,6 +77,10 @@ export function collectAcceptedPriceObjectionTurnIdsV1(
       || row.conversation_id !== target.conversation_id
       || row.contact_id !== target.contact_id) {
       throw new Error('REPAIR_SCOPE_MISMATCH');
+    }
+    if (row.selected_offering_code !== null
+      && row.selected_offering_code !== target.offering_code) {
+      throw new Error('REPAIR_INTERVENING_COURSE_CHANGE');
     }
     if (!['reply', 'clarify'].includes(row.decision_kind) || row.outbound_message_id === null) continue;
     if (!Array.isArray(row.memory_candidates)) continue;
@@ -141,14 +154,6 @@ async function main(): Promise<void> {
     `;
     if (targets.length !== 1) throw new Error('REPAIR_TARGET_NOT_UNIQUE');
     const target = targets[0]!;
-    const boundaries = await db<Array<{ conversation_seq: string | number }>>`
-      SELECT conversation_seq
-      FROM messages
-      WHERE id = ${args.from_turn_id}::uuid
-        AND conversation_id = ${args.conversation_id}::uuid
-        AND direction = 'inbound'
-    `;
-    if (boundaries.length !== 1) throw new Error('REPAIR_FROM_TURN_OUT_OF_SCOPE');
     const rows = await db<AcceptedDecisionEvidenceRowV1[]>`
       SELECT
         ${target.workspace_id}::uuid AS workspace_id,
@@ -157,16 +162,34 @@ async function main(): Promise<void> {
         decision.turn_id,
         decision.decision_kind,
         decision.outbound_message_id,
+        transition.selected_offering_code,
         decision.memory_candidates
       FROM agent_decisions decision
       JOIN messages turn ON turn.id = decision.turn_id
+      LEFT JOIN LATERAL (
+        SELECT event.selected_offering_code
+        FROM conversation_sales_context_state_events_v1 event
+        WHERE event.workspace_id = ${target.workspace_id}::uuid
+          AND event.conversation_id = turn.conversation_id
+          AND event.contact_id = turn.contact_id
+          AND event.source_turn_id = decision.turn_id
+        ORDER BY event.state_version DESC
+        LIMIT 1
+      ) transition ON true
       WHERE turn.conversation_id = ${args.conversation_id}::uuid
         AND turn.contact_id = ${target.contact_id}::uuid
         AND turn.direction = 'inbound'
-        AND turn.conversation_seq >= ${boundaries[0]!.conversation_seq}
+        AND decision.turn_id = ANY(${args.evidence_turn_ids}::uuid[])
       ORDER BY turn.conversation_seq, decision.created_at, decision.id
     `;
-    const evidence = collectAcceptedPriceObjectionTurnIdsV1(rows, target);
+    const loadedTurnIds = new Set(rows.map((row) => row.turn_id));
+    if (args.evidence_turn_ids.some((turnId) => !loadedTurnIds.has(turnId))) {
+      throw new Error('REPAIR_EVIDENCE_TURN_OUT_OF_SCOPE');
+    }
+    const evidence = collectAcceptedPriceObjectionTurnIdsV1(rows, {
+      ...target,
+      offering_code: args.offering_code,
+    });
     const plan = derivePromotionContextRepairPlanV1({
       workspace_id: target.workspace_id,
       conversation_id: target.conversation_id,

@@ -26,6 +26,17 @@ function regexLiteral(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
 }
 
+function isEmploymentOfferTextV1(value: string): boolean {
+  return /\bofertas?\s+(?:laborales?|de\s+(?:trabajo|empleo))\b/u.test(value)
+    || /\b(?:trabajo|empleo)\b[^.!?\n]{0,32}\bofertas?\b/u.test(value);
+}
+
+function isPromotionOptOutTextV1(value: string): boolean {
+  return /\bno\s+quiero\b[^.!?\n]{0,40}\b(?:recibir|ver|que\s+me\s+(?:mandes|envies|ofrezcas))\b[^.!?\n]{0,24}\bofertas?\b/u.test(value)
+    || /\bno\s+me\s+(?:mandes|envies)\b[^.!?\n]{0,24}\bofertas?\b/u.test(value)
+    || /\bno\s+me\s+ofrec\p{L}*\s+mas\s+ofertas?\b/u.test(value);
+}
+
 function authorizedCourseBonusClaimV1(
   text: string,
   authorizedNames: readonly string[],
@@ -52,6 +63,9 @@ function authorizedCourseBonusClaimV1(
 
 export function isPriceObjectionTextV1(text: string): boolean {
   const value = normalized(text);
+  if (isOfferTimingQuestionTextV1(value)
+    || isEmploymentOfferTextV1(value)
+    || isPromotionOptOutTextV1(value)) return false;
   return /\b(?:car[oa]|costos[oa]|fuera\s+de\s+(?:mi\s+)?presupuesto|no\s+me\s+alcanza|no\s+llego|no\s+(?:puedo|podria|podre)\s+(?:pagar|abonarlo|hacer\s+ese\s+gasto)|se\s+me\s+va|much[oa]\s+dinero|presupuesto\b[^.!?\n]{0,32}\b(?:ajustado|limitado|no\s+(?:me\s+)?(?:alcanza|permite)))\b/u.test(value)
     || /\b(?:(?:hay|tenes|tienes|ofreces|haces|me\s+haces|puedes|podes)\b[^.!?\n]{0,40}\b(?:descuentos?|rebajas?|promos?|promocion(?:es)?|bonificacion(?:es)?|ofertas?)|(?:bajar|reducir)\b[^.!?\n]{0,24}\b(?:el\s+)?precio)\b/u.test(value);
 }
@@ -118,6 +132,7 @@ export function evaluateSalesObjectionTurnV1(
   const priceObjection = isPriceObjectionTextV1(current);
   const priceQuestion = isPriceQuestionTextV1(current);
   const paymentTermsQuestion = isPaymentTermsQuestionTextV1(current);
+  if (isOfferTimingQuestionTextV1(current)) return { kind: 'offer_timing_question' };
   if (priceObjection && (priceQuestion || paymentTermsQuestion)) {
     return { kind: 'price_question_with_objection' };
   }
@@ -129,7 +144,6 @@ export function evaluateSalesObjectionTurnV1(
   }
   if (isPaymentFrictionTextV1(current)) return { kind: 'payment_friction' };
   if (paymentTermsQuestion) return { kind: 'payment_terms_question' };
-  if (isOfferTimingQuestionTextV1(current)) return { kind: 'offer_timing_question' };
   if (isPriceQuestionTextV1(current)) return { kind: 'price_question' };
   if (isTimeOrScheduleObjectionTextV1(current)) return { kind: 'time_or_schedule_objection' };
   if (isReadinessOrRequirementsObjectionTextV1(current)) return { kind: 'readiness_or_requirements_objection' };

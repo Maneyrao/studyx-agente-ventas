@@ -60,6 +60,7 @@ describe('evaluateSalesObjectionTurnV1', () => {
     ['Se me quedó la tarjeta en el cajero', 'payment_friction', null],
     ['Ahorita recargo la tarjeta', 'payment_friction', null],
     ['Hasta cuándo es válida la oferta?', 'offer_timing_question', null],
+    ['Hasta cuándo tienes esa oferta?', 'offer_timing_question', null],
   ] satisfies ReadonlyArray<readonly [string, string, readonly string[] | null]>)('classifies %s as %s', (text, expected, priorInbound) => {
     expect(evaluateSalesObjectionTurnV1(contextWithCurrentMessage(text, priorInbound ?? []))).toEqual({
       kind: expected,
@@ -84,6 +85,8 @@ describe('evaluateSalesObjectionTurnV1', () => {
     'Me interesa Inglés 1',
     'No quiero recibir ofertas',
     'Vi una oferta laboral de fotografía',
+    'Hay ofertas laborales?',
+    'No me ofrecés más ofertas',
   ])('does not force an objection category for %s', (text) => {
     expect(evaluateSalesObjectionTurnV1(contextWithCurrentMessage(text))).toEqual({ kind: 'none' });
   });

@@ -11,15 +11,19 @@ const target = {
 };
 
 describe('promotion-context repair command', () => {
-  it('requires an explicit conversation, course and chronology boundary and defaults to dry-run', () => {
+  it('requires an explicit conversation, course and exact reviewed evidence turns and defaults to dry-run', () => {
     expect(parsePromotionContextRepairArgsV1([
       '--conversation-id', target.conversation_id,
       '--offering-code', 'fotografia_profesional',
-      '--from-turn-id', '00000000-0000-4000-8000-000000000010',
+      '--evidence-turn-id', '00000000-0000-4000-8000-000000000010',
+      '--evidence-turn-id', '00000000-0000-4000-8000-000000000011',
     ])).toEqual({
       conversation_id: target.conversation_id,
       offering_code: 'fotografia_profesional',
-      from_turn_id: '00000000-0000-4000-8000-000000000010',
+      evidence_turn_ids: [
+        '00000000-0000-4000-8000-000000000010',
+        '00000000-0000-4000-8000-000000000011',
+      ],
       apply: false,
     });
     expect(() => parsePromotionContextRepairArgsV1([
@@ -28,7 +32,7 @@ describe('promotion-context repair command', () => {
     expect(() => parsePromotionContextRepairArgsV1([
       '--conversation-id', target.conversation_id,
       '--offering-code', 'fotografia_profesional',
-    ])).toThrow('REPAIR_FROM_TURN_ID_REQUIRED');
+    ])).toThrow('REPAIR_EVIDENCE_TURN_ID_REQUIRED');
   });
 
   it('uses only scoped accepted structured objection evidence and never customer prose', () => {
@@ -38,6 +42,7 @@ describe('promotion-context repair command', () => {
         turn_id: '00000000-0000-4000-8000-000000000010',
         decision_kind: 'reply',
         outbound_message_id: '00000000-0000-4000-8000-000000000020',
+        selected_offering_code: 'fotografia_profesional',
         response: 'El precio parece caro.',
         memory_candidates: [{
           type: 'objection', key: 'price_objection', source_quote: 'me parece caro',
@@ -48,6 +53,7 @@ describe('promotion-context repair command', () => {
         turn_id: '00000000-0000-4000-8000-000000000011',
         decision_kind: 'reply',
         outbound_message_id: '00000000-0000-4000-8000-000000000021',
+        selected_offering_code: null,
         response: 'El cliente volvió a decir que era caro.',
         memory_candidates: [],
       },
@@ -56,6 +62,7 @@ describe('promotion-context repair command', () => {
         turn_id: '00000000-0000-4000-8000-000000000012',
         decision_kind: 'suppress',
         outbound_message_id: null,
+        selected_offering_code: null,
         response: null,
         memory_candidates: [{
           type: 'objection', key: 'price_objection', source_quote: 'caro',
@@ -63,11 +70,17 @@ describe('promotion-context repair command', () => {
       },
     ];
 
-    expect(collectAcceptedPriceObjectionTurnIdsV1(rows, target)).toEqual([
+    expect(collectAcceptedPriceObjectionTurnIdsV1(rows, {
+      ...target,
+      offering_code: 'fotografia_profesional',
+    })).toEqual([
       '00000000-0000-4000-8000-000000000010',
     ]);
     expect(() => collectAcceptedPriceObjectionTurnIdsV1([{
       ...rows[0], workspace_id: '00000000-0000-4000-8000-000000000099',
-    }], target)).toThrow('REPAIR_SCOPE_MISMATCH');
+    }], {...target, offering_code:'fotografia_profesional'})).toThrow('REPAIR_SCOPE_MISMATCH');
+    expect(() => collectAcceptedPriceObjectionTurnIdsV1([{
+      ...rows[0], selected_offering_code: 'ingles_1',
+    }], {...target, offering_code:'fotografia_profesional'})).toThrow('REPAIR_INTERVENING_COURSE_CHANGE');
   });
 });
