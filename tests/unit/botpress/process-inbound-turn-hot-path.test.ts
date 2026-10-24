@@ -2324,9 +2324,11 @@ describe('processInboundTurn hot path', () => {
   });
 
   it.each([
-    { finalBackendRejected: false },
-    { finalBackendRejected: true },
-  ])('uses the remaining third generation after a local repair (final rejection: $finalBackendRejected)', async ({ finalBackendRejected }) => {
+    { finalBackendRejected: false, initialProviderRequests: 1, precommitProviderRequests: 1 },
+    { finalBackendRejected: true, initialProviderRequests: 1, precommitProviderRequests: 1 },
+    { finalBackendRejected: false, initialProviderRequests: 2, precommitProviderRequests: 1 },
+    { finalBackendRejected: false, initialProviderRequests: 1, precommitProviderRequests: 2 },
+  ])('uses the remaining third generation after a local repair (final rejection: $finalBackendRejected, initial provider requests: $initialProviderRequests, precommit provider requests: $precommitProviderRequests)', async ({ finalBackendRejected, initialProviderRequests, precommitProviderRequests }) => {
     const claimed = claimedResponse() as unknown as ClaimedTurn;
     claimed.features = {
       agent_loop_v3_mode: 'off',
@@ -2379,8 +2381,15 @@ describe('processInboundTurn hot path', () => {
       context: AgentAContextV1;
       on_provider_request?: () => void;
     }) => {
-      input.on_provider_request?.();
       generation += 1;
+      const providerRequests = generation === 1
+        ? initialProviderRequests
+        : generation === 2
+          ? precommitProviderRequests
+          : 1;
+      for (let attempt = 0; attempt < providerRequests; attempt += 1) {
+        input.on_provider_request?.();
+      }
       const corrected = generation === 3;
       return {
         proposal: {

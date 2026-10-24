@@ -1033,6 +1033,22 @@ export const processInboundTurn = new Workflow({
       physicalAgentARequests += 1
       agentAGenerationAttempts = Math.max(agentAGenerationAttempts, physicalAgentARequests) as 1 | 2 | 3
     }
+    const accountAgentAPrecommitRepairRequest = () => {
+      // Keep the third and final physical request available for the
+      // authoritative backend receipt. An internal JSON/schema retry must not
+      // consume the only request that can correct a durable business-rule
+      // rejection and leave the customer without a reply.
+      if (physicalAgentARequests >= 2) {
+        safeLog('studyx.turn.agent_a_precommit_repair_budget_reserved', {
+          trace_id: input.trace_id,
+          turn_id: owned.turn_id,
+          physical_agent_a_requests: physicalAgentARequests,
+          repair_budget_version: 'backend-reserve-v1',
+        })
+        throw new Error('PLANNERLESS_PROPOSAL_REJECTED:ACTION_NOT_AUTHORIZED:backend_repair_reserved')
+      }
+      accountAgentAProviderRequest()
+    }
     let agentAContinuationFailure: unknown = null
     let callOfferAudit: {
       readonly call_offer_count_before: 0 | 1 | 2
@@ -1332,7 +1348,7 @@ export const processInboundTurn = new Workflow({
                   'repair-agent-a-turn-proposal-v2',
                   () => continueAgentAAfterActionFeedbackV1({
                     context: agentABrainContext,
-                    on_provider_request: accountAgentAProviderRequest,
+                    on_provider_request: accountAgentAPrecommitRepairRequest,
                     rejection,
                     effects_allowed: repairEffectsAllowed,
                     apiKey: secrets.DEEPSEEK_API_KEY as string,
@@ -1362,7 +1378,7 @@ export const processInboundTurn = new Workflow({
               effectiveGenerated = await step('continue-agent-a-after-authorization-result-v2',
                 () => continueAgentAAfterActionFeedbackV1({
                   context: agentABrainContext, rejection: resolved.rejection!,
-                  on_provider_request: accountAgentAProviderRequest,
+                  on_provider_request: accountAgentAPrecommitRepairRequest,
                   apiKey: secrets.DEEPSEEK_API_KEY as string, signal,
                   generate: generateDeepSeekAgentATurnProposalV1,
                   model: typeof configuration.agentABrainDeepSeekModel === 'string'
@@ -2141,6 +2157,15 @@ export const processInboundTurn = new Workflow({
           && agentAGenerationAttempts < 3
           && typeof deepSeekApiKey === 'string'
           && deepSeekApiKey.length > 0
+        safeLog('studyx.turn.agent_a_backend_repair_budget', {
+          trace_id: input.trace_id,
+          turn_id: owned.turn_id,
+          physical_agent_a_requests: physicalAgentARequests,
+          generation_attempts: agentAGenerationAttempts,
+          may_repair: mayRepairWithAgentA,
+          effects_allowed: repairEffectsAllowed,
+          repair_budget_version: 'backend-reserve-v1',
+        })
         let continuationFailure: ReturnType<typeof classifyAgentAAttemptFailure> | null = null
 
         if (mayRepairWithAgentA) {
