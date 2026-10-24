@@ -53,6 +53,7 @@ describe('post-sale trigger', () => {
     });
     const request = JSON.parse(String(modelFetch.mock.calls[0]?.[1]?.body));
     expect(request.instructions).toContain('personalidad');
+    expect(request.instructions).toContain('No nombres cursos bonificados');
     expect(request.input).toContain('Marketing Digital');
   });
 
@@ -107,6 +108,7 @@ describe('post-sale trigger', () => {
     expect(requestStudyxJson).toHaveBeenCalledTimes(3);
     expect(requestStudyxJson.mock.calls[2]?.[0]).toMatchObject({
       path: `/api/agent/post-sale/${notificationId}/deliver`,
+      idempotencyKey: `post-sale-deliver:${notificationId}:${claimToken}`,
       body: { narrative: fallbackPostSaleNarrative({ kind: 'access_ready', new_user: true, existing_user: false }) },
     });
     expect(warning).toHaveBeenCalledWith(expect.stringContaining('POST_SALE_UNAUTHORIZED_PROSE'));

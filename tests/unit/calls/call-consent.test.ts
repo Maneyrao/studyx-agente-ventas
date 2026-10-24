@@ -136,5 +136,8 @@ describe('semantic voice consent authorization', () => {
     expect(selectAuthorizedVoiceConsentSourceIndex({
       mode: 'direct_request', texts: ['Coordinemos una comunicación por voz', 'gracias'],
     })).toBe(1);
+    expect(selectAuthorizedVoiceConsentSourceIndex({
+      mode: 'direct_request', texts: ['sí, dale', 'gracias'],
+    })).toBe(0);
   });
 });

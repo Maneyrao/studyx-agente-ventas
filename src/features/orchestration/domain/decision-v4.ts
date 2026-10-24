@@ -67,6 +67,20 @@ export interface SendTestPaymentLinkAction {
   offering_sku: string;
 }
 
+export interface SchedulePriceObjectionCheckinAction {
+  type: 'schedule_price_objection_checkin';
+  reason: 'price_objection';
+}
+
+export interface RequestPromotionReviewAction {
+  type: 'request_promotion_review';
+  reason: 'persistent_price_objection';
+}
+
+export interface AcceptPromotionAction {
+  type: 'accept_promotion';
+}
+
 /**
  * The executable v4 union. Narrower than v3's on purpose: v4 only carries
  * actions the backend actually executes or records. The dormant v3 shapes
@@ -78,6 +92,9 @@ export type DecisionV4BusinessAction =
   | { type: 'log_objection'; objection_key: string; quote: string }
   | RequestCallNowAction
   | SendTestPaymentLinkAction
+  | SchedulePriceObjectionCheckinAction
+  | RequestPromotionReviewAction
+  | AcceptPromotionAction
   | SendPaymentLinkAction;
 
 export interface DecisionV4 {
@@ -131,7 +148,7 @@ function parseRequestCallNow(value: Record<string, unknown>): RequestCallNowActi
   return action;
 }
 
-const SEND_PAYMENT_LINK_FIELDS = new Set(['type', 'plan_code', 'offering_sku']);
+const SEND_PAYMENT_LINK_FIELDS = new Set(['type', 'plan_code', 'offering_sku', 'promotion_code']);
 const SEND_TEST_PAYMENT_LINK_FIELDS = new Set(['type', 'offering_sku']);
 
 // A canonical offering sku is a short opaque slug. Anything shaped like a
@@ -167,10 +184,19 @@ function parseSendPaymentLinkAction(value: Record<string, unknown>): SendPayment
     }
     offering_sku = value.offering_sku;
   }
+  let promotionCode: string | undefined;
+  if (value.promotion_code !== undefined) {
+    if (typeof value.promotion_code !== 'string'
+      || !/^[a-z0-9][a-z0-9_-]{0,63}$/.test(value.promotion_code)) {
+      throw new DecisionValidationError('INVALID_BUSINESS_ACTION');
+    }
+    promotionCode = value.promotion_code;
+  }
   return {
     type: 'send_payment_link',
     plan_code: value.plan_code as PaymentPlanCode,
     offering_sku,
+    ...(promotionCode ? { promotion_code: promotionCode } : {}),
   };
 }
 
@@ -197,6 +223,26 @@ function parseV4BusinessAction(value: unknown): DecisionV4BusinessAction | null 
   }
   if (value.type === 'send_test_payment_link') {
     return parseSendTestPaymentLinkAction(value);
+  }
+  if (value.type === 'schedule_price_objection_checkin') {
+    if (Object.keys(value).some((key) => key !== 'type' && key !== 'reason')
+      || value.reason !== 'price_objection') {
+      throw new DecisionValidationError('INVALID_BUSINESS_ACTION');
+    }
+    return { type: 'schedule_price_objection_checkin', reason: 'price_objection' };
+  }
+  if (value.type === 'request_promotion_review') {
+    if (Object.keys(value).some((key) => key !== 'type' && key !== 'reason')
+      || value.reason !== 'persistent_price_objection') {
+      throw new DecisionValidationError('INVALID_BUSINESS_ACTION');
+    }
+    return { type: 'request_promotion_review', reason: 'persistent_price_objection' };
+  }
+  if (value.type === 'accept_promotion') {
+    if (Object.keys(value).some((key) => key !== 'type')) {
+      throw new DecisionValidationError('INVALID_BUSINESS_ACTION');
+    }
+    return { type: 'accept_promotion' };
   }
   if (value.type !== 'mark_hot_lead' && value.type !== 'log_objection') {
     throw new DecisionValidationError('INVALID_BUSINESS_ACTION');

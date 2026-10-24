@@ -336,6 +336,11 @@ const ROBOTIC_FALLBACK_PATTERNS_V1 = [
   /no pude procesar tu consulta en este momento/iu,
 ] as const;
 
+const INTERNAL_GUARDRAIL_COPY_PATTERNS_V1 = [
+  /\bno\s+te\s+voy\s+a\s+inventar(?:te)?\b/iu,
+  /\bno\s+voy\s+a\s+inventarte\b/iu,
+] as const;
+
 function normalizedReplyTokens(value: string): Set<string> {
   return new Set(value
     .normalize('NFD')
@@ -372,6 +377,9 @@ export function evaluateConversationNaturalnessV1(result: ConversationCaseResult
     if (reply.split(/\r?\n/u).length > 6) failures.add('too_many_lines');
     if (ROBOTIC_FALLBACK_PATTERNS_V1.some((pattern) => pattern.test(reply))) {
       failures.add('robotic_fallback_copy');
+    }
+    if (INTERNAL_GUARDRAIL_COPY_PATTERNS_V1.some((pattern) => pattern.test(reply))) {
+      failures.add('internal_guardrail_copy');
     }
   }
 

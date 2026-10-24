@@ -44,7 +44,7 @@ describe('conversation composer V1', () => {
       plan, fact_refs: refs, customer_goal: 'Aprender a administrar redes',
     });
     expect(CONVERSATION_COMPOSER_PROMPT_VERSION).toBe('studyx-conversation-composer-v2');
-    expect(STUDYX_SALES_BEHAVIOR_VERSION).toBe('studyx-sales-behavior-v1');
+    expect(STUDYX_SALES_BEHAVIOR_VERSION).toBe('studyx-sales-behavior-v2');
     expect(instructions).toContain(`<studyx_sales_behavior version="${STUDYX_SALES_BEHAVIOR_VERSION}">`);
     expect(instructions).toContain('Respondé primero la consulta actual');
     expect(instructions).toContain('una sola pregunta o CTA');

@@ -67,6 +67,15 @@ import {
   stripUnauthorizedUrls,
 } from '@/features/payments/domain/payment-link';
 import {
+  readCourseBonusCapabilityV1,
+  recordPromotionConversationContextV1,
+} from '@/features/promotions/application/read-course-bonus-capability';
+import {
+  cancelOpenCourseBonusOffersForCourseChangeV1,
+  commitCommercialActionV1,
+  type ScheduledCommercialFollowupV1,
+} from '@/features/promotions/application/commercial-followup-service';
+import {
   classifyCurrentPaymentIntent,
   deriveDeferredPaymentChoiceFromBatch,
   derivePaymentPlanSelectionFromBatch,
@@ -206,6 +215,8 @@ export interface CommitDecisionResult {
    * with it idempotently, and never learns the phone number.
    */
   call_request: ReservedCallRequest | null;
+  /** Durable events to schedule only after the ordinary outbound is accepted. */
+  commercial_followups: ScheduledCommercialFollowupV1[];
   /** Structured evaluator/observability evidence; never inferred from copy. */
   conversation_effects?: {
     readonly technical_fallback_reason:
@@ -358,6 +369,21 @@ async function loadDecisionOutbounds(
     part_index: Number(row.part_index),
     part_count: rows.length,
   }));
+}
+
+async function loadDecisionCommercialFollowups(
+  decision: DecisionRow,
+  db: DbClient,
+): Promise<ScheduledCommercialFollowupV1[]> {
+  const rows = await db<Array<{ id: string; kind: ScheduledCommercialFollowupV1['kind']; due_at: Date }>>`
+    SELECT followup.id, followup.kind, followup.due_at
+    FROM promotion_offers offer
+    JOIN course_bonus_followups followup ON followup.offer_id = offer.id
+    WHERE offer.source_turn_id = ${decision.turn_id}::uuid
+      AND followup.status IN ('pending','processing')
+    ORDER BY followup.created_at
+  `;
+  return rows.map((row) => ({ id: row.id, kind: row.kind, due_at: row.due_at.toISOString() }));
 }
 
 async function loadTurnPolicy(turnId: string, db: DbClient): Promise<TurnPolicyRow> {
@@ -527,6 +553,7 @@ async function duplicateDecisionResult(
 ): Promise<CommitDecisionResult> {
   if (existing.payload_hash_hex !== payloadHash) throw new DecisionConflictError();
   const outbounds = await loadDecisionOutbounds(existing, db);
+  const commercialFollowups = await loadDecisionCommercialFollowups(existing, db);
   const firstOutbound = outbounds[0] ?? null;
   return {
     status: 'duplicate',
@@ -544,6 +571,7 @@ async function duplicateDecisionResult(
     } : null,
     outbounds,
     call_request: callRequest,
+    commercial_followups: commercialFollowups,
   };
 }
 
@@ -655,6 +683,7 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
           outbound: null,
           outbounds: [],
           call_request: null,
+          commercial_followups: [],
         };
       }
     }
@@ -787,6 +816,13 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
               WHERE batch_id = ${turn.batch_id}::uuid AND direction = 'inbound'
               ORDER BY conversation_seq ASC, created_at ASC, id ASC
             `;
+        const courseBonusCapability = await readCourseBonusCapabilityV1({
+          workspace_slug: workspaceSlug,
+          contact_id: turn.contact_id,
+          conversation_id: turn.conversation_id,
+          channel: 'text',
+          selected_offering_code: pipelineStateBefore?.selected_offering_code ?? null,
+        }, { db });
         preparedAgentTurn = await prepareAgentTurnV2({
           turn: {
             id: turn.id,
@@ -802,6 +838,7 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
           current_customer_messages: currentMessages.map((message) => message.content),
           business_context: rawBusiness ? buildBusinessContextView(rawBusiness) : null,
           catalog_index: rawCatalogIndex ? buildCatalogIndexView(rawCatalogIndex) : null,
+          course_bonus_capability: courseBonusCapability,
         }, {
           state_store: new PostgresConversationStateStoreV1(db),
           call_facts: new PostgresOrchestrationStore(db),
@@ -1037,6 +1074,15 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
           AND ad.business_action ->> 'offering_sku' = ${action.offering_sku}
           AND COALESCE(prior_payment.environment, 'live') = ${stripePaymentLinkEnvironment(materialized.block.url) ?? 'live'}
           AND (prior_payment.id IS NULL OR prior_payment.status NOT IN ('failed', 'expired', 'refunded'))
+          AND COALESCE((
+            SELECT array_agg(DISTINCT snapshot.promotion_code_snapshot
+              ORDER BY snapshot.promotion_code_snapshot)
+            FROM payment_bonus_offerings snapshot
+            WHERE snapshot.payment_id = prior_payment.id
+          ), ARRAY[]::text[]) = CASE
+            WHEN ${action.promotion_code ?? null}::text IS NULL THEN ARRAY[]::text[]
+            ELSE ARRAY[${action.promotion_code ?? null}::text]
+          END
         ORDER BY ad.created_at DESC
         LIMIT 1
       `;
@@ -1065,6 +1111,7 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
             idempotency_key: `agent-a-payment-link:${turn.id}`,
             payment_link_url: materialized.block.url,
             conversation_id: turn.conversation_id,
+            ...(action.promotion_code ? { promotion_code: action.promotion_code } : {}),
           });
           const configuredUrl = materialized.block.url;
           materialized = {
@@ -1494,6 +1541,7 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
     }
     let outbound: CommitDecisionResult['outbound'] = null;
     const outbounds: CommitDecisionResult['outbounds'] = [];
+    const commercialFollowups: ScheduledCommercialFollowupV1[] = [];
 
     // A non-empty list here is an injection/jailbreak signal: the model
     // wrote a URL it has no authority to write, and it was silently removed
@@ -1646,6 +1694,7 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
       }
 
       const firstMessage = persistedParts[0]!.message;
+      const lastMessage = persistedParts[persistedParts.length - 1]!.message;
       await db`
         UPDATE agent_decisions
         SET outbound_message_id = ${firstMessage.id}::uuid
@@ -1727,6 +1776,69 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
         delivery_attempt: firstOutbound.delivery_attempt,
         authorized_egress: firstOutbound.authorized_egress,
       };
+
+      if (canonicalWorkspaceId === null && preparedAgentTurn) {
+        const workspaceRows = await db<Array<{ id: string }>>`
+          SELECT workspace.id
+          FROM workspaces workspace
+          JOIN workspace_contacts membership
+            ON membership.workspace_id = workspace.id
+           AND membership.contact_id = ${turn.contact_id}::uuid
+          WHERE workspace.slug = ${workspaceSlug} AND workspace.status = 'active'
+          LIMIT 1
+        `;
+        canonicalWorkspaceId = workspaceRows[0]?.id ?? null;
+      }
+      if (preparedAgentTurn && canonicalWorkspaceId) {
+        if (preparedAgentTurn.abandons_course_bonus_offer
+          && preparedAgentTurn.transition.selected_offering_code) {
+          await cancelOpenCourseBonusOffersForCourseChangeV1(db, {
+            workspace_id: canonicalWorkspaceId,
+            contact_id: turn.contact_id,
+            conversation_id: turn.conversation_id,
+            selected_offering_code: preparedAgentTurn.transition.selected_offering_code,
+          });
+        }
+        await recordPromotionConversationContextV1(db, {
+          workspace_id: canonicalWorkspaceId,
+          contact_id: turn.contact_id,
+          conversation_id: turn.conversation_id,
+          source_turn_id: turn.id,
+          discussed_offering_code: preparedAgentTurn.commercial_interest_offering_code,
+          records_price_objection: preparedAgentTurn.records_price_objection,
+        });
+      }
+      if (preparedAgentTurn && canonicalWorkspaceId && committedBusinessAction
+        && ['schedule_price_objection_checkin','request_promotion_review','accept_promotion']
+          .includes(committedBusinessAction.type)) {
+        const paidOfferingCode = preparedAgentTurn.commercial_interest_offering_code
+          ?? effectiveAuthorizedOfferingCode
+          ?? pipelineStateBefore?.selected_offering_code
+          ?? existingSalesContext?.selected_offering_code
+          ?? null;
+        if (paidOfferingCode) {
+          const promotionResult = await commitCommercialActionV1(db, {
+            workspace_id: canonicalWorkspaceId,
+            contact_id: turn.contact_id,
+            conversation_id: turn.conversation_id,
+            paid_offering_code: paidOfferingCode,
+            source_turn_id: turn.id,
+            source_outbound_message_id: lastMessage.id,
+            action: committedBusinessAction as
+              | { type: 'schedule_price_objection_checkin'; reason: 'price_objection' }
+              | { type: 'request_promotion_review'; reason: 'persistent_price_objection' }
+              | { type: 'accept_promotion' },
+          });
+          if (promotionResult.followup) commercialFollowups.push(promotionResult.followup);
+          if (!promotionResult.offer_id) {
+            committedBusinessAction = null;
+            await db`UPDATE agent_decisions SET business_action = NULL WHERE id = ${decisionId}::uuid`;
+          }
+        } else {
+          committedBusinessAction = null;
+          await db`UPDATE agent_decisions SET business_action = NULL WHERE id = ${decisionId}::uuid`;
+        }
+      }
 
       if (committedBusinessAction?.type === 'send_payment_link' && canonicalWorkspaceId) {
         const paymentMessage = persistedParts.find(({ message }) => (
@@ -1885,6 +1997,7 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
         outbound,
         outbounds,
         call_request: callRequest,
+        commercial_followups: commercialFollowups,
         ...(technicalFallback && technicalFallbackReasonCode ? {
           conversation_effects: {
             technical_fallback_reason: technicalFallbackReasonCode,

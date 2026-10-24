@@ -6,6 +6,7 @@ import type { ConversationMoveV1 } from '@/features/conversation/domain/conversa
 import { PostgresBusinessContextStore } from '@/features/orchestration/adapters/postgres-business-context';
 import { buildBusinessContextView, buildCatalogIndexView } from '@/features/orchestration/domain/business-context';
 import { loadContactIntakeV1 } from '@/lib/repositories/contact-intake.repository';
+import { readCourseBonusCapabilityV1 } from '@/features/promotions/application/read-course-bonus-capability';
 import { seedConversationForAgentTurn } from '../helpers/agent-turn-fixtures';
 import { sql } from '@/lib/db/orchestrator';
 
@@ -237,6 +238,70 @@ run('commercial-truth boundary', () => {
     expect(state?.awaiting_reply).toBe('call_or_chat');
     expect(state?.selected_offering_code).toBe('entrenamiento_funcional');
     expect(state?.stage).toBe('course_selected');
+  });
+
+  it('persists one canonical course named by Agent A through prepare, commit and capability read', async () => {
+    const previousBonusFlag = process.env.CENTRAL_CARGA_BONUS_ENABLED;
+    process.env.CENTRAL_CARGA_BONUS_ENABLED = 'true';
+    const seeded = await seedConversationForAgentTurn({
+      selected_offering_code: null,
+      intake_complete: true,
+      first_message: 'Inglés 1 me interesa, pero el precio me sigue pareciendo caro.',
+    });
+    try {
+      await sql`UPDATE promotions promotion SET active=true,updated_at=now()
+        FROM workspaces workspace
+        WHERE promotion.workspace_id=workspace.id AND workspace.slug='studyx'
+          AND promotion.promotion_code='ingles_1_mas_ingles_2'`;
+      const committed = await commitAgentDecision({
+        turn_id: seeded.turn_id,
+        trace_id: seeded.trace_id,
+        authorized_offering_code: null,
+        authorized_payment_plan: null,
+        conversation_pipeline_v1: null,
+        agent_turn_v2: {
+          schema_version: 2,
+          proposal: {
+            ...seeded.proposalWithCallOfferAndFalsePrice,
+            move: {
+              schema_version: 1, move: 'ask_course_information', secondary_moves: [],
+              vetoes: [], confidence: 1,
+            },
+            response: {
+              messages: ['Inglés 1 te da una base concreta para empezar.'],
+              call_offer: null,
+            },
+            memory_candidates: [{
+              type: 'objection', key: 'price_objection',
+              value: 'El precio sigue pareciéndole caro',
+              source_quote: 'el precio me sigue pareciendo caro', confidence: 1,
+            }],
+            proposed_action: { type: 'none' },
+          } as never,
+        },
+        decision: seeded.placeholderDecision as never,
+        model: seeded.model as never,
+      });
+      expect(committed.status).toBe('committed');
+      expect(await sql`SELECT interest_offering_code,price_objection_count
+        FROM conversation_promotion_context_v1
+        WHERE conversation_id=${seeded.conversation_id}::uuid`).toEqual([{
+        interest_offering_code: 'ingles_1', price_objection_count: 1,
+      }]);
+      await expect(readCourseBonusCapabilityV1({
+        workspace_slug:'studyx', contact_id:seeded.contact_id,
+        conversation_id:seeded.conversation_id, channel:'text', selected_offering_code:null,
+      }, {db:sql})).resolves.toMatchObject({
+        status:'review_available', may_request_review:true, interest_offering_code:'ingles_1',
+      });
+    } finally {
+      await sql`UPDATE promotions promotion SET active=false,updated_at=now()
+        FROM workspaces workspace
+        WHERE promotion.workspace_id=workspace.id AND workspace.slug='studyx'
+          AND promotion.promotion_code='ingles_1_mas_ingles_2'`;
+      if (previousBonusFlag === undefined) delete process.env.CENTRAL_CARGA_BONUS_ENABLED;
+      else process.env.CENTRAL_CARGA_BONUS_ENABLED = previousBonusFlag;
+    }
   });
 
   it('preserves an unavailable-course denial and the following question', async () => {

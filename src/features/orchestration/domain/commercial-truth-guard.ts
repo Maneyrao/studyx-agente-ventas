@@ -109,7 +109,7 @@ const FORBIDDEN_PROMISE =
   /(?:\bte\s+aseguramos\s+(?:empleo|trabajo)\b|\b(?:empleo|trabajo|salida\s+laboral|resultados?|exito)\s+(?:esta\s+)?(?:garantizad[oa]s?|asegurad[oa]s?)\b|\bsalida\s+laboral\s+garantizada\b|\b100\s*%\s+de\s+empleabilidad\b|\bte\s+devolvemos\s+(?:la\s+)?(?:plata|dinero)\b|\bvas\s+a\s+conseguir\s+trabajo\s+seguro\b)/u;
 
 const COMMERCIAL_BENEFIT = /\b(?:becas?|descuentos?)\b/u;
-const DENIED_BENEFIT = /\b(?:no|nunca|tampoco)\s+(?:(?:te|le|les|se|nos)\s+)?(?:ofrecemos|ofrece|tenemos|damos|aplicamos|aplica(?:n)?|hay|incluye|tenes|tienes|corresponde(?:n)?|recib(?:es|e|en|imos)|obtien(?:es|e|en)|podemos\s+ofrecer)\b[^.;]{0,40}\b(?:becas?|descuentos?)\b|\bsin\s+(?:becas?|descuentos?)\b/u;
+const DENIED_BENEFIT = /\b(?:no|nunca|tampoco)\s+(?:(?:te|le|les|se|nos)\s+)?(?:ofrecemos|ofrece|hacemos|hace|tenemos|damos|aplicamos|aplica(?:n)?|hay|incluye|tenes|tienes|corresponde(?:n)?|recib(?:es|e|en|imos)|obtien(?:es|e|en)|podemos\s+ofrecer)\b[^.;]{0,40}\b(?:becas?|descuentos?)\b|\bsin\s+(?:becas?|descuentos?)\b/u;
 const UNCERTAIN_BENEFIT = /\b(?:no\s+(?:(?:tengo|tenemos)\s+(?:(?:informacion|datos?)\s+)?confirmad[oa]s?|(?:puedo|podemos)\s+confirmar(?:te)?|me\s+consta|veo\s+(?:confirmad[oa]|registrad[oa])|figura\s+(?:confirmad[oa]|registrad[oa]))|(?:becas?|descuentos?)\s+no\s+(?:esta|estan)\s+(?:confirmad[oa]s?|registrad[oa]s?))\b[^.;]{0,80}\b(?:becas?|descuentos?)?\b/u;
 const OFFERING_CLAIM = /\b(?:(?:studyx\s+)?(?:ofrece(?:mos)?|tenemos|brinda(?:mos)?|dicta(?:mos)?|contamos\s+con|disponemos\s+de)|studyx\s+tiene|pod[eé]s\s+estudiar|te\s+recomiendo)\s+([^.!?\n]+)/giu;
 const GENERIC_CATALOG = /^(?:(?:varias|distintas|muchas|algunas|las|estas|tres)\s+)?(?:opciones|alternativas|areas|formas|planes)\b|^(?:cursos|diplomados)\s*(?:$|disponibles\b)/u;
@@ -122,9 +122,9 @@ const OFFERING_LIST_SEPARATOR = /^(?:[,;:]\s*(?:(?:y|e|o)\s+)?|(?:y|e|o)\s+)/u;
 
 function offersUnauthorizedBenefit(sentence: string): boolean {
   // Una negación alcanza su cláusula, nunca una oferta afirmativa posterior.
-  const clauses = sentence.split(/[,;]|\b(?:pero|aunque|sin embargo)\b|\by\s+(?=(?:te\s+)?(?:damos|ofrecemos|tenemos|aplicamos|hay)\b)/u);
+  const clauses = sentence.split(/[,;]|\b(?:pero|aunque|sin embargo)\b|\by\s+(?=(?:(?:para\s+(?:vos|ti|usted)|en\s+tu\s+caso)\s+)?(?:te\s+)?(?:damos|ofrecemos|hacemos|tenemos|aplicamos|hay)\b)/u);
   const topic = /^\s*(?:sobre|en cuanto a|respecto (?:a|de))\s+(?:(?:los|las)\s+)?(?:becas?|descuentos?)\s*[.:?]?\s*$/u;
-  const deniesTopic = /^\s*(?:no|nunca|tampoco)\s+(?:ofrecemos|ofrece|tenemos|damos|aplicamos|hay|incluye|podemos\s+ofrecer)\s*(?:$|[.:]|(?:promociones?|rebajas?|becas?|descuentos?)\b)/u;
+  const deniesTopic = /^\s*(?:no|nunca|tampoco)\s+(?:ofrecemos|ofrece|hacemos|hace|tenemos|damos|aplicamos|hay|incluye|podemos\s+ofrecer)\s*(?:$|[.:]|(?:promociones?|rebajas?|becas?|descuentos?)\b)/u;
   const uncertainTopic = /^\s*no\s+(?:(?:tengo|tenemos)\s+(?:informacion|datos?)\s+confirmad[ao]s?|(?:puedo|podemos)\s+confirmar(?:te)?\s+ningun[oa]?)\s*[.:]?\s*$/u;
   const hasTopic = clauses.some(clause => topic.test(clause) || COMMERCIAL_BENEFIT.test(clause));
   return clauses.some((clause, index) => {

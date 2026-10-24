@@ -1,7 +1,10 @@
 import type { BusinessContextView, CatalogIndexView } from '@/features/orchestration/domain/business-context';
 import type { DecisionV4 } from '@/features/orchestration/domain/decision-v4';
 import type { ProtectedFactRef } from '@/features/orchestration/domain/egress-guard';
-import { materializeCanonicalCatalogFacts } from '@/features/orchestration/domain/canonical-offering-egress';
+import {
+  materializeCanonicalCatalogFacts,
+  singleCanonicalOfferingReferenceV1,
+} from '@/features/orchestration/domain/canonical-offering-egress';
 import type { OrchestrationStore } from '@/features/orchestration/ports/orchestration-store';
 import { classifyBatchSalesSignal } from '@/features/orchestration/domain/sales-signal';
 import { loadConversationSessionConfig } from '@/lib/config';
@@ -20,9 +23,14 @@ import {
   effectiveConversationStateV1,
   type ContactIntakeV1,
 } from '../domain/conversation-planner';
+import {
+  customerResumesCommercialFlowAfterCallV1,
+  reconcileTerminalCallStateV1,
+} from '../domain/call-lifecycle-reconciliation';
 import { claimsImmediateCallDispatchV1, claimsImmediatePaymentLinkDelivery, solicitsACall } from '../domain/operational-promise-guard';
 import type { ConversationStateStoreV1 } from '../ports/conversation-state-store';
 import type { PaymentVerificationV1 } from '@/features/payments/application/read-payment-verification';
+import type { CourseBonusCapabilityV1 } from '@/features/promotions/application/read-course-bonus-capability';
 import {
   evaluateCallIntakeReadinessV1,
   type CallIntakeReadinessV1,
@@ -41,7 +49,8 @@ export class AgentTurnV2RejectedError extends Error {
 }
 
 export interface AgentActionRejectionV1 {
-  readonly action: 'request_call_now' | 'send_payment_link' | 'send_test_payment_link';
+  readonly action: 'request_call_now' | 'send_payment_link' | 'send_test_payment_link'
+    | 'schedule_price_objection_checkin' | 'request_promotion_review' | 'accept_promotion';
   readonly status: 'needs_input' | 'rejected';
   readonly code: string;
   readonly codes: readonly string[];
@@ -138,10 +147,19 @@ function decisionFromAuthorizedTurn(input: {
         ...(input.selected_offering_code ? { course_of_interest: input.selected_offering_code } : {}),
       }
     : action.type === 'send_payment_link'
-      ? { type: 'send_payment_link', offering_sku: action.offering_code, plan_code: action.payment_plan }
+      ? {
+          type: 'send_payment_link', offering_sku: action.offering_code, plan_code: action.payment_plan,
+          ...(action.promotion_code ? { promotion_code: action.promotion_code } : {}),
+        }
       : action.type === 'send_test_payment_link'
         ? { type: 'send_test_payment_link', offering_sku: action.offering_code }
-      : null;
+        : action.type === 'schedule_price_objection_checkin'
+          ? action
+          : action.type === 'request_promotion_review'
+            ? action
+            : action.type === 'accept_promotion'
+              ? action
+              : null;
   return {
     schema_version: 4,
     intent: input.proposal.move.move === 'greeting'
@@ -185,6 +203,7 @@ export async function prepareAgentTurnV2(input: {
   readonly semantic_rejections?: 'blocking' | 'advisory';
   readonly business_context: BusinessContextView | null;
   readonly catalog_index: CatalogIndexView | null;
+  readonly course_bonus_capability?: CourseBonusCapabilityV1;
 }, deps: {
   readonly state_store: Pick<ConversationStateStoreV1, 'load'>;
   readonly call_facts?: Pick<OrchestrationStore, 'loadClaimedCallFacts'>;
@@ -208,6 +227,11 @@ export async function prepareAgentTurnV2(input: {
   readonly authorized_payment_plan: 'monthly_12' | 'monthly_6' | 'one_time' | null;
   readonly authorized_protected_facts: readonly ProtectedFactRef[];
   readonly action_rejection: AgentActionRejectionV1 | null;
+  readonly discussed_offering_code: string | null;
+  readonly commercial_interest_offering_code: string | null;
+  readonly records_price_objection: boolean;
+  /** Model-owned select_course moved away from an open package's paid course. */
+  readonly abandons_course_bonus_offer: boolean;
 }> {
   const nowMs = deps.now?.() ?? Date.now();
   const [loaded, callFacts, contactIntake, strictCallIntakeReadiness] = await Promise.all([
@@ -228,13 +252,28 @@ export async function prepareAgentTurnV2(input: {
       ? { direction: 'inbound', message_type: 'text', channel: 'whatsapp' }
       : null,
   });
-  const state = loaded
+  const sessionState = loaded
     ? effectiveConversationStateV1(
         loaded,
         nowMs,
         loadConversationSessionConfig().sessionIdleMs,
       )
     : createDefaultConversationStateV1(input.turn);
+  const currentCustomerMessages = input.current_customer_messages ?? [];
+  const salesSignal = classifyBatchSalesSignal(
+    currentCustomerMessages,
+    { pendingCallReply: sessionState.awaiting_reply === 'call_or_chat' },
+  );
+  const state = callFacts === null
+    ? sessionState
+    : reconcileTerminalCallStateV1(sessionState, callFacts, {
+        current_customer_signal: salesSignal.type,
+        current_customer_resumes_commercial_flow:
+          customerResumesCommercialFlowAfterCallV1(currentCustomerMessages),
+      });
+  const awaitingCallAvailability = state.call_preference === 'call'
+    && state.call_offer_status === 'accepted'
+    && state.awaiting_reply === 'call_or_chat';
   const paymentVerification = await deps.payment_verification?.({
     workspace_slug: input.workspace_slug, contact_id: input.turn.contact_id,
     offering_code: state.selected_offering_code, plan_code: state.selected_payment_plan,
@@ -252,10 +291,6 @@ export async function prepareAgentTurnV2(input: {
     }),
   );
   const noActiveCall = callFacts?.active_call == null;
-  const salesSignal = classifyBatchSalesSignal(input.current_customer_messages ?? []);
-  const awaitingCallAvailability = state.call_preference === 'call'
-    && state.call_offer_status === 'accepted'
-    && state.awaiting_reply === 'call_or_chat';
   const currentCallAuthorization = salesSignal.type === 'direct_call_request';
   const authorize = (proposal: AgentATurnProposalV1, effectsAllowed = input.conversation_only !== true,
     semanticRejections = input.semantic_rejections) => {
@@ -275,6 +310,7 @@ export async function prepareAgentTurnV2(input: {
       && (state.selected_payment_plan === null
         || paymentVerification.plan_code === state.selected_payment_plan),
     current_customer_messages: input.current_customer_messages,
+    course_bonus: input.course_bonus_capability,
     semantic_rejections: semanticRejections,
     action_rejections: 'structured',
     effects_allowed: effectsAllowed,
@@ -301,6 +337,22 @@ export async function prepareAgentTurnV2(input: {
   const authority = authorize(effectiveProposal);
   let actionRejection: AgentActionRejectionV1 | null = null;
 
+  // A delivered package must be accepted before checkout. Returning only a
+  // stripped action here would let the conversational owner believe it had
+  // advanced while the durable offer remained pending. Send this narrow
+  // conflict through the existing model repair receipt instead, where the
+  // current capability re-authorizes `accept_promotion` but not a simple link.
+  if (authority.ok
+    && input.course_bonus_capability?.status === 'offer_available'
+    && input.course_bonus_capability.may_accept_offer
+    && effectiveProposal.proposed_action.type === 'send_payment_link'
+    && authority.action.type === 'none') {
+    throw new AgentTurnV2RejectedError(
+      ['ACTION_NOT_AUTHORIZED'],
+      ['promotion_acceptance_required'],
+    );
+  }
+
   if (authority.ok
     && effectiveProposal.proposed_action.type !== 'none'
     && authority.action.type === 'none') {
@@ -311,7 +363,9 @@ export async function prepareAgentTurnV2(input: {
       const rejectedAction = effectiveProposal.proposed_action.type;
       const requiredFields = rejectedAction === 'request_call_now'
         ? callIntakeReadiness.requirements.map(({ field }) => field)
-        : (['nombre', 'apellido', 'correo', 'telefono'] as const);
+        : rejectedAction === 'send_payment_link' || rejectedAction === 'send_test_payment_link'
+          ? (['nombre', 'apellido', 'correo', 'telefono'] as const)
+          : [];
       actionRejection = actionRejectionV1({
         action: rejectedAction,
         codes: [...new Set(actionCodes)],
@@ -361,6 +415,34 @@ export async function prepareAgentTurnV2(input: {
     content: authority.response,
     offerings: offerings.map((offering) => ({ code: offering.code, display_name: offering.display_name })),
   });
+  const responseOfferingCode = singleCanonicalOfferingReferenceV1({
+    content: authority.response,
+    offerings: offerings.map((offering) => ({ code: offering.code, display_name: offering.display_name })),
+  });
+  const commercialInterestOfferingCode = authority.discussed_offering_code
+    ?? input.course_bonus_capability?.interest_offering_code
+    ?? state.selected_offering_code
+    ?? responseOfferingCode;
+  const recordsPriceObjection = commercialInterestOfferingCode !== null && (
+    authority.action.type === 'schedule_price_objection_checkin'
+    || authority.action.type === 'request_promotion_review'
+    || effectiveProposal.memory_candidates.some((candidate) => (
+      candidate.type === 'objection' && candidate.key === 'price_objection'
+    ))
+  );
+  const openCourseBonusStatus = input.course_bonus_capability?.status;
+  const explicitlySelectsAnotherCourse = [
+    effectiveProposal.move.move,
+    ...effectiveProposal.move.secondary_moves,
+  ].includes('select_course')
+    && authority.transition.selected_offering_code !== null
+    && input.course_bonus_capability?.interest_offering_code !== null
+    && input.course_bonus_capability?.interest_offering_code !== undefined
+    && authority.transition.selected_offering_code
+      !== input.course_bonus_capability.interest_offering_code;
+  const abandonsCourseBonusOffer = authority.action.type !== 'accept_promotion'
+    && ['review_pending', 'offer_available', 'accepted'].includes(openCourseBonusStatus ?? '')
+    && explicitlySelectsAnotherCourse;
   return {
     decision,
     response_messages: authority.response_messages,
@@ -380,5 +462,9 @@ export async function prepareAgentTurnV2(input: {
       ...catalogFacts,
     ]),
     action_rejection: actionRejection,
+    discussed_offering_code: authority.discussed_offering_code,
+    commercial_interest_offering_code: commercialInterestOfferingCode,
+    records_price_objection: recordsPriceObjection,
+    abandons_course_bonus_offer: abandonsCourseBonusOffer,
   };
 }

@@ -25,6 +25,10 @@ import type { RetellOrchestrationStore } from '../application/retell-tools';
 import type { RetellPaymentPlanRequest } from '../application/retell-tools';
 import { logger } from '@/lib/observability/structured-log';
 import { splitFullName } from '@/lib/heuristics/contact-identity';
+import {
+  isCentralCargaBonusEnabledForContact,
+  loadCentralCargaBonusConfig,
+} from '@/features/fulfillment/central-carga/config';
 
 export type RetellOutboundSender = (
   input: Parameters<typeof sendOutboundMessage>[0],
@@ -45,6 +49,114 @@ export class PostgresRetellOrchestrationStore implements RetellOrchestrationStor
     private readonly db: postgres.Sql,
     private readonly options: PostgresRetellOrchestrationStoreOptions = {},
   ) {}
+
+  async readCourseBonusPromotion(
+    input: Parameters<NonNullable<RetellOrchestrationStore['readCourseBonusPromotion']>>[0],
+  ) {
+    if (!isCentralCargaBonusEnabledForContact(
+      loadCentralCargaBonusConfig(),
+      input.contactId,
+    )) return null;
+    const workspace = await this.workspaceForContact(input.workspaceSlug, input.contactId, input.callId);
+    if (!workspace || workspace.conversation_id !== input.conversationId) return null;
+    const promotion = await this.db.begin(async (tx) => {
+      const promotions = await tx<Array<{
+        id: string;
+        promotion_code: string;
+        paid_offering_id: string;
+      }>>`
+        SELECT promotion.id, promotion.promotion_code, promotion.paid_offering_id
+        FROM promotions promotion
+        JOIN offerings paid ON paid.id = promotion.paid_offering_id
+        WHERE promotion.workspace_id = ${workspace.id}::uuid
+          AND paid.code = ${input.course}
+          AND paid.status = 'active'
+          AND promotion.active = true
+          AND 'voice' = ANY(promotion.channels)
+          AND (promotion.valid_from IS NULL OR promotion.valid_from <= now())
+          AND (promotion.valid_until IS NULL OR promotion.valid_until > now())
+          AND (SELECT count(*) FROM promotion_bonus_offerings item
+            WHERE item.promotion_id = promotion.id) BETWEEN 1 AND 3
+          AND (SELECT count(*) FROM promotion_offers used
+            WHERE used.promotion_id = promotion.id
+              AND used.contact_id = ${input.contactId}::uuid
+              AND used.status = 'attached') < promotion.max_redemptions_per_contact
+        ORDER BY promotion.created_at DESC
+        LIMIT 1
+        FOR UPDATE OF promotion
+      `;
+      const configured = promotions[0];
+      if (!configured) return null;
+      const offers = await tx<Array<{ id: string; bonus_snapshot_sealed_at: Date | null }>>`
+        INSERT INTO promotion_offers (
+          workspace_id, contact_id, conversation_id, promotion_id, paid_offering_id,
+          status, source_turn_id, source_conversation_version, source_state_version,
+          expires_at
+        ) VALUES (
+          ${workspace.id}::uuid, ${input.contactId}::uuid, ${input.conversationId}::uuid,
+          ${configured.id}::uuid, ${configured.paid_offering_id}::uuid, 'pending_review',
+          ${workspace.source_turn_id}::uuid, ${workspace.source_conversation_version},
+          ${workspace.state_version}, now() + interval '48 hours'
+        )
+        ON CONFLICT (conversation_id, promotion_id)
+          WHERE status IN ('pending_review','offered','accepted')
+        DO UPDATE SET updated_at = now()
+        RETURNING id, bonus_snapshot_sealed_at
+      `;
+      const offer = offers[0];
+      if (!offer) return null;
+      if (!offer.bonus_snapshot_sealed_at) {
+        await tx`
+          INSERT INTO promotion_offer_bonus_offerings (
+            offer_id, promotion_id, offering_id, promotion_code_snapshot,
+            offering_code_snapshot, offering_display_name_snapshot, position
+          )
+          SELECT ${offer.id}::uuid, promotion.id, bonus.id, promotion.promotion_code,
+            bonus.code, bonus.display_name, configured_bonus.position
+          FROM promotions promotion
+          JOIN promotion_bonus_offerings configured_bonus
+            ON configured_bonus.promotion_id = promotion.id
+          JOIN offerings bonus ON bonus.id = configured_bonus.offering_id
+          WHERE promotion.id = ${configured.id}::uuid
+          ORDER BY configured_bonus.position
+          ON CONFLICT DO NOTHING
+        `;
+        await tx`
+          UPDATE promotion_offers
+          SET bonus_snapshot_sealed_at = now()
+          WHERE id = ${offer.id}::uuid AND bonus_snapshot_sealed_at IS NULL
+        `;
+      }
+      const bonuses = await tx<Array<{ code: string; display_name: string; position: number }>>`
+        SELECT offering_code_snapshot AS code,
+          offering_display_name_snapshot AS display_name, position
+        FROM promotion_offer_bonus_offerings
+        WHERE offer_id = ${offer.id}::uuid
+        ORDER BY position
+      `;
+      if (bonuses.length < 1 || bonuses.length > 3) return null;
+      const safe = bonuses.every((bonus) => {
+        const code = sanitizeRetrievedText(bonus.code, 128);
+        const name = sanitizeRetrievedText(bonus.display_name, 128);
+        return !code.injection_suspected && !code.truncated && code.text === bonus.code
+          && !name.injection_suspected && !name.truncated && name.text === bonus.display_name;
+      });
+      if (!safe) return null;
+      await tx`
+        UPDATE promotion_offers SET voice_exposed_at = COALESCE(voice_exposed_at, now())
+        WHERE id = ${offer.id}::uuid AND bonus_snapshot_sealed_at IS NOT NULL
+      `;
+      return { promotion_code: configured.promotion_code, bonus_offerings: bonuses };
+    });
+    if (!promotion || promotion.bonus_offerings.length === 0) return null;
+    return {
+      promotionCode: promotion.promotion_code,
+      bonusOfferings: promotion.bonus_offerings.map((bonus) => ({
+        code: bonus.code,
+        displayName: bonus.display_name,
+      })),
+    };
+  }
 
   async recordConfirmedSelection(input: Parameters<RetellOrchestrationStore['recordConfirmedSelection']>[0]) {
     const workspace = await this.workspaceForContact(input.workspaceSlug, input.contactId, input.callId);
@@ -179,6 +291,7 @@ export class PostgresRetellOrchestrationStore implements RetellOrchestrationStor
     const configuredUrl = paymentLinkResolver.resolve(paymentPlan.planCode);
     if (!configuredUrl) return { sent: false, reference: null, reason: 'PAYMENT_LINK_NOT_CONFIGURED' };
     let payment: Awaited<ReturnType<typeof reservePaymentLink>>;
+    const idempotencyKey = `retell-payment-link:${workspace.id}:${input.callId}`;
     try {
       payment = await reservePaymentLink(this.db, {
         workspace_id: workspace.id,
@@ -186,8 +299,12 @@ export class PostgresRetellOrchestrationStore implements RetellOrchestrationStor
         offering_id: offering.id,
         conversation_id: input.conversationId,
         plan_code: paymentPlan.planCode,
-        idempotency_key: `retell-payment-link:${workspace.id}:${input.callId}`,
+        idempotency_key: idempotencyKey,
         payment_link_url: configuredUrl,
+        ...(input.promotionCode ? {
+          promotion_code: input.promotionCode,
+          promotion_channel: 'voice' as const,
+        } : {}),
       });
     } catch (error) {
       if (error instanceof PaymentLinkReservationError) {
@@ -400,8 +517,13 @@ export class PostgresRetellOrchestrationStore implements RetellOrchestrationStor
       selected_payment_plan: PaymentPlanCode | null;
       contact_name: string | null;
       contact_email: string | null;
+      source_turn_id: string;
+      source_conversation_version: number;
+      state_version: number;
     }>>`
-      SELECT w.id, w.slug, w.metadata, cs.conversation_id,
+      SELECT w.id, w.slug, w.metadata, cs.conversation_id, cs.source_turn_id,
+             source.conversation_seq AS source_conversation_version,
+             state.version AS state_version,
              contact.name AS contact_name, contact.email AS contact_email,
              state.selected_payment_plan,
              COALESCE(
@@ -411,6 +533,7 @@ export class PostgresRetellOrchestrationStore implements RetellOrchestrationStor
              ) AS course_code
       FROM call_sessions AS cs
       JOIN workspaces AS w ON w.id = cs.workspace_id
+      JOIN messages AS source ON source.id = cs.source_turn_id
       JOIN contacts AS contact ON contact.id = cs.contact_id AND contact.deleted_at IS NULL
       JOIN workspace_contacts AS wc
         ON wc.workspace_id = cs.workspace_id

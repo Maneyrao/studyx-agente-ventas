@@ -180,7 +180,7 @@ it('retains a payment request through intake and executes it once after the sepa
   expect(await payments()).toHaveLength(1);
 });
 
-it('persists Agus data from separate messages before accepting Sii and reserves exactly one call', async () => {
+it('persists Agus data before accepting “Sí, dale”, reserves once and keeps the exact consent source', async () => {
   const id = { conversationId: `agus-call-${randomUUID()}`, userId: `agus-${randomUUID()}`,
     phoneE164: `+999${String(Date.now()).slice(-10)}`, providerMode: 'fixture' as const };
   phase = 'agus_course';
@@ -204,15 +204,41 @@ it('persists Agus data from separate messages before accepting Sii and reserves 
   const stored = await readWorkflowDbEvidenceV1({ databaseUrl, externalConversationId: id.conversationId });
   expect(stored.contact).toMatchObject({ name: 'Agus Maneyro', declaredPhone: '+15551234567' });
   phase = 'confirm';
-  const confirmed = await runWorkflowTurnV1({ ...id, text: 'Sii' });
+  const confirmed = await runWorkflowTurnV1({ ...id, text: 'Sí, dale' });
   expect(confirmed.errorCode).toBeNull();
   expect(confirmed.commitSucceeded).toBe(true);
   expect(confirmed.actions.some(action => action.name === 'dispatchCall')).toBe(true);
-  const calls = () => db`SELECT cs.id FROM call_sessions cs JOIN contacts c ON c.id=cs.contact_id WHERE c.phone=${id.phoneE164}`;
-  expect(await calls()).toHaveLength(1);
-  const replay = await runWorkflowTurnV1({ ...id, text: 'Sii', externalMessageId: confirmed.externalMessageId, occurredAt: confirmed.occurredAt });
+  const calls = () => db`SELECT cs.id,cs.consent_source_message_id FROM call_sessions cs JOIN contacts c ON c.id=cs.contact_id WHERE c.phone=${id.phoneE164}`;
+  expect(await calls()).toEqual([
+    expect.objectContaining({ consent_source_message_id: confirmed.turnId }),
+  ]);
+  const replay = await runWorkflowTurnV1({ ...id, text: 'Sí, dale', externalMessageId: confirmed.externalMessageId, occurredAt: confirmed.occurredAt });
   expect(replay.authorizedMessages).toHaveLength(0);
   expect(await calls()).toHaveLength(1);
+});
+
+it('does not create consent when “Sí, dale” is followed by a refusal in the same burst', async () => {
+  const id = { conversationId: `call-revoked-${randomUUID()}`, userId: `call-revoked-${randomUUID()}`,
+    phoneE164: `+999${String(Date.now()).slice(-10)}`, providerMode: 'fixture' as const };
+  phase = 'agus_course';
+  expect((await runWorkflowTurnV1({ ...id, text: 'Me interesa Oratoria.' })).commitSucceeded).toBe(true);
+  phase = 'missing_identity';
+  expect((await runWorkflowTurnV1({ ...id, text: 'Me podes llamar?' })).commitSucceeded).toBe(true);
+  phase = 'agus_identity';
+  expect((await runWorkflowBurstV1({ ...id, messages: [
+    { text: 'mi nombre es Agus', delayMs: 0 },
+    { text: 'Maneyro, +15551234567', delayMs: 200 },
+  ] })).commitSucceeded).toBe(true);
+
+  phase = 'confirm';
+  const revoked = await runWorkflowBurstV1({ ...id, messages: [
+    { text: 'Sí, dale', delayMs: 0 },
+    { text: 'ahora no', delayMs: 200 },
+  ] });
+
+  expect(revoked.actions.some(action => action.name === 'dispatchCall')).toBe(false);
+  const calls = await db`SELECT cs.id FROM call_sessions cs JOIN contacts c ON c.id=cs.contact_id WHERE c.phone=${id.phoneE164}`;
+  expect(calls).toHaveLength(0);
 });
 
 afterAll(async () => {

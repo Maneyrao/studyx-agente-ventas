@@ -2,6 +2,12 @@ import { courseLogisticsInV1 } from '../../../../src/shared/conversation/course-
 import { eligibleContactRequestFieldsV1 } from './contact-profile-request-policy';
 import { supportsChatPreferenceV1 } from './channel-preference-evidence';
 import { evaluateCallOfferTurnPolicyV1 } from './call-offer-turn-policy';
+import {
+  customerExpressesRealBudgetLimitV1,
+  evaluateSalesObjectionTurnV1,
+  responseAvoidsDisallowedPriceReframingV1,
+  responseProgressesRepeatedPriceObjectionV1,
+} from './sales-objection-turn-policy';
 import type { TurnRejectionV1 } from '../../schemas/turn-rejection'
 import {
   AgentATurnProposalV1Schema,
@@ -478,8 +484,11 @@ function normalizedCurrentCustomerTextV1(context: AgentAContextV1): string {
     .trim();
 }
 
-function naturalnessRepairDirectiveV1(_context: AgentAContextV1): string {
-  return 'Preserve the customer intent and the natural rhythm of the original answer. Use one or two short messages as needed, change only the rejected fact or action, and do not add unsupported claims.';
+function naturalnessRepairDirectiveV1(context: AgentAContextV1): string {
+  const objectionRepair = evaluateSalesObjectionTurnV1(context).kind === 'repeated_price_objection'
+    ? ' The customer repeated a price objection: do not answer by merely repeating plans, amounts or class count. Either connect an authorized fact to their intended use with conditional language or ask one concrete diagnostic question. A call invitation belongs only in response.call_offer when permitted.'
+    : '';
+  return `Preserve the customer intent and the natural rhythm of the original answer. Use one or two short messages as needed, change only the rejected fact or action, and do not add unsupported claims.${objectionRepair}`;
 }
 
 function closedObject(properties: Record<string, unknown>) {
@@ -539,6 +548,18 @@ function proposalJsonSchema(context: AgentAContextV1, conversationOnly = false):
     payment_plan: { anyOf: [{ type: 'string', enum: [...PAYMENT_PLANS] }, { type: 'null' }] },
     confidence: { type: 'number' },
   });
+  const courseBonus = context.capabilities.course_bonus;
+  const sendPaymentLinkProperties: Record<string, unknown> = {
+    type: { type: 'string', enum: ['send_payment_link'] },
+    offering_code: { type: 'string' },
+    payment_plan: { type: 'string', enum: [...PAYMENT_PLANS] },
+  };
+  if (courseBonus?.may_send_promoted_payment && courseBonus.promotion_code) {
+    sendPaymentLinkProperties.promotion_code = {
+      type: 'string',
+      enum: [courseBonus.promotion_code],
+    };
+  }
   const proposedAction = {
     anyOf: [
       closedObject({ type: { type: 'string', enum: ['none'] } }),
@@ -546,11 +567,18 @@ function proposalJsonSchema(context: AgentAContextV1, conversationOnly = false):
         type: { type: 'string', enum: ['request_call_now'] },
         reason: { type: 'string', enum: ['direct_request', 'accepted_offer'] },
       }),
-      closedObject({
-        type: { type: 'string', enum: ['send_payment_link'] },
-        offering_code: { type: 'string' },
-        payment_plan: { type: 'string', enum: [...PAYMENT_PLANS] },
-      }),
+      ...(courseBonus?.may_schedule_checkin ? [closedObject({
+        type: { type: 'string', enum: ['schedule_price_objection_checkin'] },
+        reason: { type: 'string', enum: ['price_objection'] },
+      })] : []),
+      ...(courseBonus?.may_request_review ? [closedObject({
+        type: { type: 'string', enum: ['request_promotion_review'] },
+        reason: { type: 'string', enum: ['persistent_price_objection'] },
+      })] : []),
+      ...(courseBonus?.may_accept_offer ? [closedObject({
+        type: { type: 'string', enum: ['accept_promotion'] },
+      })] : []),
+      closedObject(sendPaymentLinkProperties),
       closedObject({
         type: { type: 'string', enum: ['send_test_payment_link'] },
         offering_code: { type: 'string' },
@@ -1808,6 +1836,27 @@ export function validateAgentATurnProposalV1(input: {
   ) {
     rejections.push({ code: 'REPEATED_AGENT_REPLY', subject: 'previous_agent_question' });
   }
+  const salesObjection = evaluateSalesObjectionTurnV1(input.context);
+  if (
+    salesObjection.kind === 'repeated_price_objection'
+    && !responseProgressesRepeatedPriceObjectionV1({
+      ...input.proposal.response,
+      customer_expressed_real_budget_limit: customerExpressesRealBudgetLimitV1(currentCustomerText),
+    })
+  ) {
+    rejections.push({ code: 'REPEATED_AGENT_REPLY', subject: 'persistent_price_objection' });
+  }
+  if (
+    (salesObjection.kind === 'price_objection'
+      || salesObjection.kind === 'repeated_price_objection'
+      || salesObjection.kind === 'price_question_with_objection')
+    && !responseAvoidsDisallowedPriceReframingV1({
+      ...input.proposal.response,
+      allow_requested_payment_terms: salesObjection.kind === 'price_question_with_objection',
+    })
+  ) {
+    rejections.push({ code: 'FACT_VALUE_MISMATCH', subject: 'price_objection_reframe' });
+  }
 
   // V2 — cada hecho citado existe en el registro materializado del turno.
   for (const factId of input.proposal.used_fact_ids) {
@@ -2107,15 +2156,7 @@ export function validateAgentATurnProposalV1(input: {
   const requestedCallNow = moves.has('request_call') && input.proposal.proposed_action.type === 'request_call_now'
     && input.context.capabilities.may_request_call_now && callRequestSupported
     && !input.proposal.move.vetoes.includes('call');
-  // Asking for a call prerequisite is not a claim that the call was already
-  // dispatched. Agent A may classify a terse or noisy reply as `unknown`
-  // while still naturally continuing an already accepted call handoff.
-  const callCollectionInProgress = moves.has('request_call') || resumesAcceptedCall;
-  const asksForMissingCallIdentity = callCollectionInProgress
-    && missingCallIntake.length > 0
-    && mentionsMissingIntakeField(input.proposal.response.messages, missingCallIntake);
   const claimsCallDispatchWithoutAction = input.proposal.proposed_action.type !== 'request_call_now'
-    && !asksForMissingCallIdentity
     && [...input.proposal.response.messages, typeof declaredCallOffer === 'string' ? declaredCallOffer : '']
       .some(message => claimsImmediateCallDispatchV1(message, input.context.commercial_state.active_call?.status));
   if (claimsCallDispatchWithoutAction) {
@@ -2166,14 +2207,6 @@ export function validateAgentATurnProposalV1(input: {
     // valid model-owned copy.
     rejections.push({ code: 'CALL_OFFER_MESSAGE_BOUNDARY_INVALID', subject: 'call_offer' });
   }
-  const hasCanonicalCourse = state.selected_offering_code !== null
-    || typeof input.proposal.move.course_reference === 'string';
-  const hasResolvedCourseFamily = !hasCanonicalCourse
-    && moves.has('browse_catalog')
-    && [
-      ...input.context.catalog.candidate_offerings,
-      ...input.context.catalog.available_offerings,
-    ].some((offering) => cited.has(offering.fact_id));
   const selectedCourseReferenceIsCanonical = [
     ...(input.context.catalog.selected_offering ? [input.context.catalog.selected_offering] : []),
     ...input.context.catalog.candidate_offerings,
@@ -2182,9 +2215,7 @@ export function validateAgentATurnProposalV1(input: {
   const missingCourseSubject = moves.has('select_course')
     && !selectedCourseReferenceIsCanonical
     ? 'course_reference'
-    : offersACall && !callRequestSupported && !hasCanonicalCourse && !hasResolvedCourseFamily
-      ? 'call_offer'
-      : null;
+    : null;
   if (missingCourseSubject !== null) {
     rejections.push({ code: 'COURSE_NOT_RESOLVED', subject: missingCourseSubject });
   }

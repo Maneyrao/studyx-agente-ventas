@@ -28,7 +28,7 @@ La llamada real queda pendiente de configuración de Lucas y autorización super
 6. Si el cliente elige pagar, B llama `enviar_link_pago`. El formato preferido es:
 
    ```json
-   { "curso": "codigo_canonico", "plan_code": "monthly_12" }
+   { "curso": "codigo_canonico", "plan_code": "monthly_12", "promotion_code": "codigo_autorizado_opcional" }
    ```
 
    El formato ya configurado por Xendra también está admitido, con un solo
@@ -44,6 +44,11 @@ La llamada real queda pendiente de configuración de Lucas y autorización super
    de elegir curso, el backend valida el curso activo, persiste curso y plan en
    el estado de la conversación y envía un único mensaje atribuido a A en el
    chat original. Los combos de varios cursos quedan fuera de V0 y se rechazan.
+   `promotion_code` es opcional y sólo se envía cuando `consultar_oferta`
+   devolvió ese código para el mismo curso. B no compone ni infiere códigos. El
+   backend vuelve a validar que la promoción esté activa, corresponda al curso,
+   admita el canal `voice` y quede congelada en el mismo pago; un código
+   inexistente o no autorizado se rechaza sin enviar el link.
 7. `registrar_resultado` llega durante la llamada y conserva la autoridad sobre
    el desenlace operativo; habilita retomar el hilo escrito sin esperar el
    análisis tardío. `call_analyzed` llega después y enriquece el CRM sin
@@ -96,7 +101,7 @@ Configurar las nueve herramientas con `POST` y el header obligatorio
 Cambio recomendado en el contrato de pago de Agent B:
 
 ```json
-{ "curso": "codigo_canonico", "plan_code": "monthly_12" }
+{ "curso": "codigo_canonico", "plan_code": "monthly_12", "promotion_code": "codigo_autorizado_opcional" }
 ```
 
 `plan_code` admite `monthly_12`, `monthly_6` y `one_time`. El formato de Lucas
@@ -106,6 +111,12 @@ está aceptado cuando contiene exactamente un curso. El formato anterior con
 a `one_time`, mientras `cuotas` responde `PLAN_SELECTION_REQUIRED` salvo que ya
 exista una selección durable de 6 o 12. El backend ignora `email`/`canal` del
 modelo y deriva identidad y chat original.
+
+Cuando `consultar_oferta` devuelve `oferta.promocion`, B puede explicar sólo
+los cursos bonificados allí enumerados y, ante aceptación, copiar exactamente
+`oferta.promocion.codigo` a `enviar_link_pago.promotion_code`. Si la propiedad
+no aparece, B no ofrece ningún regalo. La ausencia de promoción no modifica el
+precio, el plan ni el flujo ordinario.
 
 No configurar una URL directa de Retell hacia StudyX en este modo: Xendra
 conserva el webhook de Retell y reenvía los eventos autenticados.

@@ -20,7 +20,7 @@ const config: CentralCargaConfig = {
   paidAfter: CUTOFF,
 };
 
-interface Call { method: string; url: string; paymentId: string }
+interface Call { method: string; url: string; paymentId: string; body?: Record<string, unknown> }
 type Responder = (call: Call, n: number) => Response | Promise<Response>;
 
 function mockCentral(responders: Responder[] | Responder) {
@@ -33,6 +33,7 @@ function mockCentral(responders: Responder[] | Responder) {
       paymentId: new URL(url).pathname.split('/').filter(Boolean).slice(-1)[0] === 'enrollments'
         ? String((init.headers as Record<string, string>)['idempotency-key'])
         : new URL(url).pathname.split('/').pop()!,
+      ...(init.body ? { body: JSON.parse(String(init.body)) as Record<string, unknown> } : {}),
     };
     calls.push(call);
     const responder = Array.isArray(responders)
@@ -67,6 +68,7 @@ async function fixture(options: {
   email?: string | null;
   maxAttempts?: number;
   declaredPhone?: string | null;
+  bonusCourses?: Array<{ code: string; displayName: string; position: number }>;
 } = {}) {
   const [workspace] = await db!<Array<{ id: string }>>`
     INSERT INTO workspaces (slug, display_name) VALUES (${`enr-${randomUUID().slice(0, 8)}`}, 'Enroll') RETURNING id`;
@@ -84,17 +86,48 @@ async function fixture(options: {
       'fixed', '45000.00', 'ARS', 'one_time') RETURNING id`;
   const provider = options.provider ?? 'stripe';
   const environment = options.environment ?? 'live';
+  const bonusRows: Array<{ id: string; code: string; display_name: string; position: number }> = [];
+  let promotion: { id: string; promotion_code: string } | undefined;
+  if (options.bonusCourses?.length) {
+    [promotion] = await db!<Array<{ id: string; promotion_code: string }>>`
+      INSERT INTO promotions(workspace_id,promotion_code,paid_offering_id,channels,active)
+      VALUES (${workspace.id}::uuid,${`promo-${randomUUID().slice(0, 8)}`},${offering.id}::uuid,
+        ARRAY['text']::text[],true) RETURNING id,promotion_code`;
+    for (const bonus of options.bonusCourses) {
+      const [bonusOffering] = await db!<Array<{ id: string; code: string; display_name: string }>>`
+        INSERT INTO offerings (workspace_id, code, display_name, offering_type, status, description,
+          price_type, price_amount, currency, billing_interval)
+        VALUES (${workspace.id}::uuid,${bonus.code},${bonus.displayName},'course','active','bonus',
+          'free',NULL,NULL,NULL) RETURNING id,code,display_name`;
+      await db!`INSERT INTO promotion_bonus_offerings(promotion_id,workspace_id,offering_id,position)
+        VALUES (${promotion.id}::uuid,${workspace.id}::uuid,${bonusOffering.id}::uuid,${bonus.position})`;
+      bonusRows.push({ ...bonusOffering, position: bonus.position });
+    }
+  }
   const [payment] = await db!<Array<{ id: string }>>`
     INSERT INTO payments (workspace_id, contact_id, offering_id, amount, currency, status, provider,
       environment, checkout_mode, idempotency_key, provider_session_id, paid_at, plan_code)
-    VALUES (${workspace.id}::uuid, ${contact.id}::uuid, ${offering.id}::uuid, '45000.00', 'ARS', 'paid',
+    VALUES (${workspace.id}::uuid, ${contact.id}::uuid, ${offering.id}::uuid, '45000.00', 'ARS',
+      ${bonusRows.length ? 'reserved' : 'paid'},
       ${provider}, ${environment}, 'payment', ${randomUUID()}, ${`cs_${randomUUID()}`},
-      ${options.paidAt ?? '2026-10-06T14:00:00Z'}::timestamptz, 'monthly_12')
+      ${bonusRows.length ? null : options.paidAt ?? '2026-10-06T14:00:00Z'}::timestamptz, 'monthly_12')
     RETURNING id`;
+  if (promotion) {
+    for (const bonus of bonusRows) await db!`
+      INSERT INTO payment_bonus_offerings(payment_id,promotion_id,offering_id,promotion_code_snapshot,
+        offering_code_snapshot,offering_display_name_snapshot,position)
+      VALUES (${payment.id}::uuid,${promotion.id}::uuid,${bonus.id}::uuid,${promotion.promotion_code},
+        ${bonus.code},${bonus.display_name},${bonus.position})`;
+    await db!`UPDATE payments SET status='creating_checkout' WHERE id=${payment.id}::uuid`;
+    await db!`UPDATE payments SET status='pending' WHERE id=${payment.id}::uuid`;
+    await db!`UPDATE payments SET status='paid',paid_at=${options.paidAt ?? '2026-10-06T14:00:00Z'}::timestamptz
+      WHERE id=${payment.id}::uuid`;
+  }
   const [job] = await db!<Array<{ id: string }>>`
     INSERT INTO fulfillment_jobs (payment_id, workspace_id, max_attempts)
     VALUES (${payment.id}::uuid, ${workspace.id}::uuid, ${options.maxAttempts ?? 3}) RETURNING id`;
-  return { paymentId: payment.id, jobId: job.id, workspaceId: workspace.id };
+  return { paymentId: payment.id, jobId: job.id, workspaceId: workspace.id, contactId: contact.id,
+    bonusCodes: bonusRows.sort((a,b)=>a.position-b.position).map((row)=>row.code) };
 }
 
 async function job(id: string) {
@@ -107,6 +140,10 @@ async function job(id: string) {
 const enrollments = async (paymentId: string) =>
   db!<Array<{ enrollment_id: string; student_id: string; login_email: string; welcome_sent: boolean }>>`
     SELECT enrollment_id, student_id, login_email, welcome_sent FROM central_enrollments WHERE payment_id = ${paymentId}::uuid`;
+const bonusEnrollments = async (paymentId: string) =>
+  db!<Array<{ offering_code: string; enrollment_status: string; position: number }>>`
+    SELECT offering_code,enrollment_status,position FROM central_bonus_enrollment_items
+    WHERE payment_id=${paymentId}::uuid ORDER BY position`;
 const makeDue = (id: string) =>
   db!`UPDATE fulfillment_jobs SET available_at = now() - interval '1 second' WHERE id = ${id}::uuid`;
 const work = (fetchImpl: typeof fetch, workerId = `w-${randomUUID().slice(0, 6)}`, cfg: CentralCargaConfig = config) =>
@@ -114,7 +151,6 @@ const work = (fetchImpl: typeof fetch, workerId = `w-${randomUUID().slice(0, 6)}
 
 beforeEach(async () => {
   if (!db) return;
-  await db`DELETE FROM central_enrollments`;
   await db`DELETE FROM fulfillment_jobs`;
 });
 
@@ -196,6 +232,113 @@ run('Central de Carga enrollment worker', () => {
     expect(await enrollments(f.paymentId)).toEqual([
       { enrollment_id: 'enr_1', student_id: 'stu_1', login_email: 'alumno@example.com', welcome_sent: true },
     ]);
+  });
+
+  it('sends one deterministic v2 request and stores only an exact complete bonus result', async () => {
+    const f = await fixture({ bonusCourses: [
+      { code: `BONUS-B-${randomUUID().slice(0, 6)}`, displayName: 'Bonus B', position: 2 },
+      { code: `BONUS-A-${randomUUID().slice(0, 6)}`, displayName: 'Bonus A', position: 1 },
+    ] });
+    const central = mockCentral((call) => json(201, body(call.paymentId, {
+      bonus_enrollments: f.bonusCodes.map((offering_code) => ({ offering_code, enrollment_status: 'active' })),
+    })));
+    expect(await runEnrollmentWorker({}, { sql: db!, config, fetchImpl: central.fetchImpl,
+      bonusConfig: { enabled: false, fulfillmentPaused: false } })).toMatchObject({ completed: 1 });
+    expect(central.calls).toHaveLength(1);
+    expect(central.calls[0].body).toMatchObject({
+      schema_version: 2,
+      bonus_offerings: f.bonusCodes.map((code) => ({ code })),
+    });
+    expect(await bonusEnrollments(f.paymentId)).toEqual(f.bonusCodes.map((offering_code, index) => ({
+      offering_code, enrollment_status: 'active', position: index + 1,
+    })));
+    expect((await enrollments(f.paymentId))[0].welcome_sent).toBe(true);
+  });
+
+  it('persists the immutable snapshot position instead of inventing an array index', async () => {
+    const code = `BONUS-GAP-${randomUUID().slice(0, 6)}`;
+    const f = await fixture({ bonusCourses: [{ code, displayName: 'Bonus gap', position: 2 }] });
+    const central = mockCentral((call) => json(201, body(call.paymentId, {
+      bonus_enrollments: [{ offering_code: code, enrollment_status: 'active' }],
+    })));
+    expect(await work(central.fetchImpl)).toMatchObject({ completed: 1 });
+    expect(await bonusEnrollments(f.paymentId)).toEqual([{
+      offering_code:code,enrollment_status:'active',position:2,
+    }]);
+  });
+
+  it('does not complete a v2 job when Central omits, adds, duplicates or leaves a bonus non-active', async () => {
+    for (const variant of ['missing','extra','duplicate','processing'] as const) {
+      const f = await fixture({ bonusCourses: [
+        { code: `BONUS-${variant}-${randomUUID().slice(0, 6)}`, displayName: 'Bonus', position: 1 },
+      ] });
+      const code = f.bonusCodes[0];
+      const bonus_enrollments = variant === 'missing' ? []
+        : variant === 'extra' ? [{ offering_code: code, enrollment_status: 'active' }, { offering_code: 'EXTRA', enrollment_status: 'active' }]
+          : variant === 'duplicate' ? [{ offering_code: code, enrollment_status: 'active' }, { offering_code: code, enrollment_status: 'active' }]
+            : [{ offering_code: code, enrollment_status: 'processing' }];
+      const central = mockCentral((call) => json(201, body(call.paymentId, { bonus_enrollments })));
+      expect(await work(central.fetchImpl)).toMatchObject({ completed: 0, retried: 1 });
+      expect(await job(f.jobId)).toMatchObject({ last_error_code: 'invalid_bonus_response' });
+      expect(await enrollments(f.paymentId)).toHaveLength(0);
+      expect(await bonusEnrollments(f.paymentId)).toHaveLength(0);
+    }
+  });
+
+  it('reconciles a partial v2 failure with GET/POST using the identical frozen set', async () => {
+    const f = await fixture({ bonusCourses: [
+      { code: `BONUS-RESUME-${randomUUID().slice(0, 6)}`, displayName: 'Bonus Resume', position: 1 },
+    ] });
+    expect(await work(mockCentral(timeout).fetchImpl)).toMatchObject({ retried: 1 });
+    await makeDue(f.jobId);
+    const second = mockCentral([
+      () => status(404, 'not_found'),
+      (call) => json(200, body(call.paymentId, { bonus_enrollments: f.bonusCodes.map((offering_code) => ({
+        offering_code, enrollment_status: 'active',
+      })) })),
+    ]);
+    expect(await work(second.fetchImpl)).toMatchObject({ completed: 1 });
+    expect(second.calls.map((call) => call.method)).toEqual(['GET','POST']);
+    expect(second.calls[1].body).toMatchObject({ schema_version: 2,
+      bonus_offerings: f.bonusCodes.map((code) => ({ code })) });
+    expect(await bonusEnrollments(f.paymentId)).toHaveLength(1);
+  });
+
+  it.each(['unknown_offering','unsupported_schema_version'])('dead-letters Central v2 %s explicitly', async (errorCode) => {
+    const f = await fixture({ bonusCourses: [
+      { code: `BONUS-ERROR-${randomUUID().slice(0, 6)}`, displayName: 'Bonus Error', position: 1 },
+    ] });
+    expect(await work(mockCentral(() => status(422, errorCode)).fetchImpl)).toMatchObject({ dead_lettered: 1 });
+    expect(await job(f.jobId)).toMatchObject({ last_error_code: `central_${errorCode}` });
+  });
+
+  it('halts an already-paid bonus obligation only under the explicit fulfillment pause', async () => {
+    const f = await fixture({ bonusCourses: [
+      { code: `BONUS-PAUSE-${randomUUID().slice(0, 6)}`, displayName: 'Bonus Pause', position: 1 },
+    ] });
+    const central = mockCentral(created);
+    expect(await runEnrollmentWorker({}, { sql: db!, config, fetchImpl: central.fetchImpl,
+      bonusConfig: { enabled: true, fulfillmentPaused: true } })).toMatchObject({ dead_lettered: 1 });
+    expect(central.calls).toHaveLength(0);
+    expect(await job(f.jobId)).toMatchObject({ last_error_code: 'bonus_fulfillment_paused' });
+  });
+
+  it('lets the exact canary contact fulfill a paid bonus while the global pause protects everyone else', async () => {
+    const f = await fixture({ bonusCourses: [
+      { code: `BONUS-CANARY-${randomUUID().slice(0, 6)}`, displayName: 'Bonus Canary', position: 1 },
+    ] });
+    const central = mockCentral((call) => json(201, body(call.paymentId, {
+      bonus_enrollments: f.bonusCodes.map((offering_code) => ({ offering_code, enrollment_status: 'active' })),
+    })));
+
+    expect(await runEnrollmentWorker({}, { sql: db!, config, fetchImpl: central.fetchImpl,
+      bonusConfig: {
+        enabled: false,
+        fulfillmentPaused: true,
+        canaryContactIds: [f.contactId],
+      },
+    })).toMatchObject({ completed: 1, dead_lettered: 0 });
+    expect(central.calls.map((call) => call.method)).toEqual(['POST']);
   });
 
   it('two concurrent workers never take the same job', async () => {

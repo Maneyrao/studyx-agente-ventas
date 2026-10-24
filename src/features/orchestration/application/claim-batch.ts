@@ -9,6 +9,10 @@ import {
   type ContactIntakeFieldV1,
   type ContactIntakeV1,
 } from '@/features/conversation/domain/conversation-planner';
+import {
+  customerResumesCommercialFlowAfterCallV1,
+  reconcileTerminalCallStateV1,
+} from '@/features/conversation/domain/call-lifecycle-reconciliation';
 import { loadConversationSessionConfig } from '@/lib/config';
 import {
   isCatalogRequestNeutral,
@@ -48,6 +52,7 @@ import {
   unknownCallIntakeReadinessV1,
   type CallIntakeReadinessV1,
 } from '@/features/calls/domain/call-intake-readiness';
+import type { CourseBonusCapabilityV1 } from '@/features/promotions/application/read-course-bonus-capability';
 
 /**
  * Claim a batch and, only if this caller won it, build the one controlled
@@ -112,6 +117,13 @@ export interface ClaimBatchDependencies {
     offering_code: string | null;
     plan_code: 'monthly_12' | 'monthly_6' | 'one_time' | null;
   }) => Promise<PaymentVerificationV1 | null>;
+  /** Backend-authorized promotion projection. A failure must resolve to null, never block the turn. */
+  readonly courseBonusCapability?: (input: {
+    contact_id: string;
+    conversation_id: string;
+    channel: 'text' | 'voice';
+    selected_offering_code: string | null;
+  }) => Promise<CourseBonusCapabilityV1 | null>;
   readonly agentABrainShadow?: boolean;
   /** Runtime rollout resolved after the batch is owned and its contact is canonical. */
   readonly agentLoopRollout?: AgentLoopRolloutReaderV3;
@@ -154,8 +166,9 @@ export interface ClaimBatchInput {
 /**
  * The controlled sales/call context handed to Agent A on every claimed turn.
  *
- * `allowed_actions` is the only thing this shape grants — it is always the
- * pure call-offer policy's output, never re-derived or widened here. `mode`
+ * `allowed_actions` is the only thing this shape grants. It starts from the
+ * pure call-offer policy and may be widened only by the persisted
+ * direct-request availability checkpoint after canonical intake is ready. `mode`
  * is a coarse label over the same underlying facts (open offer, active call,
  * last call result) so the prompt can describe where the conversation is
  * without re-deriving it. `course_of_interest` has no source in this task:
@@ -201,6 +214,7 @@ export interface ClaimedTurn {
   readonly call_intake_readiness: Pick<CallIntakeReadinessV1, 'status' | 'requirements'>;
   readonly contact_profile?: ContactProfileContextV1 | null;
   readonly payment_verification: PaymentVerificationV1 | null;
+  readonly course_bonus_capability?: CourseBonusCapabilityV1 | null;
   readonly contact: {
     readonly id: string;
     readonly status: 'prospecto' | 'cliente' | 'inactivo';
@@ -1036,7 +1050,7 @@ export async function claimBatch(
     : currentSelection;
   const selectionKeepsPersistedCourse = selection.offering_code !== null
     && selection.offering_code === persistedOffering;
-  const salesContext: ClaimedSalesContext = {
+  let salesContext: ClaimedSalesContext = {
     ...initialSalesContext,
     stage: selection.offering_code === null
       ? initialSalesContext.stage
@@ -1047,11 +1061,28 @@ export async function claimBatch(
     ...selection,
   };
   const rawPersistedConversationState = persisted_conversation_state as ConversationStateV1 | null;
-  const persistedConversationState = rawPersistedConversationState
+  const effectivePersistedConversationState = rawPersistedConversationState
     ? effectiveConversationStateV1(
         rawPersistedConversationState,
         Date.parse((deps.now ?? (() => new Date().toISOString()))()),
         loadConversationSessionConfig().sessionIdleMs,
+      )
+    : null;
+  const currentSalesSignal = classifyBatchSalesSignal(
+    batchMessages.map((message) => message.content),
+    { pendingCallReply: effectivePersistedConversationState?.awaiting_reply === 'call_or_chat' },
+  );
+  const currentCustomerResumesCommercialFlow = customerResumesCommercialFlowAfterCallV1(
+    batchMessages.map((message) => message.content),
+  );
+  const persistedConversationState = effectivePersistedConversationState
+    ? reconcileTerminalCallStateV1(
+        effectivePersistedConversationState,
+        callFacts,
+        {
+          current_customer_signal: currentSalesSignal.type,
+          current_customer_resumes_commercial_flow: currentCustomerResumesCommercialFlow,
+        },
       )
     : null;
   const conversationStateV1 = conversationStateEnabled
@@ -1132,16 +1163,49 @@ export async function claimBatch(
       ? async (contactId: string) => unknownCallIntakeReadinessV1(await readIntake(contactId))
       : (await import('@/lib/repositories/call-intake-readiness.repository')).loadCallIntakeReadinessV1);
   const readPaymentVerification = deps.paymentVerification ?? (async () => null);
-  const [callIntakeReadiness, paymentVerification, contactProfile] = await Promise.all([
+  const courseBonusTask = deps.courseBonusCapability?.({
+    contact_id: facts.contact.id,
+    conversation_id: claim.conversation_id!,
+    channel: 'text',
+    selected_offering_code: conversationStateV1?.selected_offering_code ?? null,
+  }).catch((error) => {
+    log('orchestration.claim.course_bonus_unavailable', {
+      trace_id: input.trace_id,
+      batch_id: claim.batch_id,
+      error: String(error),
+    });
+    return null;
+  }) ?? Promise.resolve(null);
+  const [callIntakeReadiness, paymentVerification, contactProfile, courseBonusCapability] = await Promise.all([
     readCallIntakeReadiness(facts.contact.id, claim.conversation_id!),
     readPaymentVerification(facts.contact.id, {
       offering_code: conversationStateV1?.selected_offering_code ?? null,
       plan_code: conversationStateV1?.selected_payment_plan ?? null,
     }),
     deps.contactProfileContext?.({ contactId: facts.contact.id, conversationId: claim.conversation_id!, batchId: claim.batch_id }) ?? null,
+    courseBonusTask,
   ]);
   const contactIntake = callIntakeReadiness.intake;
   const contactIntakeMissing = missingContactIntakeFieldsV1(contactIntake);
+  const resumesCustomerRequestedCall =
+    currentSalesSignal.type === 'call_acceptance'
+    && conversationStateV1?.call_preference === 'call'
+    && conversationStateV1.call_offer_status === 'accepted'
+    && conversationStateV1.call_offer_count === 0
+    && conversationStateV1.awaiting_reply === 'call_or_chat'
+    && callIntakeReadiness.status === 'ready'
+    && salesContext.open_call_offer === null
+    && salesContext.accepted_call_offer === null
+    && salesContext.active_call === null
+    && policy.may_respond
+    && !policy.blocked;
+  if (resumesCustomerRequestedCall) {
+    salesContext = {
+      ...salesContext,
+      allowed_actions: [...new Set([...salesContext.allowed_actions, 'request_call_now' as const])],
+    };
+    deterministic_route = 'call_direct_request';
+  }
   // A call fast path has no conversational recovery. Preserve the customer's
   // call intent as structured context while Agent A asks naturally for an
   // internationally callable number. This also gives provider-failure
@@ -1177,6 +1241,7 @@ export async function claimBatch(
     },
     ...(contactProfile ? { contact_profile: contactProfile } : {}),
     payment_verification: paymentVerification,
+    course_bonus_capability: courseBonusCapability,
     contact: {
       id: facts.contact.id,
       status: facts.contact.status,

@@ -75,6 +75,29 @@ describe('Agent A conversation from action feedback', () => {
       .toEqual(['nombre', 'apellido']);
   });
 
+  it('retains a promotion review as an authorized correction when the capability allows it', () => {
+    const current = context();
+    current.capabilities.course_bonus = {
+      status: 'review_available',
+      may_schedule_checkin: false,
+      may_request_review: true,
+      may_accept_offer: false,
+      may_send_promoted_payment: false,
+      promotion_code: null,
+      interest_offering_code: 'ingles_1',
+      bonus_offerings: [],
+    };
+
+    const rejection = plannerlessActionFeedbackV1({
+      context: current,
+      failure_code: 'PLANNERLESS_PROPOSAL_REJECTED:FACT_VALUE_MISMATCH:forbidden_promise',
+      rejection_id: '00000000-0000-4000-8000-000000000001',
+    });
+
+    expect(rejection.authorized_alternatives.actions)
+      .toEqual(['none', 'request_promotion_review']);
+  });
+
   it('preserves Agent A payment intent while fencing the physical effect', async () => {
     const current = context();
     const rejection = plannerlessActionFeedbackV1({ context: current, failure_code: 'PLANNERLESS_PROPOSAL_REJECTED:ACTION_NOT_AUTHORIZED:send_payment_link', rejection_id: '00000000-0000-4000-8000-000000000001' });

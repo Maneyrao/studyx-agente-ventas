@@ -30,6 +30,8 @@ interface Source {
   offering_name: string; registration_email: string; registration_name: string;
   enrollment_status: string | null; student_was_created: boolean | null;
   login_email: string | null; login_url: string | null;
+  bonus_offerings: Array<{ code: string; display_name: string; position: number }>;
+  verified_bonus_enrollments: Array<{ offering_code: string; enrollment_status: string; position: number }>;
 }
 export interface PostSaleConfig { enabled: boolean; environment: 'test' | 'live'; paidAfter: Date }
 export interface Deps { db?: postgres.Sql; config?: PostSaleConfig; sender?: ManagedOutboundSender; fetchImpl?: typeof fetch }
@@ -49,7 +51,23 @@ async function sources(db: postgres.Sql, config: PostSaleConfig, id?: string, pa
       w.display_name AS academy_name, o.display_name AS offering_name,
       COALESCE(p.registration_email, c.email) AS registration_email,
       COALESCE(p.registration_name, c.name) AS registration_name,
-      e.enrollment_status, e.student_was_created, e.login_email, e.login_url
+      e.enrollment_status, e.student_was_created, e.login_email, e.login_url,
+      COALESCE((
+        SELECT jsonb_agg(jsonb_build_object(
+          'code', bonus.offering_code_snapshot,
+          'display_name', bonus.offering_display_name_snapshot,
+          'position', bonus.position
+        ) ORDER BY bonus.position)
+        FROM payment_bonus_offerings bonus WHERE bonus.payment_id = p.id
+      ), '[]'::jsonb) AS bonus_offerings,
+      COALESCE((
+        SELECT jsonb_agg(jsonb_build_object(
+          'offering_code', verified.offering_code,
+          'enrollment_status', verified.enrollment_status,
+          'position', verified.position
+        ) ORDER BY verified.position)
+        FROM central_bonus_enrollment_items verified WHERE verified.payment_id = p.id
+      ), '[]'::jsonb) AS verified_bonus_enrollments
     FROM post_sale_notifications n JOIN payments p ON p.id = n.payment_id
     JOIN contacts c ON c.id = p.contact_id JOIN workspaces w ON w.id = p.workspace_id
     JOIN workspace_contacts wc ON wc.workspace_id = p.workspace_id AND wc.contact_id = p.contact_id
@@ -115,10 +133,31 @@ async function supersedePostSalePredecessors(
       )
   `;
 }
-export function validateNotificationSource(source: Pick<Source, 'kind' | 'enrollment_status' | 'login_email' | 'registration_email'>): boolean {
+type BonusEvidence = {
+  bonus_offerings?: ReadonlyArray<{ code: string; display_name: string; position: number }>;
+  verified_bonus_enrollments?: ReadonlyArray<{ offering_code: string; enrollment_status: string; position: number }>;
+};
+
+function hasCompleteBonusEvidence(source: BonusEvidence): boolean {
+  const expected = source.bonus_offerings ?? [];
+  const verified = source.verified_bonus_enrollments ?? [];
+  if (expected.length === 0) return verified.length === 0;
+  return verified.length === expected.length && expected.every((bonus, index) => {
+    const item = verified[index];
+    return item?.offering_code === bonus.code
+      && item.position === bonus.position
+      && item.enrollment_status === 'active';
+  });
+}
+
+export function validateNotificationSource(
+  source: Pick<Source, 'kind' | 'enrollment_status' | 'login_email' | 'registration_email'> & BonusEvidence,
+): boolean {
   if (source.kind !== 'access_ready') return true;
   return ['active', 'already_enrolled'].includes(source.enrollment_status ?? '')
-    && !!source.login_email && source.login_email.trim().toLowerCase() === source.registration_email?.trim().toLowerCase();
+    && !!source.login_email
+    && source.login_email.trim().toLowerCase() === source.registration_email?.trim().toLowerCase()
+    && hasCompleteBonusEvidence(source);
 }
 export async function dispatchNotifications(paymentId?: string, deps: Deps = {}) {
   const config = deps.config ?? loadPostSaleConfig();
@@ -213,17 +252,30 @@ export class PostSaleContentError extends Error {
 const OPTIONAL_PASSWORD_CHANGE = /^(?:(?:si quieres,?\s+)?(?:puedes\s+)?(?:cambiar|actualizar|modificar)\s+(?:tu|la)\s+contraseña|te\s+(?:sugiero|recomiendo)(?:\s+que)?\s+(?:cambiar|actualizar|modificar|cambies|actualices|modifiques)\s+(?:tu|la)\s+contraseña)(?:\s+(?:después de|al)\s+(?:ingresar|entrar))?[.!]?$/iu;
 
 function deterministicAccessBlocks(
-  source: Pick<Source, 'kind' | 'student_was_created' | 'login_email' | 'login_url'>,
+  source: Pick<Source, 'kind' | 'student_was_created' | 'login_email' | 'login_url'>
+    & Partial<Pick<Source, 'offering_name' | 'bonus_offerings' | 'verified_bonus_enrollments'>>,
 ): string[] {
   if (source.kind !== 'access_ready') return [];
   const credentials = source.student_was_created
     ? `📌 USUARIO: ${source.login_email}\n\n📌 CONTRASEÑA: ${INITIAL_PASSWORD}\n\nRECUERDA LA «E» EN MAYÚSCULA`
     : `📌 USUARIO: ${source.login_email}\n\n📌 CONTRASEÑA: la que ya utilizas`;
   const campus = `LINK DIRECTO AL CAMPUS VIRTUAL 👇🏻\n\n${CAMPUS_URL}`;
-  return [campus, credentials, OFFICIAL_CONTACTS];
+  const bonusOfferings = source.bonus_offerings ?? [];
+  const courses = bonusOfferings.length > 0 && hasCompleteBonusEvidence(source)
+    ? [
+        'CURSOS HABILITADOS',
+        `📚 CURSO PRINCIPAL: ${source.offering_name}`,
+        ...bonusOfferings.map((bonus) => `🎁 CURSO BONIFICADO: ${bonus.display_name}`),
+      ].join('\n')
+    : null;
+  return [courses, campus, credentials, OFFICIAL_CONTACTS].filter((block): block is string => Boolean(block));
 }
 
-export function assemblePostSaleMessage(source: Pick<Source, 'kind' | 'student_was_created' | 'login_email' | 'login_url'> & Partial<Pick<Source, 'registration_name' | 'offering_name'>>, narrative: z.infer<typeof NarrativeSchema>) {
+export function assemblePostSaleMessage(
+  source: Pick<Source, 'kind' | 'student_was_created' | 'login_email' | 'login_url'>
+    & Partial<Pick<Source, 'registration_name' | 'offering_name' | 'bonus_offerings' | 'verified_bonus_enrollments'>>,
+  narrative: z.infer<typeof NarrativeSchema>,
+) {
   // The model authors the conversation. Credentials are bound to verified backend data, outside the model.
   if (/https?:|www\.|@|\b(?:usuario|contraseña|password|clave)\b|(?:Studyx|Escuela)\.123/iu.test(narrative.intro)) {
     throw new PostSaleContentError('POST_SALE_UNAUTHORIZED_PROSE');

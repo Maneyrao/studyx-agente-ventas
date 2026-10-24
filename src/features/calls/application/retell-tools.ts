@@ -35,6 +35,16 @@ export type RetellOrchestrationToolName =
 export type RetellToolName = RetellP0ToolName | RetellOrchestrationToolName;
 
 export interface RetellOrchestrationStore {
+  readCourseBonusPromotion?(input: {
+    readonly callId: string;
+    readonly contactId: string;
+    readonly conversationId: string;
+    readonly workspaceSlug: string;
+    readonly course: string;
+  }): Promise<{
+    readonly promotionCode: string;
+    readonly bonusOfferings: ReadonlyArray<{ readonly code: string; readonly displayName: string }>;
+  } | null>;
   recordConfirmedSelection(input: {
     readonly callId: string;
     readonly contactId: string;
@@ -53,6 +63,7 @@ export interface RetellOrchestrationStore {
     readonly workspaceSlug: string;
     readonly course: string;
     readonly paymentPlan: RetellPaymentPlanRequest;
+    readonly promotionCode?: string;
   }): Promise<{
     readonly sent: boolean;
     readonly reference: string | null;
@@ -165,6 +176,7 @@ const SafeNameSchema = z.string().trim().min(1).max(128)
 const SafeEmailSchema = z.string().trim().max(254).email();
 const SafePhoneSchema = z.string().trim().regex(/^\+[1-9]\d{7,14}$/u);
 const CourseTextSchema = z.string().trim().min(1).max(128);
+const PromotionCodeSchema = z.string().trim().regex(/^[a-z0-9][a-z0-9_-]{0,63}$/u);
 const RETELL_NON_ANALYSIS_RESULT_KEYS = new Set([
   'resultado', 'resumen', 'objeciones', 'proximo_paso', 'nivel_interes', 'curso',
   'curso_seleccionado', 'plan_code',
@@ -263,18 +275,21 @@ const ToolArgsSchemas = {
     z.object({
       curso: CourseTextSchema,
       plan_code: z.enum(['monthly_12', 'monthly_6', 'one_time']),
+      promotion_code: PromotionCodeSchema.optional(),
     }).strict(),
     z.object({
       cursos: z.array(CourseTextSchema).length(1),
       plan: z.enum(['contado', 'cuotas']),
       email: SafeEmailSchema.optional(),
       canal: z.enum(['telegram', 'whatsapp']).optional(),
+      promotion_code: PromotionCodeSchema.optional(),
     }).strict(),
     z.object({
       cursos: z.array(CourseTextSchema).length(1),
       plan_code: z.enum(['monthly_12', 'monthly_6', 'one_time']),
       email: SafeEmailSchema.optional(),
       canal: z.enum(['telegram', 'whatsapp']).optional(),
+      promotion_code: PromotionCodeSchema.optional(),
     }).strict(),
   ]),
   verificar_pago: z.object({
@@ -565,6 +580,8 @@ async function consultCourse(
 
 async function consultOffer(
   args: z.infer<typeof ToolArgsSchemas.consultar_oferta>,
+  callId: string,
+  identity: { readonly contactId: string; readonly conversationId: string },
   dependencies: RetellToolDependencies,
 ): Promise<Response> {
   if (args.cursos.length !== 1) return resultError('OFFER_UNAVAILABLE');
@@ -584,6 +601,15 @@ async function consultOffer(
     && option.total.currency === course.price!.currency
   ));
   if (!coherent) return resultError('OFFER_UNAVAILABLE');
+  const promotion = dependencies.orchestration?.readCourseBonusPromotion
+    ? await dependencies.orchestration.readCourseBonusPromotion({
+        callId,
+        contactId: identity.contactId,
+        conversationId: identity.conversationId,
+        workspaceSlug: dependencies.workspaceSlug,
+        course: course.code,
+      })
+    : null;
   return Response.json({
     ok: true,
     oferta: {
@@ -591,6 +617,13 @@ async function consultOffer(
       precio_lista: course.price.amount,
       precio_final: course.price.amount,
       cuotas_texto: snapshot.workspace.payment_options.map((option) => option.label).join('; '),
+      ...(promotion ? { promocion: {
+        codigo: promotion.promotionCode,
+        cursos_bonificados: promotion.bonusOfferings.map((bonus) => ({
+          codigo: bonus.code,
+          nombre: bonus.displayName,
+        })),
+      } } : {}),
     },
   });
 }
@@ -694,6 +727,7 @@ async function runOrchestrationTool(
       paymentPlan: 'plan_code' in args
         ? args.plan_code
         : args.plan === 'contado' ? 'one_time' : 'cuotas',
+      ...(args.promotion_code === undefined ? {} : { promotionCode: args.promotion_code }),
     });
     return result.sent
       ? Response.json({
@@ -904,6 +938,8 @@ export async function handleRetellToolRequest(
     } else if (expectedName === 'consultar_oferta') {
       response = await consultOffer(
         envelope.args as z.infer<typeof ToolArgsSchemas.consultar_oferta>,
+        callId,
+        { contactId, conversationId },
         dependencies,
       );
     } else if (expectedName === 'guardar_datos_contacto') {

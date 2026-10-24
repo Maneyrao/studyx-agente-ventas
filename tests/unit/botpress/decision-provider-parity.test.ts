@@ -404,7 +404,7 @@ describe('applyDecisionPolicy — provider parity', () => {
 
     it.each([
       ['Holaa', /hola/iu],
-      ['¿Quién sos?', /asesora virtual de StudyX/iu],
+      ['¿Quién sos?', /parte del equipo de StudyX/iu],
       ['¿De dónde me hablás?', /StudyX/iu],
       ['¿Cómo estás?', /bien|gracias/iu],
     ])('answers the current social message %j without reviving a stale course', (message, expected) => {
@@ -751,7 +751,7 @@ describe('applyDecisionPolicy — provider parity', () => {
     const claimed = claimedTurn({ allowed_response_types: ['commercial_reply'], allowed_actions: ['offer_call'] });
     const decision = applyDecisionPolicy(
       modelDecision({
-        response: '¿Querés que nuestra asesora virtual te llame y te oriente?',
+        response: 'Querés que nuestra asesora te llame y te oriente?',
         response_type: 'call_offer',
         reason_code: 'CALL_OFFER',
       }),

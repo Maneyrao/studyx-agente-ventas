@@ -23,6 +23,11 @@ export type DeterministicSalesSignal =
   | { type: 'opt_out' }
   | { type: 'model_required' };
 
+export interface SalesSignalContext {
+  /** The durable conversation is waiting for a call/availability answer. */
+  readonly pendingCallReply?: boolean;
+}
+
 function normalize(text: string): string {
   return text
     .normalize('NFD')
@@ -94,21 +99,45 @@ const AVAILABILITY_ACCEPTANCE_PATTERNS: RegExp[] = [
 // Only an exact short reply counts — the moment the customer adds words
 // ("sí, contame más") the affirmative is no longer unambiguous on its own,
 // so it falls through to `model_required`.
-const SHORT_ACCEPTANCE_REPLIES = new Set(['si', 'dale', 'de una', 'dale de una']);
+const SHORT_ACCEPTANCE_REPLIES = new Set(['si', 'si dale', 'dale', 'de una', 'dale de una']);
+const SHORT_DECLINE_REPLIES = new Set(['no', 'no gracias', 'mejor no', 'no mejor no']);
+const PENDING_CALL_DECLINE_REPLIES = new Set([
+  ...SHORT_DECLINE_REPLIES,
+  'ahora no',
+  'por ahora no',
+  'prefiero que no',
+]);
 
-export function classifyDeterministicSalesSignal(text: string): DeterministicSalesSignal {
-  const normalized = normalize(text);
-  const phrase = normalized
+function normalizedPhrase(text: string): string {
+  return normalize(text)
     .replace(/[¿¡!.,;:]+/gu, ' ')
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+/** A bounded refusal whose meaning is call-specific only while the durable
+ * conversation is waiting for a call/availability answer. */
+export function isBoundedPendingCallDecline(text: string): boolean {
+  return PENDING_CALL_DECLINE_REPLIES.has(normalizedPhrase(text));
+}
+
+export function classifyDeterministicSalesSignal(
+  text: string,
+  context: SalesSignalContext = {},
+): DeterministicSalesSignal {
+  const normalized = normalize(text);
+  const phrase = normalizedPhrase(text);
 
   // Negations run before affirmative patterns: "Sí, pero no me llames" must
   // classify as a decline even though it contains an affirmative "sí".
   if (isExplicitOptOut(text)) {
     return { type: 'opt_out' };
   }
-  if (CALL_DECLINE_PATTERNS.some((pattern) => pattern.test(normalized))) {
+  if (
+    SHORT_DECLINE_REPLIES.has(phrase)
+    || (context.pendingCallReply === true && isBoundedPendingCallDecline(text))
+    || CALL_DECLINE_PATTERNS.some((pattern) => pattern.test(normalized))
+  ) {
     return { type: 'call_decline' };
   }
 
@@ -124,9 +153,7 @@ export function classifyDeterministicSalesSignal(text: string): DeterministicSal
     return { type: 'call_acceptance' };
   }
 
-  const bareReply = normalized
-    .replace(/^[¿¡!.,;: ]+|[¿¡!.,;: ]+$/g, '')
-    .replace(/^bueno,?\s+/u, '');
+  const bareReply = phrase.replace(/^bueno\s+/u, '');
   // Chat commonly stretches the final letter for emphasis ("sii",
   // "daleee"). Canonicalize only that terminal repetition and only for the
   // bounded short-reply check below; longer prose still requires the model.
@@ -146,8 +173,11 @@ export function classifyDeterministicSalesSignal(text: string): DeterministicSal
  * "no, mejor no" is a decline. A batch with no decisive message at all is
  * `model_required`, exactly like a single ambiguous message.
  */
-export function classifyBatchSalesSignal(texts: readonly string[]): DeterministicSalesSignal {
-  return classifyBatchSalesSignalWithIndex(texts).signal;
+export function classifyBatchSalesSignal(
+  texts: readonly string[],
+  context: SalesSignalContext = {},
+): DeterministicSalesSignal {
+  return classifyBatchSalesSignalWithIndex(texts, context).signal;
 }
 
 /**
@@ -155,12 +185,15 @@ export function classifyBatchSalesSignal(texts: readonly string[]): Deterministi
  * that need evidence (e.g. the call-consent source message) can point at the
  * exact text that carried the signal. `index` is null for `model_required`.
  */
-export function classifyBatchSalesSignalWithIndex(texts: readonly string[]): {
+export function classifyBatchSalesSignalWithIndex(
+  texts: readonly string[],
+  context: SalesSignalContext = {},
+): {
   signal: DeterministicSalesSignal;
   index: number | null;
 } {
   for (let index = texts.length - 1; index >= 0; index -= 1) {
-    const signal = classifyDeterministicSalesSignal(texts[index]);
+    const signal = classifyDeterministicSalesSignal(texts[index], context);
     if (signal.type !== 'model_required') return { signal, index };
   }
   return { signal: { type: 'model_required' }, index: null };

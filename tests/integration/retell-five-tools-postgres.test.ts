@@ -172,6 +172,82 @@ run('Retell five tools PostgreSQL adapter', () => {
       .resolves.toMatchObject({ sent: false, reason: 'COURSE_UNAVAILABLE' });
   });
 
+  it('discovers an active voice promotion and freezes only that accepted promotion into the WhatsApp payment', async () => {
+    const prior = process.env.CENTRAL_CARGA_BONUS_ENABLED;
+    process.env.CENTRAL_CARGA_BONUS_ENABLED = 'true';
+    try {
+      const ids = await callFixture();
+      const [bonus] = await db!<Array<{ id: string; code: string }>>`
+        INSERT INTO offerings(workspace_id,code,display_name,offering_type,status,description,price_type)
+        VALUES (${ids.workspaceId}::uuid,${`retell_bonus_${randomUUID().slice(0,8)}`},'Retell Bonus','course','active','Bonus','free')
+        RETURNING id,code`;
+      const [promotion] = await db!<Array<{ id: string; promotion_code: string }>>`
+        INSERT INTO promotions(workspace_id,promotion_code,paid_offering_id,channels,active)
+        VALUES (${ids.workspaceId}::uuid,${`retell_promo_${randomUUID().slice(0,8)}`},${ids.offeringId}::uuid,
+          ARRAY['voice']::text[],true) RETURNING id,promotion_code`;
+      await db!`INSERT INTO promotion_bonus_offerings(promotion_id,workspace_id,offering_id,position)
+        VALUES (${promotion.id}::uuid,${ids.workspaceId}::uuid,${bonus.id}::uuid,1)`;
+      const outbound = sender();
+      const store = new PostgresRetellOrchestrationStore(db!, {
+        paymentLinkResolver: { resolve: () => 'https://buy.stripe.com/promoted-voice-link' },
+        sendOutbound: outbound.send,
+      });
+      await expect(store.readCourseBonusPromotion({
+        callId:ids.callId,contactId:ids.contactId,conversationId:ids.conversationId,
+        workspaceSlug: ids.workspaceSlug, course: 'retell_course',
+      })).resolves.toEqual({
+        promotionCode: promotion.promotion_code,
+        bonusOfferings: [{ code: bonus.code, displayName: 'Retell Bonus' }],
+      });
+      const [lateBonus] = await db!<Array<{ id: string; code: string }>>`
+        INSERT INTO offerings(workspace_id,code,display_name,offering_type,status,description,price_type)
+        VALUES (${ids.workspaceId}::uuid,${`retell_late_${randomUUID().slice(0,8)}`},'Late Bonus',
+          'course','active','Late','free') RETURNING id,code`;
+      await db!`INSERT INTO promotion_bonus_offerings(promotion_id,workspace_id,offering_id,position)
+        VALUES (${promotion.id}::uuid,${ids.workspaceId}::uuid,${lateBonus.id}::uuid,2)`;
+      await expect(store.readCourseBonusPromotion({
+        callId:ids.callId,contactId:ids.contactId,conversationId:ids.conversationId,
+        workspaceSlug: ids.workspaceSlug, course: 'retell_course',
+      })).resolves.toEqual({
+        promotionCode: promotion.promotion_code,
+        bonusOfferings: [{ code: bonus.code, displayName: 'Retell Bonus' }],
+      });
+      const request = { callId:ids.callId,contactId:ids.contactId,conversationId:ids.conversationId,
+        workspaceSlug:ids.workspaceSlug,course:'retell_course',paymentPlan:'one_time' as const,
+        promotionCode:promotion.promotion_code };
+      await expect(store.requestAgentAPaymentLink(request)).resolves.toMatchObject({ sent:true });
+      await expect(store.requestAgentAPaymentLink(request)).resolves.toMatchObject({ sent:true });
+      expect(outbound.calls).toHaveLength(1);
+      await expect(db!`
+        SELECT snapshot.offering_code_snapshot, snapshot.promotion_code_snapshot
+        FROM payment_bonus_offerings snapshot
+        JOIN payments payment ON payment.id=snapshot.payment_id
+        WHERE payment.contact_id=${ids.contactId}::uuid
+      `).resolves.toEqual([{
+        offering_code_snapshot: bonus.code,
+        promotion_code_snapshot: promotion.promotion_code,
+      }]);
+      await expect(db!`SELECT status,count(*)::int AS count FROM promotion_offers
+        WHERE conversation_id=${ids.conversationId}::uuid GROUP BY status`).resolves.toEqual([{status:'attached',count:1}]);
+
+      const other = await callFixture();
+      const blockedOutbound = sender();
+      const blocked = new PostgresRetellOrchestrationStore(db!, {
+        paymentLinkResolver: { resolve: () => 'https://buy.stripe.com/promoted-invalid-link' },
+        sendOutbound: blockedOutbound.send,
+      });
+      await expect(blocked.requestAgentAPaymentLink({
+        callId:other.callId,contactId:other.contactId,conversationId:other.conversationId,
+        workspaceSlug:other.workspaceSlug,course:'retell_course',paymentPlan:'one_time',
+        promotionCode:'invented_bonus',
+      })).resolves.toMatchObject({sent:false,reason:'PROMOTION_NOT_AUTHORIZED'});
+      expect(blockedOutbound.calls).toHaveLength(0);
+    } finally {
+      if (prior === undefined) delete process.env.CENTRAL_CARGA_BONUS_ENABLED;
+      else process.env.CENTRAL_CARGA_BONUS_ENABLED = prior;
+    }
+  });
+
   it('lets Agent B select a canonical course during an early call and persists the sale before sending the link', async () => {
     const ids = await callFixture({ courseInCallSnapshot: '', selectedOfferingCode: null });
     const outbound = sender();

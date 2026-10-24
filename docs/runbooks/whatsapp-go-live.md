@@ -156,6 +156,54 @@ Rollback requires no code deployment. At the first hard, security, idempotency, 
 5. Before any retry, inspect and reconcile every `submitted_to_botpress` delivery; a Botpress message ID means the send may already be real, so never resend blindly.
 6. Leave production automation and production WhatsApp disabled. Classify the defect, add a failing regression test first, fix it, and restart at R0 only after review and a new authorization.
 
-## 7. Historical Telegram pilot
+## 7. Course-bonus addendum — not authorized yet
+
+The paid-course-plus-bonus capability is locally implemented but is not an
+authorized launch path. Keep `CENTRAL_CARGA_BONUS_ENABLED=false`, keep the
+promotion inactive, and preserve the existing Central v1 path.
+
+### Required external evidence
+
+Do not enable the feature until all of the following are attached to the
+release record:
+
+- Central v2 commit and deployed release identifiers;
+- exact Central/Moodle mappings for the paid and bonus offering codes;
+- successful Moodle enrollment for a new and an existing student;
+- an identical replay returning the same complete active set;
+- recovery from a partial Moodle failure without duplicate enrollment;
+- exactly one welcome email for the combined enrollment.
+
+### Guarded enablement order
+
+1. Deploy migrations, backend, and Botpress with
+   `CENTRAL_CARGA_BONUS_ENABLED=false`; keep every promotion inactive.
+2. Prove an ordinary Central v1 payment still completes unchanged.
+3. Verify every external evidence item above against the intended environment.
+4. Verify the authenticated `/api/cron/course-bonus-followups` run: a pending
+   row without a provider event must be scheduled, receive its provider event
+   id, and remain single-send under a duplicate event.
+5. Activate only the English promotion and enable the flag for one supervised
+   canary; do not activate any other mapping.
+6. Verify the sealed offered-course set, immutable payment snapshot, one
+   Central v2 job, complete Moodle access, and the deterministic post-sale
+   message. No invoice is part of this flow.
+7. If voice is included in the canary, change the live promotion mapping after
+   `consultar_oferta` and before payment in a controlled test; the payment must
+   retain the originally exposed set.
+8. Expand only after the canary evidence is reviewed explicitly.
+
+### Promotion-specific rollback
+
+On a false offer, silent reply, wrong snapshot, incomplete Central response, or
+unverifiable access, set `CENTRAL_CARGA_BONUS_ENABLED=false` and deactivate the
+promotion. Preserve payments, offers, snapshots, jobs, and audit rows. Any
+benefit already accepted or paid remains an obligation and must be completed
+manually; never downgrade that payment to Central v1 or erase the promise.
+
+This addendum does not override the 20/50 launch block or grant deployment,
+Botpress, WhatsApp, payment, canary, or production authorization.
+
+## 8. Historical Telegram pilot
 
 [The Telegram pilot runbook](../PILOT_RUNBOOK.md) remains historical evidence of the earlier synthetic-identity pilot. It is not the current WhatsApp launch authority and does not authorize an external Telegram or WhatsApp activation.

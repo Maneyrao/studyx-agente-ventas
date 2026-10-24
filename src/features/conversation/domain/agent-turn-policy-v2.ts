@@ -1,5 +1,6 @@
 import { supportsChatPreferenceV1 } from './channel-preference-evidence';
 import type { AgentAProposedActionV1, AgentATurnProposalV1 } from './agent-a-brain';
+import type { CourseBonusCapabilityV1 } from '@/features/promotions/application/read-course-bonus-capability';
 import type {
   AwaitingReplyV1,
   CallOfferStatusV1,
@@ -59,6 +60,9 @@ export type AgentTurnAuthorityResultV2 = {
   readonly transition: AgentTurnStateTransitionV2;
   readonly authorized_fact_ids: readonly string[];
   readonly state_facts: ReadonlySet<StateFactIdV1>;
+  /** Exact catalog course referenced by Agent A this turn. It is interest,
+   * not purchase selection, and is persisted separately by the commit layer. */
+  readonly discussed_offering_code: string | null;
   /** Present when semantic checks run as diagnostics instead of a copy veto. */
   readonly advisory_reasons?: readonly AgentTurnRejectionReasonV2[];
   readonly rejection_subjects?: readonly StateFactIdV1[];
@@ -128,6 +132,7 @@ export function authorizeAgentTurnV2(input: {
   readonly payment_verified?: boolean;
   readonly paid_purchase?: { readonly offering_code: string; readonly plan_code: SalesPaymentPlan | null };
   readonly current_customer_messages?: readonly string[];
+  readonly course_bonus?: CourseBonusCapabilityV1;
   /** A continuation retains its semantic transition without executing effects. */
   readonly effects_allowed?: boolean;
   /**
@@ -148,17 +153,66 @@ export function authorizeAgentTurnV2(input: {
   const { proposal, state } = input;
   const moves = allMoves(proposal);
   const requestedOffering = resolveOffering(proposal.move.course_reference, input.offerings);
+  const capabilityInterestOffering = input.course_bonus?.interest_offering_code ?? null;
+  const requestedOfferingIsPresentedBonus = requestedOffering !== null
+    && input.course_bonus?.bonus_offerings.some((offering) => offering.code === requestedOffering) === true;
+  const acceptsPresentedPromotion = proposal.proposed_action.type === 'accept_promotion'
+    && input.course_bonus?.may_accept_offer === true
+    && capabilityInterestOffering !== null
+    && !moves.has('ask_course_information')
+    && !moves.has('browse_catalog')
+    && !moves.has('decline_purchase')
+    && !proposal.move.vetoes.includes('purchase')
+    && (requestedOffering === null
+      || requestedOffering === capabilityInterestOffering
+      || requestedOfferingIsPresentedBonus);
   // A call must carry the course currently being discussed, not a stale
   // selection from an earlier sale. Merely asking a comparative question
   // remains non-mutating; `request_call` is the execution boundary where an
   // exact model-owned reference becomes the active course for the handoff.
-  const changesCourse = moves.has('select_course')
-    || (moves.has('request_call') && requestedOffering !== null);
-  const selectedOfferingCandidate = changesCourse
-    ? requestedOffering
-    : state.selected_offering_code;
+  // Accepting a presented package is different from switching to its bonus.
+  // The durable offer owns the paid course even when the customer names the
+  // included course while accepting it.
+  const changesCourse = !acceptsPresentedPromotion && (moves.has('select_course')
+    || (moves.has('request_call') && requestedOffering !== null));
+  const selectedOfferingCandidate = acceptsPresentedPromotion
+    ? capabilityInterestOffering
+    : changesCourse ? requestedOffering : state.selected_offering_code;
   const selectedOffering = input.offerings.some(offering => offering.code === selectedOfferingCandidate)
     ? selectedOfferingCandidate : null;
+  const acceptedPromotionOwnsBonusReference = input.course_bonus?.status === 'accepted'
+    && input.course_bonus.may_send_promoted_payment === true
+    && capabilityInterestOffering !== null
+    && selectedOffering === capabilityInterestOffering
+    && requestedOfferingIsPresentedBonus
+    && !changesCourse;
+  // A promotion capability belongs to the exact course that produced it. An
+  // explicit course switch wins, while naming an included course during an
+  // accepted package checkout keeps the paid course and its durable benefit.
+  const currentCommercialInterest = acceptsPresentedPromotion || acceptedPromotionOwnsBonusReference
+    ? capabilityInterestOffering
+    : requestedOffering
+    ?? capabilityInterestOffering
+    ?? selectedOffering;
+  const promotionMatchesCurrentInterest = capabilityInterestOffering !== null
+    && currentCommercialInterest === capabilityInterestOffering;
+  const promotionMatchesSelectedPurchase = capabilityInterestOffering !== null
+    && selectedOffering === capabilityInterestOffering;
+  const selectedOfferingIsPresentedBonus = selectedOffering !== null
+    && input.course_bonus?.bonus_offerings.some((offering) => offering.code === selectedOffering) === true;
+  const selectedOfferingBelongsToPresentedPackage = promotionMatchesSelectedPurchase
+    || selectedOfferingIsPresentedBonus;
+  const requestedOfferingBelongsToPresentedPackage = requestedOffering === capabilityInterestOffering
+    || requestedOfferingIsPresentedBonus;
+  const promotionEligibleForPurchase = input.course_bonus?.may_send_promoted_payment === true
+    && promotionMatchesSelectedPurchase
+    && promotionMatchesCurrentInterest;
+  const offeredPromotionNeedsAcceptance = input.course_bonus?.status === 'offer_available'
+    && input.course_bonus.may_accept_offer === true
+    && (selectedOfferingBelongsToPresentedPackage || requestedOfferingBelongsToPresentedPackage);
+  const authorizedPromotionCode = promotionEligibleForPurchase
+    ? input.course_bonus.promotion_code
+    : null;
   const factOffering = moves.has('ask_course_information') && requestedOffering !== null
     ? requestedOffering
     : selectedOffering;
@@ -375,7 +429,11 @@ export function authorizeAgentTurnV2(input: {
       && proposal.proposed_action.offering_code === selectedOffering
       && selectedPlan !== null
       && (resumesDurablePlan || proposal.proposed_action.payment_plan === selectedPlan);
-    if (!paymentLinkRequested || !matchesState
+    const matchesPromotion = proposal.proposed_action.promotion_code === undefined
+      || authorizedPromotionCode === proposal.proposed_action.promotion_code;
+    if (!paymentLinkRequested || !matchesState || !matchesPromotion
+      || offeredPromotionNeedsAcceptance
+      || (promotionEligibleForPurchase && authorizedPromotionCode === null)
       || proposal.move.vetoes.includes('payment_link')
       || proposal.move.vetoes.includes('purchase')) {
       reasons.push('ACTION_NOT_AUTHORIZED');
@@ -384,13 +442,12 @@ export function authorizeAgentTurnV2(input: {
     } else if (!paymentLinkBaseAuthorized) {
       reasons.push('ACTION_NOT_AUTHORIZED');
     } else if (paymentLinkAuthorized) {
-      action = resumesDurablePlan
-        ? {
-            type: 'send_payment_link',
-            offering_code: selectedOffering,
-            payment_plan: selectedPlan,
-          }
-        : proposal.proposed_action;
+      action = {
+        type: 'send_payment_link',
+        offering_code: selectedOffering,
+        payment_plan: selectedPlan,
+        ...(authorizedPromotionCode ? { promotion_code: authorizedPromotionCode } : {}),
+      };
     }
   }
   if (proposal.proposed_action.type === 'send_test_payment_link') {
@@ -403,6 +460,24 @@ export function authorizeAgentTurnV2(input: {
     else if (!stateFacts.has('state:intake_recorded:v1')) reasons.push('MISSING_INTAKE');
     else action = proposal.proposed_action;
   }
+  if (proposal.proposed_action.type === 'schedule_price_objection_checkin') {
+    if (input.course_bonus?.may_schedule_checkin === true && promotionMatchesCurrentInterest) {
+      action = proposal.proposed_action;
+    }
+    else reasons.push('ACTION_NOT_AUTHORIZED');
+  }
+  if (proposal.proposed_action.type === 'request_promotion_review') {
+    if (input.course_bonus?.may_request_review === true && promotionMatchesCurrentInterest) {
+      action = proposal.proposed_action;
+    }
+    else reasons.push('ACTION_NOT_AUTHORIZED');
+  }
+  if (proposal.proposed_action.type === 'accept_promotion') {
+    if (input.course_bonus?.may_accept_offer === true && promotionMatchesCurrentInterest) {
+      action = proposal.proposed_action;
+    }
+    else reasons.push('ACTION_NOT_AUTHORIZED');
+  }
   if (
     proposal.proposed_action.type === 'none'
     && paymentLinkRequested
@@ -411,6 +486,7 @@ export function authorizeAgentTurnV2(input: {
     && !proposal.move.vetoes.includes('payment_link')
     && !proposal.move.vetoes.includes('purchase')
     && paymentLinkAuthorized
+    && !offeredPromotionNeedsAcceptance
     // Completing intake preserves the customer's pending request, but it must
     // not make the backend invent a checkout behind an Agent A confirmation
     // question. An explicit proposed action can still consume the request.
@@ -424,6 +500,7 @@ export function authorizeAgentTurnV2(input: {
       type: 'send_payment_link',
       offering_code: selectedOffering,
       payment_plan: selectedPlan,
+      ...(authorizedPromotionCode ? { promotion_code: authorizedPromotionCode } : {}),
     };
   }
 
@@ -469,7 +546,9 @@ export function authorizeAgentTurnV2(input: {
       requested_by_turn_id: null,
       resolved_by_decision_id: null,
     };
-  } else if (paymentRequestWithdrawn || (changesCourse && courseChanged) || (
+  } else if (paymentRequestWithdrawn
+    || ((changesCourse || acceptsPresentedPromotion) && courseChanged)
+    || (
     selectsPaymentPlanNow && selectedPlan !== state.selected_payment_plan
   )) {
     paymentLinkRequest = paymentLinkRequest === null ? null : {
@@ -479,7 +558,12 @@ export function authorizeAgentTurnV2(input: {
     };
   }
 
-  if (changesCourse && requestedOffering) {
+  if (acceptsPresentedPromotion && capabilityInterestOffering && courseChanged) {
+    nextOffering = capabilityInterestOffering;
+    nextPlan = null;
+    awaitingReply = 'none';
+    stage = 'course_selected';
+  } else if (changesCourse && requestedOffering) {
     if (courseChanged) {
       nextPlan = null;
       awaitingReply = 'none';
@@ -591,6 +675,9 @@ export function authorizeAgentTurnV2(input: {
     action,
     authorized_fact_ids: unique(authorizedFactIds),
     state_facts: stateFacts,
+    discussed_offering_code: acceptsPresentedPromotion
+      ? capabilityInterestOffering
+      : requestedOffering,
     ...(reasons.length > 0 ? { advisory_reasons: unique(reasons) } : {}),
     ...(rejectionSubjects.length > 0 ? { rejection_subjects: rejectionSubjects } : {}),
     transition: {

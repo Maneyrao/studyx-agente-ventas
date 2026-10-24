@@ -7,7 +7,7 @@ const run = process.env.TEST_DATABASE_URL ? describe : describe.skip;
 const db = process.env.TEST_DATABASE_URL ? openLocalTestDatabase() : null;
 afterAll(async () => db?.end());
 const config = { enabled: true, environment: 'test' as const, paidAfter: new Date('2026-10-09T00:00:00Z') };
-async function fixture(environment = 'test') {
+async function fixture(environment = 'test', options: { bonus?: boolean } = {}) {
   const suffix = randomUUID();
   const [w] = await db!`INSERT INTO workspaces(slug,display_name) VALUES (${suffix}, 'StudyX') RETURNING id`;
   const [c] = await db!`INSERT INTO contacts(phone,status,channel_origin,name,email)
@@ -17,14 +17,33 @@ async function fixture(environment = 'test') {
   const [t] = await db!`INSERT INTO channel_threads(contact_id,provider,integration_id,channel,external_conversation_id,metadata)
     VALUES (${c.id},'botpress','whatsapp','whatsapp',${suffix},${db!.json({botpress_conversation_id: suffix})}) RETURNING id`;
   const [v] = await db!`INSERT INTO conversations(contact_id,channel,channel_thread_id) VALUES (${c.id},'whatsapp',${t.id}) RETURNING id`;
+  let promotion: { id: string; promotion_code: string } | undefined;
+  let bonus: { id: string; code: string; display_name: string } | undefined;
+  if (options.bonus) {
+    [bonus] = await db!`INSERT INTO offerings(workspace_id,code,display_name,status,description,price_type)
+      VALUES (${w.id},${`BONUS-${suffix.slice(0,8)}`},'Inglés 2','active','Continuación','free') RETURNING id,code,display_name`;
+    [promotion] = await db!`INSERT INTO promotions(workspace_id,promotion_code,paid_offering_id,channels,active)
+      VALUES (${w.id},${`promo-${suffix.slice(0,8)}`},${o.id},ARRAY['text']::text[],true) RETURNING id,promotion_code`;
+    if (!promotion || !bonus) throw new Error('bonus fixture creation failed');
+    await db!`INSERT INTO promotion_bonus_offerings(promotion_id,workspace_id,offering_id,position)
+      VALUES (${promotion.id},${w.id},${bonus.id},1)`;
+  }
   const [p] = await db!`INSERT INTO payments(workspace_id,contact_id,offering_id,amount,currency,status,provider,environment,checkout_mode,
     idempotency_key,provider_session_id,plan_code,registration_email,registration_name,source_conversation_id)
-    VALUES (${w.id},${c.id},${o.id},'360.00','USD','pending','stripe',${environment},'payment',${suffix},${`cs_test_${suffix}`},
+    VALUES (${w.id},${c.id},${o.id},'360.00','USD',${options.bonus ? 'reserved' : 'pending'},'stripe',${environment},'payment',${suffix},${`cs_test_${suffix}`},
       'one_time','ana@example.com','Ana Prueba',${v.id}) RETURNING id`;
+  if (bonus && promotion) {
+    await db!`INSERT INTO payment_bonus_offerings(payment_id,promotion_id,offering_id,promotion_code_snapshot,
+      offering_code_snapshot,offering_display_name_snapshot,position)
+      VALUES (${p.id},${promotion.id},${bonus.id},${promotion.promotion_code},${bonus.code},${bonus.display_name},1)`;
+    await db!`UPDATE payments SET status='creating_checkout' WHERE id=${p.id}`;
+    await db!`UPDATE payments SET status='pending' WHERE id=${p.id}`;
+  }
   await db!`UPDATE payments SET status='paid',paid_at=now() WHERE id=${p.id}`;
   await db!`INSERT INTO fulfillment_jobs(payment_id,workspace_id) VALUES (${p.id},${w.id})`;
   const [n] = await db!`SELECT id FROM post_sale_notifications WHERE payment_id=${p.id} AND kind='payment_received'`;
-  return { paymentId: p.id as string, notificationId:n.id as string, botpressId:suffix };
+  return { paymentId: p.id as string, notificationId:n.id as string, botpressId:suffix,
+    bonusCode: bonus?.code ?? null, bonusName: bonus?.display_name ?? null };
 }
 const eventFetch = (async () => new Response(JSON.stringify({event:{id:'event-confirmed'}}),{status:201})) as typeof fetch;
 const deps = () => ({ db: db!, config, fetchImpl: eventFetch });
@@ -85,6 +104,34 @@ run('post-sale payment / central / Agent A pipeline', () => {
     expect(await dispatchNotifications(f.paymentId,deps())).toEqual({dispatched:0});
     expect(messages).toHaveLength(1);
     expect(await db!`SELECT id FROM central_enrollments WHERE payment_id=${f.paymentId}`).toHaveLength(1);
+  });
+  it('announces a bonus only after the complete Central v2 result and sends no invoice', async () => {
+    process.env.BOTPRESS_MANAGED_EGRESS_TOKEN='synthetic'; process.env.BOTPRESS_MANAGED_EGRESS_BOT_ID='bot-test';
+    const f=await fixture('test',{bonus:true});
+    const messages:string[]=[];
+    const centralFetch=(async (_url:unknown,init?:RequestInit)=>{
+      const request=JSON.parse(String(init?.body));
+      expect(request).toMatchObject({schema_version:2,bonus_offerings:[{code:f.bonusCode}]});
+      return new Response(JSON.stringify({payment_id:f.paymentId,enrollment_id:'enr-v2',student_id:'stu-v2',
+        enrollment_status:'active',student_was_created:true,access:{login_email:'ana@example.com',welcome_sent:true},
+        bonus_enrollments:[{offering_code:f.bonusCode,enrollment_status:'active'}]}),{status:201});
+    }) as typeof fetch;
+    const workerConfig={enabled:true as const,baseUrl:'https://central.test',signingSecret:'secret-synthetic-123456',
+      environment:'test' as const,paidAfter:config.paidAfter,allowSandboxContacts:true};
+    expect(await runEnrollmentWorker({scoped:true,payment_id:f.paymentId,limit:1},
+      {sql:db!,config:workerConfig,fetchImpl:centralFetch,bonusConfig:{enabled:false,fulfillmentPaused:false}}))
+      .toMatchObject({completed:1});
+    const [ready]=await db!`SELECT id FROM post_sale_notifications WHERE payment_id=${f.paymentId} AND kind='access_ready'`;
+    expect(await dispatchNotifications(f.paymentId,deps())).toEqual({dispatched:1});
+    const claim=await claimNotification(ready.id,f.botpressId,deps()); if(!claim.claimed) throw new Error('ready claim');
+    expect(await deliverNotification(ready.id,{claim_token:claim.claim_token,botpress_conversation_id:f.botpressId,
+      narrative:{intro:'Tu acceso ya está habilitado.',suggestion:''}},
+      {...deps(),sender:async(input:{text:string})=>{messages.push(input.text); return {outcome:'sent' as const,
+        channel:'whatsapp' as const,providerMessageId:'sent-v2',deliveryId:null,reason:null};}})).toEqual({outcome:'sent'});
+    expect(messages).toHaveLength(1);
+    expect(messages[0]).toContain('CURSO PRINCIPAL: Curso Prueba');
+    expect(messages[0]).toContain(`CURSO BONIFICADO: ${f.bonusName}`);
+    expect(messages[0]).not.toMatch(/invoice|comprobante/iu);
   });
   it('reuses the same claim after invalid model prose and sends the safe fallback once', async () => {
     const f=await fixture(); await dispatchNotifications(f.paymentId,deps());

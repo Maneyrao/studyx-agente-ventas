@@ -29,6 +29,45 @@ export interface CanonicalCatalogOfferingSource {
   readonly display_name: string;
 }
 
+/**
+ * Resolve only an exact, unambiguous course name from Agent A's own accepted
+ * response. This is a grounding fallback for durable commercial context, not
+ * an intent classifier: generic areas, aliases and customer prose are outside
+ * its scope, and naming more than one canonical offering returns no result.
+ */
+export function singleCanonicalOfferingReferenceV1(input: {
+  readonly content: string;
+  readonly offerings: readonly CanonicalCatalogOfferingSource[];
+}): string | null {
+  const content = normalize(input.content);
+  const mentioned = input.offerings.filter((offering) => {
+    const name = normalize(offering.display_name);
+    if (!name) return false;
+    const matches = [...content.matchAll(
+      new RegExp(`(?<![\\p{L}\\p{N}])${escapeRegExp(name)}(?![\\p{L}\\p{N}])`, 'gu'),
+    )];
+    return matches.some((match) => !isRejectedOfferingOccurrence(content, match.index, name.length));
+  });
+  const codes = [...new Set(mentioned.map((offering) => offering.code))];
+  return codes.length === 1 ? codes[0]! : null;
+}
+
+function isRejectedOfferingOccurrence(content: string, start: number, length: number): boolean {
+  const sentenceBoundary = /[.!?\n]/u;
+  let sentenceStart = start;
+  while (sentenceStart > 0 && !sentenceBoundary.test(content[sentenceStart - 1]!)) sentenceStart -= 1;
+  let sentenceEnd = start + length;
+  while (sentenceEnd < content.length && !sentenceBoundary.test(content[sentenceEnd]!)) sentenceEnd += 1;
+  const beforeWords = content.slice(sentenceStart, start).match(/[\p{L}\p{N}]+/gu) ?? [];
+  const afterWords = content.slice(start + length, sentenceEnd).match(/[\p{L}\p{N}]+/gu) ?? [];
+  const nearbyNegation = new Set(['no', 'nunca', 'tampoco']);
+  const negated = beforeWords.slice(-6).some((word) => nearbyNegation.has(word))
+    || afterWords.slice(0, 6).some((word) => nearbyNegation.has(word));
+  const sentence = content.slice(sentenceStart, sentenceEnd);
+  const rejectedOrUncertain = /\b(?:descart[\p{L}\p{N}]*|inadecuad[\p{L}\p{N}]*|innecesari[\p{L}\p{N}]*|quiz[aá]s?|tal\s+vez|posiblemente|probablemente|puede\s+que|podr[ií]a\s+ser|no\s+(?:estoy|estamos)\s+segur[oa]s?)\b/u.test(sentence);
+  return negated || rejectedOrUncertain;
+}
+
 function normalize(value: string): string {
   return value.normalize('NFKC').toLowerCase().replace(/\s+/gu, ' ').trim();
 }

@@ -242,6 +242,23 @@ export const AgentAContextV1Schema = z.object({
     may_present_payment_options: z.boolean(),
     may_send_payment_link: z.boolean(),
     authorized_payment_plan: PaymentPlanSchema.nullable(),
+    course_bonus: z.object({
+      status: z.enum([
+        'unavailable', 'needs_interest', 'not_eligible', 'checkin_available',
+        'review_available', 'review_pending', 'offer_available', 'accepted',
+      ]),
+      may_schedule_checkin: z.boolean(),
+      may_request_review: z.boolean(),
+      may_accept_offer: z.boolean(),
+      may_send_promoted_payment: z.boolean(),
+      promotion_code: IdentifierSchema.nullable(),
+      interest_offering_code: IdentifierSchema.nullable().optional(),
+      bonus_offerings: z.array(z.object({
+        code: IdentifierSchema,
+        display_name: z.string().trim().min(1).max(240),
+        position: z.number().int().min(1).max(3),
+      }).strict()).max(3),
+    }).strict().optional(),
     // Lista canónica de campos que todavía faltan. Los valores confirmables
     // están en customer.contact_intake y no alteran este permiso.
     /**
@@ -271,6 +288,15 @@ export const AgentAProposedActionSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('none') }).strict(),
   z.object({ type: z.literal('request_call_now'), reason: z.enum(['direct_request', 'accepted_offer']) }).strict(),
   z.object({
+    type: z.literal('schedule_price_objection_checkin'),
+    reason: z.literal('price_objection'),
+  }).strict(),
+  z.object({
+    type: z.literal('request_promotion_review'),
+    reason: z.literal('persistent_price_objection'),
+  }).strict(),
+  z.object({ type: z.literal('accept_promotion') }).strict(),
+  z.object({
     type: z.literal('send_test_payment_link'),
     offering_code: IdentifierSchema,
   }).strict(),
@@ -278,6 +304,7 @@ export const AgentAProposedActionSchema = z.discriminatedUnion('type', [
     type: z.literal('send_payment_link'),
     offering_code: IdentifierSchema,
     payment_plan: PaymentPlanSchema,
+    promotion_code: IdentifierSchema.optional(),
   }).strict(),
 ]);
 

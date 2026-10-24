@@ -73,6 +73,7 @@ sql_paths = [
   "./seed/studyx.sql",
   "./seed/studyx-temarios.sql",
   "./seed/studyx-manual.sql",
+  "./seed/studyx-promotions.sql",
   "./seed/local-role-bootstrap.sql",
 ]
 

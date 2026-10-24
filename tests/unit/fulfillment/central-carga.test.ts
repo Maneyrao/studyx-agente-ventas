@@ -37,6 +37,7 @@ function source(overrides: Partial<EnrollmentSource> = {}): EnrollmentSource {
     contact_declared_phone: null,
     offering_code: 'ESTETICA-INTEGRAL',
     offering_display_name: 'Estética Integral',
+    bonus_offerings: [],
     ...overrides,
   };
 }

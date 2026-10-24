@@ -36,7 +36,7 @@ import {
   buildAgentASalesBridgeCompactInstructions,
   buildAgentASalesBridgeInstructions,
 } from '../prompts/agent-a-sales-bridge'
-import { StudyxHttpError } from '../utils/http'
+import { requestStudyxJson, StudyxHttpError } from '../utils/http'
 import {
   applyDecisionPolicy,
   classifyBrainFailureReason,
@@ -443,7 +443,13 @@ function backendCommitTurnRejectionV1(input: {
     ...(input.context.catalog.test_payment_options?.map((option) => option.fact_id) ?? []),
   ]
   const actions = ['none']
-  if (input.context.capabilities.may_send_payment_link) actions.push('send_payment_link')
+  const promotionAcceptancePending = input.context.capabilities.course_bonus?.may_accept_offer === true
+  if (input.context.capabilities.may_send_payment_link && !promotionAcceptancePending) {
+    actions.push('send_payment_link')
+  }
+  if (input.context.capabilities.course_bonus?.may_schedule_checkin) actions.push('schedule_price_objection_checkin')
+  if (input.context.capabilities.course_bonus?.may_request_review) actions.push('request_promotion_review')
+  if (input.context.capabilities.course_bonus?.may_accept_offer) actions.push('accept_promotion')
   if ((input.context.catalog.test_payment_options?.length ?? 0) > 0) actions.push('send_test_payment_link')
   if (input.context.capabilities.may_request_call_now) actions.push('request_call_now')
 
@@ -487,6 +493,28 @@ export const processInboundTurn = new Workflow({
     state.phase = 'processing'
     state.errorCode = null
     let whatsappTypingActive = false
+    const startWhatsAppTyping = async (): Promise<void> => {
+      if (whatsappTypingActive
+        || input.channel !== 'whatsapp'
+        || input.sandbox_provider === 'telegram_sandbox') return
+      try {
+        await getWhatsappRuntimeActions().startTypingIndicator({
+          conversationId: input.botpress_conversation_id,
+          messageId: input.external_message_id,
+          timeout: 60_000,
+        })
+        whatsappTypingActive = true
+        safeLog('studyx.turn.typing_indicator_started', { trace_id: input.trace_id })
+      } catch (error) {
+        if (!(error instanceof Error)) throw error
+        // Presence is UX only. A provider or integration failure must never
+        // prevent the durable turn from producing the actual answer.
+        safeLog('studyx.turn.typing_indicator_start_failed', {
+          trace_id: input.trace_id,
+          error_code: errorCode(error),
+        })
+      }
+    }
     const stopWhatsAppTyping = async (): Promise<void> => {
       if (!whatsappTypingActive) return
       whatsappTypingActive = false
@@ -782,6 +810,13 @@ export const processInboundTurn = new Workflow({
       return finish()
     }
 
+    // Ingest already contains the canonical contact policy. Start presence
+    // before the durable batch wait so WhatsApp shows activity during the
+    // entire customer-visible wait, without leaking it to blocked contacts.
+    if (ingest.policy.may_respond && !ingest.contact.blocked) {
+      await startWhatsAppTyping()
+    }
+
     // ---- Pasos 4-6: dormir hasta due_at y reclamar ------------------------
     //
     // El sueño es un step durable: si el runtime recicla el workflow, se
@@ -903,28 +938,6 @@ export const processInboundTurn = new Workflow({
         }
       : claimed
     state.turnId = owned.turn_id
-    if (input.channel === 'whatsapp'
-      && input.sandbox_provider !== 'telegram_sandbox'
-      && owned.policy.may_respond
-      && !owned.contact.blocked) {
-      try {
-        await getWhatsappRuntimeActions().startTypingIndicator({
-          conversationId: input.botpress_conversation_id,
-          messageId: input.external_message_id,
-          timeout: 60_000,
-        })
-        whatsappTypingActive = true
-      } catch (error) {
-        if (!(error instanceof Error)) throw error
-        // Presence is UX only. A provider or integration failure must never
-        // prevent the durable turn from producing the actual answer.
-        safeLog('studyx.turn.typing_indicator_start_failed', {
-          trace_id: input.trace_id,
-          turn_id: owned.turn_id,
-          error_code: errorCode(error),
-        })
-      }
-    }
     const batchEventTimes = owned.context.batch_messages
       .map((message) => Date.parse(message.occurred_at ?? message.created_at))
       .filter((value) => Number.isFinite(value))
@@ -964,6 +977,8 @@ export const processInboundTurn = new Workflow({
       feedback: input.recovery_feedback, batch_id: owned.batch.id,
       conversation_id: owned.batch.conversation_id, turn_id: owned.turn_id, context: agentABrainContext,
     }) : null
+    const resumedEffectsAllowed = resumedRejection?.authorized_alternatives.actions
+      .some((action) => action !== 'none') === true
     let latestRejection: TurnRejectionV1 | null = resumedRejection
     if (agentABrainContext && resumedRejection) agentABrainContext.turn_rejection = resumedRejection
     if (agentABrainContext) {
@@ -1013,7 +1028,7 @@ export const processInboundTurn = new Workflow({
     let turnDiagnostics: TurnDiagnosticsV1 | null = null
     let agentAGenerationAttempts: 0 | 1 | 2 | 3 = 0
     let physicalAgentARequests = 0
-    let agentAConversationOnly = resumedRejection !== null
+    let agentAConversationOnly = resumedRejection !== null && !resumedEffectsAllowed
     const accountAgentAProviderRequest = () => {
       if (physicalAgentARequests >= 3) {
         throw new Error('PLANNERLESS_PROPOSAL_REJECTED:ACTION_NOT_AUTHORIZED:generation_budget')
@@ -1021,7 +1036,22 @@ export const processInboundTurn = new Workflow({
       physicalAgentARequests += 1
       agentAGenerationAttempts = Math.max(agentAGenerationAttempts, physicalAgentARequests) as 1 | 2 | 3
     }
-    let agentARepairAttempted = false
+    const accountAgentAPrecommitRepairRequest = () => {
+      // Keep the third and final physical request available for the
+      // authoritative backend receipt. An internal JSON/schema retry must not
+      // consume the only request that can correct a durable business-rule
+      // rejection and leave the customer without a reply.
+      if (physicalAgentARequests >= 2) {
+        safeLog('studyx.turn.agent_a_precommit_repair_budget_reserved', {
+          trace_id: input.trace_id,
+          turn_id: owned.turn_id,
+          physical_agent_a_requests: physicalAgentARequests,
+          repair_budget_version: 'backend-reserve-v1',
+        })
+        throw new Error('PLANNERLESS_PROPOSAL_REJECTED:ACTION_NOT_AUTHORIZED:backend_repair_reserved')
+      }
+      accountAgentAProviderRequest()
+    }
     let agentAContinuationFailure: unknown = null
     let callOfferAudit: {
       readonly call_offer_count_before: 0 | 1 | 2
@@ -1078,6 +1108,53 @@ export const processInboundTurn = new Workflow({
         call_accepted: policy.customer_signal === 'acceptance',
         call_rejected: policy.customer_signal === 'rejection',
         chat_preference: policy.customer_signal === 'chat_preference',
+      }
+    }
+
+    if (deterministicDirectCallHandoff
+      && owned.conversation_state_v1?.call_preference === 'call'
+      && owned.conversation_state_v1.call_offer_status === 'accepted'
+      && owned.conversation_state_v1.call_offer_count === 0
+      && owned.conversation_state_v1.awaiting_reply === 'call_or_chat'
+      && commercialRoute.kind === 'deterministic'
+      && commercialRoute.decision.response !== null
+      && commercialRoute.decision.business_action?.type === 'request_call_now'
+      && commercialRoute.decision.business_action.reason === 'direct_request') {
+      // A short availability answer ("sí, dale") is not a standalone direct
+      // request. Preserve the model-free fast path, but send its structured
+      // move through the backend Agent Turn authority so the persisted
+      // accepted direct request is reloaded and proven before call consent is
+      // materialized. A bare affirmative outside this state never reaches it.
+      agentTurnV2Commit = {
+        schema_version: 2,
+        proposal: {
+          schema_version: 1,
+          move: {
+            schema_version: 1,
+            move: 'request_call',
+            secondary_moves: [],
+            vetoes: [],
+            confidence: 1,
+          },
+          response: { messages: [commercialRoute.decision.response], call_offer: null },
+          proposed_action: { type: 'request_call_now', reason: 'direct_request' },
+          used_fact_ids: [],
+          used_memory_ids: [],
+          memory_candidates: [],
+          profile_updates: [],
+          profile_requests: [],
+          repair_of: null,
+        },
+      }
+      pipelineDecisionProvider = 'botpress'
+      pipelineDecisionModel = 'deterministic:direct-call-availability-v1'
+      pipelinePromptVersion = AGENT_A_PROMPT_VERSION
+      turnDiagnostics = {
+        schema_version: 1,
+        generation_attempts: 0,
+        failure_stage: 'none',
+        failure_codes: [],
+        action_status: 'authorized',
       }
     }
 
@@ -1163,7 +1240,7 @@ export const processInboundTurn = new Workflow({
         }
         const generateDeepSeekProposal = () => generateDeepSeekAgentATurnProposalV1({
             context: agentABrainContext,
-            ...(resumedRejection ? { conversation_only: true } : {}),
+            ...(resumedRejection ? { conversation_only: agentAConversationOnly } : {}),
             on_provider_request: accountAgentAProviderRequest,
             apiKey: deepSeekApiKey,
             signal,
@@ -1261,7 +1338,6 @@ export const processInboundTurn = new Workflow({
                 if (agentAGenerationAttempts >= 3) {
                   throw new Error('PLANNERLESS_PROPOSAL_REJECTED:ACTION_NOT_AUTHORIZED:generation_budget')
                 }
-                agentARepairAttempted = true
                 const repairEffectsAllowed = rejection.authorized_alternatives.actions
                   .some((action) => action !== 'none')
                 agentAConversationOnly = !repairEffectsAllowed
@@ -1275,7 +1351,7 @@ export const processInboundTurn = new Workflow({
                   'repair-agent-a-turn-proposal-v2',
                   () => continueAgentAAfterActionFeedbackV1({
                     context: agentABrainContext,
-                    on_provider_request: accountAgentAProviderRequest,
+                    on_provider_request: accountAgentAPrecommitRepairRequest,
                     rejection,
                     effects_allowed: repairEffectsAllowed,
                     apiKey: secrets.DEEPSEEK_API_KEY as string,
@@ -1299,14 +1375,13 @@ export const processInboundTurn = new Workflow({
             if (resolved.action_rejection !== null) agentAConversationOnly = true
             if (resolved.action_rejection !== null && resolved.rejection !== null
               && !resolved.evidence.repair_attempted && agentAGenerationAttempts < 3) {
-              agentARepairAttempted = true
               agentAConversationOnly = true
               agentAGenerationAttempts = Math.max(agentAGenerationAttempts, 2) as 2 | 3
               try {
               effectiveGenerated = await step('continue-agent-a-after-authorization-result-v2',
                 () => continueAgentAAfterActionFeedbackV1({
                   context: agentABrainContext, rejection: resolved.rejection!,
-                  on_provider_request: accountAgentAProviderRequest,
+                  on_provider_request: accountAgentAPrecommitRepairRequest,
                   apiKey: secrets.DEEPSEEK_API_KEY as string, signal,
                   generate: generateDeepSeekAgentATurnProposalV1,
                   model: typeof configuration.agentABrainDeepSeekModel === 'string'
@@ -1582,25 +1657,36 @@ export const processInboundTurn = new Workflow({
                 const profileRejection = plannerlessActionFeedbackV1({ failure_code: failureCode,
                   context: agentABrainContext, rejection_id: randomUUID() })
                 latestRejection = profileRejection
+                const profileEffectsAllowed = profileRejection.authorized_alternatives.actions
+                  .some((action) => action !== 'none')
                 const continuation = await step('continue-agent-a-after-action-feedback-v1',
                   () => continueAgentAAfterActionFeedbackV1({
                     context: agentABrainContext,
                     on_provider_request: accountAgentAProviderRequest,
                     rejection: profileRejection,
+                    effects_allowed: profileEffectsAllowed,
                     apiKey: secrets.DEEPSEEK_API_KEY as string, signal,
                     generate: generateDeepSeekAgentATurnProposalV1,
                     model: typeof configuration.agentABrainDeepSeekModel === 'string'
                       ? configuration.agentABrainDeepSeekModel : DEFAULT_AGENT_A_BRAIN_DEEPSEEK_MODEL,
                   }), { maxAttempts: 1 })
                 await persistProfileProposal(continuation.proposal, profileRejection)
-                agentTurnV2Commit = { schema_version: 2, proposal: continuation.proposal, ...fencedAgentARequestV1() }
+                agentTurnV2Commit = {
+                  schema_version: 2,
+                  proposal: continuation.proposal,
+                  ...(!profileEffectsAllowed ? fencedAgentARequestV1() : {}),
+                }
                 pipelineMemoryCandidates = continuation.proposal.memory_candidates
                 pipelineDecisionProvider = continuation.provider
                 pipelineDecisionModel = continuation.model
                 pipelinePromptVersion = AGENT_A_BRAIN_PROMPT_VERSION
                 pipelineFailureDecision = null
                 turnDiagnostics = { ...turnDiagnostics,
-                  generation_attempts: agentAGenerationAttempts, action_status: 'none' }
+                  generation_attempts: agentAGenerationAttempts,
+                  action_status: continuation.proposal.proposed_action.type === 'none'
+                    ? 'none'
+                    : 'authorized',
+                }
               } catch (continuationError) {
                 if (!(continuationError instanceof Error)) throw continuationError
                 const continuationFailure = classifyAgentAAttemptFailure(continuationError)
@@ -2059,10 +2145,11 @@ export const processInboundTurn = new Workflow({
         rejection_subjects: rejection.rejections.map((item) => item.subject),
       })
         latestRejection = rejection
-        const rejectionCodes = [...new Set(
+        let currentBackendRejection = rejection
+        let rejectionCodes = [...new Set(
           rejection.rejections.map((item) => item.code),
         )].slice(0, 8)
-        const repairEffectsAllowed = rejection.authorized_alternatives.actions
+        let repairEffectsAllowed = rejection.authorized_alternatives.actions
           .some((action) => action !== 'none')
         const deepSeekApiKey = secrets.DEEPSEEK_API_KEY
         // A second backend rejection does not authorize the backend to write
@@ -2070,22 +2157,29 @@ export const processInboundTurn = new Workflow({
         // effect-fenced correction with the exact rejection receipt.
         const mayRepairWithAgentA = plannerlessV2Enabled
           && repairEnabled
-          && !agentARepairAttempted
           && agentAGenerationAttempts < 3
           && typeof deepSeekApiKey === 'string'
           && deepSeekApiKey.length > 0
+        safeLog('studyx.turn.agent_a_backend_repair_budget', {
+          trace_id: input.trace_id,
+          turn_id: owned.turn_id,
+          physical_agent_a_requests: physicalAgentARequests,
+          generation_attempts: agentAGenerationAttempts,
+          may_repair: mayRepairWithAgentA,
+          effects_allowed: repairEffectsAllowed,
+          repair_budget_version: 'backend-reserve-v1',
+        })
         let continuationFailure: ReturnType<typeof classifyAgentAAttemptFailure> | null = null
 
         if (mayRepairWithAgentA) {
-          agentARepairAttempted = true
-          agentAGenerationAttempts = 2
+          agentAGenerationAttempts = Math.max(agentAGenerationAttempts, 2) as 2 | 3
           try {
             const repaired = await step(
               'repair-agent-a-turn-after-backend-rejection-v1',
               () => continueAgentAAfterActionFeedbackV1({
                 context: repairContext,
                 on_provider_request: accountAgentAProviderRequest,
-                rejection,
+                rejection: currentBackendRejection,
                 effects_allowed: repairEffectsAllowed,
                 apiKey: deepSeekApiKey,
                 signal,
@@ -2096,13 +2190,13 @@ export const processInboundTurn = new Workflow({
               }),
               { maxAttempts: 1 },
             )
-            await persistProfileProposal(repaired.proposal, rejection)
+            await persistProfileProposal(repaired.proposal, currentBackendRejection)
             const resolvedRepair = await resolveAgentAPlannerlessProposalV2({
               initial: repaired,
               context: repairContext,
               repair_enabled: false,
               semantic_rejections: 'advisory',
-              rejection_id: rejection.rejection_id,
+              rejection_id: currentBackendRejection.rejection_id,
               repair: async () => {
                 throw new Error('AGENT_A_SECOND_REPAIR_NOT_ALLOWED')
               },
@@ -2132,17 +2226,34 @@ export const processInboundTurn = new Workflow({
             safeLog('studyx.turn.backend_commit_repaired_by_agent_a', {
               trace_id: input.trace_id,
               turn_id: owned.turn_id,
-              rejection_id: rejection.rejection_id,
+              rejection_id: currentBackendRejection.rejection_id,
               rejection_codes: rejectionCodes,
               repaired_action_type: effectiveRepair.proposal.proposed_action.type,
             })
           } catch (repairError) {
             if (!(repairError instanceof Error)) throw repairError
             continuationFailure = classifyAgentAAttemptFailure(repairError)
+            if (continuationFailure.stage === 'backend_rejected' && agentTurnV2Commit !== null) {
+              const renewedRejection = backendCommitTurnRejectionV1({
+                error: repairError,
+                proposal: agentTurnV2Commit.proposal,
+                context: repairContext,
+                rejectionId: randomUUID(),
+              })
+              if (renewedRejection !== null) {
+                currentBackendRejection = renewedRejection
+                latestRejection = renewedRejection
+                rejectionCodes = [...new Set(
+                  renewedRejection.rejections.map((item) => item.code),
+                )].slice(0, 8)
+                repairEffectsAllowed = renewedRejection.authorized_alternatives.actions
+                  .some((action) => action !== 'none')
+              }
+            }
             safeLog('studyx.turn.backend_commit_agent_a_repair_failed', {
               trace_id: input.trace_id,
               turn_id: owned.turn_id,
-              rejection_id: rejection.rejection_id,
+              rejection_id: currentBackendRejection.rejection_id,
               error_code: errorCode(repairError),
             })
           }
@@ -2160,7 +2271,7 @@ export const processInboundTurn = new Workflow({
               () => continueAgentAAfterActionFeedbackV1({
                 context: repairContext,
                 on_provider_request: accountAgentAProviderRequest,
-                rejection,
+                rejection: currentBackendRejection,
                 effects_allowed: repairEffectsAllowed,
                 apiKey: deepSeekApiKey,
                 signal,
@@ -2171,7 +2282,7 @@ export const processInboundTurn = new Workflow({
               }),
               { maxAttempts: 1 },
             )
-            await persistProfileProposal(finalContinuation.proposal, rejection)
+            await persistProfileProposal(finalContinuation.proposal, currentBackendRejection)
             agentTurnV2Commit = {
               schema_version: 2,
               proposal: finalContinuation.proposal,
@@ -2197,16 +2308,31 @@ export const processInboundTurn = new Workflow({
             safeLog('studyx.turn.backend_commit_final_agent_a_continuation', {
               trace_id: input.trace_id,
               turn_id: owned.turn_id,
-              rejection_id: rejection.rejection_id,
+              rejection_id: currentBackendRejection.rejection_id,
               rejection_codes: rejectionCodes,
             })
           } catch (finalError) {
             if (!(finalError instanceof Error)) throw finalError
             continuationFailure = classifyAgentAAttemptFailure(finalError)
+            if (continuationFailure.stage === 'backend_rejected' && agentTurnV2Commit !== null) {
+              const renewedRejection = backendCommitTurnRejectionV1({
+                error: finalError,
+                proposal: agentTurnV2Commit.proposal,
+                context: repairContext,
+                rejectionId: randomUUID(),
+              })
+              if (renewedRejection !== null) {
+                currentBackendRejection = renewedRejection
+                latestRejection = renewedRejection
+                rejectionCodes = [...new Set(
+                  renewedRejection.rejections.map((item) => item.code),
+                )].slice(0, 8)
+              }
+            }
             safeLog('studyx.turn.backend_commit_final_agent_a_failed', {
               trace_id: input.trace_id,
               turn_id: owned.turn_id,
-              rejection_id: rejection.rejection_id,
+              rejection_id: currentBackendRejection.rejection_id,
               error_code: errorCode(finalError),
             })
           }
@@ -2344,6 +2470,50 @@ export const processInboundTurn = new Workflow({
           call_id: committed.call_request.call_id,
           error_code: errorCode(error),
         })
+      }
+    }
+
+    const scheduleCommercialFollowups = async (messageId: string | null): Promise<void> => {
+      for (const followup of committed.commercial_followups ?? []) {
+        try {
+          const delay = Math.max(0, Date.parse(followup.due_at) - Date.now())
+          const scheduled = await step(
+            `schedule-commercial-followup-${followup.id}`,
+            () => client.createEvent({
+              type: 'studyxCommercialFollowup',
+              payload: { followup_id: followup.id },
+              conversationId: input.botpress_conversation_id,
+              ...(messageId ? { messageId } : {}),
+              schedule: { delay },
+            }),
+            { maxAttempts: 3 },
+          )
+          await requestStudyxJson({
+            path: `/api/agent/commercial-followups/${followup.id}/scheduled`,
+            body: { provider_event_id: scheduled.event.id },
+            traceId: input.trace_id,
+            idempotencyKey: `commercial-followup-scheduled:${followup.id}:${scheduled.event.id}`,
+            responseSchema: z.object({ recorded: z.boolean(), provider_event_id: z.string().nullable() }),
+          })
+          safeLog('studyx.turn.commercial_followup_scheduled', {
+            trace_id: input.trace_id,
+            turn_id: owned.turn_id,
+            followup_id: followup.id,
+            followup_kind: followup.kind,
+            provider_event_id: scheduled.event.id,
+            delay_ms: delay,
+          })
+        } catch (error) {
+          if (!(error instanceof Error)) throw error
+          // The visible answer and the rest of the sale are never rolled back
+          // because a secondary follow-up could not be scheduled.
+          safeLog('studyx.turn.commercial_followup_schedule_failed', {
+            trace_id: input.trace_id,
+            turn_id: owned.turn_id,
+            followup_id: followup.id,
+            error_code: errorCode(error),
+          })
+        }
       }
     }
 
@@ -2678,6 +2848,7 @@ export const processInboundTurn = new Workflow({
       }
       state.deliveryStatus = 'submitted_to_botpress'
       await dispatchAcknowledgedCall()
+      await scheduleCommercialFollowups(lastBotpressMessageId)
       try {
         await step(
           'flush-lead-projection-multi',
@@ -2904,6 +3075,7 @@ export const processInboundTurn = new Workflow({
       timings.delivery_report_ms = Date.now() - reportStartedAt
 
     await dispatchAcknowledgedCall()
+    await scheduleCommercialFollowups(delivery.message.id)
 
     // ---- Opcional: adelantar el flush de Sheets ---------------------------
     // El backend ya encoló la proyección `payment_link_sent` (si corresponde)

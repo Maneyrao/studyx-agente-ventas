@@ -102,6 +102,7 @@ export async function seedConversationForAgentTurn(options: {
   readonly call_offer_count?: 0 | 1 | 2;
   readonly selected_offering_code?: string | null;
   readonly intake_complete?: boolean;
+  readonly first_message?: string;
 } = {}): Promise<SeededAgentTurn> {
   const traceId = randomUUID();
   const [workspace] = await sql<Array<{ id: string }>>`
@@ -134,9 +135,9 @@ export async function seedConversationForAgentTurn(options: {
   });
 
   const first = await processInboundMessage(envelope(
-    options.intake_complete
+    options.first_message ?? (options.intake_complete
       ? `Hola, soy Ana Pérez. Mi correo es ${intakeEmail}`
-      : 'Hola, quiero info',
+      : 'Hola, quiero info'),
     '1',
   ));
 

@@ -4,7 +4,10 @@ import type { ConversationStateV1 } from '@/features/conversation/domain/convers
 import type { ConversationStateStoreV1 } from '@/features/conversation/ports/conversation-state-store';
 import type { BusinessContextView, CatalogIndexView } from '@/features/orchestration/domain/business-context';
 import { createDefaultConversationStateV1 } from '@/features/conversation/domain/conversation-planner';
-import { prepareAgentTurnV2 } from '@/features/conversation/application/prepare-agent-turn-v2';
+import {
+  AgentTurnV2RejectedError,
+  prepareAgentTurnV2,
+} from '@/features/conversation/application/prepare-agent-turn-v2';
 
 const ids = {
   workspace: '10000000-0000-4000-8000-000000000001',
@@ -701,6 +704,54 @@ describe('prepareAgentTurnV2', () => {
     });
   });
 
+  it('returns a repairable rejection instead of silently stripping checkout from a pending package', async () => {
+    const packageIndex: CatalogIndexView = {
+      ...index,
+      offerings_total: 2,
+      offerings: [
+        index.offerings[0]!,
+        { code: 'excel_integral', display_name: 'Excel Integral', academy: 'Tecnología', aliases: ['excel'] },
+      ],
+    };
+    const packageBusiness: BusinessContextView = {
+      ...business,
+      offerings: [
+        business.offerings[0]!,
+        { ...business.offerings[0]!, code: 'excel_integral', display_name: 'Excel Integral', aliases: ['excel'] },
+      ],
+    };
+    const attempt = prepareAgentTurnV2({
+      turn: { id: ids.turn, workspace_id: ids.workspace, conversation_id: ids.conversation, contact_id: ids.contact },
+      workspace_slug: 'studyx', business_context: packageBusiness, catalog_index: packageIndex,
+      current_customer_messages: ['Claro, pasame el link y va también Excel'],
+      course_bonus_capability: {
+        status: 'offer_available', may_schedule_checkin: false, may_request_review: false,
+        may_accept_offer: true, may_send_promoted_payment: false,
+        promotion_code: 'redes_con_excel', interest_offering_code: 'redes_informaticas',
+        bonus_offerings: [{ code: 'excel_integral', display_name: 'Excel Integral', position: 1 }],
+      },
+      proposal: proposal({
+        move: { schema_version: 1, move: 'request_payment_link', secondary_moves: [], vetoes: [],
+          course_reference: 'excel', confidence: 1 },
+        response: { messages: ['Perfecto, avanzo con el paquete.'] },
+        proposed_action: { type: 'send_payment_link', offering_code: 'excel_integral', payment_plan: 'monthly_6' },
+      }),
+    }, {
+      state_store: store(state({ selected_offering_code: 'excel_integral', selected_payment_plan: 'monthly_6',
+        stage: 'plan_selected', awaiting_reply: 'payment_confirmation' })),
+      contact_intake: completeIntake,
+      now: () => Date.parse(index.as_of),
+    });
+
+    const rejection = await attempt.catch((error: unknown) => error);
+    expect(rejection).toBeInstanceOf(AgentTurnV2RejectedError);
+    expect(rejection).toMatchObject({
+      code: 'AGENT_TURN_V2_REJECTED',
+      reasons: ['ACTION_NOT_AUTHORIZED'],
+      rejectionSubjects: ['promotion_acceptance_required'],
+    });
+  });
+
   it('carries a current explicit plan selected as a secondary move while intake is still incomplete', async () => {
     const prepared = await prepareAgentTurnV2({
       turn: { id: ids.turn, workspace_id: ids.workspace, conversation_id: ids.conversation, contact_id: ids.contact },
@@ -807,6 +858,101 @@ describe('prepareAgentTurnV2', () => {
       call_preference: 'call', call_offer_status: 'accepted', awaiting_reply: 'call_or_chat',
     });
     expect(prepared.action_rejection).toMatchObject({ action: 'request_call_now' });
+  });
+
+  it('authorizes a fresh invitation after the prior call reached a terminal result', async () => {
+    const prepared = await prepareAgentTurnV2({
+      turn: { id: ids.turn, workspace_id: ids.workspace, conversation_id: ids.conversation, contact_id: ids.contact },
+      workspace_slug: 'studyx', business_context: business, catalog_index: index,
+      current_customer_messages: ['Contame qué beneficios tiene el curso.'],
+      proposal: proposal({
+        move: {
+          schema_version: 1, move: 'ask_course_information', secondary_moves: [], vetoes: [],
+          course_reference: 'redes_informaticas', confidence: 0.98,
+        },
+        response: {
+          messages: ['Te cuento lo más importante para que puedas decidir.'],
+          call_offer: 'Y si querés, te llamo y lo vemos.',
+        },
+      }),
+    }, {
+      state_store: store(state({
+        selected_offering_code: 'redes_informaticas', stage: 'course_selected',
+        call_preference: 'call', call_offer_status: 'accepted', call_offer_count: 0,
+        awaiting_reply: 'none',
+      })),
+      call_facts: {
+        async loadClaimedCallFacts() {
+          return {
+            open_offer: null,
+            open_retry_prompt: null,
+            active_call: null,
+            last_call_result: {
+              call_id: '44444444-4444-4444-8444-444444444444',
+              result: 'buzon_de_voz',
+              ended_at: '2026-10-21T10:30:30.117Z',
+            },
+            last_decline_at: null,
+          };
+        },
+      },
+      now: () => Date.parse(index.as_of),
+    });
+
+    expect(prepared.transition).toMatchObject({
+      stage: 'course_selected',
+      call_preference: 'unknown',
+      call_offer_status: 'offered',
+      call_offer_count: 1,
+      awaiting_reply: 'call_or_chat',
+    });
+  });
+
+  it('persists released terminal consent when the customer resumes the sale', async () => {
+    const prepared = await prepareAgentTurnV2({
+      turn: { id: ids.turn, workspace_id: ids.workspace, conversation_id: ids.conversation, contact_id: ids.contact },
+      workspace_slug: 'studyx', business_context: business, catalog_index: index,
+      current_customer_messages: ['quiero pagar'],
+      proposal: proposal({
+        move: {
+          schema_version: 1, move: 'ask_payment_options', secondary_moves: [], vetoes: [],
+          course_reference: 'redes_informaticas', confidence: 0.98,
+        },
+        response: { messages: ['Te muestro las formas disponibles para avanzar.'] },
+      }),
+    }, {
+      state_store: store(state({
+        selected_offering_code: 'redes_informaticas', stage: 'course_selected',
+        call_preference: 'call', call_offer_status: 'accepted', call_offer_count: 0,
+        awaiting_reply: 'call_or_chat',
+      })),
+      call_facts: {
+        async loadClaimedCallFacts() {
+          return {
+            open_offer: null,
+            open_retry_prompt: null,
+            active_call: null,
+            last_call_result: {
+              call_id: '44444444-4444-4444-8444-444444444444',
+              result: 'buzon_de_voz',
+              ended_at: '2026-10-21T17:19:06.022Z',
+            },
+            last_decline_at: null,
+          };
+        },
+      },
+      contact_intake: completeIntake,
+      now: () => Date.parse(index.as_of),
+    });
+
+    expect(prepared.transition).toMatchObject({
+      selected_offering_code: 'redes_informaticas',
+      stage: 'course_selected',
+      call_preference: 'unknown',
+      call_offer_status: 'not_offered',
+      call_offer_count: 0,
+      awaiting_reply: 'none',
+    });
   });
 
   it('keeps Agent A conversationally in control when payment intake is incomplete', async () => {
@@ -1147,6 +1293,33 @@ describe('prepareAgentTurnV2', () => {
     });
   });
 
+  it.each(['no', 'no, mejor no', 'ahora no', 'por ahora no', 'prefiero que no'])(
+    'does not dispatch when a later message in the availability burst says %s',
+    async (refusal) => {
+      const prepared = await prepareAgentTurnV2({
+        turn: { id: ids.turn, workspace_id: ids.workspace, conversation_id: ids.conversation, contact_id: ids.contact },
+        workspace_slug: 'studyx', business_context: business, catalog_index: index,
+        current_customer_messages: ['sí, dale', refusal],
+        proposal: proposal({
+          move: {
+            schema_version: 1, move: 'request_call', secondary_moves: [], vetoes: [], confidence: 0.98,
+          },
+          response: { messages: ['Perfecto, seguimos por acá.'] },
+          proposed_action: { type: 'request_call_now', reason: 'direct_request' },
+        }),
+      }, {
+        state_store: store(state({
+          call_preference: 'call', call_offer_status: 'accepted', awaiting_reply: 'call_or_chat',
+        })),
+        contact_intake: completeIntake,
+        now: () => Date.parse(index.as_of),
+      });
+
+      expect(prepared.decision.business_action).toBeNull();
+      expect(prepared.action_rejection).toMatchObject({ action: 'request_call_now' });
+    },
+  );
+
   it('prepares a retry and asks availability before dispatching again', async () => {
     const prepared = await prepareAgentTurnV2({
       turn: { id: ids.turn, workspace_id: ids.workspace, conversation_id: ids.conversation, contact_id: ids.contact },
@@ -1202,6 +1375,229 @@ describe('prepareAgentTurnV2', () => {
     }, { state_store: store(state({ call_preference: 'chat', call_offer_status: 'declined' })), now: () => Date.parse(index.as_of) })).rejects.toMatchObject({
       code: 'AGENT_TURN_V2_REJECTED', reasons: ['FACT_NOT_AUTHORIZED'],
     });
+  });
+
+  it('records model-owned course interest and price objection without manufacturing a purchase selection', async () => {
+    const prepared = await prepareAgentTurnV2({
+      turn: { id: ids.turn, workspace_id: ids.workspace, conversation_id: ids.conversation, contact_id: ids.contact },
+      workspace_slug: 'studyx', business_context: business, catalog_index: index,
+      current_customer_messages: ['Redes me interesa, pero sigue fuera de mi presupuesto'],
+      proposal: proposal({
+        move: {
+          schema_version: 1,
+          move: 'ask_course_information',
+          secondary_moves: [],
+          vetoes: [],
+          course_reference: 'redes',
+          confidence: 1,
+        },
+        response: { messages: ['Te entiendo. Veamos qué valor concreto te puede aportar para decidirlo con claridad.'] },
+        memory_candidates: [{
+          type: 'objection',
+          key: 'price_objection',
+          value: 'El precio está fuera de su presupuesto',
+          source_quote: 'sigue fuera de mi presupuesto',
+          confidence: 1,
+        }],
+      }),
+    }, { state_store: store(state()), now: () => Date.parse(index.as_of) });
+
+    expect(prepared).toMatchObject({
+      discussed_offering_code: 'redes_informaticas',
+      commercial_interest_offering_code: 'redes_informaticas',
+      records_price_objection: true,
+      transition: { selected_offering_code: null },
+    });
+  });
+
+  it('binds one canonical course named by Agent A to a model-owned price objection without selecting it', async () => {
+    const prepared = await prepareAgentTurnV2({
+      turn: { id: ids.turn, workspace_id: ids.workspace, conversation_id: ids.conversation, contact_id: ids.contact },
+      workspace_slug: 'studyx', business_context: business, catalog_index: index,
+      current_customer_messages: ['Sigue fuera de mi presupuesto'],
+      proposal: proposal({
+        move: {
+          schema_version: 1,
+          move: 'ask_course_information',
+          secondary_moves: [],
+          vetoes: [],
+          confidence: 1,
+        },
+        response: { messages: ['Redes Informáticas puede servirte para empezar por una base concreta.'] },
+        memory_candidates: [{
+          type: 'objection',
+          key: 'price_objection',
+          value: 'El precio sigue fuera de su presupuesto',
+          source_quote: 'Sigue fuera de mi presupuesto',
+          confidence: 1,
+        }],
+      }),
+    }, { state_store: store(state()), now: () => Date.parse(index.as_of) });
+
+    expect(prepared).toMatchObject({
+      discussed_offering_code: null,
+      commercial_interest_offering_code: 'redes_informaticas',
+      records_price_objection: true,
+      transition: { selected_offering_code: null },
+    });
+  });
+
+  it.each(['offer_available', 'accepted'] as const)(
+    'keeps the paid course when an %s promotion response names only the bonus course', async status => {
+      const englishIndex: CatalogIndexView = {
+        ...index,
+        offerings_total: 2,
+        offerings: [
+          { code: 'ingles_1', display_name: 'Inglés 1', academy: 'Academia Cultural', aliases: [] },
+          { code: 'ingles_2', display_name: 'Inglés 2', academy: 'Academia Cultural', aliases: [] },
+        ],
+      };
+      const englishBusiness: BusinessContextView = {
+        ...business,
+        offerings: [
+          { ...business.offerings[0], code: 'ingles_1', display_name: 'Inglés 1' },
+          { ...business.offerings[0], code: 'ingles_2', display_name: 'Inglés 2' },
+        ],
+      };
+      const prepared = await prepareAgentTurnV2({
+        turn: { id: ids.turn, workspace_id: ids.workspace, conversation_id: ids.conversation, contact_id: ids.contact },
+        workspace_slug: 'studyx', business_context: englishBusiness, catalog_index: englishIndex,
+        current_customer_messages: ['¿Qué incluye la propuesta?'],
+        course_bonus_capability: {
+          status,
+          may_schedule_checkin: false,
+          may_request_review: false,
+          may_accept_offer: status === 'offer_available',
+          may_send_promoted_payment: status === 'accepted',
+          promotion_code: 'ingles_1_mas_ingles_2',
+          interest_offering_code: 'ingles_1',
+          bonus_offerings: [{ code: 'ingles_2', display_name: 'Inglés 2', position: 1 }],
+        },
+        proposal: proposal({
+          response: { messages: ['Inglés 2 puede complementar tu formación.'] },
+        }),
+      }, { state_store: store(state()), now: () => Date.parse(index.as_of) });
+
+      expect(prepared).toMatchObject({
+        discussed_offering_code: null,
+        commercial_interest_offering_code: 'ingles_1',
+      });
+    },
+  );
+
+  it('marks an explicit switch away from the paid course as abandoning the pending package', async () => {
+    const packageIndex: CatalogIndexView = {
+      ...index,
+      offerings_total: 2,
+      offerings: [
+        { code: 'redes_informaticas', display_name: 'Redes Informáticas', academy: 'Tecnología', aliases: ['redes'] },
+        { code: 'excel_integral', display_name: 'Excel Integral', academy: 'Tecnología', aliases: ['excel'] },
+      ],
+    };
+    const packageBusiness: BusinessContextView = {
+      ...business,
+      offerings: [
+        business.offerings[0],
+        { ...business.offerings[0], code: 'excel_integral', display_name: 'Excel Integral', aliases: ['excel'] },
+      ],
+    };
+    const prepared = await prepareAgentTurnV2({
+      turn: { id: ids.turn, workspace_id: ids.workspace, conversation_id: ids.conversation, contact_id: ids.contact },
+      workspace_slug: 'studyx', business_context: packageBusiness, catalog_index: packageIndex,
+      current_customer_messages: ['No quiero el paquete. Quiero comprar solamente Excel'],
+      course_bonus_capability: {
+        status: 'offer_available',
+        may_schedule_checkin: false,
+        may_request_review: false,
+        may_accept_offer: true,
+        may_send_promoted_payment: false,
+        promotion_code: 'redes_con_excel',
+        interest_offering_code: 'redes_informaticas',
+        bonus_offerings: [{ code: 'excel_integral', display_name: 'Excel Integral', position: 1 }],
+      },
+      proposal: proposal({
+        move: {
+          schema_version: 1, move: 'select_course', secondary_moves: [], vetoes: [],
+          course_reference: 'excel', confidence: 1,
+        },
+        response: { messages: ['Perfecto, seguimos únicamente con Excel Integral.'] },
+      }),
+    }, {
+      state_store: store(state({ selected_offering_code: 'redes_informaticas', stage: 'course_selected' })),
+      now: () => Date.parse(index.as_of),
+    });
+
+    expect(prepared).toMatchObject({
+      abandons_course_bonus_offer: true,
+      commercial_interest_offering_code: 'excel_integral',
+      transition: { selected_offering_code: 'excel_integral' },
+    });
+  });
+
+  it.each([
+    'No te recomiendo Redes Informáticas para lo que buscas.',
+    'No necesitas Redes Informáticas para alcanzar ese objetivo.',
+    'Redes Informáticas no sería adecuada para tu nivel.',
+    'Redes Informáticas está descartada para este caso.',
+  ])('does not turn a rejected canonical course mention into commercial interest: %s', async response => {
+    const prepared = await prepareAgentTurnV2({
+      turn: { id: ids.turn, workspace_id: ids.workspace, conversation_id: ids.conversation, contact_id: ids.contact },
+      workspace_slug: 'studyx', business_context: business, catalog_index: index,
+      current_customer_messages: ['Sigue fuera de mi presupuesto'],
+      proposal: proposal({
+        response: { messages: [response] },
+        memory_candidates: [{
+          type: 'objection', key: 'price_objection', value: 'El precio sigue fuera de su presupuesto',
+          source_quote: 'Sigue fuera de mi presupuesto', confidence: 1,
+        }],
+      }),
+    }, { state_store: store(state()), now: () => Date.parse(index.as_of) });
+
+    expect(prepared).toMatchObject({
+      discussed_offering_code: null,
+      commercial_interest_offering_code: null,
+      records_price_objection: false,
+    });
+  });
+
+  it('does not transfer a rejected promotion review into price-objection evidence for a new course', async () => {
+    const prepared = await prepareAgentTurnV2({
+      turn: { id: ids.turn, workspace_id: ids.workspace, conversation_id: ids.conversation, contact_id: ids.contact },
+      workspace_slug: 'studyx', business_context: business, catalog_index: index,
+      current_customer_messages: ['Ahora quiero saber por Redes'],
+      course_bonus_capability: {
+        status: 'review_available',
+        may_schedule_checkin: false,
+        may_request_review: true,
+        may_accept_offer: false,
+        may_send_promoted_payment: false,
+        promotion_code: null,
+        interest_offering_code: 'excel_integral',
+        bonus_offerings: [],
+      },
+      proposal: proposal({
+        move: {
+          schema_version: 1,
+          move: 'ask_course_information',
+          secondary_moves: [],
+          vetoes: [],
+          course_reference: 'redes',
+          confidence: 1,
+        },
+        response: { messages: ['Claro, veamos Redes según lo que necesitas.'] },
+        proposed_action: { type: 'request_promotion_review', reason: 'persistent_price_objection' },
+      }),
+    }, { state_store: store(state()), now: () => Date.parse(index.as_of) });
+
+    expect(prepared).toMatchObject({
+      response_messages: ['Claro, veamos Redes según lo que necesitas.'],
+      discussed_offering_code: 'redes_informaticas',
+      commercial_interest_offering_code: 'redes_informaticas',
+      records_price_objection: false,
+      transition: { selected_offering_code: null },
+      action_rejection: { action: 'request_promotion_review', codes: ['ACTION_NOT_AUTHORIZED'] },
+    });
+    expect(prepared.decision.business_action).toBeNull();
   });
 });
 

@@ -484,6 +484,11 @@ describe('processInboundTurn hot path', () => {
     const claimed = claimedResponse() as unknown as ClaimedTurn;
     claimed.policy = { may_respond: false, allowed_response_types: [], reason: 'CONTACT_BLOCKED' };
     claimed.contact.blocked = true;
+    actionSpies.ingest.mockResolvedValue({
+      ...ingestResponse(),
+      policy: { may_respond: false, allowed_response_types: [], reason: 'CONTACT_BLOCKED' },
+      contact: { ...ingestResponse().contact, blocked: true },
+    });
     actionSpies.claim.mockResolvedValue(claimed);
     const startTyping = vi.spyOn(runtimeActions.whatsapp, 'startTypingIndicator');
     const stopTyping = vi.spyOn(runtimeActions.whatsapp, 'stopTypingIndicator');
@@ -545,6 +550,9 @@ describe('processInboundTurn hot path', () => {
     expect(stopTyping).toHaveBeenCalledWith({
       conversationId: 'bp-conversation', messageId: 'wamid.typing-test',
     });
+    expect(startTyping.mock.invocationCallOrder[0]).toBeLessThan(
+      actionSpies.claim.mock.invocationCallOrder[0]!,
+    );
     expect(startTyping.mock.invocationCallOrder[0]).toBeLessThan(stopTyping.mock.invocationCallOrder[0]!);
   });
 
@@ -1412,6 +1420,120 @@ describe('processInboundTurn hot path', () => {
     expect(result).toMatchObject({ status: 'waiting_user', delivery_status: 'submitted_to_botpress', error_code: null });
   });
 
+  it('repairs a simple bonus checkout into package acceptance and still sends a reply', async () => {
+    const claimed = claimedResponse() as unknown as ClaimedTurn;
+    claimed.features = {
+      agent_loop_v3_mode: 'off',
+      conversation_pipeline_v1_enabled: false,
+      agent_a_brain_v1_enabled: true,
+      agent_a_brain_v1_shadow: false,
+      agent_a_repair_enabled: true,
+    };
+    claimed.context.batch_messages[0]!.content = 'Claro, pasame el link y va también Inglés 2';
+    claimed.conversation_state_v1 = {
+      selected_offering_code: 'ingles_2', selected_payment_plan: 'one_time',
+      stage: 'plan_selected', call_preference: 'unknown', call_offer_status: 'not_offered',
+      call_offer_count: 0, awaiting_reply: 'payment_confirmation', version: 4,
+    };
+    claimed.catalog_index = {
+      as_of: NOW, offerings_total: 2,
+      offerings: [
+        { code: 'ingles_1', display_name: 'Inglés 1', academy: 'Idiomas', aliases: [] },
+        { code: 'ingles_2', display_name: 'Inglés 2', academy: 'Idiomas', aliases: [] },
+      ],
+      injection_suspected_count: 0,
+    };
+    const business = paymentBusinessContext();
+    business.offerings = [
+      { ...business.offerings[0]!, code: 'ingles_1', display_name: 'Inglés 1', academy: 'Idiomas' },
+      { ...business.offerings[0]!, code: 'ingles_2', display_name: 'Inglés 2', academy: 'Idiomas' },
+    ];
+    claimed.business_context = business;
+    claimed.business_context_available = true;
+    claimed.course_bonus_capability = {
+      status: 'offer_available', may_schedule_checkin: false, may_request_review: false,
+      may_accept_offer: true, may_send_promoted_payment: false,
+      promotion_code: 'ingles_1_mas_ingles_2', interest_offering_code: 'ingles_1',
+      bonus_offerings: [{ code: 'ingles_2', display_name: 'Inglés 2', position: 1 }],
+    };
+    actionSpies.claim.mockResolvedValue(claimed);
+    configuration.agentAPlannerlessV2Enabled = true;
+
+    actionSpies.agentABrainDeepSeek
+      .mockResolvedValueOnce({
+        proposal: {
+          schema_version: 1,
+          move: { schema_version: 1, move: 'request_payment_link', secondary_moves: [], vetoes: [],
+            course_reference: 'ingles_2', confidence: 1 },
+          response: { messages: ['Perfecto, te comparto el enlace.'], call_offer: null },
+          proposed_action: { type: 'send_payment_link', offering_code: 'ingles_2', payment_plan: 'one_time' },
+          used_fact_ids: [], used_memory_ids: [], memory_candidates: [], repair_of: null,
+        },
+        provider: 'deepseek-direct', model: 'deepseek-v4-flash', latency_ms: 1, attempt_count: 1,
+      })
+      .mockImplementationOnce(async (input: { context: AgentAContextV1 }) => ({
+        proposal: {
+          schema_version: 1,
+          move: { schema_version: 1, move: 'unknown', secondary_moves: [], vetoes: [], confidence: 1 },
+          response: { messages: ['Perfecto, queda Inglés 1 con Inglés 2 incluido.'], call_offer: null },
+          proposed_action: { type: 'accept_promotion' },
+          used_fact_ids: [], used_memory_ids: [], memory_candidates: [],
+          repair_of: { rejection_id: input.context.turn_rejection!.rejection_id, attempt: 1 },
+        },
+        provider: 'deepseek-direct', model: 'deepseek-v4-flash', latency_ms: 1, attempt_count: 1,
+      }));
+
+    const outbound = {
+      id: UUID, content: 'Perfecto, queda Inglés 1 con Inglés 2 incluido.', status: 'pending', delivery_attempt: 1,
+      authorized_egress: { schema_version: 1,
+        content_hash: '0bd7b88dc667df434a78fb7f54174bd9a17b1c8551e363d56c482f7efe3bc734',
+        authorized_urls: [], protected_facts: [] },
+    };
+    actionSpies.commit
+      .mockRejectedValueOnce(new StudyxHttpError(
+        'DECISION_REJECTED', false, 422, 1,
+        { error: 'DECISION_REJECTED', reason: 'AGENT_TURN_V2_REJECTED:ACTION_NOT_AUTHORIZED',
+          subjects: ['promotion_acceptance_required'] },
+      ))
+      .mockResolvedValueOnce({
+        status: 'committed', replayed: false, trace_id: UUID, turn_id: UUID,
+        decision_id: UUID, next_state: 'waiting_user', outbound, outbounds: [outbound], call_request: null,
+      });
+    const createMessage = vi.fn(async () => ({ message: { id: 'bp-package-accepted-message' } }));
+    const step = Object.assign(async (_name: string, run: () => Promise<unknown>) => run(),
+      { sleep: vi.fn(async () => undefined) });
+    const handler = (processInboundTurn as unknown as {
+      definition: { handler: (args: Record<string, unknown>) => Promise<unknown> };
+    }).definition.handler;
+
+    const result = await handler({
+      input: workflowInput(), state: processingState(), step,
+      execute: vi.fn(async () => { throw new Error('LEGACY_MODEL_MUST_NOT_RUN'); }),
+      client: { createMessage }, signal: new AbortController().signal,
+      workflow: { id: 'workflow-package-acceptance-repair' },
+    });
+
+    expect(actionSpies.agentABrainDeepSeek).toHaveBeenCalledTimes(2);
+    expect(actionSpies.agentABrainDeepSeek.mock.calls[1]![0]).toMatchObject({
+      conversation_only: false,
+      context: { turn_rejection: { authorized_alternatives: {
+        actions: expect.arrayContaining(['none', 'accept_promotion']),
+      } } },
+    });
+    expect(actionSpies.agentABrainDeepSeek.mock.calls[1]![0]
+      .context.turn_rejection.authorized_alternatives.actions).not.toContain('send_payment_link');
+    expect(actionSpies.commit).toHaveBeenCalledTimes(2);
+    expect(actionSpies.commit.mock.calls[1]![0].input.agent_turn_v2).toMatchObject({
+      proposal: { proposed_action: { type: 'accept_promotion' } },
+    });
+    expect(createMessage).toHaveBeenCalledWith(expect.objectContaining({
+      payload: { text: 'Perfecto, queda Inglés 1 con Inglés 2 incluido.' },
+    }));
+    expect(actionSpies.recovery).not.toHaveBeenCalled();
+    expect(result).toMatchObject({ status: 'waiting_user', delivery_status: 'submitted_to_botpress',
+      error_code: null });
+  });
+
   it('asks Agent A for one final fenced correction after a twice-rejected backend commit', async () => {
     const claimed = claimedResponse() as unknown as ClaimedTurn;
     claimed.features = {
@@ -1555,7 +1677,10 @@ describe('processInboundTurn hot path', () => {
       delivery_status: 'submitted_to_botpress', error_code: null });
   });
 
-  async function runRecoveryFeedbackHotPath(mismatch?: 'batch_id' | 'turn_id') {
+  async function runRecoveryFeedbackHotPath(
+    mismatch?: 'batch_id' | 'turn_id',
+    promotionReview = false,
+  ) {
     const claimed = claimedResponse() as unknown as ClaimedTurn;
     claimed.features = { agent_loop_v3_mode: 'off', conversation_pipeline_v1_enabled: false,
       agent_a_brain_v1_enabled: true, agent_a_brain_v1_shadow: false, agent_a_repair_enabled: true };
@@ -1569,6 +1694,16 @@ describe('processInboundTurn hot path', () => {
     claimed.business_context = paymentBusinessContext();
     claimed.business_context.offerings[0]!.modality = 'online';
     claimed.business_context_available = true;
+    if (promotionReview) claimed.course_bonus_capability = {
+      status: 'review_available',
+      may_schedule_checkin: false,
+      may_request_review: true,
+      may_accept_offer: false,
+      may_send_promoted_payment: false,
+      promotion_code: null,
+      interest_offering_code: 'redes-informaticas',
+      bonus_offerings: [],
+    };
     actionSpies.claim.mockResolvedValue(claimed);
     configuration.agentAPlannerlessV2Enabled = true;
     const feedback = { batch_id: UUID, conversation_id: UUID, turn_id: UUID,
@@ -1582,7 +1717,10 @@ describe('processInboundTurn hot path', () => {
     actionSpies.agentABrainDeepSeek.mockReset().mockResolvedValue({
       proposal: { schema_version: 1,
         move: { schema_version: 1, move: 'unknown', secondary_moves: [], vetoes: [], confidence: 0.98 },
-        response: { messages: [safeText], call_offer: null }, proposed_action: { type: 'none' },
+        response: { messages: [safeText], call_offer: null },
+        proposed_action: promotionReview
+          ? { type: 'request_promotion_review', reason: 'persistent_price_objection' }
+          : { type: 'none' },
         used_fact_ids: [], used_memory_ids: [], memory_candidates: [],
         repair_of: mismatch ? null : { rejection_id: UUID, attempt: 1 } },
       provider: 'deepseek-direct', model: 'deepseek-v4-flash', latency_ms: 1, attempt_count: 1,
@@ -1593,7 +1731,11 @@ describe('processInboundTurn hot path', () => {
         authorized_urls: [], protected_facts: [] } };
     actionSpies.commit.mockReset().mockResolvedValue({ status: 'committed', replayed: false,
       trace_id: UUID, turn_id: UUID, decision_id: UUID, next_state: 'waiting_user',
-      outbound, outbounds: [outbound], call_request: null });
+      outbound, outbounds: [outbound], call_request: null,
+      commercial_followups: promotionReview
+        ? [{ id: UUID, kind: 'promotion_review', due_at: NOW }]
+        : [],
+    });
     actionSpies.delivery.mockClear();
     const createMessage = vi.fn(async () => ({ message: { id: 'bp-recovery-feedback-message' } }));
     const step = Object.assign(async (_name: string, run: () => Promise<unknown>) => run(),
@@ -1633,6 +1775,30 @@ describe('processInboundTurn hot path', () => {
     expect(createMessage).toHaveBeenCalledTimes(1);
     expect(actionSpies.delivery).toHaveBeenCalledTimes(1);
     expect(result).toMatchObject({ status: 'waiting_user', delivery_status: 'submitted_to_botpress', error_code: null });
+  });
+
+  it('re-authorizes a promotion review from the fresh recovery claim and persists the effect with the outbound', async () => {
+    const { result, createMessage } = await runRecoveryFeedbackHotPath(undefined, true);
+
+    expect(actionSpies.agentABrainDeepSeek).toHaveBeenCalledTimes(1);
+    expect(actionSpies.agentABrainDeepSeek.mock.calls[0]![0]).toMatchObject({
+      conversation_only: false,
+      context: { turn_rejection: { authorized_alternatives: {
+        actions: ['none', 'request_promotion_review'],
+      } } },
+    });
+    expect(actionSpies.commit.mock.calls[0]![0].input.agent_turn_v2).toMatchObject({
+      proposal: { proposed_action: {
+        type: 'request_promotion_review', reason: 'persistent_price_objection',
+      } },
+    });
+    expect(actionSpies.commit.mock.calls[0]![0].input.agent_turn_v2)
+      .not.toHaveProperty('conversation_only');
+    expect(createMessage).toHaveBeenCalledTimes(1);
+    expect(actionSpies.delivery).toHaveBeenCalledTimes(1);
+    expect(actionSpies.recovery).not.toHaveBeenCalled();
+    expect(result).toMatchObject({ status: 'waiting_user', delivery_status: 'submitted_to_botpress',
+      error_code: null });
   });
 
   it('ignores recovery feedback from a different origin batch or turn before the first generation', async () => {
@@ -2165,6 +2331,274 @@ describe('processInboundTurn hot path', () => {
     expect(actionSpies.commit).not.toHaveBeenCalled();
     expect(result).toMatchObject({ status: 'retry_pending', delivery_status: null,
       error_code: 'AGENT_A_CONTINUATION_REJECTED' });
+  });
+
+  it('keeps a currently authorized promotion review through invalid-schema continuation and delivers it', async () => {
+    const claimed = claimedResponse() as unknown as ClaimedTurn;
+    claimed.features = {
+      agent_loop_v3_mode: 'off',
+      conversation_pipeline_v1_enabled: false,
+      agent_a_brain_v1_enabled: true,
+      agent_a_brain_v1_shadow: false,
+      agent_a_repair_enabled: true,
+    };
+    claimed.context.batch_messages[0].content = 'No hay ninguna oferta que me puedas hacer?';
+    claimed.conversation_state_v1 = {
+      selected_offering_code: 'ingles_1', selected_payment_plan: null,
+      stage: 'course_selected', call_preference: 'unknown', call_offer_status: 'not_offered',
+      call_offer_count: 0, awaiting_reply: 'none', version: 3,
+    };
+    claimed.catalog_index = {
+      as_of: NOW, offerings_total: 1,
+      offerings: [{ code: 'ingles_1', display_name: 'Inglés 1', academy: 'Idiomas', aliases: ['ingles'] }],
+      injection_suspected_count: 0,
+    };
+    const business = paymentBusinessContext();
+    business.offerings[0] = {
+      ...business.offerings[0],
+      code: 'ingles_1',
+      display_name: 'Inglés 1',
+      academy: 'Idiomas',
+    };
+    claimed.business_context = business;
+    claimed.business_context_available = true;
+    claimed.course_bonus_capability = {
+      status: 'review_available',
+      may_schedule_checkin: false,
+      may_request_review: true,
+      may_accept_offer: false,
+      may_send_promoted_payment: false,
+      promotion_code: null,
+      interest_offering_code: 'ingles_1',
+      bonus_offerings: [],
+    };
+    actionSpies.claim.mockResolvedValue(claimed);
+    configuration.agentAPlannerlessV2Enabled = true;
+
+    const invalid = Object.assign(new Error('invalid proposal'), { code: 'BRAIN_INVALID_SCHEMA' });
+    const replyText = 'Dame un momento y reviso qué alternativa puedo habilitarte.';
+    actionSpies.agentABrainDeepSeek
+      .mockRejectedValueOnce(invalid)
+      .mockImplementationOnce(async ({ context }: { context: AgentAContextV1 }) => ({
+        proposal: {
+          schema_version: 1,
+          move: { schema_version: 1, move: 'ask_course_information', secondary_moves: [], vetoes: [],
+            course_reference: 'ingles_1', confidence: 1 },
+          response: { messages: [replyText], call_offer: null },
+          proposed_action: { type: 'request_promotion_review', reason: 'persistent_price_objection' },
+          used_fact_ids: [], used_memory_ids: [], memory_candidates: [],
+          repair_of: { rejection_id: context.turn_rejection!.rejection_id, attempt: 1 },
+        },
+        provider: 'deepseek-direct', model: 'deepseek-v4-flash', latency_ms: 1, attempt_count: 1,
+      }));
+    const outbound = {
+      id: UUID, content: replyText, status: 'pending', delivery_attempt: 1,
+      authorized_egress: { schema_version: 1,
+        content_hash: 'd8ef9ae0302bc639366919e442dfef275997b40106151c50a96408ef3d92e1a0',
+        authorized_urls: [], protected_facts: [] },
+    };
+    actionSpies.commit.mockResolvedValue({
+      status: 'committed', replayed: false, trace_id: UUID, turn_id: UUID,
+      decision_id: UUID, next_state: 'waiting_user', outbound, call_request: null,
+      commercial_followups: [{ id: UUID, kind: 'promotion_review', due_at: NOW }],
+    });
+    const createMessage = vi.fn(async () => ({ message: { id: 'bp-promotion-review-message' } }));
+    const step = Object.assign(async (_name: string, run: () => Promise<unknown>) => run(),
+      { sleep: vi.fn(async () => undefined) });
+    const handler = (processInboundTurn as unknown as {
+      definition: { handler: (args: Record<string, unknown>) => Promise<unknown> };
+    }).definition.handler;
+
+    const result = await handler({
+      input: workflowInput(), state: processingState(), step,
+      execute: vi.fn(async () => { throw new Error('LEGACY_MODEL_MUST_NOT_RUN'); }),
+      client: { createMessage }, signal: new AbortController().signal,
+      workflow: { id: 'workflow-promotion-review-after-schema-rejection' },
+    });
+    expect(actionSpies.agentABrainDeepSeek).toHaveBeenCalledTimes(2);
+    const continuationInput = actionSpies.agentABrainDeepSeek.mock.calls[1]![0];
+    expect(continuationInput).toMatchObject({
+      conversation_only: false,
+      context: { turn_rejection: { authorized_alternatives: {
+        actions: ['none', 'request_promotion_review'],
+      } } },
+    });
+    expect(actionSpies.commit).toHaveBeenCalledTimes(1);
+    expect(actionSpies.commit.mock.calls[0]![0].input.agent_turn_v2).toMatchObject({
+      proposal: { proposed_action: {
+        type: 'request_promotion_review', reason: 'persistent_price_objection',
+      } },
+    });
+    expect(actionSpies.commit.mock.calls[0]![0].input.agent_turn_v2)
+      .not.toHaveProperty('conversation_only');
+    expect(result).toMatchObject({ status: 'waiting_user', delivery_status: 'submitted_to_botpress',
+      error_code: null });
+    expect(createMessage).toHaveBeenCalledWith(expect.objectContaining({ payload: { text: replyText } }));
+    expect(actionSpies.recovery).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { finalBackendRejected: false, initialProviderRequests: 1, precommitProviderRequests: 1 },
+    { finalBackendRejected: true, initialProviderRequests: 1, precommitProviderRequests: 1 },
+    { finalBackendRejected: false, initialProviderRequests: 2, precommitProviderRequests: 1 },
+    { finalBackendRejected: false, initialProviderRequests: 1, precommitProviderRequests: 2 },
+  ])('uses the remaining third generation after a local repair (final rejection: $finalBackendRejected, initial provider requests: $initialProviderRequests, precommit provider requests: $precommitProviderRequests)', async ({ finalBackendRejected, initialProviderRequests, precommitProviderRequests }) => {
+    const claimed = claimedResponse() as unknown as ClaimedTurn;
+    claimed.features = {
+      agent_loop_v3_mode: 'off',
+      conversation_pipeline_v1_enabled: false,
+      agent_a_brain_v1_enabled: true,
+      agent_a_brain_v1_shadow: false,
+      agent_a_repair_enabled: true,
+    };
+    claimed.context.batch_messages[0].content = 'No hay ninguna oferta que me puedas hacer?';
+    claimed.conversation_state_v1 = {
+      selected_offering_code: 'ingles_1', selected_payment_plan: null,
+      stage: 'course_selected', call_preference: 'unknown', call_offer_status: 'not_offered',
+      call_offer_count: 0, awaiting_reply: 'none', version: 3,
+    };
+    claimed.catalog_index = {
+      as_of: NOW, offerings_total: 1,
+      offerings: [{ code: 'ingles_1', display_name: 'Inglés 1', academy: 'Idiomas', aliases: ['ingles'] }],
+      injection_suspected_count: 0,
+    };
+    const business = paymentBusinessContext();
+    business.offerings[0] = {
+      ...business.offerings[0], code: 'ingles_1', display_name: 'Inglés 1', academy: 'Idiomas',
+    };
+    claimed.business_context = business;
+    claimed.business_context_available = true;
+    claimed.course_bonus_capability = {
+      status: 'review_available', may_schedule_checkin: false, may_request_review: true,
+      may_accept_offer: false, may_send_promoted_payment: false, promotion_code: null,
+      interest_offering_code: 'ingles_1', bonus_offerings: [],
+    };
+    actionSpies.claim.mockResolvedValue(claimed);
+    configuration.agentAPlannerlessV2Enabled = true;
+
+    const unsafeText = 'Te consigo una promoción especial y te confirmo otro curso gratis.';
+    const safeText = 'Dame un momento y reviso qué alternativa puedo habilitarte.';
+    actionSpies.agentABrainValidate.mockImplementation(({ proposal }: {
+      proposal: { response: { messages: string[] } };
+    }) => proposal.response.messages.includes(safeText) ? null : {
+      schema_version: 1, rejection_id: UUID, attempt: 1,
+      rejections: [
+        { code: 'REPEATED_AGENT_REPLY', subject: 'response.messages' },
+        { code: 'FACT_VALUE_MISMATCH', subject: 'price_objection_reframe' },
+      ],
+      authorized_alternatives: {
+        fact_ids: [], actions: ['none', 'request_promotion_review'], missing_information: [],
+      },
+    });
+    let generation = 0;
+    actionSpies.agentABrainDeepSeek.mockImplementation(async (input: {
+      context: AgentAContextV1;
+      on_provider_request?: () => void;
+    }) => {
+      generation += 1;
+      const providerRequests = generation === 1
+        ? initialProviderRequests
+        : generation === 2
+          ? precommitProviderRequests
+          : 1;
+      for (let attempt = 0; attempt < providerRequests; attempt += 1) {
+        input.on_provider_request?.();
+      }
+      const corrected = generation === 3;
+      return {
+        proposal: {
+          schema_version: 1,
+          move: { schema_version: 1, move: 'ask_course_information', secondary_moves: [], vetoes: [],
+            course_reference: 'ingles_1', confidence: 1 },
+          response: { messages: [corrected ? safeText : unsafeText], call_offer: null },
+          proposed_action: { type: 'request_promotion_review', reason: 'persistent_price_objection' },
+          used_fact_ids: [], used_memory_ids: [], memory_candidates: [],
+          repair_of: input.context.turn_rejection
+            ? { rejection_id: input.context.turn_rejection.rejection_id, attempt: 1 }
+            : null,
+        },
+        provider: 'deepseek-direct', model: 'deepseek-v4-flash', latency_ms: 1, attempt_count: 1,
+      };
+    });
+
+    const outbound = {
+      id: UUID, content: safeText, status: 'pending', delivery_attempt: 1,
+      authorized_egress: { schema_version: 1,
+        content_hash: 'd8ef9ae0302bc639366919e442dfef275997b40106151c50a96408ef3d92e1a0',
+        authorized_urls: [], protected_facts: [] },
+    };
+    let persistedFollowups = 0;
+    const firstBackendRejection = new StudyxHttpError(
+        'DECISION_REJECTED', false, 422, 1,
+        { error: 'DECISION_REJECTED', reason: 'AGENT_TURN_V2_REJECTED:COMMERCIAL_TRUTH_VIOLATION',
+          subjects: ['forbidden_promise'] },
+      );
+    actionSpies.commit.mockRejectedValueOnce(firstBackendRejection);
+    if (finalBackendRejected) {
+      actionSpies.commit.mockRejectedValueOnce(new StudyxHttpError(
+        'DECISION_REJECTED', false, 422, 1,
+        { error: 'DECISION_REJECTED', reason: 'AGENT_TURN_V2_REJECTED:COMMERCIAL_TRUTH_VIOLATION',
+          subjects: ['offering_not_canonical'] },
+      ));
+    } else {
+      actionSpies.commit.mockImplementationOnce(async () => {
+        persistedFollowups += 1;
+        return {
+          status: 'committed', replayed: false, trace_id: UUID, turn_id: UUID,
+          decision_id: UUID, next_state: 'waiting_user', outbound, outbounds: [outbound],
+          call_request: null, commercial_followups: [{ id: UUID, kind: 'promotion_review', due_at: NOW }],
+        };
+      });
+    }
+    const createMessage = vi.fn(async () => ({ message: { id: 'bp-third-generation-message' } }));
+    const recoveryWorkflow = vi.spyOn(processInboundTurn, 'getOrCreate')
+      .mockResolvedValue({ id: 'third-generation-recovery-workflow' });
+    const step = Object.assign(async (_name: string, run: () => Promise<unknown>) => run(),
+      { sleep: vi.fn(async () => undefined) });
+    const handler = (processInboundTurn as unknown as {
+      definition: { handler: (args: Record<string, unknown>) => Promise<unknown> };
+    }).definition.handler;
+
+    const result = await handler({
+      input: workflowInput(), state: processingState(), step,
+      execute: vi.fn(async () => { throw new Error('LEGACY_MODEL_MUST_NOT_RUN'); }),
+      client: { createMessage }, signal: new AbortController().signal,
+      workflow: { id: 'workflow-third-generation-after-backend-rejection' },
+    });
+
+    expect(actionSpies.agentABrainDeepSeek).toHaveBeenCalledTimes(3);
+    expect(actionSpies.agentABrainDeepSeek.mock.calls[2]![0]).toMatchObject({
+      conversation_only: false,
+      context: { turn_rejection: {
+        rejections: [{ code: 'FACT_VALUE_MISMATCH', subject: 'forbidden_promise' }],
+        authorized_alternatives: { actions: expect.arrayContaining(['request_promotion_review']) },
+      } },
+    });
+    expect(actionSpies.commit).toHaveBeenCalledTimes(2);
+    expect(actionSpies.commit.mock.calls[1]![0].input.agent_turn_v2).toMatchObject({
+      proposal: {
+        response: { messages: [safeText] },
+        proposed_action: { type: 'request_promotion_review', reason: 'persistent_price_objection' },
+      },
+    });
+    if (finalBackendRejected) {
+      expect(persistedFollowups).toBe(0);
+      expect(createMessage).not.toHaveBeenCalled();
+      expect(actionSpies.recovery).toHaveBeenCalledTimes(1);
+      expect(recoveryWorkflow).toHaveBeenCalledTimes(1);
+      expect(recoveryWorkflow.mock.calls[0]![0]).toMatchObject({ input: { recovery_feedback: {
+        rejection: { rejections: [{ code: 'FACT_VALUE_MISMATCH', subject: 'offering_not_canonical' }] },
+      } } });
+      expect(result).toMatchObject({ status: 'retry_pending', delivery_status: null,
+        error_code: 'AGENT_A_CONTINUATION_REJECTED' });
+    } else {
+      expect(persistedFollowups).toBe(1);
+      expect(createMessage).toHaveBeenCalledTimes(1);
+      expect(actionSpies.recovery).not.toHaveBeenCalled();
+      expect(recoveryWorkflow).not.toHaveBeenCalled();
+      expect(result).toMatchObject({ status: 'waiting_user', delivery_status: 'submitted_to_botpress',
+        error_code: null });
+    }
   });
 
   it('retries one transient DeepSeek timeout before committing the model reply', async () => {
@@ -4183,6 +4617,54 @@ describe('processInboundTurn hot path', () => {
         response_type: 'call_confirmation',
         reason_code: 'CALL_DIRECT_REQUEST',
         business_action: { type: 'request_call_now', reason: 'direct_request' },
+      },
+    });
+  });
+
+  it('sends a completed direct-request availability reply through backend call authorization', async () => {
+    const claimed = claimedResponse() as unknown as ClaimedTurn;
+    claimed.features = {
+      agent_loop_v3_mode: 'off',
+      conversation_pipeline_v1_enabled: true,
+      agent_a_brain_v1_enabled: true,
+      agent_a_brain_v1_shadow: false,
+    };
+    claimed.deterministic_route = 'call_direct_request';
+    configuration.agentAPlannerlessV2Enabled = true;
+    claimed.context.batch_messages[0].content = 'si dale';
+    claimed.sales_context.allowed_actions = ['request_call_now'];
+    claimed.contact_intake_missing = [];
+    claimed.catalog_index = {
+      as_of: NOW, offerings_total: 0, offerings: [], injection_suspected_count: 0,
+    };
+    claimed.conversation_state_v1 = {
+      selected_offering_code: null, selected_payment_plan: null,
+      stage: 'exploring', call_preference: 'call', call_offer_status: 'accepted',
+      call_offer_count: 0, awaiting_reply: 'call_or_chat', version: 4,
+    };
+    actionSpies.claim.mockResolvedValue(claimed);
+    const step = Object.assign(
+      async (_name: string, run: () => Promise<unknown>) => run(),
+      { sleep: vi.fn(async () => undefined) },
+    );
+    const handler = (processInboundTurn as unknown as {
+      definition: { handler: (args: Record<string, unknown>) => Promise<unknown> };
+    }).definition.handler;
+
+    await handler({
+      input: workflowInput(), state: processingState(), step, execute: vi.fn(), client: {},
+      signal: new AbortController().signal, workflow: { id: 'workflow-test' },
+    });
+
+    expect(actionSpies.agentABrainDeepSeek).not.toHaveBeenCalled();
+    expect(actionSpies.commit.mock.calls[0]?.[0]?.input).toMatchObject({
+      conversation_pipeline_v1: null,
+      agent_turn_v2: {
+        schema_version: 2,
+        proposal: {
+          move: { move: 'request_call' },
+          proposed_action: { type: 'request_call_now', reason: 'direct_request' },
+        },
       },
     });
   });

@@ -184,3 +184,22 @@ it('binds recovery idempotency to both the batch and the released claim', async 
   expect((await proxy(request(`recovery:${batchId}:${token}`))).status).toBe(200);
   expect((await proxy(request(`recovery:${batchId}:other-claim`))).status).toBe(409);
 });
+
+it('binds an exhausted-batch repair to the exact batch and representative turn', async () => {
+  const batchId = '7f9f3f66-0b7c-4c8e-9a9e-2f8f0a1b2c3d';
+  const turnId = 'a1b2c3d4-1111-4222-8333-944455566677';
+  const conversationId = 'b1b2c3d4-1111-4222-8333-944455566688';
+  const traceId = '53b13d12-2a1d-4b28-b1fd-605b97ebef34';
+  const path = `/api/agent/batches/${batchId}/repair`;
+  const body = JSON.stringify({ trace_id: traceId, conversation_id: conversationId, turn_id: turnId });
+  const timestamp = Date.now().toString();
+  const signature = createHmac('sha256', 'signing-secret')
+    .update(`${timestamp}\nPOST\n${path}\n${body}`).digest('hex');
+  const request = (key: string) => new NextRequest(`http://localhost${path}`, { method: 'POST', body,
+    headers: { 'content-type': 'application/json', 'x-orchestrator-key-id': 'botpress-test',
+      'x-orchestrator-key': 'orchestrator-key', 'x-request-timestamp': timestamp, 'x-signature': `v1=${signature}`,
+      'x-trace-id': traceId, 'idempotency-key': key, 'x-request-id': `${traceId}:${key}` } });
+
+  expect((await proxy(request(`repair:${batchId}:${turnId}`))).status).toBe(200);
+  expect((await proxy(request(`repair:${batchId}:another-turn`))).status).toBe(409);
+});

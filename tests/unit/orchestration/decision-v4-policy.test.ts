@@ -219,6 +219,22 @@ describe('parseDecisionV4 — send_payment_link', () => {
     });
   });
 
+  it('accepts an authorized promotion code without accepting gift facts', () => {
+    const parsed = parseDecisionV4(paymentLinkDecision({
+      business_action: {
+        type: 'send_payment_link', plan_code: 'monthly_12', offering_sku: 'ingles_1',
+        promotion_code: 'ingles_1_mas_ingles_2',
+      },
+    }));
+    expect(parsed.business_action).toMatchObject({ promotion_code: 'ingles_1_mas_ingles_2' });
+    expect(codeOf(paymentLinkDecision({
+      business_action: {
+        type: 'send_payment_link', plan_code: 'monthly_12', offering_sku: 'ingles_1',
+        promotion_code: 'ingles_1_mas_ingles_2', bonus_offering_code: 'ingles_2',
+      },
+    }))).toBe('INVALID_BUSINESS_ACTION');
+  });
+
   it('accepts every one of the three canonical plan codes', () => {
     for (const plan_code of ['monthly_12', 'monthly_6', 'one_time']) {
       expect(
@@ -332,6 +348,25 @@ describe('parseDecisionV4 — send_payment_link', () => {
         }),
       ),
     ).toBe('INVALID_CALL_REQUEST');
+  });
+});
+
+describe('parseDecisionV4 — promotion lifecycle', () => {
+  it.each([
+    { type: 'schedule_price_objection_checkin', reason: 'price_objection' },
+    { type: 'request_promotion_review', reason: 'persistent_price_objection' },
+    { type: 'accept_promotion' },
+  ])('accepts the bounded $type action', (business_action) => {
+    expect(parseDecisionV4(paymentLinkDecision({ business_action })).business_action).toEqual(business_action);
+  });
+
+  it('rejects promotion actions carrying model-selected operational facts', () => {
+    expect(codeOf(paymentLinkDecision({
+      business_action: {
+        type: 'request_promotion_review', reason: 'persistent_price_objection',
+        promotion_code: 'ingles_1_mas_ingles_2', delay_seconds: 60,
+      },
+    }))).toBe('INVALID_BUSINESS_ACTION');
   });
 });
 

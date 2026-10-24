@@ -215,6 +215,24 @@ describe('remaining Retell orchestration tools', () => {
     });
   });
 
+  it('passes only the explicit backend promotion identity through the existing WhatsApp payment bridge', async () => {
+    const result = await invoke('enviar_link_pago', {
+      curso: 'reparacion_celulares',
+      plan_code: 'monthly_12',
+      promotion_code: 'ingles_1_mas_ingles_2',
+    });
+    expect(result.body).toMatchObject({ ok: true, pago: { enviado: true } });
+    expect(result.deps.orchestration.requestAgentAPaymentLink).toHaveBeenCalledWith({
+      callId: internalCallId,
+      contactId,
+      conversationId,
+      workspaceSlug: 'studyx',
+      course: 'reparacion_celulares',
+      paymentPlan: 'monthly_12',
+      promotionCode: 'ingles_1_mas_ingles_2',
+    });
+  });
+
   it('uses StudyX lead_id when Retell also supplies its own different contact_id', async () => {
     const deps = dependencies();
     const body = envelope('enviar_link_pago', {

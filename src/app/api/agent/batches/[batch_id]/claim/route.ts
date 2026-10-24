@@ -182,6 +182,16 @@ export async function POST(
             ...purchase,
           });
         },
+        courseBonusCapability: async (input) => {
+          const [{ readCourseBonusCapabilityV1 }, { sql }] = await Promise.all([
+            import('@/features/promotions/application/read-course-bonus-capability'),
+            import('@/lib/db/orchestrator'),
+          ]);
+          return readCourseBonusCapabilityV1({
+            workspace_slug: workspaceSlug,
+            ...input,
+          }, { db: sql });
+        },
         agentLoopRollout,
       }
     )

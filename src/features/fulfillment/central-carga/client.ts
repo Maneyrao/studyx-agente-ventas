@@ -1,7 +1,9 @@
 import { createHmac, randomUUID } from 'node:crypto';
 import {
+  EnrollmentResponseV2,
   EnrollmentResponseV1,
-  type EnrollmentRequestV1,
+  type EnrollmentRequest,
+  type EnrollmentResponse,
 } from './contract';
 
 export const REQUEST_TIMEOUT_MS = 15_000;
@@ -20,7 +22,7 @@ export function signRequest(input: {
 }
 
 export type EnrollmentCallOutcome =
-  | { kind: 'success'; body: EnrollmentResponseV1 }
+  | { kind: 'success'; body: EnrollmentResponse }
   | { kind: 'processing' }
   | { kind: 'not_found' }
   | { kind: 'retry'; code: string; retryAfterSeconds?: number }
@@ -60,19 +62,30 @@ export function classifyResponse(input: {
   bodyText: string;
   retryAfterHeader?: string | null;
   paymentId: string;
+  expectedBonusCodes?: readonly string[];
 }): EnrollmentCallOutcome {
   const { method, status } = input;
   const payload = parseJson(input.bodyText);
 
   if (status === 200 || status === 201 || status === 202) {
-    const parsed = EnrollmentResponseV1.safeParse(payload);
-    if (!parsed.success || parsed.data.payment_id !== input.paymentId) {
+    const base = EnrollmentResponseV1.safeParse(payload);
+    if (!base.success || base.data.payment_id !== input.paymentId) {
       return { kind: 'retry', code: 'invalid_response' };
     }
-    if (status === 202 || parsed.data.enrollment_status === 'processing') {
+    if (status === 202 || base.data.enrollment_status === 'processing') {
       return { kind: 'processing' };
     }
-    return { kind: 'success', body: parsed.data };
+    const expectedBonusCodes = input.expectedBonusCodes ?? [];
+    if (expectedBonusCodes.length > 0) {
+      const parsed = EnrollmentResponseV2.safeParse(payload);
+      if (!parsed.success
+        || parsed.data.bonus_enrollments.length !== expectedBonusCodes.length
+        || parsed.data.bonus_enrollments.some((item, index) => item.offering_code !== expectedBonusCodes[index])) {
+        return { kind: 'retry', code: 'invalid_bonus_response' };
+      }
+      return { kind: 'success', body: parsed.data };
+    }
+    return { kind: 'success', body: base.data };
   }
   if (status >= 200 && status < 300) {
     return { kind: 'retry', code: 'unexpected_success_status' };
@@ -116,21 +129,25 @@ export class CentralCargaClient {
     this.requestId = options.requestId ?? randomUUID;
   }
 
-  createEnrollment(request: EnrollmentRequestV1): Promise<EnrollmentCallOutcome> {
+  createEnrollment(request: EnrollmentRequest): Promise<EnrollmentCallOutcome> {
     return this.send({
       method: 'POST',
       path: '/api/v1/enrollments',
       paymentId: request.payment_id,
       body: JSON.stringify(request),
+      expectedBonusCodes: request.schema_version === 2
+        ? request.bonus_offerings.map((offering) => offering.code)
+        : [],
     });
   }
 
-  getEnrollment(paymentId: string): Promise<EnrollmentCallOutcome> {
+  getEnrollment(paymentId: string, expectedBonusCodes: readonly string[] = []): Promise<EnrollmentCallOutcome> {
     return this.send({
       method: 'GET',
       path: `/api/v1/enrollments/${encodeURIComponent(paymentId)}`,
       paymentId,
       body: '',
+      expectedBonusCodes,
     });
   }
 
@@ -139,6 +156,7 @@ export class CentralCargaClient {
     path: string;
     paymentId: string;
     body: string;
+    expectedBonusCodes: readonly string[];
   }): Promise<EnrollmentCallOutcome> {
     const url = new URL(`${this.options.baseUrl}${input.path}`);
     // The signed path is the full pathname of the final URL, deployment
@@ -178,6 +196,7 @@ export class CentralCargaClient {
         bodyText,
         retryAfterHeader: response.headers.get('retry-after'),
         paymentId: input.paymentId,
+        expectedBonusCodes: input.expectedBonusCodes,
       });
     } catch (error) {
       const timedOut = controller.signal.aborted

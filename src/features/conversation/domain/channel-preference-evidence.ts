@@ -1,3 +1,5 @@
+import { isBoundedPendingCallDecline } from '@/features/orchestration/domain/sales-signal';
+
 type ChannelPreferenceEvidenceV1 = 'call' | 'chat' | 'declined' | null;
 
 // Refusals name a future action; past-tense complaints are not revocations.
@@ -25,6 +27,10 @@ function channelPreferenceEvidenceV1(
   const clauses = value.split(/[\n,;.!?…¿¡]|\b(?:pero|aunque|sin\s+embargo)\b/gu)
     .map((clause) => clause.trim()).filter(Boolean).reverse();
   for (const clause of clauses) {
+    if (pendingCallOffer && isBoundedPendingCallDecline(clause)) return 'chat';
+    if (pendingCallOffer && /^(?:si(?:\s+por\s+favor)?|dale|bueno|ok|okay|llamame)$/u.test(clause)) {
+      return 'call';
+    }
     const refusesCall = CALL_REFUSAL.test(clause);
     const rejectsWritten = /\bno\s+(?:quiero\s+|prefiero\s+)?(?:seguir\s+|continuar\s+)?(?:por\s+)?(?:chat|escrito|mensajes?)\b/u.test(clause);
     const writtenChoice = !rejectsWritten && (
@@ -57,11 +63,14 @@ export function supportsCallDeclineV1(text: string, pendingCallOffer: boolean): 
   let latestRefusal = -1;
   let latestCallChoice = -1;
   for (const [index, clause] of clauses.entries()) {
-    if (CALL_REFUSAL.test(clause)) {
+    if ((pendingCallOffer && isBoundedPendingCallDecline(clause)) || CALL_REFUSAL.test(clause)) {
       latestRefusal = index;
       continue;
     }
-    if (CALL_CHOICE.test(clause)) latestCallChoice = index;
+    if (
+      CALL_CHOICE.test(clause)
+      || (pendingCallOffer && /^(?:si(?:\s+por\s+favor)?|dale|bueno|ok|okay|llamame)$/u.test(clause))
+    ) latestCallChoice = index;
   }
   return latestRefusal >= 0 && latestRefusal > latestCallChoice;
 }

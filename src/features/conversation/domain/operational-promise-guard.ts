@@ -30,7 +30,7 @@ const CALL_DISPATCH_CLAIM_V1 = /\b(?:te\s+(?:voy|vamos)\s+a\s+llamar|te\s+llam(?
 // Scope negation and conditions to each matched claim. A reassurance such as
 // “no te preocupes” or another sentence's question cannot cancel a dispatch.
 const CALL_DISPATCH_NEGATION_PREFIX_V1 = /\b(?:no|nunca|tampoco)\s+(?:ya\s+)?$/iu;
-const CALL_DISPATCH_CONDITION_PREFIX_V1 = /(?:^|,)\s*(?:si|cuando)\s+[^,;]+,?\s*$/iu;
+const CALL_DISPATCH_CONDITION_PREFIX_V1 = /(?:^|,)\s*(?:y\s+)?(?:si|cuando)\s+[^,;]+,?\s*$/iu;
 const CALL_DISPATCH_CONDITION_SUFFIX_V1 = /^\s*(?:ahora\s*)?,?\s*(?:si|cuando)\s+/iu;
 const REGISTERED_CALL_STATUSES_V1 = new Set(['requested', 'dispatching', 'provider_accepted', 'in_progress']);
 

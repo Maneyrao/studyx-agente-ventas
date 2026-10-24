@@ -216,15 +216,7 @@ function hasUnbackedCallDispatchClaim(
   const missingCallIdentity = context.capabilities.required_contact_fields?.call
     ?? (['nombre', 'apellido', 'correo', 'telefono'] as const)
       .filter((field) => (context.capabilities.intake_missing ?? []).includes(field))
-  const moves = new Set([proposal.move.move, ...proposal.move.secondary_moves])
-  const callCollectionInProgress = moves.has('request_call')
-    || (context.commercial_state.call_preference === 'call'
-      && context.commercial_state.call_offer_status === 'accepted')
-  const asksForMissingCallIdentity = callCollectionInProgress
-    && missingCallIdentity.length > 0
-    && mentionsMissingIntakeField(proposal.response.messages, missingCallIdentity)
-  return !asksForMissingCallIdentity
-    && [...proposal.response.messages, typeof declaredCallOffer === 'string' ? declaredCallOffer : '']
+  return [...proposal.response.messages, typeof declaredCallOffer === 'string' ? declaredCallOffer : '']
     .some(message => claimsImmediateCallDispatchV1(message, context.commercial_state.active_call?.status))
     && (proposal.proposed_action.type !== 'request_call_now'
       || rejection.rejections.some((reason) => (
@@ -326,6 +318,7 @@ function requiresModelCorrection(
   if (reason.code === 'ACTION_NOT_AUTHORIZED'
     && reason.subject.startsWith('contact_profile.already_confirmed.')) return true
   if (reason.code === 'FACT_VALUE_MISMATCH') {
+    if (reason.subject === 'price_objection_reframe') return false
     // Candidate naming/resolution heuristics remain guidance. The backend
     // independently validates actual catalogue values before any delivery.
     return !['candidate_course_detail', 'candidate_course_names'].includes(reason.subject)
@@ -342,7 +335,11 @@ function isNonBlockingGuidanceReason(
 ): boolean {
   if (reason.code === 'PROPOSAL_SCHEMA_INVALID') return false
   if (reason.code === 'FACT_VALUE_MISMATCH'
-    && ['candidate_course_detail', 'candidate_course_names'].includes(reason.subject)) return true
+    && [
+      'candidate_course_detail',
+      'candidate_course_names',
+      'price_objection_reframe',
+    ].includes(reason.subject)) return true
   return NON_BLOCKING_GUIDANCE_CODES.has(reason.code)
 }
 
@@ -378,6 +375,43 @@ function mayDegradeToBackendBoundary(
     || isNonBlockingGuidanceReason(reason))
 }
 
+/**
+ * The sole repair sometimes authors the required invitation twice: once in
+ * messages and once in response.call_offer. Keep the useful original answer
+ * and the model-authored structured invitation, then run the complete
+ * validator again. The backend never invents or rewrites customer copy.
+ */
+function salvageRequiredCallOfferFromRepairV1<T extends AgentAProposalEnvelopeV1>(input: {
+  readonly initial: T
+  readonly repaired: T
+  readonly rejection: TurnRejectionV1
+  readonly context: AgentAContextV1
+  readonly authorized_fact_ids: readonly string[]
+}): T | null {
+  if (!input.rejection.rejections.some((reason) => reason.code === 'CALL_OFFER_REQUIRED')) return null
+  const callOffer = input.repaired.proposal.response.call_offer?.trim()
+  if (!callOffer) return null
+
+  const candidate = {
+    ...input.initial,
+    proposal: {
+      ...input.initial.proposal,
+      response: {
+        ...input.initial.proposal.response,
+        call_offer: callOffer,
+      },
+      repair_of: input.repaired.proposal.repair_of,
+    },
+  } as T
+  const candidateRejection = validatePlannerless({
+    proposal: candidate.proposal,
+    context: input.context,
+    rejection_id: input.rejection.rejection_id,
+    authorized_fact_ids: input.authorized_fact_ids,
+  })
+  return candidateRejection === null ? candidate : null
+}
+
 function hasOnlyNonBlockingGuidance(
   proposal: AgentATurnProposalV1,
   rejection: TurnRejectionV1,
@@ -407,6 +441,9 @@ export type AgentActionRejectionActionV1 =
   | 'request_call_now'
   | 'send_payment_link'
   | 'send_test_payment_link'
+  | 'schedule_price_objection_checkin'
+  | 'request_promotion_review'
+  | 'accept_promotion'
 
 export interface AgentActionRejectionV1 {
   readonly action: AgentActionRejectionActionV1
@@ -571,6 +608,28 @@ export async function resolveAgentAPlannerlessProposalV2<
           },
           rejection: originalRejection,
           action_rejection: repairedActionRejection,
+        }
+      }
+      const salvagedCallOffer = salvageRequiredCallOfferFromRepairV1({
+        initial,
+        repaired: candidate,
+        rejection,
+        context: input.context,
+        authorized_fact_ids: factIds,
+      })
+      if (salvagedCallOffer !== null) {
+        return {
+          effective: salvagedCallOffer,
+          evidence: {
+            rejection_codes: rejectedCodes(),
+            repair_attempted: true, repaired: true, proposal_generation_calls: 2,
+          },
+          rejection: originalRejection,
+          action_rejection: actionRejectionV1(
+            salvagedCallOffer.proposal,
+            null,
+            input.context,
+          ),
         }
       }
       terminalRejection = repaired.rejection
