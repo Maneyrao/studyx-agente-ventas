@@ -335,6 +335,22 @@ export async function prepareAgentTurnV2(input: {
   const authority = authorize(effectiveProposal);
   let actionRejection: AgentActionRejectionV1 | null = null;
 
+  // A delivered package must be accepted before checkout. Returning only a
+  // stripped action here would let the conversational owner believe it had
+  // advanced while the durable offer remained pending. Send this narrow
+  // conflict through the existing model repair receipt instead, where the
+  // current capability re-authorizes `accept_promotion` but not a simple link.
+  if (authority.ok
+    && input.course_bonus_capability?.status === 'offer_available'
+    && input.course_bonus_capability.may_accept_offer
+    && effectiveProposal.proposed_action.type === 'send_payment_link'
+    && authority.action.type === 'none') {
+    throw new AgentTurnV2RejectedError(
+      ['ACTION_NOT_AUTHORIZED'],
+      ['promotion_acceptance_required'],
+    );
+  }
+
   if (authority.ok
     && effectiveProposal.proposed_action.type !== 'none'
     && authority.action.type === 'none') {

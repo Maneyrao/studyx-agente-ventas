@@ -292,19 +292,33 @@ export async function readCourseBonusCapabilityV1(input: {
         AND candidate.contact_id = ${input.contact_id}::uuid
         AND candidate.conversation_id = ${input.conversation_id}::uuid
         AND candidate.promotion_id = p.id
-        AND candidate.status IN ('pending_review','offered','accepted','attached')
+        AND candidate.status IN ('pending_review','offered','accepted')
+        AND candidate.payment_id IS NULL
+        AND (candidate.expires_at IS NULL OR candidate.expires_at > now())
       ORDER BY candidate.created_at DESC
       LIMIT 1
     ) po ON true
     LEFT JOIN public.promotions offer_promotion ON offer_promotion.id = po.promotion_id
     WHERE workspace.slug = ${input.workspace_slug}
-      AND (paid.code = ${interestOfferingCode} OR po.id IS NOT NULL)
+      AND (
+        paid.code = ${interestOfferingCode}
+        OR (
+          po.id IS NOT NULL
+          AND p.active = true
+          AND ${input.channel}::text = ANY(p.channels)
+          AND (p.valid_from IS NULL OR p.valid_from <= now())
+          AND (p.valid_until IS NULL OR p.valid_until > now())
+          AND EXISTS (
+            SELECT 1
+            FROM public.promotion_offer_bonus_offerings related_bonus
+            WHERE related_bonus.offer_id = po.id
+              AND related_bonus.offering_code_snapshot = ${interestOfferingCode}
+          )
+        )
+      )
     ORDER BY
-      CASE
-        WHEN po.id IS NOT NULL AND (po.expires_at IS NULL OR po.expires_at > now()) THEN 0
-        WHEN paid.code = ${interestOfferingCode} THEN 1
-        ELSE 2
-      END,
+      CASE WHEN po.id IS NOT NULL THEN 0 ELSE 1 END,
+      po.created_at DESC NULLS LAST,
       p.active DESC,
       p.created_at DESC
     LIMIT 1

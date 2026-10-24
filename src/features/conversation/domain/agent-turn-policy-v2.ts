@@ -192,13 +192,18 @@ export function authorizeAgentTurnV2(input: {
     && currentCommercialInterest === capabilityInterestOffering;
   const promotionMatchesSelectedPurchase = capabilityInterestOffering !== null
     && selectedOffering === capabilityInterestOffering;
+  const selectedOfferingIsPresentedBonus = selectedOffering !== null
+    && input.course_bonus?.bonus_offerings.some((offering) => offering.code === selectedOffering) === true;
+  const selectedOfferingBelongsToPresentedPackage = promotionMatchesSelectedPurchase
+    || selectedOfferingIsPresentedBonus;
+  const requestedOfferingBelongsToPresentedPackage = requestedOffering === capabilityInterestOffering
+    || requestedOfferingIsPresentedBonus;
   const promotionEligibleForPurchase = input.course_bonus?.may_send_promoted_payment === true
     && promotionMatchesSelectedPurchase
     && promotionMatchesCurrentInterest;
   const offeredPromotionNeedsAcceptance = input.course_bonus?.status === 'offer_available'
     && input.course_bonus.may_accept_offer === true
-    && promotionMatchesSelectedPurchase
-    && promotionMatchesCurrentInterest;
+    && (selectedOfferingBelongsToPresentedPackage || requestedOfferingBelongsToPresentedPackage);
   const authorizedPromotionCode = promotionEligibleForPurchase
     ? input.course_bonus.promotion_code
     : null;
@@ -535,7 +540,9 @@ export function authorizeAgentTurnV2(input: {
       requested_by_turn_id: null,
       resolved_by_decision_id: null,
     };
-  } else if (paymentRequestWithdrawn || (changesCourse && courseChanged) || (
+  } else if (paymentRequestWithdrawn
+    || ((changesCourse || acceptsPresentedPromotion) && courseChanged)
+    || (
     selectsPaymentPlanNow && selectedPlan !== state.selected_payment_plan
   )) {
     paymentLinkRequest = paymentLinkRequest === null ? null : {
@@ -545,7 +552,12 @@ export function authorizeAgentTurnV2(input: {
     };
   }
 
-  if (changesCourse && requestedOffering) {
+  if (acceptsPresentedPromotion && capabilityInterestOffering && courseChanged) {
+    nextOffering = capabilityInterestOffering;
+    nextPlan = null;
+    awaitingReply = 'none';
+    stage = 'course_selected';
+  } else if (changesCourse && requestedOffering) {
     if (courseChanged) {
       nextPlan = null;
       awaitingReply = 'none';

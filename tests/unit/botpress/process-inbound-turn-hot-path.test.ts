@@ -1420,6 +1420,120 @@ describe('processInboundTurn hot path', () => {
     expect(result).toMatchObject({ status: 'waiting_user', delivery_status: 'submitted_to_botpress', error_code: null });
   });
 
+  it('repairs a simple bonus checkout into package acceptance and still sends a reply', async () => {
+    const claimed = claimedResponse() as unknown as ClaimedTurn;
+    claimed.features = {
+      agent_loop_v3_mode: 'off',
+      conversation_pipeline_v1_enabled: false,
+      agent_a_brain_v1_enabled: true,
+      agent_a_brain_v1_shadow: false,
+      agent_a_repair_enabled: true,
+    };
+    claimed.context.batch_messages[0]!.content = 'Claro, pasame el link y va también Inglés 2';
+    claimed.conversation_state_v1 = {
+      selected_offering_code: 'ingles_2', selected_payment_plan: 'one_time',
+      stage: 'plan_selected', call_preference: 'unknown', call_offer_status: 'not_offered',
+      call_offer_count: 0, awaiting_reply: 'payment_confirmation', version: 4,
+    };
+    claimed.catalog_index = {
+      as_of: NOW, offerings_total: 2,
+      offerings: [
+        { code: 'ingles_1', display_name: 'Inglés 1', academy: 'Idiomas', aliases: [] },
+        { code: 'ingles_2', display_name: 'Inglés 2', academy: 'Idiomas', aliases: [] },
+      ],
+      injection_suspected_count: 0,
+    };
+    const business = paymentBusinessContext();
+    business.offerings = [
+      { ...business.offerings[0]!, code: 'ingles_1', display_name: 'Inglés 1', academy: 'Idiomas' },
+      { ...business.offerings[0]!, code: 'ingles_2', display_name: 'Inglés 2', academy: 'Idiomas' },
+    ];
+    claimed.business_context = business;
+    claimed.business_context_available = true;
+    claimed.course_bonus_capability = {
+      status: 'offer_available', may_schedule_checkin: false, may_request_review: false,
+      may_accept_offer: true, may_send_promoted_payment: false,
+      promotion_code: 'ingles_1_mas_ingles_2', interest_offering_code: 'ingles_1',
+      bonus_offerings: [{ code: 'ingles_2', display_name: 'Inglés 2', position: 1 }],
+    };
+    actionSpies.claim.mockResolvedValue(claimed);
+    configuration.agentAPlannerlessV2Enabled = true;
+
+    actionSpies.agentABrainDeepSeek
+      .mockResolvedValueOnce({
+        proposal: {
+          schema_version: 1,
+          move: { schema_version: 1, move: 'request_payment_link', secondary_moves: [], vetoes: [],
+            course_reference: 'ingles_2', confidence: 1 },
+          response: { messages: ['Perfecto, te comparto el enlace.'], call_offer: null },
+          proposed_action: { type: 'send_payment_link', offering_code: 'ingles_2', payment_plan: 'one_time' },
+          used_fact_ids: [], used_memory_ids: [], memory_candidates: [], repair_of: null,
+        },
+        provider: 'deepseek-direct', model: 'deepseek-v4-flash', latency_ms: 1, attempt_count: 1,
+      })
+      .mockImplementationOnce(async (input: { context: AgentAContextV1 }) => ({
+        proposal: {
+          schema_version: 1,
+          move: { schema_version: 1, move: 'unknown', secondary_moves: [], vetoes: [], confidence: 1 },
+          response: { messages: ['Perfecto, queda Inglés 1 con Inglés 2 incluido.'], call_offer: null },
+          proposed_action: { type: 'accept_promotion' },
+          used_fact_ids: [], used_memory_ids: [], memory_candidates: [],
+          repair_of: { rejection_id: input.context.turn_rejection!.rejection_id, attempt: 1 },
+        },
+        provider: 'deepseek-direct', model: 'deepseek-v4-flash', latency_ms: 1, attempt_count: 1,
+      }));
+
+    const outbound = {
+      id: UUID, content: 'Perfecto, queda Inglés 1 con Inglés 2 incluido.', status: 'pending', delivery_attempt: 1,
+      authorized_egress: { schema_version: 1,
+        content_hash: '0bd7b88dc667df434a78fb7f54174bd9a17b1c8551e363d56c482f7efe3bc734',
+        authorized_urls: [], protected_facts: [] },
+    };
+    actionSpies.commit
+      .mockRejectedValueOnce(new StudyxHttpError(
+        'DECISION_REJECTED', false, 422, 1,
+        { error: 'DECISION_REJECTED', reason: 'AGENT_TURN_V2_REJECTED:ACTION_NOT_AUTHORIZED',
+          subjects: ['promotion_acceptance_required'] },
+      ))
+      .mockResolvedValueOnce({
+        status: 'committed', replayed: false, trace_id: UUID, turn_id: UUID,
+        decision_id: UUID, next_state: 'waiting_user', outbound, outbounds: [outbound], call_request: null,
+      });
+    const createMessage = vi.fn(async () => ({ message: { id: 'bp-package-accepted-message' } }));
+    const step = Object.assign(async (_name: string, run: () => Promise<unknown>) => run(),
+      { sleep: vi.fn(async () => undefined) });
+    const handler = (processInboundTurn as unknown as {
+      definition: { handler: (args: Record<string, unknown>) => Promise<unknown> };
+    }).definition.handler;
+
+    const result = await handler({
+      input: workflowInput(), state: processingState(), step,
+      execute: vi.fn(async () => { throw new Error('LEGACY_MODEL_MUST_NOT_RUN'); }),
+      client: { createMessage }, signal: new AbortController().signal,
+      workflow: { id: 'workflow-package-acceptance-repair' },
+    });
+
+    expect(actionSpies.agentABrainDeepSeek).toHaveBeenCalledTimes(2);
+    expect(actionSpies.agentABrainDeepSeek.mock.calls[1]![0]).toMatchObject({
+      conversation_only: false,
+      context: { turn_rejection: { authorized_alternatives: {
+        actions: expect.arrayContaining(['none', 'accept_promotion']),
+      } } },
+    });
+    expect(actionSpies.agentABrainDeepSeek.mock.calls[1]![0]
+      .context.turn_rejection.authorized_alternatives.actions).not.toContain('send_payment_link');
+    expect(actionSpies.commit).toHaveBeenCalledTimes(2);
+    expect(actionSpies.commit.mock.calls[1]![0].input.agent_turn_v2).toMatchObject({
+      proposal: { proposed_action: { type: 'accept_promotion' } },
+    });
+    expect(createMessage).toHaveBeenCalledWith(expect.objectContaining({
+      payload: { text: 'Perfecto, queda Inglés 1 con Inglés 2 incluido.' },
+    }));
+    expect(actionSpies.recovery).not.toHaveBeenCalled();
+    expect(result).toMatchObject({ status: 'waiting_user', delivery_status: 'submitted_to_botpress',
+      error_code: null });
+  });
+
   it('asks Agent A for one final fenced correction after a twice-rejected backend commit', async () => {
     const claimed = claimedResponse() as unknown as ClaimedTurn;
     claimed.features = {

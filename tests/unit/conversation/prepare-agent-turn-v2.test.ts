@@ -4,7 +4,10 @@ import type { ConversationStateV1 } from '@/features/conversation/domain/convers
 import type { ConversationStateStoreV1 } from '@/features/conversation/ports/conversation-state-store';
 import type { BusinessContextView, CatalogIndexView } from '@/features/orchestration/domain/business-context';
 import { createDefaultConversationStateV1 } from '@/features/conversation/domain/conversation-planner';
-import { prepareAgentTurnV2 } from '@/features/conversation/application/prepare-agent-turn-v2';
+import {
+  AgentTurnV2RejectedError,
+  prepareAgentTurnV2,
+} from '@/features/conversation/application/prepare-agent-turn-v2';
 
 const ids = {
   workspace: '10000000-0000-4000-8000-000000000001',
@@ -698,6 +701,54 @@ describe('prepareAgentTurnV2', () => {
     expect(prepared.authorized_payment_plan).toBe('one_time');
     expect(prepared.transition).toMatchObject({
       selected_payment_plan: 'one_time', stage: 'payment_link_sent', awaiting_reply: 'none',
+    });
+  });
+
+  it('returns a repairable rejection instead of silently stripping checkout from a pending package', async () => {
+    const packageIndex: CatalogIndexView = {
+      ...index,
+      offerings_total: 2,
+      offerings: [
+        index.offerings[0]!,
+        { code: 'excel_integral', display_name: 'Excel Integral', academy: 'Tecnología', aliases: ['excel'] },
+      ],
+    };
+    const packageBusiness: BusinessContextView = {
+      ...business,
+      offerings: [
+        business.offerings[0]!,
+        { ...business.offerings[0]!, code: 'excel_integral', display_name: 'Excel Integral', aliases: ['excel'] },
+      ],
+    };
+    const attempt = prepareAgentTurnV2({
+      turn: { id: ids.turn, workspace_id: ids.workspace, conversation_id: ids.conversation, contact_id: ids.contact },
+      workspace_slug: 'studyx', business_context: packageBusiness, catalog_index: packageIndex,
+      current_customer_messages: ['Claro, pasame el link y va también Excel'],
+      course_bonus_capability: {
+        status: 'offer_available', may_schedule_checkin: false, may_request_review: false,
+        may_accept_offer: true, may_send_promoted_payment: false,
+        promotion_code: 'redes_con_excel', interest_offering_code: 'redes_informaticas',
+        bonus_offerings: [{ code: 'excel_integral', display_name: 'Excel Integral', position: 1 }],
+      },
+      proposal: proposal({
+        move: { schema_version: 1, move: 'request_payment_link', secondary_moves: [], vetoes: [],
+          course_reference: 'excel', confidence: 1 },
+        response: { messages: ['Perfecto, avanzo con el paquete.'] },
+        proposed_action: { type: 'send_payment_link', offering_code: 'excel_integral', payment_plan: 'monthly_6' },
+      }),
+    }, {
+      state_store: store(state({ selected_offering_code: 'excel_integral', selected_payment_plan: 'monthly_6',
+        stage: 'plan_selected', awaiting_reply: 'payment_confirmation' })),
+      contact_intake: completeIntake,
+      now: () => Date.parse(index.as_of),
+    });
+
+    const rejection = await attempt.catch((error: unknown) => error);
+    expect(rejection).toBeInstanceOf(AgentTurnV2RejectedError);
+    expect(rejection).toMatchObject({
+      code: 'AGENT_TURN_V2_REJECTED',
+      reasons: ['ACTION_NOT_AUTHORIZED'],
+      rejectionSubjects: ['promotion_acceptance_required'],
     });
   });
 

@@ -43,6 +43,11 @@ const facts: CanonicalFactV1[] = [
     source: 'business_snapshot', value: '1 pago de USD 360',
     offering_code: 'redes_informaticas', payment_plan: 'one_time',
   },
+  {
+    id: 'payment:excel_integral:one_time:label:v1', kind: 'payment_plan_label',
+    source: 'business_snapshot', value: '1 pago de USD 360',
+    offering_code: 'excel_integral', payment_plan: 'one_time',
+  },
 ];
 
 function state(overrides: Partial<ConversationStateV1> = {}): ConversationStateV1 {
@@ -508,6 +513,47 @@ describe('plannerless Agent A authority', () => {
         selected_offering_code: 'redes_informaticas',
         selected_payment_plan: 'monthly_6',
       },
+    });
+  });
+
+  it('does not charge only the bonus when a package offer is still awaiting acceptance', () => {
+    const result = authorize({
+      state: state({
+        selected_offering_code: 'excel_integral',
+        selected_payment_plan: 'one_time',
+        stage: 'plan_selected',
+        awaiting_reply: 'payment_confirmation',
+      }),
+      intake: completeIntake,
+      customerText: 'Claro, pasame el link y va también Excel',
+      actionRejections: 'structured',
+      courseBonus: {
+        status: 'offer_available',
+        may_schedule_checkin: false,
+        may_request_review: false,
+        may_accept_offer: true,
+        may_send_promoted_payment: false,
+        promotion_code: 'redes_con_excel',
+        interest_offering_code: 'redes_informaticas',
+        bonus_offerings: [{ code: 'excel_integral', display_name: 'Excel Integral', position: 1 }],
+      },
+      proposal: proposal({
+        move: {
+          schema_version: 1, move: 'request_payment_link', secondary_moves: [], vetoes: [],
+          course_reference: 'excel', confidence: 1,
+        },
+        response: { messages: ['Perfecto, te comparto el enlace.'] },
+        proposed_action: {
+          type: 'send_payment_link', offering_code: 'excel_integral', payment_plan: 'one_time',
+        },
+      }),
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      action: { type: 'none' },
+      advisory_reasons: ['ACTION_NOT_AUTHORIZED'],
+      transition: { stage: 'plan_selected' },
     });
   });
 
@@ -1859,6 +1905,60 @@ it('accepts the offered package without replacing its paid course with the menti
       selected_payment_plan: 'one_time',
       stage: 'plan_selected',
       awaiting_reply: 'payment_confirmation',
+    },
+  });
+});
+
+it('restores the paid course when the package is accepted without selecting a plan', () => {
+  const result = authorize({
+    customerText: 'Claro, va también Excel',
+    state: state({
+      selected_offering_code: 'excel_integral',
+      selected_payment_plan: 'one_time',
+      stage: 'plan_selected',
+      awaiting_reply: 'payment_confirmation',
+      payment_link_request: {
+        status: 'pending',
+        offering_code: 'excel_integral',
+        payment_plan: 'one_time',
+        requested_by_turn_id: null,
+        resolved_by_decision_id: null,
+      },
+    }),
+    courseBonus: {
+      status: 'offer_available',
+      may_schedule_checkin: false,
+      may_request_review: false,
+      may_accept_offer: true,
+      may_send_promoted_payment: false,
+      promotion_code: 'redes_con_excel',
+      interest_offering_code: 'redes_informaticas',
+      bonus_offerings: [{ code: 'excel_integral', display_name: 'Excel Integral', position: 1 }],
+    },
+    proposal: proposal({
+      move: {
+        schema_version: 1,
+        move: 'unknown',
+        secondary_moves: [],
+        vetoes: [],
+        course_reference: 'excel',
+        confidence: 1,
+      },
+      response: { messages: ['Perfecto, queda Redes con Excel incluido.'] },
+      proposed_action: { type: 'accept_promotion' },
+    }),
+  });
+
+  expect(result).toMatchObject({
+    ok: true,
+    action: { type: 'accept_promotion' },
+    discussed_offering_code: 'redes_informaticas',
+    transition: {
+      selected_offering_code: 'redes_informaticas',
+      selected_payment_plan: null,
+      stage: 'course_selected',
+      awaiting_reply: 'none',
+      payment_link_request: { status: 'withdrawn' },
     },
   });
 });

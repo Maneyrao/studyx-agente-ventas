@@ -152,6 +152,75 @@ run('durable commercial course-bonus follow-up', () => {
     })).resolves.toEqual({interest_offering_code:f.bonus.code, price_objection_count:0});
   });
 
+  it.each(['attached', 'inactive'] as const)(
+    'does not let an %s old offer hide the promotion for the current course',
+    async oldOfferState => {
+      const f = await fixture();
+      const [oldOffer] = await db!`INSERT INTO promotion_offers(
+          workspace_id,contact_id,conversation_id,promotion_id,paid_offering_id,
+          status,offered_at,accepted_at)
+        VALUES (${f.workspace.id},${f.contact.id},${f.conversation.id},${f.promotion.id},${f.paid.id},
+          'accepted',now(),now()) RETURNING id`;
+      await db!`INSERT INTO promotion_offer_bonus_offerings(
+          offer_id,promotion_id,offering_id,promotion_code_snapshot,offering_code_snapshot,
+          offering_display_name_snapshot,position)
+        VALUES (${oldOffer.id},${f.promotion.id},${f.bonus.id},${f.promotion.promotion_code},
+          ${f.bonus.code},'Inglés 2',1)`;
+      await db!`UPDATE promotion_offers SET bonus_snapshot_sealed_at=now() WHERE id=${oldOffer.id}`;
+
+      if (oldOfferState === 'attached') {
+        const [payment] = await db!`INSERT INTO payments(
+            workspace_id,contact_id,offering_id,amount,currency,status,provider,environment,
+            checkout_mode,idempotency_key,plan_code,source_conversation_id)
+          VALUES (${f.workspace.id},${f.contact.id},${f.paid.id},360,'USD','reserved','stripe','test',
+            'payment',${`old-attached-${randomUUID()}`},'one_time',${f.conversation.id}) RETURNING id`;
+        await db!`UPDATE promotion_offers SET status='attached',payment_id=${payment.id}
+          WHERE id=${oldOffer.id}`;
+      } else {
+        await db!`UPDATE promotions SET active=false WHERE id=${f.promotion.id}`;
+      }
+
+      const suffix = randomUUID().slice(0, 8);
+      const newOfferings = await db!`INSERT INTO offerings(
+          workspace_id,code,display_name,offering_type,status,description,price_type,price_amount,
+          currency,billing_interval)
+        VALUES (${f.workspace.id},${`marketing_${suffix}`},'Marketing Digital','course','active',
+            'Estrategia','fixed',360,'USD','annual'),
+          (${f.workspace.id},${`ventas_${suffix}`},'Ventas','course','active',
+            'Conversión','free',NULL,NULL,NULL)
+        RETURNING id,code`;
+      const [currentPaid, currentBonus] = newOfferings;
+      const [currentPromotion] = await db!`INSERT INTO promotions(
+          workspace_id,promotion_code,paid_offering_id,channels,active)
+        VALUES (${f.workspace.id},${`marketing-bonus-${suffix}`},${currentPaid.id},
+          ARRAY['text']::text[],true) RETURNING id`;
+      await db!`INSERT INTO promotion_bonus_offerings(
+          promotion_id,workspace_id,offering_id,position)
+        VALUES (${currentPromotion.id},${f.workspace.id},${currentBonus.id},1)`;
+
+      await recordPromotionConversationContextV1(db!, {
+        workspace_id:f.workspace.id as string,
+        contact_id:f.contact.id as string,
+        conversation_id:f.conversation.id as string,
+        source_turn_id:f.inbound.id as string,
+        discussed_offering_code:currentPaid.code as string,
+        records_price_objection:false,
+      });
+
+      await expect(readCourseBonusCapabilityV1({
+        workspace_slug:f.workspace.slug as string,
+        contact_id:f.contact.id as string,
+        conversation_id:f.conversation.id as string,
+        channel:'text',
+        selected_offering_code:currentPaid.code as string,
+      }, {db:db!})).resolves.toMatchObject({
+        status:'checkin_available',
+        interest_offering_code:currentPaid.code,
+        may_schedule_checkin:true,
+      });
+    },
+  );
+
   it('does not create reviews or offers while the feature flag is disabled', async () => {
     const f = await fixture();
     process.env.CENTRAL_CARGA_BONUS_ENABLED = 'false';

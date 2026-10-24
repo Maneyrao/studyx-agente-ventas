@@ -99,9 +99,11 @@ describe('course bonus capability', () => {
     process.env.CENTRAL_CARGA_BONUS_ENABLED = 'false';
     process.env.CENTRAL_CARGA_BONUS_CANARY_CONTACT_IDS = canary;
     let queryCount = 0;
-    const db = (async () => {
+    let capabilitySql = '';
+    const db = (async (strings: TemplateStringsArray) => {
       queryCount += 1;
       if (queryCount === 1) return [{ interest_offering_code: 'excel_integral', price_objection_count: 0 }];
+      capabilitySql = strings.join('?');
       return [{
         promotion_code: 'redes_con_excel',
         paid_offering_code: 'redes_informaticas',
@@ -130,6 +132,10 @@ describe('course bonus capability', () => {
         interest_offering_code: 'redes_informaticas',
         promotion_code: 'redes_con_excel',
       });
+      expect(capabilitySql).toContain("candidate.status IN ('pending_review','offered','accepted')");
+      expect(capabilitySql).toContain('candidate.payment_id IS NULL');
+      expect(capabilitySql).toContain('related_bonus.offering_code_snapshot');
+      expect(capabilitySql).toContain('po.created_at DESC NULLS LAST');
     } finally {
       if (priorEnabled === undefined) delete process.env.CENTRAL_CARGA_BONUS_ENABLED;
       else process.env.CENTRAL_CARGA_BONUS_ENABLED = priorEnabled;

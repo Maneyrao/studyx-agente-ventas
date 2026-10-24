@@ -443,7 +443,10 @@ function backendCommitTurnRejectionV1(input: {
     ...(input.context.catalog.test_payment_options?.map((option) => option.fact_id) ?? []),
   ]
   const actions = ['none']
-  if (input.context.capabilities.may_send_payment_link) actions.push('send_payment_link')
+  const promotionAcceptancePending = input.context.capabilities.course_bonus?.may_accept_offer === true
+  if (input.context.capabilities.may_send_payment_link && !promotionAcceptancePending) {
+    actions.push('send_payment_link')
+  }
   if (input.context.capabilities.course_bonus?.may_schedule_checkin) actions.push('schedule_price_objection_checkin')
   if (input.context.capabilities.course_bonus?.may_request_review) actions.push('request_promotion_review')
   if (input.context.capabilities.course_bonus?.may_accept_offer) actions.push('accept_promotion')
