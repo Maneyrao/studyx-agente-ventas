@@ -252,6 +252,7 @@ export const AgentAContextV1Schema = z.object({
       may_accept_offer: z.boolean(),
       may_send_promoted_payment: z.boolean(),
       promotion_code: IdentifierSchema.nullable(),
+      bonus_selection_mode: z.enum(['configured', 'any_active_course']).optional(),
       interest_offering_code: IdentifierSchema.nullable().optional(),
       bonus_offerings: z.array(z.object({
         code: IdentifierSchema,
@@ -294,6 +295,7 @@ export const AgentAProposedActionSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('request_promotion_review'),
     reason: z.literal('persistent_price_objection'),
+    bonus_offering_code: IdentifierSchema.optional(),
   }).strict(),
   z.object({ type: z.literal('accept_promotion') }).strict(),
   z.object({

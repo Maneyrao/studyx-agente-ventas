@@ -467,7 +467,19 @@ export function authorizeAgentTurnV2(input: {
     else reasons.push('ACTION_NOT_AUTHORIZED');
   }
   if (proposal.proposed_action.type === 'request_promotion_review') {
-    if (input.course_bonus?.may_request_review === true && promotionMatchesCurrentInterest) {
+    const selectedBonusCode = proposal.proposed_action.bonus_offering_code;
+    const selectedBonusIsActive = selectedBonusCode !== undefined
+      && selectedBonusCode !== capabilityInterestOffering
+      && input.offerings.some((offering) => offering.code === selectedBonusCode);
+    const bonusSelectionAuthorized = input.course_bonus?.bonus_selection_mode === 'any_active_course'
+      ? selectedBonusIsActive
+      : selectedBonusCode === undefined
+        || input.course_bonus?.bonus_offerings.some(
+          (offering) => offering.code === selectedBonusCode,
+        ) === true;
+    if (input.course_bonus?.may_request_review === true
+      && promotionMatchesCurrentInterest
+      && bonusSelectionAuthorized) {
       action = proposal.proposed_action;
     }
     else reasons.push('ACTION_NOT_AUTHORIZED');

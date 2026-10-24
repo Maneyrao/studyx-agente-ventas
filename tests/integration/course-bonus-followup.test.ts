@@ -14,6 +14,7 @@ import {
   readCourseBonusCapabilityV1,
   recordPromotionConversationContextV1,
 } from '@/features/promotions/application/read-course-bonus-capability';
+import { reservePaymentLink } from '@/features/payments/application/reserve-payment-link';
 
 const run = process.env.TEST_DATABASE_URL ? describe : describe.skip;
 const db = process.env.TEST_DATABASE_URL ? openLocalTestDatabase() : null;
@@ -314,6 +315,128 @@ run('durable commercial course-bonus follow-up', () => {
     });
 
     expect(result.followup).toMatchObject({ kind: 'promotion_review' });
+  });
+
+  it('carries the complementary active course selected by Agent A through offer, acceptance and payment', async () => {
+    const f = await fixture();
+    const suffix = randomUUID().slice(0, 8);
+    const [photography] = await db!`INSERT INTO offerings(
+        workspace_id,code,display_name,offering_type,status,description,price_type,price_amount,
+        currency,billing_interval)
+      VALUES (${f.workspace.id},${`fotografia_${suffix}`},'Fotografía con Celulares',
+        'course','active','Fotografía para tiendas','fixed',360,'USD','annual')
+      RETURNING id,code,display_name`;
+
+    const result = await commitCommercialActionV1(db!, {
+      workspace_id: f.workspace.id as string,
+      contact_id: f.contact.id as string,
+      conversation_id: f.conversation.id as string,
+      paid_offering_code: f.paid.code as string,
+      source_turn_id: f.inbound.id as string,
+      source_outbound_message_id: f.outbound.id as string,
+      action: {
+        type: 'request_promotion_review',
+        reason: 'persistent_price_objection',
+        bonus_offering_code: photography.code as string,
+      },
+    });
+
+    expect(result.followup).toMatchObject({ kind: 'promotion_review' });
+    expect(await db!`SELECT paid.code AS paid_code, bonus.code AS bonus_code
+      FROM promotion_offers offer
+      JOIN offerings paid ON paid.id=offer.paid_offering_id
+      JOIN promotion_offer_bonus_offerings snapshot ON snapshot.offer_id=offer.id
+      JOIN offerings bonus ON bonus.id=snapshot.offering_id
+      WHERE offer.id=${result.offer_id}`)
+      .toEqual([{ paid_code: f.paid.code, bonus_code: photography.code }]);
+    expect(await db!`SELECT promotion.channels
+      FROM promotion_offers offer
+      JOIN promotions promotion ON promotion.id=offer.promotion_id
+      WHERE offer.id=${result.offer_id}`)
+      .toEqual([{ channels: ['text'] }]);
+    await db!`UPDATE course_bonus_followups SET due_at=now()-interval '1 second'
+      WHERE id=${result.followup!.id}`;
+    const claim = await claimCommercialFollowupV1(
+      result.followup!.id,
+      f.botpressId,
+      `event-dynamic-${randomUUID()}`,
+      { db: db! },
+    );
+    if (!claim.claimed) throw new Error('claim expected');
+    await expect(deliverCommercialFollowupV1(result.followup!.id, {
+      claim_token: claim.claim_token,
+      botpress_conversation_id: f.botpressId,
+      narrative: { kind: 'promotion_review', value_angle: 'goal_alignment', cta: 'advance', treatment: 'tu' },
+    }, { db: db!, sender: async () => ({
+      outcome: 'sent' as const,
+      channel: 'whatsapp' as const,
+      providerMessageId: 'wamid.dynamic',
+      deliveryId: null,
+      reason: null,
+    }) })).resolves.toEqual({ outcome: 'sent' });
+    await expect(commitCommercialActionV1(db!, {
+      workspace_id: f.workspace.id as string,
+      contact_id: f.contact.id as string,
+      conversation_id: f.conversation.id as string,
+      paid_offering_code: f.paid.code as string,
+      source_turn_id: f.inbound.id as string,
+      source_outbound_message_id: f.outbound.id as string,
+      action: { type: 'accept_promotion' },
+    })).resolves.toEqual({ offer_id: result.offer_id, followup: null });
+    const [promotion] = await db!`SELECT promotion.promotion_code
+      FROM promotion_offers offer
+      JOIN promotions promotion ON promotion.id=offer.promotion_id
+      WHERE offer.id=${result.offer_id}`;
+    const payment = await reservePaymentLink(db!, {
+      workspace_id: f.workspace.id as string,
+      contact_id: f.contact.id as string,
+      offering_id: f.paid.id as string,
+      conversation_id: f.conversation.id as string,
+      plan_code: 'one_time',
+      idempotency_key: `dynamic-payment-${randomUUID()}`,
+      payment_link_url: 'https://buy.stripe.com/test_dynamic_bonus',
+      promotion_code: promotion.promotion_code as string,
+    });
+    await expect(db!`SELECT offering_code_snapshot
+      FROM payment_bonus_offerings WHERE payment_id=${payment.payment_id}`)
+      .resolves.toEqual([{ offering_code_snapshot: photography.code }]);
+  });
+
+  it('keeps an accepted live package instead of replacing it with a later dynamic review', async () => {
+    const f = await fixture();
+    const [accepted] = await db!`INSERT INTO promotion_offers(
+        workspace_id,contact_id,conversation_id,promotion_id,paid_offering_id,status,
+        offered_at,accepted_at,expires_at)
+      VALUES (${f.workspace.id},${f.contact.id},${f.conversation.id},${f.promotion.id},${f.paid.id},
+        'accepted',now(),now(),now()+interval '48 hours') RETURNING id`;
+    await db!`INSERT INTO promotion_offer_bonus_offerings(
+        offer_id,promotion_id,offering_id,promotion_code_snapshot,offering_code_snapshot,
+        offering_display_name_snapshot,position)
+      VALUES (${accepted.id},${f.promotion.id},${f.bonus.id},${f.promotion.promotion_code},
+        ${f.bonus.code},'Inglés 2',1)`;
+    await db!`UPDATE promotion_offers SET bonus_snapshot_sealed_at=now() WHERE id=${accepted.id}`;
+    const suffix = randomUUID().slice(0, 8);
+    const [photography] = await db!`INSERT INTO offerings(
+        workspace_id,code,display_name,offering_type,status,description,price_type,price_amount,
+        currency,billing_interval)
+      VALUES (${f.workspace.id},${`foto_accepted_${suffix}`},'Fotografía','course','active',
+        'Fotografía','fixed',360,'USD','annual') RETURNING code`;
+
+    await expect(commitCommercialActionV1(db!, {
+      workspace_id: f.workspace.id as string,
+      contact_id: f.contact.id as string,
+      conversation_id: f.conversation.id as string,
+      paid_offering_code: f.paid.code as string,
+      source_turn_id: f.inbound.id as string,
+      source_outbound_message_id: f.outbound.id as string,
+      action: {
+        type: 'request_promotion_review',
+        reason: 'persistent_price_objection',
+        bonus_offering_code: photography.code as string,
+      },
+    })).resolves.toEqual({ offer_id: accepted.id, followup: null });
+    await expect(db!`SELECT status,cancel_reason FROM promotion_offers WHERE id=${accepted.id}`)
+      .resolves.toEqual([{ status: 'accepted', cancel_reason: null }]);
   });
 
   it('commits one review, claims once and marks the authorized offer delivered once', async () => {

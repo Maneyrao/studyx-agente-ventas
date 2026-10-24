@@ -337,8 +337,9 @@ const ROBOTIC_FALLBACK_PATTERNS_V1 = [
 ] as const;
 
 const INTERNAL_GUARDRAIL_COPY_PATTERNS_V1 = [
-  /\bno\s+te\s+voy\s+a\s+inventar(?:te)?\b/iu,
+  /\bno\s+te\s+(?:(?:lo|la)\s+)?voy\s+a\s+inventar(?:te)?\b/iu,
   /\bno\s+voy\s+a\s+inventarte\b/iu,
+  /\b(?:eso|el\s+(?:precio|valor|monto))\s+no\s+lo\s+puedo\s+cambiar\b/iu,
 ] as const;
 
 function normalizedReplyTokens(value: string): Set<string> {

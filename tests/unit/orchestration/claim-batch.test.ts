@@ -696,6 +696,28 @@ describe('claimBatch', () => {
     ).toBe(1);
   });
 
+  it('accepts the any-course bonus selection mode on the Botpress claim wire', async () => {
+    const result = await claimBatch(input, buildDeps());
+    if (result.outcome !== 'claimed') throw new Error('expected a claim');
+
+    const parsed = ClaimedTurnSchema.parse({
+      ...withWireUuids(result),
+      course_bonus_capability: {
+        status: 'review_available',
+        may_schedule_checkin: false,
+        may_request_review: true,
+        may_accept_offer: false,
+        may_send_promoted_payment: false,
+        promotion_code: null,
+        interest_offering_code: 'ingles_1',
+        bonus_selection_mode: 'any_active_course',
+        bonus_offerings: [],
+      },
+    });
+
+    expect(parsed.course_bonus_capability?.bonus_selection_mode).toBe('any_active_course');
+  });
+
   it('degrades to structured context when the memory index fails', async () => {
     const memory = { search: vi.fn().mockRejectedValue(new Error('pgvector down')) };
     const result = await claimBatch(input, buildDeps({ memory }));

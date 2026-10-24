@@ -21,6 +21,7 @@ export interface CourseBonusCapabilityV1 {
   readonly may_accept_offer: boolean;
   readonly may_send_promoted_payment: boolean;
   readonly promotion_code: string | null;
+  readonly bonus_selection_mode?: 'configured' | 'any_active_course';
   /** Exact course being discussed. This is not a purchase selection. */
   readonly interest_offering_code: string | null;
   readonly bonus_offerings: ReadonlyArray<{
@@ -137,20 +138,36 @@ export function deriveCourseBonusCapabilityV1(input: {
   readonly prior_price_objection_checkin: boolean;
   readonly promotion: CourseBonusPromotionProjectionV1 | null;
   readonly active_offer: CourseBonusOfferProjectionV1 | null;
+  readonly allows_any_active_bonus?: boolean;
   readonly now?: Date;
 }): CourseBonusCapabilityV1 {
   const now = (input.now ?? new Date()).getTime();
   const promotion = input.promotion;
   const interestOfferingCode = input.discussed_offering_code ?? input.selected_offering_code;
   if (interestOfferingCode === null) return hidden('needs_interest');
-  if (!promotion
+  const anyActiveBonus = input.allows_any_active_bonus === true && input.active_offer === null;
+  if (!anyActiveBonus && (!promotion
     || !promotion.active
     || promotion.paid_offering_code !== interestOfferingCode
     || !promotion.channels.includes(input.channel)
     || (timestamp(promotion.valid_from) !== null && timestamp(promotion.valid_from)! > now)
     || (timestamp(promotion.valid_until) !== null && timestamp(promotion.valid_until)! <= now)
-    || promotion.bonus_offerings.length === 0) {
+    || promotion.bonus_offerings.length === 0)) {
     return hidden('unavailable');
+  }
+  if (anyActiveBonus
+    && ((input.recorded_price_objections ?? 0) > 0 || input.prior_price_objection_checkin)) {
+    return hidden('review_available', {
+      may_request_review: true,
+      interest_offering_code: interestOfferingCode,
+      bonus_selection_mode: 'any_active_course',
+    });
+  }
+  if (promotion === null) {
+    return hidden('checkin_available', {
+      interest_offering_code: interestOfferingCode,
+      bonus_selection_mode: 'any_active_course',
+    });
   }
 
   const offer = input.active_offer;
@@ -324,6 +341,22 @@ export async function readCourseBonusCapabilityV1(input: {
     LIMIT 1
   `;
   const row = rows[0];
+  const anyActiveBonusRows = row ? [{ authorized: true }] : await deps.db<Array<{ authorized: boolean }>>`
+    SELECT EXISTS (
+      SELECT 1
+      FROM public.offerings offering
+      JOIN public.workspaces workspace ON workspace.id = offering.workspace_id
+      WHERE workspace.slug = ${input.workspace_slug}
+        AND offering.code = ${interestOfferingCode}
+        AND offering.status = 'active'
+        AND EXISTS (
+          SELECT 1 FROM public.offerings candidate
+          WHERE candidate.workspace_id = offering.workspace_id
+            AND candidate.status = 'active'
+            AND candidate.id <> offering.id
+        )
+    ) AS authorized
+  `;
   // Once an offer has been delivered it owns its paid course durably. Merely
   // discussing the included course must not hide the package or turn that
   // bonus into the purchase identity.
@@ -350,6 +383,7 @@ export async function readCourseBonusCapabilityV1(input: {
       promotion_code: row.offer_promotion_code,
       expires_at: row.offer_expires_at,
     } : null,
+    allows_any_active_bonus: anyActiveBonusRows[0]?.authorized === true,
     now: input.now,
   });
 }

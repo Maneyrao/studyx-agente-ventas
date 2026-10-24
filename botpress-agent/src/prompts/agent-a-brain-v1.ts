@@ -6,7 +6,7 @@ import {
 import { resolveCanonicalPromptIdentityV1 } from './agent-a-identity';
 import { evaluateSalesObjectionTurnV1 } from '../lib/conversation/sales-objection-turn-policy';
 
-export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v128' as const;
+export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v129' as const;
 
 /**
  * Runtime contract only. The sales behavior lives in the canonical prompt so
@@ -65,9 +65,12 @@ Answer the customer from the remaining verified course facts; do not replace the
     reason.code === 'FACT_VALUE_MISMATCH' && reason.subject === 'forbidden_promise'
   ));
   const courseBonus = context.capabilities.course_bonus;
+  const selectedBonusDirective = courseBonus?.bonus_selection_mode === 'any_active_course'
+    ? ' Choose exactly one active offering from catalog.available_offerings that differs from the paid course and materially complements the customer goal; put only its code in proposed_action.bonus_offering_code. Do not name or imply that course in customer-facing copy before the review returns an offer.'
+    : '';
   const forbiddenPromiseRepair = repairsForbiddenPromise ? courseBonus?.may_request_review
     ? `
-For forbidden_promise, remove the unauthorized promise completely. You may say naturally that you will check an alternative only if you use proposed_action=request_promotion_review in this rewrite. Do not name or imply a specific gift yet, and do not claim approval, a discount, income or results.`
+For forbidden_promise, remove the unauthorized promise completely. You may say naturally that you will check an alternative only if you use proposed_action=request_promotion_review in this rewrite.${selectedBonusDirective} Do not name or imply a specific gift yet, and do not claim approval, a discount, income or results.`
     : courseBonus?.status === 'offer_available' || courseBonus?.status === 'accepted'
       ? `
 For forbidden_promise, remove the unauthorized promise completely. Mention only the exact promotion_code and bonus_offerings exposed by capabilities.course_bonus; do not add a discount, another gift, approval, income or results.`
@@ -103,8 +106,11 @@ function currentCommercialGuidanceDirectiveV1(context: AgentAContextV1): string 
   if (objection.kind === 'none') return '';
 
   const courseBonus = context.capabilities.course_bonus;
+  const selectedBonusDirective = courseBonus?.bonus_selection_mode === 'any_active_course'
+    ? ` Choose exactly one active offering from catalog.available_offerings that differs from the paid course and complements the customer's stated goal or interest. Put its code only in proposed_action.bonus_offering_code; do not reveal the selected course before the review returns offer_available.`
+    : '';
   const repeatedPriceGuidance = courseBonus?.may_request_review
-    ? `This is a persistent price objection. Do not merely repeat the price, installment amounts or class count. Change the argument dimension using recent conversation evidence, then say naturally that you will check an alternative and use proposed_action=request_promotion_review. The review is the authorized next step: do not name or imply a specific gift yet.`
+    ? `This is a persistent price objection. Do not merely repeat the price, installment amounts or class count. Change the argument dimension using recent conversation evidence, then say naturally that you will check an alternative and use proposed_action=request_promotion_review.${selectedBonusDirective} The review is the authorized next step: do not name or imply a specific gift yet.`
     : courseBonus?.status === 'offer_available' || courseBonus?.status === 'accepted'
       ? `This is a persistent price objection. Use only the authorized promotion_code and bonus_offerings from capabilities.course_bonus, connect the complementary course to the customer's stated goal, and make clear that the paid course price does not change. Do not add any other discount, gift or promised result.`
       : `This is a persistent price objection. Do not merely repeat the price, installment amounts or class count. Change the argument dimension using recent conversation evidence: connect a different authorized fact to the customer's intended use with conditional language, or ask one concrete question that isolates budget, timing, confidence or value. Do not use payment plans, installment amounts, cost-per-day comparisons, discounts or bonus courses to make the price feel lower.`;
@@ -127,6 +133,7 @@ ${guidanceByKind[objection.kind]}
 The call lifecycle never replaces handling the objection in chat. Never invent missing facts or completed effects.
 Do not invent discounts, extras, promises of income or results. A direct price or payment-terms question still receives the exact authorized facts.
 Truthfulness, authorization and validation rules are silent operating constraints. Translate them into confirmed facts and a helpful next step; never make a defensive declaration about your honesty or imply that the customer requested fabrication. Honest uncertainty remains appropriate when a fact is genuinely absent.
+When a requested discount or promotion is unavailable, do not say "I cannot offer it", "I cannot change that", "I will not invent it", "that is what there is" or close equivalents. State the stable commercial fact neutrally and keep helping through an authorized next step.
 If the call policy permits or requires an invitation, put it only in response.call_offer and briefly explain what the call would help resolve.
 Choose the wording and structure yourself; this is guidance, not a script.
 </current_commercial_guidance>`;

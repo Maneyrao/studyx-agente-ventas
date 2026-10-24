@@ -354,17 +354,28 @@ describe('parseDecisionV4 — send_payment_link', () => {
 describe('parseDecisionV4 — promotion lifecycle', () => {
   it.each([
     { type: 'schedule_price_objection_checkin', reason: 'price_objection' },
-    { type: 'request_promotion_review', reason: 'persistent_price_objection' },
+    {
+      type: 'request_promotion_review', reason: 'persistent_price_objection',
+      bonus_offering_code: 'fotografia_celulares_tiendas_online',
+    },
     { type: 'accept_promotion' },
   ])('accepts the bounded $type action', (business_action) => {
     expect(parseDecisionV4(paymentLinkDecision({ business_action })).business_action).toEqual(business_action);
   });
 
-  it('rejects promotion actions carrying model-selected operational facts', () => {
+  it('keeps the selected bonus course but rejects operational review details', () => {
+    const selected = {
+      type: 'request_promotion_review' as const,
+      reason: 'persistent_price_objection' as const,
+      bonus_offering_code: 'fotografia_celulares_tiendas_online',
+    };
+    expect(parseDecisionV4(paymentLinkDecision({ business_action: selected })).business_action)
+      .toEqual(selected);
+
     expect(codeOf(paymentLinkDecision({
       business_action: {
         type: 'request_promotion_review', reason: 'persistent_price_objection',
-        promotion_code: 'ingles_1_mas_ingles_2', delay_seconds: 60,
+        bonus_offering_code: 'fotografia_celulares_tiendas_online', delay_seconds: 60,
       },
     }))).toBe('INVALID_BUSINESS_ACTION');
   });

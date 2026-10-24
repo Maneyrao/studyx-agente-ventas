@@ -1826,7 +1826,11 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
             source_outbound_message_id: lastMessage.id,
             action: committedBusinessAction as
               | { type: 'schedule_price_objection_checkin'; reason: 'price_objection' }
-              | { type: 'request_promotion_review'; reason: 'persistent_price_objection' }
+              | {
+                  type: 'request_promotion_review';
+                  reason: 'persistent_price_objection';
+                  bonus_offering_code?: string;
+                }
               | { type: 'accept_promotion' },
           });
           if (promotionResult.followup) commercialFollowups.push(promotionResult.followup);

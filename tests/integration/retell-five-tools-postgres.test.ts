@@ -248,6 +248,188 @@ run('Retell five tools PostgreSQL adapter', () => {
     }
   });
 
+  it('reuses the live WhatsApp bonus package instead of creating a conflicting voice package', async () => {
+    const prior = process.env.CENTRAL_CARGA_BONUS_ENABLED;
+    process.env.CENTRAL_CARGA_BONUS_ENABLED = 'true';
+    try {
+      const ids = await callFixture();
+      const bonuses = await db!<Array<{ id:string; code:string; display_name:string }>>`
+        INSERT INTO offerings(workspace_id,code,display_name,offering_type,status,description,price_type)
+        VALUES
+          (${ids.workspaceId}::uuid,${`photo_${randomUUID().slice(0,8)}`},'Fotografía',
+            'course','active','Foto','free'),
+          (${ids.workspaceId}::uuid,${`english_${randomUUID().slice(0,8)}`},'Inglés 2',
+            'course','active','English','free')
+        RETURNING id,code,display_name`;
+      const [photo, english] = bonuses;
+      const promotions = await db!<Array<{ id:string; promotion_code:string; channels:string[] }>>`
+        INSERT INTO promotions(workspace_id,promotion_code,paid_offering_id,channels,active)
+        VALUES
+          (${ids.workspaceId}::uuid,${`dynamic_${randomUUID().slice(0,8)}`},${ids.offeringId}::uuid,
+            ARRAY['text']::text[],true),
+          (${ids.workspaceId}::uuid,${`voice_${randomUUID().slice(0,8)}`},${ids.offeringId}::uuid,
+            ARRAY['voice']::text[],true)
+        RETURNING id,promotion_code,channels`;
+      const [dynamicPromotion, voicePromotion] = promotions;
+      await db!`INSERT INTO promotion_bonus_offerings(promotion_id,workspace_id,offering_id,position)
+        VALUES
+          (${dynamicPromotion.id}::uuid,${ids.workspaceId}::uuid,${photo.id}::uuid,1),
+          (${voicePromotion.id}::uuid,${ids.workspaceId}::uuid,${english.id}::uuid,1)`;
+      const [offer] = await db!<Array<{ id:string }>>`
+        INSERT INTO promotion_offers(
+          workspace_id,contact_id,conversation_id,promotion_id,paid_offering_id,status,offered_at,
+          accepted_at,expires_at)
+        VALUES (${ids.workspaceId}::uuid,${ids.contactId}::uuid,${ids.conversationId}::uuid,
+          ${dynamicPromotion.id}::uuid,${ids.offeringId}::uuid,'accepted',now(),now(),
+          now()+interval '48 hours')
+        RETURNING id`;
+      await db!`INSERT INTO promotion_offer_bonus_offerings(
+          offer_id,promotion_id,offering_id,promotion_code_snapshot,offering_code_snapshot,
+          offering_display_name_snapshot,position)
+        VALUES (${offer.id}::uuid,${dynamicPromotion.id}::uuid,${photo.id}::uuid,
+          ${dynamicPromotion.promotion_code},${photo.code},${photo.display_name},1)`;
+      await db!`UPDATE promotion_offers SET bonus_snapshot_sealed_at=now() WHERE id=${offer.id}::uuid`;
+
+      const store = new PostgresRetellOrchestrationStore(db!);
+      await expect(store.readCourseBonusPromotion({
+        callId: ids.callId,
+        contactId: ids.contactId,
+        conversationId: ids.conversationId,
+        workspaceSlug: ids.workspaceSlug,
+        course: 'retell_course',
+      })).resolves.toEqual({
+        promotionCode: dynamicPromotion.promotion_code,
+        bonusOfferings: [{ code: photo.code, displayName: photo.display_name }],
+      });
+      await expect(db!`SELECT promotion_id,status,voice_exposed_at IS NOT NULL AS voice_exposed
+        FROM promotion_offers WHERE conversation_id=${ids.conversationId}::uuid`)
+        .resolves.toEqual([{
+          promotion_id: dynamicPromotion.id,
+          status: 'accepted',
+          voice_exposed: true,
+        }]);
+    } finally {
+      if (prior === undefined) delete process.env.CENTRAL_CARGA_BONUS_ENABLED;
+      else process.env.CENTRAL_CARGA_BONUS_ENABLED = prior;
+    }
+  });
+
+  it('retires an expired live package before creating the valid voice package', async () => {
+    const prior = process.env.CENTRAL_CARGA_BONUS_ENABLED;
+    process.env.CENTRAL_CARGA_BONUS_ENABLED = 'true';
+    try {
+      const ids = await callFixture();
+      const [bonus] = await db!<Array<{ id:string; code:string; display_name:string }>>`
+        INSERT INTO offerings(workspace_id,code,display_name,offering_type,status,description,price_type)
+        VALUES (${ids.workspaceId}::uuid,${`voice_expiry_bonus_${randomUUID().slice(0,8)}`},
+          'Fotografía','course','active','Foto','free')
+        RETURNING id,code,display_name`;
+      const promotions = await db!<Array<{ id:string; promotion_code:string }>>`
+        INSERT INTO promotions(workspace_id,promotion_code,paid_offering_id,channels,active)
+        VALUES
+          (${ids.workspaceId}::uuid,${`expired_offer_${randomUUID().slice(0,8)}`},
+            ${ids.offeringId}::uuid,ARRAY['text']::text[],true),
+          (${ids.workspaceId}::uuid,${`valid_voice_${randomUUID().slice(0,8)}`},
+            ${ids.offeringId}::uuid,ARRAY['voice']::text[],true)
+        RETURNING id,promotion_code`;
+      const [expiredPromotion, voicePromotion] = promotions;
+      await db!`INSERT INTO promotion_bonus_offerings(promotion_id,workspace_id,offering_id,position)
+        VALUES (${voicePromotion.id}::uuid,${ids.workspaceId}::uuid,${bonus.id}::uuid,1)`;
+      await db!`INSERT INTO promotion_offers(
+          workspace_id,contact_id,conversation_id,promotion_id,paid_offering_id,status,
+          created_at,expires_at)
+        VALUES (${ids.workspaceId}::uuid,${ids.contactId}::uuid,${ids.conversationId}::uuid,
+          ${expiredPromotion.id}::uuid,${ids.offeringId}::uuid,'pending_review',
+          now()-interval '2 minutes',now()-interval '1 minute')`;
+
+      const store = new PostgresRetellOrchestrationStore(db!);
+      await expect(store.readCourseBonusPromotion({
+        callId: ids.callId,
+        contactId: ids.contactId,
+        conversationId: ids.conversationId,
+        workspaceSlug: ids.workspaceSlug,
+        course: 'retell_course',
+      })).resolves.toEqual({
+        promotionCode: voicePromotion.promotion_code,
+        bonusOfferings: [{ code: bonus.code, displayName: bonus.display_name }],
+      });
+      await expect(db!`SELECT promotion_id,status FROM promotion_offers
+        WHERE conversation_id=${ids.conversationId}::uuid ORDER BY created_at`)
+        .resolves.toEqual([
+          { promotion_id: expiredPromotion.id, status: 'expired' },
+          { promotion_id: voicePromotion.id, status: 'pending_review' },
+        ]);
+    } finally {
+      if (prior === undefined) delete process.env.CENTRAL_CARGA_BONUS_ENABLED;
+      else process.env.CENTRAL_CARGA_BONUS_ENABLED = prior;
+    }
+  });
+
+  it('does not reuse a live package whose promotion validity has ended', async () => {
+    const prior = process.env.CENTRAL_CARGA_BONUS_ENABLED;
+    process.env.CENTRAL_CARGA_BONUS_ENABLED = 'true';
+    try {
+      const ids = await callFixture();
+      const bonuses = await db!<Array<{ id:string; code:string; display_name:string }>>`
+        INSERT INTO offerings(workspace_id,code,display_name,offering_type,status,description,price_type)
+        VALUES
+          (${ids.workspaceId}::uuid,${`old_bonus_${randomUUID().slice(0,8)}`},'Curso vencido',
+            'course','active','Old','free'),
+          (${ids.workspaceId}::uuid,${`new_bonus_${randomUUID().slice(0,8)}`},'Marketing Digital',
+            'course','active','New','free')
+        RETURNING id,code,display_name`;
+      const [oldBonus, newBonus] = bonuses;
+      const promotions = await db!<Array<{ id:string; promotion_code:string }>>`
+        INSERT INTO promotions(
+          workspace_id,promotion_code,paid_offering_id,channels,active,valid_until)
+        VALUES
+          (${ids.workspaceId}::uuid,${`ended_promo_${randomUUID().slice(0,8)}`},
+            ${ids.offeringId}::uuid,ARRAY['text']::text[],true,now()-interval '1 minute'),
+          (${ids.workspaceId}::uuid,${`current_voice_${randomUUID().slice(0,8)}`},
+            ${ids.offeringId}::uuid,ARRAY['voice']::text[],true,NULL)
+        RETURNING id,promotion_code`;
+      const [endedPromotion, voicePromotion] = promotions;
+      await db!`INSERT INTO promotion_bonus_offerings(promotion_id,workspace_id,offering_id,position)
+        VALUES
+          (${endedPromotion.id}::uuid,${ids.workspaceId}::uuid,${oldBonus.id}::uuid,1),
+          (${voicePromotion.id}::uuid,${ids.workspaceId}::uuid,${newBonus.id}::uuid,1)`;
+      const [offer] = await db!<Array<{ id:string }>>`
+        INSERT INTO promotion_offers(
+          workspace_id,contact_id,conversation_id,promotion_id,paid_offering_id,status,
+          offered_at,accepted_at,expires_at)
+        VALUES (${ids.workspaceId}::uuid,${ids.contactId}::uuid,${ids.conversationId}::uuid,
+          ${endedPromotion.id}::uuid,${ids.offeringId}::uuid,'accepted',now(),now(),
+          now()+interval '48 hours') RETURNING id`;
+      await db!`INSERT INTO promotion_offer_bonus_offerings(
+          offer_id,promotion_id,offering_id,promotion_code_snapshot,offering_code_snapshot,
+          offering_display_name_snapshot,position)
+        VALUES (${offer.id}::uuid,${endedPromotion.id}::uuid,${oldBonus.id}::uuid,
+          ${endedPromotion.promotion_code},${oldBonus.code},${oldBonus.display_name},1)`;
+      await db!`UPDATE promotion_offers SET bonus_snapshot_sealed_at=now() WHERE id=${offer.id}::uuid`;
+
+      const store = new PostgresRetellOrchestrationStore(db!);
+      await expect(store.readCourseBonusPromotion({
+        callId: ids.callId,
+        contactId: ids.contactId,
+        conversationId: ids.conversationId,
+        workspaceSlug: ids.workspaceSlug,
+        course: 'retell_course',
+      })).resolves.toEqual({
+        promotionCode: voicePromotion.promotion_code,
+        bonusOfferings: [{ code: newBonus.code, displayName: newBonus.display_name }],
+      });
+      await expect(db!`SELECT promotion_id,status FROM promotion_offers
+        WHERE conversation_id=${ids.conversationId}::uuid ORDER BY created_at`)
+        .resolves.toEqual([
+          { promotion_id: endedPromotion.id, status: 'cancelled' },
+          { promotion_id: voicePromotion.id, status: 'pending_review' },
+        ]);
+    } finally {
+      if (prior === undefined) delete process.env.CENTRAL_CARGA_BONUS_ENABLED;
+      else process.env.CENTRAL_CARGA_BONUS_ENABLED = prior;
+    }
+  });
+
   it('lets Agent B select a canonical course during an early call and persists the sale before sending the link', async () => {
     const ids = await callFixture({ courseInCallSnapshot: '', selectedOfferingCode: null });
     const outbound = sender();

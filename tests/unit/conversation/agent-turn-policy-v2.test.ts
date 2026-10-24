@@ -2068,6 +2068,43 @@ it.each([
   });
 });
 
+it('authorizes one different active catalog course for an any-course bonus review', () => {
+  const courseBonus = {
+    status: 'review_available' as const,
+    may_schedule_checkin: false,
+    may_request_review: true,
+    may_accept_offer: false,
+    may_send_promoted_payment: false,
+    promotion_code: null,
+    bonus_selection_mode: 'any_active_course' as const,
+    interest_offering_code: 'redes_informaticas',
+    bonus_offerings: [],
+  };
+  const dynamicProposal = (bonus_offering_code: string) => proposal({
+    move: {
+      schema_version: 1,
+      move: 'ask_payment_options',
+      secondary_moves: [],
+      vetoes: [],
+      course_reference: 'redes_informaticas',
+      confidence: 1,
+    },
+    response: { messages: ['Dame un momento y reviso una alternativa para tu caso.'] },
+    proposed_action: {
+      type: 'request_promotion_review',
+      reason: 'persistent_price_objection',
+      bonus_offering_code,
+    },
+  });
+
+  expect(authorize({ proposal: dynamicProposal('excel_integral'), courseBonus }))
+    .toMatchObject({ ok: true, action: { type: 'request_promotion_review', bonus_offering_code: 'excel_integral' } });
+  expect(authorize({ proposal: dynamicProposal('redes_informaticas'), courseBonus }))
+    .toMatchObject({ ok: false, reasons: expect.arrayContaining(['ACTION_NOT_AUTHORIZED']) });
+  expect(authorize({ proposal: dynamicProposal('curso_inexistente'), courseBonus }))
+    .toMatchObject({ ok: false, reasons: expect.arrayContaining(['ACTION_NOT_AUTHORIZED']) });
+});
+
 it('keeps payment confirmation when a historically accepted call coexists with a new plan selection', () => {
   const result = authorize({ state: state({ selected_offering_code: 'redes_informaticas',
     call_preference: 'call', call_offer_status: 'accepted', awaiting_reply: 'call_or_chat' }),

@@ -60,6 +60,88 @@ export class PostgresRetellOrchestrationStore implements RetellOrchestrationStor
     const workspace = await this.workspaceForContact(input.workspaceSlug, input.contactId, input.callId);
     if (!workspace || workspace.conversation_id !== input.conversationId) return null;
     const promotion = await this.db.begin(async (tx) => {
+      await tx`
+        UPDATE promotion_offers offer
+        SET status = CASE
+            WHEN offer.expires_at IS NOT NULL AND offer.expires_at <= now()
+              THEN 'expired'
+            ELSE 'cancelled'
+          END,
+          updated_at = now()
+        FROM promotions promotion, offerings paid
+        WHERE promotion.id = offer.promotion_id
+          AND promotion.workspace_id = offer.workspace_id
+          AND paid.id = offer.paid_offering_id
+          AND paid.workspace_id = offer.workspace_id
+          AND offer.workspace_id = ${workspace.id}::uuid
+          AND offer.contact_id = ${input.contactId}::uuid
+          AND offer.conversation_id = ${input.conversationId}::uuid
+          AND paid.code = ${input.course}
+          AND offer.status IN ('pending_review','offered','accepted')
+          AND offer.payment_id IS NULL
+          AND (
+            (offer.expires_at IS NOT NULL AND offer.expires_at <= now())
+            OR promotion.active = false
+            OR (promotion.valid_from IS NOT NULL AND promotion.valid_from > now())
+            OR (promotion.valid_until IS NOT NULL AND promotion.valid_until <= now())
+          )
+      `;
+      const liveOffers = await tx<Array<{
+        id: string;
+        promotion_code: string;
+        status: 'pending_review' | 'offered' | 'accepted';
+        bonus_snapshot_sealed_at: Date | null;
+        voice_exposed_at: Date | null;
+      }>>`
+        SELECT offer.id, promotion.promotion_code, offer.status,
+          offer.bonus_snapshot_sealed_at, offer.voice_exposed_at
+        FROM promotion_offers offer
+        JOIN promotions promotion ON promotion.id = offer.promotion_id
+          AND promotion.workspace_id = offer.workspace_id
+        JOIN offerings paid ON paid.id = offer.paid_offering_id
+          AND paid.workspace_id = offer.workspace_id
+        WHERE offer.workspace_id = ${workspace.id}::uuid
+          AND offer.contact_id = ${input.contactId}::uuid
+          AND offer.conversation_id = ${input.conversationId}::uuid
+          AND paid.code = ${input.course}
+          AND paid.status = 'active'
+          AND promotion.active = true
+          AND (promotion.valid_from IS NULL OR promotion.valid_from <= now())
+          AND (promotion.valid_until IS NULL OR promotion.valid_until > now())
+          AND offer.status IN ('pending_review','offered','accepted')
+          AND offer.payment_id IS NULL
+          AND (offer.expires_at IS NULL OR offer.expires_at > now())
+        ORDER BY
+          CASE offer.status WHEN 'accepted' THEN 0 WHEN 'offered' THEN 1 ELSE 2 END,
+          offer.created_at DESC
+        LIMIT 1
+        FOR UPDATE OF offer
+      `;
+      const liveOffer = liveOffers[0];
+      if (liveOffer) {
+        if (!liveOffer.bonus_snapshot_sealed_at) return null;
+        if (liveOffer.status === 'pending_review' && !liveOffer.voice_exposed_at) return null;
+        const bonuses = await tx<Array<{ code: string; display_name: string; position: number }>>`
+          SELECT offering_code_snapshot AS code,
+            offering_display_name_snapshot AS display_name, position
+          FROM promotion_offer_bonus_offerings
+          WHERE offer_id = ${liveOffer.id}::uuid
+          ORDER BY position
+        `;
+        if (bonuses.length < 1 || bonuses.length > 3) return null;
+        const safe = bonuses.every((bonus) => {
+          const code = sanitizeRetrievedText(bonus.code, 128);
+          const name = sanitizeRetrievedText(bonus.display_name, 128);
+          return !code.injection_suspected && !code.truncated && code.text === bonus.code
+            && !name.injection_suspected && !name.truncated && name.text === bonus.display_name;
+        });
+        if (!safe) return null;
+        await tx`
+          UPDATE promotion_offers SET voice_exposed_at = COALESCE(voice_exposed_at, now())
+          WHERE id = ${liveOffer.id}::uuid AND bonus_snapshot_sealed_at IS NOT NULL
+        `;
+        return { promotion_code: liveOffer.promotion_code, bonus_offerings: bonuses };
+      }
       const promotions = await tx<Array<{
         id: string;
         promotion_code: string;
