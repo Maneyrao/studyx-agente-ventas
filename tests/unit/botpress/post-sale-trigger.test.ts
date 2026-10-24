@@ -108,6 +108,7 @@ describe('post-sale trigger', () => {
     expect(requestStudyxJson).toHaveBeenCalledTimes(3);
     expect(requestStudyxJson.mock.calls[2]?.[0]).toMatchObject({
       path: `/api/agent/post-sale/${notificationId}/deliver`,
+      idempotencyKey: `post-sale-deliver:${notificationId}:${claimToken}`,
       body: { narrative: fallbackPostSaleNarrative({ kind: 'access_ready', new_user: true, existing_user: false }) },
     });
     expect(warning).toHaveBeenCalledWith(expect.stringContaining('POST_SALE_UNAUTHORIZED_PROSE'));

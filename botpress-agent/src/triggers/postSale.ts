@@ -103,7 +103,7 @@ export default new Trigger({
         usedFallback = true
         delivery = await requestStudyxJson({ path: `/api/agent/post-sale/${id}/deliver`,
           body: { claim_token: claimed.claim_token, botpress_conversation_id: conversationId, narrative },
-          traceId, idempotencyKey: `post-sale-deliver-fallback:${id}:${claimed.claim_token}`,
+          traceId, idempotencyKey: `post-sale-deliver:${id}:${claimed.claim_token}`,
           responseSchema: Delivery,
         })
       }
