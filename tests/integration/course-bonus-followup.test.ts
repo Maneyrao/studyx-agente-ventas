@@ -11,6 +11,8 @@ import {
 } from '@/features/promotions/application/commercial-followup-service';
 import { CommercialFollowupClaimSchema } from '../../botpress-agent/src/utils/commercial-followup-instructions';
 import {
+  applyPromotionContextRepairPlanV1,
+  derivePromotionContextRepairPlanV1,
   readCourseBonusCapabilityV1,
   recordPromotionConversationContextV1,
 } from '@/features/promotions/application/read-course-bonus-capability';
@@ -67,6 +69,46 @@ async function fixture() {
 }
 
 run('durable commercial course-bonus follow-up', () => {
+  it('applies a scoped reconstruction idempotently without changing the course', async () => {
+    const f = await fixture();
+    await recordPromotionConversationContextV1(db!, {
+      workspace_id: f.workspace.id as string,
+      contact_id: f.contact.id as string,
+      conversation_id: f.conversation.id as string,
+      source_turn_id: f.inbound.id as string,
+      discussed_offering_code: f.paid.code as string,
+      records_price_objection: true,
+    });
+    const [priorInbound] = await db!`INSERT INTO messages(conversation_id,contact_id,direction,content)
+      VALUES (${f.conversation.id},${f.contact.id},'inbound','Antes también objetó el precio') RETURNING id`;
+    const plan = derivePromotionContextRepairPlanV1({
+      workspace_id: f.workspace.id as string,
+      conversation_id: f.conversation.id as string,
+      contact_id: f.contact.id as string,
+      interest_offering_code: f.paid.code as string,
+      existing: {
+        interest_offering_code: f.paid.code as string,
+        price_objection_count: 1,
+        source_turn_id: f.inbound.id as string,
+      },
+      accepted_price_objection_turn_ids: [priorInbound.id as string, f.inbound.id as string],
+      active_offer_status: null,
+    });
+
+    await expect(applyPromotionContextRepairPlanV1(db!, plan)).resolves.toMatchObject({
+      interest_offering_code: f.paid.code,
+      price_objection_count: 2,
+    });
+    await expect(applyPromotionContextRepairPlanV1(db!, plan)).resolves.toMatchObject({
+      interest_offering_code: f.paid.code,
+      price_objection_count: 2,
+    });
+    await expect(db!`SELECT interest_offering_code,price_objection_count
+      FROM conversation_promotion_context_v1
+      WHERE workspace_id=${f.workspace.id} AND conversation_id=${f.conversation.id}`)
+      .resolves.toEqual([{ interest_offering_code: f.paid.code, price_objection_count: 2 }]);
+  });
+
   it.each([
     { type: 'schedule_price_objection_checkin', reason: 'price_objection' },
     { type: 'request_promotion_review', reason: 'persistent_price_objection' },

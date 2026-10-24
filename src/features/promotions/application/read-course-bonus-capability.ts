@@ -47,6 +47,112 @@ export interface CourseBonusOfferProjectionV1 {
   readonly expires_at: string | Date | null;
 }
 
+export interface PromotionContextRepairPlanV1 {
+  readonly workspace_id: string;
+  readonly conversation_id: string;
+  readonly contact_id: string;
+  readonly interest_offering_code: string;
+  readonly previous_price_objection_count: number;
+  readonly proposed_price_objection_count: number;
+  readonly evidence_source_turn_ids: readonly string[];
+  readonly latest_source_turn_id: string | null;
+  readonly protected_offer: boolean;
+}
+
+export function derivePromotionContextRepairPlanV1(input: {
+  readonly workspace_id: string;
+  readonly conversation_id: string;
+  readonly contact_id: string;
+  readonly interest_offering_code: string;
+  readonly existing: {
+    readonly interest_offering_code: string | null;
+    readonly price_objection_count: number;
+    readonly source_turn_id: string | null;
+  } | null;
+  readonly accepted_price_objection_turn_ids: readonly string[];
+  readonly active_offer_status: CourseBonusOfferProjectionV1['status'] | null;
+}): PromotionContextRepairPlanV1 {
+  if (input.existing?.interest_offering_code
+    && input.existing.interest_offering_code !== input.interest_offering_code) {
+    throw new Error('PROMOTION_CONTEXT_COURSE_MISMATCH');
+  }
+  const evidenceSourceTurnIds = [...new Set(input.accepted_price_objection_turn_ids)];
+  const previousCount = Math.max(0, Math.min(2, input.existing?.price_objection_count ?? 0));
+  const protectedOffer = input.active_offer_status === 'accepted'
+    || input.active_offer_status === 'attached';
+  const proposedCount = protectedOffer
+    ? previousCount
+    : Math.max(previousCount, Math.min(2, evidenceSourceTurnIds.length));
+  return {
+    workspace_id: input.workspace_id,
+    conversation_id: input.conversation_id,
+    contact_id: input.contact_id,
+    interest_offering_code: input.interest_offering_code,
+    previous_price_objection_count: previousCount,
+    proposed_price_objection_count: proposedCount,
+    evidence_source_turn_ids: evidenceSourceTurnIds,
+    latest_source_turn_id: evidenceSourceTurnIds.at(-1)
+      ?? input.existing?.source_turn_id
+      ?? null,
+    protected_offer: protectedOffer,
+  };
+}
+
+export async function applyPromotionContextRepairPlanV1(
+  db: DbClient,
+  plan: PromotionContextRepairPlanV1,
+): Promise<{ interest_offering_code: string | null; price_objection_count: number } | null> {
+  if (plan.protected_offer
+    || plan.proposed_price_objection_count <= plan.previous_price_objection_count) {
+    return {
+      interest_offering_code: plan.interest_offering_code,
+      price_objection_count: plan.previous_price_objection_count,
+    };
+  }
+  const rows = await db<Array<{
+    interest_offering_code: string | null;
+    price_objection_count: number;
+  }>>`
+    INSERT INTO conversation_promotion_context_v1 (
+      workspace_id, conversation_id, contact_id, interest_offering_code,
+      price_objection_count, source_turn_id
+    )
+    SELECT
+      ${plan.workspace_id}::uuid,
+      ${plan.conversation_id}::uuid,
+      ${plan.contact_id}::uuid,
+      ${plan.interest_offering_code},
+      ${plan.proposed_price_objection_count},
+      ${plan.latest_source_turn_id}::uuid
+    WHERE EXISTS (
+      SELECT 1 FROM conversation_sales_context_states_v1 state
+      WHERE state.workspace_id = ${plan.workspace_id}::uuid
+        AND state.conversation_id = ${plan.conversation_id}::uuid
+        AND state.contact_id = ${plan.contact_id}::uuid
+    )
+    ON CONFLICT (workspace_id, conversation_id) DO UPDATE SET
+      price_objection_count = GREATEST(
+        conversation_promotion_context_v1.price_objection_count,
+        EXCLUDED.price_objection_count
+      ),
+      source_turn_id = CASE
+        WHEN EXCLUDED.price_objection_count > conversation_promotion_context_v1.price_objection_count
+          THEN EXCLUDED.source_turn_id
+        ELSE conversation_promotion_context_v1.source_turn_id
+      END,
+      updated_at = CASE
+        WHEN EXCLUDED.price_objection_count > conversation_promotion_context_v1.price_objection_count
+          THEN now()
+        ELSE conversation_promotion_context_v1.updated_at
+      END
+    WHERE conversation_promotion_context_v1.interest_offering_code IS NOT DISTINCT FROM
+      EXCLUDED.interest_offering_code
+    RETURNING interest_offering_code, price_objection_count
+  `;
+  if (rows.length === 0) throw new Error('PROMOTION_CONTEXT_REPAIR_SCOPE_CHANGED');
+  return rows[0] ?? null;
+}
+
 export async function recordPromotionConversationContextV1(
   db: DbClient,
   input: {

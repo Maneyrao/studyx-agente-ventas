@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  derivePromotionContextRepairPlanV1,
   deriveCourseBonusCapabilityV1,
   readCourseBonusCapabilityV1,
 } from '@/features/promotions/application/read-course-bonus-capability';
@@ -34,6 +35,81 @@ function capability(overrides: Record<string, unknown> = {}) {
 }
 
 describe('course bonus capability', () => {
+  it('reconstructs a capped idempotent count from accepted structured evidence', () => {
+    const input = {
+      workspace_id: '00000000-0000-4000-8000-000000000001',
+      conversation_id: '00000000-0000-4000-8000-000000000002',
+      contact_id: '00000000-0000-4000-8000-000000000003',
+      interest_offering_code: 'fotografia_profesional',
+      existing: {
+        interest_offering_code: 'fotografia_profesional',
+        price_objection_count: 1,
+        source_turn_id: '00000000-0000-4000-8000-000000000011',
+      },
+      accepted_price_objection_turn_ids: [
+        '00000000-0000-4000-8000-000000000010',
+        '00000000-0000-4000-8000-000000000011',
+        '00000000-0000-4000-8000-000000000011',
+      ],
+      active_offer_status: null,
+    } as const;
+
+    const first = derivePromotionContextRepairPlanV1(input);
+    expect(first).toMatchObject({
+      previous_price_objection_count: 1,
+      proposed_price_objection_count: 2,
+      evidence_source_turn_ids: [
+        '00000000-0000-4000-8000-000000000010',
+        '00000000-0000-4000-8000-000000000011',
+      ],
+      protected_offer: false,
+    });
+    expect(derivePromotionContextRepairPlanV1({
+      ...input,
+      existing: {
+        ...input.existing,
+        price_objection_count: first.proposed_price_objection_count,
+      },
+    }).proposed_price_objection_count).toBe(2);
+  });
+
+  it('does not reuse objections after a course change or mutate accepted packages', () => {
+    expect(() => derivePromotionContextRepairPlanV1({
+      workspace_id: '00000000-0000-4000-8000-000000000001',
+      conversation_id: '00000000-0000-4000-8000-000000000002',
+      contact_id: '00000000-0000-4000-8000-000000000003',
+      interest_offering_code: 'marketing_digital',
+      existing: {
+        interest_offering_code: 'fotografia_profesional',
+        price_objection_count: 2,
+        source_turn_id: '00000000-0000-4000-8000-000000000010',
+      },
+      accepted_price_objection_turn_ids: ['00000000-0000-4000-8000-000000000010'],
+      active_offer_status: null,
+    })).toThrow('PROMOTION_CONTEXT_COURSE_MISMATCH');
+
+    expect(derivePromotionContextRepairPlanV1({
+      workspace_id: '00000000-0000-4000-8000-000000000001',
+      conversation_id: '00000000-0000-4000-8000-000000000002',
+      contact_id: '00000000-0000-4000-8000-000000000003',
+      interest_offering_code: 'fotografia_profesional',
+      existing: {
+        interest_offering_code: 'fotografia_profesional',
+        price_objection_count: 1,
+        source_turn_id: '00000000-0000-4000-8000-000000000010',
+      },
+      accepted_price_objection_turn_ids: [
+        '00000000-0000-4000-8000-000000000010',
+        '00000000-0000-4000-8000-000000000011',
+      ],
+      active_offer_status: 'attached',
+    })).toMatchObject({
+      protected_offer: true,
+      previous_price_objection_count: 1,
+      proposed_price_objection_count: 1,
+    });
+  });
+
   it('enables a promotion only for the exact canary contact while the global flag is off', () => {
     const canary = '00000000-0000-4000-8000-000000000001';
     const config = loadCentralCargaBonusConfig({
