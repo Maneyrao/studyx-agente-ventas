@@ -32,7 +32,11 @@ describe('evaluateSalesObjectionTurnV1', () => {
     ['Ofreces descuentos al final?', 'price_objection', null],
     ['Me haces un descuento?', 'price_objection', null],
     ['Podés bajar el precio?', 'price_objection', null],
+    ['No tenés una promoción?', 'price_objection', null],
+    ['Si no me ofrecés la promo no', 'price_objection', null],
+    ['No podés ofrecerme una bonificación?', 'price_objection', null],
     ['Me sigue pareciendo caro', 'repeated_price_objection', ['Está fuera de mi presupuesto']],
+    ['Si no me ofrecés la promo no', 'repeated_price_objection', ['El precio me parece caro']],
     ['Si pago en 12 meses, el diploma tarda 12 meses?', 'payment_terms_question', null],
     ['Si pago en 12 meses, puedo terminar antes?', 'payment_terms_question', null],
     ['Hay que pagar todo junto para empezar?', 'payment_terms_question', null],
@@ -173,6 +177,45 @@ describe('responseAvoidsDisallowedPriceReframingV1', () => {
       messages: ['El plan tiene 12 pagos de USD 30, menos de un dólar por día.'],
       allow_requested_payment_terms: true,
     })).toBe(false);
+  });
+
+  it('allows a course bonus only when the current capability authorizes an offer', () => {
+    const message = 'En este caso puedo incluir Fotografía con Celulares sin costo adicional.';
+
+    expect(responseAvoidsDisallowedPriceReframingV1({ messages: [message] })).toBe(false);
+    expect(responseAvoidsDisallowedPriceReframingV1({
+      messages: [message],
+      authorized_bonus_offering_names: ['Fotografía con Celulares'],
+    })).toBe(true);
+    expect(responseProgressesRepeatedPriceObjectionV1({
+      messages: [message],
+      call_offer: null,
+      authorized_bonus_offering_names: ['Fotografía con Celulares'],
+    })).toBe(true);
+    expect(responseAvoidsDisallowedPriceReframingV1({
+      messages: ['Además te hago un descuento y te incluyo Fotografía con Celulares.'],
+      authorized_bonus_offering_names: ['Fotografía con Celulares'],
+    })).toBe(false);
+    expect(responseAvoidsDisallowedPriceReframingV1({
+      messages: ['Te incluyo Fotografía con Celulares y Marketing Digital gratis.'],
+      authorized_bonus_offering_names: ['Fotografía con Celulares'],
+    })).toBe(false);
+    expect(responseAvoidsDisallowedPriceReframingV1({
+      messages: ['Fotografía con Celulares te sirve. También te regalo una cámara.'],
+      authorized_bonus_offering_names: ['Fotografía con Celulares'],
+    })).toBe(false);
+    expect(responseAvoidsDisallowedPriceReframingV1({
+      messages: ['Te regalo una cámara y Fotografía con Celulares gratis.'],
+      authorized_bonus_offering_names: ['Fotografía con Celulares'],
+    })).toBe(false);
+    expect(responseAvoidsDisallowedPriceReframingV1({
+      messages: ['Te regalo Marketing y Fotografía con Celulares gratis.'],
+      authorized_bonus_offering_names: ['Fotografía con Celulares'],
+    })).toBe(false);
+    expect(responseAvoidsDisallowedPriceReframingV1({
+      messages: ['Mantengo el precio sin descuentos y te incluyo Fotografía con Celulares gratis.'],
+      authorized_bonus_offering_names: ['Fotografía con Celulares'],
+    })).toBe(true);
   });
 
   it.each([

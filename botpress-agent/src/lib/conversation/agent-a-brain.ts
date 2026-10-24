@@ -1837,11 +1837,17 @@ export function validateAgentATurnProposalV1(input: {
     rejections.push({ code: 'REPEATED_AGENT_REPLY', subject: 'previous_agent_question' });
   }
   const salesObjection = evaluateSalesObjectionTurnV1(input.context);
+  const authorizedBonusOffer = input.context.capabilities.course_bonus?.status === 'offer_available'
+    || input.context.capabilities.course_bonus?.status === 'accepted';
+  const authorizedBonusOfferingNames = authorizedBonusOffer
+    ? input.context.capabilities.course_bonus?.bonus_offerings.map((offering) => offering.display_name) ?? []
+    : [];
   if (
     salesObjection.kind === 'repeated_price_objection'
     && !responseProgressesRepeatedPriceObjectionV1({
       ...input.proposal.response,
       customer_expressed_real_budget_limit: customerExpressesRealBudgetLimitV1(currentCustomerText),
+      authorized_bonus_offering_names: authorizedBonusOfferingNames,
     })
   ) {
     rejections.push({ code: 'REPEATED_AGENT_REPLY', subject: 'persistent_price_objection' });
@@ -1853,6 +1859,7 @@ export function validateAgentATurnProposalV1(input: {
     && !responseAvoidsDisallowedPriceReframingV1({
       ...input.proposal.response,
       allow_requested_payment_terms: salesObjection.kind === 'price_question_with_objection',
+      authorized_bonus_offering_names: authorizedBonusOfferingNames,
     })
   ) {
     rejections.push({ code: 'FACT_VALUE_MISMATCH', subject: 'price_objection_reframe' });
