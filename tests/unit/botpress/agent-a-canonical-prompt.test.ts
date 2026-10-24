@@ -14,7 +14,7 @@ describe('Agent A canonical sales prompt', () => {
 
     const generated = readFileSync(GENERATED_PATH, 'utf8');
     expect(generated).toContain(`export const STUDYX_AGENT_A_CANONICAL_PROMPT = ${JSON.stringify(prompt)} as const;`);
-    expect(generated).toContain("export const STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION = 'studyx-agent-a-canonical-v93' as const;");
+    expect(generated).toContain("export const STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION = 'studyx-agent-a-canonical-v94' as const;");
   });
 
   it('combines warm Meta-lead selling with autonomous objection and post-call handling', () => {
@@ -141,6 +141,15 @@ describe('Agent A canonical sales prompt', () => {
     expect(prompt).toMatch(/persona real[^.]*WhatsApp/iu);
     expect(prompt).toMatch(/gen[eé]ric[oa][^.]*(?:fr[ií][oa])[^.]*(?:administrativ[oa])[^.]*(?:repetitiv[oa])/iu);
     expect(prompt).toMatch(/reescr[ií]b[^.]*menos palabras[^.]*sin alterar hechos ni acciones/iu);
+  });
+
+  it('keeps internal truth and authorization rules out of customer-facing copy', () => {
+    const prompt = readFileSync(PROMPT_PATH, 'utf8');
+
+    expect(prompt).toMatch(/veracidad[^.]*autorizaci[oó]n[^.]*reglas internas/iu);
+    expect(prompt).toMatch(/hecho comercial confirmado[^.]*paso [uú]til/iu);
+    expect(prompt).toMatch(/no declares tu honestidad[^.]*(?:no|ni) menciones que evitas inventar/iu);
+    expect(prompt).toMatch(/no puedo confirmarlo[^.]*dato realmente falta/iu);
   });
 
   it('offers a call for a commercial reason rather than for turn position alone', () => {

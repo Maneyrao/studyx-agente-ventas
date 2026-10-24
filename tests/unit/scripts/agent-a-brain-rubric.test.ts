@@ -165,6 +165,22 @@ describe('Agent A brain held-out rubric', () => {
     ]));
   });
 
+  it('rechaza verbalizar una regla interna de veracidad y conserva incertidumbre honesta', () => {
+    const defensive = result(1);
+    defensive.transcript = [
+      { role: 'user', text: 'Me podés hacer un descuento?' },
+      { role: 'assistant', text: 'No hay un descuento sobre el precio, y no te voy a inventar uno.' },
+    ];
+    expect(evaluateConversationNaturalnessV1(defensive)).toContain('internal_guardrail_copy');
+
+    const uncertain = result(2);
+    uncertain.transcript = [
+      { role: 'user', text: 'Hay una fecha límite?' },
+      { role: 'assistant', text: 'No puedo confirmarlo con la información disponible. Si querés, revisamos el próximo paso.' },
+    ];
+    expect(evaluateConversationNaturalnessV1(uncertain)).toEqual([]);
+  });
+
   it('rechaza respuestas excesivas o interrogatorios y acepta una venta breve y contextual', () => {
     const excessive = result(1);
     excessive.transcript = [

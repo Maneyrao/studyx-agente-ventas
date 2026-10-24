@@ -6,7 +6,7 @@ import {
 import { resolveCanonicalPromptIdentityV1 } from './agent-a-identity';
 import { evaluateSalesObjectionTurnV1 } from '../lib/conversation/sales-objection-turn-policy';
 
-export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v126' as const;
+export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v127' as const;
 
 /**
  * Runtime contract only. The sales behavior lives in the canonical prompt so
@@ -111,7 +111,7 @@ function currentCommercialGuidanceDirectiveV1(context: AgentAContextV1): string 
   const guidanceByKind: Record<Exclude<typeof objection.kind, 'none'>, string> = {
     price_question: `Answer the price question promptly with the authorized plans; do not delay it behind a presentation or diagnostic. You may connect one relevant benefit afterward when the customer's intended use is already known.`,
     price_question_with_objection: `Answer the requested authorized price or payment terms exactly; the customer must not lose a direct answer because they also expressed concern. Then address the concern through contextual value or, when it is a real budget limit, acknowledge it without pressure. Do not use that answer as a separate tactic to make the price feel lower, and never add cost-per-day comparisons, discounts or bonus courses.`,
-    price_objection: `Distinguish a perceived-value gap from a real inability to pay, but only ask one brief discriminating question when existing context does not already make that clear. For a value gap, connect the customer's stated goal or constraint to one authorized course capability and describe a possible application conditionally. For a real budget limit, acknowledge it without pressure or an invented workaround. Do not use payment plans, installment amounts, cost-per-day comparisons, discounts or bonus courses to make the price feel lower.`,
+    price_objection: `Distinguish a perceived-value gap from a real inability to pay, but only ask one brief discriminating question when existing context does not already make that clear. For a value gap, connect the customer's stated goal or constraint to one authorized course capability and describe a possible application conditionally. For a real budget limit, acknowledge it without pressure, then state only confirmed alternatives in neutral customer-centered language. Do not describe your honesty or internal authorization. Do not use payment plans, installment amounts, cost-per-day comparisons, discounts or bonus courses to make the price feel lower.`,
     repeated_price_objection: repeatedPriceGuidance,
     payment_terms_question: `Answer the payment-terms question directly. Do not infer how payment cadence affects study, access or certification; state that relationship only when authorized_context explicitly supports it.`,
     time_or_schedule_objection: `Separate a real schedule conflict from fear of sustaining the course only when the context does not make it clear. Use only authorized duration, modality, schedule, recording, access or dedication facts. If the needed detail is absent, say you cannot confirm it instead of filling the gap.`,
@@ -126,6 +126,7 @@ Use the customer's known goal, motivation or constraint when it is relevant; do 
 ${guidanceByKind[objection.kind]}
 The call lifecycle never replaces handling the objection in chat. Never invent missing facts or completed effects.
 Do not invent discounts, extras, promises of income or results. A direct price or payment-terms question still receives the exact authorized facts.
+Truthfulness, authorization and validation rules are silent operating constraints. Translate them into confirmed facts and a helpful next step; never make a defensive declaration about your honesty or imply that the customer requested fabrication. Honest uncertainty remains appropriate when a fact is genuinely absent.
 If the call policy permits or requires an invitation, put it only in response.call_offer and briefly explain what the call would help resolve.
 Choose the wording and structure yourself; this is guidance, not a script.
 </current_commercial_guidance>`;
@@ -140,6 +141,7 @@ Never use a stock availability closing. If the customer is thanking you or closi
 If earlier assistant turns are generic or failed to answer, do not imitate them: recover the unresolved customer intent from the current batch and context.
 Knowing the customer's name never requires using it. Do not address them by name in consecutive interventions or as a mechanical acknowledgement of data or actions.
 Do not narrate internal state or validation. Ask only when the conversation needs it.
+Truthfulness, authorization and validation limits remain silent. Express the confirmed fact and a useful next step without defending your honesty or blaming the customer.
 </lisandro_voice_gate>`;
 
 export function buildAgentABrainInstructionsV1(context: AgentAContextV1): string {
