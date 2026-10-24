@@ -1,5 +1,7 @@
 import { randomUUID } from 'node:crypto';
-import { afterAll, beforeAll, expect, it } from 'vitest';
+import { afterAll, beforeAll, expect, it, vi } from 'vitest';
+import type { AgentAContextV1 } from '../../botpress-agent/src/schemas/agent-a-brain';
+import { generateDeepSeekAgentATurnProposalV1 } from '../../botpress-agent/src/lib/conversation/agent-a-brain';
 import { openLocalTestDatabase } from '../helpers/db';
 import {
   claimCommercialFollowupV1,
@@ -7,8 +9,9 @@ import {
   deliverCommercialFollowupV1,
 } from '@/features/promotions/application/commercial-followup-service';
 import {
+  applyPromotionContextRepairPlanV1,
+  derivePromotionContextRepairPlanV1,
   readCourseBonusCapabilityV1,
-  recordPromotionConversationContextV1,
 } from '@/features/promotions/application/read-course-bonus-capability';
 import { reservePaymentLink } from '@/features/payments/application/reserve-payment-link';
 import { runEnrollmentWorker } from '@/features/fulfillment/central-carga/worker';
@@ -54,15 +57,11 @@ run('carries one authorized price-objection bonus through payment, Central v2 an
       (${workspace.id},${`ingles_2_${suffix.slice(0,8)}`},'Inglés 2','course','active','Continuación','free',NULL,NULL,NULL)
     RETURNING id,code,display_name`;
   const [paid, bonus] = offerings;
-  const [promotion] = await db!`INSERT INTO promotions(workspace_id,promotion_code,paid_offering_id,channels,active)
-    VALUES (${workspace.id},${`ingles_combo_${suffix.slice(0,8)}`},${paid.id},ARRAY['text','voice']::text[],true)
-    RETURNING id,promotion_code`;
-  await db!`INSERT INTO promotion_bonus_offerings(promotion_id,workspace_id,offering_id,position)
-    VALUES (${promotion.id},${workspace.id},${bonus.id},1)`;
   const [firstInbound] = await db!`INSERT INTO messages(conversation_id,contact_id,direction,content)
     VALUES (${conversation.id},${contact.id},'inbound','Me parece caro') RETURNING id`;
-  await db!`INSERT INTO messages(conversation_id,contact_id,direction,content,in_reply_to)
-    VALUES (${conversation.id},${contact.id},'outbound','Inglés 1 puede ayudarte con documentación y entrevistas.',${firstInbound.id})`;
+  const [firstOutbound] = await db!`INSERT INTO messages(conversation_id,contact_id,direction,content,in_reply_to)
+    VALUES (${conversation.id},${contact.id},'outbound','Inglés 1 puede ayudarte con documentación y entrevistas.',${firstInbound.id})
+    RETURNING id`;
   const [inbound] = await db!`INSERT INTO messages(conversation_id,contact_id,direction,content)
     VALUES (${conversation.id},${contact.id},'inbound','El monto me sigue frenando') RETURNING id`;
   const [outbound] = await db!`INSERT INTO messages(conversation_id,contact_id,direction,content,in_reply_to)
@@ -72,21 +71,142 @@ run('carries one authorized price-objection bonus through payment, Central v2 an
       selected_offering_code,source_turn_id)
     VALUES (${workspace.id},${conversation.id},${contact.id},NULL,${inbound.id})`;
 
-  await expect(recordPromotionConversationContextV1(db!, {
-    workspace_id:workspace.id, contact_id:contact.id, conversation_id:conversation.id,
-    source_turn_id:firstInbound.id, discussed_offering_code:paid.code, records_price_objection:true,
-  })).resolves.toEqual({interest_offering_code:paid.code, price_objection_count:1});
-  await expect(readCourseBonusCapabilityV1({workspace_slug:workspace.slug,contact_id:contact.id,
-    conversation_id:conversation.id,channel:'text',selected_offering_code:null},{db:db!})).resolves.toMatchObject({
-      status:'review_available',may_request_review:true,interest_offering_code:paid.code,bonus_offerings:[],
+  await db!`INSERT INTO agent_decisions(turn_id,trace_id,schema_version,intent,decision_kind,response,
+      response_type,business_action,memory_candidates,missing_information,next_state,reason_code,
+      confidence,model_provider,model_name,prompt_version,payload_hash,outbound_message_id)
+    VALUES (${firstInbound.id},${randomUUID()},4,'commercial','reply',
+      'Inglés 1 puede ayudarte con documentación y entrevistas.','commercial_reply',NULL,
+      ${db!.json([{type:'objection',key:'price_objection',value:'precio alto',
+        source_quote:'Me parece caro',confidence:1}])},ARRAY[]::text[],'waiting_user',
+      'PROMOTION_STRUCTURED_EVIDENCE',1,'deepseek-direct','deepseek-v4-flash',
+      'studyx-agent-a-brain-v128',decode(repeat('01',32),'hex'),${firstOutbound.id})`;
+  const continuityPlan = derivePromotionContextRepairPlanV1({
+    workspace_id: workspace.id, contact_id: contact.id, conversation_id: conversation.id,
+    interest_offering_code: paid.code, existing: null,
+    accepted_price_objection_turn_ids: [firstInbound.id], active_offer_status: null,
+  });
+  await expect(applyPromotionContextRepairPlanV1(db!, continuityPlan)).resolves.toEqual({
+    interest_offering_code: paid.code, price_objection_count: 1,
+  });
+  const reviewCapability = await readCourseBonusCapabilityV1({workspace_slug:workspace.slug,contact_id:contact.id,
+    conversation_id:conversation.id,channel:'text',selected_offering_code:null},{db:db!});
+  expect(reviewCapability).toMatchObject({
+    status:'review_available',may_request_review:true,interest_offering_code:paid.code,bonus_offerings:[],
+    bonus_selection_mode:'any_active_course',
+  });
+  const brainContext: AgentAContextV1 = {
+    schema_version: 1,
+    turn: {
+      batch_messages: [
+        { id: randomUUID(), text: 'no tenes nnguan oferta' },
+        { id: randomUUID(), text: 'para hacerme' },
+        { id: randomUUID(), text: '?' },
+      ],
+      recent_turns: [
+        { id: firstInbound.id, direction: 'inbound', content: 'Me parece caro' },
+        { id: firstOutbound.id, direction: 'outbound', content: 'Inglés 1 puede ayudarte con documentación y entrevistas.' },
+      ],
+    },
+    customer: { display_name: 'Ana', memories: [] },
+    identity: { advisor_name: 'Emma', academy_name: 'Studyx', website: null, instagram: null },
+    commercial_state: {
+      selected_offering_code: null, selected_payment_plan: null, stage: 'qualified',
+      call_preference: 'unknown', call_offer_status: 'not_offered', call_offer_count: 0,
+      awaiting_reply: 'none', payment_reported: false,
+    },
+    obligations: { stage: 'qualified', owes: [], not_yet: [] },
+    catalog: {
+      selected_offering: null,
+      available_offerings: [paid, bonus].map((offering) => ({
+        code: offering.code, display_name: offering.display_name,
+        fact_id: `offering:${offering.code}:name:v1`, area_code: null,
+      })),
+      areas: [], candidate_offerings: [], payment_plans: [],
+    },
+    capabilities: {
+      may_reply: true, may_offer_call: false, may_request_call_now: false,
+      may_present_payment_options: true, may_send_payment_link: false,
+      authorized_payment_plan: null, intake_status: 'known', intake_missing: [],
+      course_bonus: {
+        ...reviewCapability,
+        bonus_offerings: [...reviewCapability.bonus_offerings],
+      },
+    },
+  };
+  const proposedReview = {
+    schema_version: 1,
+    move: {
+      schema_version: 1, move: 'ask_payment_options', secondary_moves: [], vetoes: [],
+      course_reference: paid.code, confidence: 1,
+    },
+    response: {
+      messages: ['Dame un minuto y reviso qué alternativa puedo habilitarte para que aproveches mejor la formación.'],
+      call_offer: null,
+    },
+    proposed_action: {
+      type: 'request_promotion_review', reason: 'persistent_price_objection',
+      bonus_offering_code: bonus.code,
+    },
+    confirmed_phone: null, profile_updates: [], profile_requests: [],
+    used_fact_ids: [], used_memory_ids: [],
+    memory_candidates: [{
+      type: 'objection', key: 'price_objection', value: 'pide una alternativa comercial',
+      source_quote: 'no tenes nnguan oferta', confidence: 1,
+    }],
+    repair_of: null,
+  };
+  const originalFetch = globalThis.fetch;
+  let providerRequest: Record<string, unknown> | null = null;
+  globalThis.fetch = vi.fn(async (_request: RequestInfo | URL, init?: RequestInit) => {
+    providerRequest = JSON.parse(String(init?.body)) as Record<string, unknown>;
+    return new Response(JSON.stringify({
+      output: [{ type: 'message', content: [{ type: 'output_text', text: JSON.stringify(proposedReview) }] }],
+      usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2 },
+    }), { status: 200, headers: { 'content-type': 'application/json' } });
+  });
+  let generated: Awaited<ReturnType<typeof generateDeepSeekAgentATurnProposalV1>>;
+  try {
+    generated = await generateDeepSeekAgentATurnProposalV1({
+      context: brainContext, apiKey: 'workflow-fixture', signal: new AbortController().signal,
     });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+  const providerSchema = (providerRequest as {
+    text?: { format?: { schema?: { properties?: { proposed_action?: { anyOf?: Array<{
+      properties?: { type?: { enum?: string[] }; bonus_offering_code?: { enum?: string[] } };
+      required?: string[];
+    }> } } } } };
+  } | null)?.text?.format?.schema;
+  const reviewSchema = providerSchema?.properties?.proposed_action?.anyOf?.find((candidate) => (
+    candidate.properties?.type?.enum?.includes('request_promotion_review')
+  ));
+  expect(reviewSchema).toMatchObject({
+    properties: { bonus_offering_code: { enum: [bonus.code] } },
+    required: ['type', 'reason', 'bonus_offering_code'],
+  });
+  expect(generated.proposal.response.messages.join(' ')).not.toMatch(
+    /no hay promo|no te lo voy a inventar|no te voy a ofrecer|no te voy a insistir/iu,
+  );
+  if (generated.proposal.proposed_action.type !== 'request_promotion_review') {
+    throw new Error('promotion review proposal expected');
+  }
   const review = await commitCommercialActionV1(db!,{workspace_id:workspace.id,contact_id:contact.id,
     conversation_id:conversation.id,paid_offering_code:paid.code,source_turn_id:inbound.id,
-    source_outbound_message_id:outbound.id,action:{type:'request_promotion_review',reason:'persistent_price_objection'}});
-  await expect(recordPromotionConversationContextV1(db!, {
-    workspace_id:workspace.id, contact_id:contact.id, conversation_id:conversation.id,
-    source_turn_id:inbound.id, discussed_offering_code:paid.code, records_price_objection:true,
-  })).resolves.toEqual({interest_offering_code:paid.code, price_objection_count:2});
+    source_outbound_message_id:outbound.id,action:generated.proposal.proposed_action});
+  expect(review.offer_id).not.toBeNull();
+  expect(review.followup).toMatchObject({kind:'promotion_review'});
+  const [promotion] = await db!`SELECT promotion.id,promotion.promotion_code
+    FROM promotion_offers offer JOIN promotions promotion ON promotion.id=offer.promotion_id
+    WHERE offer.id=${review.offer_id}`;
+  expect(await db!`SELECT offer.status,paid.code AS paid_offering_code,
+      snapshot.offering_code_snapshot AS bonus_offering_code
+    FROM promotion_offers offer
+    JOIN offerings paid ON paid.id=offer.paid_offering_id
+    JOIN promotion_offer_bonus_offerings snapshot ON snapshot.offer_id=offer.id
+    WHERE offer.id=${review.offer_id}`).toEqual([{
+      status:'pending_review',paid_offering_code:paid.code,bonus_offering_code:bonus.code,
+    }]);
   await db!`UPDATE course_bonus_followups SET due_at=now()-interval '1 second' WHERE id=${review.followup!.id}`;
   const claim = await claimCommercialFollowupV1(review.followup!.id,botpressId,`event-${suffix}`,{db:db!});
   if(!claim.claimed) throw new Error('promotion review claim failed');
