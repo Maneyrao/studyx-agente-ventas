@@ -2323,6 +2323,161 @@ describe('processInboundTurn hot path', () => {
     expect(actionSpies.recovery).not.toHaveBeenCalled();
   });
 
+  it.each([
+    { finalBackendRejected: false },
+    { finalBackendRejected: true },
+  ])('uses the remaining third generation after a local repair (final rejection: $finalBackendRejected)', async ({ finalBackendRejected }) => {
+    const claimed = claimedResponse() as unknown as ClaimedTurn;
+    claimed.features = {
+      agent_loop_v3_mode: 'off',
+      conversation_pipeline_v1_enabled: false,
+      agent_a_brain_v1_enabled: true,
+      agent_a_brain_v1_shadow: false,
+      agent_a_repair_enabled: true,
+    };
+    claimed.context.batch_messages[0].content = 'No hay ninguna oferta que me puedas hacer?';
+    claimed.conversation_state_v1 = {
+      selected_offering_code: 'ingles_1', selected_payment_plan: null,
+      stage: 'course_selected', call_preference: 'unknown', call_offer_status: 'not_offered',
+      call_offer_count: 0, awaiting_reply: 'none', version: 3,
+    };
+    claimed.catalog_index = {
+      as_of: NOW, offerings_total: 1,
+      offerings: [{ code: 'ingles_1', display_name: 'Inglés 1', academy: 'Idiomas', aliases: ['ingles'] }],
+      injection_suspected_count: 0,
+    };
+    const business = paymentBusinessContext();
+    business.offerings[0] = {
+      ...business.offerings[0], code: 'ingles_1', display_name: 'Inglés 1', academy: 'Idiomas',
+    };
+    claimed.business_context = business;
+    claimed.business_context_available = true;
+    claimed.course_bonus_capability = {
+      status: 'review_available', may_schedule_checkin: false, may_request_review: true,
+      may_accept_offer: false, may_send_promoted_payment: false, promotion_code: null,
+      interest_offering_code: 'ingles_1', bonus_offerings: [],
+    };
+    actionSpies.claim.mockResolvedValue(claimed);
+    configuration.agentAPlannerlessV2Enabled = true;
+
+    const unsafeText = 'Te consigo una promoción especial y te confirmo otro curso gratis.';
+    const safeText = 'Dame un momento y reviso qué alternativa puedo habilitarte.';
+    actionSpies.agentABrainValidate.mockImplementation(({ proposal }: {
+      proposal: { response: { messages: string[] } };
+    }) => proposal.response.messages.includes(safeText) ? null : {
+      schema_version: 1, rejection_id: UUID, attempt: 1,
+      rejections: [
+        { code: 'REPEATED_AGENT_REPLY', subject: 'response.messages' },
+        { code: 'FACT_VALUE_MISMATCH', subject: 'price_objection_reframe' },
+      ],
+      authorized_alternatives: {
+        fact_ids: [], actions: ['none', 'request_promotion_review'], missing_information: [],
+      },
+    });
+    let generation = 0;
+    actionSpies.agentABrainDeepSeek.mockImplementation(async (input: {
+      context: AgentAContextV1;
+      on_provider_request?: () => void;
+    }) => {
+      input.on_provider_request?.();
+      generation += 1;
+      const corrected = generation === 3;
+      return {
+        proposal: {
+          schema_version: 1,
+          move: { schema_version: 1, move: 'ask_course_information', secondary_moves: [], vetoes: [],
+            course_reference: 'ingles_1', confidence: 1 },
+          response: { messages: [corrected ? safeText : unsafeText], call_offer: null },
+          proposed_action: { type: 'request_promotion_review', reason: 'persistent_price_objection' },
+          used_fact_ids: [], used_memory_ids: [], memory_candidates: [],
+          repair_of: input.context.turn_rejection
+            ? { rejection_id: input.context.turn_rejection.rejection_id, attempt: 1 }
+            : null,
+        },
+        provider: 'deepseek-direct', model: 'deepseek-v4-flash', latency_ms: 1, attempt_count: 1,
+      };
+    });
+
+    const outbound = {
+      id: UUID, content: safeText, status: 'pending', delivery_attempt: 1,
+      authorized_egress: { schema_version: 1,
+        content_hash: 'd8ef9ae0302bc639366919e442dfef275997b40106151c50a96408ef3d92e1a0',
+        authorized_urls: [], protected_facts: [] },
+    };
+    let persistedFollowups = 0;
+    const firstBackendRejection = new StudyxHttpError(
+        'DECISION_REJECTED', false, 422, 1,
+        { error: 'DECISION_REJECTED', reason: 'AGENT_TURN_V2_REJECTED:COMMERCIAL_TRUTH_VIOLATION',
+          subjects: ['forbidden_promise'] },
+      );
+    actionSpies.commit.mockRejectedValueOnce(firstBackendRejection);
+    if (finalBackendRejected) {
+      actionSpies.commit.mockRejectedValueOnce(new StudyxHttpError(
+        'DECISION_REJECTED', false, 422, 1,
+        { error: 'DECISION_REJECTED', reason: 'AGENT_TURN_V2_REJECTED:COMMERCIAL_TRUTH_VIOLATION',
+          subjects: ['offering_not_canonical'] },
+      ));
+    } else {
+      actionSpies.commit.mockImplementationOnce(async () => {
+        persistedFollowups += 1;
+        return {
+          status: 'committed', replayed: false, trace_id: UUID, turn_id: UUID,
+          decision_id: UUID, next_state: 'waiting_user', outbound, outbounds: [outbound],
+          call_request: null, commercial_followups: [{ id: UUID, kind: 'promotion_review', due_at: NOW }],
+        };
+      });
+    }
+    const createMessage = vi.fn(async () => ({ message: { id: 'bp-third-generation-message' } }));
+    const recoveryWorkflow = vi.spyOn(processInboundTurn, 'getOrCreate')
+      .mockResolvedValue({ id: 'third-generation-recovery-workflow' });
+    const step = Object.assign(async (_name: string, run: () => Promise<unknown>) => run(),
+      { sleep: vi.fn(async () => undefined) });
+    const handler = (processInboundTurn as unknown as {
+      definition: { handler: (args: Record<string, unknown>) => Promise<unknown> };
+    }).definition.handler;
+
+    const result = await handler({
+      input: workflowInput(), state: processingState(), step,
+      execute: vi.fn(async () => { throw new Error('LEGACY_MODEL_MUST_NOT_RUN'); }),
+      client: { createMessage }, signal: new AbortController().signal,
+      workflow: { id: 'workflow-third-generation-after-backend-rejection' },
+    });
+
+    expect(actionSpies.agentABrainDeepSeek).toHaveBeenCalledTimes(3);
+    expect(actionSpies.agentABrainDeepSeek.mock.calls[2]![0]).toMatchObject({
+      conversation_only: false,
+      context: { turn_rejection: {
+        rejections: [{ code: 'FACT_VALUE_MISMATCH', subject: 'forbidden_promise' }],
+        authorized_alternatives: { actions: expect.arrayContaining(['request_promotion_review']) },
+      } },
+    });
+    expect(actionSpies.commit).toHaveBeenCalledTimes(2);
+    expect(actionSpies.commit.mock.calls[1]![0].input.agent_turn_v2).toMatchObject({
+      proposal: {
+        response: { messages: [safeText] },
+        proposed_action: { type: 'request_promotion_review', reason: 'persistent_price_objection' },
+      },
+    });
+    if (finalBackendRejected) {
+      expect(persistedFollowups).toBe(0);
+      expect(createMessage).not.toHaveBeenCalled();
+      expect(actionSpies.recovery).toHaveBeenCalledTimes(1);
+      expect(recoveryWorkflow).toHaveBeenCalledTimes(1);
+      expect(recoveryWorkflow.mock.calls[0]![0]).toMatchObject({ input: { recovery_feedback: {
+        rejection: { rejections: [{ code: 'FACT_VALUE_MISMATCH', subject: 'offering_not_canonical' }] },
+      } } });
+      expect(result).toMatchObject({ status: 'retry_pending', delivery_status: null,
+        error_code: 'AGENT_A_CONTINUATION_REJECTED' });
+    } else {
+      expect(persistedFollowups).toBe(1);
+      expect(createMessage).toHaveBeenCalledTimes(1);
+      expect(actionSpies.recovery).not.toHaveBeenCalled();
+      expect(recoveryWorkflow).not.toHaveBeenCalled();
+      expect(result).toMatchObject({ status: 'waiting_user', delivery_status: 'submitted_to_botpress',
+        error_code: null });
+    }
+  });
+
   it('retries one transient DeepSeek timeout before committing the model reply', async () => {
     const claimed = claimedResponse() as unknown as ClaimedTurn;
     claimed.features = {

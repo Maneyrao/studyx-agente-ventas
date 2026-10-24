@@ -1033,7 +1033,6 @@ export const processInboundTurn = new Workflow({
       physicalAgentARequests += 1
       agentAGenerationAttempts = Math.max(agentAGenerationAttempts, physicalAgentARequests) as 1 | 2 | 3
     }
-    let agentARepairAttempted = false
     let agentAContinuationFailure: unknown = null
     let callOfferAudit: {
       readonly call_offer_count_before: 0 | 1 | 2
@@ -1320,7 +1319,6 @@ export const processInboundTurn = new Workflow({
                 if (agentAGenerationAttempts >= 3) {
                   throw new Error('PLANNERLESS_PROPOSAL_REJECTED:ACTION_NOT_AUTHORIZED:generation_budget')
                 }
-                agentARepairAttempted = true
                 const repairEffectsAllowed = rejection.authorized_alternatives.actions
                   .some((action) => action !== 'none')
                 agentAConversationOnly = !repairEffectsAllowed
@@ -1358,7 +1356,6 @@ export const processInboundTurn = new Workflow({
             if (resolved.action_rejection !== null) agentAConversationOnly = true
             if (resolved.action_rejection !== null && resolved.rejection !== null
               && !resolved.evidence.repair_attempted && agentAGenerationAttempts < 3) {
-              agentARepairAttempted = true
               agentAConversationOnly = true
               agentAGenerationAttempts = Math.max(agentAGenerationAttempts, 2) as 2 | 3
               try {
@@ -2129,10 +2126,11 @@ export const processInboundTurn = new Workflow({
         rejection_subjects: rejection.rejections.map((item) => item.subject),
       })
         latestRejection = rejection
-        const rejectionCodes = [...new Set(
+        let currentBackendRejection = rejection
+        let rejectionCodes = [...new Set(
           rejection.rejections.map((item) => item.code),
         )].slice(0, 8)
-        const repairEffectsAllowed = rejection.authorized_alternatives.actions
+        let repairEffectsAllowed = rejection.authorized_alternatives.actions
           .some((action) => action !== 'none')
         const deepSeekApiKey = secrets.DEEPSEEK_API_KEY
         // A second backend rejection does not authorize the backend to write
@@ -2140,22 +2138,20 @@ export const processInboundTurn = new Workflow({
         // effect-fenced correction with the exact rejection receipt.
         const mayRepairWithAgentA = plannerlessV2Enabled
           && repairEnabled
-          && !agentARepairAttempted
           && agentAGenerationAttempts < 3
           && typeof deepSeekApiKey === 'string'
           && deepSeekApiKey.length > 0
         let continuationFailure: ReturnType<typeof classifyAgentAAttemptFailure> | null = null
 
         if (mayRepairWithAgentA) {
-          agentARepairAttempted = true
-          agentAGenerationAttempts = 2
+          agentAGenerationAttempts = Math.max(agentAGenerationAttempts, 2) as 2 | 3
           try {
             const repaired = await step(
               'repair-agent-a-turn-after-backend-rejection-v1',
               () => continueAgentAAfterActionFeedbackV1({
                 context: repairContext,
                 on_provider_request: accountAgentAProviderRequest,
-                rejection,
+                rejection: currentBackendRejection,
                 effects_allowed: repairEffectsAllowed,
                 apiKey: deepSeekApiKey,
                 signal,
@@ -2166,13 +2162,13 @@ export const processInboundTurn = new Workflow({
               }),
               { maxAttempts: 1 },
             )
-            await persistProfileProposal(repaired.proposal, rejection)
+            await persistProfileProposal(repaired.proposal, currentBackendRejection)
             const resolvedRepair = await resolveAgentAPlannerlessProposalV2({
               initial: repaired,
               context: repairContext,
               repair_enabled: false,
               semantic_rejections: 'advisory',
-              rejection_id: rejection.rejection_id,
+              rejection_id: currentBackendRejection.rejection_id,
               repair: async () => {
                 throw new Error('AGENT_A_SECOND_REPAIR_NOT_ALLOWED')
               },
@@ -2202,17 +2198,34 @@ export const processInboundTurn = new Workflow({
             safeLog('studyx.turn.backend_commit_repaired_by_agent_a', {
               trace_id: input.trace_id,
               turn_id: owned.turn_id,
-              rejection_id: rejection.rejection_id,
+              rejection_id: currentBackendRejection.rejection_id,
               rejection_codes: rejectionCodes,
               repaired_action_type: effectiveRepair.proposal.proposed_action.type,
             })
           } catch (repairError) {
             if (!(repairError instanceof Error)) throw repairError
             continuationFailure = classifyAgentAAttemptFailure(repairError)
+            if (continuationFailure.stage === 'backend_rejected' && agentTurnV2Commit !== null) {
+              const renewedRejection = backendCommitTurnRejectionV1({
+                error: repairError,
+                proposal: agentTurnV2Commit.proposal,
+                context: repairContext,
+                rejectionId: randomUUID(),
+              })
+              if (renewedRejection !== null) {
+                currentBackendRejection = renewedRejection
+                latestRejection = renewedRejection
+                rejectionCodes = [...new Set(
+                  renewedRejection.rejections.map((item) => item.code),
+                )].slice(0, 8)
+                repairEffectsAllowed = renewedRejection.authorized_alternatives.actions
+                  .some((action) => action !== 'none')
+              }
+            }
             safeLog('studyx.turn.backend_commit_agent_a_repair_failed', {
               trace_id: input.trace_id,
               turn_id: owned.turn_id,
-              rejection_id: rejection.rejection_id,
+              rejection_id: currentBackendRejection.rejection_id,
               error_code: errorCode(repairError),
             })
           }
@@ -2230,7 +2243,7 @@ export const processInboundTurn = new Workflow({
               () => continueAgentAAfterActionFeedbackV1({
                 context: repairContext,
                 on_provider_request: accountAgentAProviderRequest,
-                rejection,
+                rejection: currentBackendRejection,
                 effects_allowed: repairEffectsAllowed,
                 apiKey: deepSeekApiKey,
                 signal,
@@ -2241,7 +2254,7 @@ export const processInboundTurn = new Workflow({
               }),
               { maxAttempts: 1 },
             )
-            await persistProfileProposal(finalContinuation.proposal, rejection)
+            await persistProfileProposal(finalContinuation.proposal, currentBackendRejection)
             agentTurnV2Commit = {
               schema_version: 2,
               proposal: finalContinuation.proposal,
@@ -2267,16 +2280,31 @@ export const processInboundTurn = new Workflow({
             safeLog('studyx.turn.backend_commit_final_agent_a_continuation', {
               trace_id: input.trace_id,
               turn_id: owned.turn_id,
-              rejection_id: rejection.rejection_id,
+              rejection_id: currentBackendRejection.rejection_id,
               rejection_codes: rejectionCodes,
             })
           } catch (finalError) {
             if (!(finalError instanceof Error)) throw finalError
             continuationFailure = classifyAgentAAttemptFailure(finalError)
+            if (continuationFailure.stage === 'backend_rejected' && agentTurnV2Commit !== null) {
+              const renewedRejection = backendCommitTurnRejectionV1({
+                error: finalError,
+                proposal: agentTurnV2Commit.proposal,
+                context: repairContext,
+                rejectionId: randomUUID(),
+              })
+              if (renewedRejection !== null) {
+                currentBackendRejection = renewedRejection
+                latestRejection = renewedRejection
+                rejectionCodes = [...new Set(
+                  renewedRejection.rejections.map((item) => item.code),
+                )].slice(0, 8)
+              }
+            }
             safeLog('studyx.turn.backend_commit_final_agent_a_failed', {
               trace_id: input.trace_id,
               turn_id: owned.turn_id,
-              rejection_id: rejection.rejection_id,
+              rejection_id: currentBackendRejection.rejection_id,
               error_code: errorCode(finalError),
             })
           }
