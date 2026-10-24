@@ -33,6 +33,8 @@ describe('evaluateSalesObjectionTurnV1', () => {
     ['Me haces un descuento?', 'price_objection', null],
     ['Podés bajar el precio?', 'price_objection', null],
     ['No tenés una promoción?', 'price_objection', null],
+    ['No tenés ninguna oferta para hacerme?', 'price_objection', null],
+    ['Hay alguna oferta que puedas darme?', 'price_objection', null],
     ['Si no me ofrecés la promo no', 'price_objection', null],
     ['No podés ofrecerme una bonificación?', 'price_objection', null],
     ['Me sigue pareciendo caro', 'repeated_price_objection', ['Está fuera de mi presupuesto']],
@@ -64,11 +66,24 @@ describe('evaluateSalesObjectionTurnV1', () => {
     });
   });
 
+  it('classifies the fragmented production wording as a promotion objection', () => {
+    const current = contextWithCurrentMessage('');
+    current.turn.batch_messages = [
+      { id: 'current-1', text: 'no tenes nnguan oferta' },
+      { id: 'current-2', text: 'para hacerme' },
+      { id: 'current-3', text: '?' },
+    ];
+
+    expect(evaluateSalesObjectionTurnV1(current)).toEqual({ kind: 'price_objection' });
+  });
+
   it.each([
     'Cuánto dura?',
     'Quiero tiempo para pensarlo',
     'Hoy sí o sí hago el pago',
     'Me interesa Inglés 1',
+    'No quiero recibir ofertas',
+    'Vi una oferta laboral de fotografía',
   ])('does not force an objection category for %s', (text) => {
     expect(evaluateSalesObjectionTurnV1(contextWithCurrentMessage(text))).toEqual({ kind: 'none' });
   });

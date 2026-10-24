@@ -53,7 +53,7 @@ function authorizedCourseBonusClaimV1(
 export function isPriceObjectionTextV1(text: string): boolean {
   const value = normalized(text);
   return /\b(?:car[oa]|costos[oa]|fuera\s+de\s+(?:mi\s+)?presupuesto|no\s+me\s+alcanza|no\s+llego|no\s+(?:puedo|podria|podre)\s+(?:pagar|abonarlo|hacer\s+ese\s+gasto)|se\s+me\s+va|much[oa]\s+dinero|presupuesto\b[^.!?\n]{0,32}\b(?:ajustado|limitado|no\s+(?:me\s+)?(?:alcanza|permite)))\b/u.test(value)
-    || /\b(?:(?:hay|tenes|tienes|ofreces|haces|me\s+haces|puedes|podes)\b[^.!?\n]{0,40}\b(?:descuentos?|rebajas?|promos?|promocion(?:es)?|bonificacion(?:es)?)|(?:bajar|reducir)\b[^.!?\n]{0,24}\b(?:el\s+)?precio)\b/u.test(value);
+    || /\b(?:(?:hay|tenes|tienes|ofreces|haces|me\s+haces|puedes|podes)\b[^.!?\n]{0,40}\b(?:descuentos?|rebajas?|promos?|promocion(?:es)?|bonificacion(?:es)?|ofertas?)|(?:bajar|reducir)\b[^.!?\n]{0,24}\b(?:el\s+)?precio)\b/u.test(value);
 }
 
 export function customerExpressesRealBudgetLimitV1(text: string): boolean {

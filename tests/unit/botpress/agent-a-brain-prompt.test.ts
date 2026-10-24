@@ -89,7 +89,7 @@ describe('Agent A Brain prompt', () => {
     expect(JSON.parse(encoded)).toEqual(current);
     expect(instructions).not.toContain('<current_turn_guidance>');
     expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v96');
-    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v130');
+    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v131');
   });
 
   it('adds turn-specific guidance for a repeated price objection without forcing a script', () => {
@@ -168,6 +168,36 @@ describe('Agent A Brain prompt', () => {
       .split('</current_commercial_guidance>')[0]!;
 
     expect(guidance).toContain('request_promotion_review');
+    expect(guidance).toContain('do not name or imply a specific gift yet');
+    expect(guidance).not.toContain('discounts or bonus courses to make the price feel lower');
+  });
+
+  it('uses durable review capability for a direct promotion request without a regex-visible prior objection', () => {
+    const current = context();
+    current.turn.batch_messages = [
+      { id: 'current-1', text: 'no tenes nnguan oferta' },
+      { id: 'current-2', text: 'para hacerme' },
+      { id: 'current-3', text: '?' },
+    ];
+    current.turn.recent_turns = [];
+    current.capabilities.course_bonus = {
+      status: 'review_available',
+      may_schedule_checkin: false,
+      may_request_review: true,
+      may_accept_offer: false,
+      may_send_promoted_payment: false,
+      promotion_code: null,
+      bonus_selection_mode: 'any_active_course',
+      interest_offering_code: 'fotografia_profesional',
+      bonus_offerings: [],
+    };
+
+    const guidance = buildAgentABrainInstructionsV1(current)
+      .split('<current_commercial_guidance kind="price_objection">')[1]!
+      .split('</current_commercial_guidance>')[0]!;
+
+    expect(guidance).toContain('request_promotion_review');
+    expect(guidance).toContain('bonus_offering_code');
     expect(guidance).toContain('do not name or imply a specific gift yet');
     expect(guidance).not.toContain('discounts or bonus courses to make the price feel lower');
   });
