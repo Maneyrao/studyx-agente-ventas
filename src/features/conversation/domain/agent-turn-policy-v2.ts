@@ -180,10 +180,16 @@ export function authorizeAgentTurnV2(input: {
     : changesCourse ? requestedOffering : state.selected_offering_code;
   const selectedOffering = input.offerings.some(offering => offering.code === selectedOfferingCandidate)
     ? selectedOfferingCandidate : null;
-  // A promotion capability belongs to the exact course that produced it. A
-  // new canonical course reference wins for this turn, so an old review,
-  // accepted offer, or checkout benefit cannot move across courses.
-  const currentCommercialInterest = acceptsPresentedPromotion
+  const acceptedPromotionOwnsBonusReference = input.course_bonus?.status === 'accepted'
+    && input.course_bonus.may_send_promoted_payment === true
+    && capabilityInterestOffering !== null
+    && selectedOffering === capabilityInterestOffering
+    && requestedOfferingIsPresentedBonus
+    && !changesCourse;
+  // A promotion capability belongs to the exact course that produced it. An
+  // explicit course switch wins, while naming an included course during an
+  // accepted package checkout keeps the paid course and its durable benefit.
+  const currentCommercialInterest = acceptsPresentedPromotion || acceptedPromotionOwnsBonusReference
     ? capabilityInterestOffering
     : requestedOffering
     ?? capabilityInterestOffering

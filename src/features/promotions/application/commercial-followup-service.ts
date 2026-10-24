@@ -238,6 +238,47 @@ export async function commitCommercialActionV1(
   };
 }
 
+/** Retires only model-owned open packages whose paid course was explicitly
+ * replaced by another canonical course. This is not text interpretation: the
+ * caller supplies the committed select_course result from Agent A. */
+export async function cancelOpenCourseBonusOffersForCourseChangeV1(
+  db: DbClient,
+  input: {
+    readonly workspace_id: string;
+    readonly contact_id: string;
+    readonly conversation_id: string;
+    readonly selected_offering_code: string;
+  },
+): Promise<number> {
+  const cancelled = await db<Array<{ id: string }>>`
+    UPDATE promotion_offers offer
+    SET status = 'cancelled', cancel_reason = 'CUSTOMER_CHANGED_COURSE'
+    FROM offerings paid
+    WHERE offer.workspace_id = ${input.workspace_id}::uuid
+      AND offer.contact_id = ${input.contact_id}::uuid
+      AND offer.conversation_id = ${input.conversation_id}::uuid
+      AND offer.status IN ('pending_review','offered','accepted')
+      AND offer.payment_id IS NULL
+      AND paid.id = offer.paid_offering_id
+      AND paid.workspace_id = offer.workspace_id
+      AND paid.code <> ${input.selected_offering_code}
+    RETURNING offer.id
+  `;
+  if (cancelled.length === 0) return 0;
+  await db`
+    UPDATE course_bonus_followups followup
+    SET status = 'cancelled', terminal_reason = 'CUSTOMER_CHANGED_COURSE'
+    FROM promotion_offers offer
+    WHERE followup.offer_id = offer.id
+      AND offer.workspace_id = ${input.workspace_id}::uuid
+      AND offer.contact_id = ${input.contact_id}::uuid
+      AND offer.conversation_id = ${input.conversation_id}::uuid
+      AND offer.cancel_reason = 'CUSTOMER_CHANGED_COURSE'
+      AND followup.status = 'pending'
+  `;
+  return cancelled.length;
+}
+
 interface FollowupSource {
   id: string;
   offer_id: string;

@@ -300,14 +300,14 @@ export async function readCourseBonusCapabilityV1(input: {
     ) po ON true
     LEFT JOIN public.promotions offer_promotion ON offer_promotion.id = po.promotion_id
     WHERE workspace.slug = ${input.workspace_slug}
+      AND p.active = true
+      AND ${input.channel}::text = ANY(p.channels)
+      AND (p.valid_from IS NULL OR p.valid_from <= now())
+      AND (p.valid_until IS NULL OR p.valid_until > now())
       AND (
         paid.code = ${interestOfferingCode}
         OR (
           po.id IS NOT NULL
-          AND p.active = true
-          AND ${input.channel}::text = ANY(p.channels)
-          AND (p.valid_from IS NULL OR p.valid_from <= now())
-          AND (p.valid_until IS NULL OR p.valid_until > now())
           AND EXISTS (
             SELECT 1
             FROM public.promotion_offer_bonus_offerings related_bonus

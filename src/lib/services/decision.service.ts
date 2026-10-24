@@ -71,6 +71,7 @@ import {
   recordPromotionConversationContextV1,
 } from '@/features/promotions/application/read-course-bonus-capability';
 import {
+  cancelOpenCourseBonusOffersForCourseChangeV1,
   commitCommercialActionV1,
   type ScheduledCommercialFollowupV1,
 } from '@/features/promotions/application/commercial-followup-service';
@@ -1789,6 +1790,15 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
         canonicalWorkspaceId = workspaceRows[0]?.id ?? null;
       }
       if (preparedAgentTurn && canonicalWorkspaceId) {
+        if (preparedAgentTurn.abandons_course_bonus_offer
+          && preparedAgentTurn.transition.selected_offering_code) {
+          await cancelOpenCourseBonusOffersForCourseChangeV1(db, {
+            workspace_id: canonicalWorkspaceId,
+            contact_id: turn.contact_id,
+            conversation_id: turn.conversation_id,
+            selected_offering_code: preparedAgentTurn.transition.selected_offering_code,
+          });
+        }
         await recordPromotionConversationContextV1(db, {
           workspace_id: canonicalWorkspaceId,
           contact_id: turn.contact_id,

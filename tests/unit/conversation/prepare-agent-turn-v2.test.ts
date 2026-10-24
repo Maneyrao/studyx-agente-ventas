@@ -1485,6 +1485,55 @@ describe('prepareAgentTurnV2', () => {
     },
   );
 
+  it('marks an explicit switch away from the paid course as abandoning the pending package', async () => {
+    const packageIndex: CatalogIndexView = {
+      ...index,
+      offerings_total: 2,
+      offerings: [
+        { code: 'redes_informaticas', display_name: 'Redes Informáticas', academy: 'Tecnología', aliases: ['redes'] },
+        { code: 'excel_integral', display_name: 'Excel Integral', academy: 'Tecnología', aliases: ['excel'] },
+      ],
+    };
+    const packageBusiness: BusinessContextView = {
+      ...business,
+      offerings: [
+        business.offerings[0],
+        { ...business.offerings[0], code: 'excel_integral', display_name: 'Excel Integral', aliases: ['excel'] },
+      ],
+    };
+    const prepared = await prepareAgentTurnV2({
+      turn: { id: ids.turn, workspace_id: ids.workspace, conversation_id: ids.conversation, contact_id: ids.contact },
+      workspace_slug: 'studyx', business_context: packageBusiness, catalog_index: packageIndex,
+      current_customer_messages: ['No quiero el paquete. Quiero comprar solamente Excel'],
+      course_bonus_capability: {
+        status: 'offer_available',
+        may_schedule_checkin: false,
+        may_request_review: false,
+        may_accept_offer: true,
+        may_send_promoted_payment: false,
+        promotion_code: 'redes_con_excel',
+        interest_offering_code: 'redes_informaticas',
+        bonus_offerings: [{ code: 'excel_integral', display_name: 'Excel Integral', position: 1 }],
+      },
+      proposal: proposal({
+        move: {
+          schema_version: 1, move: 'select_course', secondary_moves: [], vetoes: [],
+          course_reference: 'excel', confidence: 1,
+        },
+        response: { messages: ['Perfecto, seguimos únicamente con Excel Integral.'] },
+      }),
+    }, {
+      state_store: store(state({ selected_offering_code: 'redes_informaticas', stage: 'course_selected' })),
+      now: () => Date.parse(index.as_of),
+    });
+
+    expect(prepared).toMatchObject({
+      abandons_course_bonus_offer: true,
+      commercial_interest_offering_code: 'excel_integral',
+      transition: { selected_offering_code: 'excel_integral' },
+    });
+  });
+
   it.each([
     'No te recomiendo Redes Informáticas para lo que buscas.',
     'No necesitas Redes Informáticas para alcanzar ese objetivo.',

@@ -472,6 +472,49 @@ describe('plannerless Agent A authority', () => {
     });
   });
 
+  it('keeps an accepted package when checkout names its included course', () => {
+    const result = authorize({
+      state: state({
+        selected_offering_code: 'redes_informaticas',
+        selected_payment_plan: 'one_time',
+        stage: 'plan_selected',
+        awaiting_reply: 'payment_confirmation',
+      }),
+      intake: completeIntake,
+      customerText: 'Entonces con Excel incluido, pasame el enlace',
+      courseBonus: {
+        status: 'accepted',
+        may_schedule_checkin: false,
+        may_request_review: false,
+        may_accept_offer: false,
+        may_send_promoted_payment: true,
+        promotion_code: 'redes_con_excel',
+        interest_offering_code: 'redes_informaticas',
+        bonus_offerings: [{ code: 'excel_integral', display_name: 'Excel Integral', position: 1 }],
+      },
+      proposal: proposal({
+        move: {
+          schema_version: 1, move: 'request_payment_link', secondary_moves: [], vetoes: [],
+          course_reference: 'excel', confidence: 1,
+        },
+        response: { messages: ['Perfecto, te comparto el enlace del paquete.'] },
+        proposed_action: {
+          type: 'send_payment_link', offering_code: 'redes_informaticas', payment_plan: 'one_time',
+        },
+      }),
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      action: {
+        type: 'send_payment_link',
+        offering_code: 'redes_informaticas',
+        payment_plan: 'one_time',
+        promotion_code: 'redes_con_excel',
+      },
+    });
+  });
+
   it('does not create a simple checkout while the offered package still needs acceptance', () => {
     const result = authorize({
       state: state({

@@ -230,6 +230,8 @@ export async function prepareAgentTurnV2(input: {
   readonly discussed_offering_code: string | null;
   readonly commercial_interest_offering_code: string | null;
   readonly records_price_objection: boolean;
+  /** Model-owned select_course moved away from an open package's paid course. */
+  readonly abandons_course_bonus_offer: boolean;
 }> {
   const nowMs = deps.now?.() ?? Date.now();
   const [loaded, callFacts, contactIntake, strictCallIntakeReadiness] = await Promise.all([
@@ -428,6 +430,19 @@ export async function prepareAgentTurnV2(input: {
       candidate.type === 'objection' && candidate.key === 'price_objection'
     ))
   );
+  const openCourseBonusStatus = input.course_bonus_capability?.status;
+  const explicitlySelectsAnotherCourse = [
+    effectiveProposal.move.move,
+    ...effectiveProposal.move.secondary_moves,
+  ].includes('select_course')
+    && authority.transition.selected_offering_code !== null
+    && input.course_bonus_capability?.interest_offering_code !== null
+    && input.course_bonus_capability?.interest_offering_code !== undefined
+    && authority.transition.selected_offering_code
+      !== input.course_bonus_capability.interest_offering_code;
+  const abandonsCourseBonusOffer = authority.action.type !== 'accept_promotion'
+    && ['review_pending', 'offer_available', 'accepted'].includes(openCourseBonusStatus ?? '')
+    && explicitlySelectsAnotherCourse;
   return {
     decision,
     response_messages: authority.response_messages,
@@ -450,5 +465,6 @@ export async function prepareAgentTurnV2(input: {
     discussed_offering_code: authority.discussed_offering_code,
     commercial_interest_offering_code: commercialInterestOfferingCode,
     records_price_objection: recordsPriceObjection,
+    abandons_course_bonus_offer: abandonsCourseBonusOffer,
   };
 }

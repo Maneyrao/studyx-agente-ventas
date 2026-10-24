@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { afterAll, afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { openLocalTestDatabase } from '../helpers/db';
 import {
+  cancelOpenCourseBonusOffersForCourseChangeV1,
   claimCommercialFollowupV1,
   commitCommercialActionV1,
   deliverCommercialFollowupV1,
@@ -220,6 +221,68 @@ run('durable commercial course-bonus follow-up', () => {
       });
     },
   );
+
+  it('prefers a current promotion over an inactive accepted offer for the same paid course', async () => {
+    const f = await fixture();
+    const [oldOffer] = await db!`INSERT INTO promotion_offers(
+        workspace_id,contact_id,conversation_id,promotion_id,paid_offering_id,
+        status,offered_at,accepted_at)
+      VALUES (${f.workspace.id},${f.contact.id},${f.conversation.id},${f.promotion.id},${f.paid.id},
+        'accepted',now(),now()) RETURNING id`;
+    await db!`INSERT INTO promotion_offer_bonus_offerings(
+        offer_id,promotion_id,offering_id,promotion_code_snapshot,offering_code_snapshot,
+        offering_display_name_snapshot,position)
+      VALUES (${oldOffer.id},${f.promotion.id},${f.bonus.id},${f.promotion.promotion_code},
+        ${f.bonus.code},'Inglés 2',1)`;
+    await db!`UPDATE promotion_offers SET bonus_snapshot_sealed_at=now() WHERE id=${oldOffer.id}`;
+    await db!`UPDATE promotions SET active=false WHERE id=${f.promotion.id}`;
+
+    const [currentPromotion] = await db!`INSERT INTO promotions(
+        workspace_id,promotion_code,paid_offering_id,channels,active)
+      VALUES (${f.workspace.id},${`current-${randomUUID().slice(0,8)}`},${f.paid.id},
+        ARRAY['text']::text[],true) RETURNING id`;
+    await db!`INSERT INTO promotion_bonus_offerings(
+        promotion_id,workspace_id,offering_id,position)
+      VALUES (${currentPromotion.id},${f.workspace.id},${f.bonus.id},1)`;
+    await recordPromotionConversationContextV1(db!, {
+      workspace_id:f.workspace.id as string,
+      contact_id:f.contact.id as string,
+      conversation_id:f.conversation.id as string,
+      source_turn_id:f.inbound.id as string,
+      discussed_offering_code:f.paid.code as string,
+      records_price_objection:false,
+    });
+
+    await expect(readCourseBonusCapabilityV1({
+      workspace_slug:f.workspace.slug as string,
+      contact_id:f.contact.id as string,
+      conversation_id:f.conversation.id as string,
+      channel:'text',
+      selected_offering_code:f.paid.code as string,
+    }, {db:db!})).resolves.toMatchObject({
+      status:'checkin_available',
+      interest_offering_code:f.paid.code,
+      may_schedule_checkin:true,
+    });
+  });
+
+  it('cancels an open package when the model explicitly selects another paid course', async () => {
+    const f = await fixture();
+    const [offer] = await db!`INSERT INTO promotion_offers(
+        workspace_id,contact_id,conversation_id,promotion_id,paid_offering_id,status,
+        offered_outbound_message_id,offered_at)
+      VALUES (${f.workspace.id},${f.contact.id},${f.conversation.id},${f.promotion.id},${f.paid.id},
+        'offered',${f.outbound.id},now()) RETURNING id`;
+
+    await expect(cancelOpenCourseBonusOffersForCourseChangeV1(db!, {
+      workspace_id:f.workspace.id as string,
+      contact_id:f.contact.id as string,
+      conversation_id:f.conversation.id as string,
+      selected_offering_code:f.bonus.code as string,
+    })).resolves.toBe(1);
+    await expect(db!`SELECT status,cancel_reason FROM promotion_offers WHERE id=${offer.id}`)
+      .resolves.toEqual([{status:'cancelled',cancel_reason:'CUSTOMER_CHANGED_COURSE'}]);
+  });
 
   it('does not create reviews or offers while the feature flag is disabled', async () => {
     const f = await fixture();
