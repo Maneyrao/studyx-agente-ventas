@@ -487,7 +487,7 @@ run('durable commercial course-bonus follow-up', () => {
       conversation_id:f.conversation.id as string, paid_offering_code:f.paid.code as string,
       source_turn_id:f.inbound.id as string, source_outbound_message_id:f.outbound.id as string,
       action:{type:'request_promotion_review' as const,reason:'persistent_price_objection' as const},
-      now:new Date('2026-10-23T12:00:00Z') };
+      now:new Date() };
     const first = await commitCommercialActionV1(db!, input);
     const replay = await commitCommercialActionV1(db!, input);
     expect(first.followup).toMatchObject({ kind:'promotion_review' });
