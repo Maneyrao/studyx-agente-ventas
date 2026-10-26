@@ -549,6 +549,25 @@ function proposalJsonSchema(context: AgentAContextV1, conversationOnly = false):
     confidence: { type: 'number' },
   });
   const courseBonus = context.capabilities.course_bonus;
+  const eligibleDynamicBonusCodes = courseBonus?.bonus_selection_mode === 'any_active_course'
+    ? context.catalog.available_offerings
+      .map((offering) => offering.code)
+      .filter((code) => code !== courseBonus.interest_offering_code)
+    : [];
+  const promotionReviewAlternatives = courseBonus?.may_request_review
+    ? courseBonus.bonus_selection_mode === 'any_active_course'
+      ? eligibleDynamicBonusCodes.length > 0
+        ? [closedObject({
+          type: { type: 'string', enum: ['request_promotion_review'] },
+          reason: { type: 'string', enum: ['persistent_price_objection'] },
+          bonus_offering_code: { type: 'string', enum: eligibleDynamicBonusCodes },
+        })]
+        : []
+      : [closedObject({
+        type: { type: 'string', enum: ['request_promotion_review'] },
+        reason: { type: 'string', enum: ['persistent_price_objection'] },
+      })]
+    : [];
   const sendPaymentLinkProperties: Record<string, unknown> = {
     type: { type: 'string', enum: ['send_payment_link'] },
     offering_code: { type: 'string' },
@@ -571,10 +590,7 @@ function proposalJsonSchema(context: AgentAContextV1, conversationOnly = false):
         type: { type: 'string', enum: ['schedule_price_objection_checkin'] },
         reason: { type: 'string', enum: ['price_objection'] },
       })] : []),
-      ...(courseBonus?.may_request_review ? [closedObject({
-        type: { type: 'string', enum: ['request_promotion_review'] },
-        reason: { type: 'string', enum: ['persistent_price_objection'] },
-      })] : []),
+      ...promotionReviewAlternatives,
       ...(courseBonus?.may_accept_offer ? [closedObject({
         type: { type: 'string', enum: ['accept_promotion'] },
       })] : []),
@@ -1837,11 +1853,17 @@ export function validateAgentATurnProposalV1(input: {
     rejections.push({ code: 'REPEATED_AGENT_REPLY', subject: 'previous_agent_question' });
   }
   const salesObjection = evaluateSalesObjectionTurnV1(input.context);
+  const authorizedBonusOffer = input.context.capabilities.course_bonus?.status === 'offer_available'
+    || input.context.capabilities.course_bonus?.status === 'accepted';
+  const authorizedBonusOfferingNames = authorizedBonusOffer
+    ? input.context.capabilities.course_bonus?.bonus_offerings.map((offering) => offering.display_name) ?? []
+    : [];
   if (
     salesObjection.kind === 'repeated_price_objection'
     && !responseProgressesRepeatedPriceObjectionV1({
       ...input.proposal.response,
       customer_expressed_real_budget_limit: customerExpressesRealBudgetLimitV1(currentCustomerText),
+      authorized_bonus_offering_names: authorizedBonusOfferingNames,
     })
   ) {
     rejections.push({ code: 'REPEATED_AGENT_REPLY', subject: 'persistent_price_objection' });
@@ -1853,6 +1875,7 @@ export function validateAgentATurnProposalV1(input: {
     && !responseAvoidsDisallowedPriceReframingV1({
       ...input.proposal.response,
       allow_requested_payment_terms: salesObjection.kind === 'price_question_with_objection',
+      authorized_bonus_offering_names: authorizedBonusOfferingNames,
     })
   ) {
     rejections.push({ code: 'FACT_VALUE_MISMATCH', subject: 'price_objection_reframe' });

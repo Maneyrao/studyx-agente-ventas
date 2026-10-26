@@ -37,7 +37,7 @@ function argValue(flag, fallback) {
   const i = args.indexOf(flag);
   return i !== -1 && args[i + 1] ? args[i + 1] : fallback;
 }
-const BASE = argValue('--base', 'https://studyx-agente-ventas.vercel.app');
+const BASE = argValue('--base', 'https://studyx-agente-ventas-sigma.vercel.app');
 const VU_STEPS = argValue('--vus', '1,10,25,50').split(',').map(Number);
 const KEY_ID = process.env.ORCHESTRATOR_KEY_ID || 'botpress-dev';
 const KEY = process.env.ORCHESTRATOR_API_KEY;

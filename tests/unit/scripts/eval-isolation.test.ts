@@ -91,7 +91,7 @@ describe('aislamiento del entorno de evaluación', () => {
   it('rechaza el puerto genérico 3000 y APIs que no sean loopback', () => {
     for (const apiBaseUrl of [
       'http://127.0.0.1:3000',
-      'https://studyx-agente-ventas.vercel.app',
+      'https://studyx-agente-ventas-sigma.vercel.app',
       'http://10.0.0.4:3217',
     ]) {
       expect(() => assertIsolatedEvaluationEnvironmentV1({

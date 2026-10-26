@@ -1,7 +1,7 @@
 /** Portable lexical detection only; authorization remains with the owning agent/backend. */
 const LINK_NOUN = /\b(?:link|enlace)\b/u;
-const DELIVERY = /\b(?:te\s+(?:lo\s+)?(?:(?:he|hemos)\s+)?(?:paso|envio|mando|comparto|pase|envie|mande|comparti|pasado|enviado|mandado|compartido)|ahi\s+va|(?:link|enlace)\b.{0,48}\bya\s+(?:esta|quedo))\b/gu;
-const COMPLETED = /\b(?:pase|envie|mande|comparti|pasado|enviado|mandado|compartido|ya\s+(?:esta|quedo))\b/u;
+const DELIVERY = /\b(?:te\s+(?:lo\s+)?(?:(?:he|hemos)\s+)?(?:paso|envio|mando|comparto|dejo|dejamos|pase|envie|mande|comparti|deje|pasado|enviado|mandado|compartido|dejado)|ahi\s+va|(?:link|enlace)\b.{0,48}\bya\s+(?:esta|quedo))\b/gu;
+const COMPLETED = /\b(?:pase|envie|mande|comparti|deje|pasado|enviado|mandado|compartido|dejado|ya\s+(?:esta|quedo))\b/u;
 const NEGATION_PREFIX = /\b(?:no|nunca|tampoco)\s+(?:ya\s+)?$/u;
 const CONDITION_PREFIX = /(?:^|\b(?:as[ií]\s+que|entonces)\s+)\s*(?:si|cuando|en\s+caso\s+de(?:\s+que)?|una\s+vez\s+que)\s+\S[\s\S]*$/u;
 const CONDITION_SUFFIX = /^\s*(?:(?:de|para)\s+(?:el\s+)?pago\s*)?(?:ahora(?:\s+mismo)?\s*)?(?:si|cuando)\s+\S/u;

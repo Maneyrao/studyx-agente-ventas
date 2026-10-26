@@ -14,7 +14,7 @@ describe('Agent A canonical sales prompt', () => {
 
     const generated = readFileSync(GENERATED_PATH, 'utf8');
     expect(generated).toContain(`export const STUDYX_AGENT_A_CANONICAL_PROMPT = ${JSON.stringify(prompt)} as const;`);
-    expect(generated).toContain("export const STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION = 'studyx-agent-a-canonical-v96' as const;");
+    expect(generated).toContain("export const STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION = 'studyx-agent-a-canonical-v97' as const;");
   });
 
   it('combines warm Meta-lead selling with autonomous objection and post-call handling', () => {
@@ -251,8 +251,9 @@ describe('Agent A canonical sales prompt', () => {
 
     expect(prompt).toMatch(/intenci[oó]n ya est[aá] clara[\s\S]*sin pedir permisos redundantes/iu);
     expect(prompt).toMatch(/con datos completos[\s\S]*ll[aá]mame[\s\S]*request_call_now[\s\S]*ese turno/iu);
-    expect(prompt).toMatch(/curso, plan y datos completos[\s\S]*directo al resumen[\s\S]*sin reconfirmar el plan/iu);
-    expect(prompt).toMatch(/confirmaci[oó]n del resumen[\s\S]*env[ií]a el enlace[\s\S]*sin pedir otro «dale»/iu);
+    expect(prompt).toMatch(/curso y datos completos[\s\S]*directo al resumen/iu);
+    expect(prompt).toMatch(/falta el plan[\s\S]*despu[eé]s de que acepte el resumen[\s\S]*env[ií]a el enlace en el mismo turno/iu);
+    expect(prompt).toMatch(/nunca pidas otro «dale»/iu);
   });
 
 });

@@ -23,7 +23,7 @@ catálogo, pagos, mensajería, Supabase y Google Sheets.
 - Retell LLM ID: `llm_eea8f670b6569b44689e9394b150`
 - Versión: `0`
 - Endpoint de Xendra: `https://xendrapro-admin.vercel.app/api/studyx/llamar`
-- URL base del orquestador: `https://studyx-agente-ventas.vercel.app`
+- URL base del orquestador: `https://studyx-agente-ventas-sigma.vercel.app`
 
 No se debe compartir ni solicitar una API key privada de Retell. El orquestador llama a Xendra,
 y Xendra administra Retell, el trunk SIP y el número saliente.
@@ -103,7 +103,7 @@ una llamada en curso para ese número.
 URL:
 
 ```text
-POST https://studyx-agente-ventas.vercel.app/retell/eventos
+POST https://studyx-agente-ventas-sigma.vercel.app/retell/eventos
 ```
 
 Headers obligatorios:
@@ -128,15 +128,15 @@ Xendra; no se debe configurar Retell para enviar directamente al orquestador de 
 Todas usan `POST`, `Content-Type: application/json` y el header
 `x-studyx-tools-secret: <RETELL_TOOLS_SECRET>`.
 
-1. `https://studyx-agente-ventas.vercel.app/retell/tools/consultar-curso`
-2. `https://studyx-agente-ventas.vercel.app/retell/tools/consultar-oferta`
-3. `https://studyx-agente-ventas.vercel.app/retell/tools/guardar-datos-contacto`
-4. `https://studyx-agente-ventas.vercel.app/retell/tools/enviar-link-pago`
-5. `https://studyx-agente-ventas.vercel.app/retell/tools/verificar-pago`
-6. `https://studyx-agente-ventas.vercel.app/retell/tools/enviar-material`
-7. `https://studyx-agente-ventas.vercel.app/retell/tools/derivar-humano`
-8. `https://studyx-agente-ventas.vercel.app/retell/tools/agendar-seguimiento`
-9. `https://studyx-agente-ventas.vercel.app/retell/tools/registrar-resultado`
+1. `https://studyx-agente-ventas-sigma.vercel.app/retell/tools/consultar-curso`
+2. `https://studyx-agente-ventas-sigma.vercel.app/retell/tools/consultar-oferta`
+3. `https://studyx-agente-ventas-sigma.vercel.app/retell/tools/guardar-datos-contacto`
+4. `https://studyx-agente-ventas-sigma.vercel.app/retell/tools/enviar-link-pago`
+5. `https://studyx-agente-ventas-sigma.vercel.app/retell/tools/verificar-pago`
+6. `https://studyx-agente-ventas-sigma.vercel.app/retell/tools/enviar-material`
+7. `https://studyx-agente-ventas-sigma.vercel.app/retell/tools/derivar-humano`
+8. `https://studyx-agente-ventas-sigma.vercel.app/retell/tools/agendar-seguimiento`
+9. `https://studyx-agente-ventas-sigma.vercel.app/retell/tools/registrar-resultado`
 
 Las URLs placeholder `REEMPLAZAR-ORQUESTADOR.studyx.com` deben eliminarse completamente.
 

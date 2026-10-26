@@ -88,8 +88,8 @@ describe('Agent A Brain prompt', () => {
     const encoded = instructions.split('<authorized_context>')[1]!.split('</authorized_context>')[0]!;
     expect(JSON.parse(encoded)).toEqual(current);
     expect(instructions).not.toContain('<current_turn_guidance>');
-    expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v96');
-    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v129');
+    expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v97');
+    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v131');
   });
 
   it('adds turn-specific guidance for a repeated price objection without forcing a script', () => {
@@ -172,6 +172,36 @@ describe('Agent A Brain prompt', () => {
     expect(guidance).not.toContain('discounts or bonus courses to make the price feel lower');
   });
 
+  it('uses durable review capability for a direct promotion request without a regex-visible prior objection', () => {
+    const current = context();
+    current.turn.batch_messages = [
+      { id: 'current-1', text: 'no tenes nnguan oferta' },
+      { id: 'current-2', text: 'para hacerme' },
+      { id: 'current-3', text: '?' },
+    ];
+    current.turn.recent_turns = [];
+    current.capabilities.course_bonus = {
+      status: 'review_available',
+      may_schedule_checkin: false,
+      may_request_review: true,
+      may_accept_offer: false,
+      may_send_promoted_payment: false,
+      promotion_code: null,
+      bonus_selection_mode: 'any_active_course',
+      interest_offering_code: 'fotografia_profesional',
+      bonus_offerings: [],
+    };
+
+    const guidance = buildAgentABrainInstructionsV1(current)
+      .split('<current_commercial_guidance kind="price_objection">')[1]!
+      .split('</current_commercial_guidance>')[0]!;
+
+    expect(guidance).toContain('request_promotion_review');
+    expect(guidance).toContain('bonus_offering_code');
+    expect(guidance).toContain('do not name or imply a specific gift yet');
+    expect(guidance).not.toContain('discounts or bonus courses to make the price feel lower');
+  });
+
   it('separates a value gap from a real budget limit without changing the price', () => {
     const current = context();
     current.turn.batch_messages = [{ id: 'current-1', text: 'Me parece caro' }];
@@ -203,6 +233,37 @@ describe('Agent A Brain prompt', () => {
 
     expect(guidance).toContain('Answer the requested authorized price or payment terms exactly');
     expect(guidance).toContain('Do not use that answer as a separate tactic to make the price feel lower');
+  });
+
+  it.each([
+    ['Me parece caro', 'price_objection'],
+    ['Me parece caro, cuánto sería en 12 cuotas?', 'price_question_with_objection'],
+    ['Si no me ofrecés la promo no', 'price_objection'],
+  ] as const)('uses an already authorized course bonus for %s', (message, kind) => {
+    const current = context();
+    current.turn.batch_messages = [{ id: 'current-1', text: message }];
+    current.capabilities.course_bonus = {
+      status: 'offer_available',
+      may_schedule_checkin: false,
+      may_request_review: false,
+      may_accept_offer: true,
+      may_send_promoted_payment: false,
+      promotion_code: 'photo-pair',
+      interest_offering_code: 'fotografia_profesional',
+      bonus_offerings: [{
+        code: 'fotografia_celulares',
+        display_name: 'Fotografía con Celulares para Tiendas Online',
+        position: 1,
+      }],
+    };
+
+    const guidance = buildAgentABrainInstructionsV1(current)
+      .split(`<current_commercial_guidance kind="${kind}">`)[1]
+      ?.split('</current_commercial_guidance>')[0];
+
+    expect(guidance).toContain('Use only the authorized promotion_code and bonus_offerings');
+    expect(guidance).toContain('the paid course price does not change');
+    expect(guidance).not.toContain('never add cost-per-day comparisons, discounts or bonus courses');
   });
 
   it.each([

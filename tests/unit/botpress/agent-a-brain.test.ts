@@ -1662,6 +1662,20 @@ describe('Agent A Brain V1', () => {
 
   it('exposes an authorized promotion review in the real DeepSeek wire schema and parses its response', async () => {
     const current = context();
+    current.catalog.available_offerings = [
+      {
+        code: 'redes-informaticas', fact_id: 'offering:redes-informaticas:name:v1',
+        display_name: 'Redes Informáticas', area_code: 'tecnologia',
+      },
+      {
+        code: 'marketing-digital', fact_id: 'offering:marketing-digital:name:v1',
+        display_name: 'Marketing Digital', area_code: 'emprendedores',
+      },
+      {
+        code: 'excel-integral', fact_id: 'offering:excel-integral:name:v1',
+        display_name: 'Excel Integral', area_code: 'tecnologia',
+      },
+    ];
     current.capabilities.course_bonus = {
       status: 'review_available',
       may_schedule_checkin: false,
@@ -1669,12 +1683,14 @@ describe('Agent A Brain V1', () => {
       may_accept_offer: false,
       may_send_promoted_payment: false,
       promotion_code: null,
+      bonus_selection_mode: 'any_active_course',
       interest_offering_code: 'redes-informaticas',
       bonus_offerings: [],
     };
     const reviewAction = {
       type: 'request_promotion_review' as const,
       reason: 'persistent_price_objection' as const,
+      bonus_offering_code: 'marketing-digital',
     };
     const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(providerResponse(
       200,
@@ -1699,11 +1715,49 @@ describe('Agent A Brain V1', () => {
     expect(alternatives.find((item: { properties: { type: { enum: string[] } } }) => (
       item.properties.type.enum.includes('request_promotion_review')
     ))).toMatchObject({
-      properties: { reason: { enum: ['persistent_price_objection'] } },
-      required: ['type', 'reason'],
+      properties: {
+        reason: { enum: ['persistent_price_objection'] },
+        bonus_offering_code: { enum: ['marketing-digital', 'excel-integral'] },
+      },
+      required: ['type', 'reason', 'bonus_offering_code'],
       additionalProperties: false,
     });
     expect(result.proposal.proposed_action).toEqual(reviewAction);
+  });
+
+  it('omits an any-course promotion review when the catalog has no eligible complement', async () => {
+    const current = context();
+    current.catalog.available_offerings = [{
+      code: 'redes-informaticas', fact_id: 'offering:redes-informaticas:name:v1',
+      display_name: 'Redes Informáticas', area_code: 'tecnologia',
+    }];
+    current.capabilities.course_bonus = {
+      status: 'review_available',
+      may_schedule_checkin: false,
+      may_request_review: true,
+      may_accept_offer: false,
+      may_send_promoted_payment: false,
+      promotion_code: null,
+      bonus_selection_mode: 'any_active_course',
+      interest_offering_code: 'redes-informaticas',
+      bonus_offerings: [],
+    };
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(providerResponse(
+      200,
+      responsesSuccessBody(proposal()),
+    ));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await generateDeepSeekAgentATurnProposalV1({
+      context: current,
+      apiKey: 'deepseek-test-key',
+      signal: new AbortController().signal,
+    });
+
+    const body = JSON.parse(String(fetchMock.mock.calls[0]![1]?.body));
+    const actionTypes = body.text.format.schema.properties.proposed_action.anyOf
+      .map((item: { properties: { type: { enum: string[] } } }) => item.properties.type.enum[0]);
+    expect(actionTypes).not.toContain('request_promotion_review');
   });
 
   it('omits a revoked promotion review from the real DeepSeek wire schema', async () => {

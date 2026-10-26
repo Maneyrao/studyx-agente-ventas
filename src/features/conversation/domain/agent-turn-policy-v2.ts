@@ -390,6 +390,13 @@ export function authorizeAgentTurnV2(input: {
   // consume that request. This makes reconfirmation a state boundary rather
   // than optional wording in the prompt.
   const paymentConfirmationSatisfied = state.awaiting_reply === 'payment_confirmation';
+  // `payment_plan` is a structured checkpoint created when Agent A explicitly
+  // asked how the customer wants to pay. A canonical plan selection answering
+  // that checkpoint is checkout intent; no raw-text reinterpretation or extra
+  // "dale" is needed. Intake, promotion, paid-state and veto boundaries below
+  // still own authorization.
+  const answersRequestedPaymentPlan = state.awaiting_reply === 'payment_plan'
+    && selectsPaymentPlanNow;
   const explicitlyResumesDurablePlan = resumesDurablePlan
     && explicitlyRequestsPaymentLink(input.current_customer_messages);
   const paymentLinkWasAlreadyDelivered = state.stage === 'payment_link_sent'
@@ -404,6 +411,7 @@ export function authorizeAgentTurnV2(input: {
     && (paymentConfirmationSatisfied || paymentLinkWasAlreadyDelivered
       || explicitlyResumesDurablePlan
       || sameTurnPlanAndCheckoutRequested
+      || answersRequestedPaymentPlan
       || (pendingPaymentRequest !== null && moves.has('provide_contact_details')));
   // Asking for the next missing field is also prompt guidance. Missing intake
   // remains a hard boundary only for the payment side effect below.
@@ -412,7 +420,8 @@ export function authorizeAgentTurnV2(input: {
     && selectedPlan !== null && proposal.proposed_action.payment_plan === selectedPlan
     && !moves.has('report_payment') && !selectedPurchasePaid;
   const paymentLinkRequestedNow = !paymentRequestWithdrawn
-    && (moves.has('request_payment_link') || explicitPaymentLinkRequested);
+    && (moves.has('request_payment_link') || explicitPaymentLinkRequested
+      || answersRequestedPaymentPlan);
   const paymentLinkRequested = paymentLinkRequestedNow
     || (!paymentRequestWithdrawn && pendingPaymentRequest !== null && moves.has('provide_contact_details'));
   if (proposal.proposed_action.type === 'request_call_now') {
