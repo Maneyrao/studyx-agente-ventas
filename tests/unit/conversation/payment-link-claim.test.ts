@@ -27,6 +27,7 @@ const cases: ReadonlyArray<readonly [string, boolean]> = [
   ['No te lo he enviado; me falta tu correo para el enlace.', false],
   ['¿Ya te envié el enlace?', false],
   ['Te paso el link ahora.', true],
+  ['Te dejo el enlace para que lo hagas.', true],
   ['Ahí va el link.', true],
   ['Ahí va, Matía. El enlace es de Stripe.', true],
   ['¿Ahí va el enlace, para avanzar?', false],

@@ -199,6 +199,45 @@ describe('plannerless Agent A authority', () => {
     } });
   });
 
+  it('sends checkout when the customer answers the requested payment-plan choice', () => {
+    const result = authorize({
+      state: state({
+        selected_offering_code: 'redes_informaticas',
+        selected_payment_plan: null,
+        stage: 'course_selected',
+        awaiting_reply: 'payment_plan',
+      }),
+      intake: completeIntake,
+      customerText: '1 pago',
+      proposal: proposal({
+        move: {
+          schema_version: 1,
+          move: 'select_payment_plan',
+          secondary_moves: [],
+          vetoes: [],
+          payment_plan: 'one_time',
+          confidence: 1,
+        },
+        response: { messages: ['Listo, un pago único de USD 360.'] },
+      }),
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      action: {
+        type: 'send_payment_link',
+        offering_code: 'redes_informaticas',
+        payment_plan: 'one_time',
+      },
+      transition: {
+        selected_payment_plan: 'one_time',
+        stage: 'payment_link_sent',
+        awaiting_reply: 'none',
+        payment_link_request: { status: 'consumed' },
+      },
+    });
+  });
+
   it('keeps an explicit payment tool request pending during a fenced selection-only continuation', () => {
     const result = authorizeAgentTurnV2({ effects_allowed: false,
       state: state({ selected_offering_code: 'redes_informaticas' }), offerings, facts, contact_intake: completeIntake,
