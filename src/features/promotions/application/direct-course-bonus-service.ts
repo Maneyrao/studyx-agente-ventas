@@ -75,6 +75,12 @@ function authorizedLimit(contactId: string): number | null {
       ? config.maxBonusCourses : null;
   } catch { return null; }
 }
+function mayAcceptExistingPackage(contactId: string): boolean {
+  try {
+    // Review stops new promises, not acceptance of an already delivered one.
+    return loadCourseBonusFlowConfig().mode === 'review' || authorizedLimit(contactId) !== null;
+  } catch { return false; }
+}
 async function execute<T>(db: DbClient, work: (tx: DbClient) => Promise<T>): Promise<T | Rejected> {
   try { return await transaction(db, work); } catch (error) {
     if (error instanceof Rejection) return { ok: false, reason: error.reason };
@@ -99,6 +105,13 @@ interface OfferRow {
 function durable(offer: OfferRow, version = offer.offer_version): DurableResult {
   return { ok: true, offer_id: offer.id, promotion_code: offer.promotion_code,
     promotion_cycle_id: offer.promotion_cycle_id, offer_version: version };
+}
+async function validateExistingPackage(tx: DbClient, offer: OfferRow): Promise<void> {
+  const [snapshot] = await tx<Array<{valid:boolean}>>`SELECT count(*) BETWEEN 1 AND 3
+    AND count(*)=${offer.offer_version} AND min(position)=1 AND max(position)=${offer.offer_version}
+    AND bool_and(position=offer_version) AS valid
+    FROM promotion_offer_bonus_offerings WHERE offer_id=${offer.id}::uuid`;
+  if (!snapshot.valid) reject('stale_offer_version');
 }
 async function lockIdentity(tx: DbClient, input: Identity) {
   const [context] = await tx<Array<{stage: string; selected_offering_code: string | null; paid_id: string; paid_status: string; paid_type: string}>>`
@@ -259,12 +272,13 @@ export async function offerDirectCourseBonusV1(db: DbClient, input: OfferDirectC
 }
 
 export async function acceptDirectCourseBonusV1(db: DbClient, input: AcceptDirectCourseBonusInputV1): Promise<AcceptDirectCourseBonusResultV1> {
-  if (!authorizedLimit(input.contact_id)) return {ok:false,reason:'bonus_disabled'};
+  if (!mayAcceptExistingPackage(input.contact_id)) return {ok:false,reason:'bonus_disabled'};
   return execute(db,async tx=>{
     if (!input.promotion_code || !input.promotion_cycle_id || !Number.isInteger(input.expected_offer_version) || input.expected_offer_version<1) reject('stale_offer_version');
     const context=await lockIdentity(tx,input);
     const offer=await resolveOffer(tx,input,context.paid_id);
     if (!offer || offer.offer_version!==input.expected_offer_version) reject('stale_offer_version');
+    await validateExistingPackage(tx,offer);
     if (['accepted','attached'].includes(offer.status) && offer.accepted_source_turn_id===input.source_turn_id) return durable(offer);
     await validateOpen(tx,input,context,offer);
     await tx`SELECT accept_direct_course_bonus(${offer.id}::uuid,${input.source_turn_id}::uuid,${input.expected_offer_version})`;
@@ -282,6 +296,7 @@ export async function acceptDirectCourseBonusByVoiceV1(db: DbClient, input: Acce
     const context=await lockIdentity(tx,input);
     const offer=await resolveOffer(tx,input,context.paid_id);
     if (!offer || offer.offer_version!==input.expected_offer_version) reject('stale_offer_version');
+    await validateExistingPackage(tx,offer);
     const [call]=await tx`SELECT id FROM call_sessions WHERE id=${input.call_id}::uuid
       AND workspace_id=${input.workspace_id}::uuid AND contact_id=${input.contact_id}::uuid
       AND conversation_id=${input.conversation_id}::uuid AND source_turn_id=${input.source_turn_id}::uuid
@@ -293,7 +308,7 @@ export async function acceptDirectCourseBonusByVoiceV1(db: DbClient, input: Acce
       if (evidence && evidence.call_id!==input.call_id) reject('stale_offer_version');
       return durable(offer);
     }
-    if (!authorizedLimit(input.contact_id)) reject('bonus_disabled');
+    if (!mayAcceptExistingPackage(input.contact_id)) reject('bonus_disabled');
     await validateOpen(tx,input,context,offer);
     await tx`INSERT INTO promotion_voice_acceptances(offer_id,call_id,workspace_id,contact_id,conversation_id,promotion_cycle_id,offer_version)
       VALUES (${offer.id}::uuid,${input.call_id}::uuid,${input.workspace_id}::uuid,${input.contact_id}::uuid,

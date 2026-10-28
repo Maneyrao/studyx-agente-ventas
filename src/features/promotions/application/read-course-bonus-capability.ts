@@ -481,6 +481,15 @@ export async function readCourseBonusCapabilityV1(input: {
 }, deps: { readonly db: DbClient }): Promise<CourseBonusCapabilityV1> {
   try {
     const flow = loadCourseBonusFlowConfig();
+    if (flow.mode === 'review' && input.channel === 'text' && (input.selected_offering_code || input.source_turn_id)) {
+      const obligation=await readDirectCapability(input,deps.db,flow.maxBonusCourses ?? 3);
+      if (['offered','accepted','attached'].includes(obligation.package_status ?? '')
+        && obligation.bonus_offerings.length>=1 && obligation.bonus_offerings.length<=3
+        && obligation.offer_version===obligation.bonus_offerings.length) {
+        return {...obligation,enabled:false,may_offer_bonus:false,
+          may_request_review:false,may_schedule_checkin:false};
+      }
+    }
     if (!isCentralCargaBonusEnabledForContact(loadCentralCargaBonusConfig(),input.contact_id)) {
       return flow.mode === 'direct' && flow.maxBonusCourses !== null
         ? {...hidden('unavailable'),enabled:false,max_bonus_courses:flow.maxBonusCourses}
@@ -489,13 +498,6 @@ export async function readCourseBonusCapabilityV1(input: {
     if (flow.mode === 'direct' && flow.maxBonusCourses !== null) {
       if (input.channel !== 'text') return {...hidden('unavailable'),enabled:false};
       return readDirectCapability(input,deps.db,flow.maxBonusCourses);
-    }
-    if (flow.mode === 'review' && input.channel === 'text' && input.selected_offering_code) {
-      const obligation=await readDirectCapability(input,deps.db,flow.maxBonusCourses ?? 3);
-      if(obligation.package_status === 'accepted' || obligation.package_status === 'attached') {
-        return {...obligation,enabled:false,may_offer_bonus:false,may_accept_offer:false,
-          may_request_review:false,may_schedule_checkin:false};
-      }
     }
   } catch { return {...hidden('unavailable'),enabled:false}; }
   const contexts = await deps.db<Array<{

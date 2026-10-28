@@ -17,7 +17,7 @@ run('direct decision atomic repair', () => {
       conversation_id:f.conversation_id,channel:'text',selected_offering_code:'entrenamiento_funcional',source_turn_id:f.turn_id},{db:sql}))
       .toMatchObject({enabled:true,max_bonus_courses:2,may_offer_bonus:false,may_request_review:false});
   });
-  it('reserves one outbound and outbox, confirms delivery idempotently, then accepts the exact later package', async () => {
+  it.each(['direct','review'] as const)('reserves one outbound and accepts its exact delivered package in %s mode', async mode => {
     vi.stubEnv('CENTRAL_CARGA_BONUS_ENABLED','true');vi.stubEnv('COURSE_BONUS_FLOW_MODE','direct');vi.stubEnv('COURSE_BONUS_MAX_COURSES','2');
     const f = await seedConversationForAgentTurn({selected_offering_code:'entrenamiento_funcional',intake_complete:true});
     const [prior] = await sql`INSERT INTO messages(conversation_id,contact_id,direction,content,created_at)
@@ -79,7 +79,8 @@ run('direct decision atomic repair', () => {
     expect((await sql`SELECT delivered_at FROM promotion_offer_bonus_offerings WHERE offered_outbound_message_id=${id}`)[0].delivered_at).not.toBeNull();
     await expect(recordDeliveryReport({...receipt,delivered_at:new Date(Date.now()+1000).toISOString()})).rejects.toMatchObject({code:'DELIVERY_REPORT_CONFLICT'});
     // Move the fixture's second inbound to the actual later receipt moment.
-    await sql`UPDATE messages SET created_at=clock_timestamp(),metadata=metadata-'occurred_at_trusted'
+    await sql`UPDATE messages SET created_at=GREATEST(clock_timestamp(),
+      (SELECT delivered_at+interval '1 microsecond' FROM outbound_deliveries WHERE message_id=${id})),metadata=metadata-'occurred_at_trusted'
       WHERE id=${f.second_turn_id}`;
     const delivered = await capability.readCourseBonusCapabilityV1({workspace_slug:'studyx',contact_id:f.contact_id,
       conversation_id:f.conversation_id,channel:'text',selected_offering_code:'entrenamiento_funcional',source_turn_id:f.second_turn_id},{db:sql});
@@ -95,6 +96,14 @@ run('direct decision atomic repair', () => {
     expect((await sql`SELECT count(*)::int n FROM messages WHERE in_reply_to=${f.second_turn_id}`)[0].n).toBe(0);
     expect((await sql`SELECT count(*)::int n FROM promotion_offer_bonus_offerings WHERE offered_outbound_message_id=${id}`)[0].n).toBe(1);
     vi.restoreAllMocks();vi.stubEnv('COURSE_BONUS_MAX_COURSES','2');
+    vi.stubEnv('COURSE_BONUS_FLOW_MODE',mode);
+    if (mode === 'review') {
+      vi.stubEnv('CENTRAL_CARGA_BONUS_ENABLED','false');
+      vi.stubEnv('CENTRAL_CARGA_BONUS_CANARY_CONTACT_IDS','');
+      expect(await capability.readCourseBonusCapabilityV1({workspace_slug:'studyx',contact_id:f.contact_id,
+        conversation_id:f.conversation_id,channel:'text',selected_offering_code:'entrenamiento_funcional',source_turn_id:f.second_turn_id},{db:sql}))
+        .toMatchObject({enabled:false,may_offer_bonus:false,may_accept_offer:true,offer_version:1});
+    }
     const action = {type:'accept_promotion',interest_offering_code:'entrenamiento_funcional',promotion_code:delivered.promotion_code,
       promotion_cycle_id:delivered.promotion_cycle_id,offer_version:1};
     const accepted=await commitAgentDecision({...input,turn_id:f.second_turn_id,agent_turn_v2:{schema_version:2,

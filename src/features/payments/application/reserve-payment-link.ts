@@ -125,7 +125,9 @@ export async function reservePaymentLink(
     || (input.accepted_offer_version ?? 0)>3)) {
     throw new PaymentLinkReservationError('PROMOTION_NOT_AUTHORIZED');
   }
-  if (input.promotion_code && !isCentralCargaBonusEnabledForContact(
+  // A complete direct tuple is revalidated against the locked, sealed offer
+  // below. Rollback must not disable payment for that existing obligation.
+  if (input.promotion_code && !hasDirectIdentity && !isCentralCargaBonusEnabledForContact(
     loadCentralCargaBonusConfig(),
     input.contact_id,
   )) {

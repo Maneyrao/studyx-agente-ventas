@@ -56,10 +56,6 @@ export class PostgresRetellOrchestrationStore implements RetellOrchestrationStor
   async readCourseBonusPromotion(
     input: Parameters<NonNullable<RetellOrchestrationStore['readCourseBonusPromotion']>>[0],
   ) {
-    if (!isCentralCargaBonusEnabledForContact(
-      loadCentralCargaBonusConfig(),
-      input.contactId,
-    )) return null;
     const workspace = await this.workspaceForContact(input.workspaceSlug, input.contactId, input.callId);
     if (!workspace || workspace.conversation_id !== input.conversationId) return null;
     // Direct packages belong to the original text cycle. Reading never seals,
@@ -99,6 +95,7 @@ export class PostgresRetellOrchestrationStore implements RetellOrchestrationStor
       };
     }
     if (loadCourseBonusFlowConfig().mode === 'direct') return null;
+    if (!isCentralCargaBonusEnabledForContact(loadCentralCargaBonusConfig(),input.contactId)) return null;
     const promotion = await this.db.begin(async (tx) => {
       await tx`
         UPDATE promotion_offers offer

@@ -67,6 +67,28 @@ async function fixture() {
 }
 
 run('direct course bonus voice continuity',()=>{
+  it('accepts the delivered exact voice package after review rollback while new offers remain disabled',async()=>{
+    const f=await fixture();
+    vi.stubEnv('COURSE_BONUS_FLOW_MODE','review');vi.stubEnv('COURSE_BONUS_MAX_COURSES','1');
+    vi.stubEnv('CENTRAL_CARGA_BONUS_ENABLED','false');vi.stubEnv('CENTRAL_CARGA_BONUS_CANARY_CONTACT_IDS','');
+    expect(await f.store.readCourseBonusPromotion(f.common)).toMatchObject({offerVersion:1,promotionCycleId:f.first.promotion_cycle_id});
+    expect(await f.store.requestAgentAPaymentLink(f.payment(2))).toMatchObject({sent:false});
+    expect(await f.store.requestAgentAPaymentLink(f.payment())).toMatchObject({sent:true});
+    const [payment]=await db!`SELECT id,promotion_offer_id,accepted_offer_version FROM payments WHERE contact_id=${f.common.contactId}`;
+    expect(payment).toMatchObject({promotion_offer_id:f.first.offer_id,accepted_offer_version:1});
+    expect(await db!`SELECT offering_code_snapshot FROM payment_bonus_offerings WHERE payment_id=${payment.id}`)
+      .toEqual([{offering_code_snapshot:f.courses[1].code}]);
+    await expect(f.append(2)).rejects.toThrow('bonus_disabled');
+  });
+  it('does not accept pending or failed voice delivery after review rollback',async()=>{
+    const f=await fixture();const second=await f.append(2,false);
+    vi.stubEnv('COURSE_BONUS_FLOW_MODE','review');
+    expect(await f.store.requestAgentAPaymentLink(f.payment())).toMatchObject({sent:false});
+    await db!`UPDATE outbound_deliveries SET state='leased' WHERE message_id=${second.outbound_message_id}`;
+    await db!`UPDATE outbound_deliveries SET state='failed_retryable' WHERE message_id=${second.outbound_message_id}`;
+    expect(await f.store.requestAgentAPaymentLink(f.payment())).toMatchObject({sent:false});
+    expect(await db!`SELECT id FROM payments WHERE contact_id=${f.common.contactId}`).toHaveLength(0);
+  });
   it('refuses ordinary checkout when the model omits every promotion field of an offered package',async()=>{
     const f=await fixture();
     expect(await f.store.requestAgentAPaymentLink({...f.common,paymentPlan:'one_time'}))

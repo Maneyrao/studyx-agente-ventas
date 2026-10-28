@@ -55,6 +55,36 @@ async function fixture() {
 }
 
 run('atomic direct bonus service', () => {
+  it('accepts only the existing delivered current package after review rollback',async()=>{
+    const f=await fixture();const input=f.input();const first=await offerDirectCourseBonusV1(db!,input);
+    expect(first.ok).toBe(true);if(!first.ok) throw new Error('missing offer');
+    vi.stubEnv('COURSE_BONUS_FLOW_MODE','review');vi.stubEnv('COURSE_BONUS_MAX_COURSES','1');
+    vi.stubEnv('CENTRAL_CARGA_BONUS_ENABLED','false');vi.stubEnv('CENTRAL_CARGA_BONUS_CANARY_CONTACT_IDS','');
+    const accept={...f.identity,expected_offer_version:1,source_turn_id:await f.inbound(0)};
+    expect(await acceptDirectCourseBonusV1(db!,accept)).toEqual({ok:false,reason:'bonus_without_reply'});
+    await f.deliver(input.outbound.id);
+    expect(await acceptDirectCourseBonusV1(db!,accept)).toEqual({ok:false,reason:'bonus_without_reply'});
+    const later={...accept,source_turn_id:await f.inbound(0)};
+    expect(await acceptDirectCourseBonusV1(db!,{...later,expected_offer_version:2})).toEqual({ok:false,reason:'stale_offer_version'});
+    expect(await offerDirectCourseBonusV1(db!,f.input(later.source_turn_id,2,1))).toEqual({ok:false,reason:'bonus_disabled'});
+    const fresh=await fixture();
+    expect(await offerDirectCourseBonusV1(db!,fresh.input())).toEqual({ok:false,reason:'bonus_disabled'});
+    expect(await acceptDirectCourseBonusV1(db!,later)).toMatchObject({ok:true,offer_id:first.offer_id,offer_version:1});
+    expect(await db!`SELECT position,offering_code_snapshot FROM promotion_offer_bonus_offerings WHERE offer_id=${first.offer_id}`)
+      .toEqual([{position:1,offering_code_snapshot:f.courses[1].code}]);
+  });
+  it('preserves a previously offered two-course package when rollback lowers the new-offer cap to one',async()=>{
+    const f=await fixture();const first=f.input();const offer=await offerDirectCourseBonusV1(db!,first);
+    expect(offer.ok).toBe(true);if(!offer.ok) throw new Error('missing offer');
+    await f.deliver(first.outbound.id);
+    const second=f.input(await f.inbound(0),2,1);
+    expect(await offerDirectCourseBonusV1(db!,second)).toMatchObject({ok:true,offer_version:2});
+    await f.deliver(second.outbound.id);
+    vi.stubEnv('COURSE_BONUS_FLOW_MODE','review');vi.stubEnv('COURSE_BONUS_MAX_COURSES','1');
+    expect(await acceptDirectCourseBonusV1(db!,{...f.identity,expected_offer_version:2,source_turn_id:await f.inbound(0)}))
+      .toMatchObject({ok:true,offer_id:offer.offer_id,offer_version:2});
+    expect(await offerDirectCourseBonusV1(db!,f.input(await f.inbound(0),3,2))).toEqual({ok:false,reason:'bonus_disabled'});
+  });
   it.each(['interest_current','selected_current','selected_future','selected_foreign'] as const)
   ('does not borrow a prior course objection for unproven commercial context (%s)',async scenario=>{
     const f=await seedConversationForAgentTurn({intake_complete:true,first_message:'Me parece caro'});

@@ -253,13 +253,13 @@ describe('course bonus capability', () => {
     }
   });
 
-  it('hides the entire capability while the Central v2 feature flag is disabled', async () => {
+  it('checks for existing direct obligations but hides new capability while the Central v2 flag is disabled', async () => {
     const prior = process.env.CENTRAL_CARGA_BONUS_ENABLED;
     delete process.env.CENTRAL_CARGA_BONUS_ENABLED;
     let queried = false;
     const db = (() => {
       queried = true;
-      throw new Error('database must not be queried while disabled');
+      return [];
     }) as unknown as DbClient;
     try {
       await expect(readCourseBonusCapabilityV1({
@@ -273,7 +273,7 @@ describe('course bonus capability', () => {
         may_request_review: false,
         may_send_promoted_payment: false,
       });
-      expect(queried).toBe(false);
+      expect(queried).toBe(true);
     } finally {
       if (prior === undefined) delete process.env.CENTRAL_CARGA_BONUS_ENABLED;
       else process.env.CENTRAL_CARGA_BONUS_ENABLED = prior;

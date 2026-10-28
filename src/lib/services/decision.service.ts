@@ -1896,7 +1896,8 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
           ?? existingSalesContext?.selected_offering_code
           ?? null;
         if (paidOfferingCode) {
-          if (committedBusinessAction.type === 'accept_promotion' && courseBonusCapability?.enabled === true) {
+          if (committedBusinessAction.type === 'accept_promotion'
+            && (courseBonusCapability?.enabled === true || courseBonusCapability?.promotion_cycle_id)) {
             const action = committedBusinessAction;
             const result = await acceptDirectCourseBonusV1(db,{
               workspace_id:canonicalWorkspaceId,contact_id:turn.contact_id,conversation_id:turn.conversation_id,

@@ -497,7 +497,7 @@ export function authorizeAgentTurnV2(input: {
     else reasons.push('ACTION_NOT_AUTHORIZED');
   }
   if (proposal.proposed_action.type === 'accept_promotion') {
-    if (input.course_bonus?.enabled === true) {
+    if (input.course_bonus?.enabled === true || input.course_bonus?.promotion_cycle_id) {
       const requested = proposal.proposed_action;
       const cap = input.course_bonus;
       if (!cap.may_accept_offer || !('promotion_cycle_id' in requested)
