@@ -402,6 +402,7 @@ export async function cancelOpenCourseBonusOffersForCourseChangeV1(
       AND offer.contact_id = ${input.contact_id}::uuid
       AND offer.conversation_id = ${input.conversation_id}::uuid
       AND offer.status IN ('pending_review','offered','accepted')
+      AND NOT (offer.package_mode = 'direct' AND offer.status IN ('accepted','attached'))
       AND offer.payment_id IS NULL
       AND paid.id = offer.paid_offering_id
       AND paid.workspace_id = offer.workspace_id
