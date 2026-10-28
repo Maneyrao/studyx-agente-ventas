@@ -56,7 +56,7 @@ BEGIN
     OR EXISTS (SELECT 1 FROM public.promotion_offer_bonus_offerings WHERE offer_id=p_offer_id AND source_turn_id=p_turn_id) THEN
     RAISE EXCEPTION 'Distinct correlated customer turn required';
   END IF;
-  IF t.created_at <= b.delivered_at THEN RAISE EXCEPTION 'Customer turn must be later than confirmed delivery'; END IF;
+  IF public.message_occurrence_v1(t.metadata,t.created_at) <= b.delivered_at THEN RAISE EXCEPTION 'Customer turn must be later than confirmed delivery'; END IF;
 END $$;
 
 CREATE OR REPLACE FUNCTION public.enforce_promotion_offer_bonus_identity()
@@ -208,7 +208,8 @@ BEGIN
 END $$;
 
 REVOKE ALL ON FUNCTION public.append_direct_course_bonus(uuid,uuid,uuid,uuid,integer),public.accept_direct_course_bonus(uuid,uuid,integer),
-  public.assert_direct_bonus_later_turn(uuid,uuid),public.confirm_direct_bonus_delivery() FROM PUBLIC;
+  public.assert_direct_bonus_later_turn(uuid,uuid),public.confirm_direct_bonus_delivery(),
+  public.guard_direct_bonus_offer(),public.advance_direct_bonus_version() FROM PUBLIC, anon, authenticated;
 DO $$ BEGIN
   IF EXISTS(SELECT 1 FROM pg_roles WHERE rolname='orchestrator_role') THEN
     GRANT EXECUTE ON FUNCTION public.append_direct_course_bonus(uuid,uuid,uuid,uuid,integer),public.accept_direct_course_bonus(uuid,uuid,integer),

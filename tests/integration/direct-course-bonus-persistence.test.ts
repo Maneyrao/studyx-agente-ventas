@@ -100,6 +100,21 @@ run('direct append-only bonus persistence', () => {
     await expect(db!`DELETE FROM promotion_offer_bonus_offerings WHERE offer_id=${o.id}`).rejects.toThrow(/immutable/i);
   });
 
+  it.each(['extension','acceptance'])('rejects %s from a customer message occurring before delivery but ingested afterward',async action=>{
+    const f=await fixture();const o=await f.offer();const first=await f.inbound('2026-10-28T12:00:00Z');const offered=await f.outbound(first);
+    await f.append(o.id,1,first,offered,0);await f.deliver(offered);
+    const delayed=await f.inbound('2026-10-28T12:00:02Z');
+    await db!`UPDATE messages SET metadata=${db!.json({occurred_at_trusted:true,occurred_at:'2026-10-28T12:00:00.500Z'})} WHERE id=${delayed}`;
+    if(action==='extension') {
+      const reply=await f.outbound(delayed);
+      await expect(f.append(o.id,2,delayed,reply,1)).rejects.toThrow(/later/i);
+    } else {
+      await expect(db!`SELECT accept_direct_course_bonus(${o.id}::uuid,${delayed}::uuid,1)`).rejects.toThrow(/later/i);
+    }
+    const [unchanged]=await db!`SELECT status,offer_version,bonus_snapshot_sealed_at FROM promotion_offers WHERE id=${o.id}`;
+    expect(unchanged).toMatchObject({status:'offered',offer_version:1,bonus_snapshot_sealed_at:null});
+  });
+
   it('retains cancelled history and creates a distinct cycle after switching away and back',async()=>{
     const f=await fixture();const o=await f.offer();const t=await f.inbound('2026-10-28T12:00:00Z');const m=await f.outbound(t);
     await f.append(o.id,1,t,m,0);
@@ -166,6 +181,29 @@ run('direct append-only bonus persistence', () => {
 
   it('executes through the production orchestrator role while preserving receipt and acceptance guards',async()=>{
     const f=await fixture();const o=await f.offer();const t=await f.inbound('2026-10-28T12:00:00Z');const m=await f.outbound(t);
+    const acls=await db!`SELECT p.proname,
+      EXISTS(SELECT 1 FROM aclexplode(COALESCE(p.proacl,acldefault('f',p.proowner))) acl
+        WHERE acl.grantee=0 AND acl.privilege_type='EXECUTE') AS public_execute,
+      has_function_privilege('anon',p.oid,'EXECUTE') AS anon_execute,
+      has_function_privilege('authenticated',p.oid,'EXECUTE') AS authenticated_execute,
+      has_function_privilege('orchestrator_role',p.oid,'EXECUTE') AS orchestrator_execute
+      FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+      WHERE n.nspname='public' AND p.proname IN ('append_direct_course_bonus','accept_direct_course_bonus','guard_direct_bonus_offer','advance_direct_bonus_version')`;
+    expect(acls).toHaveLength(4);
+    for(const acl of acls) {
+      expect(acl).toMatchObject({public_execute:false,anon_execute:false,authenticated_execute:false,
+        orchestrator_execute:['append_direct_course_bonus','accept_direct_course_bonus'].includes(acl.proname)});
+    }
+    for(const role of ['anon','authenticated']) {
+      await expect(db!.begin(async tx=>{
+        await tx.unsafe(`SET LOCAL ROLE ${role}`);
+        await tx`SELECT append_direct_course_bonus(${o.id}::uuid,${f.courses[1].id}::uuid,${t}::uuid,${m}::uuid,0)`;
+      })).rejects.toThrow(/permission denied for function/i);
+      await expect(db!.begin(async tx=>{
+        await tx.unsafe(`SET LOCAL ROLE ${role}`);
+        await tx`SELECT accept_direct_course_bonus(${o.id}::uuid,${t}::uuid,0)`;
+      })).rejects.toThrow(/permission denied for function/i);
+    }
     await db!.begin(async tx=>{
       await tx`SET LOCAL ROLE orchestrator_role`;
       const [result]=await tx`SELECT append_direct_course_bonus(${o.id}::uuid,${f.courses[1].id}::uuid,${t}::uuid,${m}::uuid,0) AS version`;
