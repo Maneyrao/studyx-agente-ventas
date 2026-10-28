@@ -92,7 +92,8 @@ export async function reservePaymentLink(
   const hasDirectIdentity=input.promotion_cycle_id !== undefined || input.accepted_offer_version !== undefined;
   if(hasDirectIdentity && (!input.promotion_code || !input.promotion_cycle_id
     || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(input.promotion_cycle_id)
-    || !Number.isSafeInteger(input.accepted_offer_version) || (input.accepted_offer_version ?? 0)<1)) {
+    || !Number.isSafeInteger(input.accepted_offer_version) || (input.accepted_offer_version ?? 0)<1
+    || (input.accepted_offer_version ?? 0)>3)) {
     throw new PaymentLinkReservationError('PROMOTION_NOT_AUTHORIZED');
   }
   if (input.promotion_code && !isCentralCargaBonusEnabledForContact(

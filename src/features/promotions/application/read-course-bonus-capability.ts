@@ -358,6 +358,7 @@ export function deriveDirectCourseBonusCapabilityV1(input: {
     readonly delivered_courses?: CourseBonusCapabilityV1['bonus_offerings'];
     readonly delivered: boolean;
     readonly later_reply: boolean;
+    readonly payment_superseded?: boolean;
   } | null;
 }): CourseBonusCapabilityV1 {
   const offer = input.package;
@@ -372,7 +373,7 @@ export function deriveDirectCourseBonusCapabilityV1(input: {
     may_offer_bonus: open && ready && input.prior_price_objection
       && (offer?.courses.length ?? 0) < input.max_bonus_courses,
     may_accept_offer: offer?.status === 'offered' && ready && !expired,
-    may_send_promoted_payment: accepted,
+    may_send_promoted_payment: accepted && offer?.payment_superseded !== true,
     interest_offering_code: input.interest_offering_code,
     promotion_code: offer?.promotion_code ?? null,
     promotion_cycle_id: offer?.promotion_cycle_id ?? null,
@@ -396,8 +397,10 @@ async function readDirectCapability(input: {
     expires_at: Date | null; accepted_at: Date | null;
     delivered_courses: CourseBonusCapabilityV1['bonus_offerings']; delivered: boolean; later_reply: boolean;
     prior_price_objection: boolean;
+    payment_superseded: boolean;
   }>>`
     SELECT p.promotion_code,o.promotion_cycle_id,o.offer_version,o.status,o.expires_at,o.accepted_at,
+      EXISTS(SELECT 1 FROM payment_intent_supersessions superseded WHERE superseded.payment_id=o.payment_id) AS payment_superseded,
       COALESCE(b.courses,'[]'::jsonb) courses,COALESCE(b.delivered_courses,'[]'::jsonb) delivered_courses,
       COALESCE(b.delivered,false) delivered,
       COALESCE(b.latest_delivery < message_occurrence_v1(current.metadata,current.created_at),false) later_reply,

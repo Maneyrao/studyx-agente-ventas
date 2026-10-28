@@ -407,6 +407,7 @@ export function authorizeAgentTurnV2(input: {
     && moves.has('request_payment_link')
     && explicitlyRequestsPaymentLink(input.current_customer_messages);
   const paymentLinkBaseAuthorized = !moves.has('report_payment') && !selectedPurchasePaid
+    && !(input.course_bonus?.package_status === 'attached' && !input.course_bonus.may_send_promoted_payment)
     && stateFacts.has('state:intake_recorded:v1');
   const paymentLinkAuthorized = paymentLinkBaseAuthorized
     && (paymentConfirmationSatisfied || paymentLinkWasAlreadyDelivered
