@@ -21,6 +21,7 @@ import {
   type PaymentReportProjectionSubjectV1,
 } from '@/features/payments/domain/payment-report-projection';
 import { auditLog } from '@/lib/audit/logger';
+import { resolveAgentTurnOfferingReferenceV2 } from '@/features/conversation/domain/agent-turn-policy-v2';
 import {
   loadAgentARolloutConfig,
   loadBusinessWorkspaceConfig,
@@ -820,12 +821,25 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
               WHERE batch_id = ${turn.batch_id}::uuid AND direction = 'inbound'
               ORDER BY conversation_seq ASC, created_at ASC, id ASC
             `;
+        const agentCatalogIndex = rawCatalogIndex ? buildCatalogIndexView(rawCatalogIndex) : null;
+        const agentBusinessContext = rawBusiness ? buildBusinessContextView(rawBusiness) : null;
+        const currentMoves=[agentTurnProposal.move.move,...agentTurnProposal.move.secondary_moves];
+        const proposedActionType=validatedInput.agent_turn_v2.requested_action?.type ?? agentTurnProposal.proposed_action.type;
+        const checkoutSelectsCourse=(currentMoves.includes('select_course') || currentMoves.includes('request_call'))
+          && (proposedActionType==='send_payment_link'
+            || (proposedActionType==='none' && currentMoves.includes('request_payment_link')));
+        // Checkout owns the canonical selection of this complete turn. Reading
+        // only the previous state can hide A's supersession or veto a valid B.
+        const checkoutOfferingCode=checkoutSelectsCourse
+          ? resolveAgentTurnOfferingReferenceV2(agentTurnProposal.move.course_reference,
+            agentCatalogIndex?.offerings ?? agentBusinessContext?.offerings ?? [])
+          : pipelineStateBefore?.selected_offering_code ?? null;
         courseBonusCapability = await readCourseBonusCapabilityV1({
           workspace_slug: workspaceSlug,
           contact_id: turn.contact_id,
           conversation_id: turn.conversation_id,
           channel: 'text',
-          selected_offering_code: pipelineStateBefore?.selected_offering_code ?? null,
+          selected_offering_code: checkoutOfferingCode,
           source_turn_id: turn.id,
         }, { db });
         preparedAgentTurn = await prepareAgentTurnV2({
@@ -841,8 +855,8 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
           requested_action: validatedInput.agent_turn_v2.requested_action,
           semantic_rejections: 'advisory',
           current_customer_messages: currentMessages.map((message) => message.content),
-          business_context: rawBusiness ? buildBusinessContextView(rawBusiness) : null,
-          catalog_index: rawCatalogIndex ? buildCatalogIndexView(rawCatalogIndex) : null,
+          business_context: agentBusinessContext,
+          catalog_index: agentCatalogIndex,
           course_bonus_capability: courseBonusCapability,
         }, {
           state_store: new PostgresConversationStateStoreV1(db),

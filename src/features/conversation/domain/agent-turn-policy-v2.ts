@@ -80,7 +80,7 @@ function referenceKey(value: string): string {
     .replace(/\s+/gu, ' ');
 }
 
-function resolveOffering(
+export function resolveAgentTurnOfferingReferenceV2(
   reference: string | undefined,
   offerings: readonly PlannerlessOfferingV2[],
 ): string | null {
@@ -153,7 +153,7 @@ export function authorizeAgentTurnV2(input: {
 }): AgentTurnAuthorityResultV2 {
   const { proposal, state } = input;
   const moves = allMoves(proposal);
-  const requestedOffering = resolveOffering(proposal.move.course_reference, input.offerings);
+  const requestedOffering = resolveAgentTurnOfferingReferenceV2(proposal.move.course_reference, input.offerings);
   const capabilityInterestOffering = input.course_bonus?.interest_offering_code ?? null;
   const requestedOfferingIsPresentedBonus = requestedOffering !== null
     && input.course_bonus?.bonus_offerings.some((offering) => offering.code === requestedOffering) === true;
@@ -407,7 +407,8 @@ export function authorizeAgentTurnV2(input: {
     && moves.has('request_payment_link')
     && explicitlyRequestsPaymentLink(input.current_customer_messages);
   const paymentLinkBaseAuthorized = !moves.has('report_payment') && !selectedPurchasePaid
-    && !(input.course_bonus?.package_status === 'attached' && !input.course_bonus.may_send_promoted_payment)
+    && !(promotionMatchesSelectedPurchase && input.course_bonus?.package_status === 'attached'
+      && !input.course_bonus.may_send_promoted_payment)
     && stateFacts.has('state:intake_recorded:v1');
   const paymentLinkAuthorized = paymentLinkBaseAuthorized
     && (paymentConfirmationSatisfied || paymentLinkWasAlreadyDelivered

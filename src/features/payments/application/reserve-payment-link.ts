@@ -175,6 +175,18 @@ export async function reservePaymentLink(
     return { payment_id: found.id, status: found.status, url: found.checkout_url };
   }
 
+  // A fresh ordinary request cannot bypass an attached package's manual path
+  // by omitting promotion_code. Historical exact replays above stay durable.
+  const supersededPackage=await db<Array<{id:string}>>`
+    SELECT offer.id FROM promotion_offers offer
+    JOIN payment_intent_supersessions superseded ON superseded.payment_id=offer.payment_id
+    WHERE offer.workspace_id=${input.workspace_id}::uuid AND offer.contact_id=${input.contact_id}::uuid
+      AND offer.conversation_id=${input.conversation_id ?? null}::uuid
+      AND offer.paid_offering_id=${input.offering_id}::uuid
+      AND offer.package_mode='direct' AND offer.status='attached'
+    LIMIT 1`;
+  if(supersededPackage[0]) throw new PaymentLinkReservationError('PROMOTION_NOT_AUTHORIZED');
+
   let authorizedPromotion: {
     promotion_id: string;
     offer_id: string;

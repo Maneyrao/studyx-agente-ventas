@@ -119,6 +119,20 @@ run('direct bonus checkout exact accepted package',()=>{
         decision:f.placeholderDecision as never,model:f.model as never});
     }
     expect((await select('ingles_1','Inglés 1')).status).toBe('committed');
+    async function combinedCheckout(code:string,reference:string) {
+      const turn=await next(`Quiero ${reference} en un pago. Pasame el link de pago`);
+      return commitAgentDecision({turn_id:turn.turn_id,trace_id:randomUUID(),supports_multi_outbound:true,
+        authorized_offering_code:code,authorized_payment_plan:'one_time',
+        agent_turn_v2:{schema_version:2,proposal:{...f.proposalWithCallOfferAndFalsePrice,
+          move:{schema_version:1,move:'select_course',secondary_moves:['select_payment_plan','request_payment_link'],vetoes:[],
+            confidence:1,course_reference:reference,payment_plan:'one_time'},
+          proposed_action:{type:'send_payment_link',offering_code:code,payment_plan:'one_time'},
+          response:{messages:['Te comparto el enlace para pagar.'],call_offer:null}} as never},
+        decision:f.placeholderDecision as never,model:f.model as never});
+    }
+    await expect(combinedCheckout('entrenamiento_funcional','Entrenamiento Funcional'))
+      .rejects.toMatchObject({reason:'AGENT_TURN_V2_REJECTED:ACTION_NOT_AUTHORIZED'});
+    expect(await db!`SELECT id FROM payments WHERE source_conversation_id=${f.conversation_id}`).toHaveLength(1);
     expect((await select('entrenamiento_funcional','Entrenamiento Funcional')).status).toBe('committed');
     const retry=await next('Pasame el link de pago');
     const returned=await readCourseBonusCapabilityV1({workspace_slug:'studyx',contact_id:f.contact_id,conversation_id:f.conversation_id,
@@ -134,6 +148,8 @@ run('direct bonus checkout exact accepted package',()=>{
     expect(await db!`SELECT id FROM payments WHERE source_conversation_id=${f.conversation_id}`).toHaveLength(1);
     expect((await db!`SELECT status,promotion_cycle_id FROM promotion_offers WHERE id=${offer.offer_id}`)[0])
       .toEqual({status:'attached',promotion_cycle_id:offer.promotion_cycle_id});
+    expect((await combinedCheckout('ingles_1','Inglés 1')).status).toBe('committed');
+    expect(await db!`SELECT id FROM payments WHERE source_conversation_id=${f.conversation_id}`).toHaveLength(2);
   });
   it('projects an accepted obligation in review rollback without authorizing offers or acceptance',async()=>{
     const f=await fixture(2);vi.stubEnv('COURSE_BONUS_FLOW_MODE','review');
@@ -255,6 +271,13 @@ run('direct bonus checkout exact accepted package',()=>{
     const cases=await db!`SELECT c.status,c.case_type,e.provider_event_id FROM payment_reconciliation_cases c JOIN payment_events e ON e.id=c.payment_event_id WHERE c.payment_id=${old.payment_id}`;
     expect(cases).toEqual([{status:'open',case_type:'SUPERSEDED_PAYMENT_PAID',provider_event_id:paid.provider_event_id}]);
     expect((await db!`SELECT offering_id,status FROM payments WHERE id=${old.payment_id}`)[0]).toEqual({offering_id:f.courses[0].id,status:'paid'});
+  });
+  it('refuses a new ordinary reservation for the superseded attached paid course without a promotion code',async()=>{
+    const f=await fixture();const old=await reservePaymentLink(db!,f.input);await f.change();
+    await expect(reservePaymentLink(db!,{...f.input,idempotency_key:randomUUID(),promotion_code:undefined,
+      promotion_cycle_id:undefined,accepted_offer_version:undefined})).rejects.toMatchObject({code:'PROMOTION_NOT_AUTHORIZED'});
+    expect((await db!`SELECT payment_id FROM promotion_offers WHERE id=${f.offer.offer_id}`)[0].payment_id).toBe(old.payment_id);
+    expect(await db!`SELECT id FROM payments WHERE source_conversation_id=${f.identity.conversation_id}`).toHaveLength(1);
   });
   it('requires correlated course-change evidence and grants the production role append-only access',async()=>{
     const f=await fixture();const old=await reservePaymentLink(db!,f.input);
