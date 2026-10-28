@@ -23,6 +23,7 @@ export function signRequest(input: {
 
 export type EnrollmentCallOutcome =
   | { kind: 'success'; body: EnrollmentResponse }
+  | { kind: 'partial'; body: EnrollmentResponse }
   | { kind: 'processing' }
   | { kind: 'not_found' }
   | { kind: 'retry'; code: string; retryAfterSeconds?: number }
@@ -72,19 +73,23 @@ export function classifyResponse(input: {
     if (!base.success || base.data.payment_id !== input.paymentId) {
       return { kind: 'retry', code: 'invalid_response' };
     }
-    if (status === 202 || base.data.enrollment_status === 'processing') {
-      return { kind: 'processing' };
-    }
     const expectedBonusCodes = input.expectedBonusCodes ?? [];
     if (expectedBonusCodes.length > 0) {
       const parsed = EnrollmentResponseV2.safeParse(payload);
+      if (!parsed.success && (status === 202 || base.data.enrollment_status === 'processing')) return { kind: 'processing' };
       if (!parsed.success
         || parsed.data.bonus_enrollments.length !== expectedBonusCodes.length
         || parsed.data.bonus_enrollments.some((item, index) => item.offering_code !== expectedBonusCodes[index])) {
         return { kind: 'retry', code: 'invalid_bonus_response' };
       }
+      if (base.data.enrollment_status === 'processing'
+        || parsed.data.bonus_enrollments.some((item) => !['active', 'already_enrolled'].includes(item.enrollment_status))) {
+        return { kind: 'partial', body: parsed.data };
+      }
+      if (status === 202) return { kind: 'processing' };
       return { kind: 'success', body: parsed.data };
     }
+    if (status === 202 || base.data.enrollment_status === 'processing') return { kind: 'processing' };
     return { kind: 'success', body: base.data };
   }
   if (status >= 200 && status < 300) {

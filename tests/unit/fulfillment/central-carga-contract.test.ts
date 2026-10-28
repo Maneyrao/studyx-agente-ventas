@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { classifyResponse } from '@/features/fulfillment/central-carga/client';
 import {
   buildEnrollmentRequest,
+  EnrollmentRequestV2,
   type EnrollmentSource,
 } from '@/features/fulfillment/central-carga/contract';
 
@@ -42,6 +43,14 @@ const response = (overrides: Record<string, unknown> = {}) => ({
 });
 
 describe('Central v1/v2 course enrollment contract', () => {
+  it('rejects recovery codes that are empty, duplicated or outside the immutable package', () => {
+    const request=buildEnrollmentRequest(source({bonus_offerings:[{code:'a',display_name:'A',promotion_code:'p',position:1}]}));
+    if (!request.success) throw new Error('fixture');
+    for (const retry_offering_codes of [[],['a','a'],['other']]) {
+      expect(EnrollmentRequestV2.safeParse({...request.data,retry_offering_codes}).success).toBe(false);
+    }
+    expect(EnrollmentRequestV2.safeParse({...request.data,retry_offering_codes:['a']}).success).toBe(true);
+  });
   it('keeps schema v1 byte-shape compatible when the payment has no bonus snapshot', () => {
     const parsed = buildEnrollmentRequest(source());
     expect(parsed.success).toBe(true);
@@ -88,7 +97,6 @@ describe('Central v1/v2 course enrollment contract', () => {
       [{ offering_code: 'ingles_2', enrollment_status: 'active' }],
       [...validBonuses, { offering_code: 'otro', enrollment_status: 'active' }],
       [{ offering_code: 'ingles_2', enrollment_status: 'active' }, { offering_code: 'ingles_2', enrollment_status: 'active' }],
-      [{ offering_code: 'ingles_2', enrollment_status: 'active' }, { offering_code: 'marketing', enrollment_status: 'processing' }],
     ]) {
       expect(classifyResponse({ method: 'POST', status: 201,
         bodyText: JSON.stringify(response({ bonus_enrollments })), paymentId: PAYMENT_ID, expectedBonusCodes }))
@@ -100,5 +108,15 @@ describe('Central v1/v2 course enrollment contract', () => {
     expect(classifyResponse({ method: 'GET', status: 202,
       bodyText: JSON.stringify(response({ enrollment_status: 'processing' })),
       paymentId: PAYMENT_ID, expectedBonusCodes: ['ingles_2'] })).toEqual({ kind: 'processing' });
+  });
+
+  it('retains verified items from a valid partial result without declaring success', () => {
+    expect(classifyResponse({ method: 'POST', status: 200, paymentId: PAYMENT_ID,
+      expectedBonusCodes: ['a', 'b', 'c'], bodyText: JSON.stringify(response({
+        supports_partial_recovery: true,
+        bonus_enrollments: ['a', 'b', 'c'].map((offering_code) => ({ offering_code,
+          enrollment_status: offering_code === 'c' ? 'failed' : 'active' })),
+      })) })).toMatchObject({ kind: 'partial', body: { supports_partial_recovery: true,
+      bonus_enrollments: [{ offering_code: 'a' }, { offering_code: 'b' }, { offering_code: 'c' }] } });
   });
 });

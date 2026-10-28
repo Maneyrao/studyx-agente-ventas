@@ -18,6 +18,7 @@ import {
   type EnrollmentSource,
 } from './contract';
 import { computeBackoffSeconds, effectiveMaxAttempts, preflight, sandboxLiveBridgeState } from './policy';
+import { openBonusFulfillmentCase } from './manual-case';
 
 const DEFAULT_LIMIT = 10;
 const DEFAULT_LEASE_SECONDS = 120;
@@ -67,11 +68,12 @@ export interface EnrollmentWorkerDeps {
   bonusConfig?: CentralCargaBonusConfig;
 }
 
-type Terminal =
+type Terminal = (
   | { kind: 'completed'; body: EnrollmentResponse }
-  | { kind: 'retry'; code: string; delaySeconds?: number }
+  | { kind: 'retry'; code: string; delaySeconds?: number; body?: EnrollmentResponse }
   | { kind: 'skipped'; code: string }
-  | { kind: 'dead_letter'; code: string };
+  | { kind: 'dead_letter'; code: string; body?: EnrollmentResponse }
+) & { paidOffering?: { code: string; display_name: string }; priorEvidence?: EnrollmentResponse };
 
 /**
  * Leased worker that turns `fulfillment_jobs` into Central de Carga
@@ -172,7 +174,8 @@ async function loadSource(sql: postgres.Sql, paymentId: string): Promise<SourceR
       COALESCE(p.registration_name, c.name) AS contact_name,
       COALESCE(p.registration_email, c.email) AS contact_email, c.phone AS contact_phone,
       c.declared_phone AS contact_declared_phone,
-      o.code AS offering_code, o.display_name AS offering_display_name,
+      COALESCE(e.offering_code_snapshot,o.code) AS offering_code,
+      COALESCE(e.offering_display_name_snapshot,o.display_name) AS offering_display_name,
       COALESCE((
         SELECT jsonb_agg(jsonb_build_object(
           'code', bonus.offering_code_snapshot,
@@ -187,6 +190,7 @@ async function loadSource(sql: postgres.Sql, paymentId: string): Promise<SourceR
     FROM payments p
     JOIN contacts c ON c.id = p.contact_id
     LEFT JOIN offerings o ON o.id = p.offering_id
+    LEFT JOIN central_enrollments e ON e.payment_id=p.id
     WHERE p.id = ${paymentId}::uuid
   `;
   return rows[0] ?? null;
@@ -196,6 +200,8 @@ function fromOutcome(outcome: EnrollmentCallOutcome, onNotFound: Terminal | null
   switch (outcome.kind) {
     case 'success':
       return { kind: 'completed', body: outcome.body };
+    case 'partial':
+      return { kind: 'retry', code: 'partial_enrollment', body: outcome.body };
     case 'processing':
       return { kind: 'retry', code: 'enrollment_processing' };
     case 'retry':
@@ -247,16 +253,44 @@ async function decide(
     });
     return { kind: 'dead_letter', code: 'invalid_enrollment_request' };
   }
+  const withSnapshot = (terminal: Terminal): Terminal => ({ ...terminal, paidOffering: request.data.offering });
 
+  let recoveryBody: EnrollmentResponse | undefined;
+  let retryCodes: string[] | undefined;
   if (job.attempt_count > 1) {
     // Previous attempt may have reached the Central (timeout, lost response).
     const expectedBonusCodes = request.data.schema_version === 2
       ? request.data.bonus_offerings.map((offering) => offering.code)
       : [];
     const existing = await client.getEnrollment(job.payment_id, expectedBonusCodes);
+    if (existing.kind === 'partial') recoveryBody = existing.body;
     if (existing.kind === 'success' || existing.kind === 'processing'
       || existing.kind === 'retry' || existing.kind === 'dead_letter') {
-      return fromOutcome(existing, null);
+      return withSnapshot(fromOutcome(existing, null));
+    }
+    if (request.data.schema_version === 2) {
+      const verified = await sql<Array<{ offering_code: string }>>`
+        SELECT offering_code FROM central_bonus_enrollment_items WHERE payment_id=${job.payment_id}::uuid
+      `;
+      const [paid] = await sql`SELECT id FROM central_enrollments WHERE payment_id=${job.payment_id}::uuid
+        AND enrollment_status IN ('active','already_enrolled')`;
+      const active = new Set(verified.map((item) => item.offering_code));
+      if (paid) active.add(request.data.offering.code);
+      if (recoveryBody) {
+        if (recoveryBody.enrollment_status !== 'processing') active.add(request.data.offering.code);
+        if ('bonus_enrollments' in recoveryBody) for (const item of recoveryBody.bonus_enrollments) {
+          if (['active', 'already_enrolled'].includes(item.enrollment_status)) active.add(item.offering_code);
+        }
+      }
+      if (active.size > 0) {
+        if (!recoveryBody || !('supports_partial_recovery' in recoveryBody) || !recoveryBody.supports_partial_recovery) {
+          return withSnapshot({ kind: 'dead_letter', code: 'partial_recovery_unsupported', body: recoveryBody });
+        }
+        retryCodes = [request.data.offering.code, ...expectedBonusCodes].filter((code) => !active.has(code));
+        if (retryCodes.length === 0) {
+          return withSnapshot({ kind: 'retry', code: 'enrollment_reconciliation_pending', body: recoveryBody });
+        }
+      }
     }
     // 404: nothing completed there; the POST is idempotent, so it is safe.
   }
@@ -268,8 +302,10 @@ async function decide(
     until: config.sandboxLiveUntil,
     now: now(),
   });
-  if (bridge === 'expired') return { kind: 'dead_letter', code: 'sandbox_live_bridge_expired' };
-  const outbound = bridge === 'active' ? { ...request.data, environment: 'live' as const } : request.data;
+  if (bridge === 'expired') return withSnapshot({ kind: 'dead_letter', code: 'sandbox_live_bridge_expired', body: recoveryBody });
+  const recoveryRequest = request.data.schema_version === 2 && retryCodes
+    ? { ...request.data, retry_offering_codes: retryCodes } : request.data;
+  const outbound = bridge === 'active' ? { ...recoveryRequest, environment: 'live' as const } : recoveryRequest;
   if (bridge === 'active') {
     await sql`
       INSERT INTO payment_events (payment_id, provider, provider_event_id, event_type, payload)
@@ -285,7 +321,7 @@ async function decide(
       ON CONFLICT (provider, provider_event_id) DO NOTHING
     `;
     if (now() >= config.sandboxLiveUntil!.getTime()) {
-      return { kind: 'dead_letter', code: 'sandbox_live_bridge_expired' };
+      return withSnapshot({ kind: 'dead_letter', code: 'sandbox_live_bridge_expired', body: recoveryBody });
     }
     logger.warn({
       event: 'central_carga.sandbox_live_bridge_used',
@@ -295,7 +331,12 @@ async function decide(
       expires_at: config.sandboxLiveUntil!.toISOString(),
     });
   }
-  return fromOutcome(await client.createEnrollment(outbound), null);
+  const outcome = fromOutcome(await client.createEnrollment(outbound), null);
+  // GET evidence survives a subsequent POST timeout or permanent failure.
+  if (recoveryBody && (outcome.kind === 'retry' || outcome.kind === 'dead_letter') && !outcome.body) {
+    outcome.body = recoveryBody;
+  }
+  return withSnapshot({ ...outcome, priorEvidence: recoveryBody });
 }
 
 /**
@@ -310,6 +351,56 @@ async function settle(
   outcome: Terminal,
   random: () => number,
 ): Promise<Terminal | null> {
+  return sql.begin(async (tx) => {
+    const scoped = tx as unknown as postgres.Sql;
+    const [owned] = await tx`
+      SELECT id FROM fulfillment_jobs WHERE id=${job.id}::uuid AND status='leased'
+        AND leased_by=${workerId} AND attempt_count=${job.attempt_count} FOR UPDATE
+    `;
+    if (!owned) return null;
+    if (outcome.priorEvidence) await persistEvidence(scoped, job, outcome.priorEvidence, outcome.paidOffering!);
+    if ('body' in outcome && outcome.body) await persistEvidence(scoped, job, outcome.body, outcome.paidOffering!);
+    const applied = await settleStatus(scoped, job, workerId, outcome, random);
+    if (applied?.kind === 'dead_letter') await openBonusFulfillmentCase(scoped, job.payment_id, applied.code);
+    return applied;
+  }) as Promise<Terminal | null>;
+}
+
+async function persistEvidence(tx: postgres.Sql, job: ClaimedJob, body: EnrollmentResponse,
+  paidOffering: { code: string; display_name: string }) {
+  await tx`
+    INSERT INTO central_enrollments (
+      payment_id, workspace_id, enrollment_id, student_id, enrollment_status,
+      student_was_created, welcome_sent, login_email, central_created_at, login_url,
+      offering_code_snapshot,offering_display_name_snapshot
+    ) VALUES (
+      ${job.payment_id}::uuid, ${job.workspace_id}::uuid, ${body.enrollment_id},
+      ${body.student_id}, ${body.enrollment_status}, ${body.student_was_created},
+      ${body.access.welcome_sent}, ${body.access.login_email}, ${body.created_at ?? null},
+      ${body.access.login_url ?? null},
+      ${paidOffering.code},${paidOffering.display_name}
+    ) ON CONFLICT (payment_id) DO UPDATE SET
+      enrollment_status=EXCLUDED.enrollment_status,welcome_sent=EXCLUDED.welcome_sent,
+      login_email=EXCLUDED.login_email,login_url=EXCLUDED.login_url
+      WHERE central_enrollments.enrollment_status='processing'
+  `;
+  if ('bonus_enrollments' in body) {
+    for (const bonus of body.bonus_enrollments) {
+      if (!['active', 'already_enrolled'].includes(bonus.enrollment_status)) continue;
+      await tx`
+        INSERT INTO central_bonus_enrollment_items (central_enrollment_id,payment_id,offering_code,enrollment_status,position)
+        SELECT e.id,e.payment_id,s.offering_code_snapshot,${bonus.enrollment_status},s.position
+        FROM central_enrollments e JOIN payment_bonus_offerings s ON s.payment_id=e.payment_id
+        WHERE e.payment_id=${job.payment_id}::uuid AND s.offering_code_snapshot=${bonus.offering_code}
+        ON CONFLICT (payment_id,offering_code) DO NOTHING
+      `;
+    }
+  }
+}
+
+async function settleStatus(
+  sql: postgres.Sql, job: ClaimedJob, workerId: string, outcome: Terminal, random: () => number,
+): Promise<Terminal | null> {
   let terminal = outcome;
   // Retry budget exhausted: escalate instead of rescheduling.
   if (terminal.kind === 'retry' && job.attempt_count >= effectiveMaxAttempts(job.max_attempts)) {
@@ -321,8 +412,7 @@ async function settle(
 
   if (terminal.kind === 'completed') {
     const body = terminal.body;
-    const done = await sql.begin(async (tx) => {
-      const rows = await tx<Array<{ id: string }>>`
+    const rows = await sql<Array<{ id: string }>>`
         UPDATE fulfillment_jobs
         SET status = 'completed', completed_at = now(), lease_until = NULL, leased_by = NULL,
             last_error_code = NULL, last_error_detail = NULL
@@ -330,50 +420,7 @@ async function settle(
           AND attempt_count = ${job.attempt_count}
         RETURNING id
       `;
-      if (rows.length === 0) return false;
-      await tx`
-        INSERT INTO central_enrollments (
-          payment_id, workspace_id, enrollment_id, student_id, enrollment_status,
-          student_was_created, welcome_sent, login_email, central_created_at, login_url
-        ) VALUES (
-          ${job.payment_id}::uuid, ${job.workspace_id}::uuid, ${body.enrollment_id},
-          ${body.student_id}, ${body.enrollment_status}, ${body.student_was_created},
-          ${body.access.welcome_sent}, ${body.access.login_email}, ${body.created_at ?? null},
-          ${body.access.login_url ?? null}
-        )
-        ON CONFLICT (payment_id) DO NOTHING
-      `;
-      if ('bonus_enrollments' in body) {
-        const enrollmentRows = await tx<Array<{ id: string }>>`
-          SELECT id FROM central_enrollments WHERE payment_id = ${job.payment_id}::uuid LIMIT 1
-        `;
-        const centralEnrollmentId = enrollmentRows[0]?.id;
-        if (!centralEnrollmentId) throw new Error('central enrollment persistence failed');
-        const snapshotPositions = await tx<Array<{ offering_code_snapshot: string; position: number }>>`
-          SELECT offering_code_snapshot, position
-          FROM payment_bonus_offerings
-          WHERE payment_id = ${job.payment_id}::uuid
-        `;
-        const positionByCode = new Map(snapshotPositions.map((snapshot) => (
-          [snapshot.offering_code_snapshot, snapshot.position] as const
-        )));
-        for (const bonus of body.bonus_enrollments) {
-          const position = positionByCode.get(bonus.offering_code);
-          if (position === undefined) throw new Error('central bonus position not found in payment snapshot');
-          await tx`
-            INSERT INTO central_bonus_enrollment_items (
-              central_enrollment_id, payment_id, offering_code, enrollment_status, position
-            ) VALUES (
-              ${centralEnrollmentId}::uuid, ${job.payment_id}::uuid, ${bonus.offering_code},
-              ${bonus.enrollment_status}, ${position}
-            )
-            ON CONFLICT (payment_id, offering_code) DO NOTHING
-          `;
-        }
-      }
-      return true;
-    });
-    if (!done) return null;
+    if (rows.length === 0) return null;
     logger.info({
       event: 'central_carga.enrollment_completed',
       payment_id: job.payment_id,
@@ -432,9 +479,8 @@ async function settle(
     RETURNING id
   `;
   if (fenced.length === 0) return null;
-  // Escalation: the repo has no operator-alert channel for payments (the
-  // existing human-review flag is conversation-scoped), so a structured
-  // error line is the alert. No PII: payment_id, job_id and a code only.
+  // The enclosing fenced transaction persists a bonus human case as well.
+  // Logs remain codes and identifiers only.
   logger.error({
     event: 'central_carga.enrollment_dead_letter',
     payment_id: job.payment_id,

@@ -155,6 +155,107 @@ beforeEach(async () => {
 });
 
 run('Central de Carga enrollment worker', () => {
+  it('never sends an empty retry subset when Central regresses a previously verified course', async () => {
+    const f=await fixture({bonusCourses:[{code:`REGRESS-${randomUUID().slice(0,6)}`,displayName:'Bonus',position:1}]});
+    expect(await work(mockCentral(call=>json(200,body(call.paymentId,{supports_partial_recovery:true,
+      bonus_enrollments:[{offering_code:f.bonusCodes[0],enrollment_status:'failed'}]}))).fetchImpl)).toMatchObject({retried:1});
+    await makeDue(f.jobId);
+    const central=mockCentral(call=>json(200,body(call.paymentId,{enrollment_status:'processing',supports_partial_recovery:true,
+      bonus_enrollments:[{offering_code:f.bonusCodes[0],enrollment_status:'active'}]})));
+    expect(await work(central.fetchImpl)).toMatchObject({retried:1});
+    expect(central.calls.map(call=>call.method)).toEqual(['GET']);
+  });
+  it.each([false, true])('does not replay verified courses to an unsupported Central (GET missing=%s)', async (getMissing) => {
+    const f=await fixture({bonusCourses:[{code:`OLD-${randomUUID().slice(0,6)}`,displayName:'Bonus',position:1}]});
+    const partial=(call:Call)=>json(200,body(call.paymentId,{bonus_enrollments:[{
+      offering_code:f.bonusCodes[0],enrollment_status:'failed'}]}));
+    expect(await work(mockCentral(partial).fetchImpl)).toMatchObject({retried:1});
+    await makeDue(f.jobId);
+    const central=mockCentral(getMissing ? ()=>status(404) : partial);
+    expect(await work(central.fetchImpl)).toMatchObject({dead_lettered:1});
+    expect(central.calls.map(call=>call.method)).toEqual(['GET']);
+    expect(await job(f.jobId)).toMatchObject({last_error_code:'partial_recovery_unsupported'});
+    expect(await db!`SELECT id FROM bonus_fulfillment_cases WHERE payment_id=${f.paymentId}::uuid`).toHaveLength(1);
+  });
+  it('freezes the paid course name actually sent to Central even if the catalog changes during enrollment', async () => {
+    const f=await fixture();
+    const central=mockCentral(async (call)=>{
+      expect(call.body!.offering).toMatchObject({display_name:'Curso'});
+      await db!`UPDATE offerings SET display_name='Renamed during enrollment' WHERE id=(SELECT offering_id FROM payments WHERE id=${f.paymentId}::uuid)`;
+      return json(200,body(call.paymentId));
+    });
+    expect(await work(central.fetchImpl)).toMatchObject({completed:1});
+    expect((await db!`SELECT offering_display_name_snapshot FROM central_enrollments WHERE payment_id=${f.paymentId}::uuid`)[0])
+      .toMatchObject({offering_display_name_snapshot:'Curso'});
+  });
+  it('retains active bonuses when the paid course is processing and retries only the paid course', async () => {
+    const f=await fixture({bonusCourses:[{code:`PAID-PENDING-${randomUUID().slice(0,6)}`,displayName:'Verified bonus',position:1}]});
+    const partial=(call: Call)=>json(200,body(call.paymentId,{enrollment_status:'processing',supports_partial_recovery:true,
+      bonus_enrollments:[{offering_code:f.bonusCodes[0],enrollment_status:'active'}]}));
+    expect(await work(mockCentral(partial).fetchImpl)).toMatchObject({retried:1});
+    await makeDue(f.jobId);
+    const recovery=mockCentral([partial,(call)=>{
+      const paid=(call.body!.offering as {code:string}).code;
+      expect(call.body!.retry_offering_codes).toEqual([paid]);
+      return json(200,body(call.paymentId,{bonus_enrollments:[{offering_code:f.bonusCodes[0],enrollment_status:'active'}]}));
+    }]);
+    expect(await work(recovery.fetchImpl)).toMatchObject({completed:1});
+    expect(await bonusEnrollments(f.paymentId)).toHaveLength(1);
+    expect(recovery.calls.map(call=>call.method)).toEqual(['GET','POST']);
+  });
+  it('opens a case when the database exhausts an expired final lease before worker claim', async () => {
+    const f=await fixture({bonusCourses:[{code:`LEASE-${randomUUID().slice(0,6)}`,displayName:'Lease bonus',position:1}]});
+    await db!`UPDATE fulfillment_jobs SET status='leased',attempt_count=3,leased_by='crashed',
+      lease_until=now()-interval '1 second' WHERE id=${f.jobId}::uuid`;
+    await runEnrollmentWorker({scoped:true,payment_id:f.paymentId},{sql:db!,config,fetchImpl:mockCentral(created).fetchImpl});
+    expect((await job(f.jobId)).status).toBe('dead_letter');
+    expect(await db!`SELECT id FROM bonus_fulfillment_cases WHERE payment_id=${f.paymentId}::uuid`).toHaveLength(1);
+  });
+  it.each([true, false])('recovers only the pending course for created=%s and replays idempotently', async (studentWasCreated) => {
+    const f = await fixture({ bonusCourses: [1, 2, 3].map((position) => ({
+      code: `PART-${position}-${randomUUID().slice(0, 6)}`, displayName: `Frozen ${position}`, position,
+    })) });
+    const partial = (call: Call) => json(200, body(call.paymentId, {
+      student_was_created: studentWasCreated, supports_partial_recovery: true,
+      bonus_enrollments: f.bonusCodes.map((offering_code, index) => ({ offering_code,
+        enrollment_status: index === 2 ? 'failed' : 'active' })),
+    }));
+    expect(await work(mockCentral(partial).fetchImpl)).toMatchObject({ retried: 1, completed: 0 });
+    expect(await bonusEnrollments(f.paymentId)).toHaveLength(2);
+    expect(await db!`SELECT id FROM post_sale_notifications WHERE payment_id=${f.paymentId}::uuid AND kind='access_ready'`).toHaveLength(0);
+    await makeDue(f.jobId);
+    const recovery = mockCentral([partial, (call) => {
+      expect(call.body).toMatchObject({ retry_offering_codes: [f.bonusCodes[2]],
+        bonus_offerings: f.bonusCodes.map((code) => ({ code })) });
+      return json(200, body(call.paymentId, { student_was_created: studentWasCreated,
+        bonus_enrollments: f.bonusCodes.map((offering_code) => ({ offering_code, enrollment_status: 'active' })) }));
+    }]);
+    expect(await work(recovery.fetchImpl)).toMatchObject({ completed: 1 });
+    expect(recovery.calls.map((call) => call.method)).toEqual(['GET', 'POST']);
+    expect(await bonusEnrollments(f.paymentId)).toHaveLength(3);
+    expect(await work(recovery.fetchImpl)).toMatchObject({ claimed: 0 });
+    expect(await db!`SELECT id FROM post_sale_notifications WHERE payment_id=${f.paymentId}::uuid AND kind='access_ready'`).toHaveLength(1);
+  });
+
+  it('keeps payment confirmed and opens one secret-free durable case on exhausted partial recovery', async () => {
+    const f = await fixture({ maxAttempts: 1, bonusCourses: [1, 2, 3].map((position) => ({
+      code: `EXH-${position}-${randomUUID().slice(0, 6)}`, displayName: `Frozen ${position}`, position,
+    })) });
+    const central = mockCentral((call) => json(200, body(call.paymentId, { supports_partial_recovery: true,
+      bonus_enrollments: f.bonusCodes.map((offering_code, index) => ({ offering_code,
+        enrollment_status: index === 2 ? 'processing' : 'active' })),
+    })));
+    expect(await work(central.fetchImpl)).toMatchObject({ dead_lettered: 1 });
+    expect(await bonusEnrollments(f.paymentId)).toHaveLength(2);
+    const [humanCase] = await db!`SELECT * FROM bonus_fulfillment_cases WHERE payment_id=${f.paymentId}::uuid`;
+    expect(humanCase).toMatchObject({ pending_codes: [f.bonusCodes[2]] });
+    expect(humanCase.expected_codes).toHaveLength(4);
+    expect(humanCase.active_codes).toHaveLength(3);
+    expect(JSON.stringify(humanCase)).not.toMatch(/alumno|login|secret|stu_1|enr_1/i);
+    expect((await db!`SELECT status FROM payments WHERE id=${f.paymentId}::uuid`)[0].status).toBe('paid');
+    await work(central.fetchImpl);
+    expect(await db!`SELECT id FROM bonus_fulfillment_cases WHERE payment_id=${f.paymentId}::uuid`).toHaveLength(1);
+  });
   const bridgeUntil = new Date('2026-10-10T03:00:00Z');
   const bridgeConfig: CentralCargaConfig = { ...config, enabled: true, environment: 'test',
     sandboxLiveUntil: bridgeUntil };
@@ -234,12 +335,12 @@ run('Central de Carga enrollment worker', () => {
     ]);
   });
 
-  it('sends one deterministic v2 request and stores only an exact complete bonus result', async () => {
-    const f = await fixture({ bonusCourses: [
-      { code: `BONUS-B-${randomUUID().slice(0, 6)}`, displayName: 'Bonus B', position: 2 },
-      { code: `BONUS-A-${randomUUID().slice(0, 6)}`, displayName: 'Bonus A', position: 1 },
-    ] });
+  it.each([1,2,3])('sends one deterministic v2 request with %s bonuses and stores the exact complete result', async (count) => {
+    const f = await fixture({ bonusCourses: Array.from({length:count},(_,index)=>({
+      code:`BONUS-${index}-${randomUUID().slice(0,6)}`,displayName:`Bonus ${index}`,position:index+1,
+    })).reverse() });
     const central = mockCentral((call) => json(201, body(call.paymentId, {
+      student_was_created:count!==2,
       bonus_enrollments: f.bonusCodes.map((offering_code) => ({ offering_code, enrollment_status: 'active' })),
     })));
     expect(await runEnrollmentWorker({}, { sql: db!, config, fetchImpl: central.fetchImpl,
@@ -253,6 +354,7 @@ run('Central de Carga enrollment worker', () => {
       offering_code, enrollment_status: 'active', position: index + 1,
     })));
     expect((await enrollments(f.paymentId))[0].welcome_sent).toBe(true);
+    expect(await work(central.fetchImpl)).toMatchObject({claimed:0});
   });
 
   it('persists the immutable snapshot position instead of inventing an array index', async () => {
@@ -267,8 +369,8 @@ run('Central de Carga enrollment worker', () => {
     }]);
   });
 
-  it('does not complete a v2 job when Central omits, adds, duplicates or leaves a bonus non-active', async () => {
-    for (const variant of ['missing','extra','duplicate','processing'] as const) {
+  it('does not complete a v2 job when Central omits, adds or duplicates a bonus', async () => {
+    for (const variant of ['missing','extra','duplicate'] as const) {
       const f = await fixture({ bonusCourses: [
         { code: `BONUS-${variant}-${randomUUID().slice(0, 6)}`, displayName: 'Bonus', position: 1 },
       ] });

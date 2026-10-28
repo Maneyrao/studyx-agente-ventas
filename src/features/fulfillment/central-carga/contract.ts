@@ -38,6 +38,7 @@ export const EnrollmentRequestV2 = EnrollmentRequestV1.extend({
     display_name: z.string().min(1),
     promotion_code: z.string().min(1).max(64),
   })).min(1).max(3),
+  retry_offering_codes: z.array(z.string().min(1)).min(1).max(4).optional(),
 }).superRefine((request, context) => {
   const codes = request.bonus_offerings.map((offering) => offering.code);
   if (new Set(codes).size !== codes.length || codes.includes(request.offering.code)) {
@@ -46,6 +47,11 @@ export const EnrollmentRequestV2 = EnrollmentRequestV1.extend({
       path: ['bonus_offerings'],
       message: 'bonus codes must be unique and different from offering.code',
     });
+  }
+  const retry = request.retry_offering_codes;
+  if (retry && (new Set(retry).size !== retry.length
+    || retry.some((code) => ![request.offering.code, ...codes].includes(code)))) {
+    context.addIssue({ code: 'custom', path: ['retry_offering_codes'], message: 'retry must be a unique expected subset' });
   }
 });
 export type EnrollmentRequestV2 = z.infer<typeof EnrollmentRequestV2>;
@@ -67,9 +73,10 @@ export const EnrollmentResponseV1 = z.object({
 export type EnrollmentResponseV1 = z.infer<typeof EnrollmentResponseV1>;
 
 export const EnrollmentResponseV2 = EnrollmentResponseV1.extend({
+  supports_partial_recovery: z.boolean().optional(),
   bonus_enrollments: z.array(z.object({
     offering_code: z.string().min(1),
-    enrollment_status: z.literal('active'),
+    enrollment_status: z.enum(['active', 'already_enrolled', 'processing', 'failed']),
   })).min(1).max(3),
 });
 export type EnrollmentResponseV2 = z.infer<typeof EnrollmentResponseV2>;
