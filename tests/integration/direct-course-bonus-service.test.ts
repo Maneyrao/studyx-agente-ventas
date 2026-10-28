@@ -55,6 +55,70 @@ async function fixture() {
 }
 
 run('atomic direct bonus service', () => {
+  it.each(['interest_current','selected_current','selected_future','selected_foreign'] as const)
+  ('does not borrow a prior course objection for unproven commercial context (%s)',async scenario=>{
+    const f=await seedConversationForAgentTurn({intake_complete:true,first_message:'Me parece caro'});
+    await commitAgentDecision({turn_id:f.turn_id,trace_id:f.trace_id,supports_multi_outbound:true,
+      agent_turn_v2:{schema_version:2,proposal:{...f.proposalWithCallOfferAndFalsePrice,
+        move:{schema_version:1,move:'ask_course_information',secondary_moves:[],vetoes:[],confidence:1,course_reference:'entrenamiento_funcional'},
+        response:{messages:['Podemos revisar el contenido.'],call_offer:null},proposed_action:{type:'none'},
+        memory_candidates:[{type:'objection',key:'price_objection',value:'precio alto',source_quote:'Me parece caro',confidence:1}]} as never},
+      decision:f.placeholderDecision as never,model:f.model as never});
+    const course=scenario.endsWith('current')?'ingles_2':'entrenamiento_funcional';
+    let evidenceSource=f.second_turn_id;
+    if(scenario==='selected_future') {
+      const [future]=await db!`INSERT INTO messages(conversation_id,contact_id,direction,content,created_at)
+        VALUES (${f.conversation_id},${f.contact_id},'inbound','Más adelante',clock_timestamp()+interval '1 minute') RETURNING id`;
+      evidenceSource=future.id;
+    }
+    if(scenario==='selected_foreign') evidenceSource=(await seedConversationForAgentTurn({intake_complete:true})).turn_id;
+    await recordPromotionConversationContextV1(db!,{workspace_id:f.workspace_id,contact_id:f.contact_id,conversation_id:f.conversation_id,
+      source_turn_id:evidenceSource,discussed_offering_code:course,records_price_objection:true});
+    if(scenario!=='interest_current') await db!`UPDATE conversation_sales_context_states_v1 SET selected_offering_code=${course}
+      WHERE conversation_id=${f.conversation_id}`;
+    const cap=await readCourseBonusCapabilityV1({workspace_slug:'studyx',contact_id:f.contact_id,conversation_id:f.conversation_id,
+      channel:'text',selected_offering_code:scenario==='interest_current'?null:course,source_turn_id:f.second_turn_id},{db:db!});
+    expect(cap.may_offer_bonus).toBe(false);
+    const id=randomUUID();
+    expect(await offerDirectCourseBonusV1(db!,{workspace_id:f.workspace_id,contact_id:f.contact_id,conversation_id:f.conversation_id,
+      paid_offering_code:course,source_turn_id:f.second_turn_id,expected_offer_version:0,bonus_offering_codes:['ingles_1'],
+      outbound:{id,content:'Te regalo Inglés 1.',provider:'test',integration_id:'test',channel:'whatsapp',destination:'test',idempotency_key:id}}))
+      .toMatchObject({ok:false});
+    expect(await db!`SELECT id FROM promotion_offers WHERE conversation_id=${f.conversation_id}`).toHaveLength(0);
+  });
+  it.each([null,'ingles_2'] as const)('retains B prior-objection evidence after a later non-objection turn (selection %s)',async selected=>{
+    const f=await seedConversationForAgentTurn({intake_complete:true,first_message:'Me parece caro'});
+    const commit=(turn:string,course:string,objection:boolean)=>commitAgentDecision({turn_id:turn,trace_id:randomUUID(),supports_multi_outbound:true,
+      agent_turn_v2:{schema_version:2,proposal:{...f.proposalWithCallOfferAndFalsePrice,
+        move:{schema_version:1,move:'ask_course_information',secondary_moves:[],vetoes:[],confidence:1,course_reference:course},
+        response:{messages:[objection?'Revisemos qué necesitás del curso.':'Podemos continuar por acá.'],call_offer:null},proposed_action:{type:'none'},
+        memory_candidates:objection?[{type:'objection',key:'price_objection',value:'precio alto',source_quote:turn===f.turn_id?'Me parece caro':'Dale',confidence:1}]:[]} as never},
+      decision:f.placeholderDecision as never,model:f.model as never});
+    await commit(f.turn_id,'entrenamiento_funcional',true);
+    await commit(f.second_turn_id,'ingles_2',true);
+    const [later]=await db!`INSERT INTO messages(conversation_id,contact_id,direction,content)
+      VALUES (${f.conversation_id},${f.contact_id},'inbound','Repasemos el contenido') RETURNING id`;
+    await recordPromotionConversationContextV1(db!,{workspace_id:f.workspace_id,contact_id:f.contact_id,conversation_id:f.conversation_id,
+      source_turn_id:later.id,discussed_offering_code:'ingles_2',records_price_objection:false});
+    await db!`UPDATE conversation_sales_context_states_v1 SET selected_offering_code=${selected} WHERE conversation_id=${f.conversation_id}`;
+    const [current]=await db!`INSERT INTO messages(conversation_id,contact_id,direction,content)
+      VALUES (${f.conversation_id},${f.contact_id},'inbound','El precio sigue frenándome') RETURNING id`;
+    expect(await readCourseBonusCapabilityV1({workspace_slug:'studyx',contact_id:f.contact_id,conversation_id:f.conversation_id,
+      channel:'text',selected_offering_code:selected,source_turn_id:current.id},{db:db!})).toMatchObject({may_offer_bonus:true,interest_offering_code:'ingles_2'});
+    const id=randomUUID();
+    const independent=openLocalTestDatabase();
+    try {await db!.begin(async tx=>{
+      expect(await offerDirectCourseBonusV1(tx,{workspace_id:f.workspace_id,contact_id:f.contact_id,conversation_id:f.conversation_id,
+        paid_offering_code:'ingles_2',source_turn_id:current.id,expected_offer_version:0,bonus_offering_codes:['ingles_1'],
+        outbound:{id,content:'Te regalo Inglés 1.',provider:'test',integration_id:'test',channel:'whatsapp',destination:'test',idempotency_key:id}}))
+        .toMatchObject({ok:true});
+      await expect(independent.begin(async race=>{
+        await race`SET LOCAL lock_timeout='100ms'`;
+        await race`UPDATE conversation_promotion_context_v1 SET source_turn_id=${current.id} WHERE conversation_id=${f.conversation_id}`;
+        throw new Error('COMMERCIAL_EVIDENCE_CHANGED_DURING_OFFER');
+      })).rejects.toMatchObject({code:'55P03'});
+    });} finally {await independent.end();}
+  });
   it.each(['selected_other','interest_other','future_source','foreign_source','foreign_contact','current_objection'] as const)
   ('refuses stale or unrelated interest/objection evidence (%s)',async kind=>{
     const f=await seedConversationForAgentTurn({intake_complete:true,first_message:'Me parece caro'});

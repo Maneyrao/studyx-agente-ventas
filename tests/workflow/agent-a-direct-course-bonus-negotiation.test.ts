@@ -9,7 +9,7 @@ import { recordDeliveryReport } from '@/lib/services/decision.service';
 import Stripe from 'stripe';
 import { processStripeWebhook } from '@/features/payments/application/process-stripe-webhook';
 import { runEnrollmentWorker } from '@/features/fulfillment/central-carga/worker';
-import { assemblePostSaleMessage } from '@/features/fulfillment/post-sale/service';
+import { claimNotification, deliverNotification, dispatchNotifications } from '@/features/fulfillment/post-sale/service';
 import { loadLatestPaymentVerificationV1 } from '@/features/payments/application/read-payment-verification';
 import { contactFixtureUpdatesV1 } from './contact-profile-fixture';
 import { acceptDirectCourseBonusV1 } from '@/features/promotions/application/direct-course-bonus-service';
@@ -28,6 +28,8 @@ beforeAll(async () => {
   vi.stubEnv('COURSE_BONUS_FLOW_MODE','direct');
   vi.stubEnv('COURSE_BONUS_MAX_COURSES','3');
   vi.stubEnv('CENTRAL_CARGA_BONUS_ENABLED','true');
+  vi.stubEnv('BOTPRESS_MANAGED_EGRESS_TOKEN','synthetic-post-sale-token');
+  vi.stubEnv('BOTPRESS_MANAGED_EGRESS_BOT_ID','synthetic-post-sale-bot');
   expect(new URL(configuration.apiBaseUrl).hostname).toBe('127.0.0.1');
   const fetchLocal = globalThis.fetch;
   expect((await fetchLocal(`${configuration.apiBaseUrl}/api/ready`)).ok).toBe(true);
@@ -269,6 +271,36 @@ run.each(['complete','partial'] as const)('carries interest-only discovery, 1→
   expect(centralRequests[0].bonus_offerings.map(course=>course.code)).toEqual(['ingles_1','excel_integral','ingles_2']);
   expect(centralRequests[0].bonus_offerings.every(course=>course.promotion_code===offer.promotion_code)).toBe(true);
   expect(workerResult).toMatchObject(fulfillment==='partial'?{dead_lettered:1,completed:0}:{completed:1});
+  async function sendPersistedPostSale(kind:'access_ready'|'access_delayed') {
+    const [notice]=await db!`SELECT id,status FROM post_sale_notifications WHERE payment_id=${payment.id} AND kind=${kind}`;
+    expect(notice).toMatchObject({status:'pending'});
+    const dispatchedEvents:unknown[]=[];
+    const deps={db:db!,config:{enabled:true,environment:'test' as const,paidAfter:new Date('2026-01-01')},
+      fetchImpl:(async (_url:unknown,init?:RequestInit)=>{
+        dispatchedEvents.push(JSON.parse(String(init?.body)));
+        return new Response(JSON.stringify({event:{id:`post-sale-event-${key}`}}),{status:201});
+      }) as typeof fetch};
+    expect(await dispatchNotifications(payment.id,deps)).toEqual({dispatched:1});
+    expect(dispatchedEvents).toEqual([{type:'studyxPostSale',payload:{notification_id:notice.id},conversationId:identity.conversationId}]);
+    const claim=await claimNotification(notice.id,identity.conversationId,deps);
+    expect(claim).toMatchObject({claimed:true,kind});
+    if(!claim.claimed) throw new Error('POST_SALE_CLAIM_REQUIRED');
+    const sent:string[]=[];
+    const deliveryDeps={...deps,sender:async(input:{text:string})=>{
+      sent.push(input.text);
+      return {outcome:'sent' as const,channel:'whatsapp' as const,providerMessageId:`post-sale-message-${key}`,
+        deliveryId:null,reason:null};
+    }};
+    const input={claim_token:claim.claim_token,botpress_conversation_id:identity.conversationId,
+      narrative:{intro:kind==='access_ready'?'Tu acceso ya está habilitado.':'Recibimos tu pago. El equipo está revisando el curso pendiente.',suggestion:''}};
+    expect(await deliverNotification(notice.id,input,deliveryDeps)).toEqual({outcome:'sent'});
+    // Sent notifications are excluded by the source authorization query.
+    expect(await deliverNotification(notice.id,input,deliveryDeps)).toEqual({outcome:'not_authorized'});
+    expect(sent).toHaveLength(1);
+    expect((await db!`SELECT status,provider_message_id,sent_at FROM post_sale_notifications WHERE id=${notice.id}`)[0])
+      .toMatchObject({status:'sent',provider_message_id:`post-sale-message-${key}`,sent_at:expect.any(Date)});
+    return sent[0];
+  }
   if(fulfillment==='partial') {
     expect((await db!`SELECT status FROM payments WHERE id=${payment.id}`)[0].status).toBe('paid');
     expect(await loadLatestPaymentVerificationV1({workspace_slug:'studyx',contact_id:offer.contact_id},db!))
@@ -276,9 +308,9 @@ run.each(['complete','partial'] as const)('carries interest-only discovery, 1→
     expect(await db!`SELECT id FROM post_sale_notifications WHERE payment_id=${payment.id} AND kind='access_ready'`).toHaveLength(0);
     expect(await db!`SELECT pending_codes FROM bonus_fulfillment_cases WHERE payment_id=${payment.id}`)
       .toEqual([{pending_codes:['ingles_2']}]);
-    const delayed=assemblePostSaleMessage({kind:'access_delayed',login_email:'ana.direct@example.test',login_url:null,student_was_created:true},
-      {intro:'Recibimos tu pago. El equipo está revisando el curso pendiente.',suggestion:''});
-    expect(delayed).not.toMatch(/CONTRASEÑA|USUARIO|CURSOS HABILITADOS|campus-virtual|factura|invoice/iu);
+    const delayed=await sendPersistedPostSale('access_delayed');
+    expect(delayed).not.toMatch(/CONTRASEÑA|USUARIO|CURSOS HABILITADOS|campus-virtual|acceso (?:completo|habilitado)|factura|invoice/iu);
+    expect(await db!`SELECT id FROM bonus_fulfillment_cases WHERE payment_id=${payment.id}`).toHaveLength(1);
     return;
   }
   const verified=await db!<Array<{offering_code:string;enrollment_status:string;position:number}>>`
@@ -286,11 +318,9 @@ run.each(['complete','partial'] as const)('carries interest-only discovery, 1→
   expect(verified).toHaveLength(3);
   expect(await loadLatestPaymentVerificationV1({workspace_slug:'studyx',contact_id:offer.contact_id},db!))
     .toMatchObject({status:'paid',fulfillment:{enrollment_status:'active'}});
-  const message=assemblePostSaleMessage({kind:'access_ready',offering_name:'Entrenamiento Funcional',
-    login_email:'ana.direct@example.test',login_url:null,student_was_created:true,
-    bonus_offerings:[{code:'ingles_1',display_name:'Inglés 1',position:1},{code:'excel_integral',display_name:'Excel Integral',position:2},
-      {code:'ingles_2',display_name:'Inglés 2',position:3}],verified_bonus_enrollments:verified},
-    {intro:'Tu acceso ya está habilitado.',suggestion:''});
+  const message=await sendPersistedPostSale('access_ready');
   for(const name of ['Entrenamiento Funcional','Inglés 1','Excel Integral','Inglés 2']) expect(message).toContain(name);
   expect(message).not.toMatch(/invoice|factura|comprobante/iu);
+  expect(message).toContain('CURSO PRINCIPAL: Entrenamiento Funcional');
+  expect(message.match(/CURSO BONIFICADO:/gu)).toHaveLength(3);
 },180_000);

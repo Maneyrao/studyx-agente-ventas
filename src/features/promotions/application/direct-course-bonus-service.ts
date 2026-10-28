@@ -111,22 +111,30 @@ async function lockIdentity(tx: DbClient, input: Identity) {
       AND s.contact_id=${input.contact_id}::uuid FOR UPDATE OF s FOR SHARE OF paid
   `;
   if (!context) reject('invalid_offering');
-  if(context.selected_offering_code===null) {
-    const [interest]=await tx<Array<{interest_offering_code:string}>>`
-      SELECT interest.interest_offering_code FROM conversation_promotion_context_v1 interest
-      JOIN messages source ON source.id=interest.source_turn_id AND source.conversation_id=interest.conversation_id
-        AND source.contact_id=interest.contact_id AND source.direction='inbound'
-      JOIN messages current ON current.id=${input.source_turn_id}::uuid AND current.conversation_id=interest.conversation_id
-        AND current.contact_id=interest.contact_id AND current.direction='inbound'
+  // Purchase selection determines the course, never the provenance of its
+  // commercial evidence. Lock that evidence in both selected/interest paths.
+  const [interest]=await tx<Array<{interest_offering_code:string;price_objection_count:number;source_turn_id:string}>>`
+      SELECT interest.interest_offering_code,interest.price_objection_count,interest.source_turn_id
+      FROM conversation_promotion_context_v1 interest
       WHERE interest.workspace_id=${input.workspace_id}::uuid AND interest.conversation_id=${input.conversation_id}::uuid
         AND interest.contact_id=${input.contact_id}::uuid
-        AND message_occurrence_v1(source.metadata,source.created_at)<=message_occurrence_v1(current.metadata,current.created_at)
       FOR SHARE OF interest
-    `;
-    // Effective commercial identity only; never persist a purchase selection.
-    context.selected_offering_code=interest?.interest_offering_code ?? null;
-  }
-  return context;
+  `;
+  const [source]=interest ? await tx<Array<{prior:boolean}>>`
+      SELECT source.id<>current.id AND
+        message_occurrence_v1(source.metadata,source.created_at)<message_occurrence_v1(current.metadata,current.created_at) AS prior
+      FROM messages source JOIN messages current ON current.id=${input.source_turn_id}::uuid
+      WHERE source.id=${interest.source_turn_id}::uuid AND source.conversation_id=${input.conversation_id}::uuid
+        AND source.contact_id=${input.contact_id}::uuid AND source.direction='inbound'
+        AND current.conversation_id=source.conversation_id AND current.contact_id=source.contact_id AND current.direction='inbound'
+        AND message_occurrence_v1(source.metadata,source.created_at)<=message_occurrence_v1(current.metadata,current.created_at)
+      FOR SHARE OF source,current
+  ` : [];
+  // Effective identity only; never persist a purchase selection. Same-turn
+  // interest can identify a course, but cannot establish a prior objection.
+  return {...context,selected_offering_code:context.selected_offering_code ?? (source ? interest.interest_offering_code : null),
+    structured_objection_authorized:source?.prior===true && interest.interest_offering_code===input.paid_offering_code
+      && interest.price_objection_count>0};
 }
 async function resolveOffer(tx: DbClient, input: Identity, paidId: string): Promise<OfferRow | undefined> {
   const [offer] = await tx<OfferRow[]>`
@@ -218,6 +226,7 @@ export async function offerDirectCourseBonusV1(db: DbClient, input: OfferDirectC
         AND evidence.conversation_id=${input.conversation_id}::uuid AND evidence.contact_id=${input.contact_id}::uuid
         AND evidence.interest_offering_code=${input.paid_offering_code} AND evidence.price_objection_count>0
       WHERE source.conversation_id=evidence.conversation_id AND source.contact_id=evidence.contact_id AND source.direction='inbound'
+        AND ${context.structured_objection_authorized}
         AND current.conversation_id=source.conversation_id AND current.contact_id=source.contact_id AND current.direction='inbound'
         AND source.id<>current.id
         AND decision.memory_candidates @> '[{"type":"objection","key":"price_objection"}]'::jsonb

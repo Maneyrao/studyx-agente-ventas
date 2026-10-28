@@ -433,6 +433,10 @@ async function readDirectCapability(input: {
         JOIN conversation_promotion_context_v1 evidence ON evidence.workspace_id=w.id
           AND evidence.conversation_id=current.conversation_id AND evidence.contact_id=current.contact_id
           AND evidence.interest_offering_code=paid.code AND evidence.price_objection_count>0
+        JOIN messages evidence_source ON evidence_source.id=evidence.source_turn_id
+          AND evidence_source.conversation_id=evidence.conversation_id AND evidence_source.contact_id=evidence.contact_id
+          AND evidence_source.direction='inbound' AND evidence_source.id<>current.id
+          AND message_occurrence_v1(evidence_source.metadata,evidence_source.created_at)<message_occurrence_v1(current.metadata,current.created_at)
         WHERE source.conversation_id=current.conversation_id AND source.contact_id=current.contact_id
           AND source.direction='inbound' AND source.id<>current.id
           AND decision.memory_candidates @> '[{"type":"objection","key":"price_objection"}]'::jsonb

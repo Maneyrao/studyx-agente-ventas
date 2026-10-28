@@ -69,7 +69,7 @@ The two default-timeout failures were `agent-request-validation.test.ts / reject
 The full integration run preceded only the final interest-row-lock refinement; the affected 46-test direct/service/voice/commit gate passed afterward. Its seven failures remain explicit:
 
 - `course-bonus-invariants.test.ts / backfills legacy packages as sealed version one and quarantines ambiguous delivery without rewriting obligations`: the known fixture attempts to drop `promotion_cycle_id` despite newer dependent objects.
-- `contact-profile-external-writers.test.ts / promotes an identical voice email only when the customer types it in WhatsApp`: full-suite ordering issue; passed unchanged in the subsequent isolated two-file run (9/9 with Telegram). Not established as a resolved production defect.
+- `contact-profile-external-writers.test.ts / promotes an identical voice email only when the customer types it in WhatsApp`: preexisting clock/source-order sensitivity, not merely suite ordering. It passed unchanged in the subsequent isolated two-file run (9/9 with Telegram), but that does not resolve the sensitivity. Explicit follow-up remains open to make occurrence ordering deterministic and verify both source orders.
 - Four `course-bonus-followup.test.ts` global-dispatch scenarios: recover unscheduled follow-up, reclaim expired processing lease, terminalize unconfirmed scheduling, and terminalize last-attempt scheduling reservation. Other suite files leave global jobs visible to the dispatcher. The exact five-file gate passes in isolation. This task now terminalizes only its own fixture jobs after each scenario; it does not modify foreign jobs to make the suite pass.
 - `telegram-channel-reconciliation.test.ts / reclassifies only proven Telegram sandbox state and is idempotent`: isolated-DB bootstrap initially omitted pgcrypto/search-path settings. Those settings were restored; the unchanged test also passed on the original disposable DB. The original failing full run is retained.
 
@@ -86,5 +86,26 @@ Release remains blocked until the full-suite issues above are resolved or explic
 1. Real Botpress/WhatsApp authenticated confirmed-delivery receipts correlated with each exact outbound/version. Local adapter submission is not provider delivery.
 2. Deployed Central V2 verifies every ordered course for new/existing students, advertises partial recovery, honors only the pending subset, and replays without duplicate enrollment/email.
 3. Retell/Xendra publishes and forwards the additive promotion identity/acceptance contract with authenticated call scope. Local voice integration does not prove that external configuration.
+
+## Task 9 Fix round 1
+
+The review found that a prior objection for course A could be combined with a same-turn context for course B, and that explicit selection skipped context-source validation/locking. RED: `task-9-fix1-evidence-red.log`, five failures / one pass. The service now locks the scoped promotion context and its correlated inbound messages for both selected and interest-only identities. Structured evidence must have a source strictly earlier than the authorized current turn, same conversation/contact/course, with positive objection count. Selection still wins course identity but never bypasses evidence provenance. Capability applies the same strict prior-source boundary. The earlier committed objection need not equal the latest context source: a later non-objection turn is valid only when that context itself is prior and retains the same-course objection count.
+
+Real PostgreSQL negatives cover A→B/current context, selected/current, selected/future and selected/foreign source. Positives preserve prior B objection after a later non-objection turn, with and without selection. An independent competing context update must time out under the transaction lock. GREEN: 52/52 direct service, atomic commit and voice integrations (`task-9-fix1-evidence-green.log`); affected units: 145/145 (`task-9-fix1-focused-unit.log`).
+
+Post-sale RED: both complete/partial scenarios left notifications pending when the workflow only called the assembler (`task-9-fix1-post-sale-red.log`). The workflow now reads the worker-created notification and invokes real dispatch → claim → delivery with explicit simulated channel/event adapters. It asserts exact persisted event identity, sent/provider-message state, and replay rejection with one physical send. Complete output derives four course names from persisted fulfillment, labels the paid course plus three gifts, and excludes invoice language. Partial output dispatches delayed status, excludes credentials/complete access/invoice, and retains one durable manual case. No assembler is called directly by this workflow. The first rerun (`task-9-fix1-workflow-green.log`, despite its provisional filename) retained two assertion failures: a sent notification is excluded by the source query and returns `not_authorized`, not the initially expected `claim_lost`. The expectation was corrected to that real contract, without changing production delivery behavior.
+
+Fix-round logs use `task-9-fix1-*.log`. Final exact workflow gate: two files, 5/5 passed in 203.92 seconds (`task-9-fix1-workflow-final.log`). The exact five-file integration command above was repeated against new disposable local database `studyx_task9_fix1_20261028`: 125/125 passed. The previous broad integration failures remain open; this round does not reclassify that suite as green. Isolation and external rollout gates above remain unchanged. Fix-round source/evidence SHA is discoverable with `git log -1 --format=%H -- src/features/promotions/application/direct-course-bonus-service.ts` (separate commit after `44bfc7d2c6bd65affcc29556fac27e628f7a758a`).
+
+Full unit with the existing `--testTimeout=15000` allowance initially returned 4802 passed / two known timeout failures while typecheck/lint ran concurrently (`task-9-fix1-full-unit.log`). Repeating without those concurrent static gates passed 4804, with 17 skipped / 7 todo (`task-9-fix1-full-unit-serial-gates.log`). No timeout configuration was edited. Typecheck (including final rerun), lint, whitespace check and guarded production build passed (`task-9-fix1-typecheck-final.log`, `task-9-fix1-lint.log`, `task-9-fix1-build.log`).
+
+Additional fix-round commands (besides the unchanged exact gates above):
+
+```sh
+TEST_DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:54322/studyx_task9_fix1_20261028 npx vitest run --config vitest.integration.config.mts tests/integration/direct-course-bonus-service.test.ts tests/integration/agent-turn-direct-bonus-commit.test.ts tests/integration/direct-course-bonus-voice.test.ts
+npx vitest run --config vitest.config.mts tests/unit/promotions/course-bonus-capability.test.ts tests/unit/promotions/direct-course-bonus-service.test.ts tests/unit/botpress/process-inbound-turn-hot-path.test.ts
+npm run test:unit -- --testTimeout=15000
+bash scripts/run-agent-a-direct-bonus-verification-lab.sh npm run build
+```
 
 No production enablement is recommended by this report.
