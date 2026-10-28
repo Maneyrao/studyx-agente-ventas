@@ -163,5 +163,15 @@ reserva falla. Las solicitudes de llamadas anteriores a otra llamada del mismo
 scope se rechazan; un resultado autenticado de la llamada recién completada
 puede conservar su selección, sin reutilizar el inbound que solicitó la llamada.
 
+El cierre de entrega vuelve a bloquear el contexto y valida el `payment_id`
+y URL exactos reservados, su scope, curso/plan, estado no terminal, que siga
+siendo el checkout actual de esa conversación y que no tenga supersesión.
+Coincidir sólo en curso y plan no basta: una vuelta A→B→A no reactiva el pago A.
+Si la entrega física termina después de que su checkout quedó viejo, la
+herramienta conserva el contexto actual y responde `PAYMENT_LINK_STALE` con
+`sent: false`; no afirma que haya un checkout vigente ni vuelve a poner el
+chat en espera de confirmación de ese pago. El envío físico ya completado
+puede conservar su evidencia histórica de entrega.
+
 No configurar una URL directa de Retell hacia StudyX en este modo: Xendra
 conserva el webhook de Retell y reenvía los eventos autenticados.

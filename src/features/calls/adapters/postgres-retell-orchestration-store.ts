@@ -572,13 +572,18 @@ export class PostgresRetellOrchestrationStore implements RetellOrchestrationStor
       }
     }
 
-    await this.recordPaymentLinkSelection({
+    const current = await this.recordPaymentLinkSelection({
       workspaceId: workspace.id,
       conversationId: input.conversationId,
       contactId: input.contactId,
       course: input.course,
       plan: paymentPlan.planCode,
+      paymentId: payment.payment_id,
+      checkoutUrl: payment.url,
     });
+    if (!current) return {
+      sent: false, reference: sent.deliveryId, channel: sent.channel, reason: 'PAYMENT_LINK_STALE',
+    };
     return { sent: true, reference: sent.deliveryId, channel: sent.channel };
   }
 
@@ -762,10 +767,32 @@ export class PostgresRetellOrchestrationStore implements RetellOrchestrationStor
     readonly contactId: string;
     readonly course: string;
     readonly plan: PaymentPlanCode;
-  }): Promise<void> {
-    // Delivery can finish after a newer voice selection. Only mark the
-    // already selected checkout as sent; never select its old course again.
-    await this.db`
+    readonly paymentId: string;
+    readonly checkoutUrl: string;
+  }): Promise<boolean> {
+    // Course/plan can return to the same values after a newer selection.
+    // Revalidate the exact checkout under the same locks used by selection
+    // and supersession before changing any commercial projection.
+    return this.db.begin(async (tx) => {
+      const [state] = await tx<Array<{ selected_offering_code: string | null; selected_payment_plan: string | null }>>`
+        SELECT selected_offering_code,selected_payment_plan FROM conversation_sales_context_states_v1
+        WHERE workspace_id=${input.workspaceId}::uuid AND contact_id=${input.contactId}::uuid
+          AND conversation_id=${input.conversationId}::uuid FOR UPDATE`;
+      if (state?.selected_offering_code !== input.course || state.selected_payment_plan !== input.plan) return false;
+      const [payment] = await tx`SELECT p.id FROM payments p JOIN offerings paid ON paid.id=p.offering_id
+        WHERE p.id=${input.paymentId}::uuid AND p.workspace_id=${input.workspaceId}::uuid
+          AND p.contact_id=${input.contactId}::uuid AND p.source_conversation_id=${input.conversationId}::uuid
+          AND paid.workspace_id=p.workspace_id AND paid.code=${input.course}
+          AND p.plan_code=${input.plan} AND p.checkout_url=${input.checkoutUrl}
+          AND p.status NOT IN ('paid','refunded','failed','expired')
+          AND NOT EXISTS (SELECT 1 FROM payment_intent_supersessions s WHERE s.payment_id=p.id)
+          AND p.id=(SELECT candidate.id FROM payments candidate
+            WHERE candidate.workspace_id=p.workspace_id AND candidate.contact_id=p.contact_id
+              AND candidate.source_conversation_id=p.source_conversation_id
+            ORDER BY candidate.created_at DESC,candidate.id DESC LIMIT 1)
+        FOR UPDATE OF p`;
+      if (!payment) return false;
+      await tx`
       WITH updated AS (
         UPDATE conversation_sales_context_states_v1 AS state
         SET stage = 'payment_link_sent',
@@ -821,6 +848,8 @@ export class PostgresRetellOrchestrationStore implements RetellOrchestrationStor
       FROM updated_sales
       ON CONFLICT DO NOTHING
     `;
+      return true;
+    });
   }
 }
 
