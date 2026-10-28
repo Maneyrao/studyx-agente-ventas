@@ -158,6 +158,17 @@ Rollback requires no code deployment. At the first hard, security, idempotency, 
 
 ## 7. Course-bonus addendum — not authorized yet
 
+For the direct multi-course V2 release, use the [direct bonus cutover runbook](direct-course-bonus-v2-cutover.md)
+as the current compatibility order, canary matrix and obligation-preserving rollback.
+The review-only English-promotion sequence below is historical and must not be
+used to enable direct mode. The 20/50 sandbox result above is historical, not a
+fresh score for V2; Task 9's broad integration gate remains non-green with seven
+failures and provider gates remain pending. This link grants no external action.
+Direct cutover requires additive migrations/backend in review, readiness/schema
+and old-ADK compatibility, then the dual-mode ADK, then an allowlisted direct
+canary with global `CENTRAL_CARGA_BONUS_ENABLED=false`. Keep that ADK during rollback;
+stop new direct offers without cancelling delivered/accepted/attached obligations.
+
 The paid-course-plus-bonus capability is locally implemented but is not an
 authorized launch path. Keep `CENTRAL_CARGA_BONUS_ENABLED=false`, keep the
 promotion inactive, and preserve the existing Central v1 path.
