@@ -235,3 +235,35 @@ export async function acceptDirectCourseBonusV1(db: DbClient, input: AcceptDirec
     return durable(offer);
   });
 }
+
+/** Only called after the Retell signature and canonical call correlation are verified. */
+export async function acceptDirectCourseBonusByVoiceV1(db: DbClient, input: AcceptDirectCourseBonusInputV1 & {
+  readonly call_id: string;
+}): Promise<AcceptDirectCourseBonusResultV1> {
+  return execute(db,async tx=>{
+    if (!input.promotion_code || !input.promotion_cycle_id || !Number.isInteger(input.expected_offer_version)
+      || input.expected_offer_version<1) reject('stale_offer_version');
+    const context=await lockIdentity(tx,input);
+    const offer=await resolveOffer(tx,input,context.paid_id);
+    if (!offer || offer.offer_version!==input.expected_offer_version) reject('stale_offer_version');
+    const [call]=await tx`SELECT id FROM call_sessions WHERE id=${input.call_id}::uuid
+      AND workspace_id=${input.workspace_id}::uuid AND contact_id=${input.contact_id}::uuid
+      AND conversation_id=${input.conversation_id}::uuid AND source_turn_id=${input.source_turn_id}::uuid
+      AND provider='retell' AND provider_call_id IS NOT NULL
+      AND status IN ('provider_accepted','in_progress') FOR SHARE`;
+    if (!call) reject('bonus_without_reply');
+    if (['accepted','attached'].includes(offer.status)) {
+      const [evidence]=await tx`SELECT call_id FROM promotion_voice_acceptances WHERE offer_id=${offer.id}::uuid`;
+      if (evidence && evidence.call_id!==input.call_id) reject('stale_offer_version');
+      return durable(offer);
+    }
+    if (!authorizedLimit(input.contact_id)) reject('bonus_disabled');
+    await validateOpen(tx,input,context,offer);
+    await tx`INSERT INTO promotion_voice_acceptances(offer_id,call_id,workspace_id,contact_id,conversation_id,promotion_cycle_id,offer_version)
+      VALUES (${offer.id}::uuid,${input.call_id}::uuid,${input.workspace_id}::uuid,${input.contact_id}::uuid,
+        ${input.conversation_id}::uuid,${input.promotion_cycle_id}::uuid,${input.expected_offer_version})`;
+    await tx`UPDATE promotion_offers SET status='accepted',accepted_at=clock_timestamp(),bonus_snapshot_sealed_at=clock_timestamp()
+      WHERE id=${offer.id}::uuid`;
+    return durable(offer);
+  });
+}

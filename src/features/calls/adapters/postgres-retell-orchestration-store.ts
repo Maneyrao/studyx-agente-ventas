@@ -1,4 +1,6 @@
 import type postgres from 'postgres';
+import { acceptDirectCourseBonusByVoiceV1 } from '@/features/promotions/application/direct-course-bonus-service';
+import { loadCourseBonusFlowConfig } from '@/features/promotions/application/course-bonus-flow-config';
 import {
   buildAuthorizedEgress,
   protectedFactsInContentV1,
@@ -59,6 +61,42 @@ export class PostgresRetellOrchestrationStore implements RetellOrchestrationStor
     )) return null;
     const workspace = await this.workspaceForContact(input.workspaceSlug, input.contactId, input.callId);
     if (!workspace || workspace.conversation_id !== input.conversationId) return null;
+    // Direct packages belong to the original text cycle. Reading never seals,
+    // exposes, appends or creates a replacement package.
+    const [direct] = await this.db<Array<{
+      id: string;
+      promotion_code: string;
+      promotion_cycle_id: string;
+      offer_version: number;
+      bonuses: Array<{ code: string; display_name: string }>;
+    }>>`SELECT offer.id,promotion.promotion_code,offer.promotion_cycle_id,offer.offer_version,
+        (SELECT COALESCE(jsonb_agg(jsonb_build_object('code',b.offering_code_snapshot,
+          'display_name',b.offering_display_name_snapshot) ORDER BY b.position),'[]'::jsonb)
+          FROM promotion_offer_bonus_offerings b WHERE b.offer_id=offer.id) AS bonuses
+      FROM promotion_offers offer JOIN promotions promotion ON promotion.id=offer.promotion_id
+      JOIN offerings paid ON paid.id=offer.paid_offering_id
+      WHERE offer.workspace_id=${workspace.id}::uuid AND offer.contact_id=${input.contactId}::uuid
+        AND offer.conversation_id=${input.conversationId}::uuid AND paid.code=${input.course}
+        AND offer.package_mode='direct' AND offer.status IN ('offered','accepted','attached')
+        AND (offer.status IN ('accepted','attached') OR (promotion.active=true AND paid.status='active'
+          AND (promotion.valid_from IS NULL OR promotion.valid_from<=now())
+          AND (promotion.valid_until IS NULL OR promotion.valid_until>now())
+          AND (offer.expires_at IS NULL OR offer.expires_at>now())))
+      ORDER BY offer.created_at DESC LIMIT 1`;
+    if (direct) {
+      const bonuses = direct.bonuses;
+      if (bonuses.length < 1 || bonuses.length > 3 || bonuses.some((bonus) => [bonus.code, bonus.display_name].some((value) => {
+        const safe = sanitizeRetrievedText(value, 128);
+        return safe.injection_suspected || safe.truncated || safe.text !== value;
+      }))) return null;
+      return {
+        promotionCode: direct.promotion_code,
+        promotionCycleId: direct.promotion_cycle_id,
+        offerVersion: direct.offer_version,
+        bonusOfferings: bonuses.map((bonus) => ({ code: bonus.code, displayName: bonus.display_name })),
+      };
+    }
+    if (loadCourseBonusFlowConfig().mode === 'direct') return null;
     const promotion = await this.db.begin(async (tx) => {
       await tx`
         UPDATE promotion_offers offer
@@ -372,6 +410,25 @@ export class PostgresRetellOrchestrationStore implements RetellOrchestrationStor
     const paymentLinkResolver = this.options.paymentLinkResolver ?? createConfigPaymentLinkResolver();
     const configuredUrl = paymentLinkResolver.resolve(paymentPlan.planCode);
     if (!configuredUrl) return { sent: false, reference: null, reason: 'PAYMENT_LINK_NOT_CONFIGURED' };
+    const hasDirectIdentity = input.promotionCycleId !== undefined
+      || input.acceptedOfferVersion !== undefined || input.acceptPromotion !== undefined;
+    if (hasDirectIdentity) {
+      if (!input.promotionCode || !input.promotionCycleId || !input.acceptedOfferVersion || input.acceptPromotion !== true) {
+        return { sent: false, reference: null, reason: 'PROMOTION_NOT_AUTHORIZED' };
+      }
+      const accepted = await acceptDirectCourseBonusByVoiceV1(this.db, {
+        workspace_id: workspace.id,
+        contact_id: input.contactId,
+        conversation_id: input.conversationId,
+        paid_offering_code: input.course,
+        source_turn_id: workspace.source_turn_id,
+        call_id: input.callId,
+        promotion_code: input.promotionCode,
+        promotion_cycle_id: input.promotionCycleId,
+        expected_offer_version: input.acceptedOfferVersion,
+      });
+      if (!accepted.ok) return { sent: false, reference: null, reason: accepted.reason };
+    }
     let payment: Awaited<ReturnType<typeof reservePaymentLink>>;
     const idempotencyKey = `retell-payment-link:${workspace.id}:${input.callId}`;
     try {
@@ -386,6 +443,10 @@ export class PostgresRetellOrchestrationStore implements RetellOrchestrationStor
         ...(input.promotionCode ? {
           promotion_code: input.promotionCode,
           promotion_channel: 'voice' as const,
+          ...(hasDirectIdentity ? {
+            promotion_cycle_id: input.promotionCycleId,
+            accepted_offer_version: input.acceptedOfferVersion,
+          } : {}),
         } : {}),
       });
     } catch (error) {

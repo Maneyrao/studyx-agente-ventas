@@ -264,7 +264,7 @@ export async function reservePaymentLink(
         AND promotion.promotion_code = ${input.promotion_code}
         AND promotion.paid_offering_id = ${input.offering_id}::uuid
         AND promotion.active = true
-        AND ${input.promotion_channel ?? 'text'} = ANY(promotion.channels)
+        AND (${input.promotion_channel ?? 'text'} = ANY(promotion.channels) OR offer.package_mode='direct')
         AND (promotion.valid_from IS NULL OR promotion.valid_from <= now())
         AND (promotion.valid_until IS NULL OR promotion.valid_until > now())
         AND offer.workspace_id = ${input.workspace_id}::uuid
@@ -274,7 +274,9 @@ export async function reservePaymentLink(
         AND ((offer.package_mode = 'review' AND ${!hasDirectIdentity}) OR (offer.package_mode='direct' AND
           offer.promotion_cycle_id = ${input.promotion_cycle_id ?? null}::uuid
           AND offer.offer_version = ${input.accepted_offer_version ?? null}::integer
-          AND offer.accepted_source_turn_id IS NOT NULL
+          AND (offer.accepted_source_turn_id IS NOT NULL OR EXISTS (
+            SELECT 1 FROM promotion_voice_acceptances evidence WHERE evidence.offer_id=offer.id
+              AND evidence.promotion_cycle_id=offer.promotion_cycle_id AND evidence.offer_version=offer.offer_version))
           AND (${validatedCurrentSelection} OR EXISTS (SELECT 1 FROM conversation_sales_context_states_v1 context
             JOIN offerings selected ON selected.workspace_id=context.workspace_id AND selected.code=context.selected_offering_code
             WHERE context.workspace_id=offer.workspace_id AND context.contact_id=offer.contact_id

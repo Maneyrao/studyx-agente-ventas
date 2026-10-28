@@ -43,6 +43,8 @@ export interface RetellOrchestrationStore {
     readonly course: string;
   }): Promise<{
     readonly promotionCode: string;
+    readonly promotionCycleId?: string;
+    readonly offerVersion?: number;
     readonly bonusOfferings: ReadonlyArray<{ readonly code: string; readonly displayName: string }>;
   } | null>;
   recordConfirmedSelection(input: {
@@ -64,6 +66,9 @@ export interface RetellOrchestrationStore {
     readonly course: string;
     readonly paymentPlan: RetellPaymentPlanRequest;
     readonly promotionCode?: string;
+    readonly promotionCycleId?: string;
+    readonly acceptedOfferVersion?: number;
+    readonly acceptPromotion?: boolean;
   }): Promise<{
     readonly sent: boolean;
     readonly reference: string | null;
@@ -276,6 +281,9 @@ const ToolArgsSchemas = {
       curso: CourseTextSchema,
       plan_code: z.enum(['monthly_12', 'monthly_6', 'one_time']),
       promotion_code: PromotionCodeSchema.optional(),
+      promotion_cycle_id: z.uuid().optional(),
+      accepted_offer_version: z.number().int().min(1).max(3).optional(),
+      accept_promotion: z.boolean().optional(),
     }).strict(),
     z.object({
       cursos: z.array(CourseTextSchema).length(1),
@@ -283,6 +291,9 @@ const ToolArgsSchemas = {
       email: SafeEmailSchema.optional(),
       canal: z.enum(['telegram', 'whatsapp']).optional(),
       promotion_code: PromotionCodeSchema.optional(),
+      promotion_cycle_id: z.uuid().optional(),
+      accepted_offer_version: z.number().int().min(1).max(3).optional(),
+      accept_promotion: z.boolean().optional(),
     }).strict(),
     z.object({
       cursos: z.array(CourseTextSchema).length(1),
@@ -290,6 +301,9 @@ const ToolArgsSchemas = {
       email: SafeEmailSchema.optional(),
       canal: z.enum(['telegram', 'whatsapp']).optional(),
       promotion_code: PromotionCodeSchema.optional(),
+      promotion_cycle_id: z.uuid().optional(),
+      accepted_offer_version: z.number().int().min(1).max(3).optional(),
+      accept_promotion: z.boolean().optional(),
     }).strict(),
   ]),
   verificar_pago: z.object({
@@ -619,6 +633,10 @@ async function consultOffer(
       cuotas_texto: snapshot.workspace.payment_options.map((option) => option.label).join('; '),
       ...(promotion ? { promocion: {
         codigo: promotion.promotionCode,
+        ...(promotion.promotionCycleId ? {
+          promotion_cycle_id: promotion.promotionCycleId,
+          offer_version: promotion.offerVersion,
+        } : {}),
         cursos_bonificados: promotion.bonusOfferings.map((bonus) => ({
           codigo: bonus.code,
           nombre: bonus.displayName,
@@ -728,6 +746,9 @@ async function runOrchestrationTool(
         ? args.plan_code
         : args.plan === 'contado' ? 'one_time' : 'cuotas',
       ...(args.promotion_code === undefined ? {} : { promotionCode: args.promotion_code }),
+      ...(args.promotion_cycle_id === undefined ? {} : { promotionCycleId: args.promotion_cycle_id }),
+      ...(args.accepted_offer_version === undefined ? {} : { acceptedOfferVersion: args.accepted_offer_version }),
+      ...(args.accept_promotion === undefined ? {} : { acceptPromotion: args.accept_promotion }),
     });
     return result.sent
       ? Response.json({

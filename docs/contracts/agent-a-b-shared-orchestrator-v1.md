@@ -118,5 +118,29 @@ los cursos bonificados allí enumerados y, ante aceptación, copiar exactamente
 no aparece, B no ofrece ningún regalo. La ausencia de promoción no modifica el
 precio, el plan ni el flujo ordinario.
 
+En modo direct, la promoción leída del chat original incluye además
+`promotion_cycle_id` y `offer_version`. Esta lectura es atómica y no crea,
+amplía ni sella el paquete. B puede explicar exclusivamente los cursos de esa
+versión. Para aceptar y enviar el link, copia el código, ciclo y versión exactos
+en `promotion_code`, `promotion_cycle_id`, `accepted_offer_version` y envía
+`accept_promotion: true` sólo tras la aceptación explícita del cliente.
+Una versión anterior, identidad parcial, entrega aún no confirmada o llamada
+no correlacionada se rechaza sin crear checkout. No se admite agregar regalos
+desde la llamada. Los argumentos de la herramienta no autorizan el paquete:
+el backend vuelve a validar el estado durable bajo bloqueo.
+
+La herramienta autenticada por firma Retell o secreto del relay autorizado y
+correlacionada por el backend registra una fila inmutable en
+`promotion_voice_acceptances`: llamada Retell activa, workspace, contacto,
+conversación original, ciclo, versión y hora de recepción del servidor posterior
+a la entrega confirmada de esa versión. No se crea un mensaje entrante de chat.
+Esta evidencia usa las mismas comprobaciones de elegibilidad y paquete que la
+aceptación por texto; permite sellar una sola versión y reservar el checkout
+con el snapshot completo. Un replay exacto de la misma llamada reutiliza la
+evidencia y el checkout; otra llamada no reutiliza la aceptación de voz anterior.
+El paquete aceptado permanece inmutable, incluso al volver a modo review, y
+el link se entrega al `conversation_id` original de la llamada. El contrato
+legacy de promoción review conserva sus argumentos y comportamiento.
+
 No configurar una URL directa de Retell hacia StudyX en este modo: Xendra
 conserva el webhook de Retell y reenvía los eventos autenticados.
