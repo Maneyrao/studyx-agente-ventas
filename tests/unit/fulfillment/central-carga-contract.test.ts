@@ -110,6 +110,13 @@ describe('Central v1/v2 course enrollment contract', () => {
       paymentId: PAYMENT_ID, expectedBonusCodes: ['ingles_2'] })).toEqual({ kind: 'processing' });
   });
 
+  it.each(['processing', 'active'] as const)('keeps HTTP 202 waiting even with valid v2 %s evidence', (enrollment_status) => {
+    expect(classifyResponse({ method: 'GET', status: 202, paymentId: PAYMENT_ID,
+      expectedBonusCodes: ['a'], bodyText: JSON.stringify(response({ enrollment_status,
+        supports_partial_recovery: true, bonus_enrollments: [{ offering_code: 'a', enrollment_status: 'active' }],
+      })) })).toEqual({ kind: 'processing' });
+  });
+
   it('retains verified items from a valid partial result without declaring success', () => {
     expect(classifyResponse({ method: 'POST', status: 200, paymentId: PAYMENT_ID,
       expectedBonusCodes: ['a', 'b', 'c'], bodyText: JSON.stringify(response({

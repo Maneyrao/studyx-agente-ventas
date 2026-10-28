@@ -155,6 +155,34 @@ beforeEach(async () => {
 });
 
 run('Central de Carga enrollment worker', () => {
+  it.each(['processing','active'] as const)('only polls after HTTP 202 with valid v2 paid=%s evidence', async (enrollment_status) => {
+    const f=await fixture({bonusCourses:[{code:`WAIT202-${randomUUID().slice(0,6)}`,displayName:'Bonus',position:1}]});
+    expect(await work(mockCentral(timeout).fetchImpl)).toMatchObject({retried:1});
+    await makeDue(f.jobId);
+    const central=mockCentral(call=>json(202,body(call.paymentId,{enrollment_status,supports_partial_recovery:true,
+      bonus_enrollments:[{offering_code:f.bonusCodes[0],enrollment_status:'active'}]})));
+    expect(await work(central.fetchImpl)).toMatchObject({retried:1,completed:0});
+    expect(central.calls.map(call=>call.method)).toEqual(['GET']);
+    expect(await job(f.jobId)).toMatchObject({last_error_code:'enrollment_processing'});
+    expect(await db!`SELECT id FROM post_sale_notifications WHERE payment_id=${f.paymentId}::uuid AND kind='access_ready'`).toHaveLength(0);
+  });
+
+  it.each([undefined,false])('refuses partial recovery without capability even with zero active courses (%s)', async (supports_partial_recovery) => {
+    const f=await fixture({bonusCourses:[{code:`NONE-${randomUUID().slice(0,6)}`,displayName:'Bonus',position:1}]});
+    expect(await work(mockCentral(timeout).fetchImpl)).toMatchObject({retried:1});
+    await makeDue(f.jobId);
+    const central=mockCentral(call=>json(200,body(call.paymentId,{enrollment_status:'processing',supports_partial_recovery,
+      bonus_enrollments:[{offering_code:f.bonusCodes[0],enrollment_status:'failed'}]})));
+    expect(await work(central.fetchImpl)).toMatchObject({dead_lettered:1,completed:0});
+    expect(central.calls.map(call=>call.method)).toEqual(['GET']);
+    expect((await db!`SELECT enrollment_status FROM central_enrollments WHERE payment_id=${f.paymentId}::uuid`)[0])
+      .toMatchObject({enrollment_status:'processing'});
+    expect(await bonusEnrollments(f.paymentId)).toHaveLength(0);
+    expect((await db!`SELECT expected_codes,active_codes,pending_codes FROM bonus_fulfillment_cases WHERE payment_id=${f.paymentId}::uuid`)[0])
+      .toMatchObject({active_codes:[],pending_codes:expect.arrayContaining(f.bonusCodes)});
+    expect((await db!`SELECT status FROM payments WHERE id=${f.paymentId}::uuid`)[0].status).toBe('paid');
+    expect(await db!`SELECT id FROM post_sale_notifications WHERE payment_id=${f.paymentId}::uuid AND kind='access_ready'`).toHaveLength(0);
+  });
   it('never sends an empty retry subset when Central regresses a previously verified course', async () => {
     const f=await fixture({bonusCourses:[{code:`REGRESS-${randomUUID().slice(0,6)}`,displayName:'Bonus',position:1}]});
     expect(await work(mockCentral(call=>json(200,body(call.paymentId,{supports_partial_recovery:true,

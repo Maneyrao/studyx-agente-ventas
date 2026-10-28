@@ -282,7 +282,7 @@ async function decide(
           if (['active', 'already_enrolled'].includes(item.enrollment_status)) active.add(item.offering_code);
         }
       }
-      if (active.size > 0) {
+      if (recoveryBody || active.size > 0) {
         if (!recoveryBody || !('supports_partial_recovery' in recoveryBody) || !recoveryBody.supports_partial_recovery) {
           return withSnapshot({ kind: 'dead_letter', code: 'partial_recovery_unsupported', body: recoveryBody });
         }
