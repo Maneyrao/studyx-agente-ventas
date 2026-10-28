@@ -133,11 +133,19 @@ run('direct bonus checkout exact accepted package',()=>{
       return commitAgentDecision({turn_id:turn.turn_id,trace_id:randomUUID(),supports_multi_outbound:true,
         authorized_offering_code:code,authorized_payment_plan:null,
         agent_turn_v2:{schema_version:2,proposal:{...f.proposalWithCallOfferAndFalsePrice,
-          move:{schema_version:1,move:'select_course',secondary_moves:[],vetoes:[],confidence:1,course_reference:reference},
+          move:{schema_version:1,move:'request_call',secondary_moves:[],vetoes:[],confidence:1,course_reference:reference},
           proposed_action:{type:'none'},response:{messages:[`Seguimos con ${reference}.`],call_offer:null}} as never},
         decision:f.placeholderDecision as never,model:f.model as never});
     }
     expect((await select('ingles_1','Inglés 1')).status).toBe('committed');
+    expect(await db!`SELECT id FROM payment_intent_supersessions WHERE payment_id=${payment.id}`).toHaveLength(1);
+    const stripe=new Stripe('sk_test_never_network');const secret='whsec_request_call';
+    const payload=JSON.stringify({id:`evt_${randomUUID()}`,object:'event',livemode:false,type:'checkout.session.completed',created:Math.floor(Date.now()/1000),
+      data:{object:{id:`cs_test_${randomUUID()}`,object:'checkout.session',client_reference_id:payment.id,mode:'payment',
+        payment_status:'paid',amount_total:36000,currency:'usd',metadata:{}}}});
+    expect(await processStripeWebhook(payload,stripe.webhooks.generateTestHeaderString({payload,secret}),
+      {db:db!,stripe,webhookSecret:secret,expectedEnvironment:'test'})).toMatchObject({body:{reconciliation_required:true}});
+    expect(await db!`SELECT id FROM fulfillment_jobs WHERE payment_id=${payment.id}`).toEqual([]);
     async function combinedCheckout(code:string,reference:string) {
       const turn=await next(`Quiero ${reference} en un pago. Pasame el link de pago`);
       return commitAgentDecision({turn_id:turn.turn_id,trace_id:randomUUID(),supports_multi_outbound:true,
@@ -234,7 +242,7 @@ run('direct bonus checkout exact accepted package',()=>{
   });
   it('denies inherited public client privileges and restricts the application to SELECT/INSERT',async()=>{
     const roles=await db!`SELECT rolname FROM pg_roles WHERE rolname IN ('anon','authenticated','service_role','orchestrator_role')`;
-    for(const {rolname} of roles) for(const table of ['payment_intent_supersessions','payment_reconciliation_cases']) {
+    for(const {rolname} of roles) for(const table of ['payment_intent_supersessions','payment_reconciliation_cases','bonus_fulfillment_cases']) {
       const [acl]=await db!`SELECT has_table_privilege(${rolname},${'public.'+table},'SELECT') AS read,
         has_table_privilege(${rolname},${'public.'+table},'INSERT') AS append,
         has_table_privilege(${rolname},${'public.'+table},'UPDATE') AS change,
@@ -243,10 +251,10 @@ run('direct bonus checkout exact accepted package',()=>{
       expect(acl).toEqual({read:rolname==='orchestrator_role',append:rolname==='orchestrator_role',change:false,remove:false,truncate:false});
     }
     expect(await db!`SELECT privilege_type FROM pg_class c CROSS JOIN LATERAL aclexplode(c.relacl) a
-      WHERE c.oid IN ('public.payment_intent_supersessions'::regclass,'public.payment_reconciliation_cases'::regclass) AND a.grantee=0`).toEqual([]);
+      WHERE c.oid IN ('public.payment_intent_supersessions'::regclass,'public.payment_reconciliation_cases'::regclass,'public.bonus_fulfillment_cases'::regclass) AND a.grantee=0`).toEqual([]);
   });
   it.each(['anon','authenticated','service_role'])('denies direct reads and writes to %s independently from RLS',async role=>{
-    for(const table of ['payment_intent_supersessions','payment_reconciliation_cases']) {
+    for(const table of ['payment_intent_supersessions','payment_reconciliation_cases','bonus_fulfillment_cases']) {
       for(const command of [`SELECT id FROM ${table}`,`INSERT INTO ${table} DEFAULT VALUES`,
         `UPDATE ${table} SET id=id WHERE false`,`DELETE FROM ${table} WHERE false`]) {
         await expect(db!.begin(async tx=>{

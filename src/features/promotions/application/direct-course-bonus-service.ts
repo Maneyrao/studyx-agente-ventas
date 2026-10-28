@@ -143,9 +143,24 @@ async function lockIdentity(tx: DbClient, input: Identity) {
         AND message_occurrence_v1(source.metadata,source.created_at)<=message_occurrence_v1(current.metadata,current.created_at)
       FOR SHARE OF source,current
   ` : [];
+  // A question about a gift changes explanatory focus only. Preserve the live
+  // package's paid identity without persisting a purchase selection or lending
+  // its objection evidence to a different paid course.
+  const [packageIdentity]=!context.selected_offering_code && source && interest
+    ? await tx<Array<{paid_code:string}>>`
+      SELECT paid.code AS paid_code FROM promotion_offers o
+      JOIN offerings paid ON paid.id=o.paid_offering_id AND paid.workspace_id=o.workspace_id
+      WHERE o.workspace_id=${input.workspace_id}::uuid AND o.conversation_id=${input.conversation_id}::uuid
+        AND o.contact_id=${input.contact_id}::uuid AND o.package_mode='direct'
+        AND o.status IN ('offered','accepted','attached')
+        AND NOT EXISTS(SELECT 1 FROM payment_intent_supersessions superseded WHERE superseded.payment_id=o.payment_id)
+        AND EXISTS(SELECT 1 FROM promotion_offer_bonus_offerings gift WHERE gift.offer_id=o.id
+          AND gift.offering_code_snapshot=${interest.interest_offering_code})
+      ORDER BY o.created_at DESC LIMIT 1 FOR UPDATE OF o
+    ` : [];
   // Effective identity only; never persist a purchase selection. Same-turn
   // interest can identify a course, but cannot establish a prior objection.
-  return {...context,selected_offering_code:context.selected_offering_code ?? (source ? interest.interest_offering_code : null),
+  return {...context,selected_offering_code:context.selected_offering_code ?? packageIdentity?.paid_code ?? (source ? interest.interest_offering_code : null),
     structured_objection_authorized:source?.prior===true && interest.interest_offering_code===input.paid_offering_code
       && interest.price_objection_count>0};
 }
@@ -232,6 +247,11 @@ export async function offerDirectCourseBonusV1(db: DbClient, input: OfferDirectC
         AND source.direction='inbound' AND source.id<>current.id
         AND current.direction='inbound' AND current.conversation_id=source.conversation_id AND current.contact_id=source.contact_id
         AND message_occurrence_v1(source.metadata,source.created_at)<message_occurrence_v1(current.metadata,current.created_at)
+        AND NOT EXISTS(SELECT 1 FROM promotion_offers prior_package
+          WHERE prior_package.workspace_id=${input.workspace_id}::uuid AND prior_package.contact_id=current.contact_id
+            AND prior_package.conversation_id=current.conversation_id AND prior_package.package_mode='direct'
+            AND prior_package.status IN ('offered','accepted','attached') AND prior_package.paid_offering_id<>${context.paid_id}::uuid
+            AND message_occurrence_v1(source.metadata,source.created_at)<=prior_package.created_at)
       UNION ALL
       SELECT decision.id FROM agent_decisions decision JOIN messages source ON source.id=decision.turn_id
       JOIN messages current ON current.id=${input.source_turn_id}::uuid

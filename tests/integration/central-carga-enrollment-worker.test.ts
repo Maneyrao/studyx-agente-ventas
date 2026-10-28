@@ -173,13 +173,24 @@ run('Central de Carga enrollment worker', () => {
     await makeDue(f.jobId);
     const central=mockCentral(call=>json(200,body(call.paymentId,{enrollment_status:'processing',supports_partial_recovery,
       bonus_enrollments:[{offering_code:f.bonusCodes[0],enrollment_status:'failed'}]})));
-    expect(await work(central.fetchImpl)).toMatchObject({dead_lettered:1,completed:0});
+    await db!`SET ROLE orchestrator_role`;
+    try {
+      expect(await work(central.fetchImpl)).toMatchObject({dead_lettered:1,completed:0});
+    } finally { await db!`RESET ROLE`; }
     expect(central.calls.map(call=>call.method)).toEqual(['GET']);
     expect((await db!`SELECT enrollment_status FROM central_enrollments WHERE payment_id=${f.paymentId}::uuid`)[0])
       .toMatchObject({enrollment_status:'processing'});
     expect(await bonusEnrollments(f.paymentId)).toHaveLength(0);
     expect((await db!`SELECT expected_codes,active_codes,pending_codes FROM bonus_fulfillment_cases WHERE payment_id=${f.paymentId}::uuid`)[0])
       .toMatchObject({active_codes:[],pending_codes:expect.arrayContaining(f.bonusCodes)});
+    await expect(db!`UPDATE bonus_fulfillment_cases SET reason_code=reason_code WHERE payment_id=${f.paymentId}::uuid`)
+      .rejects.toThrow(/append.only/i);
+    await expect(db!`DELETE FROM bonus_fulfillment_cases WHERE payment_id=${f.paymentId}::uuid`)
+      .rejects.toThrow(/append.only/i);
+    await expect(db!.begin(async tx=>{
+      await tx`SET LOCAL ROLE orchestrator_role`;
+      await tx`UPDATE bonus_fulfillment_cases SET reason_code=reason_code WHERE payment_id=${f.paymentId}::uuid`;
+    })).rejects.toMatchObject({code:'42501'});
     expect((await db!`SELECT status FROM payments WHERE id=${f.paymentId}::uuid`)[0].status).toBe('paid');
     expect(await db!`SELECT id FROM post_sale_notifications WHERE payment_id=${f.paymentId}::uuid AND kind='access_ready'`).toHaveLength(0);
   });

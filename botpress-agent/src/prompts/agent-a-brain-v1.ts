@@ -6,7 +6,7 @@ import {
 import { resolveCanonicalPromptIdentityV1 } from './agent-a-identity';
 import { evaluateSalesObjectionTurnV1 } from '../lib/conversation/sales-objection-turn-policy';
 
-export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v133' as const;
+export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v134' as const;
 
 /**
  * Runtime contract only. The sales behavior lives in the canonical prompt so
@@ -38,7 +38,7 @@ function inertJson(value: unknown): string {
     .replaceAll('&', '\\u0026');
 }
 
-function hasDirectBonusContextV1(context: AgentAContextV1): boolean {
+export function hasDirectBonusContextV1(context: AgentAContextV1): boolean {
   const capability=context.capabilities.course_bonus;
   const promotion=context.commercial_state.promotion;
   // Creation permission can be off during rollback while a direct package

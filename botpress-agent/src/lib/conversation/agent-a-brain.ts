@@ -30,7 +30,7 @@ import {
   type ComposedNarrativeV1,
   type TurnPlanV1,
 } from '../../schemas/conversation-pipeline';
-import { buildAgentABrainInstructionsV1 } from '../../prompts/agent-a-brain-v1';
+import { buildAgentABrainInstructionsV1, hasDirectBonusContextV1 } from '../../prompts/agent-a-brain-v1';
 import { assertedCommercialClausesV1, assertedCommercialPricesV1 } from '../../../../src/features/orchestration/domain/commercial-truth-guard';
 import { lastAgentReplyV1 } from './conversation-composer';
 import {
@@ -576,7 +576,7 @@ function proposalJsonSchema(context: AgentAContextV1, conversationOnly = false):
       interest_offering_code:{type:'string',enum:[courseBonus.interest_offering_code]},
       bonus_offering_code:{type:'string',enum:directBonusCodes}})] : [];
   const acceptanceAlternatives = courseBonus?.may_accept_offer
-    ? courseBonus.enabled
+    ? hasDirectBonusContextV1(context)
       ? courseBonus.promotion_code && courseBonus.promotion_cycle_id && courseBonus.interest_offering_code && courseBonus.offer_version
         ? [closedObject({type:{type:'string',enum:['accept_promotion']},
           promotion_code:{type:'string',enum:[courseBonus.promotion_code]},
@@ -1878,8 +1878,8 @@ export function validateAgentATurnProposalV1(input: {
     && directAction.bonus_offering_code !== directBonusCapability.interest_offering_code
     && !directBonusCapability.bonus_offerings.some(o => o.code === directAction.bonus_offering_code)
     ? input.context.catalog.available_offerings.find(o => o.code === directAction.bonus_offering_code) : null;
-  const authorizedBonusOfferingNames = directBonusCapability?.enabled
-    ? [...(directBonusCapability.delivered_bonus_offerings ?? []).flatMap(o => {
+  const authorizedBonusOfferingNames = hasDirectBonusContextV1(input.context)
+    ? [...(directBonusCapability?.delivered_bonus_offerings ?? []).flatMap(o => {
       const active = input.context.catalog.available_offerings.find(offering => offering.code === o.code);
       return active ? [active.display_name] : [];
     }),

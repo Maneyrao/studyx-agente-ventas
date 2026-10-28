@@ -93,6 +93,24 @@ afterEach(() => {
 });
 
 describe('Agent A Brain V1', () => {
+  it('rejects a pending gift during rollback while allowing the delivered gift', () => {
+    const current=context();
+    current.catalog.available_offerings=[
+      {code:'ingles_1',display_name:'Inglés 1',fact_id:'english',area_code:'language'},
+      {code:'excel',display_name:'Excel',fact_id:'excel',area_code:'tech'}];
+    current.capabilities.course_bonus={enabled:false,status:'offer_available',package_status:'offered',
+      may_schedule_checkin:false,may_request_review:false,may_accept_offer:false,may_send_promoted_payment:false,
+      promotion_code:'p',promotion_cycle_id:'11111111-1111-4111-8111-111111111111',offer_version:2,
+      interest_offering_code:'redes-informaticas',bonus_offerings:[
+        {code:'ingles_1',display_name:'Inglés 1',position:1},{code:'excel',display_name:'Excel',position:2}],
+      delivered_bonus_offerings:[{code:'ingles_1',display_name:'Inglés 1',position:1}]};
+    for(const [content,forbidden] of [['Te regalo Inglés 1.',false],['Te regalo Excel.',true]] as const) {
+      const parsed=parseAgentATurnProposalV1(proposal({response:{messages:[content],call_offer:null}}),current);
+      const rejection=validateAgentATurnProposalV1({proposal:parsed,context:current,planned_fact_ids:[],
+        rejection_id:'00000000-0000-4000-8000-000000000001'});
+      expect(rejection?.rejections.some(r=>r.subject==='forbidden_promise') ?? false).toBe(forbidden);
+    }
+  });
   it.each([true, false])('authorizes the full package with exactly one new course, formal selection=%s', (selected) => {
     const current = context();
     current.turn.batch_messages = [{ id: 'current', text: 'Me sigue pareciendo caro' }];
@@ -1750,11 +1768,11 @@ describe('Agent A Brain V1', () => {
     expect(moveProperties.vetoes.description).toContain('current customer message explicitly refuses');
   });
 
-  it('exposes only authorized direct offering codes and the exact acceptance identity on the wire', async () => {
+  it.each([true,false])('exposes the exact direct acceptance identity on the real wire with creation enabled=%s', async enabled => {
     const current=context();
     current.catalog.available_offerings=[{code:'redes-informaticas',display_name:'Redes Informáticas',fact_id:'paid',area_code:'tech'},
       {code:'excel-integral',display_name:'Excel Integral',fact_id:'bonus',area_code:'tech'}];
-    current.capabilities.course_bonus={enabled:true,max_bonus_courses:2,may_offer_bonus:true,status:'offer_available',
+    current.capabilities.course_bonus={enabled,max_bonus_courses:2,may_offer_bonus:enabled,status:'offer_available',package_status:'offered',
       may_schedule_checkin:false,may_request_review:false,may_accept_offer:true,may_send_promoted_payment:false,
       interest_offering_code:'redes-informaticas',promotion_code:'p',promotion_cycle_id:'11111111-1111-4111-8111-111111111111',
       offer_version:1,bonus_offerings:[],delivered_bonus_offerings:[]};
@@ -1763,9 +1781,11 @@ describe('Agent A Brain V1', () => {
     await generateDeepSeekAgentATurnProposalV1({context:current,apiKey:'fixture',signal:new AbortController().signal});
     const body=JSON.parse(String(fetchMock.mock.calls[0]![1]?.body));
     const alternatives=body.text.format.schema.properties.proposed_action.anyOf as Array<{properties:Record<string,{enum?:unknown[]}>}>;
-    expect(alternatives.find(a=>a.properties.type.enum?.includes('offer_course_bonus'))).toMatchObject({
+    if(enabled) expect(alternatives.find(a=>a.properties.type.enum?.includes('offer_course_bonus'))).toMatchObject({
       properties:{bonus_offering_code:{enum:['excel-integral']},interest_offering_code:{enum:['redes-informaticas']}}});
+    else expect(alternatives.find(a=>a.properties.type.enum?.includes('offer_course_bonus'))).toBeUndefined();
     expect(alternatives.find(a=>a.properties.type.enum?.includes('accept_promotion'))).toMatchObject({
+      additionalProperties:false,
       properties:{promotion_code:{enum:['p']},promotion_cycle_id:{enum:['11111111-1111-4111-8111-111111111111']},offer_version:{enum:[1]}}});
   });
 

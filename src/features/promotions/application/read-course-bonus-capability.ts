@@ -394,7 +394,8 @@ async function readDirectCapability(input: {
     // Interest is commercial state, not a purchase selection. Resolve only the
     // durable, scoped projection with a correlated source no later than this turn.
     const [interest] = await db<Array<{interest_offering_code:string}>>`
-      SELECT p.interest_offering_code FROM conversation_promotion_context_v1 p
+      SELECT COALESCE(package.paid_code,p.interest_offering_code) AS interest_offering_code
+      FROM conversation_promotion_context_v1 p
       JOIN workspaces w ON w.id=p.workspace_id AND w.slug=${input.workspace_slug}
       JOIN conversation_sales_context_states_v1 s ON s.workspace_id=p.workspace_id
         AND s.conversation_id=p.conversation_id AND s.contact_id=p.contact_id
@@ -402,6 +403,16 @@ async function readDirectCapability(input: {
         AND source.contact_id=p.contact_id AND source.direction='inbound'
       JOIN messages current ON current.conversation_id=p.conversation_id AND current.contact_id=p.contact_id
         AND current.direction='inbound' AND current.id=${input.source_turn_id ?? null}::uuid
+      LEFT JOIN LATERAL (
+        SELECT paid.code AS paid_code FROM promotion_offers o
+        JOIN offerings paid ON paid.id=o.paid_offering_id AND paid.workspace_id=p.workspace_id
+        WHERE o.workspace_id=p.workspace_id AND o.conversation_id=p.conversation_id AND o.contact_id=p.contact_id
+          AND o.package_mode='direct' AND o.status IN ('offered','accepted','attached')
+          AND NOT EXISTS(SELECT 1 FROM payment_intent_supersessions superseded WHERE superseded.payment_id=o.payment_id)
+          AND EXISTS(SELECT 1 FROM promotion_offer_bonus_offerings gift
+            WHERE gift.offer_id=o.id AND gift.offering_code_snapshot=p.interest_offering_code)
+        ORDER BY o.created_at DESC LIMIT 1
+      ) package ON true
       WHERE p.conversation_id=${input.conversation_id}::uuid AND p.contact_id=${input.contact_id}::uuid
         AND s.selected_offering_code IS NULL
         AND message_occurrence_v1(source.metadata,source.created_at)<=message_occurrence_v1(current.metadata,current.created_at)
@@ -429,6 +440,11 @@ async function readDirectCapability(input: {
           AND source.direction='inbound' AND source.id<>current.id
           AND source.conversation_id=current.conversation_id AND source.contact_id=current.contact_id
           AND message_occurrence_v1(source.metadata,source.created_at)<message_occurrence_v1(current.metadata,current.created_at)
+          AND NOT EXISTS(SELECT 1 FROM promotion_offers prior_package
+            WHERE prior_package.workspace_id=w.id AND prior_package.contact_id=current.contact_id
+              AND prior_package.conversation_id=current.conversation_id AND prior_package.package_mode='direct'
+              AND prior_package.status IN ('offered','accepted','attached') AND prior_package.paid_offering_id<>paid.id
+              AND message_occurrence_v1(source.metadata,source.created_at)<=prior_package.created_at)
       ) OR EXISTS(SELECT 1 FROM agent_decisions decision JOIN messages source ON source.id=decision.turn_id
         JOIN conversation_promotion_context_v1 evidence ON evidence.workspace_id=w.id
           AND evidence.conversation_id=current.conversation_id AND evidence.contact_id=current.contact_id

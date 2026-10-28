@@ -435,11 +435,9 @@ export async function prepareAgentTurnV2(input: {
   );
   const previousPurchaseCourse = state.selected_offering_code
     ?? input.course_bonus_capability?.interest_offering_code;
-  const explicitlySelectsAnotherCourse = [
-    effectiveProposal.move.move,
-    ...effectiveProposal.move.secondary_moves,
-  ].includes('select_course')
-    && authority.transition.selected_offering_code !== null
+  // The policy owns effective selection, including an exact course carried by
+  // request_call. Information/comparison moves preserve the prior selection.
+  const explicitlySelectsAnotherCourse = authority.transition.selected_offering_code !== null
     && previousPurchaseCourse !== null
     && previousPurchaseCourse !== undefined
     && authority.transition.selected_offering_code

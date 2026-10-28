@@ -6,6 +6,7 @@ import { cancelOpenCourseBonusOffersForCourseChangeV1 } from '@/features/promoti
 import { readCourseBonusCapabilityV1, recordPromotionConversationContextV1 } from '@/features/promotions/application/read-course-bonus-capability';
 import { seedConversationForAgentTurn } from '../helpers/agent-turn-fixtures';
 import { commitAgentDecision } from '@/lib/services/decision.service';
+import { processInboundMessage } from '@/lib/services/ingestion.service';
 
 const run = process.env.TEST_DATABASE_URL ? describe : describe.skip;
 const db = process.env.TEST_DATABASE_URL ? openLocalTestDatabase() : null;
@@ -55,6 +56,87 @@ async function fixture() {
 }
 
 run('atomic direct bonus service', () => {
+  it.each(['direct','review','call'] as const)('keeps package identity for gift information, retires it for a call course change (%s)',async mode=>{
+    const f=await seedConversationForAgentTurn({selected_offering_code:'entrenamiento_funcional',intake_complete:true});
+    const [prior]=await db!`INSERT INTO messages(conversation_id,contact_id,direction,content,created_at)
+      VALUES (${f.conversation_id},${f.contact_id},'inbound','Expensive',now()-interval '1 hour') RETURNING id`;
+    await db!`INSERT INTO selected_memories(contact_id,conversation_id,source_message_id,status,memory_type,memory_key,value_normalized,source_quote,confidence,dedupe_hash)
+      VALUES (${f.contact_id},${f.conversation_id},${prior.id},'active','objection','price_objection','expensive','Expensive',0.9,${'a'.repeat(64)})`;
+    const identity={workspace_id:f.workspace_id,contact_id:f.contact_id,conversation_id:f.conversation_id,paid_offering_code:'entrenamiento_funcional'};
+    const id=randomUUID();
+    const offer=await offerDirectCourseBonusV1(db!,{...identity,source_turn_id:f.turn_id,expected_offer_version:0,bonus_offering_codes:['ingles_1'],
+      outbound:{id,content:'Bonus',provider:'test',integration_id:'test',channel:'whatsapp',destination:'test',idempotency_key:id}});
+    if(!offer.ok) throw new Error(offer.reason);
+    await db!`UPDATE outbound_deliveries SET state='leased' WHERE message_id=${id}`;
+    await db!`UPDATE outbound_deliveries SET state='submitted',submitted_at=now() WHERE message_id=${id}`;
+    await db!`UPDATE outbound_deliveries SET state='delivered',delivered_at=now() WHERE message_id=${id}`;
+    await db!`UPDATE conversation_sales_context_states_v1 SET selected_offering_code=NULL WHERE conversation_id=${f.conversation_id}`;
+    await recordPromotionConversationContextV1(db!,{...identity,discussed_offering_code:'entrenamiento_funcional',source_turn_id:f.turn_id,records_price_objection:false});
+    await db!`UPDATE messages SET created_at=clock_timestamp(),metadata=metadata-'occurred_at_trusted' WHERE id=${f.second_turn_id}`;
+    vi.stubEnv('COURSE_BONUS_FLOW_MODE',mode==='call'?'direct':mode);
+    const question=await commitAgentDecision({turn_id:f.second_turn_id,trace_id:f.trace_id,supports_multi_outbound:true,
+      agent_turn_v2:{schema_version:2,proposal:{...f.proposalWithCallOfferAndFalsePrice,
+        move:{schema_version:1,move:mode==='call'?'request_call':'ask_course_information',secondary_moves:[],vetoes:[],confidence:1,course_reference:'ingles_1'},
+        response:{messages:['Podemos revisar el contenido de Inglés 1.'],call_offer:null},proposed_action:{type:'none'},memory_candidates:[]} as never},
+      decision:f.placeholderDecision as never,model:f.model as never});
+    expect(question.status).toBe('committed');
+    if(mode==='call') {
+      expect((await db!`SELECT status FROM promotion_offers WHERE id=${offer.offer_id}`)[0].status).toBe('cancelled');
+      const [contact]=await db!`SELECT phone FROM contacts WHERE id=${f.contact_id}`;
+      const back=await processInboundMessage({schema_version:1,source:'botpress',channel:'whatsapp',integration_id:'vitest-agent-turn-fixture',
+        external_message_id:randomUUID(),external_conversation_id:`agent-turn-fixture-${f.trace_id}`,
+        external_user_id:`agent-turn-fixture-user-${f.trace_id}`,phone_e164:contact.phone,trace_id:randomUUID(),identity_owner:'agent_a_v1',
+        message:{type:'text',text:'Quiero Entrenamiento Funcional',occurred_at:new Date().toISOString(),reply_to_external_message_id:null}});
+      expect((await commitAgentDecision({turn_id:back.turn_id,trace_id:randomUUID(),supports_multi_outbound:true,
+        agent_turn_v2:{schema_version:2,proposal:{...f.proposalWithCallOfferAndFalsePrice,
+          move:{schema_version:1,move:'select_course',secondary_moves:[],vetoes:[],confidence:1,course_reference:'entrenamiento_funcional'},
+          response:{messages:['Seguimos con Entrenamiento Funcional.'],call_offer:null},proposed_action:{type:'none'},memory_candidates:[]} as never},
+        decision:f.placeholderDecision as never,model:f.model as never})).status).toBe('committed');
+      expect((await db!`SELECT status FROM promotion_offers WHERE id=${offer.offer_id}`)[0].status).toBe('cancelled');
+      expect(await readCourseBonusCapabilityV1({workspace_slug:'studyx',contact_id:f.contact_id,conversation_id:f.conversation_id,
+        channel:'text',selected_offering_code:'entrenamiento_funcional',source_turn_id:back.turn_id},{db:db!}))
+        .toMatchObject({promotion_cycle_id:null,may_accept_offer:false});
+      return;
+    }
+    const [contact]=await db!`SELECT phone FROM contacts WHERE id=${f.contact_id}`;
+    const acceptedTurn=await processInboundMessage({schema_version:1,source:'botpress',channel:'whatsapp',integration_id:'vitest-agent-turn-fixture',
+      external_message_id:randomUUID(),external_conversation_id:`agent-turn-fixture-${f.trace_id}`,
+      external_user_id:`agent-turn-fixture-user-${f.trace_id}`,phone_e164:contact.phone,trace_id:randomUUID(),identity_owner:'agent_a_v1',
+      message:{type:'text',text:'Acepto el paquete',occurred_at:new Date().toISOString(),reply_to_external_message_id:null}});
+    const later={id:acceptedTurn.turn_id};
+    const cap=await readCourseBonusCapabilityV1({workspace_slug:'studyx',contact_id:f.contact_id,conversation_id:f.conversation_id,
+      channel:'text',selected_offering_code:null,source_turn_id:later.id},{db:db!});
+    expect(cap).toMatchObject({interest_offering_code:'entrenamiento_funcional',promotion_cycle_id:offer.promotion_cycle_id,may_accept_offer:true});
+    const rollback=new Error('ROLLBACK_ACCEPTANCE_PROBE');
+    await expect(db!.begin(async tx=>{
+      expect(await acceptDirectCourseBonusV1(tx,{...identity,...offer,source_turn_id:later.id,expected_offer_version:1})).toMatchObject({ok:true});
+      throw rollback;
+    })).rejects.toBe(rollback);
+    expect((await db!`SELECT selected_offering_code FROM conversation_sales_context_states_v1 WHERE conversation_id=${f.conversation_id}`)[0])
+      .toEqual({selected_offering_code:null});
+    await recordPromotionConversationContextV1(db!,{...identity,discussed_offering_code:'ingles_2',source_turn_id:later.id,records_price_objection:false});
+    const unrelated=await readCourseBonusCapabilityV1({workspace_slug:'studyx',contact_id:f.contact_id,conversation_id:f.conversation_id,
+      channel:'text',selected_offering_code:null,source_turn_id:later.id},{db:db!});
+    expect(unrelated.promotion_cycle_id ?? null).toBeNull();
+    expect(unrelated.may_offer_bonus).not.toBe(true);
+    const unrelatedId=randomUUID();
+    expect(await offerDirectCourseBonusV1(db!,{...identity,paid_offering_code:'ingles_2',source_turn_id:later.id,
+      expected_offer_version:0,bonus_offering_codes:['excel_integral'],outbound:{id:unrelatedId,content:'Bonus',
+        provider:'test',integration_id:'test',channel:'whatsapp',destination:'test',idempotency_key:unrelatedId}}))
+      .toEqual({ok:false,reason:mode==='direct'?'no_price_objection':'bonus_disabled'});
+    await recordPromotionConversationContextV1(db!,{...identity,discussed_offering_code:'ingles_1',source_turn_id:f.second_turn_id,records_price_objection:false});
+    const accepted=await commitAgentDecision({turn_id:later.id,trace_id:randomUUID(),supports_multi_outbound:true,
+      agent_turn_v2:{schema_version:2,proposal:{...f.proposalWithCallOfferAndFalsePrice,
+        move:{schema_version:1,move:'select_course',secondary_moves:[],vetoes:[],confidence:1,course_reference:'ingles_1'},
+        response:{messages:['Entrenamiento Funcional incluye Inglés 1 de regalo.'],call_offer:null},
+        proposed_action:{type:'accept_promotion',promotion_code:offer.promotion_code,promotion_cycle_id:offer.promotion_cycle_id,
+          interest_offering_code:'entrenamiento_funcional',offer_version:1},memory_candidates:[]} as never},
+      decision:f.placeholderDecision as never,model:f.model as never});
+    expect(accepted.status).toBe('committed');
+    expect((await db!`SELECT status FROM promotion_offers WHERE id=${offer.offer_id}`)[0].status).toBe('accepted');
+    expect((await db!`SELECT selected_offering_code FROM conversation_sales_context_states_v1 WHERE conversation_id=${f.conversation_id}`)[0])
+      .toEqual({selected_offering_code:'entrenamiento_funcional'});
+  });
   it('accepts only the existing delivered current package after review rollback',async()=>{
     const f=await fixture();const input=f.input();const first=await offerDirectCourseBonusV1(db!,input);
     expect(first.ok).toBe(true);if(!first.ok) throw new Error('missing offer');

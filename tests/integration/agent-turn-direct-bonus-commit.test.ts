@@ -4,6 +4,9 @@ import * as capability from '@/features/promotions/application/read-course-bonus
 import { seedConversationForAgentTurn } from '../helpers/agent-turn-fixtures';
 import { sql } from '@/lib/db/orchestrator';
 import { jsonbParam } from '@/lib/db/json';
+import { offerDirectCourseBonusV1 } from '@/features/promotions/application/direct-course-bonus-service';
+import { randomUUID } from 'node:crypto';
+import { processInboundMessage } from '@/lib/services/ingestion.service';
 
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllEnvs(); });
 const run = process.env.TEST_DATABASE_URL ? describe : describe.skip;
@@ -17,7 +20,7 @@ run('direct decision atomic repair', () => {
       conversation_id:f.conversation_id,channel:'text',selected_offering_code:'entrenamiento_funcional',source_turn_id:f.turn_id},{db:sql}))
       .toMatchObject({enabled:true,max_bonus_courses:2,may_offer_bonus:false,may_request_review:false});
   });
-  it.each(['direct','review'] as const)('reserves one outbound and accepts its exact delivered package in %s mode', async mode => {
+  it.each(['direct','review','review_pending'] as const)('reserves one outbound and preserves exact delivery authority in %s mode', async mode => {
     vi.stubEnv('CENTRAL_CARGA_BONUS_ENABLED','true');vi.stubEnv('COURSE_BONUS_FLOW_MODE','direct');vi.stubEnv('COURSE_BONUS_MAX_COURSES','2');
     const f = await seedConversationForAgentTurn({selected_offering_code:'entrenamiento_funcional',intake_complete:true});
     const [prior] = await sql`INSERT INTO messages(conversation_id,contact_id,direction,content,created_at)
@@ -71,7 +74,11 @@ run('direct decision atomic repair', () => {
       {...report,status:'delivered' as const,delivered_at:new Date().toISOString(),botpress_message_id:'wrong-provider-id'},
     ]) await expect(recordDeliveryReport(invalid)).rejects.toMatchObject({code:'DELIVERY_REPORT_CONFLICT'});
     expect((await sql`SELECT delivered_at FROM promotion_offer_bonus_offerings WHERE offered_outbound_message_id=${id}`)[0].delivered_at).toBeNull();
-    const receipt = {...report,status:'delivered' as const,delivered_at:new Date().toISOString()};
+    // Keep receipt/source/outbound ordering on the PostgreSQL clock. A Node
+    // receipt a few milliseconds ahead can fabricate a future fixture inbound.
+    const [receiptClock]=await sql<Array<{delivered_at:string}>>`
+      SELECT to_char(timezone('UTC',clock_timestamp()),'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS delivered_at`;
+    const receipt = {...report,status:'delivered' as const,delivered_at:receiptClock.delivered_at};
     expect(await recordDeliveryReport(receipt)).toMatchObject({status:'recorded'});
     expect(await recordDeliveryReport(receipt)).toMatchObject({status:'duplicate'});
     await expect(recordDeliveryReport({...report,status:'failed',error_code:'DOWNGRADE'}))
@@ -86,6 +93,29 @@ run('direct decision atomic repair', () => {
       conversation_id:f.conversation_id,channel:'text',selected_offering_code:'entrenamiento_funcional',source_turn_id:f.second_turn_id},{db:sql});
     expect(delivered).toMatchObject({may_accept_offer:true,may_offer_bonus:true,offer_version:1,
       delivered_bonus_offerings:[{code:'ingles_1'}]});
+    if(mode==='review_pending') {
+      const secondId=randomUUID();
+      const second=await offerDirectCourseBonusV1(sql,{workspace_id:f.workspace_id,contact_id:f.contact_id,conversation_id:f.conversation_id,
+        source_turn_id:f.second_turn_id,paid_offering_code:'entrenamiento_funcional',promotion_code:delivered.promotion_code,
+        promotion_cycle_id:delivered.promotion_cycle_id,expected_offer_version:1,bonus_offering_codes:['excel_integral'],
+        outbound:{id:secondId,content:'Excel Integral de regalo.',provider:'test',integration_id:'test',channel:'whatsapp',destination:'test',idempotency_key:secondId}});
+      expect(second,JSON.stringify(second)).toMatchObject({ok:true,offer_version:2});
+      const [contact]=await sql`SELECT phone FROM contacts WHERE id=${f.contact_id}`;
+      const later=await processInboundMessage({schema_version:1,source:'botpress',channel:'whatsapp',integration_id:'vitest-agent-turn-fixture',
+        external_message_id:randomUUID(),external_conversation_id:`agent-turn-fixture-${f.trace_id}`,
+        external_user_id:`agent-turn-fixture-user-${f.trace_id}`,phone_e164:contact.phone,trace_id:randomUUID(),identity_owner:'agent_a_v1',
+        message:{type:'text',text:'Acepto',occurred_at:new Date().toISOString(),reply_to_external_message_id:null}});
+      vi.stubEnv('COURSE_BONUS_FLOW_MODE','review');vi.stubEnv('CENTRAL_CARGA_BONUS_ENABLED','false');
+      const commit=(action:Record<string,unknown>,content:string)=>commitAgentDecision({...input,turn_id:later.turn_id,agent_turn_v2:{schema_version:2,
+        proposal:{...proposal,proposed_action:action,response:{messages:[content],call_offer:null}} as never}});
+      await expect(commit({type:'none'},'Te regalo Excel Integral.')).rejects.toMatchObject({subjects:expect.arrayContaining(['forbidden_promise'])});
+      await expect(commit({type:'accept_promotion',interest_offering_code:'entrenamiento_funcional',promotion_code:delivered.promotion_code,
+        promotion_cycle_id:delivered.promotion_cycle_id,offer_version:2},'Seguimos con el paquete.')).rejects.toThrow();
+      expect((await commit({type:'none'},'Inglés 1 sigue de regalo.')).status).toBe('committed');
+      expect((await sql`SELECT status,offer_version FROM promotion_offers WHERE promotion_cycle_id=${delivered.promotion_cycle_id ?? null}`)[0])
+        .toMatchObject({status:'offered',offer_version:2});
+      return;
+    }
     // A stale preliminary capability must not survive a stricter final runtime limit.
     vi.spyOn(capability,'readCourseBonusCapabilityV1').mockResolvedValue(delivered);
     vi.stubEnv('COURSE_BONUS_MAX_COURSES','1');

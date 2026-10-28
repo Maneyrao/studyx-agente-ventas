@@ -1498,7 +1498,8 @@ describe('prepareAgentTurnV2', () => {
     },
   );
 
-  it.each(['offer_available','accepted','no_capability'] as const)('marks an explicit course switch to retire previous payment intent (%s)', async (status) => {
+  it.each((['offer_available','accepted','no_capability'] as const).flatMap(status =>
+    (['select_course','request_call'] as const).map(move => ({status,move}))))('marks an effective course switch to retire previous payment intent ($status/$move)', async ({status,move}) => {
     const packageIndex: CatalogIndexView = {
       ...index,
       offerings_total: 2,
@@ -1530,7 +1531,7 @@ describe('prepareAgentTurnV2', () => {
       },
       proposal: proposal({
         move: {
-          schema_version: 1, move: 'select_course', secondary_moves: [], vetoes: [],
+          schema_version: 1, move, secondary_moves: [], vetoes: [],
           course_reference: 'excel', confidence: 1,
         },
         response: { messages: ['Perfecto, seguimos únicamente con Excel Integral.'] },
