@@ -70,7 +70,7 @@ describe('parseDecisionV4 — request_call_now', () => {
       .toBe('INVALID_BUSINESS_ACTION');
     expect(codeOf(callOffer({response_type:'commercial_reply',business_action:{...action,other:true}})))
       .toBe('INVALID_BUSINESS_ACTION');
-    for (const promotion_code of ['', '   ']) {
+    for (const promotion_code of ['', '   ', '\t', '\n']) {
       expect(codeOf(callOffer({response_type:'commercial_reply',business_action:{...action,promotion_code}})))
         .toBe('INVALID_BUSINESS_ACTION');
     }

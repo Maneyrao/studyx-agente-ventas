@@ -63,16 +63,26 @@ export function inspectCourseBonusClaimsV1(input: {
   const clauses = normalize(input.content).split(/[.!?;\n]+|\b(?:pero|aunque|sin embargo)\b|,\s*(?=(?:no\s+)?(?:te\s+)?(?:regal|inclu|bonific|sum|agreg))|\by\s+(?=(?:no\s+)?(?:te\s+)?(?:regal|inclu|bonific|sum|agreg))/u);
   let authorized = false;
   let unauthorized = false;
-  for (const clause of clauses) {
+  for (let index = 0; index < clauses.length; index += 1) {
+    const clause = clauses[index]!;
     const markers = [...clause.matchAll(GIFT_MARKER)];
     const implicitGift = /\b(?:agregar|sumar|incluir)\b.*\bcurso\b.*\b(?:mismo\s+(?:precio|valor)|incluid[oa])\b/u.test(clause);
     if (!markers.length && !implicitGift) continue;
     // Only this clause's denied predicate is exempt. A later affirmative
     // predicate is split above and must independently resolve its whole object.
-    const deniedPredicate = /^\s*(?:no|nunca|tampoco)\s+(?:(?:te|lo|la|le|les|se)\s+)?(?:(?:puedo|podemos)\s+)?(?:regal\p{L}*|inclu\p{L}*|bonific\p{L}*|tengo|tenemos|hacemos|ofrecemos|damos|hay)\b/u.test(clause);
+    const deniedPredicate = /^\s*(?:no|nunca|tampoco)\s+(?:(?:te|lo|la|le|les|se)\s+)?(?:(?:puedo|podemos)\s+)?(?:regal\p{L}*|inclu\p{L}*|bonific\p{L}*)\b/u.test(clause);
+    const deniedExistence = /^\s*(?:no|nunca|tampoco)\s+(?:tengo|tenemos|hacemos|ofrecemos|damos|hay)\s+(?:(?:ningun[oa]?|un[oa]?|mas)\s+)?(?:regalos?|bonificaciones?|promociones?|cursos?\s+(?:gratis|bonificados?))\b/u.test(clause);
     const deniedDescriptor = /\b(?:no|nunca|tampoco)\s+(?:es|esta|va|queda)\s+(?:de\s+regalo|gratis|bonificad[oa]|sin\s+(?:costo|cargo))\b/u.test(clause);
-    if (markers.length === 1 && (deniedPredicate || deniedDescriptor)) continue;
-    const object = giftObject(clause.trim(), input.paid_offering_names ?? []);
+    if (markers.length === 1 && (deniedPredicate || deniedExistence || deniedDescriptor)) continue;
+    let asserted = clause.trim();
+    const explanation = clause.match(/\s+para\s+|,\s*que\s+/u);
+    if (explanation && explanation.index! > (markers[0]?.index ?? Infinity)) {
+      asserted = clause.slice(0, explanation.index).trim();
+      // Explanations are outside the object list, but cannot hide another
+      // affirmative gift. Process their own gift predicates independently.
+      clauses.push(clause.slice(explanation.index).replace(/^,\s*/u, '').trim());
+    }
+    const object = giftObject(asserted, input.paid_offering_names ?? []);
     if (object !== null && authorizedObjects(object, input.authorized_bonus_names)) authorized = true;
     else unauthorized = true;
   }

@@ -106,13 +106,15 @@ describe('Agent A Brain V1', () => {
       may_send_promoted_payment:false,promotion_code:'p',interest_offering_code:'redes-informaticas',
       bonus_offerings:[{code:'ingles_1',display_name:'Inglés 1',position:1}],
       delivered_bonus_offerings:[{code:'ingles_1',display_name:'Inglés 1',position:1}]};
-    for (const content of ['Te regalo Inglés 1 y Astrología.','No te regalo Inglés 1, pero te regalo Redes.']) {
+    for (const content of ['Te regalo Inglés 1 y Astrología.','No te regalo Inglés 1, pero te regalo Redes.',
+      'No tengo problema en regalarte Redes.','Te regalo Inglés 1 y Astrología para complementar tu formación.']) {
       const parsed=parseAgentATurnProposalV1(proposal({response:{messages:[content],call_offer:null}}),current);
       expect(validateAgentATurnProposalV1({proposal:parsed,context:current,planned_fact_ids:[],
         rejection_id:'00000000-0000-4000-8000-000000000001'})?.rejections)
         .toContainEqual({code:'FACT_VALUE_MISMATCH',subject:'forbidden_promise'});
     }
-    for (const content of ['Te regalo Inglés 1 al comprar Redes.','Redes incluye Inglés 1 de regalo.']) {
+    for (const content of ['Te regalo Inglés 1 al comprar Redes.','Redes incluye Inglés 1 de regalo.',
+      'Te regalo Inglés 1 para complementar tu formación.','Te regalo Inglés 1, que te sirve para practicar.']) {
       const parsed=parseAgentATurnProposalV1(proposal({response:{messages:[content],call_offer:null}}),current);
       const rejection=validateAgentATurnProposalV1({proposal:parsed,context:current,planned_fact_ids:[],
         rejection_id:'00000000-0000-4000-8000-000000000001'});

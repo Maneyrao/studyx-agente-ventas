@@ -37,21 +37,29 @@ run('direct decision atomic repair', () => {
       conversation_id:f.conversation_id,channel:'text',selected_offering_code:'entrenamiento_funcional',source_turn_id:f.second_turn_id},{db:sql});
     expect(pending).toMatchObject({offer_version:1,may_offer_bonus:false,may_accept_offer:false,delivered_bonus_offerings:[]});
     expect(pending.promotion_cycle_id).toMatch(/^[0-9a-f-]{36}$/u);
-    const cloneWithAction = (action:Record<string,unknown>) => sql`INSERT INTO agent_decisions
+    const cloneWithAction = async (action:Record<string,unknown>) => {
+      const accepted = new Error('ROLL_BACK_SYNTHETIC_ACCEPTED_DECISION');
+      try { await sql.begin(async tx => {
+      await tx`INSERT INTO agent_decisions
       (turn_id,trace_id,schema_version,intent,decision_kind,response,response_type,business_action,
        memory_candidates,missing_information,next_state,reason_code,confidence,model_provider,model_name,prompt_version,payload_hash)
-      SELECT ${f.second_turn_id},trace_id,schema_version,intent,decision_kind,response,response_type,${jsonbParam(sql,action)},
+      SELECT ${f.second_turn_id},trace_id,schema_version,intent,decision_kind,response,response_type,${jsonbParam(tx,action)},
        memory_candidates,missing_information,next_state,reason_code,confidence,model_provider,model_name,prompt_version,payload_hash
       FROM agent_decisions WHERE turn_id=${f.turn_id}`;
+      throw accepted;
+      }); } catch(error) { if (error === accepted) return []; throw error; }
+    };
     for (const action of [
       {type:'accept_promotion',offer_version:1},
       {type:'accept_promotion',promotion_code:'p',promotion_cycle_id:pending.promotion_cycle_id,
         interest_offering_code:'entrenamiento_funcional',offer_version:1,unknown:true},
       {type:'offer_course_bonus',interest_offering_code:'entrenamiento_funcional'},
     ]) await expect(cloneWithAction(action)).rejects.toMatchObject({code:'23514',constraint_name:'agent_decisions_business_action_check'});
-    await expect(cloneWithAction({type:'accept_promotion',promotion_code:'   ',promotion_cycle_id:pending.promotion_cycle_id,
-      interest_offering_code:'entrenamiento_funcional',offer_version:1})).rejects.toMatchObject({
-        code:'23514',constraint_name:'agent_decisions_direct_acceptance_code_check'});
+    for (const promotion_code of ['   ','\t','\n',' \t\n ']) {
+      await expect(cloneWithAction({type:'accept_promotion',promotion_code,promotion_cycle_id:pending.promotion_cycle_id,
+        interest_offering_code:'entrenamiento_funcional',offer_version:1})).rejects.toMatchObject({code:'23514'});
+    }
+    expect(await cloneWithAction({type:'accept_promotion'})).toEqual([]);
     const report = {outbound_id:id,trace_id:f.trace_id,status:'submitted_to_botpress' as const,
       botpress_message_id:`confirmed-bonus-${f.trace_id}`,replayed:false,error_code:null,delivery_attempt:1};
     await expect(recordDeliveryReport({...report,status:'delivered',delivered_at:new Date().toISOString()}))

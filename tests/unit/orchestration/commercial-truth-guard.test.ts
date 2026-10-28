@@ -28,6 +28,12 @@ const UNKNOWN_CERTIFICATION: CanonicalTruthSetV1 = { ...CANONICAL, certification
 it.each([
   ['Te regalo Inglés 1 y Astrología.', false],
   ['No te regalo Inglés 1, pero te regalo Redes.', false],
+  ['No tengo problema en regalarte Redes.', false],
+  ['No tenemos problema en regalarte Redes.', false],
+  ['Te regalo Inglés 1 para complementar tu formación.', true],
+  ['Te regalo Inglés 1, que te sirve para practicar.', true],
+  ['Te regalo Inglés 1 y Astrología para complementar tu formación.', false],
+  ['Te regalo Inglés 1 para regalarte Redes.', false],
   ['Te regalo Inglés 1 al comprar Redes.', true],
   ['Redes incluye Inglés 1 de regalo.', true],
   ['No te regalo Redes. Inglés 1 te puede servir para tu objetivo.', true],
