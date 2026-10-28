@@ -62,6 +62,15 @@ function codeOf(value: Record<string, unknown>): string {
 }
 
 describe('parseDecisionV4 — request_call_now', () => {
+  it('preserves exact direct promotion identities and rejects partial acceptance', () => {
+    const action = {type:'accept_promotion',promotion_code:'p',interest_offering_code:'ingles_1',
+      promotion_cycle_id:'11111111-1111-4111-8111-111111111111',offer_version:2};
+    expect(parseDecisionV4(callOffer({response_type:'commercial_reply',business_action:action})).business_action).toEqual(action);
+    expect(codeOf(callOffer({response_type:'commercial_reply',business_action:{type:'accept_promotion',offer_version:2}})))
+      .toBe('INVALID_BUSINESS_ACTION');
+    expect(codeOf(callOffer({response_type:'commercial_reply',business_action:{...action,other:true}})))
+      .toBe('INVALID_BUSINESS_ACTION');
+  });
   it('accepts the canonical call_confirmation with an accepted_offer request', () => {
     expect(() => parseDecisionV4(v4())).not.toThrow();
   });

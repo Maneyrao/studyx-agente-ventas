@@ -83,6 +83,19 @@ const completeIntake = async () => ({
 });
 
 describe('prepareAgentTurnV2', () => {
+  it('retains an authorized direct bonus as the committed business action', async () => {
+    const action = {type:'offer_course_bonus',interest_offering_code:'redes_informaticas',bonus_offering_code:'excel_integral'} as const;
+    const prepared = await prepareAgentTurnV2({
+      turn:{id:ids.turn,workspace_id:ids.workspace,conversation_id:ids.conversation,contact_id:ids.contact},
+      workspace_slug:'studyx',business_context:business,
+      catalog_index:{...index,offerings:[...index.offerings,{code:'excel_integral',display_name:'Excel Integral',aliases:[],academy:'Tecnología'}]},
+      proposal:proposal({proposed_action:action,response:{messages:['Te regalo Excel Integral.']}}),
+      course_bonus_capability:{status:'checkin_available',enabled:true,max_bonus_courses:2,may_offer_bonus:true,
+        may_schedule_checkin:false,may_request_review:false,may_accept_offer:false,may_send_promoted_payment:false,
+        promotion_code:null,interest_offering_code:'redes_informaticas',bonus_offerings:[]},
+    },{state_store:store(state({selected_offering_code:'redes_informaticas'})),contact_intake:completeIntake});
+    expect(prepared.decision.business_action).toEqual(action);
+  });
   it.each(['missing', 'complete'] as const)('keeps the original explicit tool intent while continuation sends only prose: %s intake', async intakeCase => {
     const messages = ['Para avanzar, vemos los datos necesarios.'];
     const prepared = await prepareAgentTurnV2({

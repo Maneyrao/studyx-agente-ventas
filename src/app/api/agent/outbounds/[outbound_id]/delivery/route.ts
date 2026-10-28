@@ -10,7 +10,8 @@ import { flushSheetProjectionsAfterMutation } from '@/lib/services/sheet-project
 const schema = z.object({
   outbound_id: z.string().uuid(),
   trace_id: z.string().uuid(),
-  status: z.enum(['submitted_to_botpress', 'failed']),
+  status: z.enum(['submitted_to_botpress', 'delivered', 'failed']),
+  delivered_at: z.string().datetime().nullable().optional(),
   botpress_message_id: z.string().trim().min(1).max(512).nullable().default(null),
   replayed: z.boolean().default(false),
   error_code: z.string().trim().min(1).max(128).nullable().default(null),

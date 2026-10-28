@@ -25,6 +25,18 @@ const CANONICAL: CanonicalTruthSetV1 = {
 const NO_CERTIFICATION: CanonicalTruthSetV1 = { ...CANONICAL, certification: false };
 const UNKNOWN_CERTIFICATION: CanonicalTruthSetV1 = { ...CANONICAL, certification: null };
 
+it('restricts gift assertions to delivered and provisionally authorized course names', () => {
+  const canonical = {...CANONICAL,offering_names:['Inglés 1','Excel Integral','Redes'],
+    authorized_bonus_names:['Inglés 1','Excel Integral']};
+  expect(enforce('Te regalo Inglés 1 y Excel Integral.',canonical).violations).toEqual([]);
+  expect(enforce('Te regalo Redes.',canonical).violations).toContainEqual({code:'FORBIDDEN_PROMISE',value:'promise'});
+  expect(enforce('Te regalo Redes e Inglés 1.',canonical).violations)
+    .toContainEqual({code:'FORBIDDEN_PROMISE',value:'promise'});
+  expect(enforce('Inglés 1 sigue de regalo. Te regalo Excel Integral.',
+    {...canonical,authorized_bonus_names:['Inglés 1']}).content).toBe('Inglés 1 sigue de regalo.');
+  expect(enforce('Te regalo un curso.',canonical).violations).toContainEqual({code:'FORBIDDEN_PROMISE',value:'promise'});
+});
+
 function enforce(content: string, canonical: CanonicalTruthSetV1 = CANONICAL, urls: string[] = []) {
   return enforceCommercialTruthV1({ content, authorized_urls: urls, canonical });
 }

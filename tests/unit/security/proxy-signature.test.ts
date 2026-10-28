@@ -62,6 +62,22 @@ afterEach(() => {
 });
 
 describe('API proxy authentication', () => {
+  it('authenticates explicit confirmed delivery receipts and binds their exact evidence bytes', async () => {
+    const id='53b13d12-2a1d-4b28-b1fd-605b97ebef34';
+    const pathname=`/api/agent/outbounds/${id}/delivery`;
+    const body=JSON.stringify({outbound_id:id,trace_id:id,status:'delivered',botpress_message_id:'provider-1',
+      delivered_at:'2026-10-28T12:00:00.000Z',delivery_attempt:1});
+    const unsigned=new NextRequest(`http://localhost${pathname}`,{method:'POST',body});
+    expect((await proxy(unsigned)).status).toBe(401);
+    const timestamp=Date.now().toString();const key=`delivery:${id}:provider-1:delivered`;
+    const signature=createHmac('sha256','signing-secret').update(`${timestamp}\nPOST\n${pathname}\n${body}`).digest('hex');
+    const headers={'x-orchestrator-key-id':'botpress-test','x-orchestrator-key':'orchestrator-key',
+      'x-request-timestamp':timestamp,'x-signature':`v1=${signature}`,'x-trace-id':id,
+      'idempotency-key':key,'x-request-id':`${id}:${key}`};
+    expect((await proxy(new NextRequest(`http://localhost${pathname}`,{method:'POST',headers,body}))).status).toBe(200);
+    expect((await proxy(new NextRequest(`http://localhost${pathname}`,{method:'POST',headers,
+      body:body.replace('provider-1','provider-2')}))).status).toBe(401);
+  });
   it('accepts the exact signed body without consuming the route request', async () => {
     const body = JSON.stringify(inboundBody());
     const request = signedRequest(body);

@@ -161,6 +161,12 @@ export const AgentAContextV1Schema = z.object({
     authorized_payment_plan: PaymentPlanSchema.nullable(),
     course_bonus: z.object({
       enabled: z.boolean().optional(),
+      may_offer_bonus: z.boolean().optional(),
+      promotion_cycle_id: z.string().uuid().nullable().optional(),
+      offer_version: z.number().int().min(0).optional(),
+      accepted_at: z.string().nullable().optional(),
+      package_status: z.enum(['pending_review','offered','accepted','cancelled','expired','attached']).nullable().optional(),
+      delivered_bonus_offerings: z.array(z.object({code:IdentifierSchema,display_name:z.string().trim().min(1).max(240),position:z.number().int().min(1).max(3)}).strict()).max(3).optional(),
       max_bonus_courses: z.union([z.literal(1), z.literal(2), z.literal(3)]).optional(),
       status: z.enum([
         'unavailable', 'needs_interest', 'not_eligible', 'checkin_available',
@@ -174,6 +180,7 @@ export const AgentAContextV1Schema = z.object({
       bonus_selection_mode: z.enum(['configured', 'any_active_course']).optional(),
       interest_offering_code: IdentifierSchema.nullable().optional(),
       bonus_offerings: z.array(z.object({
+        offered_at: z.string().optional(),
         code: IdentifierSchema,
         display_name: z.string().trim().min(1).max(240),
         position: z.number().int().min(1).max(3),

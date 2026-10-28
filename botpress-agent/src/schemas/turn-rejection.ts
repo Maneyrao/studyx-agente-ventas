@@ -25,6 +25,7 @@ export const TurnRejectionCodeSchema = z.enum([
 ])
 
 /** Identificador o código. Nunca una frase para el cliente (A4). */
+// Includes direct_bonus:<reason> beside the stable forbidden_promise subject.
 const StructuredSubjectSchema = z
   .string()
   .trim()

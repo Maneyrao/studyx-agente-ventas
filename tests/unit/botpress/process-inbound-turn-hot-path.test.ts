@@ -331,6 +331,28 @@ function processingState() {
 }
 
 describe('processInboundTurn hot path', () => {
+  it('schedules durable recovery when an Agent A decision exhausts database serialization', async () => {
+    const claimed = claimedResponse() as unknown as ClaimedTurn;
+    claimed.features = {agent_loop_v3_mode:'off',conversation_pipeline_v1_enabled:false,
+      agent_a_brain_v1_enabled:true,agent_a_brain_v1_shadow:false};
+    claimed.conversation_state_v1 = {selected_offering_code:'redes-informaticas',selected_payment_plan:null,
+      stage:'course_selected',call_preference:'unknown',call_offer_status:'not_offered',call_offer_count:0,awaiting_reply:'none',version:2};
+    claimed.catalog_index = {as_of:NOW,offerings_total:1,offerings:[{code:'redes-informaticas',
+      display_name:'Redes Informáticas',academy:'Tecnología',aliases:['redes']}],injection_suspected_count:0};
+    claimed.business_context=paymentBusinessContext();claimed.business_context_available=true;
+    actionSpies.claim.mockResolvedValue(claimed);
+    configuration.agentAPlannerlessV2Enabled = true;
+    actionSpies.commit.mockRejectedValue(new StudyxHttpError('INTERNAL_ERROR',true,500,3));
+    vi.spyOn(processInboundTurn,'getOrCreate').mockResolvedValue({id:'serialization-recovery'});
+    const step = Object.assign(async (_name:string,run:()=>Promise<unknown>)=>run(),{sleep:vi.fn(async()=>undefined)});
+    const result = await (processInboundTurn as unknown as {
+      definition:{handler:(args:Record<string,unknown>)=>Promise<unknown>};
+    }).definition.handler({input:workflowInput(),state:processingState(),step,execute:vi.fn(),client:{},
+      signal:new AbortController().signal,workflow:{id:'serialization-test'}});
+    expect(result).toMatchObject({status:'retry_pending',delivery_status:null});
+    expect(actionSpies.recovery).toHaveBeenCalledTimes(1);
+    expect(actionSpies.recovery.mock.calls[0]?.[0].input).toMatchObject({reason_code:'AGENT_A_COMMIT_FAILED'});
+  });
   it('uses a stable 8–14 second WhatsApp reply target', () => {
     const first = whatsappReplyTargetLatencyMs('wamid.first');
     const repeated = whatsappReplyTargetLatencyMs('wamid.first');
@@ -1282,9 +1304,10 @@ describe('processInboundTurn hot path', () => {
   });
 
   it.each([
-    ['UNSUPPORTED_STATE_ASSERTION', 'state:payment_verified:v1', 'UNSUPPORTED_OPERATIONAL_CLAIM'],
-    ['COMMERCIAL_TRUTH_VIOLATION', 'payment_plan_not_canonical', 'FACT_VALUE_MISMATCH'],
-  ])('returns the exact backend %s to Agent A and commits only its repaired response', async (backendCode, subject, rejectionCode) => {
+    ['UNSUPPORTED_STATE_ASSERTION', 'state:payment_verified:v1', 'UNSUPPORTED_OPERATIONAL_CLAIM', null],
+    ['COMMERCIAL_TRUTH_VIOLATION', 'payment_plan_not_canonical', 'FACT_VALUE_MISMATCH', null],
+    ['COMMERCIAL_TRUTH_VIOLATION', 'forbidden_promise', 'FACT_VALUE_MISMATCH', 'direct_bonus:no_price_objection'],
+  ])('returns the exact backend %s to Agent A and commits only its repaired response', async (backendCode, subject, rejectionCode, directReason) => {
     const claimed = claimedResponse() as unknown as ClaimedTurn;
     claimed.features = {
       agent_loop_v3_mode: 'off',
@@ -1352,7 +1375,7 @@ describe('processInboundTurn hot path', () => {
         {
           error: 'DECISION_REJECTED',
           reason: `AGENT_TURN_V2_REJECTED:${backendCode}`,
-          subjects: [subject],
+          subjects: [subject,...(directReason ? [directReason] : [])],
         },
       ))
       .mockResolvedValueOnce({
@@ -1399,7 +1422,7 @@ describe('processInboundTurn hot path', () => {
         rejections: [{
           code: rejectionCode,
           subject,
-        }],
+        },...(directReason ? [{code:'FACT_VALUE_MISMATCH',subject:directReason}] : [])],
       });
     expect(actionSpies.commit.mock.calls[1]?.[0]?.input).toMatchObject({
       agent_turn_v2: {

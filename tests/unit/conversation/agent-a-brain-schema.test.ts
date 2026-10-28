@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { AgentATurnProposalV1Schema } from '@/features/conversation/adapters/agent-a-brain-schema';
-import { AgentATurnProposalV1Schema as BotpressAgentATurnProposalV1Schema } from '../../../botpress-agent/src/schemas/agent-a-brain';
+import { AgentATurnProposalV1Schema, AgentAContextV1Schema } from '@/features/conversation/adapters/agent-a-brain-schema';
+import { AgentATurnProposalV1Schema as BotpressAgentATurnProposalV1Schema, AgentAContextV1Schema as BotpressContextSchema } from '../../../botpress-agent/src/schemas/agent-a-brain';
 import { DecisionBusinessActionSchema } from '../../../botpress-agent/src/schemas/contracts';
 
 function proposal(overrides: Record<string, unknown> = {}) {
@@ -30,6 +30,17 @@ function proposal(overrides: Record<string, unknown> = {}) {
 }
 
 describe('AgentATurnProposalV1Schema', () => {
+  it('preserves the current direct package and confirmed courses through both strict context boundaries', () => {
+    const capability={enabled:true,max_bonus_courses:2,may_offer_bonus:true,status:'offer_available',
+      may_schedule_checkin:false,may_request_review:false,may_accept_offer:true,may_send_promoted_payment:false,
+      promotion_code:'p',promotion_cycle_id:'11111111-1111-4111-8111-111111111111',offer_version:1,package_status:'offered',
+      bonus_selection_mode:'any_active_course',interest_offering_code:'ingles_1',
+      bonus_offerings:[{code:'ingles_2',display_name:'Inglés 2',position:1}],
+      delivered_bonus_offerings:[{code:'ingles_2',display_name:'Inglés 2',position:1}]};
+    for (const schema of [AgentAContextV1Schema,BotpressContextSchema]) {
+      expect(schema.shape.capabilities.shape.course_bonus.unwrap().parse(capability)).toEqual(capability);
+    }
+  });
   const directAcceptance = {
     type: 'accept_promotion', promotion_code: 'PRM-1', interest_offering_code: 'redes',
     promotion_cycle_id: 'cycle-1', offer_version: 2,

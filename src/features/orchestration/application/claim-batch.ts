@@ -119,6 +119,7 @@ export interface ClaimBatchDependencies {
   }) => Promise<PaymentVerificationV1 | null>;
   /** Backend-authorized promotion projection. A failure must resolve to null, never block the turn. */
   readonly courseBonusCapability?: (input: {
+    source_turn_id?: string;
     contact_id: string;
     conversation_id: string;
     channel: 'text' | 'voice';
@@ -1164,6 +1165,7 @@ export async function claimBatch(
       : (await import('@/lib/repositories/call-intake-readiness.repository')).loadCallIntakeReadinessV1);
   const readPaymentVerification = deps.paymentVerification ?? (async () => null);
   const courseBonusTask = deps.courseBonusCapability?.({
+    source_turn_id: facts.representative_turn_id,
     contact_id: facts.contact.id,
     conversation_id: claim.conversation_id!,
     channel: 'text',

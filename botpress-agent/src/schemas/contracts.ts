@@ -633,6 +633,12 @@ export const ClaimedTurnSchema = z.object({
   }).strict().nullable().optional(),
   course_bonus_capability: z.object({
     enabled: z.boolean().optional(),
+    may_offer_bonus: z.boolean().optional(),
+    promotion_cycle_id: z.string().uuid().nullable().optional(),
+    offer_version: z.number().int().min(0).optional(),
+    accepted_at: z.string().nullable().optional(),
+    package_status: z.enum(['pending_review','offered','accepted','cancelled','expired','attached']).nullable().optional(),
+    delivered_bonus_offerings: z.array(z.object({code:z.string().trim().min(1),display_name:z.string().trim().min(1).max(240),position:z.number().int().min(1).max(3)}).strict()).max(3).optional(),
     max_bonus_courses: z.union([z.literal(1), z.literal(2), z.literal(3)]).optional(),
     status: z.enum([
       'unavailable', 'needs_interest', 'not_eligible', 'checkin_available',
@@ -646,6 +652,7 @@ export const ClaimedTurnSchema = z.object({
     bonus_selection_mode: z.enum(['configured', 'any_active_course']).optional(),
     interest_offering_code: z.string().min(1).max(160).nullable().optional(),
     bonus_offerings: z.array(z.object({
+      offered_at: z.string().optional(),
       code: z.string().min(1).max(160),
       display_name: z.string().min(1).max(240),
       position: z.number().int().min(1).max(3),
@@ -935,12 +942,13 @@ export const CommitDecisionResponseSchema = z.object({
 
 export type CommitDecisionResponse = z.infer<typeof CommitDecisionResponseSchema>
 
-export const DeliveryStatusSchema = z.enum(['submitted_to_botpress', 'failed'])
+export const DeliveryStatusSchema = z.enum(['submitted_to_botpress', 'delivered', 'failed'])
 
 export const DeliveryReportInputSchema = z.object({
   outbound_id: z.string().uuid(),
   trace_id: z.string().uuid(),
   status: DeliveryStatusSchema,
+  delivered_at: z.string().datetime().nullable().optional(),
   botpress_message_id: z.string().min(1).max(512).nullable().default(null),
   replayed: z.boolean().default(false),
   error_code: z.string().min(1).max(128).nullable().default(null),

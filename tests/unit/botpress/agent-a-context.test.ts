@@ -193,6 +193,18 @@ function claimedTurn(): ClaimedTurn {
 }
 
 describe('buildAgentAContextV1', () => {
+  it('projects the durable direct package into commercial state without deriving it from prose', () => {
+    const claimed=claimedTurn();
+    claimed.course_bonus_capability={enabled:true,max_bonus_courses:2,may_offer_bonus:true,
+      status:'offer_available',may_schedule_checkin:false,may_request_review:false,may_accept_offer:true,
+      may_send_promoted_payment:false,promotion_code:'p',promotion_cycle_id:UUID,offer_version:1,
+      package_status:'offered',interest_offering_code:'redes-informaticas',accepted_at:null,
+      bonus_offerings:[{code:'ingles_1',display_name:'Inglés 1',position:1,offered_at:NOW}],
+      delivered_bonus_offerings:[{code:'ingles_1',display_name:'Inglés 1',position:1}]};
+    expect(buildAgentAContextV1(claimed)!.commercial_state.promotion).toEqual({promotion_code:'p',
+      promotion_cycle_id:UUID,offer_version:1,status:'offer_available',interest_offering_code:'redes-informaticas',
+      accepted_at:null,bonus_offerings:[{offering_code:'ingles_1',name:'Inglés 1',position:1,offered_at:NOW}]});
+  });
   it('projects durable summary memory and twenty logical interventions to Agent A', () => {
     const claimed = claimedTurn();
     claimed.context.summary = {

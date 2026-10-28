@@ -134,6 +134,12 @@ export interface AgentAContextV1 {
     readonly authorized_payment_plan: AgentAPaymentPlanV1 | null;
     readonly course_bonus?: {
       readonly enabled?: boolean;
+      readonly may_offer_bonus?: boolean;
+      readonly promotion_cycle_id?: string | null;
+      readonly offer_version?: number;
+      readonly accepted_at?: string | null;
+      readonly package_status?: 'pending_review' | 'offered' | 'accepted' | 'cancelled' | 'expired' | 'attached' | null;
+      readonly delivered_bonus_offerings?: ReadonlyArray<{ readonly code: string; readonly display_name: string; readonly position: number }>;
       readonly max_bonus_courses?: CourseBonusMaxCoursesV1;
       readonly status: 'unavailable' | 'needs_interest' | 'not_eligible' | 'checkin_available'
         | 'review_available' | 'review_pending' | 'offer_available' | 'accepted';
@@ -145,6 +151,7 @@ export interface AgentAContextV1 {
       readonly bonus_selection_mode?: 'configured' | 'any_active_course';
       readonly interest_offering_code?: string | null;
       readonly bonus_offerings: ReadonlyArray<{
+        readonly offered_at?: string;
         readonly code: string;
         readonly display_name: string;
         readonly position: number;

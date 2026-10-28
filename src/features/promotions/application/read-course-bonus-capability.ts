@@ -1,4 +1,6 @@
 import type { DbClient } from '@/lib/db/types';
+import { loadCourseBonusFlowConfig } from './course-bonus-flow-config';
+import type { CourseBonusMaxCoursesV1 } from '../domain/course-bonus';
 import {
   isCentralCargaBonusEnabledForContact,
   loadCentralCargaBonusConfig,
@@ -15,6 +17,14 @@ export type CourseBonusCapabilityStatus =
   | 'accepted';
 
 export interface CourseBonusCapabilityV1 {
+  readonly enabled?: boolean;
+  readonly max_bonus_courses?: CourseBonusMaxCoursesV1;
+  readonly may_offer_bonus?: boolean;
+  readonly promotion_cycle_id?: string | null;
+  readonly offer_version?: number;
+  readonly accepted_at?: string | null;
+  readonly package_status?: CourseBonusOfferProjectionV1['status'] | null;
+  readonly delivered_bonus_offerings?: Array<{readonly code:string; readonly display_name:string; readonly position:number}>;
   readonly status: CourseBonusCapabilityStatus;
   readonly may_schedule_checkin: boolean;
   readonly may_request_review: boolean;
@@ -25,6 +35,7 @@ export interface CourseBonusCapabilityV1 {
   /** Exact course being discussed. This is not a purchase selection. */
   readonly interest_offering_code: string | null;
   readonly bonus_offerings: ReadonlyArray<{
+    readonly offered_at?: string;
     readonly code: string;
     readonly display_name: string;
     readonly position: number;
@@ -332,18 +343,121 @@ interface CapabilityRow {
   prior_price_objection_checkin: boolean;
 }
 
+export function deriveDirectCourseBonusCapabilityV1(input: {
+  readonly interest_offering_code: string;
+  readonly max_bonus_courses: CourseBonusMaxCoursesV1;
+  readonly prior_price_objection: boolean;
+  readonly package: {
+    readonly promotion_code: string;
+    readonly promotion_cycle_id: string;
+    readonly offer_version: number;
+    readonly status: CourseBonusOfferProjectionV1['status'];
+    readonly expires_at?: string | Date | null;
+    readonly accepted_at?: string | Date | null;
+    readonly courses: CourseBonusCapabilityV1['bonus_offerings'];
+    readonly delivered_courses?: CourseBonusCapabilityV1['bonus_offerings'];
+    readonly delivered: boolean;
+    readonly later_reply: boolean;
+  } | null;
+}): CourseBonusCapabilityV1 {
+  const offer = input.package;
+  const expiresAt = timestamp(offer?.expires_at ?? null);
+  const expired = expiresAt !== null && expiresAt <= Date.now();
+  const open = offer === null || (offer.status === 'offered' && !expired);
+  const ready = offer === null || (offer.delivered && offer.later_reply);
+  const accepted = offer?.status === 'accepted' || offer?.status === 'attached';
+  return {
+    ...hidden(accepted ? 'accepted' : offer ? 'offer_available' : 'checkin_available'),
+    enabled: true, max_bonus_courses: input.max_bonus_courses,
+    may_offer_bonus: open && ready && input.prior_price_objection
+      && (offer?.courses.length ?? 0) < input.max_bonus_courses,
+    may_accept_offer: offer?.status === 'offered' && ready && !expired,
+    may_send_promoted_payment: accepted,
+    interest_offering_code: input.interest_offering_code,
+    promotion_code: offer?.promotion_code ?? null,
+    promotion_cycle_id: offer?.promotion_cycle_id ?? null,
+    offer_version: offer?.offer_version ?? 0,
+    accepted_at: offer?.accepted_at ? new Date(offer.accepted_at).toISOString() : null,
+    package_status: expired && offer?.status === 'offered' ? 'expired' : offer?.status ?? null,
+    bonus_selection_mode: 'any_active_course',
+    bonus_offerings: offer?.courses ?? [],
+    delivered_bonus_offerings: [...(offer?.delivered_courses ?? (offer?.delivered ? offer.courses : []))],
+  };
+}
+
+async function readDirectCapability(input: {
+  workspace_slug: string; contact_id: string; conversation_id: string;
+  selected_offering_code: string | null; source_turn_id?: string;
+}, db: DbClient, max: CourseBonusMaxCoursesV1): Promise<CourseBonusCapabilityV1> {
+  if (!input.selected_offering_code) return {...hidden('needs_interest'), enabled:true,max_bonus_courses:max};
+  const [row] = await db<Array<{
+    promotion_code: string | null; promotion_cycle_id: string; offer_version: number;
+    status: CourseBonusOfferProjectionV1['status']; courses: CourseBonusCapabilityV1['bonus_offerings'];
+    expires_at: Date | null; accepted_at: Date | null;
+    delivered_courses: CourseBonusCapabilityV1['bonus_offerings']; delivered: boolean; later_reply: boolean;
+    prior_price_objection: boolean;
+  }>>`
+    SELECT p.promotion_code,o.promotion_cycle_id,o.offer_version,o.status,o.expires_at,o.accepted_at,
+      COALESCE(b.courses,'[]'::jsonb) courses,COALESCE(b.delivered_courses,'[]'::jsonb) delivered_courses,
+      COALESCE(b.delivered,false) delivered,
+      COALESCE(b.latest_delivery < message_occurrence_v1(current.metadata,current.created_at),false) later_reply,
+      EXISTS(SELECT 1 FROM selected_memories m JOIN messages source ON source.id=m.source_message_id
+        WHERE m.contact_id=${input.contact_id}::uuid AND m.conversation_id=${input.conversation_id}::uuid
+          AND m.memory_type='objection' AND m.memory_key='price_objection' AND m.status IN ('active','accepted','superseded')
+          AND m.valid_from<=now() AND (m.valid_until IS NULL OR m.valid_until>now())
+          AND source.direction='inbound' AND source.id<>current.id
+          AND source.conversation_id=current.conversation_id AND source.contact_id=current.contact_id
+          AND message_occurrence_v1(source.metadata,source.created_at)<message_occurrence_v1(current.metadata,current.created_at)
+      ) prior_price_objection
+    FROM workspaces w JOIN offerings paid ON paid.workspace_id=w.id AND paid.code=${input.selected_offering_code}
+      AND paid.status='active' AND paid.offering_type='course'
+    JOIN workspace_contacts wc ON wc.workspace_id=w.id AND wc.contact_id=${input.contact_id}::uuid
+    JOIN LATERAL(SELECT m.* FROM messages m WHERE m.conversation_id=${input.conversation_id}::uuid
+      AND m.contact_id=${input.contact_id}::uuid AND m.direction='inbound'
+      AND (${input.source_turn_id ?? null}::uuid IS NULL OR m.id=${input.source_turn_id ?? null}::uuid)
+      ORDER BY m.conversation_seq DESC,m.created_at DESC LIMIT 1) current ON true
+    LEFT JOIN LATERAL(SELECT candidate.* FROM promotion_offers candidate
+      WHERE candidate.workspace_id=w.id AND candidate.contact_id=wc.contact_id
+        AND candidate.conversation_id=current.conversation_id AND candidate.paid_offering_id=paid.id
+        AND candidate.package_mode='direct' AND candidate.status IN ('offered','accepted','attached')
+      ORDER BY candidate.created_at DESC LIMIT 1) o ON true
+    LEFT JOIN promotions p ON p.id=o.promotion_id
+    LEFT JOIN LATERAL(SELECT jsonb_agg(jsonb_build_object('code',s.offering_code_snapshot,
+      'display_name',s.offering_display_name_snapshot,'position',s.position,'offered_at',s.offered_at) ORDER BY s.position) courses,
+      jsonb_agg(jsonb_build_object('code',s.offering_code_snapshot,
+      'display_name',s.offering_display_name_snapshot,'position',s.position) ORDER BY s.position)
+        FILTER(WHERE s.delivered_at IS NOT NULL) delivered_courses,
+      bool_and(s.delivered_at IS NOT NULL) delivered,max(s.delivered_at) latest_delivery
+      FROM promotion_offer_bonus_offerings s WHERE s.offer_id=o.id) b ON true
+    WHERE w.slug=${input.workspace_slug} AND w.status='active'
+  `;
+  if (!row) return {...hidden('unavailable'),enabled:false,max_bonus_courses:max};
+  return deriveDirectCourseBonusCapabilityV1({interest_offering_code:input.selected_offering_code,
+    max_bonus_courses:max,prior_price_objection:row.prior_price_objection,
+    package:row.promotion_code ? {...row,promotion_code:row.promotion_code} : null});
+}
+
 export async function readCourseBonusCapabilityV1(input: {
   readonly workspace_slug: string;
   readonly contact_id: string;
   readonly conversation_id: string;
   readonly channel: 'text' | 'voice';
   readonly selected_offering_code: string | null;
+  readonly source_turn_id?: string;
   readonly now?: Date;
 }, deps: { readonly db: DbClient }): Promise<CourseBonusCapabilityV1> {
-  if (!isCentralCargaBonusEnabledForContact(
-    loadCentralCargaBonusConfig(),
-    input.contact_id,
-  )) return hidden('unavailable');
+  try {
+    const flow = loadCourseBonusFlowConfig();
+    if (!isCentralCargaBonusEnabledForContact(loadCentralCargaBonusConfig(),input.contact_id)) {
+      return flow.mode === 'direct' && flow.maxBonusCourses !== null
+        ? {...hidden('unavailable'),enabled:false,max_bonus_courses:flow.maxBonusCourses}
+        : hidden('unavailable');
+    }
+    if (flow.mode === 'direct' && flow.maxBonusCourses !== null) {
+      if (input.channel !== 'text') return {...hidden('unavailable'),enabled:false};
+      return readDirectCapability(input,deps.db,flow.maxBonusCourses);
+    }
+  } catch { return {...hidden('unavailable'),enabled:false}; }
   const contexts = await deps.db<Array<{
     interest_offering_code: string | null;
     price_objection_count: number;

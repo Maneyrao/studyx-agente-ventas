@@ -41,6 +41,7 @@ export interface AgentTurnStateTransitionV2 {
 }
 
 export type AgentTurnRejectionReasonV2 =
+  | 'COMMERCIAL_TRUTH_VIOLATION'
   | 'FACT_NOT_AUTHORIZED'
   | 'UNSUPPORTED_STATE_ASSERTION'
   | 'ACTION_NOT_AUTHORIZED'
@@ -65,12 +66,12 @@ export type AgentTurnAuthorityResultV2 = {
   readonly discussed_offering_code: string | null;
   /** Present when semantic checks run as diagnostics instead of a copy veto. */
   readonly advisory_reasons?: readonly AgentTurnRejectionReasonV2[];
-  readonly rejection_subjects?: readonly StateFactIdV1[];
+  readonly rejection_subjects?: readonly string[];
 } | {
   readonly ok: false;
   readonly reasons: readonly AgentTurnRejectionReasonV2[];
   /** Exact durable facts the authored response claimed without authority. */
-  readonly rejection_subjects?: readonly StateFactIdV1[];
+  readonly rejection_subjects?: readonly string[];
 };
 
 function referenceKey(value: string): string {
@@ -494,10 +495,34 @@ export function authorizeAgentTurnV2(input: {
     else reasons.push('ACTION_NOT_AUTHORIZED');
   }
   if (proposal.proposed_action.type === 'accept_promotion') {
+    if (input.course_bonus?.enabled === true) {
+      const requested = proposal.proposed_action;
+      const cap = input.course_bonus;
+      if (!cap.may_accept_offer || !('promotion_cycle_id' in requested)
+        || requested.promotion_cycle_id !== cap.promotion_cycle_id
+        || requested.promotion_code !== cap.promotion_code || requested.offer_version !== cap.offer_version
+        || requested.interest_offering_code !== cap.interest_offering_code || !promotionMatchesCurrentInterest) {
+        return {ok:false,reasons:['COMMERCIAL_TRUTH_VIOLATION'],
+          rejection_subjects:['forbidden_promise','direct_bonus:stale_offer_version']};
+      }
+    }
     if (input.course_bonus?.may_accept_offer === true && promotionMatchesCurrentInterest) {
       action = proposal.proposed_action;
     }
     else reasons.push('ACTION_NOT_AUTHORIZED');
+  }
+  if (proposal.proposed_action.type === 'offer_course_bonus') {
+    const proposed = proposal.proposed_action;
+    const cap = input.course_bonus;
+    const reason = cap?.enabled !== true || cap.may_offer_bonus !== true ? 'bonus_disabled'
+      : proposed.interest_offering_code !== capabilityInterestOffering || !promotionMatchesCurrentInterest
+        || !input.offerings.some(o => o.code === proposed.bonus_offering_code) ? 'invalid_offering'
+      : proposed.bonus_offering_code === capabilityInterestOffering ? 'same_as_paid_course'
+      : cap.bonus_offerings.some(o => o.code === proposed.bonus_offering_code) ? 'duplicate_bonus'
+      : cap.bonus_offerings.length >= (cap.max_bonus_courses ?? 0) ? 'bonus_limit_reached' : null;
+    if (reason) return {ok:false,reasons:['COMMERCIAL_TRUTH_VIOLATION'],
+      rejection_subjects:['forbidden_promise',`direct_bonus:${reason}`]};
+    action = proposed;
   }
   if (
     proposal.proposed_action.type === 'none'

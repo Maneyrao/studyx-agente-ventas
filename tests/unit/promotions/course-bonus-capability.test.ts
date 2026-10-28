@@ -1,8 +1,9 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   derivePromotionContextRepairPlanV1,
   deriveCourseBonusCapabilityV1,
   readCourseBonusCapabilityV1,
+  deriveDirectCourseBonusCapabilityV1,
 } from '@/features/promotions/application/read-course-bonus-capability';
 import type { DbClient } from '@/lib/db/types';
 import {
@@ -19,6 +20,38 @@ const promotion = {
   valid_until: null,
   bonus_offerings: [{ code: 'ingles_2', display_name: 'Inglés 2', position: 1 }],
 };
+
+describe('direct capability', () => {
+  it('projects disabled rollout with the configured direct limit without reading customer data', async () => {
+    vi.stubEnv('CENTRAL_CARGA_BONUS_ENABLED','false');vi.stubEnv('CENTRAL_CARGA_BONUS_CANARY_CONTACT_IDS','');
+    vi.stubEnv('COURSE_BONUS_FLOW_MODE','direct');vi.stubEnv('COURSE_BONUS_MAX_COURSES','2');
+    try {
+      expect(await readCourseBonusCapabilityV1({workspace_slug:'studyx',contact_id:'disabled',conversation_id:'unused',
+        channel:'text',selected_offering_code:'ingles_1'},{db:(()=>{throw new Error('MUST_NOT_QUERY');}) as unknown as DbClient}))
+        .toMatchObject({enabled:false,max_bonus_courses:2});
+    } finally { vi.unstubAllEnvs(); }
+  });
+  it('does not authorize accepting or extending an expired direct offer', () => {
+    expect(deriveDirectCourseBonusCapabilityV1({interest_offering_code:'ingles_1',max_bonus_courses:2,
+      prior_price_objection:true,package:{promotion_code:'p',promotion_cycle_id:'cycle',offer_version:1,status:'offered',
+        expires_at:'2000-01-01T00:00:00.000Z',courses:promotion.bonus_offerings,delivered:true,later_reply:true}}))
+      .toMatchObject({may_offer_bonus:false,may_accept_offer:false});
+  });
+  it('requires a prior committed objection and exposes the ordered durable package', () => {
+    const input = { interest_offering_code: 'ingles_1', max_bonus_courses: 2 as const,
+      prior_price_objection: false, package: null };
+    expect(deriveDirectCourseBonusCapabilityV1(input)).toMatchObject({ enabled: true,
+      max_bonus_courses: 2, may_offer_bonus: false, may_request_review: false, offer_version: 0 });
+    expect(deriveDirectCourseBonusCapabilityV1({ ...input, prior_price_objection: true }))
+      .toMatchObject({ may_offer_bonus: true });
+    expect(deriveDirectCourseBonusCapabilityV1({ ...input, prior_price_objection: true,
+      package: { promotion_code: 'p', promotion_cycle_id: 'cycle', offer_version: 1,
+        status: 'offered', courses: promotion.bonus_offerings, delivered: false, later_reply: false } }))
+      .toMatchObject({ promotion_code: 'p', promotion_cycle_id: 'cycle', offer_version: 1,
+        bonus_offerings: promotion.bonus_offerings, delivered_bonus_offerings: [],
+        may_offer_bonus: false, may_accept_offer: false });
+  });
+});
 
 function capability(overrides: Record<string, unknown> = {}) {
   return deriveCourseBonusCapabilityV1({

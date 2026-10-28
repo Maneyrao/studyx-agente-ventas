@@ -1660,6 +1660,25 @@ describe('Agent A Brain V1', () => {
     expect(moveProperties.vetoes.description).toContain('current customer message explicitly refuses');
   });
 
+  it('exposes only authorized direct offering codes and the exact acceptance identity on the wire', async () => {
+    const current=context();
+    current.catalog.available_offerings=[{code:'redes-informaticas',display_name:'Redes Informáticas',fact_id:'paid',area_code:'tech'},
+      {code:'excel-integral',display_name:'Excel Integral',fact_id:'bonus',area_code:'tech'}];
+    current.capabilities.course_bonus={enabled:true,max_bonus_courses:2,may_offer_bonus:true,status:'offer_available',
+      may_schedule_checkin:false,may_request_review:false,may_accept_offer:true,may_send_promoted_payment:false,
+      interest_offering_code:'redes-informaticas',promotion_code:'p',promotion_cycle_id:'11111111-1111-4111-8111-111111111111',
+      offer_version:1,bonus_selection_mode:'any_active_course',bonus_offerings:[],delivered_bonus_offerings:[]};
+    const fetchMock=vi.fn<typeof fetch>().mockResolvedValue(providerResponse(200,responsesSuccessBody(proposal())));
+    vi.stubGlobal('fetch',fetchMock);
+    await generateDeepSeekAgentATurnProposalV1({context:current,apiKey:'fixture',signal:new AbortController().signal});
+    const body=JSON.parse(String(fetchMock.mock.calls[0]![1]?.body));
+    const alternatives=body.text.format.schema.properties.proposed_action.anyOf as Array<{properties:Record<string,{enum?:unknown[]}>}>;
+    expect(alternatives.find(a=>a.properties.type.enum?.includes('offer_course_bonus'))).toMatchObject({
+      properties:{bonus_offering_code:{enum:['excel-integral']},interest_offering_code:{enum:['redes-informaticas']}}});
+    expect(alternatives.find(a=>a.properties.type.enum?.includes('accept_promotion'))).toMatchObject({
+      properties:{promotion_code:{enum:['p']},promotion_cycle_id:{enum:['11111111-1111-4111-8111-111111111111']},offer_version:{enum:[1]}}});
+  });
+
   it('exposes an authorized promotion review in the real DeepSeek wire schema and parses its response', async () => {
     const current = context();
     current.catalog.available_offerings = [

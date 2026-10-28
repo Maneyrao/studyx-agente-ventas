@@ -68,7 +68,10 @@ Answer the customer from the remaining verified course facts; do not replace the
   const selectedBonusDirective = courseBonus?.bonus_selection_mode === 'any_active_course'
     ? ' Choose exactly one active offering from catalog.available_offerings that differs from the paid course and materially complements the customer goal; put only its code in proposed_action.bonus_offering_code. Do not name or imply that course in customer-facing copy before the review returns an offer.'
     : '';
-  const forbiddenPromiseRepair = repairsForbiddenPromise ? courseBonus?.may_request_review
+  const forbiddenPromiseRepair = repairsForbiddenPromise ? courseBonus?.enabled
+    ? `
+For forbidden_promise, remove only the unauthorized addition identified by direct_bonus. Preserve useful commercial content and the previously delivered courses in capabilities.course_bonus.delivered_bonus_offerings. Do not repeat the rejected new gift or claim its effect succeeded. A pending undelivered course is not a confirmed promise.`
+    : courseBonus?.may_request_review
     ? `
 For forbidden_promise, remove the unauthorized promise completely. You may say naturally that you will check an alternative only if you use proposed_action=request_promotion_review in this rewrite.${selectedBonusDirective} Do not name or imply a specific gift yet, and do not claim approval, a discount, income or results.`
     : courseBonus?.status === 'offer_available' || courseBonus?.status === 'accepted'

@@ -647,6 +647,23 @@ export function buildAgentAContextV1(
     },
     identity: agentAIdentityFromClaim(claimed, advisorName),
     commercial_state: {
+      promotion: claimed.course_bonus_capability?.enabled
+        && claimed.course_bonus_capability.promotion_code && claimed.course_bonus_capability.promotion_cycle_id
+        && claimed.course_bonus_capability.offer_version && claimed.course_bonus_capability.interest_offering_code
+        && claimed.course_bonus_capability.bonus_offerings.every(course => course.offered_at)
+        ? {
+          promotion_code:claimed.course_bonus_capability.promotion_code,
+          promotion_cycle_id:claimed.course_bonus_capability.promotion_cycle_id,
+          offer_version:claimed.course_bonus_capability.offer_version,
+          interest_offering_code:claimed.course_bonus_capability.interest_offering_code,
+          status:claimed.course_bonus_capability.package_status === 'accepted' || claimed.course_bonus_capability.package_status === 'attached'
+            ? 'accepted' : claimed.course_bonus_capability.package_status === 'expired' ? 'expired'
+              : claimed.course_bonus_capability.package_status === 'cancelled' ? 'cancelled' : 'offer_available',
+          accepted_at:claimed.course_bonus_capability.accepted_at ?? null,
+          bonus_offerings:claimed.course_bonus_capability.bonus_offerings.map(course => ({
+            offering_code:course.code,name:course.display_name,offered_at:course.offered_at!,position:course.position,
+          })),
+        } : null,
       selected_offering_code: selectedCode,
       selected_payment_plan: selectedPlan,
       stage: state.stage,

@@ -80,6 +80,10 @@ export interface RequestPromotionReviewAction {
 
 export interface AcceptPromotionAction {
   type: 'accept_promotion';
+  promotion_code?: string;
+  promotion_cycle_id?: string;
+  interest_offering_code?: string;
+  offer_version?: number;
 }
 
 /**
@@ -89,6 +93,7 @@ export interface AcceptPromotionAction {
  * the v4 contract at all.
  */
 export type DecisionV4BusinessAction =
+  | { type: 'offer_course_bonus'; interest_offering_code: string; bonus_offering_code: string }
   | { type: 'mark_hot_lead'; score: number }
   | { type: 'log_objection'; objection_key: string; quote: string }
   | RequestCallNowAction
@@ -216,6 +221,14 @@ function parseV4BusinessAction(value: unknown): DecisionV4BusinessAction | null 
   if (!isRecord(value)) {
     throw new DecisionValidationError('INVALID_BUSINESS_ACTION');
   }
+  if (value.type === 'offer_course_bonus') {
+    if (Object.keys(value).some(key => !['type','interest_offering_code','bonus_offering_code'].includes(key))
+      || typeof value.interest_offering_code !== 'string' || !isCanonicalOfferingSku(value.interest_offering_code)
+      || typeof value.bonus_offering_code !== 'string' || !isCanonicalOfferingSku(value.bonus_offering_code)) {
+      throw new DecisionValidationError('INVALID_BUSINESS_ACTION');
+    }
+    return {type:'offer_course_bonus',interest_offering_code:value.interest_offering_code,bonus_offering_code:value.bonus_offering_code};
+  }
   if (value.type === 'request_call_now') {
     return parseRequestCallNow(value);
   }
@@ -249,8 +262,18 @@ function parseV4BusinessAction(value: unknown): DecisionV4BusinessAction | null 
     };
   }
   if (value.type === 'accept_promotion') {
-    if (Object.keys(value).some((key) => key !== 'type')) {
+    if (Object.keys(value).some((key) => !['type','promotion_code','promotion_cycle_id','interest_offering_code','offer_version'].includes(key))) {
       throw new DecisionValidationError('INVALID_BUSINESS_ACTION');
+    }
+    if (Object.keys(value).length > 1) {
+      if (typeof value.promotion_code !== 'string' || typeof value.promotion_cycle_id !== 'string'
+        || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu.test(value.promotion_cycle_id)
+        || typeof value.interest_offering_code !== 'string' || !isCanonicalOfferingSku(value.interest_offering_code)
+        || typeof value.offer_version !== 'number' || !Number.isInteger(value.offer_version) || value.offer_version < 1) {
+        throw new DecisionValidationError('INVALID_BUSINESS_ACTION');
+      }
+      return {type:'accept_promotion',promotion_code:value.promotion_code,promotion_cycle_id:value.promotion_cycle_id,
+        interest_offering_code:value.interest_offering_code,offer_version:value.offer_version};
     }
     return { type: 'accept_promotion' };
   }

@@ -17,6 +17,9 @@ import { courseLogisticsInV1 as courseLogisticsIn, type CourseLogisticsFactV1 } 
  */
 
 export interface CanonicalTruthSetV1 {
+  /** Delivered package plus the single transactionally pending proposed course. */
+  readonly authorized_bonus_names?: readonly string[];
+  readonly bonus_catalog_names?: readonly string[];
   /** Precios asertables del registro, p. ej. `['USD 360', 'USD 30']`. */
   readonly prices: readonly string[];
   /** Duraciones asertables, p. ej. `['38 clases']`. */
@@ -426,7 +429,14 @@ function sentenceViolations(
     violations.push({ code: 'CERTIFICATION_CONTRADICTS_CANONICAL', value: 'certification' });
   }
 
-  if (FORBIDDEN_PROMISE.test(normalized) || offersUnauthorizedBenefit(normalized)) {
+  const giftClaim = /\b(?:regal(?:o|amos|a)|de\s+regalo|gratis|sin\s+(?:costo|cargo)|bonificad[oa]|bono\s+de\s+curso)\b/u.test(normalized)
+    && !/\b(?:no|nunca|tampoco)\s+(?:te\s+)?(?:regal\w+|incluye\w*)\b/u.test(normalized);
+  const bonusNames = (canonical.authorized_bonus_names ?? []).map(normalize);
+  const claimedNames = (canonical.bonus_catalog_names ?? canonical.offering_names ?? []).map(normalize)
+    .filter(name => name && normalized.includes(name));
+  const giftAuthorized = claimedNames.length > 0 && claimedNames.every(name => bonusNames.includes(name));
+  if (FORBIDDEN_PROMISE.test(normalized) || offersUnauthorizedBenefit(normalized)
+    || (giftClaim && !giftAuthorized)) {
     violations.push({ code: 'FORBIDDEN_PROMISE', value: 'promise' });
   }
 

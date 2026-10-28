@@ -129,6 +129,9 @@ function responseType(input: {
   readonly response: string;
 }): DecisionV4['response_type'] {
   if (input.proposal.proposed_action.type === 'request_call_now') return 'call_confirmation';
+  // The promotion is the committed effect; an optional invitation remains
+  // authored conversation and its existing state transition still applies.
+  if (input.proposal.proposed_action.type === 'offer_course_bonus') return 'commercial_reply';
   const declaredOffer = input.proposal.response.call_offer;
   if ((declaredOffer && solicitsACall(declaredOffer, true)) || solicitsACall(input.response)) return 'call_offer';
   if (input.proposal.move.move === 'greeting') return 'social_reply';
@@ -155,7 +158,7 @@ function decisionFromAuthorizedTurn(input: {
         ? { type: 'send_test_payment_link', offering_sku: action.offering_code }
         : action.type === 'schedule_price_objection_checkin'
           ? action
-          : action.type === 'request_promotion_review'
+          : action.type === 'request_promotion_review' || action.type === 'offer_course_bonus'
             ? action
             : action.type === 'accept_promotion'
               ? action

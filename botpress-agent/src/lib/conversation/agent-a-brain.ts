@@ -568,6 +568,21 @@ function proposalJsonSchema(context: AgentAContextV1, conversationOnly = false):
         reason: { type: 'string', enum: ['persistent_price_objection'] },
       })]
     : [];
+  const directBonusCodes = eligibleDynamicBonusCodes.filter(code => !courseBonus?.bonus_offerings.some(o => o.code === code));
+  const directBonusAlternatives = courseBonus?.enabled && courseBonus.may_offer_bonus
+    && courseBonus.interest_offering_code && directBonusCodes.length
+    ? [closedObject({type:{type:'string',enum:['offer_course_bonus']},
+      interest_offering_code:{type:'string',enum:[courseBonus.interest_offering_code]},
+      bonus_offering_code:{type:'string',enum:directBonusCodes}})] : [];
+  const acceptanceAlternatives = courseBonus?.may_accept_offer
+    ? courseBonus.enabled
+      ? courseBonus.promotion_code && courseBonus.promotion_cycle_id && courseBonus.interest_offering_code && courseBonus.offer_version
+        ? [closedObject({type:{type:'string',enum:['accept_promotion']},
+          promotion_code:{type:'string',enum:[courseBonus.promotion_code]},
+          promotion_cycle_id:{type:'string',enum:[courseBonus.promotion_cycle_id]},
+          interest_offering_code:{type:'string',enum:[courseBonus.interest_offering_code]},
+          offer_version:{type:'integer',enum:[courseBonus.offer_version]}})] : []
+      : [closedObject({type:{type:'string',enum:['accept_promotion']}})] : [];
   const sendPaymentLinkProperties: Record<string, unknown> = {
     type: { type: 'string', enum: ['send_payment_link'] },
     offering_code: { type: 'string' },
@@ -591,9 +606,8 @@ function proposalJsonSchema(context: AgentAContextV1, conversationOnly = false):
         reason: { type: 'string', enum: ['price_objection'] },
       })] : []),
       ...promotionReviewAlternatives,
-      ...(courseBonus?.may_accept_offer ? [closedObject({
-        type: { type: 'string', enum: ['accept_promotion'] },
-      })] : []),
+      ...directBonusAlternatives,
+      ...acceptanceAlternatives,
       closedObject(sendPaymentLinkProperties),
       closedObject({
         type: { type: 'string', enum: ['send_test_payment_link'] },
@@ -1855,7 +1869,18 @@ export function validateAgentATurnProposalV1(input: {
   const salesObjection = evaluateSalesObjectionTurnV1(input.context);
   const authorizedBonusOffer = input.context.capabilities.course_bonus?.status === 'offer_available'
     || input.context.capabilities.course_bonus?.status === 'accepted';
-  const authorizedBonusOfferingNames = authorizedBonusOffer
+  const directBonusCapability = input.context.capabilities.course_bonus;
+  const directAction = input.proposal.proposed_action;
+  const directOffering = directAction.type === 'offer_course_bonus'
+    && directBonusCapability?.enabled && directBonusCapability.may_offer_bonus
+    && directAction.interest_offering_code === directBonusCapability.interest_offering_code
+    && directAction.bonus_offering_code !== directBonusCapability.interest_offering_code
+    && !directBonusCapability.bonus_offerings.some(o => o.code === directAction.bonus_offering_code)
+    ? input.context.catalog.available_offerings.find(o => o.code === directAction.bonus_offering_code) : null;
+  const authorizedBonusOfferingNames = directBonusCapability?.enabled
+    ? [...(directBonusCapability.delivered_bonus_offerings ?? []).map(o => o.display_name),
+      ...(directOffering ? [directOffering.display_name] : [])]
+    : authorizedBonusOffer
     ? input.context.capabilities.course_bonus?.bonus_offerings.map((offering) => offering.display_name) ?? []
     : [];
   if (
