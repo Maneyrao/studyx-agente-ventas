@@ -193,6 +193,23 @@ function claimedTurn(): ClaimedTurn {
 }
 
 describe('buildAgentAContextV1', () => {
+  it.each(['offered','accepted','attached'] as const)('projects durable %s direct identity with new-offer creation disabled', status => {
+    const claimed=claimedTurn();
+    claimed.course_bonus_capability={enabled:false,max_bonus_courses:2,may_offer_bonus:false,
+      status:status==='offered'?'offer_available':'accepted',may_schedule_checkin:false,may_request_review:false,
+      may_accept_offer:status==='offered',may_send_promoted_payment:status!=='offered',
+      promotion_code:'direct-package',promotion_cycle_id:UUID,offer_version:1,package_status:status,
+      interest_offering_code:'redes-informaticas',accepted_at:status==='offered'?null:NOW,
+      bonus_offerings:[{code:'ingles_1',display_name:'Inglés 1',position:1,offered_at:NOW}],
+      delivered_bonus_offerings:[{code:'ingles_1',display_name:'Inglés 1',position:1}]};
+    const projected=buildAgentAContextV1(claimed)!;
+    expect(projected.commercial_state.promotion).toEqual({promotion_code:'direct-package',promotion_cycle_id:UUID,
+      offer_version:1,status:status==='offered'?'offer_available':'accepted',interest_offering_code:'redes-informaticas',
+      accepted_at:status==='offered'?null:NOW,
+      bonus_offerings:[{offering_code:'ingles_1',name:'Inglés 1',position:1,offered_at:NOW}]});
+    expect(projected.capabilities.course_bonus).toMatchObject({enabled:false,may_offer_bonus:false,
+      may_accept_offer:status==='offered',package_status:status});
+  });
   it('projects the durable direct package into commercial state without deriving it from prose', () => {
     const claimed=claimedTurn();
     claimed.course_bonus_capability={enabled:true,max_bonus_courses:2,may_offer_bonus:true,

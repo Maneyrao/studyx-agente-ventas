@@ -647,9 +647,10 @@ export function buildAgentAContextV1(
     },
     identity: agentAIdentityFromClaim(claimed, advisorName),
     commercial_state: {
-      promotion: claimed.course_bonus_capability?.enabled
-        && claimed.course_bonus_capability.promotion_code && claimed.course_bonus_capability.promotion_cycle_id
+      promotion: claimed.course_bonus_capability?.promotion_code && claimed.course_bonus_capability.promotion_cycle_id
         && claimed.course_bonus_capability.offer_version && claimed.course_bonus_capability.interest_offering_code
+        && claimed.course_bonus_capability.package_status
+        && claimed.course_bonus_capability.bonus_offerings.length>0
         && claimed.course_bonus_capability.bonus_offerings.every(course => course.offered_at)
         ? {
           promotion_code:claimed.course_bonus_capability.promotion_code,

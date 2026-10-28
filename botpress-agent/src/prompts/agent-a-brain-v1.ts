@@ -6,7 +6,7 @@ import {
 import { resolveCanonicalPromptIdentityV1 } from './agent-a-identity';
 import { evaluateSalesObjectionTurnV1 } from '../lib/conversation/sales-objection-turn-policy';
 
-export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v132' as const;
+export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v133' as const;
 
 /**
  * Runtime contract only. The sales behavior lives in the canonical prompt so
@@ -36,6 +36,19 @@ function inertJson(value: unknown): string {
     .replaceAll('<', '\\u003c')
     .replaceAll('>', '\\u003e')
     .replaceAll('&', '\\u0026');
+}
+
+function hasDirectBonusContextV1(context: AgentAContextV1): boolean {
+  const capability=context.capabilities.course_bonus;
+  const promotion=context.commercial_state.promotion;
+  // Creation permission can be off during rollback while a direct package
+  // still exists. A legacy review offer has no cycle/version identity.
+  return capability?.enabled===true || Boolean(
+    capability?.promotion_code && capability.promotion_cycle_id && (capability.offer_version ?? 0)>0
+      && capability.package_status
+    || promotion?.promotion_code && promotion.promotion_cycle_id && promotion.offer_version>0
+      && promotion.status!=='none',
+  );
 }
 
 function mandatoryRepairDirectiveV1(context: AgentAContextV1): string {
@@ -68,7 +81,7 @@ Answer the customer from the remaining verified course facts; do not replace the
   const selectedBonusDirective = courseBonus?.bonus_selection_mode === 'any_active_course'
     ? ' Choose exactly one active offering from catalog.available_offerings that differs from the paid course and materially complements the customer goal; put only its code in proposed_action.bonus_offering_code. Do not name or imply that course in customer-facing copy before the review returns an offer.'
     : '';
-  const forbiddenPromiseRepair = repairsForbiddenPromise ? courseBonus?.enabled
+  const forbiddenPromiseRepair = repairsForbiddenPromise ? hasDirectBonusContextV1(context)
     ? `
 For forbidden_promise, remove only the unauthorized addition identified by direct_bonus. Preserve useful commercial content and the previously delivered courses in capabilities.course_bonus.delivered_bonus_offerings. Do not repeat the rejected new gift or claim its effect succeeded. A pending undelivered course is not a confirmed promise.`
     : courseBonus?.may_request_review
@@ -118,8 +131,8 @@ function currentCommercialGuidanceDirectiveV1(context: AgentAContextV1): string 
   const promotionReviewGuidance = courseBonus?.may_request_review
     ? `Do not merely repeat the price, installment amounts or class count. Say naturally that you will check an alternative and use proposed_action=request_promotion_review.${selectedBonusDirective} The review is the authorized next step: do not name or imply a specific gift yet.`
     : null;
-  const directBonusGuidance = courseBonus?.enabled
-    ? courseBonus.may_offer_bonus
+  const directBonusGuidance = hasDirectBonusContextV1(context)
+    ? courseBonus?.enabled===true && courseBonus.may_offer_bonus===true
       ? `Only after persistent price resistance and prior value and trial-close attempts, you may use offer_course_bonus with exactly one new active catalog code, distinct from the paid and existing bonus courses. Name that course in the same response, tie it to the expressed goal and recap the exact paid course plus delivered_bonus_offerings and this one validated addition. Respect max_bonus_courses and never a fourth gift; a later expansion needs a customer reply after confirmed delivery and a prior close attempt. Preserve the main price. No first-objection gift or forced close. The backend validates truth, limits and persistence; you interpret the sales conversation.`
       : `No new bonus is authorized. Preserve only the current delivered_bonus_offerings package and its exact identity; do not repeat pending or rejected additions. Continue with contextual value or a useful diagnosis, without forcing a close.`
     : null;

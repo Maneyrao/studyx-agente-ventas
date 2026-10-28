@@ -72,6 +72,37 @@ function context(memoryValue = 'busca salida laboral'): AgentAContextV1 {
 }
 
 describe('Agent A Brain prompt', () => {
+  it.each(['capability','commercial_state','disabled_with_may_offer'] as const)('preserves only delivered direct gifts during review rollback using %s identity', identity => {
+    const current=context();
+    current.turn.batch_messages=[{id:'m3',text:'Me sigue pareciendo caro'}];
+    current.turn.recent_turns=[{id:'m2',direction:'inbound',content:'Me parece caro'}];
+    current.capabilities.course_bonus={enabled:false,max_bonus_courses:2,may_offer_bonus:identity==='disabled_with_may_offer',
+      status:'offer_available',may_schedule_checkin:false,may_request_review:false,may_accept_offer:false,
+      may_send_promoted_payment:false,promotion_code:'direct-package',
+      ...(identity!=='commercial_state'?{promotion_cycle_id:'18a823e8-27c2-4279-9956-058f45f33cd5',offer_version:2,package_status:'offered' as const}:{}),
+      interest_offering_code:'redes-informaticas',
+      bonus_offerings:[{code:'ingles_1',display_name:'Inglés 1',position:1},{code:'ingles_2',display_name:'Inglés 2',position:2}],
+      delivered_bonus_offerings:[{code:'ingles_1',display_name:'Inglés 1',position:1}]};
+    if(identity==='commercial_state') current.commercial_state.promotion={promotion_code:'direct-package',
+      promotion_cycle_id:'18a823e8-27c2-4279-9956-058f45f33cd5',offer_version:2,status:'offer_available',
+      interest_offering_code:'redes-informaticas',accepted_at:null,
+      bonus_offerings:[{offering_code:'ingles_1',name:'Inglés 1',position:1,offered_at:'2026-10-28T10:00:00Z'},
+        {offering_code:'ingles_2',name:'Inglés 2',position:2,offered_at:'2026-10-28T10:01:00Z'}]};
+    current.turn_rejection={schema_version:1,rejection_id:'18a823e8-27c2-4279-9956-058f45f33cd5',attempt:1,
+      rejections:[{code:'FACT_VALUE_MISMATCH',subject:'forbidden_promise'},
+        {code:'FACT_VALUE_MISMATCH',subject:'direct_bonus:bonus_without_reply'}],
+      authorized_alternatives:{fact_ids:[],actions:['none'],missing_information:[]}};
+    const instructions=buildAgentABrainInstructionsV1(current);
+    const guidance=instructions.split('<current_commercial_guidance kind="repeated_price_objection">')[1]!.split('</current_commercial_guidance>')[0]!;
+    const repair=instructions.split('<mandatory_repair')[1]!.split('</mandatory_repair>')[0]!;
+    expect(guidance).toContain('No new bonus is authorized');
+    for(const directive of [guidance,repair]) {
+      expect(directive).toContain('delivered_bonus_offerings');
+      expect(directive).toMatch(/pending/iu);
+      expect(directive).not.toMatch(/\bbonus_offerings\b/u);
+      expect(directive).not.toContain('request_promotion_review');
+    }
+  });
   it('adapts discovery, trial closes and direct negotiation while preserving early calls', () => {
     const instructions = buildAgentABrainInstructionsV1(context());
     for (const rule of ['cierre de prueba', '«me interesa» no confirma una compra',
@@ -120,7 +151,7 @@ describe('Agent A Brain prompt', () => {
     expect(JSON.parse(encoded)).toEqual(current);
     expect(instructions).not.toContain('<current_turn_guidance>');
     expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v98');
-    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v132');
+    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v133');
   });
 
   it('adds turn-specific guidance for a repeated price objection without forcing a script', () => {
