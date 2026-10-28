@@ -66,6 +66,90 @@ async function fixture() {
 }
 
 run('direct course bonus voice continuity',()=>{
+  it('refuses ordinary checkout when the model omits every promotion field of an offered package',async()=>{
+    const f=await fixture();
+    expect(await f.store.requestAgentAPaymentLink({...f.common,paymentPlan:'one_time'}))
+      .toMatchObject({sent:false,reason:'PROMOTION_ACCEPTANCE_REQUIRED'});
+    expect(f.sent).not.toHaveBeenCalled();
+    expect(await db!`SELECT id FROM payments WHERE contact_id=${f.common.contactId}`).toHaveLength(0);
+  });
+  it('automatically preserves an already accepted exact package when every promotion field is omitted',async()=>{
+    const f=await fixture();
+    expect(await acceptDirectCourseBonusByVoiceV1(db!,{...f.identity,...f.first,source_turn_id:f.source,
+      expected_offer_version:1,call_id:f.common.callId})).toMatchObject({ok:true});
+    expect(await f.store.requestAgentAPaymentLink({...f.common,paymentPlan:'one_time'})).toMatchObject({sent:true});
+    const [payment]=await db!`SELECT id,promotion_offer_id,promotion_cycle_id,accepted_offer_version FROM payments WHERE contact_id=${f.common.contactId}`;
+    expect(payment).toMatchObject({promotion_offer_id:f.first.offer_id,promotion_cycle_id:f.first.promotion_cycle_id,accepted_offer_version:1});
+    expect(await db!`SELECT offering_code_snapshot FROM payment_bonus_offerings WHERE payment_id=${payment.id}`)
+      .toEqual([{offering_code_snapshot:f.courses[1].code}]);
+  });
+  it('cancels an offered package atomically when voice changes A to B to A without recreating inbound chat',async()=>{
+    const f=await fixture();
+    const before=await db!`SELECT id FROM messages WHERE conversation_id=${f.common.conversationId} AND direction='inbound'`;
+    expect(await f.store.recordConfirmedSelection({...f.common,course:f.courses[3].code})).toMatchObject({recorded:true});
+    expect(await f.store.recordConfirmedSelection(f.common)).toMatchObject({recorded:true});
+    expect(await f.store.readCourseBonusPromotion(f.common)).toBeNull();
+    expect((await db!`SELECT status FROM promotion_offers WHERE id=${f.first.offer_id}`)[0].status).toBe('cancelled');
+    expect(await db!`SELECT call_id FROM voice_course_selections WHERE conversation_id=${f.common.conversationId}`).toHaveLength(2);
+    expect(await db!`SELECT id FROM messages WHERE conversation_id=${f.common.conversationId} AND direction='inbound'`).toEqual(before);
+  });
+  it('supersedes the exact existing checkout with current voice selection evidence and never retargets it',async()=>{
+    const f=await fixture();
+    expect(await f.store.requestAgentAPaymentLink(f.payment())).toMatchObject({sent:true});
+    const [before]=await db!`SELECT * FROM payments WHERE promotion_offer_id=${f.first.offer_id}`;
+    await db!`SET ROLE orchestrator_role`;
+    try {
+      expect(await f.store.recordConfirmedSelection({...f.common,course:f.courses[3].code})).toMatchObject({recorded:true});
+    } finally { await db!`RESET ROLE`; }
+    const [supersession]=await db!`SELECT s.*,e.call_id,e.selected_offering_code FROM payment_intent_supersessions s
+      JOIN voice_course_selections e ON e.id=s.source_voice_selection_id WHERE s.payment_id=${before.id}`;
+    expect(supersession).toMatchObject({payment_id:before.id,source_turn_id:null,call_id:f.common.callId,
+      original_offering_id:f.courses[0].id,replacement_offering_id:f.courses[3].id,selected_offering_code:f.courses[3].code});
+    expect((await db!`SELECT * FROM payments WHERE id=${before.id}`)[0]).toEqual(before);
+    expect(await f.store.recordConfirmedSelection(f.common)).toMatchObject({recorded:true});
+    expect(await f.store.readCourseBonusPromotion(f.common)).toBeNull();
+    expect(await f.store.requestAgentAPaymentLink({...f.common,paymentPlan:'one_time'})).toMatchObject({sent:false});
+    expect(await db!`SELECT id FROM payments WHERE contact_id=${f.common.contactId}`).toHaveLength(1);
+  });
+  it('rolls back voice selection, supersession and context together when checkout conflicts',async()=>{
+    const f=await fixture();
+    expect(await f.store.requestAgentAPaymentLink(f.payment())).toMatchObject({sent:true});
+    const [before]=await db!`SELECT * FROM conversation_sales_context_states_v1 WHERE conversation_id=${f.common.conversationId}`;
+    expect(await f.store.requestAgentAPaymentLink({...f.common,course:f.courses[3].code,paymentPlan:'one_time'}))
+      .toMatchObject({sent:false,reason:'IDEMPOTENCY_KEY_CONFLICT'});
+    expect((await db!`SELECT * FROM conversation_sales_context_states_v1 WHERE conversation_id=${f.common.conversationId}`)[0]).toEqual(before);
+    expect(await db!`SELECT id FROM voice_course_selections WHERE conversation_id=${f.common.conversationId}`).toHaveLength(0);
+    expect(await db!`SELECT id FROM payment_intent_supersessions WHERE contact_id=${f.common.contactId}`).toHaveLength(0);
+    expect(f.sent).toHaveBeenCalledTimes(1);
+  });
+  it('does not overwrite a newer voice course selection when the older checkout delivery finishes',async()=>{
+    const f=await fixture();
+    f.sent.mockImplementationOnce(async()=>{
+      expect(await f.store.recordConfirmedSelection({...f.common,course:f.courses[3].code})).toMatchObject({recorded:true});
+      return {outcome:'sent',channel:'whatsapp',deliveryId:null,providerMessageId:'voice-race'} as never;
+    });
+    expect(await f.store.requestAgentAPaymentLink(f.payment())).toMatchObject({sent:true});
+    const [state]=await db!`SELECT selected_offering_code FROM conversation_sales_context_states_v1 WHERE conversation_id=${f.common.conversationId}`;
+    expect(state.selected_offering_code).toBe(f.courses[3].code);
+    expect(await db!`SELECT id FROM payment_intent_supersessions WHERE contact_id=${f.common.contactId}`).toHaveLength(1);
+    expect(await f.store.readCourseBonusPromotion(f.common)).toBeNull();
+  });
+  it('rejects stale or wrong-call voice selection evidence without changing the selected course',async()=>{
+    const f=await fixture();
+    const [before]=await db!`SELECT selected_offering_code,version FROM conversation_sales_context_states_v1 WHERE conversation_id=${f.common.conversationId}`;
+    await expect(db!`INSERT INTO voice_course_selections(call_id,workspace_id,contact_id,conversation_id,previous_offering_code,selected_offering_code,expected_state_version)
+      VALUES (${f.common.callId},${f.identity.workspace_id},${f.common.contactId},${f.common.conversationId},${before.selected_offering_code},${f.courses[3].code},${Number(before.version)+1})`).rejects.toThrow('Voice selection identity mismatch');
+    expect(await f.store.recordConfirmedSelection({...f.common,callId:randomUUID(),course:f.courses[3].code})).toMatchObject({recorded:false});
+    expect((await db!`SELECT selected_offering_code,version FROM conversation_sales_context_states_v1 WHERE conversation_id=${f.common.conversationId}`)[0]).toEqual(before);
+    expect(await db!`SELECT id FROM voice_course_selections WHERE conversation_id=${f.common.conversationId}`).toHaveLength(0);
+  });
+  it('preserves ordinary no-promotion checkout after a confirmed course selection',async()=>{
+    const f=await fixture(); const ordinary={...f.common,course:f.courses[3].code};
+    expect(await f.store.recordConfirmedSelection(ordinary)).toMatchObject({recorded:true});
+    expect(await f.store.requestAgentAPaymentLink({...ordinary,paymentPlan:'one_time'})).toMatchObject({sent:true});
+    const [payment]=await db!`SELECT promotion_offer_id,promotion_cycle_id FROM payments WHERE contact_id=${f.common.contactId}`;
+    expect(payment).toEqual({promotion_offer_id:null,promotion_cycle_id:null});
+  });
   it('reads the exact text package without sealing or mutating it',async()=>{
     const f=await fixture(); const second=await f.append(2);
     const [before]=await db!`SELECT * FROM promotion_offers WHERE id=${second.offer_id}`;

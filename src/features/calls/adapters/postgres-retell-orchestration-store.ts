@@ -1,6 +1,7 @@
 import type postgres from 'postgres';
 import { acceptDirectCourseBonusByVoiceV1 } from '@/features/promotions/application/direct-course-bonus-service';
 import { loadCourseBonusFlowConfig } from '@/features/promotions/application/course-bonus-flow-config';
+import { cancelOpenCourseBonusOffersForCourseChangeV1 } from '@/features/promotions/application/commercial-followup-service';
 import {
   buildAuthorizedEgress,
   protectedFactsInContentV1,
@@ -78,6 +79,7 @@ export class PostgresRetellOrchestrationStore implements RetellOrchestrationStor
       WHERE offer.workspace_id=${workspace.id}::uuid AND offer.contact_id=${input.contactId}::uuid
         AND offer.conversation_id=${input.conversationId}::uuid AND paid.code=${input.course}
         AND offer.package_mode='direct' AND offer.status IN ('offered','accepted','attached')
+        AND NOT EXISTS (SELECT 1 FROM payment_intent_supersessions superseded WHERE superseded.payment_id=offer.payment_id)
         AND (offer.status IN ('accepted','attached') OR (promotion.active=true AND paid.status='active'
           AND (promotion.valid_from IS NULL OR promotion.valid_from<=now())
           AND (promotion.valid_until IS NULL OR promotion.valid_until>now())
@@ -300,12 +302,43 @@ export class PostgresRetellOrchestrationStore implements RetellOrchestrationStor
       `;
       if (!offerings[0]) return { recorded: false, reason: 'COURSE_UNAVAILABLE' };
     }
-    const course = input.course ?? workspace.course_code;
+    return this.db.begin((tx) => this.recordConfirmedSelectionInTransaction(tx, workspace, input));
+  }
+
+  private async recordConfirmedSelectionInTransaction(
+    tx: postgres.TransactionSql,
+    workspace: { readonly id: string; readonly course_code: string },
+    input: Parameters<RetellOrchestrationStore['recordConfirmedSelection']>[0],
+  ) {
+    const [current] = await tx<Array<{ selected_offering_code: string | null; version: number }>>`
+      SELECT state.selected_offering_code,state.version
+      FROM conversation_sales_context_states_v1 state
+      JOIN call_sessions call ON call.workspace_id=state.workspace_id AND call.contact_id=state.contact_id
+        AND call.conversation_id=state.conversation_id
+      WHERE state.workspace_id=${workspace.id}::uuid AND state.contact_id=${input.contactId}::uuid
+        AND state.conversation_id=${input.conversationId}::uuid AND call.id=${input.callId}::uuid
+        AND call.provider='retell' AND call.provider_call_id IS NOT NULL
+        AND call.status IN ('provider_accepted','in_progress','completed')
+        AND NOT EXISTS (SELECT 1 FROM call_sessions later WHERE later.workspace_id=call.workspace_id
+          AND later.contact_id=call.contact_id AND later.conversation_id=call.conversation_id AND later.requested_at>call.requested_at)
+      FOR UPDATE OF state FOR SHARE OF call`;
+    if (!current) return { recorded: false, reason: 'CALL_UNAVAILABLE' };
+    const course = input.course ?? current.selected_offering_code ?? workspace.course_code;
     if (input.paymentPlan !== undefined && !course) {
       return { recorded: false, reason: 'COURSE_SELECTION_REQUIRED' };
     }
     const plan = input.paymentPlan as PaymentPlanCode | undefined;
-    const changed = await this.db<Array<{ changed: boolean }>>`
+    if (input.course !== undefined && course !== current.selected_offering_code) {
+      const [evidence] = await tx<Array<{ id: string }>>`INSERT INTO voice_course_selections(
+        call_id,workspace_id,contact_id,conversation_id,previous_offering_code,selected_offering_code,expected_state_version)
+        VALUES (${input.callId}::uuid,${workspace.id}::uuid,${input.contactId}::uuid,${input.conversationId}::uuid,
+          ${current.selected_offering_code},${course},${current.version}) RETURNING id`;
+      await cancelOpenCourseBonusOffersForCourseChangeV1(tx, {
+        workspace_id: workspace.id, contact_id: input.contactId, conversation_id: input.conversationId,
+        selected_offering_code: course, source_voice_selection_id: evidence.id,
+      });
+    }
+    const changed = await tx<Array<{ changed: boolean }>>`
       WITH updated AS (
         UPDATE conversation_sales_context_states_v1 AS state
         SET selected_offering_code = COALESCE(${course || null}::text, state.selected_offering_code),
@@ -416,38 +449,65 @@ export class PostgresRetellOrchestrationStore implements RetellOrchestrationStor
       if (!input.promotionCode || !input.promotionCycleId || !input.acceptedOfferVersion || input.acceptPromotion !== true) {
         return { sent: false, reference: null, reason: 'PROMOTION_NOT_AUTHORIZED' };
       }
-      const accepted = await acceptDirectCourseBonusByVoiceV1(this.db, {
-        workspace_id: workspace.id,
-        contact_id: input.contactId,
-        conversation_id: input.conversationId,
-        paid_offering_code: input.course,
-        source_turn_id: workspace.source_turn_id,
-        call_id: input.callId,
-        promotion_code: input.promotionCode,
-        promotion_cycle_id: input.promotionCycleId,
-        expected_offer_version: input.acceptedOfferVersion,
-      });
-      if (!accepted.ok) return { sent: false, reference: null, reason: accepted.reason };
     }
     let payment: Awaited<ReturnType<typeof reservePaymentLink>>;
     const idempotencyKey = `retell-payment-link:${workspace.id}:${input.callId}`;
     try {
-      payment = await reservePaymentLink(this.db, {
-        workspace_id: workspace.id,
-        contact_id: input.contactId,
-        offering_id: offering.id,
-        conversation_id: input.conversationId,
-        plan_code: paymentPlan.planCode,
-        idempotency_key: idempotencyKey,
-        payment_link_url: configuredUrl,
-        ...(input.promotionCode ? {
-          promotion_code: input.promotionCode,
-          promotion_channel: 'voice' as const,
-          ...(hasDirectIdentity ? {
-            promotion_cycle_id: input.promotionCycleId,
-            accepted_offer_version: input.acceptedOfferVersion,
+      payment = await this.db.begin(async (tx) => {
+        const selection = await this.recordConfirmedSelectionInTransaction(tx, workspace, {
+          callId: input.callId, contactId: input.contactId, conversationId: input.conversationId,
+          workspaceSlug: input.workspaceSlug, course: input.course, paymentPlan: paymentPlan.planCode,
+        });
+        if (!selection.recorded && selection.reason) throw new PaymentLinkReservationError(selection.reason);
+        const [direct] = await tx<Array<{
+          promotion_code: string; promotion_cycle_id: string; offer_version: number;
+          status: string; bonus_snapshot_sealed_at: Date | null; superseded: boolean;
+        }>>`SELECT p.promotion_code,o.promotion_cycle_id,o.offer_version,o.status,o.bonus_snapshot_sealed_at,
+            EXISTS(SELECT 1 FROM payment_intent_supersessions s WHERE s.payment_id=o.payment_id) AS superseded
+          FROM promotion_offers o JOIN promotions p ON p.id=o.promotion_id
+          WHERE o.workspace_id=${workspace.id}::uuid AND o.contact_id=${input.contactId}::uuid
+            AND o.conversation_id=${input.conversationId}::uuid AND o.paid_offering_id=${offering.id}::uuid
+            AND o.package_mode='direct' AND o.status IN ('offered','accepted','attached')
+          ORDER BY o.created_at DESC LIMIT 1 FOR UPDATE OF o`;
+        if (direct?.superseded) throw new PaymentLinkReservationError('PROMOTION_NOT_AUTHORIZED');
+        let promotionCode = input.promotionCode;
+        let promotionCycleId = input.promotionCycleId;
+        let acceptedOfferVersion = input.acceptedOfferVersion;
+        if (direct && !hasDirectIdentity) {
+          if (promotionCode) throw new PaymentLinkReservationError('PROMOTION_NOT_AUTHORIZED');
+          if (direct.status === 'offered') throw new PaymentLinkReservationError('PROMOTION_ACCEPTANCE_REQUIRED');
+          if (!direct.bonus_snapshot_sealed_at) throw new PaymentLinkReservationError('PROMOTION_NOT_AUTHORIZED');
+          // Honor a sealed obligation even if the model omitted every promotion field.
+          promotionCode = direct.promotion_code;
+          promotionCycleId = direct.promotion_cycle_id;
+          acceptedOfferVersion = direct.offer_version;
+        }
+        if (hasDirectIdentity) {
+          const accepted = await acceptDirectCourseBonusByVoiceV1(tx, {
+            workspace_id: workspace.id, contact_id: input.contactId, conversation_id: input.conversationId,
+            paid_offering_code: input.course, source_turn_id: workspace.source_turn_id, call_id: input.callId,
+            promotion_code: input.promotionCode!, promotion_cycle_id: input.promotionCycleId!,
+            expected_offer_version: input.acceptedOfferVersion!,
+          });
+          if (!accepted.ok) throw new PaymentLinkReservationError(accepted.reason);
+        }
+        return reservePaymentLink(tx, {
+          workspace_id: workspace.id,
+          contact_id: input.contactId,
+          offering_id: offering.id,
+          conversation_id: input.conversationId,
+          plan_code: paymentPlan.planCode,
+          idempotency_key: idempotencyKey,
+          payment_link_url: configuredUrl,
+          ...(promotionCode ? {
+            promotion_code: promotionCode,
+            promotion_channel: 'voice' as const,
+            ...(promotionCycleId ? {
+              promotion_cycle_id: promotionCycleId,
+              accepted_offer_version: acceptedOfferVersion,
+            } : {}),
           } : {}),
-        } : {}),
+        });
       });
     } catch (error) {
       if (error instanceof PaymentLinkReservationError) {
@@ -703,22 +763,22 @@ export class PostgresRetellOrchestrationStore implements RetellOrchestrationStor
     readonly course: string;
     readonly plan: PaymentPlanCode;
   }): Promise<void> {
+    // Delivery can finish after a newer voice selection. Only mark the
+    // already selected checkout as sent; never select its old course again.
     await this.db`
       WITH updated AS (
         UPDATE conversation_sales_context_states_v1 AS state
-        SET selected_offering_code = ${input.course},
-            selected_payment_plan = ${input.plan},
-            stage = 'payment_link_sent',
+        SET stage = 'payment_link_sent',
             awaiting_reply = 'payment_confirmation',
             version = state.version + 1,
             updated_at = now()
         WHERE state.workspace_id = ${input.workspaceId}::uuid
           AND state.conversation_id = ${input.conversationId}::uuid
           AND state.contact_id = ${input.contactId}::uuid
+          AND state.selected_offering_code = ${input.course}
+          AND state.selected_payment_plan = ${input.plan}
           AND (
-            state.selected_offering_code IS DISTINCT FROM ${input.course}
-            OR state.selected_payment_plan IS DISTINCT FROM ${input.plan}
-            OR state.stage IS DISTINCT FROM 'payment_link_sent'
+            state.stage IS DISTINCT FROM 'payment_link_sent'
             OR state.awaiting_reply IS DISTINCT FROM 'payment_confirmation'
           )
         RETURNING state.*
@@ -739,20 +799,16 @@ export class PostgresRetellOrchestrationStore implements RetellOrchestrationStor
         RETURNING 1
       ), updated_sales AS (
         UPDATE sales_context_states AS state
-        SET conversation_id = ${input.conversationId}::uuid,
-            selected_offering_code = ${input.course},
-            selected_payment_plan = ${input.plan},
-            stage = 'payment_link_sent',
+        SET stage = 'payment_link_sent',
             version = state.version + 1,
             updated_at = now()
         WHERE state.workspace_id = ${input.workspaceId}::uuid
           AND state.contact_id = ${input.contactId}::uuid
-          AND (
-            state.conversation_id IS DISTINCT FROM ${input.conversationId}::uuid
-            OR state.selected_offering_code IS DISTINCT FROM ${input.course}
-            OR state.selected_payment_plan IS DISTINCT FROM ${input.plan}
-            OR state.stage IS DISTINCT FROM 'payment_link_sent'
-          )
+          AND state.conversation_id = ${input.conversationId}::uuid
+          AND state.selected_offering_code = ${input.course}
+          AND state.selected_payment_plan = ${input.plan}
+          AND state.stage IS DISTINCT FROM 'payment_link_sent'
+          AND EXISTS (SELECT 1 FROM updated)
         RETURNING state.*
       )
       INSERT INTO sales_context_state_events (

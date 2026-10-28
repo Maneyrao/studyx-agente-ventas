@@ -394,6 +394,7 @@ export async function cancelOpenCourseBonusOffersForCourseChangeV1(
     readonly conversation_id: string;
     readonly selected_offering_code: string;
     readonly source_turn_id?: string;
+    readonly source_voice_selection_id?: string;
   },
 ): Promise<number> {
   const begin=(db as DbClient & {begin?: <T>(fn:(tx:DbClient)=>Promise<T>)=>Promise<T>}).begin;
@@ -410,17 +411,29 @@ export async function cancelOpenCourseBonusOffersForCourseChangeV1(
       AND NOT EXISTS (SELECT 1 FROM payment_intent_supersessions s WHERE s.payment_id=p.id)
     ORDER BY p.id FOR UPDATE OF p
   `;
-  if(unpaid.length && !input.source_turn_id) throw new Error('COURSE_CHANGE_SOURCE_TURN_REQUIRED');
+  if(input.source_turn_id && input.source_voice_selection_id) throw new Error('COURSE_CHANGE_SOURCE_AMBIGUOUS');
+  if(input.source_voice_selection_id) {
+    const [evidence]=await db`SELECT e.id FROM voice_course_selections e
+      JOIN conversation_sales_context_states_v1 s ON s.workspace_id=e.workspace_id
+        AND s.contact_id=e.contact_id AND s.conversation_id=e.conversation_id
+      WHERE e.id=${input.source_voice_selection_id}::uuid AND e.workspace_id=${input.workspace_id}::uuid
+        AND e.contact_id=${input.contact_id}::uuid AND e.conversation_id=${input.conversation_id}::uuid
+        AND e.selected_offering_code=${input.selected_offering_code} AND e.expected_state_version=s.version
+        AND e.previous_offering_code IS NOT DISTINCT FROM s.selected_offering_code`;
+    if(!evidence) throw new Error('COURSE_CHANGE_VOICE_EVIDENCE_MISMATCH');
+  }
+  if(unpaid.length && !input.source_turn_id && !input.source_voice_selection_id) throw new Error('COURSE_CHANGE_SOURCE_TURN_REQUIRED');
   for(const payment of unpaid) await db`INSERT INTO payment_intent_supersessions(
-    payment_id,workspace_id,contact_id,conversation_id,original_offering_id,replacement_offering_id,source_turn_id)
+    payment_id,workspace_id,contact_id,conversation_id,original_offering_id,replacement_offering_id,source_turn_id,source_voice_selection_id)
     VALUES (${payment.id}::uuid,${input.workspace_id}::uuid,${input.contact_id}::uuid,${input.conversation_id}::uuid,
-      ${payment.offering_id}::uuid,${payment.replacement_id}::uuid,${input.source_turn_id!}::uuid)
+      ${payment.offering_id}::uuid,${payment.replacement_id}::uuid,${input.source_turn_id ?? null}::uuid,${input.source_voice_selection_id ?? null}::uuid)
     ON CONFLICT(payment_id) DO NOTHING`;
-  if(input.source_turn_id) await db`SELECT append_audit_event_atomic(
+  const sourceId=input.source_turn_id ?? input.source_voice_selection_id;
+  if(sourceId) await db`SELECT append_audit_event_atomic(
       'orchestrator','promotion.path.superseded','promotion_offer',offer.id,
-      ${jsonbParam(db,{source_turn_id:input.source_turn_id,replacement_offering_code:input.selected_offering_code})}
+      ${jsonbParam(db,{source_turn_id:input.source_turn_id,source_voice_selection_id:input.source_voice_selection_id,replacement_offering_code:input.selected_offering_code})}
         || jsonb_build_object('promotion_cycle_id',offer.promotion_cycle_id,'offer_version',offer.offer_version),
-      'promotion-path:' || offer.id::text || ':' || ${input.source_turn_id},NULL::uuid,NULL::uuid,NULL::uuid)
+      'promotion-path:' || offer.id::text || ':' || ${sourceId},NULL::uuid,NULL::uuid,NULL::uuid)
     FROM promotion_offers offer JOIN offerings paid ON paid.id=offer.paid_offering_id
     WHERE offer.workspace_id=${input.workspace_id}::uuid AND offer.contact_id=${input.contact_id}::uuid
       AND offer.conversation_id=${input.conversation_id}::uuid AND offer.package_mode='direct'

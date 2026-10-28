@@ -142,5 +142,26 @@ El paquete aceptado permanece inmutable, incluso al volver a modo review, y
 el link se entrega al `conversation_id` original de la llamada. El contrato
 legacy de promoción review conserva sus argumentos y comportamiento.
 
+La omisión de todos los campos de promoción nunca descarta una obligación:
+el backend busca el paquete direct durable del curso efectivo bajo bloqueo.
+Si sólo está ofrecido, `enviar_link_pago` responde
+`PROMOTION_ACCEPTANCE_REQUIRED` para que B consulte la versión actual y obtenga
+aceptación explícita. Si ya está aceptado y sellado, enlaza automáticamente
+el ciclo y versión exactos al checkout. Una identidad explícita parcial o stale
+se rechaza; un curso sin paquete vigente mantiene el checkout ordinario.
+
+Una selección de curso confirmada por voz registra evidencia inmutable en
+`voice_course_selections`, con llamada correlacionada, scope, estado previo,
+nuevo curso, versión del contexto y hora del servidor. La selección, cancelación
+de ofertas abiertas y supersesión de intentos de pago pendientes ocurren en
+una sola transacción. Las supersesiones exigen exactamente una fuente durable:
+`source_turn_id` del chat XOR `source_voice_selection_id` de voz. Volver al curso
+anterior no reactiva una oferta cancelada ni reexpone un checkout supersedido;
+el pago y su snapshot originales permanecen intactos. Un checkout que implica
+un cambio de curso usa la misma transición y revierte todos esos efectos si la
+reserva falla. Las solicitudes de llamadas anteriores a otra llamada del mismo
+scope se rechazan; un resultado autenticado de la llamada recién completada
+puede conservar su selección, sin reutilizar el inbound que solicitó la llamada.
+
 No configurar una URL directa de Retell hacia StudyX en este modo: Xendra
 conserva el webhook de Retell y reenvía los eventos autenticados.
