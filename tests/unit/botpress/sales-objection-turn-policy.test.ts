@@ -93,6 +93,24 @@ describe('evaluateSalesObjectionTurnV1', () => {
 });
 
 describe('responseProgressesRepeatedPriceObjectionV1', () => {
+  it.each([
+    { allow_requested_payment_terms: true },
+    { customer_expressed_real_budget_limit: true },
+  ])('allows a neutral single-payment count with authorization %j', (authorization) => {
+    expect(responseAvoidsDisallowedPriceReframingV1({
+      messages: ['Podés elegir un solo pago de USD 360.'], ...authorization,
+    })).toBe(true);
+  });
+
+  it.each([
+    'Puedes elegir un solo pago por sólo USD 360.',
+    'Puedes elegir un solo pago de apenas USD 360.',
+    'Por sólo USD 30 al mes.',
+  ])('does not let a payment count hide monetary minimization: %s', (message) => {
+    expect(responseAvoidsDisallowedPriceReframingV1({
+      messages: [message], allow_requested_payment_terms: true,
+    })).toBe(false);
+  });
   it('allows neutral exact terms for a proven budget limit with a useful diagnostic', () => {
     expect(responseProgressesRepeatedPriceObjectionV1({
       messages: ['Podés elegir 12 pagos de USD 30. Qué importe mensual te permitiría estudiar sin comprometer tus gastos?'],

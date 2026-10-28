@@ -152,8 +152,11 @@ export function responseAvoidsDisallowedPriceReframingV1(input: {
   ].join('\n');
   const text = normalized(visible);
   const installmentFacts = mentionsInstallmentTermsV1(text);
-  const monthlyMinimization = /\b(?:solo|apenas)\b[^.!?\n]{0,16}\b(?:usd|dolares?)\s*\d/u.test(text)
-    || /\b(?:solo|apenas)\b[^.!?\n]{0,32}\b(?:usd|\d+|dolar(?:es)?)\b[^.!?\n]{0,24}\b(?:al\s+mes|mensual(?:es|mente)?)\b/u.test(text)
+  // "Un solo pago" counts payments; any separate "sólo/apenas USD" still
+  // minimizes money and must be checked independently of that quantifier.
+  const monetaryEmphasis = text.replace(/\b(?:un|1)\s+solo\s+pago\b/gu, 'un pago');
+  const monthlyMinimization = /\b(?:solo|apenas)\b[^.!?\n]{0,16}\b(?:usd|dolares?)\s*\d/u.test(monetaryEmphasis)
+    || /\b(?:solo|apenas)\b[^.!?\n]{0,32}\b(?:usd|\d+|dolar(?:es)?)\b[^.!?\n]{0,24}\b(?:al\s+mes|mensual(?:es|mente)?)\b/u.test(monetaryEmphasis)
     || /\b(?:opcion|plan|cuota)\s+mensual\b[^.!?\n]{0,32}\b(?:mas\s+)?(?:accesible|barat[oa]|baj[oa]|livian[oa])\b/u.test(text)
     || /\b(?:cuota|plan|opcion)\b[^.!?\n]{0,40}\b(?:mas\s+)?(?:baj[oa]|chic[oa]|livian[oa]|accesible|barat[oa])\b/u.test(text)
     || /\b(?:te\s+)?recomiend\p{L}*\b[^.!?\n]{0,56}\b(?:cuota|plan|pagos?|mensualidad)\b/u.test(text)
