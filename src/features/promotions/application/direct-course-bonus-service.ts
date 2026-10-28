@@ -111,6 +111,21 @@ async function lockIdentity(tx: DbClient, input: Identity) {
       AND s.contact_id=${input.contact_id}::uuid FOR UPDATE OF s FOR SHARE OF paid
   `;
   if (!context) reject('invalid_offering');
+  if(context.selected_offering_code===null) {
+    const [interest]=await tx<Array<{interest_offering_code:string}>>`
+      SELECT interest.interest_offering_code FROM conversation_promotion_context_v1 interest
+      JOIN messages source ON source.id=interest.source_turn_id AND source.conversation_id=interest.conversation_id
+        AND source.contact_id=interest.contact_id AND source.direction='inbound'
+      JOIN messages current ON current.id=${input.source_turn_id}::uuid AND current.conversation_id=interest.conversation_id
+        AND current.contact_id=interest.contact_id AND current.direction='inbound'
+      WHERE interest.workspace_id=${input.workspace_id}::uuid AND interest.conversation_id=${input.conversation_id}::uuid
+        AND interest.contact_id=${input.contact_id}::uuid
+        AND message_occurrence_v1(source.metadata,source.created_at)<=message_occurrence_v1(current.metadata,current.created_at)
+      FOR SHARE OF interest
+    `;
+    // Effective commercial identity only; never persist a purchase selection.
+    context.selected_offering_code=interest?.interest_offering_code ?? null;
+  }
   return context;
 }
 async function resolveOffer(tx: DbClient, input: Identity, paidId: string): Promise<OfferRow | undefined> {
@@ -195,7 +210,19 @@ export async function offerDirectCourseBonusV1(db: DbClient, input: OfferDirectC
         AND m.valid_from<=now() AND (m.valid_until IS NULL OR m.valid_until>now())
         AND source.direction='inbound' AND source.id<>current.id
         AND current.direction='inbound' AND current.conversation_id=source.conversation_id AND current.contact_id=source.contact_id
-        AND message_occurrence_v1(source.metadata,source.created_at)<message_occurrence_v1(current.metadata,current.created_at) LIMIT 1`;
+        AND message_occurrence_v1(source.metadata,source.created_at)<message_occurrence_v1(current.metadata,current.created_at)
+      UNION ALL
+      SELECT decision.id FROM agent_decisions decision JOIN messages source ON source.id=decision.turn_id
+      JOIN messages current ON current.id=${input.source_turn_id}::uuid
+      JOIN conversation_promotion_context_v1 evidence ON evidence.workspace_id=${input.workspace_id}::uuid
+        AND evidence.conversation_id=${input.conversation_id}::uuid AND evidence.contact_id=${input.contact_id}::uuid
+        AND evidence.interest_offering_code=${input.paid_offering_code} AND evidence.price_objection_count>0
+      WHERE source.conversation_id=evidence.conversation_id AND source.contact_id=evidence.contact_id AND source.direction='inbound'
+        AND current.conversation_id=source.conversation_id AND current.contact_id=source.contact_id AND current.direction='inbound'
+        AND source.id<>current.id
+        AND decision.memory_candidates @> '[{"type":"objection","key":"price_objection"}]'::jsonb
+        AND message_occurrence_v1(source.metadata,source.created_at)<message_occurrence_v1(current.metadata,current.created_at)
+      LIMIT 1`;
     if (!objection) reject('no_price_objection');
     if (offer && offer.offer_version>=limit) reject('bonus_limit_reached');
     if (offer) {

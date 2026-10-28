@@ -390,7 +390,25 @@ async function readDirectCapability(input: {
   workspace_slug: string; contact_id: string; conversation_id: string;
   selected_offering_code: string | null; source_turn_id?: string;
 }, db: DbClient, max: CourseBonusMaxCoursesV1): Promise<CourseBonusCapabilityV1> {
-  if (!input.selected_offering_code) return {...hidden('needs_interest'), enabled:true,max_bonus_courses:max};
+  if (!input.selected_offering_code) {
+    // Interest is commercial state, not a purchase selection. Resolve only the
+    // durable, scoped projection with a correlated source no later than this turn.
+    const [interest] = await db<Array<{interest_offering_code:string}>>`
+      SELECT p.interest_offering_code FROM conversation_promotion_context_v1 p
+      JOIN workspaces w ON w.id=p.workspace_id AND w.slug=${input.workspace_slug}
+      JOIN conversation_sales_context_states_v1 s ON s.workspace_id=p.workspace_id
+        AND s.conversation_id=p.conversation_id AND s.contact_id=p.contact_id
+      JOIN messages source ON source.id=p.source_turn_id AND source.conversation_id=p.conversation_id
+        AND source.contact_id=p.contact_id AND source.direction='inbound'
+      JOIN messages current ON current.conversation_id=p.conversation_id AND current.contact_id=p.contact_id
+        AND current.direction='inbound' AND current.id=${input.source_turn_id ?? null}::uuid
+      WHERE p.conversation_id=${input.conversation_id}::uuid AND p.contact_id=${input.contact_id}::uuid
+        AND s.selected_offering_code IS NULL
+        AND message_occurrence_v1(source.metadata,source.created_at)<=message_occurrence_v1(current.metadata,current.created_at)
+    `;
+    if (!interest) return {...hidden('needs_interest'), enabled:true,max_bonus_courses:max};
+    input={...input,selected_offering_code:interest.interest_offering_code};
+  }
   const [row] = await db<Array<{
     promotion_code: string | null; promotion_cycle_id: string; offer_version: number;
     status: CourseBonusOfferProjectionV1['status']; courses: CourseBonusCapabilityV1['bonus_offerings'];
@@ -410,6 +428,14 @@ async function readDirectCapability(input: {
           AND m.valid_from<=now() AND (m.valid_until IS NULL OR m.valid_until>now())
           AND source.direction='inbound' AND source.id<>current.id
           AND source.conversation_id=current.conversation_id AND source.contact_id=current.contact_id
+          AND message_occurrence_v1(source.metadata,source.created_at)<message_occurrence_v1(current.metadata,current.created_at)
+      ) OR EXISTS(SELECT 1 FROM agent_decisions decision JOIN messages source ON source.id=decision.turn_id
+        JOIN conversation_promotion_context_v1 evidence ON evidence.workspace_id=w.id
+          AND evidence.conversation_id=current.conversation_id AND evidence.contact_id=current.contact_id
+          AND evidence.interest_offering_code=paid.code AND evidence.price_objection_count>0
+        WHERE source.conversation_id=current.conversation_id AND source.contact_id=current.contact_id
+          AND source.direction='inbound' AND source.id<>current.id
+          AND decision.memory_candidates @> '[{"type":"objection","key":"price_objection"}]'::jsonb
           AND message_occurrence_v1(source.metadata,source.created_at)<message_occurrence_v1(current.metadata,current.created_at)
       ) prior_price_objection
     FROM workspaces w JOIN offerings paid ON paid.workspace_id=w.id AND paid.code=${input.selected_offering_code}
@@ -435,7 +461,7 @@ async function readDirectCapability(input: {
     WHERE w.slug=${input.workspace_slug} AND w.status='active'
   `;
   if (!row) return {...hidden('unavailable'),enabled:false,max_bonus_courses:max};
-  return deriveDirectCourseBonusCapabilityV1({interest_offering_code:input.selected_offering_code,
+  return deriveDirectCourseBonusCapabilityV1({interest_offering_code:input.selected_offering_code!,
     max_bonus_courses:max,prior_price_objection:row.prior_price_objection,
     package:row.promotion_code ? {...row,promotion_code:row.promotion_code} : null});
 }
