@@ -22,11 +22,19 @@ const run = process.env.TEST_DATABASE_URL ? describe : describe.skip;
 const db = process.env.TEST_DATABASE_URL ? openLocalTestDatabase() : null;
 const priorBonusFlag = process.env.CENTRAL_CARGA_BONUS_ENABLED;
 const priorCanaryContacts = process.env.CENTRAL_CARGA_BONUS_CANARY_CONTACT_IDS;
+const scenarioConversations:string[]=[];
 beforeEach(() => {
+  scenarioConversations.length=0;
   process.env.CENTRAL_CARGA_BONUS_ENABLED = 'true';
   delete process.env.CENTRAL_CARGA_BONUS_CANARY_CONTACT_IDS;
 });
-afterEach(() => {
+afterEach(async () => {
+  // The dispatcher is global. Finish only this test's own outstanding jobs so
+  // the next scenario cannot reschedule a previous scenario's synthetic event.
+  if(db && scenarioConversations.length) await db`UPDATE course_bonus_followups
+    SET status='cancelled',claim_token=NULL,claimed_by=NULL,lease_until=NULL,terminal_reason='TEST_SCENARIO_COMPLETE'
+    WHERE offer_id IN (SELECT id FROM promotion_offers WHERE conversation_id=ANY(${db.array(scenarioConversations)}::uuid[]))
+      AND status IN ('pending','processing')`;
   if (priorBonusFlag === undefined) delete process.env.CENTRAL_CARGA_BONUS_ENABLED;
   else process.env.CENTRAL_CARGA_BONUS_ENABLED = priorBonusFlag;
   if (priorCanaryContacts === undefined) delete process.env.CENTRAL_CARGA_BONUS_CANARY_CONTACT_IDS;
@@ -49,6 +57,7 @@ async function fixture() {
     VALUES (${contact.id},'botpress','whatsapp','whatsapp',${botpressId},${db!.json({botpress_conversation_id:botpressId})}) RETURNING id`;
   const [conversation] = await db!`INSERT INTO conversations(contact_id,channel,channel_thread_id)
     VALUES (${contact.id},'whatsapp',${thread.id}) RETURNING id`;
+  scenarioConversations.push(conversation.id as string);
   const offerings = await db!`INSERT INTO offerings(workspace_id,code,display_name,offering_type,status,description,price_type,price_amount,currency,billing_interval)
     VALUES (${workspace.id},${`ingles_1_${suffix.slice(0,8)}`},'Inglés 1','course','active','Base','fixed',360,'USD','annual'),
       (${workspace.id},${`ingles_2_${suffix.slice(0,8)}`},'Inglés 2','course','active','Continuación','free',NULL,NULL,NULL)
@@ -487,7 +496,7 @@ run('durable commercial course-bonus follow-up', () => {
       conversation_id:f.conversation.id as string, paid_offering_code:f.paid.code as string,
       source_turn_id:f.inbound.id as string, source_outbound_message_id:f.outbound.id as string,
       action:{type:'request_promotion_review' as const,reason:'persistent_price_objection' as const},
-      now:new Date('2026-10-23T12:00:00Z') };
+      now:new Date() };
     const first = await commitCommercialActionV1(db!, input);
     const replay = await commitCommercialActionV1(db!, input);
     expect(first.followup).toMatchObject({ kind:'promotion_review' });

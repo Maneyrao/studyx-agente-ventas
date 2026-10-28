@@ -1307,6 +1307,9 @@ describe('processInboundTurn hot path', () => {
     ['UNSUPPORTED_STATE_ASSERTION', 'state:payment_verified:v1', 'UNSUPPORTED_OPERATIONAL_CLAIM', null],
     ['COMMERCIAL_TRUTH_VIOLATION', 'payment_plan_not_canonical', 'FACT_VALUE_MISMATCH', null],
     ['COMMERCIAL_TRUTH_VIOLATION', 'forbidden_promise', 'FACT_VALUE_MISMATCH', 'direct_bonus:no_price_objection'],
+    ['COMMERCIAL_TRUTH_VIOLATION', 'forbidden_promise', 'FACT_VALUE_MISMATCH', 'direct_bonus:bonus_limit_reached'],
+    ['COMMERCIAL_TRUTH_VIOLATION', 'forbidden_promise', 'FACT_VALUE_MISMATCH', 'direct_bonus:stale_offer_version'],
+    ['COMMERCIAL_TRUTH_VIOLATION', 'forbidden_promise', 'FACT_VALUE_MISMATCH', 'direct_bonus:bonus_without_reply'],
   ])('returns the exact backend %s to Agent A and commits only its repaired response', async (backendCode, subject, rejectionCode, directReason) => {
     const claimed = claimedResponse() as unknown as ClaimedTurn;
     claimed.features = {
