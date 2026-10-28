@@ -1498,7 +1498,7 @@ describe('prepareAgentTurnV2', () => {
     },
   );
 
-  it('marks an explicit switch away from the paid course as abandoning the pending package', async () => {
+  it.each(['offer_available','accepted','no_capability'] as const)('marks an explicit course switch to retire previous payment intent (%s)', async (status) => {
     const packageIndex: CatalogIndexView = {
       ...index,
       offerings_total: 2,
@@ -1518,8 +1518,8 @@ describe('prepareAgentTurnV2', () => {
       turn: { id: ids.turn, workspace_id: ids.workspace, conversation_id: ids.conversation, contact_id: ids.contact },
       workspace_slug: 'studyx', business_context: packageBusiness, catalog_index: packageIndex,
       current_customer_messages: ['No quiero el paquete. Quiero comprar solamente Excel'],
-      course_bonus_capability: {
-        status: 'offer_available',
+      course_bonus_capability: status === 'no_capability' ? undefined : {
+        status,
         may_schedule_checkin: false,
         may_request_review: false,
         may_accept_offer: true,

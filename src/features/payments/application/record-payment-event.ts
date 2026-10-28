@@ -27,6 +27,7 @@ export interface RecordPaymentEventInput {
 export interface RecordPaymentEventResult {
   outcome: 'applied' | 'ignored' | 'duplicate';
   status: PaymentStatus;
+  reconciliation_required?: true;
 }
 
 export class PaymentEventError extends Error {
@@ -46,6 +47,10 @@ export async function recordPaymentEvent(
     `;
     if (!payments[0]) throw new PaymentEventError('PAYMENT_NOT_FOUND');
     const current = payments[0].status;
+    const supersessions=await tx<Array<{id:string}>>`SELECT id FROM payment_intent_supersessions
+      WHERE payment_id=${input.payment_id}::uuid`;
+    const reconciliation=supersessions[0] && (current==='paid' || current==='refunded')
+      ? {reconciliation_required:true as const} : {};
 
     const appended = await tx<Array<{ id: string }>>`
       INSERT INTO payment_events (
@@ -59,12 +64,12 @@ export async function recordPaymentEvent(
       RETURNING id
     `;
     if (appended.length === 0) {
-      return { outcome: 'duplicate' as const, status: current };
+      return { outcome: 'duplicate' as const, status: current,...reconciliation };
     }
 
     const transition = reducePaymentState(current, input.event);
     if (!transition.applied) {
-      return { outcome: 'ignored' as const, status: current };
+      return { outcome: 'ignored' as const, status: current,...reconciliation };
     }
 
     await tx`
@@ -76,13 +81,18 @@ export async function recordPaymentEvent(
     `;
 
     if (transition.next === 'paid') {
-      await tx`
+      if(supersessions[0]) {
+        await tx`INSERT INTO payment_reconciliation_cases(payment_id,supersession_id,payment_event_id)
+          VALUES (${input.payment_id}::uuid,${supersessions[0].id}::uuid,${appended[0].id}::uuid)
+          ON CONFLICT(payment_id) DO NOTHING`;
+      } else await tx`
         INSERT INTO fulfillment_jobs (payment_id, workspace_id)
         SELECT id, workspace_id FROM payments WHERE id = ${input.payment_id}::uuid
         ON CONFLICT (payment_id) DO NOTHING
       `;
     }
 
-    return { outcome: 'applied' as const, status: transition.next };
+    return { outcome: 'applied' as const, status: transition.next,
+      ...(transition.next==='paid' && supersessions[0] ? {reconciliation_required:true as const}:reconciliation) };
   });
 }

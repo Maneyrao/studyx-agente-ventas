@@ -457,6 +457,13 @@ export async function readCourseBonusCapabilityV1(input: {
       if (input.channel !== 'text') return {...hidden('unavailable'),enabled:false};
       return readDirectCapability(input,deps.db,flow.maxBonusCourses);
     }
+    if (flow.mode === 'review' && input.channel === 'text' && input.selected_offering_code) {
+      const obligation=await readDirectCapability(input,deps.db,flow.maxBonusCourses ?? 3);
+      if(obligation.package_status === 'accepted' || obligation.package_status === 'attached') {
+        return {...obligation,enabled:false,may_offer_bonus:false,may_accept_offer:false,
+          may_request_review:false,may_schedule_checkin:false};
+      }
+    }
   } catch { return {...hidden('unavailable'),enabled:false}; }
   const contexts = await deps.db<Array<{
     interest_offering_code: string | null;

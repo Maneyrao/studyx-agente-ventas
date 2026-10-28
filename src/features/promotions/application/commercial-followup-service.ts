@@ -2,6 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import type postgres from 'postgres';
 import { z } from 'zod';
 import type { DbClient } from '@/lib/db/types';
+import { jsonbParam } from '@/lib/db/json';
 import type { ManagedOutboundSender } from '@/features/messaging/adapters/managed-outbound';
 import {
   isCentralCargaBonusConfigured,
@@ -392,8 +393,38 @@ export async function cancelOpenCourseBonusOffersForCourseChangeV1(
     readonly contact_id: string;
     readonly conversation_id: string;
     readonly selected_offering_code: string;
+    readonly source_turn_id?: string;
   },
 ): Promise<number> {
+  const begin=(db as DbClient & {begin?: <T>(fn:(tx:DbClient)=>Promise<T>)=>Promise<T>}).begin;
+  if(typeof begin==='function') return await begin.call(db,(tx)=>cancelOpenCourseBonusOffersForCourseChangeV1(tx,input)) as number;
+  await db`SELECT conversation_id FROM conversation_sales_context_states_v1
+    WHERE workspace_id=${input.workspace_id}::uuid AND contact_id=${input.contact_id}::uuid
+      AND conversation_id=${input.conversation_id}::uuid FOR UPDATE`;
+  const unpaid=await db<Array<{id:string;offering_id:string;replacement_id:string}>>`
+    SELECT p.id,p.offering_id,replacement.id AS replacement_id FROM payments p
+    JOIN offerings replacement ON replacement.workspace_id=p.workspace_id AND replacement.code=${input.selected_offering_code}
+    WHERE p.workspace_id=${input.workspace_id}::uuid AND p.contact_id=${input.contact_id}::uuid
+      AND p.source_conversation_id=${input.conversation_id}::uuid AND p.offering_id<>replacement.id
+      AND p.status NOT IN ('paid','refunded','failed','expired')
+      AND NOT EXISTS (SELECT 1 FROM payment_intent_supersessions s WHERE s.payment_id=p.id)
+    ORDER BY p.id FOR UPDATE OF p
+  `;
+  if(unpaid.length && !input.source_turn_id) throw new Error('COURSE_CHANGE_SOURCE_TURN_REQUIRED');
+  for(const payment of unpaid) await db`INSERT INTO payment_intent_supersessions(
+    payment_id,workspace_id,contact_id,conversation_id,original_offering_id,replacement_offering_id,source_turn_id)
+    VALUES (${payment.id}::uuid,${input.workspace_id}::uuid,${input.contact_id}::uuid,${input.conversation_id}::uuid,
+      ${payment.offering_id}::uuid,${payment.replacement_id}::uuid,${input.source_turn_id!}::uuid)
+    ON CONFLICT(payment_id) DO NOTHING`;
+  if(input.source_turn_id) await db`SELECT append_audit_event_atomic(
+      'orchestrator','promotion.path.superseded','promotion_offer',offer.id,
+      ${jsonbParam(db,{source_turn_id:input.source_turn_id,replacement_offering_code:input.selected_offering_code})}
+        || jsonb_build_object('promotion_cycle_id',offer.promotion_cycle_id,'offer_version',offer.offer_version),
+      'promotion-path:' || offer.id::text || ':' || ${input.source_turn_id},NULL::uuid,NULL::uuid,NULL::uuid)
+    FROM promotion_offers offer JOIN offerings paid ON paid.id=offer.paid_offering_id
+    WHERE offer.workspace_id=${input.workspace_id}::uuid AND offer.contact_id=${input.contact_id}::uuid
+      AND offer.conversation_id=${input.conversation_id}::uuid AND offer.package_mode='direct'
+      AND offer.status IN ('accepted','attached') AND paid.code<>${input.selected_offering_code}`;
   const cancelled = await db<Array<{ id: string }>>`
     UPDATE promotion_offers offer
     SET status = 'cancelled', cancel_reason = 'CUSTOMER_CHANGED_COURSE'

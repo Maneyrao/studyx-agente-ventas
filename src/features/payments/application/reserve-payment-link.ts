@@ -29,6 +29,8 @@ export interface ReservePaymentLinkInput {
   readonly payment_link_url: string;
   readonly conversation_id?: string;
   readonly promotion_code?: string;
+  readonly promotion_cycle_id?: string;
+  readonly accepted_offer_version?: number;
   readonly promotion_channel?: 'text' | 'voice';
 }
 
@@ -87,6 +89,12 @@ export async function reservePaymentLink(
   }
   const environment = stripePaymentLinkEnvironment(input.payment_link_url);
   if (!environment) throw new PaymentLinkReservationError('PAYMENT_LINK_INVALID');
+  const hasDirectIdentity=input.promotion_cycle_id !== undefined || input.accepted_offer_version !== undefined;
+  if(hasDirectIdentity && (!input.promotion_code || !input.promotion_cycle_id
+    || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(input.promotion_cycle_id)
+    || !Number.isSafeInteger(input.accepted_offer_version) || (input.accepted_offer_version ?? 0)<1)) {
+    throw new PaymentLinkReservationError('PROMOTION_NOT_AUTHORIZED');
+  }
   if (input.promotion_code && !isCentralCargaBonusEnabledForContact(
     loadCentralCargaBonusConfig(),
     input.contact_id,
@@ -104,6 +112,9 @@ export async function reservePaymentLink(
   // The replay read must happen after the shared promotion lock. Otherwise a
   // concurrent identical request can observe no payment, wait for the first
   // reservation, then incorrectly reject the now-attached offer.
+  if(input.conversation_id) await db`SELECT conversation_id FROM conversation_sales_context_states_v1
+    WHERE workspace_id=${input.workspace_id}::uuid AND contact_id=${input.contact_id}::uuid
+      AND conversation_id=${input.conversation_id}::uuid FOR UPDATE`;
   if (input.promotion_code) {
     await lockPromotionRedemptionV1(db, {
       workspace_id: input.workspace_id,
@@ -123,10 +134,14 @@ export async function reservePaymentLink(
     environment: 'test' | 'live';
     promotion_codes: string[];
     bonus_snapshot_sealed_at: Date | null;
+    promotion_cycle_id: string | null;
+    accepted_offer_version: number | null;
+    source_conversation_id: string | null;
   }>>`
     SELECT payment.id, payment.status, payment.workspace_id, payment.contact_id,
       payment.offering_id, payment.plan_code, payment.checkout_url, payment.environment,
-      payment.bonus_snapshot_sealed_at,
+      payment.bonus_snapshot_sealed_at, payment.promotion_cycle_id,
+      payment.accepted_offer_version, payment.source_conversation_id,
       COALESCE((
         SELECT array_agg(DISTINCT snapshot.promotion_code_snapshot ORDER BY snapshot.promotion_code_snapshot)
         FROM payment_bonus_offerings snapshot WHERE snapshot.payment_id = payment.id
@@ -143,6 +158,9 @@ export async function reservePaymentLink(
       || found.plan_code !== input.plan_code
       || found.environment !== environment
       || !found.checkout_url
+      || found.promotion_cycle_id !== (input.promotion_cycle_id ?? null)
+      || found.accepted_offer_version !== (input.accepted_offer_version ?? null)
+      || found.source_conversation_id !== (input.conversation_id ?? null)
       || (input.promotion_code === undefined
         ? found.promotion_codes.length !== 0
         : found.promotion_codes.length !== 1 || found.promotion_codes[0] !== input.promotion_code)
@@ -160,6 +178,7 @@ export async function reservePaymentLink(
     promotion_id: string;
     offer_id: string;
     bonus_count: number;
+    package_mode: 'direct' | 'review';
   } | null = null;
   if (input.promotion_code) {
     if (!input.conversation_id) throw new PaymentLinkReservationError('PROMOTION_NOT_AUTHORIZED');
@@ -167,8 +186,9 @@ export async function reservePaymentLink(
       promotion_id: string;
       offer_id: string;
       bonus_count: number;
+      package_mode: 'direct' | 'review';
     }>>`
-      SELECT promotion.id AS promotion_id, offer.id AS offer_id,
+      SELECT promotion.id AS promotion_id, offer.id AS offer_id, offer.package_mode,
         (SELECT count(*)::integer FROM promotion_offer_bonus_offerings candidate
           WHERE candidate.offer_id = offer.id) AS bonus_count
       FROM promotions promotion
@@ -184,6 +204,15 @@ export async function reservePaymentLink(
         AND offer.contact_id = ${input.contact_id}::uuid
         AND offer.conversation_id = ${input.conversation_id}::uuid
         AND offer.paid_offering_id = ${input.offering_id}::uuid
+        AND ((offer.package_mode = 'review' AND ${!hasDirectIdentity}) OR (offer.package_mode='direct' AND
+          offer.promotion_cycle_id = ${input.promotion_cycle_id ?? null}::uuid
+          AND offer.offer_version = ${input.accepted_offer_version ?? null}::integer
+          AND offer.accepted_source_turn_id IS NOT NULL
+          AND EXISTS (SELECT 1 FROM conversation_sales_context_states_v1 context
+            JOIN offerings selected ON selected.workspace_id=context.workspace_id AND selected.code=context.selected_offering_code
+            WHERE context.workspace_id=offer.workspace_id AND context.contact_id=offer.contact_id
+              AND context.conversation_id=offer.conversation_id AND selected.id=offer.paid_offering_id)
+        ))
         AND (
           (${input.promotion_channel ?? 'text'}::text = 'text' AND offer.status = 'accepted')
           OR (${input.promotion_channel ?? 'text'}::text = 'voice'
@@ -223,7 +252,8 @@ export async function reservePaymentLink(
       INSERT INTO payments (
         id, workspace_id, contact_id, offering_id, amount, currency, status,
         provider, environment, checkout_mode, idempotency_key, checkout_url, plan_code,
-        registration_email, registration_name, source_conversation_id
+        registration_email, registration_name, source_conversation_id,
+        promotion_offer_id,promotion_cycle_id,accepted_offer_version
       ) VALUES (
         ${paymentId}::uuid, ${input.workspace_id}::uuid, ${input.contact_id}::uuid,
         ${input.offering_id}::uuid, ${presentation.installment_amount},
@@ -231,7 +261,10 @@ export async function reservePaymentLink(
         ${input.idempotency_key}, ${checkoutUrl}, ${input.plan_code},
         (SELECT lower(trim(email)) FROM contacts WHERE id = ${input.contact_id}::uuid),
         (SELECT name FROM contacts WHERE id = ${input.contact_id}::uuid),
-        ${input.conversation_id ?? null}::uuid
+        ${input.conversation_id ?? null}::uuid,
+        ${authorizedPromotion?.package_mode === 'direct' ? authorizedPromotion.offer_id : null}::uuid,
+        ${authorizedPromotion?.package_mode === 'direct' ? input.promotion_cycle_id ?? null : null}::uuid,
+        ${authorizedPromotion?.package_mode === 'direct' ? input.accepted_offer_version ?? null : null}::integer
       )
       ON CONFLICT (idempotency_key) DO NOTHING
       RETURNING id, status, checkout_url
@@ -244,6 +277,9 @@ export async function reservePaymentLink(
           plan_code: input.plan_code,
           source: 'stripe_payment_link',
           ...(input.promotion_code ? { promotion_code: input.promotion_code } : {}),
+          ...(authorizedPromotion?.package_mode === 'direct' ? {
+            promotion_cycle_id:input.promotion_cycle_id,accepted_offer_version:input.accepted_offer_version,
+          } : {}),
         })}
       FROM inserted_payment
       ON CONFLICT (provider, provider_event_id) DO NOTHING

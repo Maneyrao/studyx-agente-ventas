@@ -1079,6 +1079,10 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
           AND ad.business_action ->> 'offering_sku' = ${action.offering_sku}
           AND COALESCE(prior_payment.environment, 'live') = ${stripePaymentLinkEnvironment(materialized.block.url) ?? 'live'}
           AND (prior_payment.id IS NULL OR prior_payment.status NOT IN ('failed', 'expired', 'refunded'))
+          AND NOT EXISTS (SELECT 1 FROM payment_intent_supersessions superseded WHERE superseded.payment_id=prior_payment.id)
+          AND (prior_payment.promotion_cycle_id IS NULL OR (
+            prior_payment.promotion_cycle_id=${courseBonusCapability?.promotion_cycle_id ?? null}::uuid
+            AND prior_payment.accepted_offer_version=${courseBonusCapability?.offer_version ?? null}::integer))
           AND COALESCE((
             SELECT array_agg(DISTINCT snapshot.promotion_code_snapshot
               ORDER BY snapshot.promotion_code_snapshot)
@@ -1117,6 +1121,11 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
             payment_link_url: materialized.block.url,
             conversation_id: turn.conversation_id,
             ...(action.promotion_code ? { promotion_code: action.promotion_code } : {}),
+            ...(action.promotion_code && courseBonusCapability?.promotion_cycle_id
+              && ['accepted','attached'].includes(courseBonusCapability.package_status ?? '') ? {
+              promotion_cycle_id:courseBonusCapability.promotion_cycle_id ?? undefined,
+              accepted_offer_version:courseBonusCapability.offer_version ?? undefined,
+            }:{}),
           });
           const configuredUrl = materialized.block.url;
           materialized = {
@@ -1840,6 +1849,7 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
             contact_id: turn.contact_id,
             conversation_id: turn.conversation_id,
             selected_offering_code: preparedAgentTurn.transition.selected_offering_code,
+            source_turn_id:turn.id,
           });
         }
         await recordPromotionConversationContextV1(db, {
