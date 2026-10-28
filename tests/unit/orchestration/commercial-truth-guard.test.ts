@@ -25,6 +25,19 @@ const CANONICAL: CanonicalTruthSetV1 = {
 const NO_CERTIFICATION: CanonicalTruthSetV1 = { ...CANONICAL, certification: false };
 const UNKNOWN_CERTIFICATION: CanonicalTruthSetV1 = { ...CANONICAL, certification: null };
 
+it.each([
+  ['Te regalo Inglés 1 y Astrología.', false],
+  ['No te regalo Inglés 1, pero te regalo Redes.', false],
+  ['Te regalo Inglés 1 al comprar Redes.', true],
+  ['Redes incluye Inglés 1 de regalo.', true],
+  ['No te regalo Redes. Inglés 1 te puede servir para tu objetivo.', true],
+])('validates the complete gift object without gifting its paid-course condition: %s', (content, allowed) => {
+  const result=enforce(content as string,{...CANONICAL,offering_names:['Inglés 1','Excel','Redes'],
+    authorized_bonus_names:['Inglés 1'],paid_offering_names:['Redes']});
+  expect(result.violations.some(v=>v.code==='FORBIDDEN_PROMISE')).toBe(!allowed);
+  if (allowed) expect(result).toMatchObject({content,violations:[],removed:[]});
+});
+
 it('restricts gift assertions to delivered and provisionally authorized course names', () => {
   const canonical = {...CANONICAL,offering_names:['Inglés 1','Excel Integral','Redes'],
     authorized_bonus_names:['Inglés 1','Excel Integral']};

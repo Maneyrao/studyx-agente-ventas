@@ -1264,8 +1264,7 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
         authorized_urls: authorizedUrls,
         canonical: {
           ...canonicalTruth,
-          bonus_catalog_names: [...offerings.map(o => o.display_name),
-            ...(courseBonusCapability?.delivered_bonus_offerings ?? []).map(o => o.display_name)],
+          paid_offering_names: offerings.filter(o => o.code === effectiveAuthorizedOfferingCode).map(o => o.display_name),
           authorized_bonus_names: [
             ...(courseBonusCapability?.delivered_bonus_offerings ??
               (courseBonusCapability?.enabled ? [] : courseBonusCapability?.bonus_offerings ?? []))

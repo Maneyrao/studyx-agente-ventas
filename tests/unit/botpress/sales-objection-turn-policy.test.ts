@@ -236,6 +236,13 @@ describe('responseAvoidsDisallowedPriceReframingV1', () => {
     })).toBe(true);
   });
 
+  it('keeps a following ordinary message outside the preceding gift object', () => {
+    const input={messages:['Te regalo Inglés 1','Podemos revisar el contenido del curso.'],
+      authorized_bonus_offering_names:['Inglés 1']};
+    expect(responseAvoidsDisallowedPriceReframingV1(input)).toBe(true);
+    expect(responseProgressesRepeatedPriceObjectionV1(input)).toBe(true);
+  });
+
   it.each([
     'El plan es de USD 30 al mes durante 12 meses.',
     'No, puedes empezar con el plan de 12 pagos de USD 30.',

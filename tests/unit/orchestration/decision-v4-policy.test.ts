@@ -70,6 +70,10 @@ describe('parseDecisionV4 — request_call_now', () => {
       .toBe('INVALID_BUSINESS_ACTION');
     expect(codeOf(callOffer({response_type:'commercial_reply',business_action:{...action,other:true}})))
       .toBe('INVALID_BUSINESS_ACTION');
+    for (const promotion_code of ['', '   ']) {
+      expect(codeOf(callOffer({response_type:'commercial_reply',business_action:{...action,promotion_code}})))
+        .toBe('INVALID_BUSINESS_ACTION');
+    }
   });
   it('accepts the canonical call_confirmation with an accepted_offer request', () => {
     expect(() => parseDecisionV4(v4())).not.toThrow();

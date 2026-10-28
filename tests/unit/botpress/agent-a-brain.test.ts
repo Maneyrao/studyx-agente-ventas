@@ -93,6 +93,32 @@ afterEach(() => {
 });
 
 describe('Agent A Brain V1', () => {
+  it.each(['direct','review'] as const)('validates complete gift objects and paid-course conditions locally in %s mode', mode => {
+    const current=context();
+    current.turn.batch_messages=[{id:'current',text:'Me parece caro'}];
+    current.catalog.selected_offering!.display_name='Redes';
+    current.catalog.available_offerings=[
+      {code:'redes-informaticas',display_name:'Redes',fact_id:'paid',area_code:'tech'},
+      {code:'ingles_1',display_name:'Inglés 1',fact_id:'bonus',area_code:'language'},
+      {code:'excel',display_name:'Excel',fact_id:'excel',area_code:'tech'}];
+    current.capabilities.course_bonus={enabled:mode==='direct' ? true : undefined,
+      status:'offer_available',may_schedule_checkin:false,may_request_review:false,may_accept_offer:true,
+      may_send_promoted_payment:false,promotion_code:'p',interest_offering_code:'redes-informaticas',
+      bonus_offerings:[{code:'ingles_1',display_name:'Inglés 1',position:1}],
+      delivered_bonus_offerings:[{code:'ingles_1',display_name:'Inglés 1',position:1}]};
+    for (const content of ['Te regalo Inglés 1 y Astrología.','No te regalo Inglés 1, pero te regalo Redes.']) {
+      const parsed=parseAgentATurnProposalV1(proposal({response:{messages:[content],call_offer:null}}),current);
+      expect(validateAgentATurnProposalV1({proposal:parsed,context:current,planned_fact_ids:[],
+        rejection_id:'00000000-0000-4000-8000-000000000001'})?.rejections)
+        .toContainEqual({code:'FACT_VALUE_MISMATCH',subject:'forbidden_promise'});
+    }
+    for (const content of ['Te regalo Inglés 1 al comprar Redes.','Redes incluye Inglés 1 de regalo.']) {
+      const parsed=parseAgentATurnProposalV1(proposal({response:{messages:[content],call_offer:null}}),current);
+      const rejection=validateAgentATurnProposalV1({proposal:parsed,context:current,planned_fact_ids:[],
+        rejection_id:'00000000-0000-4000-8000-000000000001'});
+      expect(rejection?.rejections.filter(r=>['forbidden_promise','price_objection_reframe'].includes(r.subject)) ?? []).toEqual([]);
+    }
+  });
   it('recognizes the canonical current plan selected by Agent A before it has been persisted', () => {
     const current = context();
     current.turn.batch_messages = [{ id: 'm1', text: '12 pagos 30' }];

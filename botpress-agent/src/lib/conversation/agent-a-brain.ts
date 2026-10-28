@@ -1,4 +1,5 @@
 import { courseLogisticsInV1 } from '../../../../src/shared/conversation/course-logistics';
+import { inspectCourseBonusClaimsV1 } from '../../../../src/shared/conversation/course-bonus-claim';
 import { eligibleContactRequestFieldsV1 } from './contact-profile-request-policy';
 import { supportsChatPreferenceV1 } from './channel-preference-evidence';
 import { evaluateCallOfferTurnPolicyV1 } from './call-offer-turn-policy';
@@ -1883,12 +1884,20 @@ export function validateAgentATurnProposalV1(input: {
     : authorizedBonusOffer
     ? input.context.capabilities.course_bonus?.bonus_offerings.map((offering) => offering.display_name) ?? []
     : [];
+  const paidOfferingNames = input.context.catalog.selected_offering
+    ? [input.context.catalog.selected_offering.display_name] : [];
+  if (inspectCourseBonusClaimsV1({content:[...input.proposal.response.messages,
+    ...(input.proposal.response.call_offer ? [input.proposal.response.call_offer] : [])].join('\n'),
+    authorized_bonus_names:authorizedBonusOfferingNames,paid_offering_names:paidOfferingNames}).has_unauthorized_claim) {
+    rejections.push({code:'FACT_VALUE_MISMATCH',subject:'forbidden_promise'});
+  }
   if (
     salesObjection.kind === 'repeated_price_objection'
     && !responseProgressesRepeatedPriceObjectionV1({
       ...input.proposal.response,
       customer_expressed_real_budget_limit: customerExpressesRealBudgetLimitV1(currentCustomerText),
       authorized_bonus_offering_names: authorizedBonusOfferingNames,
+      paid_offering_names:paidOfferingNames,
     })
   ) {
     rejections.push({ code: 'REPEATED_AGENT_REPLY', subject: 'persistent_price_objection' });
@@ -1901,6 +1910,7 @@ export function validateAgentATurnProposalV1(input: {
       ...input.proposal.response,
       allow_requested_payment_terms: salesObjection.kind === 'price_question_with_objection',
       authorized_bonus_offering_names: authorizedBonusOfferingNames,
+      paid_offering_names:paidOfferingNames,
     })
   ) {
     rejections.push({ code: 'FACT_VALUE_MISMATCH', subject: 'price_objection_reframe' });

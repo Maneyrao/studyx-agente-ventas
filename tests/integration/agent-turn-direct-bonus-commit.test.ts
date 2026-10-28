@@ -3,6 +3,7 @@ import { commitAgentDecision, recordDeliveryReport } from '@/lib/services/decisi
 import * as capability from '@/features/promotions/application/read-course-bonus-capability';
 import { seedConversationForAgentTurn } from '../helpers/agent-turn-fixtures';
 import { sql } from '@/lib/db/orchestrator';
+import { jsonbParam } from '@/lib/db/json';
 
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllEnvs(); });
 const run = process.env.TEST_DATABASE_URL ? describe : describe.skip;
@@ -23,7 +24,7 @@ run('direct decision atomic repair', () => {
       VALUES (${f.conversation_id},${f.contact_id},'inbound','Me parece caro',now()-interval '1 hour') RETURNING id`;
     await sql`INSERT INTO selected_memories(contact_id,conversation_id,source_message_id,status,memory_type,memory_key,value_normalized,source_quote,confidence,dedupe_hash)
       VALUES (${f.contact_id},${f.conversation_id},${prior.id},'active','objection','price_objection','caro','Me parece caro',1,${'b'.repeat(64)})`;
-    const proposal = {...f.proposalWithCallOfferAndFalsePrice,response:{messages:['El total es USD 360.','Te regalo Inglés 1.'],call_offer:'Si querés, puedo llamarte para asesorarte.'},
+    const proposal = {...f.proposalWithCallOfferAndFalsePrice,response:{messages:['El total es USD 360.','Te regalo Inglés 1 al comprar Entrenamiento Funcional.'],call_offer:'Si querés, puedo llamarte para asesorarte.'},
       proposed_action:{type:'offer_course_bonus',interest_offering_code:'entrenamiento_funcional',bonus_offering_code:'ingles_1'}};
     const input = {turn_id:f.turn_id,trace_id:f.trace_id,supports_multi_outbound:true,
       authorized_offering_code:'entrenamiento_funcional',authorized_payment_plan:null,
@@ -35,10 +36,11 @@ run('direct decision atomic repair', () => {
     const pending = await capability.readCourseBonusCapabilityV1({workspace_slug:'studyx',contact_id:f.contact_id,
       conversation_id:f.conversation_id,channel:'text',selected_offering_code:'entrenamiento_funcional',source_turn_id:f.second_turn_id},{db:sql});
     expect(pending).toMatchObject({offer_version:1,may_offer_bonus:false,may_accept_offer:false,delivered_bonus_offerings:[]});
+    expect(pending.promotion_cycle_id).toMatch(/^[0-9a-f-]{36}$/u);
     const cloneWithAction = (action:Record<string,unknown>) => sql`INSERT INTO agent_decisions
       (turn_id,trace_id,schema_version,intent,decision_kind,response,response_type,business_action,
        memory_candidates,missing_information,next_state,reason_code,confidence,model_provider,model_name,prompt_version,payload_hash)
-      SELECT ${f.second_turn_id},trace_id,schema_version,intent,decision_kind,response,response_type,${JSON.stringify(action)}::jsonb,
+      SELECT ${f.second_turn_id},trace_id,schema_version,intent,decision_kind,response,response_type,${jsonbParam(sql,action)},
        memory_candidates,missing_information,next_state,reason_code,confidence,model_provider,model_name,prompt_version,payload_hash
       FROM agent_decisions WHERE turn_id=${f.turn_id}`;
     for (const action of [
@@ -47,6 +49,9 @@ run('direct decision atomic repair', () => {
         interest_offering_code:'entrenamiento_funcional',offer_version:1,unknown:true},
       {type:'offer_course_bonus',interest_offering_code:'entrenamiento_funcional'},
     ]) await expect(cloneWithAction(action)).rejects.toMatchObject({code:'23514',constraint_name:'agent_decisions_business_action_check'});
+    await expect(cloneWithAction({type:'accept_promotion',promotion_code:'   ',promotion_cycle_id:pending.promotion_cycle_id,
+      interest_offering_code:'entrenamiento_funcional',offer_version:1})).rejects.toMatchObject({
+        code:'23514',constraint_name:'agent_decisions_direct_acceptance_code_check'});
     const report = {outbound_id:id,trace_id:f.trace_id,status:'submitted_to_botpress' as const,
       botpress_message_id:`confirmed-bonus-${f.trace_id}`,replayed:false,error_code:null,delivery_attempt:1};
     await expect(recordDeliveryReport({...report,status:'delivered',delivered_at:new Date().toISOString()}))
@@ -85,9 +90,9 @@ run('direct decision atomic repair', () => {
     const action = {type:'accept_promotion',interest_offering_code:'entrenamiento_funcional',promotion_code:delivered.promotion_code,
       promotion_cycle_id:delivered.promotion_cycle_id,offer_version:1};
     const accepted=await commitAgentDecision({...input,turn_id:f.second_turn_id,agent_turn_v2:{schema_version:2,
-      proposal:{...proposal,proposed_action:action,response:{messages:['El total es USD 360. Queda confirmado Inglés 1 de regalo.'],call_offer:null}} as never}});
+      proposal:{...proposal,proposed_action:action,response:{messages:['El total es USD 360. Entrenamiento Funcional incluye Inglés 1 de regalo.'],call_offer:null}} as never}});
     expect(accepted.status).toBe('committed');
-    expect(accepted.outbounds[0].content).toBe('El total es USD 360. Queda confirmado Inglés 1 de regalo.');
+    expect(accepted.outbounds[0].content).toBe('El total es USD 360. Entrenamiento Funcional incluye Inglés 1 de regalo.');
     expect((await sql`SELECT status,bonus_snapshot_sealed_at FROM promotion_offers WHERE promotion_cycle_id=${delivered.promotion_cycle_id ?? null}`)[0])
       .toMatchObject({status:'accepted',bonus_snapshot_sealed_at:expect.any(Date)});
   });

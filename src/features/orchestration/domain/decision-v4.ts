@@ -266,7 +266,7 @@ function parseV4BusinessAction(value: unknown): DecisionV4BusinessAction | null 
       throw new DecisionValidationError('INVALID_BUSINESS_ACTION');
     }
     if (Object.keys(value).length > 1) {
-      if (typeof value.promotion_code !== 'string' || typeof value.promotion_cycle_id !== 'string'
+      if (typeof value.promotion_code !== 'string' || value.promotion_code.trim().length === 0 || typeof value.promotion_cycle_id !== 'string'
         || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu.test(value.promotion_cycle_id)
         || typeof value.interest_offering_code !== 'string' || !isCanonicalOfferingSku(value.interest_offering_code)
         || typeof value.offer_version !== 'number' || !Number.isInteger(value.offer_version) || value.offer_version < 1) {

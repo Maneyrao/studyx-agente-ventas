@@ -1,4 +1,5 @@
 import type { AgentAContextV1 } from '../../schemas/agent-a-brain';
+import { inspectCourseBonusClaimsV1 } from '../../../../src/shared/conversation/course-bonus-claim';
 
 export type SalesObjectionTurnKindV1 =
   | 'none'
@@ -22,10 +23,6 @@ function normalized(value: string): string {
     .trim();
 }
 
-function regexLiteral(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
-}
-
 function isEmploymentOfferTextV1(value: string): boolean {
   return /\bofertas?\s+(?:laborales?|de\s+(?:trabajo|empleo))\b/u.test(value)
     || /\b(?:trabajo|empleo)\b[^.!?\n]{0,32}\bofertas?\b/u.test(value);
@@ -37,29 +34,6 @@ function isPromotionOptOutTextV1(value: string): boolean {
     || /\bno\s+me\s+ofrec\p{L}*\s+mas\s+ofertas?\b/u.test(value);
 }
 
-function authorizedCourseBonusClaimV1(
-  text: string,
-  authorizedNames: readonly string[],
-): { readonly matched: boolean; readonly remaining: string } {
-  let remaining = text;
-  let matched = false;
-  for (const rawName of authorizedNames) {
-    const name = normalized(rawName);
-    if (!name) continue;
-    const escapedName = regexLiteral(name);
-    const patterns = [
-      new RegExp(`\\b(?:te\\s+)?(?:puedo\\s+)?(?:inclu\\p{L}*|sum\\p{L}*|agreg\\p{L}*|bonific\\p{L}*|regal\\p{L}*|ofrec\\p{L}*)\\b\\s+(?:(?:el|la|un|una)\\s+)?(?:curso\\s+(?:de\\s+)?)?${escapedName}(?:\\s+(?:gratis|sin\\s+costo(?:\\s+adicional)?|incluid\\p{L}*|bonific\\p{L}*))?`, 'gu'),
-      new RegExp(`${escapedName}(?:\\s+(?:queda|va|esta|seria|se\\s+incluye|te\\s+lo\\s+dejo))?\\s+(?:gratis|sin\\s+costo(?:\\s+adicional)?|incluid\\p{L}*|bonific\\p{L}*)\\b`, 'gu'),
-    ];
-    for (const pattern of patterns) {
-      remaining = remaining.replace(pattern, () => {
-        matched = true;
-        return ' ';
-      });
-    }
-  }
-  return { matched, remaining };
-}
 
 export function isPriceObjectionTextV1(text: string): boolean {
   const value = normalized(text);
@@ -162,11 +136,13 @@ export function responseAvoidsDisallowedPriceReframingV1(input: {
   readonly call_offer?: string | null;
   readonly allow_requested_payment_terms?: boolean;
   readonly authorized_bonus_offering_names?: readonly string[];
+  readonly paid_offering_names?: readonly string[];
 }): boolean {
-  const text = normalized([
+  const visible = [
     ...input.messages,
     ...(input.call_offer ? [input.call_offer] : []),
-  ].join('\n'));
+  ].join('\n');
+  const text = normalized(visible);
   const installmentFacts = /\b(?:\d+|seis|doce)\s+(?:pagos?|cuotas?|mensualidades?)\b/u.test(text)
     || /\b(?:cuota|plan)\b[^.!?\n]{0,48}\b(?:usd|dolares?)\b/u.test(text)
     || /\b(?:usd\s*)?\d+(?:[.,]\d+)?\s*(?:dolar(?:es)?)?\s+(?:al\s+mes|mensual(?:es|mente)?)\b/u.test(text)
@@ -187,16 +163,13 @@ export function responseAvoidsDisallowedPriceReframingV1(input: {
     || /\b(?:bajar|reducir)\b[^.!?\n]{0,24}\b(?:el\s+)?precio\b/u.test(textWithoutDiscountNegation);
   const courseBonus = /\b(?:bonific\p{L}*|gratis|sin\s+costo|regal\p{L}*)\b/u.test(text)
     || /\b(?:agregar|sumar|incluir)\b[^.!?\n]{0,56}\b(?:otro\s+)?curso\b[^.!?\n]{0,48}\b(?:mismo\s+(?:precio|valor)|incluido)\b/u.test(text);
-  const authorizedClaim = authorizedCourseBonusClaimV1(
-    text,
-    input.authorized_bonus_offering_names ?? [],
-  );
-  const unconsumedGift = /\b(?:bonific\p{L}*|gratis|sin\s+costo|regal\p{L}*)\b/u.test(authorizedClaim.remaining)
-    || /\b(?:agregar|sumar|incluir)\b[^.!?\n]{0,56}\b(?:otro\s+)?curso\b[^.!?\n]{0,48}\b(?:mismo\s+(?:precio|valor)|incluido)\b/u.test(authorizedClaim.remaining);
+  const claims = inspectCourseBonusClaimsV1({content:visible,
+    authorized_bonus_names:input.authorized_bonus_offering_names ?? [],
+    paid_offering_names:input.paid_offering_names});
   return !installmentPitch
     && !dailyComparison
     && !priceReduction
-    && (!courseBonus || (authorizedClaim.matched && !unconsumedGift));
+    && (!courseBonus || !claims.has_unauthorized_claim);
 }
 
 /**
@@ -210,17 +183,17 @@ export function responseProgressesRepeatedPriceObjectionV1(input: {
   readonly call_offer?: string | null;
   readonly customer_expressed_real_budget_limit?: boolean;
   readonly authorized_bonus_offering_names?: readonly string[];
+  readonly paid_offering_names?: readonly string[];
 }): boolean {
   if (!responseAvoidsDisallowedPriceReframingV1(input)) return false;
   if ((input.authorized_bonus_offering_names?.length ?? 0) > 0) {
     const authorizedOfferText = normalized(input.messages.join('\n'));
-    const authorizedClaim = authorizedCourseBonusClaimV1(
-      authorizedOfferText,
-      input.authorized_bonus_offering_names!,
-    );
+    const authorizedClaim = inspectCourseBonusClaimsV1({content:input.messages.join('\n'),
+      authorized_bonus_names:input.authorized_bonus_offering_names!,
+      paid_offering_names:input.paid_offering_names});
     const mentionsIncludedCourse = /\b(?:bonific\p{L}*|gratis|sin\s+costo|regal\p{L}*)\b/u.test(authorizedOfferText)
       || /\b(?:agregar|sumar|incluir)\b[^.!?\n]{0,56}\b(?:otro\s+)?curso\b[^.!?\n]{0,48}\b(?:mismo\s+(?:precio|valor)|incluido)\b/u.test(authorizedOfferText);
-    if (authorizedClaim.matched && mentionsIncludedCourse) return true;
+    if (authorizedClaim.has_authorized_claim && mentionsIncludedCourse) return true;
   }
   // Once the customer has explicitly said they cannot afford the purchase,
   // any non-empty answer that preserves the price guard may acknowledge or
