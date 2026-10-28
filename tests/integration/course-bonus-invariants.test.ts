@@ -72,6 +72,56 @@ async function createPromotion(f: Awaited<ReturnType<typeof fixture>>, code = `p
 }
 
 run('authorized course bonus database invariants', () => {
+  it('backfills legacy packages as sealed version one and quarantines ambiguous delivery without rewriting obligations', async () => {
+    const fixtures = [await fixture(), await fixture()];
+    const ids: string[] = [];
+    for (const [index, f] of fixtures.entries()) {
+      const p = await createPromotion(f);
+      await db!`INSERT INTO promotion_bonus_offerings(promotion_id,workspace_id,offering_id,position)
+        VALUES (${p.id},${f.workspace.id},${f.giftA.id},1),(${p.id},${f.workspace.id},${f.giftB.id},2)`;
+      const [source]=await db!`INSERT INTO messages(conversation_id,contact_id,direction,content)
+        VALUES (${f.conversation.id},${f.contact.id},'inbound','Legacy customer turn') RETURNING id`;
+      const [m] = await db!`INSERT INTO messages(conversation_id,contact_id,direction,content)
+        VALUES (${f.conversation.id},${f.contact.id},'outbound','Legacy promise') RETURNING id`;
+      await db!`INSERT INTO outbound_deliveries(message_id,conversation_id,contact_id,provider,integration_id,channel,destination,idempotency_key,state,delivered_at,submitted_at)
+        VALUES (${m.id},${f.conversation.id},${f.contact.id},'test','test','whatsapp','test',${m.id},${index===0?'delivered':'submitted'},${index===0?new Date():null},now())`;
+      const [o] = await db!`INSERT INTO promotion_offers(workspace_id,contact_id,conversation_id,promotion_id,paid_offering_id)
+        VALUES (${f.workspace.id},${f.contact.id},${f.conversation.id},${p.id},${f.paid.id}) RETURNING id`;
+      await db!`INSERT INTO promotion_offer_bonus_offerings(offer_id,promotion_id,offering_id,promotion_code_snapshot,offering_code_snapshot,offering_display_name_snapshot,position)
+        VALUES (${o.id},${p.id},${f.giftA.id},${p.promotion_code},${f.giftA.code},'Gift A',1),
+          (${o.id},${p.id},${f.giftB.id},${p.promotion_code},${f.giftB.code},'Gift B',2)`;
+      await db!`UPDATE promotion_offers SET status=${index===0?'offered':'accepted'},offered_at=now(),offered_outbound_message_id=${m.id},
+        accepted_at=${index===0?null:new Date()},bonus_snapshot_sealed_at=now(),source_turn_id=${source.id} WHERE id=${o.id}`;
+      ids.push(o.id);
+    }
+    const migration=readFileSync(resolve(process.cwd(),'supabase/migrations/20261028010001_direct_multi_course_bonus.sql'),'utf8');
+    const rollback=new Error('rollback migration rehearsal');
+    try {
+      await db!.begin(async tx=>{
+        await tx.unsafe(`
+          DROP TRIGGER promotion_offers_direct_guard ON promotion_offers;
+          DROP TRIGGER promotion_offer_bonus_advance_version ON promotion_offer_bonus_offerings;
+          DROP TRIGGER outbound_delivery_confirm_bonus ON outbound_deliveries;
+          ALTER TABLE promotion_offers DROP COLUMN package_mode,DROP COLUMN promotion_cycle_id,DROP COLUMN offer_version,
+            DROP COLUMN accepted_source_turn_id,DROP COLUMN delivery_reconciliation_required;
+          ALTER TABLE promotion_offer_bonus_offerings DROP COLUMN source_turn_id,DROP COLUMN offered_at,
+            DROP COLUMN offered_outbound_message_id,DROP COLUMN delivered_at,DROP COLUMN offer_version;
+        `);
+        await tx.unsafe(migration);
+        const offers=await tx`SELECT id,status,offer_version,bonus_snapshot_sealed_at,delivery_reconciliation_required FROM promotion_offers WHERE id IN (${ids[0]},${ids[1]})`;
+        expect(offers.find(o=>o.id===ids[0])).toMatchObject({status:'offered',offer_version:1,delivery_reconciliation_required:false});
+        expect(offers.find(o=>o.id===ids[1])).toMatchObject({status:'accepted',offer_version:1,delivery_reconciliation_required:true});
+        expect(offers.every(o=>o.bonus_snapshot_sealed_at instanceof Date)).toBe(true);
+        const gifts=await tx`SELECT offer_id,offering_code_snapshot,offer_version,delivered_at FROM promotion_offer_bonus_offerings WHERE offer_id IN (${ids[0]},${ids[1]})`;
+        expect(gifts).toHaveLength(4);
+        expect(gifts.find(g=>g.offer_id===ids[0])).toMatchObject({offering_code_snapshot:fixtures[0].giftA.code,offer_version:1});
+        expect(gifts.find(g=>g.offer_id===ids[0])?.delivered_at).toBeInstanceOf(Date);
+        expect(gifts.find(g=>g.offer_id===ids[1])?.delivered_at).toBeNull();
+        throw rollback;
+      });
+    } catch(error) { if(error!==rollback) throw error; }
+  });
+
   it('migration cleanup preserves an accepted live package over a newer pending review', async () => {
     const f = await fixture();
     const acceptedPromotion = await createPromotion(f, `accepted-${f.suffix}`);
