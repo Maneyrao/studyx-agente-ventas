@@ -50,7 +50,7 @@ export class AgentTurnV2RejectedError extends Error {
 
 export interface AgentActionRejectionV1 {
   readonly action: 'request_call_now' | 'send_payment_link' | 'send_test_payment_link'
-    | 'schedule_price_objection_checkin' | 'request_promotion_review' | 'accept_promotion';
+    | 'schedule_price_objection_checkin' | 'request_promotion_review' | 'offer_course_bonus' | 'accept_promotion';
   readonly status: 'needs_input' | 'rejected';
   readonly code: string;
   readonly codes: readonly string[];

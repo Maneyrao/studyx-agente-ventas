@@ -86,6 +86,60 @@ const validProposal = {
 const contextSchemas = [BackendContextSchema, BotpressContextSchema] as const;
 const proposalSchemas = [BackendProposalSchema, BotpressProposalSchema] as const;
 
+const directPromotion = {
+  promotion_code: 'PRM-1', promotion_cycle_id: 'cycle-1', offer_version: 2,
+  status: 'offer_available', interest_offering_code: 'redes-informaticas',
+  bonus_offerings: [
+    { offering_code: 'ingles_1', name: 'Inglés 1', offered_at: '2026-10-28T12:00:00Z', position: 1 },
+    { offering_code: 'ingles_2', name: 'Inglés 2', offered_at: '2026-10-28T13:00:00Z', position: 2 },
+  ],
+  accepted_at: null,
+};
+
+describe('direct bonus context parity', () => {
+  function context(promotion: unknown = directPromotion, limit: unknown = 3) {
+    return {
+      ...validContext,
+      commercial_state: { ...validContext.commercial_state, promotion },
+      capabilities: { ...validContext.capabilities, course_bonus: {
+        enabled: true, max_bonus_courses: limit, status: 'offer_available',
+        may_schedule_checkin: false, may_request_review: false, may_accept_offer: true,
+        may_send_promoted_payment: false, promotion_code: 'PRM-1', bonus_offerings: [],
+      } },
+    };
+  }
+
+  it('preserves the same versioned package and additive capability at both boundaries', () => {
+    for (const schema of contextSchemas) {
+      const parsed = schema.parse(context());
+      expect(parsed.commercial_state.promotion).toEqual(directPromotion);
+      expect(parsed.capabilities.course_bonus).toMatchObject({ enabled: true, max_bonus_courses: 3 });
+    }
+  });
+
+  it('accepts an absent or null promotion during rollout', () => {
+    for (const schema of contextSchemas) {
+      expect(schema.safeParse(validContext).success).toBe(true);
+      expect(schema.safeParse(context(null)).success).toBe(true);
+    }
+  });
+
+  it.each([
+    { offer_version: 0 }, { offer_version: 1.5 }, { promotion_cycle_id: '' },
+    { status: 'invented' }, { bonus_offerings: Array(4).fill(directPromotion.bonus_offerings[0]) },
+    { bonus_offerings: [{ ...directPromotion.bonus_offerings[0], position: 0 }] },
+    { bonus_offerings: [{ ...directPromotion.bonus_offerings[0], position: 4 }] },
+  ])('rejects malformed promotion state %j at both boundaries', (replacement) => {
+    for (const schema of contextSchemas) {
+      expect(schema.safeParse(context({ ...directPromotion, ...replacement })).success).toBe(false);
+    }
+  });
+
+  it.each([0, 4, 1.5])('rejects unsupported capability limit %s at both boundaries', (limit) => {
+    for (const schema of contextSchemas) expect(schema.safeParse(context(directPromotion, limit)).success).toBe(false);
+  });
+});
+
 describe('Agent A brain schema parity', () => {
   it('accepts the same valid context and compound proposal at both boundaries', () => {
     for (const schema of contextSchemas) expect(schema.safeParse(validContext).success).toBe(true);

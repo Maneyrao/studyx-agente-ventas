@@ -72,6 +72,20 @@ export const AgentAContextV1Schema = z.object({
     instagram: z.string().trim().min(1).max(120).nullable(),
   }).strict().nullable(),
   commercial_state: z.object({
+    promotion: z.object({
+      promotion_code: IdentifierSchema,
+      promotion_cycle_id: IdentifierSchema,
+      offer_version: z.number().int().min(1),
+      status: z.enum(['none', 'offer_available', 'accepted', 'expired', 'cancelled']),
+      interest_offering_code: IdentifierSchema,
+      bonus_offerings: z.array(z.object({
+        offering_code: IdentifierSchema,
+        name: z.string().trim().min(1).max(240),
+        offered_at: z.string().min(1),
+        position: z.union([z.literal(1), z.literal(2), z.literal(3)]),
+      }).strict()).max(3),
+      accepted_at: z.string().min(1).nullable(),
+    }).strict().nullable().optional(),
     selected_offering_code: IdentifierSchema.nullable(),
     selected_payment_plan: PaymentPlanSchema.nullable(),
     stage: z.enum(['exploring', 'qualified', 'course_selected', 'plan_selected', 'payment_link_sent', 'handoff', 'closed']),
@@ -146,6 +160,8 @@ export const AgentAContextV1Schema = z.object({
     may_send_payment_link: z.boolean(),
     authorized_payment_plan: PaymentPlanSchema.nullable(),
     course_bonus: z.object({
+      enabled: z.boolean().optional(),
+      max_bonus_courses: z.union([z.literal(1), z.literal(2), z.literal(3)]).optional(),
       status: z.enum([
         'unavailable', 'needs_interest', 'not_eligible', 'checkin_available',
         'review_available', 'review_pending', 'offer_available', 'accepted',
@@ -193,7 +209,18 @@ export const AgentAProposedActionSchema = z.discriminatedUnion('type', [
     reason: z.literal('persistent_price_objection'),
     bonus_offering_code: IdentifierSchema.optional(),
   }).strict(),
-  z.object({ type: z.literal('accept_promotion') }).strict(),
+  z.object({
+    type: z.literal('offer_course_bonus'),
+    bonus_offering_code: IdentifierSchema,
+    interest_offering_code: IdentifierSchema,
+  }).strict(),
+  z.object({
+    type: z.literal('accept_promotion'),
+    promotion_code: IdentifierSchema.optional(),
+    interest_offering_code: IdentifierSchema.optional(),
+    promotion_cycle_id: IdentifierSchema.optional(),
+    offer_version: z.number().int().min(1).optional(),
+  }).strict(),
   z.object({
     type: z.literal('send_test_payment_link'),
     offering_code: IdentifierSchema,
@@ -204,7 +231,11 @@ export const AgentAProposedActionSchema = z.discriminatedUnion('type', [
     payment_plan: PaymentPlanSchema,
     promotion_code: IdentifierSchema.optional(),
   }).strict(),
-]);
+]).refine((action) => {
+  if (action.type !== 'accept_promotion') return true;
+  const fields = [action.promotion_code, action.interest_offering_code, action.promotion_cycle_id, action.offer_version];
+  return fields.every((field) => field === undefined) || fields.every((field) => field !== undefined);
+}, 'DIRECT_PROMOTION_ACCEPTANCE_FIELDS_REQUIRED');
 
 const MemoryCandidateSchema = z.object({
   type: MemoryTypeSchema,

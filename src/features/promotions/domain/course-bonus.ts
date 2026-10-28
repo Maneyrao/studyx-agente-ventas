@@ -1,4 +1,21 @@
 export type PromotionChannel = 'text' | 'voice';
+export type CourseBonusFlowModeV1 = 'review' | 'direct';
+export type CourseBonusMaxCoursesV1 = 1 | 2 | 3;
+
+export interface DirectCourseBonusPromotionV1 {
+  readonly promotion_code: string;
+  readonly promotion_cycle_id: string;
+  readonly offer_version: number;
+  readonly status: 'none' | 'offer_available' | 'accepted' | 'expired' | 'cancelled';
+  readonly interest_offering_code: string;
+  readonly bonus_offerings: ReadonlyArray<{
+    readonly offering_code: string;
+    readonly name: string;
+    readonly offered_at: string;
+    readonly position: CourseBonusMaxCoursesV1;
+  }>;
+  readonly accepted_at: string | null;
+}
 export type PromotionOfferStatus =
   | 'pending_review'
   | 'offered'

@@ -167,9 +167,32 @@ export const RequestPromotionReviewActionSchema = z.object({
   bonus_offering_code: z.string().regex(/^[a-z0-9][a-z0-9_-]{0,127}$/).optional(),
 }).strict()
 
-export const AcceptPromotionActionSchema = z.object({
-  type: z.literal('accept_promotion'),
+export const OfferCourseBonusActionSchema = z.object({
+  type: z.literal('offer_course_bonus'),
+  bonus_offering_code: z.string().trim().min(1).max(160),
+  interest_offering_code: z.string().trim().min(1).max(160),
 }).strict()
+
+// Keep the unrefined object inside Zod 3's discriminated union.
+const AcceptPromotionActionObjectSchema = z.object({
+  type: z.literal('accept_promotion'),
+  promotion_code: z.string().trim().min(1).max(160).optional(),
+  interest_offering_code: z.string().trim().min(1).max(160).optional(),
+  promotion_cycle_id: z.string().trim().min(1).max(160).optional(),
+  offer_version: z.number().int().min(1).optional(),
+}).strict()
+
+function hasCompletePromotionAcceptance(action: {
+  type: string; promotion_code?: string; interest_offering_code?: string;
+  promotion_cycle_id?: string; offer_version?: number;
+}): boolean {
+  if (action.type !== 'accept_promotion') return true
+  const fields = [action.promotion_code, action.interest_offering_code, action.promotion_cycle_id, action.offer_version]
+  return fields.every((field) => field === undefined) || fields.every((field) => field !== undefined)
+}
+
+export const AcceptPromotionActionSchema = AcceptPromotionActionObjectSchema
+  .refine(hasCompletePromotionAcceptance, 'DIRECT_PROMOTION_ACCEPTANCE_FIELDS_REQUIRED')
 
 export const DecisionBusinessActionSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('mark_hot_lead'), score: z.number().min(0).max(1) }).strict(),
@@ -182,8 +205,9 @@ export const DecisionBusinessActionSchema = z.discriminatedUnion('type', [
   SendPaymentLinkActionSchema,
   SchedulePriceObjectionCheckinActionSchema,
   RequestPromotionReviewActionSchema,
-  AcceptPromotionActionSchema,
-])
+  AcceptPromotionActionObjectSchema,
+  OfferCourseBonusActionSchema,
+]).refine(hasCompletePromotionAcceptance, 'DIRECT_PROMOTION_ACCEPTANCE_FIELDS_REQUIRED')
 
 export const DecisionResponseTypeSchema = z.enum([
   'social_reply',
@@ -608,6 +632,8 @@ export const ClaimedTurnSchema = z.object({
     }).strict().nullable().optional(),
   }).strict().nullable().optional(),
   course_bonus_capability: z.object({
+    enabled: z.boolean().optional(),
+    max_bonus_courses: z.union([z.literal(1), z.literal(2), z.literal(3)]).optional(),
     status: z.enum([
       'unavailable', 'needs_interest', 'not_eligible', 'checkin_available',
       'review_available', 'review_pending', 'offer_available', 'accepted',
