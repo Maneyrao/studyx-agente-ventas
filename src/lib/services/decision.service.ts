@@ -62,6 +62,7 @@ import { createConfigPaymentLinkResolver } from '@/features/payments/adapters/co
 import {
   PaymentLinkReservationError,
   reservePaymentLink,
+  createValidatedPaymentLinkCourseSelectionV1,
   reserveStripeVerificationLink,
 } from '@/features/payments/application/reserve-payment-link';
 import {
@@ -1139,6 +1140,17 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
               && ['accepted','attached'].includes(courseBonusCapability.package_status ?? '') ? {
               promotion_cycle_id:courseBonusCapability.promotion_cycle_id ?? undefined,
               accepted_offer_version:courseBonusCapability.offer_version ?? undefined,
+            }:{}),
+            ...(action.promotion_code && courseBonusCapability?.package_status === 'accepted'
+              && courseBonusCapability.promotion_cycle_id && preparedAgentTurn?.transition.selected_offering_code
+              && pipelineStateBefore
+              && preparedAgentTurn.transition.selected_offering_code !== pipelineStateBefore.selected_offering_code ? {
+              validated_course_selection:createValidatedPaymentLinkCourseSelectionV1({
+                workspace_id:canonicalWorkspaceId,contact_id:turn.contact_id,conversation_id:turn.conversation_id,
+                source_turn_id:turn.id,expected_state_version:pipelineStateBefore.version,
+                previous_offering_code:pipelineStateBefore.selected_offering_code,
+                selected_offering_code:preparedAgentTurn.transition.selected_offering_code,
+              }),
             }:{}),
           });
           const configuredUrl = materialized.block.url;

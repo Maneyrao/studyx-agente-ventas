@@ -20,6 +20,34 @@ export class PaymentLinkReservationError extends Error {
   }
 }
 
+const validatedCourseSelections = new WeakSet<object>();
+const courseSelectionBrand: unique symbol = Symbol('validated-checkout-selection');
+interface PaymentLinkCourseSelectionDetailsV1 {
+  readonly workspace_id: string;
+  readonly contact_id: string;
+  readonly conversation_id: string;
+  readonly source_turn_id: string;
+  readonly expected_state_version: number;
+  readonly previous_offering_code: string | null;
+  readonly selected_offering_code: string;
+}
+export interface ValidatedPaymentLinkCourseSelectionV1 extends PaymentLinkCourseSelectionDetailsV1 {
+  readonly [courseSelectionBrand]: true;
+  toJSON(): never;
+}
+
+/** Internal handoff from an already authorized Agent A transition. The proof
+ * cannot be reconstructed from a public JSON request or used at a root DB. */
+export function createValidatedPaymentLinkCourseSelectionV1(
+  input: PaymentLinkCourseSelectionDetailsV1,
+): ValidatedPaymentLinkCourseSelectionV1 {
+  const proof = Object.freeze({ ...input, [courseSelectionBrand]: true as const,
+    toJSON(): never { throw new Error('Validated checkout selection is not serializable'); },
+  });
+  validatedCourseSelections.add(proof);
+  return proof;
+}
+
 export interface ReservePaymentLinkInput {
   readonly workspace_id: string;
   readonly contact_id: string;
@@ -32,6 +60,7 @@ export interface ReservePaymentLinkInput {
   readonly promotion_cycle_id?: string;
   readonly accepted_offer_version?: number;
   readonly promotion_channel?: 'text' | 'voice';
+  readonly validated_course_selection?: ValidatedPaymentLinkCourseSelectionV1;
 }
 
 export interface ReservedPaymentLink {
@@ -106,6 +135,12 @@ export async function reservePaymentLink(
   const begin = (db as DbClient & {
     begin?: <T>(fn: (transaction: DbClient) => Promise<T>) => Promise<T>;
   }).begin;
+  const selection = input.validated_course_selection;
+  if (selection && (typeof begin === 'function' || !validatedCourseSelections.has(selection)
+    || selection.workspace_id !== input.workspace_id || selection.contact_id !== input.contact_id
+    || selection.conversation_id !== input.conversation_id)) {
+    throw new PaymentLinkReservationError('PROMOTION_NOT_AUTHORIZED');
+  }
   if (typeof begin === 'function') {
     return (await begin.call(db, (transaction) => reservePaymentLink(transaction, input))) as ReservedPaymentLink;
   }
@@ -187,6 +222,25 @@ export async function reservePaymentLink(
     LIMIT 1`;
   if(supersededPackage[0]) throw new PaymentLinkReservationError('PROMOTION_NOT_AUTHORIZED');
 
+  let validatedCurrentSelection = false;
+  if (selection) {
+    const authorized = await db<Array<{ id: string }>>`
+      SELECT selected.id FROM conversation_sales_context_states_v1 context
+      JOIN messages source ON source.id=${selection.source_turn_id}::uuid
+        AND source.conversation_id=context.conversation_id AND source.contact_id=context.contact_id
+        AND source.direction='inbound'
+      JOIN offerings selected ON selected.workspace_id=context.workspace_id
+        AND selected.id=${input.offering_id}::uuid AND selected.code=${selection.selected_offering_code}
+        AND selected.status='active'
+      WHERE context.workspace_id=${input.workspace_id}::uuid AND context.contact_id=${input.contact_id}::uuid
+        AND context.conversation_id=${input.conversation_id ?? null}::uuid
+        AND context.version=${selection.expected_state_version}
+        AND context.selected_offering_code IS NOT DISTINCT FROM ${selection.previous_offering_code}
+    `;
+    if (!authorized[0]) throw new PaymentLinkReservationError('PROMOTION_NOT_AUTHORIZED');
+    validatedCurrentSelection = true;
+  }
+
   let authorizedPromotion: {
     promotion_id: string;
     offer_id: string;
@@ -221,10 +275,10 @@ export async function reservePaymentLink(
           offer.promotion_cycle_id = ${input.promotion_cycle_id ?? null}::uuid
           AND offer.offer_version = ${input.accepted_offer_version ?? null}::integer
           AND offer.accepted_source_turn_id IS NOT NULL
-          AND EXISTS (SELECT 1 FROM conversation_sales_context_states_v1 context
+          AND (${validatedCurrentSelection} OR EXISTS (SELECT 1 FROM conversation_sales_context_states_v1 context
             JOIN offerings selected ON selected.workspace_id=context.workspace_id AND selected.code=context.selected_offering_code
             WHERE context.workspace_id=offer.workspace_id AND context.contact_id=offer.contact_id
-              AND context.conversation_id=offer.conversation_id AND selected.id=offer.paid_offering_id)
+              AND context.conversation_id=offer.conversation_id AND selected.id=offer.paid_offering_id))
         ))
         AND (
           (${input.promotion_channel ?? 'text'}::text = 'text' AND offer.status = 'accepted')
