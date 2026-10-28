@@ -78,6 +78,19 @@ function generated(value: AgentATurnProposalV1) {
 }
 
 describe('resolveAgentAPlannerlessProposalV2', () => {
+  it('preserves neutral exact-plan wording for a proven budget limit without semantic repair', async () => {
+    const current = context();
+    current.turn.batch_messages = [{ id: 'budget', text: 'No me alcanza el presupuesto' }];
+    const messages = ['Puedes elegir 12 pagos de USD 30.'];
+    const initial = generated(proposal({ response: { messages, call_offer: null },
+      used_fact_ids: ['payment:maquillaje-profesional:monthly_12:label:v1'] }));
+    const result = await resolveAgentAPlannerlessProposalV2({ initial, context: current, repair_enabled: true,
+      rejection_id: '00000000-0000-4000-8000-000000000124',
+      repair: async () => { throw new Error('valid terms must not enter repair'); } });
+    expect(result.effective.proposal.response.messages).toEqual(messages);
+    expect(result.evidence.rejection_codes).toEqual([]);
+    expect(result.evidence.repair_attempted).toBe(false);
+  });
   it('keeps the exact production price-objection answer without a semantic repair', async () => {
     const current = context();
     current.turn = {

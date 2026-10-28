@@ -8,13 +8,13 @@ describe('Agent A canonical sales prompt', () => {
   it('ships the complete approved prompt and a byte-equivalent generated module', () => {
     const prompt = readFileSync(PROMPT_PATH, 'utf8');
 
-    expect(prompt.match(/\n/g) ?? []).toHaveLength(67);
+    expect(prompt.match(/\n/g) ?? []).toHaveLength(93);
     expect(createHash('sha256').update(prompt).digest('hex')).toMatch(/^[a-f0-9]{64}$/u);
     expect(existsSync(GENERATED_PATH)).toBe(true);
 
     const generated = readFileSync(GENERATED_PATH, 'utf8');
     expect(generated).toContain(`export const STUDYX_AGENT_A_CANONICAL_PROMPT = ${JSON.stringify(prompt)} as const;`);
-    expect(generated).toContain("export const STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION = 'studyx-agent-a-canonical-v97' as const;");
+    expect(generated).toContain("export const STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION = 'studyx-agent-a-canonical-v98' as const;");
   });
 
   it('combines warm Meta-lead selling with autonomous objection and post-call handling', () => {
@@ -167,7 +167,7 @@ describe('Agent A canonical sales prompt', () => {
     expect(prompt).toMatch(/objeci[oó]n de precio[^.]*no uses[^.]*cuotas[^.]*comparaciones/iu);
     expect(prompt).toMatch(/no bajes ni cambies el precio/iu);
     expect(prompt).toMatch(/consulta de precio[^.]*no la habilita/iu);
-    expect(prompt).toMatch(/resistencia persistente[^.]*request_promotion_review/iu);
+    expect(prompt).toMatch(/modo directo[\s\S]*offer_course_bonus/iu);
     expect(prompt).toMatch(/sin prometer resultados[^.]*emprender[^.]*ampliar ingresos/iu);
     expect(prompt).not.toMatch(/curso gratis|por el mismo valor/iu);
     expect(prompt).toMatch(/limitaci[oó]n real de presupuesto[^.]*sin presionar/iu);

@@ -125,16 +125,24 @@ export function evaluateSalesObjectionTurnV1(
   return { kind: 'none' };
 }
 
+function mentionsInstallmentTermsV1(text: string): boolean {
+  return /\b(?:\d+|seis|doce)\s+(?:pagos?|cuotas?|mensualidades?)\b/u.test(text)
+    || /\b(?:cuota|plan)\b[^.!?\n]{0,48}\b(?:usd|dolares?)\b/u.test(text)
+    || /\b(?:usd\s*)?\d+(?:[.,]\d+)?\s*(?:dolar(?:es)?)?\s+(?:al\s+mes|mensual(?:es|mente)?)\b/u.test(text)
+    || /\b(?:pagarlo|pagalo|pagar|abonarlo|abonar)\b[^.!?\n]{0,36}\b(?:en\s+)?(?:cuotas?|pagos?\s+mensuales?|mensualidades?)\b/u.test(text);
+}
+
 /**
  * Price objections are handled by clarifying the real friction and connecting
  * authorized value to the customer's context. A valid catalog price may still
- * answer a direct price question, but it must not be used as a tactic to make
- * an objection feel cheaper.
+ * answer a direct price question or inform a proven budget constraint, but it
+ * must not be used as a tactic to make an objection feel cheaper.
  */
 export function responseAvoidsDisallowedPriceReframingV1(input: {
   readonly messages: readonly string[];
   readonly call_offer?: string | null;
   readonly allow_requested_payment_terms?: boolean;
+  readonly customer_expressed_real_budget_limit?: boolean;
   readonly authorized_bonus_offering_names?: readonly string[];
   readonly paid_offering_names?: readonly string[];
 }): boolean {
@@ -143,18 +151,16 @@ export function responseAvoidsDisallowedPriceReframingV1(input: {
     ...(input.call_offer ? [input.call_offer] : []),
   ].join('\n');
   const text = normalized(visible);
-  const installmentFacts = /\b(?:\d+|seis|doce)\s+(?:pagos?|cuotas?|mensualidades?)\b/u.test(text)
-    || /\b(?:cuota|plan)\b[^.!?\n]{0,48}\b(?:usd|dolares?)\b/u.test(text)
-    || /\b(?:usd\s*)?\d+(?:[.,]\d+)?\s*(?:dolar(?:es)?)?\s+(?:al\s+mes|mensual(?:es|mente)?)\b/u.test(text)
-    || /\b(?:pagarlo|pagalo|pagar|abonarlo|abonar)\b[^.!?\n]{0,36}\b(?:en\s+)?(?:cuotas?|pagos?\s+mensuales?|mensualidades?)\b/u.test(text);
-  const monthlyMinimization = /\b(?:solo|apenas)\b[^.!?\n]{0,32}\b(?:usd|\d+|dolar(?:es)?)\b[^.!?\n]{0,24}\b(?:al\s+mes|mensual(?:es|mente)?)\b/u.test(text)
+  const installmentFacts = mentionsInstallmentTermsV1(text);
+  const monthlyMinimization = /\b(?:solo|apenas)\b[^.!?\n]{0,16}\b(?:usd|dolares?)\s*\d/u.test(text)
+    || /\b(?:solo|apenas)\b[^.!?\n]{0,32}\b(?:usd|\d+|dolar(?:es)?)\b[^.!?\n]{0,24}\b(?:al\s+mes|mensual(?:es|mente)?)\b/u.test(text)
     || /\b(?:opcion|plan|cuota)\s+mensual\b[^.!?\n]{0,32}\b(?:mas\s+)?(?:accesible|barat[oa]|baj[oa]|livian[oa])\b/u.test(text)
     || /\b(?:cuota|plan|opcion)\b[^.!?\n]{0,40}\b(?:mas\s+)?(?:baj[oa]|chic[oa]|livian[oa]|accesible|barat[oa])\b/u.test(text)
     || /\b(?:te\s+)?recomiend\p{L}*\b[^.!?\n]{0,56}\b(?:cuota|plan|pagos?|mensualidad)\b/u.test(text)
     || /\b(?:asi|porque)\b[^.!?\n]{0,32}\b(?:resulta|queda|es|sea)\b[^.!?\n]{0,20}\b(?:mas\s+)?(?:accesible|barat[oa]|livian[oa])\b/u.test(text)
     || /\b(?:menos\s+pesa|pesa\s+menos)\b/u.test(text);
   const installmentPitch = monthlyMinimization
-    || (!input.allow_requested_payment_terms && installmentFacts);
+    || (!input.allow_requested_payment_terms && !input.customer_expressed_real_budget_limit && installmentFacts);
   const dailyComparison = /\b(?:menos\s+de\s+)?(?:usd\s*)?(?:\d+(?:[.,]\d+)?|un[oa]?)\s*(?:dolar(?:es)?)?\s+(?:por|al)\s+dia\b/u.test(text)
     || /\b(?:cafe|gasto\s+cotidiano|lo\s+que\s+gastas?)\b[^.!?\n]{0,56}\b(?:por\s+dia|diario|inversion|cuesta|precio)\b/u.test(text)
     || /\b(?:inversion|cuesta|precio)\b[^.!?\n]{0,56}\b(?:cafe|gasto\s+cotidiano|lo\s+que\s+gastas?)\b/u.test(text);
@@ -196,10 +202,11 @@ export function responseProgressesRepeatedPriceObjectionV1(input: {
     if (authorizedClaim.has_authorized_claim && mentionsIncludedCourse) return true;
   }
   // Once the customer has explicitly said they cannot afford the purchase,
-  // any non-empty answer that preserves the price guard may acknowledge or
-  // close naturally. Requiring a specific sentence here caused valid replies
-  // to enter repair and, if repair failed, disappear from the conversation.
-  if (input.customer_expressed_real_budget_limit && input.messages.some((message) => message.trim().length > 0)) {
+  // Acknowledge or close naturally after a proven budget limit. Repeating
+  // terms still needs a diagnostic or contextual value advance below.
+  const repeatsInstallments = mentionsInstallmentTermsV1(normalized(input.messages.join('\n')));
+  if (input.customer_expressed_real_budget_limit && !repeatsInstallments
+    && input.messages.some((message) => message.trim().length > 0)) {
     return true;
   }
   const visible = input.messages.join('\n');

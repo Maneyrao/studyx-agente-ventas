@@ -72,6 +72,37 @@ function context(memoryValue = 'busca salida laboral'): AgentAContextV1 {
 }
 
 describe('Agent A Brain prompt', () => {
+  it('adapts discovery, trial closes and direct negotiation while preserving early calls', () => {
+    const instructions = buildAgentABrainInstructionsV1(context());
+    for (const rule of ['cierre de prueba', '«me interesa» no confirma una compra',
+      'Nunca bonifiques ante la primera objeción', 'uno, luego dos y finalmente tres',
+      'Nunca un cuarto', 'No uses Ackerman', 'no te voy a insistir',
+      'Un curso exacto no es requisito', 'una pregunta principal',
+      'curso pago y todos los bonificados', 'sin decir «virtual»']) {
+      expect(instructions).toContain(rule);
+    }
+  });
+
+  it('guides a direct expansion without legacy review wording or hidden course names', () => {
+    const current = context();
+    current.turn.batch_messages = [{ id: 'm2', text: 'Me sigue pareciendo caro' }];
+    current.turn.recent_turns = [{ id: 'm1', direction: 'inbound', content: 'Es caro' }];
+    current.capabilities.course_bonus = {
+      enabled: true, max_bonus_courses: 3, may_offer_bonus: true,
+      status: 'offer_available', may_schedule_checkin: false, may_request_review: false,
+      may_accept_offer: true, may_send_promoted_payment: false,
+      promotion_code: 'p', interest_offering_code: 'redes-informaticas',
+      bonus_offerings: [{ code: 'ingles_1', display_name: 'Inglés 1', position: 1 }],
+      delivered_bonus_offerings: [{ code: 'ingles_1', display_name: 'Inglés 1', position: 1 }],
+    };
+    const guidance = buildAgentABrainInstructionsV1(current)
+      .split('<current_commercial_guidance kind="repeated_price_objection">')[1]!.split('</current_commercial_guidance>')[0]!;
+    expect(guidance).toContain('offer_course_bonus');
+    expect(guidance).toContain('same response');
+    expect(guidance).toContain('delivered_bonus_offerings');
+    expect(guidance).not.toContain('request_promotion_review');
+    expect(guidance).not.toContain('Do not add any other discount, gift');
+  });
   it('makes phase identification and brevity an Agent A responsibility', () => {
     const instructions = buildAgentABrainInstructionsV1(context());
 
@@ -88,8 +119,8 @@ describe('Agent A Brain prompt', () => {
     const encoded = instructions.split('<authorized_context>')[1]!.split('</authorized_context>')[0]!;
     expect(JSON.parse(encoded)).toEqual(current);
     expect(instructions).not.toContain('<current_turn_guidance>');
-    expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v97');
-    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v131');
+    expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v98');
+    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v132');
   });
 
   it('adds turn-specific guidance for a repeated price objection without forcing a script', () => {

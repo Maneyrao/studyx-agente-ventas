@@ -93,6 +93,68 @@ afterEach(() => {
 });
 
 describe('Agent A Brain V1', () => {
+  it.each([true, false])('authorizes the full package with exactly one new course, formal selection=%s', (selected) => {
+    const current = context();
+    current.turn.batch_messages = [{ id: 'current', text: 'Me sigue pareciendo caro' }];
+    current.turn.recent_turns = [{ id: 'earlier', direction: 'inbound', content: 'Es caro' }];
+    current.catalog.available_offerings = [
+      { code: 'redes-informaticas', display_name: 'Redes Informáticas', area_code: 'tech', fact_id: 'paid' },
+      { code: 'ingles_1', display_name: 'Inglés 1', area_code: 'language', fact_id: 'english' },
+      { code: 'excel', display_name: 'Excel', area_code: 'tech', fact_id: 'excel' },
+      { code: 'word', display_name: 'Word', area_code: 'tech', fact_id: 'word' },
+    ];
+    if (!selected) {
+      current.catalog.selected_offering = null;
+      current.commercial_state.selected_offering_code = null;
+    }
+    current.capabilities.course_bonus = { enabled: true, max_bonus_courses: 3, may_offer_bonus: true,
+      status: 'offer_available', may_schedule_checkin: false, may_request_review: false, may_accept_offer: true,
+      may_send_promoted_payment: false, promotion_code: 'p', interest_offering_code: 'redes-informaticas',
+      bonus_offerings: [{ code: 'ingles_1', display_name: 'Inglés 1', position: 1 },
+        { code: 'excel', display_name: 'Excel', position: 2 }],
+      delivered_bonus_offerings: [{ code: 'ingles_1', display_name: 'Inglés 1', position: 1 },
+        { code: 'excel', display_name: 'Excel', position: 2 }] };
+    for (const [message, forbidden] of [
+      ['Redes Informáticas incluye Inglés 1, Excel y Word bonificados.', false],
+      ['Redes Informáticas incluye Inglés 1, Excel, Word y Astrología bonificados.', true],
+    ] as const) {
+      const parsed = parseAgentATurnProposalV1(proposal({
+        response: { messages: [message], call_offer: null }, used_fact_ids: [], used_memory_ids: [],
+        proposed_action: { type: 'offer_course_bonus', interest_offering_code: 'redes-informaticas', bonus_offering_code: 'word' },
+      }), current);
+      const rejection = validateAgentATurnProposalV1({ proposal: parsed, context: current, planned_fact_ids: [],
+        rejection_id: '00000000-0000-4000-8000-000000000001' });
+      expect(rejection?.rejections.some(r => r.subject === 'forbidden_promise') ?? false).toBe(forbidden);
+    }
+  });
+  it('accepts neutral exact terms for a real budget limit without a price-reframe rejection', () => {
+    const current = context();
+    current.turn.batch_messages = [{ id: 'current', text: 'No me alcanza el presupuesto' }];
+    const parsed = parseAgentATurnProposalV1(proposal({
+      response: { messages: ['Puedes elegir 12 pagos de USD 30.'], call_offer: null },
+      used_fact_ids: ['payment:redes-informaticas:monthly_12:label:v1'], used_memory_ids: [],
+    }), current);
+    const rejection = validateAgentATurnProposalV1({ proposal: parsed, context: current,
+      planned_fact_ids: ['payment:redes-informaticas:monthly_12:label:v1'],
+      rejection_id: '00000000-0000-4000-8000-000000000001' });
+    expect(rejection?.rejections.filter(r => r.subject === 'price_objection_reframe') ?? []).toEqual([]);
+  });
+
+  it('does not authorize a stale noncatalog bonus name from delivery evidence', () => {
+    const current = context();
+    current.capabilities.course_bonus = { enabled: true, status: 'offer_available',
+      may_schedule_checkin: false, may_request_review: false, may_accept_offer: true,
+      may_send_promoted_payment: false, promotion_code: 'p', interest_offering_code: 'redes-informaticas',
+      bonus_offerings: [{ code: 'deleted', display_name: 'Astrología', position: 1 }],
+      delivered_bonus_offerings: [{ code: 'deleted', display_name: 'Astrología', position: 1 }] };
+    const parsed = parseAgentATurnProposalV1(proposal({
+      response: { messages: ['Astrología va bonificada.'], call_offer: null },
+      used_fact_ids: [], used_memory_ids: [],
+    }), current);
+    expect(validateAgentATurnProposalV1({ proposal: parsed, context: current, planned_fact_ids: [],
+      rejection_id: '00000000-0000-4000-8000-000000000001' })?.rejections)
+      .toContainEqual({ code: 'FACT_VALUE_MISMATCH', subject: 'forbidden_promise' });
+  });
   it.each(['direct','review'] as const)('validates complete gift objects and paid-course conditions locally in %s mode', mode => {
     const current=context();
     current.turn.batch_messages=[{id:'current',text:'Me parece caro'}];
@@ -1695,7 +1757,7 @@ describe('Agent A Brain V1', () => {
     current.capabilities.course_bonus={enabled:true,max_bonus_courses:2,may_offer_bonus:true,status:'offer_available',
       may_schedule_checkin:false,may_request_review:false,may_accept_offer:true,may_send_promoted_payment:false,
       interest_offering_code:'redes-informaticas',promotion_code:'p',promotion_cycle_id:'11111111-1111-4111-8111-111111111111',
-      offer_version:1,bonus_selection_mode:'any_active_course',bonus_offerings:[],delivered_bonus_offerings:[]};
+      offer_version:1,bonus_offerings:[],delivered_bonus_offerings:[]};
     const fetchMock=vi.fn<typeof fetch>().mockResolvedValue(providerResponse(200,responsesSuccessBody(proposal())));
     vi.stubGlobal('fetch',fetchMock);
     await generateDeepSeekAgentATurnProposalV1({context:current,apiKey:'fixture',signal:new AbortController().signal});

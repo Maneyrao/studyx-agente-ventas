@@ -93,6 +93,28 @@ describe('evaluateSalesObjectionTurnV1', () => {
 });
 
 describe('responseProgressesRepeatedPriceObjectionV1', () => {
+  it('allows neutral exact terms for a proven budget limit with a useful diagnostic', () => {
+    expect(responseProgressesRepeatedPriceObjectionV1({
+      messages: ['Podés elegir 12 pagos de USD 30. Qué importe mensual te permitiría estudiar sin comprometer tus gastos?'],
+      customer_expressed_real_budget_limit: true,
+    })).toBe(true);
+  });
+
+  it.each(['Podés elegir 12 pagos de USD 30.', 'El plan es USD 30 al mes.'])(
+    'rejects sterile installment repetition even for a proven budget limit: %s', (message) => {
+    expect(responseProgressesRepeatedPriceObjectionV1({
+      messages: [message],
+      customer_expressed_real_budget_limit: true,
+    })).toBe(false);
+  });
+
+  it.each(['Son sólo USD 30.', 'Son apenas USD 30.', 'Es la cuota más barata.', 'Es menos de USD 1 por día.'])(
+    'rejects minimization even for requested terms: %s', (message) => {
+      expect(responseAvoidsDisallowedPriceReframingV1({
+        messages: [message], allow_requested_payment_terms: true,
+      })).toBe(false);
+    },
+  );
   it.each([
     'Son 12 cuotas de USD 30. Te parece?',
     'Puedes pagar 12 cuotas de USD 30.',

@@ -550,7 +550,7 @@ function proposalJsonSchema(context: AgentAContextV1, conversationOnly = false):
     confidence: { type: 'number' },
   });
   const courseBonus = context.capabilities.course_bonus;
-  const eligibleDynamicBonusCodes = courseBonus?.bonus_selection_mode === 'any_active_course'
+  const eligibleDynamicBonusCodes = courseBonus?.enabled || courseBonus?.bonus_selection_mode === 'any_active_course'
     ? context.catalog.available_offerings
       .map((offering) => offering.code)
       .filter((code) => code !== courseBonus.interest_offering_code)
@@ -1879,13 +1879,19 @@ export function validateAgentATurnProposalV1(input: {
     && !directBonusCapability.bonus_offerings.some(o => o.code === directAction.bonus_offering_code)
     ? input.context.catalog.available_offerings.find(o => o.code === directAction.bonus_offering_code) : null;
   const authorizedBonusOfferingNames = directBonusCapability?.enabled
-    ? [...(directBonusCapability.delivered_bonus_offerings ?? []).map(o => o.display_name),
+    ? [...(directBonusCapability.delivered_bonus_offerings ?? []).flatMap(o => {
+      const active = input.context.catalog.available_offerings.find(offering => offering.code === o.code);
+      return active ? [active.display_name] : [];
+    }),
       ...(directOffering ? [directOffering.display_name] : [])]
     : authorizedBonusOffer
     ? input.context.capabilities.course_bonus?.bonus_offerings.map((offering) => offering.display_name) ?? []
     : [];
-  const paidOfferingNames = input.context.catalog.selected_offering
-    ? [input.context.catalog.selected_offering.display_name] : [];
+  const paidOffering = input.context.catalog.selected_offering
+    ?? input.context.catalog.available_offerings.find(offering => (
+      offering.code === directBonusCapability?.interest_offering_code
+    ));
+  const paidOfferingNames = paidOffering ? [paidOffering.display_name] : [];
   if (inspectCourseBonusClaimsV1({content:[...input.proposal.response.messages,
     ...(input.proposal.response.call_offer ? [input.proposal.response.call_offer] : [])].join('\n'),
     authorized_bonus_names:authorizedBonusOfferingNames,paid_offering_names:paidOfferingNames}).has_unauthorized_claim) {
@@ -1909,6 +1915,7 @@ export function validateAgentATurnProposalV1(input: {
     && !responseAvoidsDisallowedPriceReframingV1({
       ...input.proposal.response,
       allow_requested_payment_terms: salesObjection.kind === 'price_question_with_objection',
+      customer_expressed_real_budget_limit: customerExpressesRealBudgetLimitV1(currentCustomerText),
       authorized_bonus_offering_names: authorizedBonusOfferingNames,
       paid_offering_names:paidOfferingNames,
     })
