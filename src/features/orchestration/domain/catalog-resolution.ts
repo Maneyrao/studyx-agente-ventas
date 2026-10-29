@@ -87,7 +87,10 @@ const CATALOG_INTENT_PATTERN =
 const COURSE_DETAIL_REQUEST_PATTERN = /\b(?:plan de estudios?|temarios?)\b/u;
 
 const COURSE_DETAIL_SUBJECT_PATTERN =
-  /\b(?:plan de estudios?|temarios?)\s+(?:de|del|para)\s+(?:(?:el|la|un|una)\s+)?(?:(?:curso|diplomado|programa)\s+(?:de\s+)?)?([\p{L}\p{N}].*)$/u;
+  /\b(?:plan de estudios?|temarios?)\s+(?:de|del|para|sobre)\s+(?:(?:el|la|un|una)\s+)?(?:(?:curso|diplomado|programa)\s+(?:de\s+)?)?([\p{L}\p{N}].*)$/u;
+
+const COURSE_DETAIL_FOLLOWUP_SUBJECT_PATTERN =
+  /^(?:de|del|para|sobre)\s+(?:(?:el|la|un|una)\s+)?(?:(?:curso|diplomado|programa)\s+(?:de\s+)?)?[\p{L}\p{N}]/u;
 
 const SELECTION_CUE_PATTERN =
   /\b(?:prefiero|elijo|elegi|selecciono|me quedo con|voy con|quiero|mejor|cambio a)\b/gu;
@@ -551,6 +554,19 @@ function partialSubjectMatches(
 
 export function isCatalogDetailRequest(text: string | readonly string[]): boolean {
   return toMessages(text).some((message) => COURSE_DETAIL_REQUEST_PATTERN.test(message));
+}
+
+/** True only when a plan/temario request genuinely leaves its course implicit. */
+export function catalogDetailRequestOmitsSubject(
+  text: string | readonly string[],
+): boolean {
+  const messages = toMessages(text);
+  const detailIndex = messages.findIndex((message) => COURSE_DETAIL_REQUEST_PATTERN.test(message));
+  if (detailIndex < 0) return false;
+  if (messages.some((message) => COURSE_DETAIL_SUBJECT_PATTERN.test(message))) return false;
+  return !messages.slice(detailIndex + 1).some((message) => (
+    COURSE_DETAIL_FOLLOWUP_SUBJECT_PATTERN.test(message)
+  ));
 }
 
 function computerRepairMatches(

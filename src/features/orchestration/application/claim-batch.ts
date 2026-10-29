@@ -15,6 +15,7 @@ import {
 } from '@/features/conversation/domain/call-lifecycle-reconciliation';
 import { loadConversationSessionConfig } from '@/lib/config';
 import {
+  catalogDetailRequestOmitsSubject,
   isCatalogDetailRequest,
   isCatalogRequestNeutral,
   resolveCatalogRequest,
@@ -999,9 +1000,11 @@ export async function claimBatch(
     ? loadedSalesState.selected_offering_code
     : null;
   const detailRequest = isCatalogDetailRequest(currentMessageTexts);
+  const detailRequestOmitsSubject = catalogDetailRequestOmitsSubject(currentMessageTexts);
   const detailOfferingCode = catalog_resolution.kind === 'exact'
     ? catalog_resolution.offeringCode
     : detailRequest
+      && detailRequestOmitsSubject
       && catalog_resolution.kind === 'no_catalog_intent'
       && isCatalogRequestNeutral(currentMessageTexts)
       ? currentSelection.offering_code ?? persistedDetailOffering

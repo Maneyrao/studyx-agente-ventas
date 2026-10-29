@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import {
+  catalogDetailRequestOmitsSubject,
   isCatalogRequestNeutral,
   resolveCatalogRequest,
   type CatalogResolutionSnapshot,
@@ -309,6 +310,15 @@ describe('resolveCatalogRequest', () => {
       text,
       snapshot([offering('coaching_liderazgo', 'Coaching y Liderazgo', 'Academia de Negocios')]),
     )).toEqual({ kind: 'no_catalog_intent' });
+  });
+
+  it.each([
+    ['¿Me pasás el temario?', true],
+    ['¿Me pasás el temario de Astronomía?', false],
+    [['¿Me pasás el temario?', 'de Astronomía'], false],
+    ['¿Me das el plan de estudio sobre Coaching deportivo?', false],
+  ])('detects whether a course-detail request genuinely omits its subject: %j', (text, expected) => {
+    expect(catalogDetailRequestOmitsSubject(text)).toBe(expected);
   });
 
   it('keeps an administrative identity confirmation neutral to the remembered course', () => {
