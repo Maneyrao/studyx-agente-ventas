@@ -31,6 +31,10 @@ it.each([
   ['Te regalo Inglés 1\nEl total es USD 360.', true],
   ['Redes incluye prácticas y un proyecto final.', true],
   ['Puedo incluir otro curso incluido.', false],
+  ['No tenemos promociones hoy, salvo que te llevás Astrología gratis.', false],
+  ['No tenemos promociones, Astrología va sin costo.', false],
+  ['No tenemos promociones de cursos gratis.', true],
+  ['No hay cursos gratis.', true],
 ])('consumes bounded gift scope and preserves ordinary clauses: %s', (content, allowed) => {
   expect(inspectCourseBonusClaimsV1({content:content as string,
     authorized_bonus_names:['Inglés 1','Excel'],paid_offering_names:['Redes']}).has_unauthorized_claim).toBe(!allowed);

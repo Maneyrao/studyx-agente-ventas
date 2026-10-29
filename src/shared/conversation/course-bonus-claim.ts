@@ -71,7 +71,13 @@ export function inspectCourseBonusClaimsV1(input: {
     // Only this clause's denied predicate is exempt. A later affirmative
     // predicate is split above and must independently resolve its whole object.
     const deniedPredicate = /^\s*(?:no|nunca|tampoco)\s+(?:(?:te|lo|la|le|les|se)\s+)?(?:(?:puedo|podemos)\s+)?(?:regal\p{L}*|inclu\p{L}*|bonific\p{L}*)\b/u.test(clause);
-    const deniedExistence = /^\s*(?:no|nunca|tampoco)\s+(?:tengo|tenemos|hacemos|ofrecemos|damos|hay)\s+(?:(?:ningun[oa]?|un[oa]?|mas)\s+)?(?:regalos?|bonificaciones?|promociones?|cursos?\s+(?:gratis|bonificados?))\b/u.test(clause);
+    // A denied existence only covers the marker it negates: either the marker is
+    // inside the negated span or it qualifies that span ("promociones de cursos
+    // gratis"). "No tenemos promociones, Excel va sin costo" still asserts a gift.
+    const existence = clause.match(/^\s*(?:no|nunca|tampoco)\s+(?:tengo|tenemos|hacemos|ofrecemos|damos|hay)\s+(?:(?:ningun[oa]?|un[oa]?|mas)\s+)?(?:regalos?|bonificaciones?|promociones?|cursos?\s+(?:gratis|bonificados?))\b/u);
+    const existenceEnd = existence ? existence[0].length : -1;
+    const deniedExistence = existence !== null && markers.length === 1
+      && (markers[0]!.index! < existenceEnd || /^\s+(?:de|con)\s+[^,]*$/u.test(clause.slice(existenceEnd, markers[0]!.index!)));
     const deniedDescriptor = /\b(?:no|nunca|tampoco)\s+(?:es|esta|va|queda)\s+(?:de\s+regalo|gratis|bonificad[oa]|sin\s+(?:costo|cargo))\b/u.test(clause);
     if (markers.length === 1 && (deniedPredicate || deniedExistence || deniedDescriptor)) continue;
     let asserted = clause.trim();
