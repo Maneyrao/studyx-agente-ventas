@@ -978,21 +978,42 @@ export async function claimBatch(
   }
 
   await Promise.all([businessTask, conversationStateTask, agentLoopRolloutTask]);
+  const currentMessageTexts = batchMessages
+    .filter((message) => message.message_type === 'text')
+    .map((message) => message.content);
   const catalog_resolution = resolveCatalogFromSnapshot(
-    batchMessages
-      .filter((message) => message.message_type === 'text')
-      .map((message) => message.content),
+    currentMessageTexts,
     catalog_index,
     latestAgentTurnMessages(logicalRecentTurns),
   );
+  const currentSelection = deriveCourseSelection({
+    current: catalog_resolution,
+    currentMessageTexts,
+    recentTurns: logicalRecentTurns,
+    catalogIndex: catalog_index,
+  });
+  // Assigned in the joined commercial-context task; make that async boundary
+  // explicit to TypeScript without changing the runtime ordering.
+  const loadedSalesState = persisted_sales_context as SalesContextState | null;
+  const persistedDetailOffering = loadedSalesState?.conversation_id === claim.conversation_id
+    ? loadedSalesState.selected_offering_code
+    : null;
+  const detailRequest = isCatalogDetailRequest(currentMessageTexts);
+  const detailOfferingCode = catalog_resolution.kind === 'exact'
+    ? catalog_resolution.offeringCode
+    : detailRequest
+      && catalog_resolution.kind === 'no_catalog_intent'
+      && isCatalogRequestNeutral(currentMessageTexts)
+      ? currentSelection.offering_code ?? persistedDetailOffering
+      : null;
 
   // The index identifies every real offering without bringing every detailed
   // payload into the prompt. Once a course is exact, load only that detail and
   // merge it into the bounded snapshot for factual answers and protected facts.
-  if (catalog_resolution.kind === 'exact' && deps.business?.loadByCode) {
+  if (detailOfferingCode !== null && deps.business?.loadByCode) {
     counters.catalog_calls += 1;
     try {
-      const detailContext = await deps.business.loadByCode(catalog_resolution.offeringCode);
+      const detailContext = await deps.business.loadByCode(detailOfferingCode);
       const detail = detailContext?.offerings[0] ?? null;
       if (detail !== null) {
         // TypeScript cannot see the write performed by the joined async task;
@@ -1017,19 +1038,15 @@ export async function claimBatch(
     }
   }
   if (
-    catalog_resolution.kind === 'exact'
-    && isCatalogDetailRequest(
-      batchMessages
-        .filter((message) => message.message_type === 'text')
-        .map((message) => message.content),
-    )
+    detailOfferingCode !== null
+    && detailRequest
     && deps.knowledge.searchByOfferingCode
   ) {
     counters.knowledge_search_calls += 1;
     const startedAt = monotonicNow();
     try {
       const canonicalKnowledge = await deps.knowledge.searchByOfferingCode({
-        offering_code: catalog_resolution.offeringCode,
+        offering_code: detailOfferingCode,
         limit: limits.knowledgeResults,
       });
       const previouslyRetrievedUris = new Set(knowledge_base.map((item) => item.source_uri));
@@ -1055,24 +1072,13 @@ export async function claimBatch(
       log('orchestration.claim.course_knowledge_unavailable', {
         trace_id: input.trace_id,
         batch_id: claim.batch_id,
-        offering_code: catalog_resolution.offeringCode,
+        offering_code: detailOfferingCode,
         error: String(error),
       });
     } finally {
       timings.knowledge_search_ms += Math.max(0, monotonicNow() - startedAt);
     }
   }
-  const currentSelection = deriveCourseSelection({
-    current: catalog_resolution,
-    currentMessageTexts: batchMessages
-      .filter((message) => message.message_type === 'text')
-      .map((message) => message.content),
-    recentTurns: logicalRecentTurns,
-    catalogIndex: catalog_index,
-  });
-  // Assigned in the joined commercial-context task; make that async boundary
-  // explicit to TypeScript without changing the runtime ordering.
-  const loadedSalesState = persisted_sales_context as SalesContextState | null;
   // This legacy projection is contact-scoped. A fresh conversation must not
   // inherit a selection made in an older conversation on the same contact.
   const persistedState = loadedSalesState?.conversation_id === claim.conversation_id

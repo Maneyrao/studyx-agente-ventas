@@ -1268,6 +1268,64 @@ describe('claimBatch business context', () => {
     expect(result.context.injection_suspected_count).toBe(1);
   });
 
+  it('loads the selected course syllabus when a follow-up detail request omits the course name', async () => {
+    const canonicalCourseKnowledge = {
+      source_uri: 'knowledge://coaching_liderazgo/manual',
+      title: 'Manual StudyX — Coaching y Liderazgo',
+      content: 'El diplomado tiene 16 clases, 4 trabajos prácticos y 1 examen final.',
+      similarity: 1,
+    };
+    const knowledge = {
+      search: vi.fn().mockResolvedValue([]),
+      searchByOfferingCode: vi.fn().mockResolvedValue([canonicalCourseKnowledge]),
+    };
+    const coaching = businessOffering(
+      'coaching_liderazgo',
+      'Coaching y Liderazgo',
+      'Academia de Negocios',
+    );
+    const business = businessContextView({ offerings: [coaching] });
+    const result = await claimBatch(input, {
+      ...buildDeps({
+        knowledge,
+        messagesResult: [{
+          id: 'm1', conversation_seq: 2, content: '¿Me pasás el temario?',
+          created_at: '2026-08-11T12:00:00.000Z', message_type: 'text',
+        }],
+        factsResult: facts({
+          recent_turns: [{
+            direction: 'inbound',
+            content: 'Quiero Coaching y Liderazgo',
+            created_at: '2026-08-11T11:59:00.000Z',
+          }],
+        }),
+      }),
+      business: {
+        load: vi.fn().mockResolvedValue(business),
+        loadCompleteIndex: vi.fn().mockResolvedValue({
+          as_of: business.as_of,
+          offerings_total: 1,
+          offerings: [{
+            code: coaching.code,
+            display_name: coaching.display_name,
+            academy: coaching.academy,
+            aliases: [],
+          }],
+          injection_suspected_count: 0,
+        }),
+        loadByCode: vi.fn().mockResolvedValue(business),
+      },
+    });
+
+    if (result.outcome !== 'claimed') throw new Error('expected a claim');
+    expect(result.sales_context.offering_code).toBe('coaching_liderazgo');
+    expect(knowledge.searchByOfferingCode).toHaveBeenCalledWith({
+      offering_code: 'coaching_liderazgo',
+      limit: DEFAULT_CONTEXT_LIMITS.knowledgeResults,
+    });
+    expect(result.context.knowledge_base).toContainEqual(canonicalCourseKnowledge);
+  });
+
   it('distinguishes a real not-found result from an incomplete catalog', async () => {
     const messages = [{
       id: 'm1',
