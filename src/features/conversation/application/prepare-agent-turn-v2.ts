@@ -233,6 +233,8 @@ export async function prepareAgentTurnV2(input: {
   readonly discussed_offering_code: string | null;
   readonly commercial_interest_offering_code: string | null;
   readonly records_price_objection: boolean;
+  /** A terminal sale followed by generic catalog browsing starts without the old promotion focus. */
+  readonly resets_promotion_context: boolean;
   /** Explicit course switch retires open packages and prior unpaid intents. */
   readonly abandons_course_bonus_offer: boolean;
 }> {
@@ -422,10 +424,14 @@ export async function prepareAgentTurnV2(input: {
     content: authority.response,
     offerings: offerings.map((offering) => ({ code: offering.code, display_name: offering.display_name })),
   });
-  const commercialInterestOfferingCode = authority.discussed_offering_code
-    ?? input.course_bonus_capability?.interest_offering_code
-    ?? state.selected_offering_code
-    ?? responseOfferingCode;
+  const resetsPromotionContext = state.stage === 'closed'
+    && [effectiveProposal.move.move, ...effectiveProposal.move.secondary_moves].includes('browse_catalog');
+  const commercialInterestOfferingCode = resetsPromotionContext
+    ? null
+    : authority.discussed_offering_code
+      ?? input.course_bonus_capability?.interest_offering_code
+      ?? state.selected_offering_code
+      ?? responseOfferingCode;
   const recordsPriceObjection = commercialInterestOfferingCode !== null && (
     authority.action.type === 'schedule_price_objection_checkin'
     || authority.action.type === 'request_promotion_review'
@@ -466,6 +472,7 @@ export async function prepareAgentTurnV2(input: {
     discussed_offering_code: authority.discussed_offering_code,
     commercial_interest_offering_code: commercialInterestOfferingCode,
     records_price_objection: recordsPriceObjection,
+    resets_promotion_context: resetsPromotionContext,
     abandons_course_bonus_offer: abandonsCourseBonusOffer,
   };
 }

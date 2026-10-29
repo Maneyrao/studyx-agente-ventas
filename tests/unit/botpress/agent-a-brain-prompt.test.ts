@@ -130,6 +130,9 @@ describe('Agent A Brain prompt', () => {
       .split('<current_commercial_guidance kind="repeated_price_objection">')[1]!.split('</current_commercial_guidance>')[0]!;
     expect(guidance).toContain('offer_course_bonus');
     expect(guidance).toContain('same response');
+    expect(guidance).toContain('Permission is not proof that the earlier negotiation rungs were completed');
+    expect(guidance).toContain('personalized value, the neutral authorized installment reframe and a conditional close');
+    expect(guidance).not.toContain('The backend has confirmed persistent price resistance and authorized the bonus rung');
     expect(guidance).toContain('delivered_bonus_offerings');
     expect(guidance).not.toContain('request_promotion_review');
     expect(guidance).not.toContain('Do not add any other discount, gift');
@@ -150,8 +153,8 @@ describe('Agent A Brain prompt', () => {
     const encoded = instructions.split('<authorized_context>')[1]!.split('</authorized_context>')[0]!;
     expect(JSON.parse(encoded)).toEqual(current);
     expect(instructions).not.toContain('<current_turn_guidance>');
-    expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v99');
-    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v135');
+    expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v100');
+    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v136');
   });
 
   it('adds turn-specific guidance for a repeated price objection without forcing a script', () => {
@@ -173,7 +176,8 @@ describe('Agent A Brain prompt', () => {
     expect(instructions).toContain('<current_commercial_guidance kind="repeated_price_objection">');
     expect(instructions).toContain('The call lifecycle never replaces handling the objection in chat');
     expect(instructions).toContain('Do not merely repeat the price, installment amounts or class count');
-    expect(instructions).toContain('Do not use payment plans, installment amounts, cost-per-day comparisons, discounts or bonus courses to make the price feel lower');
+    expect(instructions).toContain('use the authorized 12-payment plan once as the next negotiation step');
+    expect(instructions).not.toContain('Do not use payment plans, installment amounts');
     expect(instructions).toContain('Choose the wording and structure yourself');
   });
 
@@ -274,8 +278,9 @@ describe('Agent A Brain prompt', () => {
       ?.split('</current_commercial_guidance>')[0];
 
     expect(guidance).toContain('perceived-value gap from a real inability to pay');
-    expect(guidance).toContain('Do not use payment plans, installment amounts, cost-per-day comparisons, discounts or bonus courses to make the price feel lower');
-    expect(guidance).toContain('state only confirmed alternatives in neutral customer-centered language');
+    expect(guidance).toContain('use the authorized 12-payment plan once as the next negotiation step');
+    expect(guidance).not.toContain('Do not use payment plans, installment amounts');
+    expect(guidance).toContain('Present it only as the same total distributed over time');
     expect(guidance).toContain('Truthfulness, authorization and validation rules are silent operating constraints');
     expect(guidance).toContain('Honest uncertainty remains appropriate when a fact is genuinely absent');
     expect(guidance).not.toContain('invented workaround');

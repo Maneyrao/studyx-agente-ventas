@@ -109,6 +109,282 @@ function authorize(input: {
 }
 
 describe('plannerless Agent A authority', () => {
+  it.each(['closed', 'payment_link_sent'] as const)(
+    'starts a fresh call-offer budget when a completed %s sale switches to another course',
+    previousStage => {
+      const result = authorize({
+        state: state({
+          selected_offering_code: 'excel_integral',
+          selected_payment_plan: 'one_time',
+          stage: previousStage,
+          call_preference: 'chat',
+          call_offer_status: 'declined',
+          call_offer_count: 2,
+        }),
+        customerText: 'Ahora quiero Redes Informáticas',
+        proposal: proposal({
+          move: {
+            schema_version: 1,
+            move: 'select_course',
+            secondary_moves: [],
+            vetoes: [],
+            course_reference: 'redes',
+            confidence: 1,
+          },
+          response: { messages: ['Redes Informáticas encaja con lo que querés aprender.'] },
+        }),
+      });
+
+      expect(result).toMatchObject({
+        ok: true,
+        transition: {
+          selected_offering_code: 'redes_informaticas',
+          selected_payment_plan: null,
+          stage: 'course_selected',
+          call_preference: 'unknown',
+          call_offer_status: 'not_offered',
+          call_offer_count: 0,
+        },
+      });
+    },
+  );
+
+  it('starts a fresh exploratory sale and spends only its first call invitation before course selection', () => {
+    const result = authorize({
+      state: state({
+        selected_offering_code: 'excel_integral',
+        selected_payment_plan: 'one_time',
+        stage: 'closed',
+        call_preference: 'chat',
+        call_offer_status: 'declined',
+        call_offer_count: 2,
+        payment_reported_at: '2026-10-20T12:00:00.000Z',
+      }),
+      mayOfferCall: true,
+      customerText: 'No sé si Redes Informáticas es para mí',
+      proposal: proposal({
+        move: {
+          schema_version: 1,
+          move: 'ask_course_information',
+          secondary_moves: [],
+          vetoes: [],
+          course_reference: 'redes',
+          confidence: 1,
+        },
+        response: {
+          messages: ['Te cuento cómo puede encajar con lo que buscás.'],
+          call_offer: 'Si querés, te llamo y vemos juntos si este curso es el indicado para vos.',
+        },
+      }),
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      discussed_offering_code: 'redes_informaticas',
+      transition: {
+        selected_offering_code: null,
+        selected_payment_plan: null,
+        stage: 'exploring',
+        call_preference: 'unknown',
+        call_offer_status: 'offered',
+        call_offer_count: 1,
+        awaiting_reply: 'call_or_chat',
+        payment_reported: false,
+        reset_payment_reported: true,
+      },
+    });
+  });
+
+  it('counts select-course plus call as the first invitation of the new sales cycle', () => {
+    const result = authorize({
+      state: state({
+        selected_offering_code: 'excel_integral',
+        stage: 'closed',
+        call_preference: 'chat',
+        call_offer_status: 'declined',
+        call_offer_count: 2,
+      }),
+      mayOfferCall: true,
+      customerText: 'Quiero Redes Informáticas pero tengo dudas',
+      proposal: proposal({
+        move: {
+          schema_version: 1,
+          move: 'select_course',
+          secondary_moves: [],
+          vetoes: [],
+          course_reference: 'redes',
+          confidence: 1,
+        },
+        response: {
+          messages: ['Redes Informáticas queda como foco y podemos revisar tus dudas.'],
+          call_offer: 'Si querés, te llamo y lo vemos con calma.',
+        },
+      }),
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      transition: {
+        selected_offering_code: 'redes_informaticas',
+        stage: 'course_selected',
+        call_offer_status: 'offered',
+        call_offer_count: 1,
+      },
+    });
+  });
+
+  it('preserves checkout and package identity when asking about an included bonus course', () => {
+    const result = authorize({
+      state: state({
+        selected_offering_code: 'redes_informaticas',
+        selected_payment_plan: 'one_time',
+        stage: 'payment_link_sent',
+        call_preference: 'chat',
+        call_offer_status: 'declined',
+        call_offer_count: 2,
+        payment_link_request: {
+          status: 'consumed',
+          offering_code: 'redes_informaticas',
+          payment_plan: 'one_time',
+          requested_by_turn_id: null,
+          resolved_by_decision_id: null,
+        },
+      }),
+      customerText: 'Qué incluye Excel, que viene bonificado?',
+      courseBonus: {
+        enabled: false,
+        max_bonus_courses: 2,
+        may_offer_bonus: false,
+        status: 'accepted',
+        package_status: 'attached',
+        may_schedule_checkin: false,
+        may_request_review: false,
+        may_accept_offer: false,
+        may_send_promoted_payment: true,
+        promotion_code: 'redes_con_excel',
+        interest_offering_code: 'redes_informaticas',
+        bonus_offerings: [{ code: 'excel_integral', display_name: 'Excel Integral', position: 1 }],
+      },
+      proposal: proposal({
+        move: {
+          schema_version: 1,
+          move: 'ask_course_information',
+          secondary_moves: [],
+          vetoes: [],
+          course_reference: 'excel',
+          confidence: 1,
+        },
+        response: { messages: ['Te cuento qué incluye Excel Integral dentro de tu paquete.'] },
+      }),
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      discussed_offering_code: 'excel_integral',
+      transition: {
+        selected_offering_code: 'redes_informaticas',
+        selected_payment_plan: 'one_time',
+        stage: 'payment_link_sent',
+        call_preference: 'chat',
+        call_offer_status: 'declined',
+        call_offer_count: 2,
+        payment_link_request: { status: 'consumed', offering_code: 'redes_informaticas' },
+      },
+    });
+  });
+
+  it('preserves the paid package when the customer requests a call about its bonus course', () => {
+    const result = authorize({
+      state: state({
+        selected_offering_code: 'redes_informaticas',
+        selected_payment_plan: 'one_time',
+        stage: 'payment_link_sent',
+        call_preference: 'unknown',
+        call_offer_status: 'not_offered',
+        call_offer_count: 0,
+        payment_link_request: {
+          status: 'consumed',
+          offering_code: 'redes_informaticas',
+          payment_plan: 'one_time',
+          requested_by_turn_id: null,
+          resolved_by_decision_id: null,
+        },
+      }),
+      customerText: 'Llamame para explicarme Excel, que viene incluido',
+      courseBonus: {
+        enabled: false,
+        max_bonus_courses: 2,
+        may_offer_bonus: false,
+        status: 'accepted',
+        package_status: 'attached',
+        may_schedule_checkin: false,
+        may_request_review: false,
+        may_accept_offer: false,
+        may_send_promoted_payment: true,
+        promotion_code: 'redes_con_excel',
+        interest_offering_code: 'redes_informaticas',
+        bonus_offerings: [{ code: 'excel_integral', display_name: 'Excel Integral', position: 1 }],
+      },
+      proposal: proposal({
+        move: {
+          schema_version: 1,
+          move: 'request_call',
+          secondary_moves: [],
+          vetoes: [],
+          course_reference: 'excel',
+          confidence: 1,
+        },
+        response: { messages: ['Claro, coordinemos la llamada para revisar Excel dentro de tu paquete.'] },
+      }),
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      discussed_offering_code: 'excel_integral',
+      transition: {
+        selected_offering_code: 'redes_informaticas',
+        selected_payment_plan: 'one_time',
+        stage: 'payment_link_sent',
+        call_preference: 'call',
+        call_offer_status: 'accepted',
+        payment_link_request: { status: 'consumed', offering_code: 'redes_informaticas' },
+      },
+    });
+  });
+
+  it('keeps the call-offer ledger when the customer compares courses inside the same active sale', () => {
+    const result = authorize({
+      state: state({
+        selected_offering_code: 'excel_integral',
+        stage: 'exploring',
+        call_preference: 'chat',
+        call_offer_status: 'declined',
+        call_offer_count: 1,
+      }),
+      customerText: 'Me interesa más Redes Informáticas',
+      proposal: proposal({
+        move: {
+          schema_version: 1,
+          move: 'select_course',
+          secondary_moves: [],
+          vetoes: [],
+          course_reference: 'redes',
+          confidence: 1,
+        },
+      }),
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      transition: {
+        selected_offering_code: 'redes_informaticas',
+        call_preference: 'chat',
+        call_offer_status: 'declined',
+        call_offer_count: 1,
+      },
+    });
+  });
+
   it.each([
     {from:'excel_integral',to:'redes_informaticas',reference:'redes',blocked:true},
     {from:'redes_informaticas',to:'excel_integral',reference:'excel',blocked:false},

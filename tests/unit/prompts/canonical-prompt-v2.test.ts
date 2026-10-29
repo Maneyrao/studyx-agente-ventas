@@ -15,7 +15,7 @@ const source = readFileSync(
 // Exact-prose assertions from v41 would preserve the overloaded prompt.
 describe('canonical prompt deployment parity', () => {
   it('loads the same source used to generate the deployed behavior', () => {
-    expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v99');
+    expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v100');
     expect(STUDYX_AGENT_A_CANONICAL_PROMPT).toBe(source);
   });
 
@@ -27,5 +27,18 @@ describe('canonical prompt deployment parity', () => {
     expect(source).toContain('request_promotion_review');
     expect(source).toContain('schedule_price_objection_checkin');
     expect(source).toContain('No bajes ni cambies el precio');
+  });
+
+  it('ships the complete sales system requested by Lisandro instead of a compressed summary', () => {
+    expect(source).toContain('## Mentalidad de venta');
+    expect(source).toContain('## Descubrir lo justo');
+    expect(source).toContain('## Construir valor');
+    expect(source).toContain('## Cierres de prueba y cierre');
+    expect(source).toContain('### Escalera de negociación');
+    expect(source).toContain('### Mapa de afinidades');
+    expect(source).toContain('1. **Valor:**');
+    expect(source).toContain('2. **Cuotas:**');
+    expect(source).toContain('5. **Bonificación:**');
+    expect(source).toContain('Una objeción no es un no: es información');
   });
 });

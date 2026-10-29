@@ -143,6 +143,8 @@ export interface ConversationStateTransitionV1 {
   readonly call_offer_count?: 0 | 1 | 2;
   readonly awaiting_reply: AwaitingReplyV1;
   readonly payment_reported: boolean;
+  /** Clears a payment claim from a previous course when a new sale starts. */
+  readonly reset_payment_reported?: boolean;
   /** Omitido por rutas legacy: en ese caso el store conserva el valor actual. */
   readonly payment_link_request?: PaymentLinkRequestV1 | null;
   /**

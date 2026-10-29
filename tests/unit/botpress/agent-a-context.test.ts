@@ -2180,6 +2180,96 @@ it('keeps the exhausted call budget authoritative despite a retrieved preference
   expect(context.capabilities.may_request_call_now).toBe(false);
 });
 
+it('opens a fresh call budget when a terminal sale receives an exact inquiry about another course', () => {
+  const claimed = claimedTurn();
+  claimed.conversation_state_v1 = {
+    ...claimed.conversation_state_v1!,
+    selected_offering_code: 'redes-informaticas',
+    selected_payment_plan: 'monthly_12',
+    stage: 'closed',
+    call_preference: 'chat',
+    call_offer_status: 'declined',
+    call_offer_count: 2,
+    awaiting_reply: 'none',
+    payment_reported: true,
+  };
+  claimed.catalog_resolution = {
+    kind: 'exact', offeringCode: 'curso-1', displayName: 'Curso 1', academy: 'Tecnología', match: 'canonical',
+  };
+  claimed.context.batch_messages[0] = {
+    ...claimed.context.batch_messages[0]!,
+    content: 'Ahora quiero saber si Curso 1 me sirve para trabajar',
+  };
+
+  const context = buildAgentAContextV1(claimed)!;
+
+  expect(context.commercial_state).toMatchObject({
+    selected_offering_code: null,
+    selected_payment_plan: null,
+    stage: 'exploring',
+    call_preference: 'unknown',
+    call_offer_status: 'not_offered',
+    call_offer_count: 0,
+    awaiting_reply: 'none',
+    payment_reported: false,
+  });
+  expect(context.catalog.selected_offering?.code).toBe('curso-1');
+  expect(context.capabilities.may_offer_call).toBe(true);
+});
+
+it('does not turn an included bonus-course question into a new sale after checkout', () => {
+  const claimed = claimedTurn();
+  claimed.conversation_state_v1 = {
+    ...claimed.conversation_state_v1!,
+    selected_offering_code: 'redes-informaticas',
+    selected_payment_plan: 'monthly_12',
+    stage: 'payment_link_sent',
+    call_preference: 'chat',
+    call_offer_status: 'declined',
+    call_offer_count: 2,
+    awaiting_reply: 'none',
+  };
+  claimed.course_bonus_capability = {
+    enabled: false,
+    max_bonus_courses: 2,
+    may_offer_bonus: false,
+    status: 'accepted',
+    may_schedule_checkin: false,
+    may_request_review: false,
+    may_accept_offer: false,
+    may_send_promoted_payment: true,
+    promotion_code: 'redes-con-curso-1',
+    promotion_cycle_id: UUID,
+    offer_version: 1,
+    package_status: 'attached',
+    interest_offering_code: 'redes-informaticas',
+    accepted_at: NOW,
+    bonus_offerings: [{ code: 'curso-1', display_name: 'Curso 1', position: 1, offered_at: NOW }],
+    delivered_bonus_offerings: [{ code: 'curso-1', display_name: 'Curso 1', position: 1 }],
+  };
+  claimed.catalog_resolution = {
+    kind: 'exact', offeringCode: 'curso-1', displayName: 'Curso 1', academy: 'Tecnología', match: 'canonical',
+  };
+  claimed.context.batch_messages[0] = {
+    ...claimed.context.batch_messages[0]!,
+    content: 'Qué incluye Curso 1, que venía bonificado?',
+  };
+
+  const context = buildAgentAContextV1(claimed)!;
+
+  expect(context.commercial_state).toMatchObject({
+    selected_offering_code: 'redes-informaticas',
+    selected_payment_plan: 'monthly_12',
+    stage: 'payment_link_sent',
+    call_offer_count: 2,
+    promotion: { promotion_code: 'redes-con-curso-1', status: 'accepted' },
+  });
+  expect(context.capabilities.course_bonus).toMatchObject({
+    interest_offering_code: 'redes-informaticas',
+    package_status: 'attached',
+  });
+});
+
 it('does not authorize an immediate call when contact intake was not loaded', () => {
   const claimed = claimedTurn();
   delete (claimed as Partial<ClaimedTurn>).contact_intake_missing;

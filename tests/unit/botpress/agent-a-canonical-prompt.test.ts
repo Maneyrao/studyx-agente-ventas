@@ -8,13 +8,13 @@ describe('Agent A canonical sales prompt', () => {
   it('ships the complete approved prompt and a byte-equivalent generated module', () => {
     const prompt = readFileSync(PROMPT_PATH, 'utf8');
 
-    expect(prompt.match(/\n/g) ?? []).toHaveLength(95);
+    expect(prompt.match(/\n/g) ?? []).toHaveLength(148);
     expect(createHash('sha256').update(prompt).digest('hex')).toMatch(/^[a-f0-9]{64}$/u);
     expect(existsSync(GENERATED_PATH)).toBe(true);
 
     const generated = readFileSync(GENERATED_PATH, 'utf8');
     expect(generated).toContain(`export const STUDYX_AGENT_A_CANONICAL_PROMPT = ${JSON.stringify(prompt)} as const;`);
-    expect(generated).toContain("export const STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION = 'studyx-agent-a-canonical-v99' as const;");
+    expect(generated).toContain("export const STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION = 'studyx-agent-a-canonical-v100' as const;");
   });
 
   it('combines warm Meta-lead selling with autonomous objection and post-call handling', () => {
@@ -22,7 +22,7 @@ describe('Agent A canonical sales prompt', () => {
 
     expect(prompt).toMatch(/leads? c[aá]lidos?.*Meta/iu);
     expect(prompt).toMatch(/iniciativa[\s\S]*llamada[\s\S]*inscripci[oó]n/iu);
-    expect(prompt).toMatch(/objeci[oó]n[\s\S]*entiend[ea][\s\S]*personaliza[\s\S]*avanza/iu);
+    expect(prompt).toMatch(/una objeci[oó]n no es un no[\s\S]*reconoce[\s\S]*a[ií]sla[\s\S]*responde[\s\S]*paso concreto/iu);
     expect(prompt).toMatch(/no fue atendida[\s\S]*reintentar[\s\S]*chat/iu);
     expect(prompt).toMatch(/report_payment[\s\S]*payment_verification[\s\S]*[uú]nica autoridad/iu);
     expect(prompt).toMatch(/`paid` con `paid_at`[\s\S]*state:payment_verified:v1/iu);
@@ -169,17 +169,18 @@ describe('Agent A canonical sales prompt', () => {
     expect(prompt).toMatch(/objeci[oó]n persistente/iu);
   });
 
-  it('handles price objections by building value without reframing or changing the price', () => {
+  it('handles price objections with value and one safe installment rung without changing the price', () => {
     const prompt = readFileSync(PROMPT_PATH, 'utf8');
 
     expect(prompt).toMatch(/pregunta directa[^.]*precio[^.]*responde[^.]*hechos autorizados/iu);
-    expect(prompt).toMatch(/objeci[oó]n de precio[^.]*no uses[^.]*cuotas[^.]*comparaciones/iu);
+    expect(prompt).toContain('plan autorizado de 12 pagos de USD 30 como reencuadre de pago');
+    expect(prompt).toContain('sin comparaciones diarias');
     expect(prompt).toMatch(/no bajes ni cambies el precio/iu);
     expect(prompt).toMatch(/consulta de precio[^.]*no la habilita/iu);
     expect(prompt).toMatch(/modo directo[\s\S]*offer_course_bonus/iu);
     expect(prompt).toMatch(/sin prometer resultados[^.]*emprender[^.]*ampliar ingresos/iu);
     expect(prompt).not.toMatch(/curso gratis|por el mismo valor/iu);
-    expect(prompt).toMatch(/limitaci[oó]n real de presupuesto[^.]*sin presionar/iu);
+    expect(prompt).toMatch(/limitaci[oó]n real de presupuesto[\s\S]{0,180}reconoce sin presionar/iu);
   });
 
   it('adapts to the customer register and delays intake until it executes a chosen next step', () => {
@@ -221,7 +222,7 @@ describe('Agent A canonical sales prompt', () => {
     expect(prompt).toMatch(/situaci[oó]n actual[\s\S]*deseo[\s\S]*motivaci[oó]n[\s\S]*freno/iu);
     expect(prompt).toMatch(/lentes[^.]*no como secuencia r[ií]gida/iu);
     expect(prompt).toMatch(/informaci[oó]n del cliente[\s\S]*hecho verificado[\s\S]*utilidad/iu);
-    expect(prompt).toMatch(/objeci[oó]n[\s\S]*entiend[ea][\s\S]*personaliza[\s\S]*comprueba/iu);
+    expect(prompt).toMatch(/manejo de objeciones[\s\S]*objetivo, motivaci[oó]n y situaci[oó]n[\s\S]*paso concreto/iu);
     expect(prompt).toMatch(/memory_candidates[\s\S]*hechos expresados/iu);
   });
 
@@ -231,8 +232,8 @@ describe('Agent A canonical sales prompt', () => {
     expect(prompt).toMatch(/como m[aá]ximo una pregunta principal[^.]*informaci[oó]n comercial [uú]til/iu);
     expect(prompt).toMatch(/objetivo[^.]*motivaci[oó]n[^.]*freno[^.]*recomendaci[oó]n[^.]*valor[^.]*objeci[oó]n[^.]*cierre/iu);
     expect(prompt).toMatch(/no vuelvas a preguntar[^.]*ya (?:dijo|expres[oó]|est[aá])/iu);
-    expect(prompt).toMatch(/objeci[oó]n[^.]*ambigua[^.]*a[ií]sla[^.]*una pregunta breve/iu);
-    expect(prompt).toMatch(/hecho autorizado[^.]*utilidad personal[^.]*comprueba[^.]*avanza/iu);
+    expect(prompt).toMatch(/a[ií]sla el freno s[oó]lo si es ambiguo/iu);
+    expect(prompt).toMatch(/informaci[oó]n del cliente[^.]*necesidad[^.]*hecho verificado[^.]*utilidad personal/iu);
     expect(prompt).not.toMatch(/Pregunta el objetivo s[oó]lo para recomendar/iu);
   });
 

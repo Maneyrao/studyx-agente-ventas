@@ -1531,7 +1531,9 @@ describe('prepareAgentTurnV2', () => {
       },
       proposal: proposal({
         move: {
-          schema_version: 1, move, secondary_moves: [], vetoes: [],
+          schema_version: 1, move,
+          secondary_moves: move === 'request_call' ? ['select_course'] : [],
+          vetoes: [],
           course_reference: 'excel', confidence: 1,
         },
         response: { messages: ['Perfecto, seguimos únicamente con Excel Integral.'] },
@@ -1545,6 +1547,70 @@ describe('prepareAgentTurnV2', () => {
       abandons_course_bonus_offer: true,
       commercial_interest_offering_code: 'excel_integral',
       transition: { selected_offering_code: 'excel_integral' },
+    });
+  });
+
+  it('clears the previous promotion focus when a closed sale starts generic catalog exploration', async () => {
+    const catalogIndex: CatalogIndexView = {
+      ...index,
+      offerings_total: 2,
+      offerings: [
+        ...index.offerings,
+        { code: 'excel_integral', display_name: 'Excel Integral', academy: 'Tecnología', aliases: ['excel'] },
+      ],
+    };
+    const businessContext: BusinessContextView = {
+      ...business,
+      offerings: [
+        ...business.offerings,
+        { ...business.offerings[0]!, code: 'excel_integral', display_name: 'Excel Integral', aliases: ['excel'] },
+      ],
+    };
+    const prepared = await prepareAgentTurnV2({
+      turn: { id: ids.turn, workspace_id: ids.workspace, conversation_id: ids.conversation, contact_id: ids.contact },
+      workspace_slug: 'studyx', business_context: businessContext, catalog_index: catalogIndex,
+      current_customer_messages: ['Qué otros cursos tienen?'],
+      course_bonus_capability: {
+        status: 'accepted',
+        may_schedule_checkin: false,
+        may_request_review: false,
+        may_accept_offer: false,
+        may_send_promoted_payment: true,
+        promotion_code: 'redes_con_excel',
+        interest_offering_code: 'redes_informaticas',
+        bonus_offerings: [{ code: 'excel_integral', display_name: 'Excel Integral', position: 1 }],
+      },
+      proposal: proposal({
+        move: {
+          schema_version: 1, move: 'browse_catalog', secondary_moves: [], vetoes: [], confidence: 1,
+        },
+        response: { messages: ['Podemos ver Redes Informáticas o Excel Integral según lo que quieras lograr.'] },
+      }),
+    }, {
+      state_store: store(state({
+        selected_offering_code: 'redes_informaticas',
+        selected_payment_plan: 'monthly_6',
+        stage: 'closed',
+        call_preference: 'chat',
+        call_offer_status: 'declined',
+        call_offer_count: 2,
+        payment_reported_at: '2026-10-20T12:00:00.000Z',
+      })),
+      now: () => Date.parse(index.as_of),
+    });
+
+    expect(prepared).toMatchObject({
+      commercial_interest_offering_code: null,
+      records_price_objection: false,
+      resets_promotion_context: true,
+      transition: {
+        selected_offering_code: null,
+        selected_payment_plan: null,
+        stage: 'exploring',
+        call_offer_count: 0,
+        payment_reported: false,
+        reset_payment_reported: true,
+      },
     });
   });
 

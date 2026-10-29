@@ -69,9 +69,9 @@ describe('direct bonus production cutover invariants', () => {
 
   it('pins provenance without claiming missing provider or broad-suite gates green', () => {
     const text = cutover();
-    for (const fragment of ['studyx-agent-a-canonical-v99','studyx-agent-a-brain-v135',
+    for (const fragment of ['studyx-agent-a-canonical-v100','studyx-agent-a-brain-v136',
       '17a91049c10618e34274ea096ec9e29abcb527b3',
-      '7ec207ffaff5a3118bdec934783326a1aa7b8bfeb13a003262a7d5bb12b27c87',
+      '103810c663bfb97a2589ac3681e10480a299bbb6edd0f03c57f98da129c74711',
       '889 passed, 7 failed, 1 skipped','contact-profile','clock/source-order sensitivity',
       'Retell/Xendra','supports_partial_recovery:true','Lucas','Thiago',
       'RELEASE_MANIFEST_TURN_PROMPT_REQUIRED']) expect(text).toContain(fragment);

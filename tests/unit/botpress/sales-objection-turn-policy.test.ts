@@ -132,6 +132,25 @@ describe('evaluateSalesObjectionTurnV1', () => {
 
 describe('responseProgressesRepeatedPriceObjectionV1', () => {
   it.each([
+    'Con 12 pagos de USD 30 podés empezar sin pagar los USD 360 de una vez.',
+    'Te recomiendo el plan de 12 pagos de USD 30; el total sigue siendo USD 360.',
+  ])('accepts the unused authorized installment rung without price minimization: %s', (message) => {
+    expect(responseProgressesRepeatedPriceObjectionV1({
+      messages: [message],
+      allow_price_objection_installment_reframe: true,
+      prior_assistant_messages: ['Por lo que querés lograr, el curso te da una base práctica para empezar.'],
+    })).toBe(true);
+  });
+
+  it('rejects the installment rung when it merely repeats terms already used', () => {
+    expect(responseProgressesRepeatedPriceObjectionV1({
+      messages: ['Con 12 pagos de USD 30 podés empezar sin pagar los USD 360 de una vez.'],
+      allow_price_objection_installment_reframe: true,
+      prior_assistant_messages: ['También está el plan de 12 pagos de USD 30.'],
+    })).toBe(false);
+  });
+
+  it.each([
     { allow_requested_payment_terms: true },
     { customer_expressed_real_budget_limit: true },
   ])('allows a neutral single-payment count with authorization %j', (authorization) => {
@@ -241,6 +260,24 @@ describe('responseProgressesRepeatedPriceObjectionV1', () => {
 });
 
 describe('responseAvoidsDisallowedPriceReframingV1', () => {
+  it('allows one neutral authorized installment reframe while handling a price objection', () => {
+    expect(responseAvoidsDisallowedPriceReframingV1({
+      messages: ['Con 12 pagos de USD 30 podés empezar sin pagar los USD 360 de una vez.'],
+      allow_price_objection_installment_reframe: true,
+    })).toBe(true);
+  });
+
+  it.each([
+    'Son solo USD 30 al mes.',
+    'La cuota de USD 30 es la opción más accesible.',
+    'Es menos de un dólar por día.',
+  ])('keeps minimization forbidden during an authorized installment reframe: %s', (message) => {
+    expect(responseAvoidsDisallowedPriceReframingV1({
+      messages: [message],
+      allow_price_objection_installment_reframe: true,
+    })).toBe(false);
+  });
+
   it.each([
     'Para tu negocio, lo aprendido te puede ayudar a vender y puedes pagarlo en 12 cuotas de USD 30.',
     'Para tu trabajo, te puede ayudar a crecer y es menos de un dólar por día.',

@@ -173,9 +173,11 @@ export async function recordPromotionConversationContextV1(
     readonly source_turn_id: string;
     readonly discussed_offering_code: string | null;
     readonly records_price_objection: boolean;
+    readonly reset_context?: boolean;
   },
 ): Promise<{ interest_offering_code: string | null; price_objection_count: number } | null> {
-  if (input.discussed_offering_code === null && !input.records_price_objection) return null;
+  if (input.discussed_offering_code === null && !input.records_price_objection
+    && input.reset_context !== true) return null;
   const rows = await db<Array<{
     interest_offering_code: string | null;
     price_objection_count: number;
@@ -189,7 +191,7 @@ export async function recordPromotionConversationContextV1(
       ${input.conversation_id}::uuid,
       ${input.contact_id}::uuid,
       ${input.discussed_offering_code},
-      ${input.records_price_objection ? 1 : 0},
+      ${input.reset_context === true ? 0 : input.records_price_objection ? 1 : 0},
       ${input.source_turn_id}::uuid
     WHERE EXISTS (
       SELECT 1 FROM conversation_sales_context_states_v1 state
@@ -198,11 +200,15 @@ export async function recordPromotionConversationContextV1(
         AND state.contact_id = ${input.contact_id}::uuid
     )
     ON CONFLICT (workspace_id, conversation_id) DO UPDATE SET
-      interest_offering_code = COALESCE(
-        EXCLUDED.interest_offering_code,
-        conversation_promotion_context_v1.interest_offering_code
-      ),
+      interest_offering_code = CASE
+        WHEN ${input.reset_context === true} THEN NULL
+        ELSE COALESCE(
+          EXCLUDED.interest_offering_code,
+          conversation_promotion_context_v1.interest_offering_code
+        )
+      END,
       price_objection_count = CASE
+        WHEN ${input.reset_context === true} THEN 0
         WHEN EXCLUDED.interest_offering_code IS NOT NULL
           AND EXCLUDED.interest_offering_code IS DISTINCT FROM
             conversation_promotion_context_v1.interest_offering_code

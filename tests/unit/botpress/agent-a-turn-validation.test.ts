@@ -295,7 +295,7 @@ describe('validación de la propuesta del turno', () => {
     expect(rejection).toBeNull();
   });
 
-  it('rechaza usar una cuota autorizada como táctica para abaratar una objeción de precio', () => {
+  it('permite reencuadrar una objeción de precio con una cuota autorizada y valor contextual', () => {
     const paymentFactId = 'payment:redes-informaticas:monthly_12:price:v1';
     const rejection = validateAgentATurnProposalV1({
       proposal: proposal({
@@ -323,10 +323,7 @@ describe('validación de la propuesta del turno', () => {
       rejection_id: '00000000-0000-4000-8000-000000000001',
     });
 
-    expect(rejection?.rejections).toContainEqual({
-      code: 'FACT_VALUE_MISMATCH',
-      subject: 'price_objection_reframe',
-    });
+    expect(rejection).toBeNull();
   });
 
   it('rechaza también una mensualidad autorizada presentada como más accesible', () => {

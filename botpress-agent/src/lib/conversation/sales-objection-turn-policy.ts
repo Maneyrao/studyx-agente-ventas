@@ -180,6 +180,7 @@ export function responseAvoidsDisallowedPriceReframingV1(input: {
   readonly messages: readonly string[];
   readonly call_offer?: string | null;
   readonly allow_requested_payment_terms?: boolean;
+  readonly allow_price_objection_installment_reframe?: boolean;
   readonly customer_expressed_real_budget_limit?: boolean;
   readonly authorized_bonus_offering_names?: readonly string[];
   readonly paid_offering_names?: readonly string[];
@@ -197,11 +198,13 @@ export function responseAvoidsDisallowedPriceReframingV1(input: {
     || /\b(?:solo|apenas)\b[^.!?\n]{0,32}\b(?:usd|\d+|dolar(?:es)?)\b[^.!?\n]{0,24}\b(?:al\s+mes|mensual(?:es|mente)?)\b/u.test(monetaryEmphasis)
     || /\b(?:opcion|plan|cuota)\s+mensual\b[^.!?\n]{0,32}\b(?:mas\s+)?(?:accesible|barat[oa]|baj[oa]|livian[oa])\b/u.test(text)
     || /\b(?:cuota|plan|opcion)\b[^.!?\n]{0,40}\b(?:mas\s+)?(?:baj[oa]|chic[oa]|livian[oa]|accesible|barat[oa])\b/u.test(text)
-    || /\b(?:te\s+)?recomiend\p{L}*\b[^.!?\n]{0,56}\b(?:cuota|plan|pagos?|mensualidad)\b/u.test(text)
     || /\b(?:asi|porque)\b[^.!?\n]{0,32}\b(?:resulta|queda|es|sea)\b[^.!?\n]{0,20}\b(?:mas\s+)?(?:accesible|barat[oa]|livian[oa])\b/u.test(text)
     || /\b(?:menos\s+pesa|pesa\s+menos)\b/u.test(text);
   const installmentPitch = monthlyMinimization
-    || (!input.allow_requested_payment_terms && !input.customer_expressed_real_budget_limit && installmentFacts);
+    || (!input.allow_requested_payment_terms
+      && !input.allow_price_objection_installment_reframe
+      && !input.customer_expressed_real_budget_limit
+      && installmentFacts);
   const dailyComparison = /\b(?:menos\s+de\s+)?(?:usd\s*)?(?:\d+(?:[.,]\d+)?|un[oa]?)\s*(?:dolar(?:es)?)?\s+(?:por|al)\s+dia\b/u.test(text)
     || /\b(?:cafe|gasto\s+cotidiano|lo\s+que\s+gastas?)\b[^.!?\n]{0,56}\b(?:por\s+dia|diario|inversion|cuesta|precio)\b/u.test(text)
     || /\b(?:inversion|cuesta|precio)\b[^.!?\n]{0,56}\b(?:cafe|gasto\s+cotidiano|lo\s+que\s+gastas?)\b/u.test(text);
@@ -228,6 +231,8 @@ export function responseAvoidsDisallowedPriceReframingV1(input: {
 export function responseProgressesRepeatedPriceObjectionV1(input: {
   readonly messages: readonly string[];
   readonly call_offer?: string | null;
+  readonly allow_price_objection_installment_reframe?: boolean;
+  readonly prior_assistant_messages?: readonly string[];
   readonly customer_expressed_real_budget_limit?: boolean;
   readonly authorized_bonus_offering_names?: readonly string[];
   readonly paid_offering_names?: readonly string[];
@@ -246,6 +251,18 @@ export function responseProgressesRepeatedPriceObjectionV1(input: {
   // Acknowledge or close naturally after a proven budget limit. Repeating
   // terms still needs a diagnostic or contextual value advance below.
   const repeatsInstallments = mentionsInstallmentTermsV1(normalized(input.messages.join('\n')));
+  const priorAssistantText = normalized((input.prior_assistant_messages ?? []).join('\n'));
+  const alreadyUsedInstallmentRung = mentionsInstallmentTermsV1(priorAssistantText)
+    || /\b(?:cuota|plan|pagos?|mensualidad)\b[^.!?\n]{0,80}\b(?:mes|mensual|baj\p{L}*|pesa|usd|dolar(?:es)?|\d+)\b/u
+      .test(priorAssistantText);
+  // Exact authorized installments are a genuine negotiation step once. They
+  // become sterile repetition only after an earlier assistant turn already
+  // used that rung; wording alone cannot reveal that temporal distinction.
+  if (input.allow_price_objection_installment_reframe
+    && repeatsInstallments
+    && !alreadyUsedInstallmentRung) {
+    return true;
+  }
   if (input.customer_expressed_real_budget_limit && !repeatsInstallments
     && input.messages.some((message) => message.trim().length > 0)) {
     return true;

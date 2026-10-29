@@ -1885,6 +1885,7 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
           source_turn_id: turn.id,
           discussed_offering_code: preparedAgentTurn.commercial_interest_offering_code,
           records_price_objection: preparedAgentTurn.records_price_objection,
+          reset_context: preparedAgentTurn.resets_promotion_context,
         });
       }
       if (preparedAgentTurn && canonicalWorkspaceId && committedBusinessAction

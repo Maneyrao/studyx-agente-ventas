@@ -1901,6 +1901,10 @@ export function validateAgentATurnProposalV1(input: {
     salesObjection.kind === 'repeated_price_objection'
     && !responseProgressesRepeatedPriceObjectionV1({
       ...input.proposal.response,
+      allow_price_objection_installment_reframe: true,
+      prior_assistant_messages: input.context.turn.recent_turns
+        .filter((turn) => turn.direction === 'outbound')
+        .map((turn) => turn.content),
       customer_expressed_real_budget_limit: customerExpressesRealBudgetLimitV1(currentCustomerText),
       authorized_bonus_offering_names: authorizedBonusOfferingNames,
       paid_offering_names:paidOfferingNames,
@@ -1915,6 +1919,7 @@ export function validateAgentATurnProposalV1(input: {
     && !responseAvoidsDisallowedPriceReframingV1({
       ...input.proposal.response,
       allow_requested_payment_terms: salesObjection.kind === 'price_question_with_objection',
+      allow_price_objection_installment_reframe: true,
       customer_expressed_real_budget_limit: customerExpressesRealBudgetLimitV1(currentCustomerText),
       authorized_bonus_offering_names: authorizedBonusOfferingNames,
       paid_offering_names:paidOfferingNames,

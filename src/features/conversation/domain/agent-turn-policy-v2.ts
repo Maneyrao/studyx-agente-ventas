@@ -37,6 +37,8 @@ export interface AgentTurnStateTransitionV2 {
   readonly call_offer_count: 0 | 1 | 2;
   readonly awaiting_reply: AwaitingReplyV1;
   readonly payment_reported: boolean;
+  /** Backend-owned boundary: a new sale must not inherit another course's claim. */
+  readonly reset_payment_reported?: true;
   readonly payment_link_request: PaymentLinkRequestV1 | null;
 }
 
@@ -175,10 +177,35 @@ export function authorizeAgentTurnV2(input: {
   // The durable offer owns the paid course even when the customer names the
   // included course while accepting it.
   const changesCourse = !acceptsPresentedPromotion && (moves.has('select_course')
-    || (moves.has('request_call') && requestedOffering !== null));
+    || (moves.has('request_call')
+      && requestedOffering !== null
+      // Asking to discuss an included course by phone does not replace the
+      // paid course or abandon its checkout. Keep it as discussed context.
+      && !requestedOfferingIsPresentedBonus));
+  const requestedOfferingBelongsToCurrentPackage = requestedOffering !== null
+    && (requestedOffering === capabilityInterestOffering || requestedOfferingIsPresentedBonus);
+  const discussesDifferentOffering = requestedOffering !== null
+    && requestedOffering !== state.selected_offering_code
+    && !requestedOfferingBelongsToCurrentPackage;
+  const startsFreshSalesCycle = state.stage === 'closed'
+    ? moves.has('browse_catalog')
+      || (discussesDifferentOffering && (moves.has('ask_course_information') || changesCourse))
+    : state.stage === 'payment_link_sent'
+      // A delivered checkout remains the active sale while the customer asks
+      // comparative or package questions. Only an explicit model-owned switch
+      // can abandon it for another paid course.
+      ? discussesDifferentOffering && changesCourse
+      : false;
+  const effectiveCallPreference = startsFreshSalesCycle ? 'unknown' as const : state.call_preference;
+  const effectiveCallOfferStatus = startsFreshSalesCycle ? 'not_offered' as const : state.call_offer_status;
+  const effectiveCallOfferCount = startsFreshSalesCycle ? 0 : state.call_offer_count;
+  const effectiveStage = startsFreshSalesCycle ? 'exploring' as const : state.stage;
+  const effectiveAwaitingReply = startsFreshSalesCycle ? 'none' as const : state.awaiting_reply;
   const selectedOfferingCandidate = acceptsPresentedPromotion
     ? capabilityInterestOffering
-    : changesCourse ? requestedOffering : state.selected_offering_code;
+    : changesCourse ? requestedOffering
+      : startsFreshSalesCycle ? null
+        : state.selected_offering_code;
   const selectedOffering = input.offerings.some(offering => offering.code === selectedOfferingCandidate)
     ? selectedOfferingCandidate : null;
   const acceptedPromotionOwnsBonusReference = input.course_bonus?.status === 'accepted'
@@ -239,7 +266,8 @@ export function authorizeAgentTurnV2(input: {
   const durablePlan = !courseChanged && canonicalPlan(state.selected_payment_plan)
     ? state.selected_payment_plan : null;
   const selectedPlan = invalidCurrentPaymentSelection ? null : selectedCurrentPlan ?? durablePlan;
-  const plannedPaymentReported = moves.has('report_payment') || state.payment_reported_at !== null;
+  const plannedPaymentReported = moves.has('report_payment')
+    || (!startsFreshSalesCycle && state.payment_reported_at !== null);
   const stateFacts = materializeStateFactsV1({
     intake: input.contact_intake,
     planned_payment_reported: plannedPaymentReported,
@@ -284,8 +312,8 @@ export function authorizeAgentTurnV2(input: {
 
   const authoredMessages = [...proposal.response.messages];
   const currentText = (input.current_customer_messages ?? []).join('\n');
-  const resumesAcceptedCall = state.call_preference === 'call'
-    && state.call_offer_status === 'accepted';
+  const resumesAcceptedCall = effectiveCallPreference === 'call'
+    && effectiveCallOfferStatus === 'accepted';
   const completesAcceptedCallIntake = resumesAcceptedCall
     && state.awaiting_reply === 'contact_details'
     && input.call_policy.intake_ready === true
@@ -293,7 +321,7 @@ export function authorizeAgentTurnV2(input: {
   const channelChoice = moves.has('continue_by_chat') || moves.has('decline_call');
   const currentTurnRejectsCallOffer = channelChoice || supportsChatPreferenceV1(
     currentText,
-    state.awaiting_reply === 'call_or_chat',
+    effectiveAwaitingReply === 'call_or_chat',
   );
   const callRequestSupported = !currentTurnRejectsCallOffer
     && !proposal.move.vetoes.includes('call')
@@ -312,12 +340,12 @@ export function authorizeAgentTurnV2(input: {
     ? null
     : dropUnsupportedStateAssertionsV1(authoredCallOffer, stateFacts);
   const mayDeliverCallOffer = input.call_policy.may_offer_call
-    && state.call_offer_count < 2
-    && state.call_preference !== 'call'
-    && state.call_offer_status !== 'accepted'
-    && state.stage !== 'handoff'
-    && state.stage !== 'closed'
-    && state.stage !== 'payment_link_sent'
+    && effectiveCallOfferCount < 2
+    && effectiveCallPreference !== 'call'
+    && effectiveCallOfferStatus !== 'accepted'
+    && effectiveStage !== 'handoff'
+    && effectiveStage !== 'closed'
+    && effectiveStage !== 'payment_link_sent'
     && !plannedPaymentReported
     && !currentTurnRejectsCallOffer
     && !proposal.move.vetoes.includes('call');
@@ -328,7 +356,7 @@ export function authorizeAgentTurnV2(input: {
     (authoredCallOffer !== null && solicitsACall(authoredCallOffer, true))
     || authoredMessages.some((message) => solicitsACall(message))
   );
-  if (proactiveCallOffer && state.call_offer_count >= 2) {
+  if (proactiveCallOffer && effectiveCallOfferCount >= 2) {
     reasons.push('CALL_OFFER_NOT_AUTHORIZED');
   }
   const inspectedMessages = authoredMessages.map((message) => (
@@ -577,14 +605,25 @@ export function authorizeAgentTurnV2(input: {
     ...(rejectionSubjects.length > 0 ? { rejection_subjects: rejectionSubjects } : {}),
   };
 
-  let nextOffering = state.selected_offering_code;
-  let nextPlan = state.selected_payment_plan;
-  let stage = state.stage;
-  let callPreference = state.call_preference;
-  let callOfferStatus = state.call_offer_status;
-  let callOfferCount = state.call_offer_count;
-  let awaitingReply = state.awaiting_reply;
-  let paymentLinkRequest: PaymentLinkRequestV1 | null = state.payment_link_request ?? null;
+  let nextOffering = startsFreshSalesCycle ? null : state.selected_offering_code;
+  let nextPlan = startsFreshSalesCycle ? null : state.selected_payment_plan;
+  let stage = effectiveStage;
+  let callPreference = effectiveCallPreference;
+  let callOfferStatus = effectiveCallOfferStatus;
+  let callOfferCount = effectiveCallOfferCount;
+  let awaitingReply = effectiveAwaitingReply;
+  let paymentLinkRequest: PaymentLinkRequestV1 | null = startsFreshSalesCycle
+    ? null
+    : state.payment_link_request ?? null;
+
+  // The invitation ledger belongs to one sales cycle. A different course
+  // selected after checkout or a closed attempt starts a new sale; carrying
+  // the previous course's two invitations made a valid call impossible.
+  if (startsFreshSalesCycle) {
+    callPreference = 'unknown';
+    callOfferStatus = 'not_offered';
+    callOfferCount = 0;
+  }
 
   if (paymentLinkRequestedNow && selectedOffering !== null && selectedPlan !== null) {
     paymentLinkRequest = {
@@ -670,7 +709,7 @@ export function authorizeAgentTurnV2(input: {
     if (awaitingReply === 'call_or_chat') awaitingReply = 'none';
   }
   if (callOfferCanAdvanceState && !supportedChannelChoice) {
-    callOfferCount = Math.min(2, state.call_offer_count + 1) as 1 | 2;
+    callOfferCount = Math.min(2, callOfferCount + 1) as 1 | 2;
     if (callPreference === 'declined') callPreference = 'chat';
     callOfferStatus = 'offered';
     if (awaitingReply !== 'contact_details'
@@ -737,6 +776,7 @@ export function authorizeAgentTurnV2(input: {
       call_offer_count: callOfferCount,
       awaiting_reply: awaitingReply,
       payment_reported: plannedPaymentReported,
+      ...(startsFreshSalesCycle ? { reset_payment_reported: true as const } : {}),
       payment_link_request: paymentLinkRequest,
     },
   };

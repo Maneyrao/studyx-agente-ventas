@@ -56,7 +56,30 @@ async function fixture() {
 }
 
 run('atomic direct bonus service', () => {
-  it.each(['direct','review','call'] as const)('keeps package identity for gift information, retires it for a call course change (%s)',async mode=>{
+  it('clears historical promotion interest when a new generic sales cycle starts', async () => {
+    const f = await fixture();
+    await recordPromotionConversationContextV1(db!, {
+      ...f.identity,
+      source_turn_id: f.source,
+      discussed_offering_code: f.courses[0].code as string,
+      records_price_objection: true,
+    });
+    const resetTurn = await f.inbound(0);
+
+    expect(await recordPromotionConversationContextV1(db!, {
+      ...f.identity,
+      source_turn_id: resetTurn,
+      discussed_offering_code: null,
+      records_price_objection: false,
+      reset_context: true,
+    })).toEqual({ interest_offering_code: null, price_objection_count: 0 });
+    expect((await db!`SELECT interest_offering_code, price_objection_count
+      FROM conversation_promotion_context_v1
+      WHERE workspace_id=${f.w.id} AND conversation_id=${f.v.id}`)[0])
+      .toEqual({ interest_offering_code: null, price_objection_count: 0 });
+  });
+
+  it.each(['direct','review','call'] as const)('keeps package identity for gift information and a call about the included course (%s)',async mode=>{
     const f=await seedConversationForAgentTurn({selected_offering_code:'entrenamiento_funcional',intake_complete:true});
     const [prior]=await db!`INSERT INTO messages(conversation_id,contact_id,direction,content,created_at)
       VALUES (${f.conversation_id},${f.contact_id},'inbound','Expensive',now()-interval '1 hour') RETURNING id`;
@@ -80,24 +103,7 @@ run('atomic direct bonus service', () => {
         response:{messages:['Podemos revisar el contenido de Inglés 1.'],call_offer:null},proposed_action:{type:'none'},memory_candidates:[]} as never},
       decision:f.placeholderDecision as never,model:f.model as never});
     expect(question.status).toBe('committed');
-    if(mode==='call') {
-      expect((await db!`SELECT status FROM promotion_offers WHERE id=${offer.offer_id}`)[0].status).toBe('cancelled');
-      const [contact]=await db!`SELECT phone FROM contacts WHERE id=${f.contact_id}`;
-      const back=await processInboundMessage({schema_version:1,source:'botpress',channel:'whatsapp',integration_id:'vitest-agent-turn-fixture',
-        external_message_id:randomUUID(),external_conversation_id:`agent-turn-fixture-${f.trace_id}`,
-        external_user_id:`agent-turn-fixture-user-${f.trace_id}`,phone_e164:contact.phone,trace_id:randomUUID(),identity_owner:'agent_a_v1',
-        message:{type:'text',text:'Quiero Entrenamiento Funcional',occurred_at:new Date().toISOString(),reply_to_external_message_id:null}});
-      expect((await commitAgentDecision({turn_id:back.turn_id,trace_id:randomUUID(),supports_multi_outbound:true,
-        agent_turn_v2:{schema_version:2,proposal:{...f.proposalWithCallOfferAndFalsePrice,
-          move:{schema_version:1,move:'select_course',secondary_moves:[],vetoes:[],confidence:1,course_reference:'entrenamiento_funcional'},
-          response:{messages:['Seguimos con Entrenamiento Funcional.'],call_offer:null},proposed_action:{type:'none'},memory_candidates:[]} as never},
-        decision:f.placeholderDecision as never,model:f.model as never})).status).toBe('committed');
-      expect((await db!`SELECT status FROM promotion_offers WHERE id=${offer.offer_id}`)[0].status).toBe('cancelled');
-      expect(await readCourseBonusCapabilityV1({workspace_slug:'studyx',contact_id:f.contact_id,conversation_id:f.conversation_id,
-        channel:'text',selected_offering_code:'entrenamiento_funcional',source_turn_id:back.turn_id},{db:db!}))
-        .toMatchObject({promotion_cycle_id:null,may_accept_offer:false});
-      return;
-    }
+    expect((await db!`SELECT status FROM promotion_offers WHERE id=${offer.offer_id}`)[0].status).toBe('offered');
     const [contact]=await db!`SELECT phone FROM contacts WHERE id=${f.contact_id}`;
     const acceptedTurn=await processInboundMessage({schema_version:1,source:'botpress',channel:'whatsapp',integration_id:'vitest-agent-turn-fixture',
       external_message_id:randomUUID(),external_conversation_id:`agent-turn-fixture-${f.trace_id}`,
@@ -123,7 +129,7 @@ run('atomic direct bonus service', () => {
     expect(await offerDirectCourseBonusV1(db!,{...identity,paid_offering_code:'ingles_2',source_turn_id:later.id,
       expected_offer_version:0,bonus_offering_codes:['excel_integral'],outbound:{id:unrelatedId,content:'Bonus',
         provider:'test',integration_id:'test',channel:'whatsapp',destination:'test',idempotency_key:unrelatedId}}))
-      .toEqual({ok:false,reason:mode==='direct'?'no_price_objection':'bonus_disabled'});
+      .toEqual({ok:false,reason:mode==='review'?'bonus_disabled':'no_price_objection'});
     await recordPromotionConversationContextV1(db!,{...identity,discussed_offering_code:'ingles_1',source_turn_id:f.second_turn_id,records_price_objection:false});
     const accepted=await commitAgentDecision({turn_id:later.id,trace_id:randomUUID(),supports_multi_outbound:true,
       agent_turn_v2:{schema_version:2,proposal:{...f.proposalWithCallOfferAndFalsePrice,

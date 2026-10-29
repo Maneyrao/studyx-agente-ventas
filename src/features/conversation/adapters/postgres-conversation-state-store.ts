@@ -140,12 +140,15 @@ export class PostgresConversationStateStoreV1 implements ConversationStateStoreV
               ELSE EXCLUDED.call_offer_count
             END,
             awaiting_reply = EXCLUDED.awaiting_reply,
-            -- Una afirmación de pago no se retracta ni se re-fecha: el primer
-            -- momento en que el cliente lo dijo es el que un humano necesita.
-            payment_reported_at = COALESCE(
-              conversation_sales_context_states_v1.payment_reported_at,
-              EXCLUDED.payment_reported_at
-            ),
+            -- El reclamo es durable dentro de una venta. Una nueva venta
+            -- explícita lo reinicia para que otro curso no herede un pago.
+            payment_reported_at = CASE
+              WHEN ${input.reset_payment_reported === true} THEN EXCLUDED.payment_reported_at
+              ELSE COALESCE(
+                conversation_sales_context_states_v1.payment_reported_at,
+                EXCLUDED.payment_reported_at
+              )
+            END,
             payment_link_request = CASE
               WHEN ${writesPaymentLinkRequest} THEN EXCLUDED.payment_link_request
               ELSE conversation_sales_context_states_v1.payment_link_request
