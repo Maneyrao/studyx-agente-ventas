@@ -45,6 +45,43 @@ const proposal: AgentATurnProposalV1 = {
 };
 
 describe('plannerless natural evidence regression', () => {
+  it('does not misclassify a negated enrollment deferral as direct purchase', () => {
+    const context = {
+      schema_version: 1,
+      turn: {
+        batch_messages: [{ id: 'deferral', text: 'No quiero inscribirme todavía, tengo que pensarlo.' }],
+        recent_turns: [{ id: 'course', direction: 'outbound' as const, content: 'Fotografía Profesional puede ayudarte con tu tienda.' }],
+      },
+      continuity: { assistant_has_spoken: true, first_name_status: 'known' as const, last_agent_reply: 'Fotografía Profesional puede ayudarte con tu tienda.' },
+      customer: { display_name: 'Ana', memories: [] },
+      identity: null,
+      commercial_state: {
+        selected_offering_code: 'fotografia_profesional', selected_payment_plan: 'monthly_12' as const,
+        stage: 'plan_selected' as const, call_preference: 'unknown' as const,
+        call_offer_status: 'not_offered' as const, call_offer_count: 0 as const,
+        awaiting_reply: 'none' as const, payment_reported: false,
+      },
+      catalog: {
+        selected_offering: {
+          code: 'fotografia_profesional', display_name: 'Fotografía Profesional', area_code: 'fotografia',
+          facts: [{ id: 'offering:fotografia_profesional:name:v1', kind: 'offering_name' as const, value: 'Fotografía Profesional' }],
+        },
+        available_offerings: [], areas: [], candidate_offerings: [], payment_plans: [],
+      },
+      capabilities: {
+        may_reply: true, may_offer_call: true, may_request_call_now: false,
+        may_present_payment_options: true, may_send_payment_link: false,
+        authorized_payment_plan: null, intake_status: 'known' as const, intake_missing: [],
+      },
+    } satisfies AgentAContextV1;
+
+    expect(evaluateCallOfferTurnPolicyV1({ context })).toMatchObject({
+      customer_signal: 'none',
+      offer_allowed: true,
+      reason: 'FIRST_OFFER_DUE',
+    });
+  });
+
   it('does not force a call after an ordinary greeting or first useful answer', () => {
     const context = {
       schema_version: 1,

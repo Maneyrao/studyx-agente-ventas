@@ -6,7 +6,7 @@ import {
 import { resolveCanonicalPromptIdentityV1 } from './agent-a-identity';
 import { evaluateSalesObjectionTurnV1 } from '../lib/conversation/sales-objection-turn-policy';
 
-export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v134' as const;
+export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v135' as const;
 
 /**
  * Runtime contract only. The sales behavior lives in the canonical prompt so
@@ -165,6 +165,7 @@ function currentCommercialGuidanceDirectiveV1(context: AgentAContextV1): string 
     readiness_or_requirements_objection: `Respond to the concrete readiness concern with authorized prerequisites, level, equipment or course-description facts. Do not claim beginner suitability or that equipment is unnecessary unless authorized_context explicitly supports it.`,
     trust_objection: `Use concrete authorized evidence, not reassuring adjectives. Website, Instagram, certification, contact channels, graduate evidence or physical-certificate claims are usable only when they appear in authorized_context. Treat an expectation mismatch about live teaching or recorded video as high risk: acknowledge it, do not assert either format unless it is authorized, and offer an immediate call only when the call policy authorizes it.`,
     payment_friction: `Lower pressure and preserve the customer's purchase intent without pretending an operation occurred. Offer only payment alternatives present in authorized_context. Do not claim a reserved place or a loaded pre-enrollment, and do not suggest Apple Pay or Google Pay unless specifically authorized.`,
+    decision_deferral: `Treat this as a decision deferral, not a definitive rejection. Ask what remains unresolved before ending the sale, then use the customer's known goal and one authorized fact to address that friction. If a payment plan was explicitly chosen earlier or in the same batch, preserve it without claiming enrollment, sending a payment link or inventing another action. Do not offer a bonus unless the customer has actually expressed a persistent price objection. If the call policy authorizes an invitation and speaking would help resolve the uncertainty, put a brief reasoned invitation only in response.call_offer. Respect a clear request to stop or a definitive lack of interest.`,
     offer_timing_question: `Answer with an authorized real start date or expiry only. Never invent an expiry, start date, scarcity or urgency; if no date is authorized, say you cannot confirm it and keep the next step practical.`,
   };
   return `<current_commercial_guidance kind="${objection.kind}">

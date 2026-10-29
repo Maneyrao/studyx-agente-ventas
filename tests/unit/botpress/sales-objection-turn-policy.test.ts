@@ -59,6 +59,8 @@ describe('evaluateSalesObjectionTurnV1', () => {
     ['La tarjeta está bloqueada', 'payment_friction', null],
     ['Se me quedó la tarjeta en el cajero', 'payment_friction', null],
     ['Ahorita recargo la tarjeta', 'payment_friction', null],
+    ['Quiero tiempo para pensarlo', 'decision_deferral', null],
+    ['No me quiero inscribir todavía, tengo que pensarlo', 'decision_deferral', null],
     ['Hasta cuándo es válida la oferta?', 'offer_timing_question', null],
     ['Hasta cuándo tienes esa oferta?', 'offer_timing_question', null],
   ] satisfies ReadonlyArray<readonly [string, string, readonly string[] | null]>)('classifies %s as %s', (text, expected, priorInbound) => {
@@ -80,7 +82,6 @@ describe('evaluateSalesObjectionTurnV1', () => {
 
   it.each([
     'Cuánto dura?',
-    'Quiero tiempo para pensarlo',
     'Hoy sí o sí hago el pago',
     'Me interesa Inglés 1',
     'No quiero recibir ofertas',
@@ -89,6 +90,43 @@ describe('evaluateSalesObjectionTurnV1', () => {
     'No me ofrecés más ofertas',
   ])('does not force an objection category for %s', (text) => {
     expect(evaluateSalesObjectionTurnV1(contextWithCurrentMessage(text))).toEqual({ kind: 'none' });
+  });
+
+  it('classifies a selected plan followed by a decision deferral in the same batch', () => {
+    const current = contextWithCurrentMessage('');
+    current.turn.batch_messages = [
+      { id: 'current-1', text: 'doce de 30' },
+      { id: 'current-2', text: 'no me quiero inscribir igual ya, tengo que pensarlo' },
+    ];
+
+    expect(evaluateSalesObjectionTurnV1(current)).toEqual({ kind: 'decision_deferral' });
+  });
+
+  it.each([
+    'No necesito pensarlo, pasame el link.',
+    'No quiero pensarlo más, quiero inscribirme ahora.',
+  ])('does not treat a negated deferral as pending: %s', (text) => {
+    expect(evaluateSalesObjectionTurnV1(contextWithCurrentMessage(text))).toEqual({ kind: 'none' });
+  });
+
+  it('honors the last purchase intention when the customer changes their mind in the same batch', () => {
+    const current = contextWithCurrentMessage('');
+    current.turn.batch_messages = [
+      { id: 'current-1', text: 'Lo voy a pensar.' },
+      { id: 'current-2', text: 'Mejor no, quiero inscribirme ahora.' },
+    ];
+
+    expect(evaluateSalesObjectionTurnV1(current)).toEqual({ kind: 'none' });
+  });
+
+  it('honors a later link request after an earlier decision deferral', () => {
+    const current = contextWithCurrentMessage('');
+    current.turn.batch_messages = [
+      { id: 'current-1', text: 'Lo voy a pensar.' },
+      { id: 'current-2', text: 'Ya me decidí, pasame el link.' },
+    ];
+
+    expect(evaluateSalesObjectionTurnV1(current)).toEqual({ kind: 'none' });
   });
 });
 

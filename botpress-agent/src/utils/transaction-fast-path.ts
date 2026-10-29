@@ -381,6 +381,7 @@ export function matchConversationCloseFastPath(claimed: ClaimedTurn): Decision |
   ) || /\b(?:que|cuales|cuantas|cuantos|como|cuando)\b.{0,60}\b(?:curso|diplomado|clases|requisit\w*|precio|pago|devolucion|certificad\w*|horarios?|modalidad)\b/u
     .test(normalized)
   if (!isDeferredClose && !isCallDecline) return null
+  if (isDeferredClose && !isCallDecline) return null
   if (isCallDecline && asksAboutCourse) return null
 
   return {
