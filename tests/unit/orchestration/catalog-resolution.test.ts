@@ -279,6 +279,33 @@ describe('resolveCatalogRequest', () => {
     });
   });
 
+  it('resolves a split plan-of-study request from a unique canonical title even when the production alias is missing', () => {
+    expect(resolveCatalogRequest(
+      ['me das el plan de estudio', 'de coaching?'],
+      snapshot([
+        offering(
+          'coaching_liderazgo',
+          'Coaching y Liderazgo',
+          'Academia de Negocios',
+          [],
+        ),
+      ]),
+    )).toMatchObject({
+      kind: 'exact',
+      offeringCode: 'coaching_liderazgo',
+    });
+  });
+
+  it.each([
+    '¿Me das el plan de estudio?',
+    '¿Cuál es el plan de pago?',
+  ])('keeps a generic plan request neutral when it does not identify a course: %s', (text) => {
+    expect(resolveCatalogRequest(
+      text,
+      snapshot([offering('coaching_liderazgo', 'Coaching y Liderazgo', 'Academia de Negocios')]),
+    )).toEqual({ kind: 'no_catalog_intent' });
+  });
+
   it('keeps an administrative identity confirmation neutral to the remembered course', () => {
     const text = 'Repetime con qué datos quedé anotada, quiero confirmar que están bien.';
 

@@ -15,6 +15,7 @@ import {
 } from '@/features/conversation/domain/call-lifecycle-reconciliation';
 import { loadConversationSessionConfig } from '@/lib/config';
 import {
+  isCatalogDetailRequest,
   isCatalogRequestNeutral,
   resolveCatalogRequest,
   type CatalogResolution,
@@ -1013,6 +1014,47 @@ export async function claimBatch(
         batch_id: claim.batch_id,
         error: String(error),
       });
+    }
+  }
+  if (
+    catalog_resolution.kind === 'exact'
+    && isCatalogDetailRequest(
+      batchMessages
+        .filter((message) => message.message_type === 'text')
+        .map((message) => message.content),
+    )
+    && deps.knowledge.searchByOfferingCode
+  ) {
+    counters.knowledge_search_calls += 1;
+    const startedAt = monotonicNow();
+    try {
+      const canonicalKnowledge = await deps.knowledge.searchByOfferingCode({
+        offering_code: catalog_resolution.offeringCode,
+        limit: limits.knowledgeResults,
+      });
+      const canonicalUris = new Set(canonicalKnowledge.map((item) => item.source_uri));
+      const mergedKnowledge = [
+        ...canonicalKnowledge,
+        ...knowledge_base.filter((item) => !canonicalUris.has(item.source_uri)),
+      ];
+      const capped = capRetrievedItems(mergedKnowledge, (item) => item.content, {
+        maxItems: limits.knowledgeResults,
+        maxCharsPerItem: limits.knowledgeMaxCharsPerItem,
+        maxTotalChars: limits.knowledgeMaxTotalChars,
+      });
+      knowledge_base = capped.kept.map((entry) => ({ ...entry.item, content: entry.text }));
+      knowledge_base_dropped += capped.dropped;
+      injection_suspected_count = capped.injection_suspected_count;
+      knowledge_base_available = true;
+    } catch (error) {
+      log('orchestration.claim.course_knowledge_unavailable', {
+        trace_id: input.trace_id,
+        batch_id: claim.batch_id,
+        offering_code: catalog_resolution.offeringCode,
+        error: String(error),
+      });
+    } finally {
+      timings.knowledge_search_ms += Math.max(0, monotonicNow() - startedAt);
     }
   }
   const currentSelection = deriveCourseSelection({

@@ -66,4 +66,9 @@ describe('StudyX official programme knowledge seed', () => {
     expect(sql).not.toContain("title LIKE 'Temario — %'");
     expect(sql).not.toContain("SET status = 'archived'");
   });
+
+  it('wires the generated programmes into the canonical database seed entrypoint', () => {
+    const seedEntrypoint = readFileSync(join(root, 'supabase/seed.sql'), 'utf8');
+    expect(seedEntrypoint).toContain('\\ir seed/studyx-programas.sql');
+  });
 });

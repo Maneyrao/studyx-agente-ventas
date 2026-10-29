@@ -68,6 +68,41 @@ describe('PostgresKnowledgeRetriever workspace scoping', () => {
 
     expect(calls[0].params[0]).toBe(WORKSPACE_ID);
   });
+
+  it('loads canonical knowledge by backend-owned offering code without an embedding', async () => {
+    const row = {
+      source_uri: 'knowledge-source:00000000-0000-4000-8000-000000000001',
+      title: 'Manual StudyX — Coaching y Liderazgo',
+      content: '16 clases, 4 trabajos prácticos y 1 examen final.',
+      similarity: 1,
+    };
+    const { fn, calls } = dbMock([row]);
+    const retriever = new PostgresKnowledgeRetriever(fn, async () => WORKSPACE_ID);
+
+    await expect(retriever.searchByOfferingCode({
+      offering_code: 'coaching_liderazgo',
+      limit: 5,
+    })).resolves.toEqual([row]);
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0].params).toEqual([
+      WORKSPACE_ID,
+      'coaching_liderazgo',
+      'coaching_liderazgo',
+      5,
+    ]);
+  });
+
+  it('rejects a non-canonical offering code before querying', async () => {
+    const { fn, calls } = dbMock([]);
+    const retriever = new PostgresKnowledgeRetriever(fn, async () => WORKSPACE_ID);
+
+    await expect(retriever.searchByOfferingCode({
+      offering_code: "coaching' OR true",
+      limit: 5,
+    })).rejects.toThrow(/invalid offering_code/u);
+    expect(calls).toHaveLength(0);
+  });
 });
 
 describe('PostgresMemoryRetriever vector boundary', () => {

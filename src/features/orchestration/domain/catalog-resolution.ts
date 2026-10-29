@@ -84,6 +84,8 @@ const METHOD_PRIORITY: Readonly<Record<LiteralMatchMethod, number>> = {
 const CATALOG_INTENT_PATTERN =
   /(?:\b(?:cursos|diplomados|capacitaciones|formaciones|programas|catalogo|oferta academica|academia|inscribirme|inscribime|anotarme|anotame)\b|\b(?:estudiar|aprender)\b(?!\s+para\b)|\bbusco\s+(?!(?:para|trabajo|empleo|ayuda|informacion|info|datos|detalles|algo|un?\s+opcion)\b)[\p{L}\p{N}]{3,}|\b(?:curso|diplomado|capacitacion|formacion|programa)\s+de\s+[\p{L}\p{N}]|\b(?:tienen|ofrecen|hay)\b.{0,24}\b(?:curso|diplomado|capacitacion|formacion|programa)\b)/u;
 
+const COURSE_DETAIL_REQUEST_PATTERN = /\b(?:plan de estudios?|temarios?)\b/u;
+
 const SELECTION_CUE_PATTERN =
   /\b(?:prefiero|elijo|elegi|selecciono|me quedo con|voy con|quiero|mejor|cambio a)\b/gu;
 
@@ -530,6 +532,7 @@ function partialSubjectMatches(
     const subject = (cue?.index === undefined
       ? normalized
       : normalized.slice(cue.index + cue[0].length))
+      .replace(/^(?:(?:el|la|un|una|de|del)\s+)+/u, '')
       .replace(/\s+(?:tienen|ofrecen|hay|esta disponible|estan disponibles)$/u, '')
       .trim();
     return subject ? [subject] : [];
@@ -538,6 +541,10 @@ function partialSubjectMatches(
   return offerings.filter((offering) => subjects.some((subject) => (
     offering.normalizedName.startsWith(`${subject} `)
   )));
+}
+
+export function isCatalogDetailRequest(text: string | readonly string[]): boolean {
+  return toMessages(text).some((message) => COURSE_DETAIL_REQUEST_PATTERN.test(message));
 }
 
 function computerRepairMatches(
@@ -817,8 +824,15 @@ export function resolveCatalogRequest(
     if (snapshot.offerings_truncated > 0) {
       return { kind: 'unavailable', reason: 'snapshot_truncated' };
     }
-    // A partial title narrows the clarification, never establishes identity,
-    // even when the current complete snapshot has just one matching course.
+    // A plan/temario request naming one unique canonical title fragment is an
+    // informational lookup, not a course-selection guess. This keeps a
+    // production catalog usable even when an approved short alias has not yet
+    // been synchronized into metadata.
+    if (partialMatches.length === 1 && isCatalogDetailRequest(messages)) {
+      return exact(partialMatches[0], 'canonical');
+    }
+    // Outside that narrow informational case, a partial title only narrows the
+    // clarification and never establishes identity.
     return ambiguous(request, partialMatches);
   }
 
