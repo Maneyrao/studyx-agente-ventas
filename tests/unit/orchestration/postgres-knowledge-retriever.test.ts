@@ -19,9 +19,9 @@ import type { DbClient } from '@/lib/db/types';
 const WORKSPACE_ID = '00000000-0000-0000-0000-0000000000bb';
 
 function dbMock(rows: unknown[] = []) {
-  const calls: Array<{ params: unknown[] }> = [];
-  const fn = ((_strings: TemplateStringsArray, ...params: unknown[]) => {
-    calls.push({ params });
+  const calls: Array<{ query: string; params: unknown[] }> = [];
+  const fn = ((strings: TemplateStringsArray, ...params: unknown[]) => {
+    calls.push({ query: strings.join('?'), params });
     return Promise.resolve(rows);
   }) as unknown as DbClient;
   return { fn, calls };
@@ -91,6 +91,21 @@ describe('PostgresKnowledgeRetriever workspace scoping', () => {
       'coaching_liderazgo',
       5,
     ]);
+  });
+
+  it('prioritizes syllabus chunks and orders JSON page metadata numerically', async () => {
+    const { fn, calls } = dbMock([]);
+    const retriever = new PostgresKnowledgeRetriever(fn, async () => WORKSPACE_ID);
+
+    await retriever.searchByOfferingCode({
+      offering_code: 'fotografia_profesional',
+      limit: 5,
+    });
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0].query).toMatch(/content\s+~\*/u);
+    expect(calls[0].query).toContain("metadata ->> 'source_page')::integer");
+    expect(calls[0].query).toContain("metadata ->> 'source_part')::integer");
   });
 
   it('rejects a non-canonical offering code before querying', async () => {

@@ -279,9 +279,14 @@ describe('resolveCatalogRequest', () => {
     });
   });
 
-  it('resolves a split plan-of-study request from a unique canonical title even when the production alias is missing', () => {
+  it.each([
+    ['me das el plan de estudio', 'de coaching?'],
+    ['me das el plan de estudio de coaching?'],
+    ['me pasás el temario de coaching?'],
+    ['me pasás el temario del curso de coaching?'],
+  ])('resolves a plan-of-study request from a unique canonical title even when the production alias is missing: %j', (...messages) => {
     expect(resolveCatalogRequest(
-      ['me das el plan de estudio', 'de coaching?'],
+      messages,
       snapshot([
         offering(
           'coaching_liderazgo',

@@ -86,6 +86,9 @@ const CATALOG_INTENT_PATTERN =
 
 const COURSE_DETAIL_REQUEST_PATTERN = /\b(?:plan de estudios?|temarios?)\b/u;
 
+const COURSE_DETAIL_SUBJECT_PATTERN =
+  /\b(?:plan de estudios?|temarios?)\s+(?:de|del|para)\s+(?:(?:el|la|un|una)\s+)?(?:(?:curso|diplomado|programa)\s+(?:de\s+)?)?([\p{L}\p{N}].*)$/u;
+
 const SELECTION_CUE_PATTERN =
   /\b(?:prefiero|elijo|elegi|selecciono|me quedo con|voy con|quiero|mejor|cambio a)\b/gu;
 
@@ -525,13 +528,16 @@ function partialSubjectMatches(
     // arbitrary words would turn "fotografía forense" into an available
     // course, or confuse "fot" with "fotovoltaica". A bare title fragment is
     // also a subject; surrounding unrelated prose is not stripped from it.
-    const cues = [...normalized.matchAll(
-      /\b(?:cursos?|diplomados?|capacitaciones|capacitacion|formaciones|formacion|programas?|estudiar|aprender|busco|quiero|me interesa|me interesan|informacion sobre)\s+(?:(?:el|la|un|una|de)\s+)*/gu,
-    )];
+    const detailSubject = COURSE_DETAIL_SUBJECT_PATTERN.exec(normalized)?.[1];
+    const cues = detailSubject === undefined
+      ? [...normalized.matchAll(
+          /\b(?:cursos?|diplomados?|capacitaciones|capacitacion|formaciones|formacion|programas?|estudiar|aprender|busco|quiero|me interesa|me interesan|informacion sobre)\s+(?:(?:el|la|un|una|de)\s+)*/gu,
+        )]
+      : [];
     const cue = cues.at(-1);
-    const subject = (cue?.index === undefined
+    const subject = (detailSubject ?? (cue?.index === undefined
       ? normalized
-      : normalized.slice(cue.index + cue[0].length))
+      : normalized.slice(cue.index + cue[0].length)))
       .replace(/^(?:(?:el|la|un|una|de|del)\s+)+/u, '')
       .replace(/\s+(?:tienen|ofrecen|hay|esta disponible|estan disponibles)$/u, '')
       .trim();

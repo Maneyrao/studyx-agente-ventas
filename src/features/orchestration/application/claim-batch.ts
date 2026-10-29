@@ -1032,6 +1032,7 @@ export async function claimBatch(
         offering_code: catalog_resolution.offeringCode,
         limit: limits.knowledgeResults,
       });
+      const previouslyRetrievedUris = new Set(knowledge_base.map((item) => item.source_uri));
       const canonicalUris = new Set(canonicalKnowledge.map((item) => item.source_uri));
       const mergedKnowledge = [
         ...canonicalKnowledge,
@@ -1044,7 +1045,11 @@ export async function claimBatch(
       });
       knowledge_base = capped.kept.map((entry) => ({ ...entry.item, content: entry.text }));
       knowledge_base_dropped += capped.dropped;
-      injection_suspected_count = capped.injection_suspected_count;
+      injection_suspected_count += capped.kept.filter((entry) => (
+        entry.injection_suspected
+        && canonicalUris.has(entry.item.source_uri)
+        && !previouslyRetrievedUris.has(entry.item.source_uri)
+      )).length;
       knowledge_base_available = true;
     } catch (error) {
       log('orchestration.claim.course_knowledge_unavailable', {

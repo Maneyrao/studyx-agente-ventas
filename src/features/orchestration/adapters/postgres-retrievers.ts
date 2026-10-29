@@ -170,12 +170,27 @@ export class PostgresKnowledgeRetriever implements KnowledgeRetriever {
         )
       ORDER BY
         CASE
+          WHEN content ~* '(^|[[:space:][:punct:]])clase[[:space:]]+[0-9]+' THEN 0
+          WHEN content ~* '(^|[[:space:][:punct:]])temario([[:space:][:punct:]]|$)' THEN 0
+          WHEN content ~* '(^|[[:space:][:punct:]])m[oó]dulos?([[:space:][:punct:]]|$)' THEN 1
+          WHEN content ~* 'duraci[oó]n:' THEN 2
+          ELSE 3
+        END,
+        CASE
           WHEN metadata ->> 'source' = 'official_program_pdf' THEN 0
           WHEN metadata ->> 'canonical_source' = 'studyx_manual_1' THEN 1
           ELSE 2
         END,
-        COALESCE(metadata ->> 'source_page', ''),
-        COALESCE(metadata ->> 'source_part', ''),
+        CASE
+          WHEN (metadata ->> 'source_page') ~ '^[0-9]+$'
+            THEN (metadata ->> 'source_page')::integer
+          ELSE 2147483647
+        END,
+        CASE
+          WHEN (metadata ->> 'source_part') ~ '^[0-9]+$'
+            THEN (metadata ->> 'source_part')::integer
+          ELSE 2147483647
+        END,
         title,
         id
       LIMIT ${Math.min(Math.max(input.limit, 1), 20)}
