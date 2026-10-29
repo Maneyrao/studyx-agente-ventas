@@ -8,13 +8,13 @@ describe('Agent A canonical sales prompt', () => {
   it('ships the complete approved prompt and a byte-equivalent generated module', () => {
     const prompt = readFileSync(PROMPT_PATH, 'utf8');
 
-    expect(prompt.match(/\n/g) ?? []).toHaveLength(93);
+    expect(prompt.match(/\n/g) ?? []).toHaveLength(95);
     expect(createHash('sha256').update(prompt).digest('hex')).toMatch(/^[a-f0-9]{64}$/u);
     expect(existsSync(GENERATED_PATH)).toBe(true);
 
     const generated = readFileSync(GENERATED_PATH, 'utf8');
     expect(generated).toContain(`export const STUDYX_AGENT_A_CANONICAL_PROMPT = ${JSON.stringify(prompt)} as const;`);
-    expect(generated).toContain("export const STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION = 'studyx-agent-a-canonical-v98' as const;");
+    expect(generated).toContain("export const STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION = 'studyx-agent-a-canonical-v99' as const;");
   });
 
   it('combines warm Meta-lead selling with autonomous objection and post-call handling', () => {
@@ -102,8 +102,8 @@ describe('Agent A canonical sales prompt', () => {
   it('uses Emma identity, delays data collection, and keeps calls commercially useful', () => {
     const prompt = readFileSync(PROMPT_PATH, 'utf8');
 
-    expect(prompt).toContain('Eres {{NOMBRE_ASESOR}}, administrativa de Studyx');
-    expect(prompt).toContain('«Soy {{NOMBRE_ASESOR}}, administrativa de Studyx»');
+    expect(prompt).toContain('Eres {{NOMBRE_ASESOR}}, asesora comercial de Studyx');
+    expect(prompt).toContain('«Soy {{NOMBRE_ASESOR}}, asesora de Studyx»');
     expect(prompt).toMatch(/varía naturalmente el saludo, la puntuación y la transición/iu);
     expect(prompt).toContain('No añadas «Academia Internacional»');
     expect(prompt).not.toMatch(/asesora virtual|asistente virtual/iu);
@@ -113,6 +113,15 @@ describe('Agent A canonical sales prompt', () => {
     expect(prompt).not.toMatch(/segunda intervenci[oó]n comercial/iu);
     expect(prompt).toMatch(/m[aá]ximo dos invitaciones[\s\S]*segunda[\s\S]*motivo nuevo/iu);
     expect(prompt).toMatch(/adaptada al trato y (?:al )?motivo real[\s\S]*no repitas esa frase como plantilla/iu);
+  });
+
+  it('keeps a decision deferral open and works the hidden friction before leaving', () => {
+    const prompt = readFileSync(PROMPT_PATH, 'utf8');
+
+    expect(prompt).toMatch(/«Lo voy a pensar»[\s\S]{0,180}escond[^.]*otro freno/iu);
+    expect(prompt).toMatch(/pregunta[^.]*qu[eé] es lo que le queda por definir[^.]*resu[eé]lvelo/iu);
+    expect(prompt).toMatch(/no implican? un rechazo definitivo/iu);
+    expect(prompt).toMatch(/conserva el plan elegido[^.]*no env[ií]es el enlace/iu);
   });
 
   it('keeps Lisandro humanized selling as the primary behavior instead of a questionnaire', () => {

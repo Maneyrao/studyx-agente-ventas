@@ -12,6 +12,7 @@ export type SalesObjectionTurnKindV1 =
   | 'readiness_or_requirements_objection'
   | 'trust_objection'
   | 'payment_friction'
+  | 'decision_deferral'
   | 'offer_timing_question';
 
 function normalized(value: string): string {
@@ -87,6 +88,42 @@ function isPaymentFrictionTextV1(text: string): boolean {
   return /\b(?:banco\b[^.!?\n]{0,44}\b(?:no\s+me\s+deja|rechaz\p{L}*|bloque\p{L}*)|tarjeta\b[^.!?\n]{0,44}\b(?:no\s+(?:me\s+)?pasa|no\s+funciona|rechaz\p{L}*|declinad\p{L}*|bloque\p{L}*|cajero|perdi|olvide)|(?:recarg|carg)(?:o|ar|ando)?\b[^.!?\n]{0,28}\btarjeta|no\s+puedo\b[^.!?\n]{0,32}\b(?:hacer|completar|meter)\b[^.!?\n]{0,24}\b(?:pago|cash)|(?:fallo|falla|error)\b[^.!?\n]{0,24}\bpago)\b/u.test(value);
 }
 
+function isDecisionDeferralTextV1(text: string): boolean {
+  const value = normalized(text);
+  const withoutNegatedDeferrals = value.replace(
+    /\bno\s+(?:necesito|quiero|voy\s+a|tengo\s+que|lo\s+tengo\s+que)\s+pensar(?:lo)?(?:\s+mas)?\b/gu,
+    (match) => ' '.repeat(match.length),
+  );
+  const deferralPatterns = [
+    /\b(?:tengo\s+que|lo\s+tengo\s+que|necesito|quiero|voy\s+a|dejame)\s+pensar(?:lo)?\b/gu,
+    /\b(?:quiero|necesito)\s+(?:un\s+poco\s+de\s+)?tiempo\s+para\s+pensar(?:lo)?\b/gu,
+    /\b(?:lo|me\s+lo)\s+voy\s+a\s+pensar\b/gu,
+    /\bno\s+(?:me\s+)?quiero\s+(?:pagar|comprar|inscribirme|inscribir|anotarme|anotar)\b[^.!?\n]{0,40}\b(?:ahora|todavia|aun|por\s+ahora|ya)\b/gu,
+  ];
+  const purchasePatterns = [
+    /\b(?:pasame|mandame|enviame|compartime)\s+(?:el\s+)?(?:link|enlace)\b/gu,
+    /\b(?:quiero|voy\s+a|me\s+decidi\s+a|decidi|list[oa]\s+para)\s+(?:comprar|pagar|inscribirme|inscribir|anotarme|anotar|avanzar)\b/gu,
+  ];
+  const lastMatchIndex = (patterns: readonly RegExp[], input: string, ignoreNegatedPurchase = false): number => {
+    let lastIndex = -1;
+    for (const pattern of patterns) {
+      for (const match of input.matchAll(pattern)) {
+        const matchIndex = match.index ?? -1;
+        if (ignoreNegatedPurchase) {
+          const prefix = input.slice(Math.max(0, matchIndex - 12), matchIndex);
+          if (/\bno(?:\s+me)?\s*$/u.test(prefix)) continue;
+        }
+        lastIndex = Math.max(lastIndex, matchIndex);
+      }
+    }
+    return lastIndex;
+  };
+  const lastDeferralIndex = lastMatchIndex(deferralPatterns, withoutNegatedDeferrals);
+  if (lastDeferralIndex < 0) return false;
+  const lastPurchaseIndex = lastMatchIndex(purchasePatterns, value, true);
+  return lastPurchaseIndex <= lastDeferralIndex;
+}
+
 function isOfferTimingQuestionTextV1(text: string): boolean {
   const value = normalized(text);
   return /\b(?:hasta\s+cuando|por\s+cuanto\s+tiempo)\b[^.!?\n]{0,48}\b(?:oferta|promocion|precio|valor)\b/u.test(value)
@@ -116,6 +153,7 @@ export function evaluateSalesObjectionTurnV1(
     ));
     return { kind: priorPriceObjection ? 'repeated_price_objection' : 'price_objection' };
   }
+  if (isDecisionDeferralTextV1(current)) return { kind: 'decision_deferral' };
   if (isPaymentFrictionTextV1(current)) return { kind: 'payment_friction' };
   if (paymentTermsQuestion) return { kind: 'payment_terms_question' };
   if (isPriceQuestionTextV1(current)) return { kind: 'price_question' };

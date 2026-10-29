@@ -65,30 +65,16 @@ function claimed(text: string, overrides: { name?: string | null; prices?: boole
 }
 
 describe('transaction fast paths', () => {
-  it('closes a deferred sale politely without another call or payment push', () => {
-    const decision = matchConversationCloseFastPath(claimed(
+  it('leaves a decision deferral to the conversational agent instead of closing it', () => {
+    expect(matchConversationCloseFastPath(claimed(
       'Buena info, gracias. Todavía no me voy a anotar, quería averiguar nomás.',
-    ));
-
-    expect(decision).toMatchObject({
-      intent: 'commercial_decline',
-      response_type: 'commercial_reply',
-      business_action: null,
-    });
-    expect(decision?.response).not.toMatch(/llamada|pago|link/i);
+    ))).toBeNull();
   });
 
-  it('acknowledges a temporary payment-link pause without opting the customer out', () => {
-    const decision = matchConversationCloseFastPath(claimed(
+  it('leaves a temporary payment-link pause to the conversational agent', () => {
+    expect(matchConversationCloseFastPath(claimed(
       'No me mandes el link todavía, quiero pensarlo.',
-    ));
-
-    expect(decision).toMatchObject({
-      intent: 'commercial_decline',
-      response_type: 'commercial_reply',
-      business_action: null,
-    });
-    expect(decision?.response).not.toMatch(/https?:\/\/|baja|desuscrip|\?/i);
+    ))).toBeNull();
   });
 
   it('acknowledges a call cancellation and continues by chat', () => {

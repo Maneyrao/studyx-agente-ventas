@@ -54,6 +54,9 @@ function currentText(context: AgentAContextV1): string {
 
 function directPurchase(text: string): boolean {
   const value = normalized(text);
+  if (/\bno\s+(?:me\s+)?quiero\b[^.!?\n]{0,36}\b(?:comprar|pagar|inscribirme|inscribir|anotarme|anotar|avanzar)\b/u.test(value)) {
+    return false;
+  }
   return /\b(?:mandame|enviame|pasame|compartime)\s+(?:el\s+)?(?:link|enlace)\b/u.test(value)
     || /\b(?:quiero|voy\s+a|listo\s+para|decidi)\b[^.!?\n]{0,36}\b(?:comprar|pagar|inscribirme|anotarme|avanzar)\b/u.test(value);
 }

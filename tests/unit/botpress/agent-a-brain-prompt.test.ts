@@ -150,8 +150,8 @@ describe('Agent A Brain prompt', () => {
     const encoded = instructions.split('<authorized_context>')[1]!.split('</authorized_context>')[0]!;
     expect(JSON.parse(encoded)).toEqual(current);
     expect(instructions).not.toContain('<current_turn_guidance>');
-    expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v98');
-    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v134');
+    expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v99');
+    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v135');
   });
 
   it('adds turn-specific guidance for a repeated price objection without forcing a script', () => {
@@ -335,6 +335,7 @@ describe('Agent A Brain prompt', () => {
     ['Estoy desde cero', 'readiness_or_requirements_objection', 'Do not claim beginner suitability or that equipment is unnecessary'],
     ['El certificado sirve?', 'trust_objection', 'Use concrete authorized evidence'],
     ['El banco no me deja pagar', 'payment_friction', 'Do not claim a reserved place or a loaded pre-enrollment'],
+    ['No me quiero inscribir igual ya, tengo que pensarlo', 'decision_deferral', 'Ask what remains unresolved before ending the sale'],
     ['Hasta cuando es valida la oferta?', 'offer_timing_question', 'Never invent an expiry, start date, scarcity or urgency'],
   ] as const)('adds scoped, fact-gated guidance for %s', (message, kind, expectedGuidance) => {
     const current = context();
@@ -404,7 +405,7 @@ describe('Agent A Brain prompt', () => {
     const current = context();
     current.identity = { advisor_name: 'Emma', academy_name: 'StudyX', website: null, instagram: null };
     const instructions = buildAgentABrainInstructionsV1(current);
-    expect(instructions).toContain('Eres Emma, administrativa de Studyx');
+    expect(instructions).toContain('Eres Emma, asesora comercial de Studyx');
     expect(instructions).not.toContain('{{NOMBRE_ACADEMIA}}');
     expect(JSON.parse(instructions.split('<authorized_context>')[1]!.split('</authorized_context>')[0]!)).toEqual(current);
   });
