@@ -944,7 +944,7 @@ el público. A nosotros, como diseñadores, sí.
 Nuestro objetivo principal es el de comunicar, de persuadir.
 Y para esto, debemos realizar una investigación del
 Programa completo: https://mystudyx.com/diplomado/diseno-grafico-con-ilustrator/',
- 'active',1,'{"source":"official_program_pdf","course_slug":"diseno-grafico-con-ilustrator","offering_code":null,"catalog_url":"https://mystudyx.com/diplomado/diseno-grafico-con-ilustrator/","pdf_sha256":"4344dda905f14502a9a2cf403f06a6dd75be897165a9b04bfd982d102f1c85b5","source_page":3,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
+ 'active',1,'{"source":"official_program_pdf","course_slug":"diseno-grafico-con-ilustrator","offering_code":"diseno_illustrator","catalog_url":"https://mystudyx.com/diplomado/diseno-grafico-con-ilustrator/","pdf_sha256":"4344dda905f14502a9a2cf403f06a6dd75be897165a9b04bfd982d102f1c85b5","source_page":3,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
 ('b446151f-99fc-4bc2-b4af-68648423d512','b0000000-0000-4000-8000-000000000001','offering',
  'Programa — Diseño Gráfico con Illustrator — página 3 — parte 2',
  'Curso: Diseño Gráfico con Illustrator.
@@ -958,7 +958,7 @@ vamos a tratar.
 Bienvenidos y gracias por confiar en nosotros.
 Objetivos del diplomado
 Programa completo: https://mystudyx.com/diplomado/diseno-grafico-con-ilustrator/',
- 'active',1,'{"source":"official_program_pdf","course_slug":"diseno-grafico-con-ilustrator","offering_code":null,"catalog_url":"https://mystudyx.com/diplomado/diseno-grafico-con-ilustrator/","pdf_sha256":"4344dda905f14502a9a2cf403f06a6dd75be897165a9b04bfd982d102f1c85b5","source_page":3,"source_part":2,"extracted_at":"2026-10-29"}'::jsonb),
+ 'active',1,'{"source":"official_program_pdf","course_slug":"diseno-grafico-con-ilustrator","offering_code":"diseno_illustrator","catalog_url":"https://mystudyx.com/diplomado/diseno-grafico-con-ilustrator/","pdf_sha256":"4344dda905f14502a9a2cf403f06a6dd75be897165a9b04bfd982d102f1c85b5","source_page":3,"source_part":2,"extracted_at":"2026-10-29"}'::jsonb),
 ('ab7fb667-501d-4226-aa6d-734542e03463','b0000000-0000-4000-8000-000000000001','offering',
  'Programa — Diseño Gráfico con Illustrator — página 4 — parte 1',
  'Curso: Diseño Gráfico con Illustrator.
@@ -972,7 +972,7 @@ Módulos
 Diseño Gráfico con
 Illustrator
 Programa completo: https://mystudyx.com/diplomado/diseno-grafico-con-ilustrator/',
- 'active',1,'{"source":"official_program_pdf","course_slug":"diseno-grafico-con-ilustrator","offering_code":null,"catalog_url":"https://mystudyx.com/diplomado/diseno-grafico-con-ilustrator/","pdf_sha256":"4344dda905f14502a9a2cf403f06a6dd75be897165a9b04bfd982d102f1c85b5","source_page":4,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
+ 'active',1,'{"source":"official_program_pdf","course_slug":"diseno-grafico-con-ilustrator","offering_code":"diseno_illustrator","catalog_url":"https://mystudyx.com/diplomado/diseno-grafico-con-ilustrator/","pdf_sha256":"4344dda905f14502a9a2cf403f06a6dd75be897165a9b04bfd982d102f1c85b5","source_page":4,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
 ('d38861a6-8d64-41c7-9778-f5cf53e4375f','b0000000-0000-4000-8000-000000000001','offering',
  'Programa — Diseño Gráfico con Illustrator — página 5 — parte 1',
  'Curso: Diseño Gráfico con Illustrator.
@@ -997,7 +997,7 @@ trabajo. Reconocer que, en el
 mundo del diseño, no todo lo que
 está publicado está bien.
 Programa completo: https://mystudyx.com/diplomado/diseno-grafico-con-ilustrator/',
- 'active',1,'{"source":"official_program_pdf","course_slug":"diseno-grafico-con-ilustrator","offering_code":null,"catalog_url":"https://mystudyx.com/diplomado/diseno-grafico-con-ilustrator/","pdf_sha256":"4344dda905f14502a9a2cf403f06a6dd75be897165a9b04bfd982d102f1c85b5","source_page":5,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
+ 'active',1,'{"source":"official_program_pdf","course_slug":"diseno-grafico-con-ilustrator","offering_code":"diseno_illustrator","catalog_url":"https://mystudyx.com/diplomado/diseno-grafico-con-ilustrator/","pdf_sha256":"4344dda905f14502a9a2cf403f06a6dd75be897165a9b04bfd982d102f1c85b5","source_page":5,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
 ('b6f6b67e-965d-485a-9720-b0385ce9bd46','b0000000-0000-4000-8000-000000000001','offering',
  'Programa — Diseño Gráfico con Illustrator — página 6 — parte 1',
  'Curso: Diseño Gráfico con Illustrator.
@@ -1016,7 +1016,7 @@ observar al mundo que nos rodea y poder
 abrirnos a éste. Toda experiencia, buena o
 mala. Sera enriquecedora.
 Programa completo: https://mystudyx.com/diplomado/diseno-grafico-con-ilustrator/',
- 'active',1,'{"source":"official_program_pdf","course_slug":"diseno-grafico-con-ilustrator","offering_code":null,"catalog_url":"https://mystudyx.com/diplomado/diseno-grafico-con-ilustrator/","pdf_sha256":"4344dda905f14502a9a2cf403f06a6dd75be897165a9b04bfd982d102f1c85b5","source_page":6,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
+ 'active',1,'{"source":"official_program_pdf","course_slug":"diseno-grafico-con-ilustrator","offering_code":"diseno_illustrator","catalog_url":"https://mystudyx.com/diplomado/diseno-grafico-con-ilustrator/","pdf_sha256":"4344dda905f14502a9a2cf403f06a6dd75be897165a9b04bfd982d102f1c85b5","source_page":6,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
 ('843e5e2d-4ce4-49da-a1ab-f79db7cf5151','b0000000-0000-4000-8000-000000000001','offering',
  'Programa — Diseño Gráfico con Illustrator — página 7 — parte 1',
  'Curso: Diseño Gráfico con Illustrator.
@@ -1057,14 +1057,14 @@ Los exámenes te ayudaran a
 fortalecer y afirmar conceptos
 fundamentales
 Programa completo: https://mystudyx.com/diplomado/diseno-grafico-con-ilustrator/',
- 'active',1,'{"source":"official_program_pdf","course_slug":"diseno-grafico-con-ilustrator","offering_code":null,"catalog_url":"https://mystudyx.com/diplomado/diseno-grafico-con-ilustrator/","pdf_sha256":"4344dda905f14502a9a2cf403f06a6dd75be897165a9b04bfd982d102f1c85b5","source_page":7,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
+ 'active',1,'{"source":"official_program_pdf","course_slug":"diseno-grafico-con-ilustrator","offering_code":"diseno_illustrator","catalog_url":"https://mystudyx.com/diplomado/diseno-grafico-con-ilustrator/","pdf_sha256":"4344dda905f14502a9a2cf403f06a6dd75be897165a9b04bfd982d102f1c85b5","source_page":7,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
 ('b4469493-6266-40c6-a863-bc710ed2b03e','b0000000-0000-4000-8000-000000000001','offering',
  'Programa — Diseño Gráfico con Illustrator — página 7 — parte 2',
  'Curso: Diseño Gráfico con Illustrator.
 Fuente oficial: programa StudyX, página 7 de 9.
 ¿Por que elegirnos?
 Programa completo: https://mystudyx.com/diplomado/diseno-grafico-con-ilustrator/',
- 'active',1,'{"source":"official_program_pdf","course_slug":"diseno-grafico-con-ilustrator","offering_code":null,"catalog_url":"https://mystudyx.com/diplomado/diseno-grafico-con-ilustrator/","pdf_sha256":"4344dda905f14502a9a2cf403f06a6dd75be897165a9b04bfd982d102f1c85b5","source_page":7,"source_part":2,"extracted_at":"2026-10-29"}'::jsonb),
+ 'active',1,'{"source":"official_program_pdf","course_slug":"diseno-grafico-con-ilustrator","offering_code":"diseno_illustrator","catalog_url":"https://mystudyx.com/diplomado/diseno-grafico-con-ilustrator/","pdf_sha256":"4344dda905f14502a9a2cf403f06a6dd75be897165a9b04bfd982d102f1c85b5","source_page":7,"source_part":2,"extracted_at":"2026-10-29"}'::jsonb),
 ('51ec30bc-381d-45f6-93d0-029f051315a0','b0000000-0000-4000-8000-000000000001','offering',
  'Programa — Diseño Gráfico con Illustrator — página 8 — parte 1',
  'Curso: Diseño Gráfico con Illustrator.
@@ -1092,7 +1092,7 @@ Clase 18: Examen Final
 Temario Diseño Gráfico
 con Illustrator
 Programa completo: https://mystudyx.com/diplomado/diseno-grafico-con-ilustrator/',
- 'active',1,'{"source":"official_program_pdf","course_slug":"diseno-grafico-con-ilustrator","offering_code":null,"catalog_url":"https://mystudyx.com/diplomado/diseno-grafico-con-ilustrator/","pdf_sha256":"4344dda905f14502a9a2cf403f06a6dd75be897165a9b04bfd982d102f1c85b5","source_page":8,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
+ 'active',1,'{"source":"official_program_pdf","course_slug":"diseno-grafico-con-ilustrator","offering_code":"diseno_illustrator","catalog_url":"https://mystudyx.com/diplomado/diseno-grafico-con-ilustrator/","pdf_sha256":"4344dda905f14502a9a2cf403f06a6dd75be897165a9b04bfd982d102f1c85b5","source_page":8,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
 ('f3e60d57-62bc-492f-979f-70070cf6c0a1','b0000000-0000-4000-8000-000000000001','offering',
  'Programa — Diseño Gráfico con Illustrator — página 9 — parte 1',
  'Curso: Diseño Gráfico con Illustrator.
@@ -1104,7 +1104,7 @@ mystudyx.com
 instagram.com/studyxacademia
 facebook.com/Studyx-Academia
 Programa completo: https://mystudyx.com/diplomado/diseno-grafico-con-ilustrator/',
- 'active',1,'{"source":"official_program_pdf","course_slug":"diseno-grafico-con-ilustrator","offering_code":null,"catalog_url":"https://mystudyx.com/diplomado/diseno-grafico-con-ilustrator/","pdf_sha256":"4344dda905f14502a9a2cf403f06a6dd75be897165a9b04bfd982d102f1c85b5","source_page":9,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
+ 'active',1,'{"source":"official_program_pdf","course_slug":"diseno-grafico-con-ilustrator","offering_code":"diseno_illustrator","catalog_url":"https://mystudyx.com/diplomado/diseno-grafico-con-ilustrator/","pdf_sha256":"4344dda905f14502a9a2cf403f06a6dd75be897165a9b04bfd982d102f1c85b5","source_page":9,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
 ('826002c0-6a7e-4aaf-894e-4e178ebbcfc0','b0000000-0000-4000-8000-000000000001','offering',
  'Programa — Diseño Gráfico con CorelDraw — página 3 — parte 1',
  'Curso: Diseño Gráfico con CorelDraw.
@@ -1129,7 +1129,7 @@ el público. A nosotros, como diseñadores, sí.
 Nuestro objetivo principal es el de comunicar, de persuadir.
 Y para esto, debemos realizar una investigación del
 Programa completo: https://mystudyx.com/diplomado/community-manager/',
- 'active',1,'{"source":"official_program_pdf","course_slug":"diseno-grafico-en-coreldraw","offering_code":null,"catalog_url":"https://mystudyx.com/diplomado/community-manager/","pdf_sha256":"750e53eb114da36f18eb914b073711f3aba44a0d24731660d3fb41e58d80b324","source_page":3,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
+ 'active',1,'{"source":"official_program_pdf","course_slug":"diseno-grafico-en-coreldraw","offering_code":"diseno_corel_draw","catalog_url":"https://mystudyx.com/diplomado/community-manager/","pdf_sha256":"750e53eb114da36f18eb914b073711f3aba44a0d24731660d3fb41e58d80b324","source_page":3,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
 ('139b4386-1fdf-4984-bc33-f2e67dd60698','b0000000-0000-4000-8000-000000000001','offering',
  'Programa — Diseño Gráfico con CorelDraw — página 3 — parte 2',
  'Curso: Diseño Gráfico con CorelDraw.
@@ -1143,7 +1143,7 @@ vamos a tratar.
 Bienvenidos y gracias por confiar en nosotros.
 Objetivos del diplomado
 Programa completo: https://mystudyx.com/diplomado/community-manager/',
- 'active',1,'{"source":"official_program_pdf","course_slug":"diseno-grafico-en-coreldraw","offering_code":null,"catalog_url":"https://mystudyx.com/diplomado/community-manager/","pdf_sha256":"750e53eb114da36f18eb914b073711f3aba44a0d24731660d3fb41e58d80b324","source_page":3,"source_part":2,"extracted_at":"2026-10-29"}'::jsonb),
+ 'active',1,'{"source":"official_program_pdf","course_slug":"diseno-grafico-en-coreldraw","offering_code":"diseno_corel_draw","catalog_url":"https://mystudyx.com/diplomado/community-manager/","pdf_sha256":"750e53eb114da36f18eb914b073711f3aba44a0d24731660d3fb41e58d80b324","source_page":3,"source_part":2,"extracted_at":"2026-10-29"}'::jsonb),
 ('825c96d7-5f60-4592-92be-69b4f91d9b79','b0000000-0000-4000-8000-000000000001','offering',
  'Programa — Diseño Gráfico con CorelDraw — página 4 — parte 1',
  'Curso: Diseño Gráfico con CorelDraw.
@@ -1157,7 +1157,7 @@ Módulos
 Diseño Gráfico con
 CorelDraw
 Programa completo: https://mystudyx.com/diplomado/community-manager/',
- 'active',1,'{"source":"official_program_pdf","course_slug":"diseno-grafico-en-coreldraw","offering_code":null,"catalog_url":"https://mystudyx.com/diplomado/community-manager/","pdf_sha256":"750e53eb114da36f18eb914b073711f3aba44a0d24731660d3fb41e58d80b324","source_page":4,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
+ 'active',1,'{"source":"official_program_pdf","course_slug":"diseno-grafico-en-coreldraw","offering_code":"diseno_corel_draw","catalog_url":"https://mystudyx.com/diplomado/community-manager/","pdf_sha256":"750e53eb114da36f18eb914b073711f3aba44a0d24731660d3fb41e58d80b324","source_page":4,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
 ('5a753aa7-b5bd-4672-b150-bea284576cbe','b0000000-0000-4000-8000-000000000001','offering',
  'Programa — Diseño Gráfico con CorelDraw — página 5 — parte 1',
  'Curso: Diseño Gráfico con CorelDraw.
@@ -1182,7 +1182,7 @@ trabajo. Reconocer que, en el
 mundo del diseño, no todo lo que
 está publicado está bien.
 Programa completo: https://mystudyx.com/diplomado/community-manager/',
- 'active',1,'{"source":"official_program_pdf","course_slug":"diseno-grafico-en-coreldraw","offering_code":null,"catalog_url":"https://mystudyx.com/diplomado/community-manager/","pdf_sha256":"750e53eb114da36f18eb914b073711f3aba44a0d24731660d3fb41e58d80b324","source_page":5,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
+ 'active',1,'{"source":"official_program_pdf","course_slug":"diseno-grafico-en-coreldraw","offering_code":"diseno_corel_draw","catalog_url":"https://mystudyx.com/diplomado/community-manager/","pdf_sha256":"750e53eb114da36f18eb914b073711f3aba44a0d24731660d3fb41e58d80b324","source_page":5,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
 ('03d181fa-0888-4ae9-bd80-634281098eb1','b0000000-0000-4000-8000-000000000001','offering',
  'Programa — Diseño Gráfico con CorelDraw — página 6 — parte 1',
  'Curso: Diseño Gráfico con CorelDraw.
@@ -1200,7 +1200,7 @@ observar al mundo que nos rodea y poder
 abrirnos a éste. Toda experiencia, buena o
 mala. Sera enriquecedora.
 Programa completo: https://mystudyx.com/diplomado/community-manager/',
- 'active',1,'{"source":"official_program_pdf","course_slug":"diseno-grafico-en-coreldraw","offering_code":null,"catalog_url":"https://mystudyx.com/diplomado/community-manager/","pdf_sha256":"750e53eb114da36f18eb914b073711f3aba44a0d24731660d3fb41e58d80b324","source_page":6,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
+ 'active',1,'{"source":"official_program_pdf","course_slug":"diseno-grafico-en-coreldraw","offering_code":"diseno_corel_draw","catalog_url":"https://mystudyx.com/diplomado/community-manager/","pdf_sha256":"750e53eb114da36f18eb914b073711f3aba44a0d24731660d3fb41e58d80b324","source_page":6,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
 ('12c30d2d-f0a7-4515-abeb-d92f3ec03bc2','b0000000-0000-4000-8000-000000000001','offering',
  'Programa — Diseño Gráfico con CorelDraw — página 7 — parte 1',
  'Curso: Diseño Gráfico con CorelDraw.
@@ -1241,14 +1241,14 @@ Los exámenes te ayudaran a
 fortalecer y afirmar conceptos
 fundamentales
 Programa completo: https://mystudyx.com/diplomado/community-manager/',
- 'active',1,'{"source":"official_program_pdf","course_slug":"diseno-grafico-en-coreldraw","offering_code":null,"catalog_url":"https://mystudyx.com/diplomado/community-manager/","pdf_sha256":"750e53eb114da36f18eb914b073711f3aba44a0d24731660d3fb41e58d80b324","source_page":7,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
+ 'active',1,'{"source":"official_program_pdf","course_slug":"diseno-grafico-en-coreldraw","offering_code":"diseno_corel_draw","catalog_url":"https://mystudyx.com/diplomado/community-manager/","pdf_sha256":"750e53eb114da36f18eb914b073711f3aba44a0d24731660d3fb41e58d80b324","source_page":7,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
 ('16f35108-9617-4ed9-bd58-07659028ce3d','b0000000-0000-4000-8000-000000000001','offering',
  'Programa — Diseño Gráfico con CorelDraw — página 7 — parte 2',
  'Curso: Diseño Gráfico con CorelDraw.
 Fuente oficial: programa StudyX, página 7 de 9.
 ¿Por que elegirnos?
 Programa completo: https://mystudyx.com/diplomado/community-manager/',
- 'active',1,'{"source":"official_program_pdf","course_slug":"diseno-grafico-en-coreldraw","offering_code":null,"catalog_url":"https://mystudyx.com/diplomado/community-manager/","pdf_sha256":"750e53eb114da36f18eb914b073711f3aba44a0d24731660d3fb41e58d80b324","source_page":7,"source_part":2,"extracted_at":"2026-10-29"}'::jsonb),
+ 'active',1,'{"source":"official_program_pdf","course_slug":"diseno-grafico-en-coreldraw","offering_code":"diseno_corel_draw","catalog_url":"https://mystudyx.com/diplomado/community-manager/","pdf_sha256":"750e53eb114da36f18eb914b073711f3aba44a0d24731660d3fb41e58d80b324","source_page":7,"source_part":2,"extracted_at":"2026-10-29"}'::jsonb),
 ('fca1093f-91f1-4c1b-93d8-b6c856ae2f56','b0000000-0000-4000-8000-000000000001','offering',
  'Programa — Diseño Gráfico con CorelDraw — página 8 — parte 1',
  'Curso: Diseño Gráfico con CorelDraw.
@@ -1272,7 +1272,7 @@ Clase 17: Examen Final
 Temario Diseño Gráfico
 con CorelDraw
 Programa completo: https://mystudyx.com/diplomado/community-manager/',
- 'active',1,'{"source":"official_program_pdf","course_slug":"diseno-grafico-en-coreldraw","offering_code":null,"catalog_url":"https://mystudyx.com/diplomado/community-manager/","pdf_sha256":"750e53eb114da36f18eb914b073711f3aba44a0d24731660d3fb41e58d80b324","source_page":8,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
+ 'active',1,'{"source":"official_program_pdf","course_slug":"diseno-grafico-en-coreldraw","offering_code":"diseno_corel_draw","catalog_url":"https://mystudyx.com/diplomado/community-manager/","pdf_sha256":"750e53eb114da36f18eb914b073711f3aba44a0d24731660d3fb41e58d80b324","source_page":8,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
 ('08af04ff-6e39-4fc4-8f43-d399d7c24d3d','b0000000-0000-4000-8000-000000000001','offering',
  'Programa — Diseño Gráfico con CorelDraw — página 9 — parte 1',
  'Curso: Diseño Gráfico con CorelDraw.
@@ -1284,7 +1284,7 @@ mystudyx.com
 instagram.com/studyxacademia
 facebook.com/Studyx-Academia
 Programa completo: https://mystudyx.com/diplomado/community-manager/',
- 'active',1,'{"source":"official_program_pdf","course_slug":"diseno-grafico-en-coreldraw","offering_code":null,"catalog_url":"https://mystudyx.com/diplomado/community-manager/","pdf_sha256":"750e53eb114da36f18eb914b073711f3aba44a0d24731660d3fb41e58d80b324","source_page":9,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
+ 'active',1,'{"source":"official_program_pdf","course_slug":"diseno-grafico-en-coreldraw","offering_code":"diseno_corel_draw","catalog_url":"https://mystudyx.com/diplomado/community-manager/","pdf_sha256":"750e53eb114da36f18eb914b073711f3aba44a0d24731660d3fb41e58d80b324","source_page":9,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
 ('8c473b79-a1da-4d60-a7b8-2814dd5967e3','b0000000-0000-4000-8000-000000000001','offering',
  'Programa — Diseño Gráfico con Photoshop — página 3 — parte 1',
  'Curso: Diseño Gráfico con Photoshop.
@@ -1309,7 +1309,7 @@ el público. A nosotros, como diseñadores, sí. Nuestro
 objetivo principal es el de comunicar, de persuadir. Y para
 esto, debemos realizar una investigación del producto,
 Programa completo: https://mystudyx.com/diplomado/diseno-grafico-en-photoshop/',
- 'active',1,'{"source":"official_program_pdf","course_slug":"diseno-grafico-en-photoshop","offering_code":null,"catalog_url":"https://mystudyx.com/diplomado/diseno-grafico-en-photoshop/","pdf_sha256":"eb9db1dd629056691c137d420c6df0ead6e0d9d9b0a820242cfc12f1d0788bf5","source_page":3,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
+ 'active',1,'{"source":"official_program_pdf","course_slug":"diseno-grafico-en-photoshop","offering_code":"diseno_photoshop","catalog_url":"https://mystudyx.com/diplomado/diseno-grafico-en-photoshop/","pdf_sha256":"eb9db1dd629056691c137d420c6df0ead6e0d9d9b0a820242cfc12f1d0788bf5","source_page":3,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
 ('1fae56a4-965f-400b-85de-f36f045c9960','b0000000-0000-4000-8000-000000000001','offering',
  'Programa — Diseño Gráfico con Photoshop — página 3 — parte 2',
  'Curso: Diseño Gráfico con Photoshop.
@@ -1323,7 +1323,7 @@ tratar.
 Bienvenidos y gracias por confiar en nosotros.
 Objetivos del diplomado
 Programa completo: https://mystudyx.com/diplomado/diseno-grafico-en-photoshop/',
- 'active',1,'{"source":"official_program_pdf","course_slug":"diseno-grafico-en-photoshop","offering_code":null,"catalog_url":"https://mystudyx.com/diplomado/diseno-grafico-en-photoshop/","pdf_sha256":"eb9db1dd629056691c137d420c6df0ead6e0d9d9b0a820242cfc12f1d0788bf5","source_page":3,"source_part":2,"extracted_at":"2026-10-29"}'::jsonb),
+ 'active',1,'{"source":"official_program_pdf","course_slug":"diseno-grafico-en-photoshop","offering_code":"diseno_photoshop","catalog_url":"https://mystudyx.com/diplomado/diseno-grafico-en-photoshop/","pdf_sha256":"eb9db1dd629056691c137d420c6df0ead6e0d9d9b0a820242cfc12f1d0788bf5","source_page":3,"source_part":2,"extracted_at":"2026-10-29"}'::jsonb),
 ('a7d7ec9e-5e64-45f8-a071-17e8ee1d2f57','b0000000-0000-4000-8000-000000000001','offering',
  'Programa — Diseño Gráfico con Photoshop — página 4 — parte 1',
  'Curso: Diseño Gráfico con Photoshop.
@@ -1337,7 +1337,7 @@ Módulos
 Diseño Gráfico
 con Photoshop
 Programa completo: https://mystudyx.com/diplomado/diseno-grafico-en-photoshop/',
- 'active',1,'{"source":"official_program_pdf","course_slug":"diseno-grafico-en-photoshop","offering_code":null,"catalog_url":"https://mystudyx.com/diplomado/diseno-grafico-en-photoshop/","pdf_sha256":"eb9db1dd629056691c137d420c6df0ead6e0d9d9b0a820242cfc12f1d0788bf5","source_page":4,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
+ 'active',1,'{"source":"official_program_pdf","course_slug":"diseno-grafico-en-photoshop","offering_code":"diseno_photoshop","catalog_url":"https://mystudyx.com/diplomado/diseno-grafico-en-photoshop/","pdf_sha256":"eb9db1dd629056691c137d420c6df0ead6e0d9d9b0a820242cfc12f1d0788bf5","source_page":4,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
 ('f09e50a2-95ae-4807-8658-1ed258bb1539','b0000000-0000-4000-8000-000000000001','offering',
  'Programa — Diseño Gráfico con Photoshop — página 5 — parte 1',
  'Curso: Diseño Gráfico con Photoshop.
@@ -1362,7 +1362,7 @@ trabajo. Reconocer que, en el
 mundo del diseño, no todo lo que
 está publicado está bien.
 Programa completo: https://mystudyx.com/diplomado/diseno-grafico-en-photoshop/',
- 'active',1,'{"source":"official_program_pdf","course_slug":"diseno-grafico-en-photoshop","offering_code":null,"catalog_url":"https://mystudyx.com/diplomado/diseno-grafico-en-photoshop/","pdf_sha256":"eb9db1dd629056691c137d420c6df0ead6e0d9d9b0a820242cfc12f1d0788bf5","source_page":5,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
+ 'active',1,'{"source":"official_program_pdf","course_slug":"diseno-grafico-en-photoshop","offering_code":"diseno_photoshop","catalog_url":"https://mystudyx.com/diplomado/diseno-grafico-en-photoshop/","pdf_sha256":"eb9db1dd629056691c137d420c6df0ead6e0d9d9b0a820242cfc12f1d0788bf5","source_page":5,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
 ('018c1983-9f12-4cf4-a8fe-65f6b8b53ab3','b0000000-0000-4000-8000-000000000001','offering',
  'Programa — Diseño Gráfico con Photoshop — página 6 — parte 1',
  'Curso: Diseño Gráfico con Photoshop.
@@ -1381,7 +1381,7 @@ abrirnos a éste.
 Toda experiencia, buena o mala, sera
 enriquecedora.
 Programa completo: https://mystudyx.com/diplomado/diseno-grafico-en-photoshop/',
- 'active',1,'{"source":"official_program_pdf","course_slug":"diseno-grafico-en-photoshop","offering_code":null,"catalog_url":"https://mystudyx.com/diplomado/diseno-grafico-en-photoshop/","pdf_sha256":"eb9db1dd629056691c137d420c6df0ead6e0d9d9b0a820242cfc12f1d0788bf5","source_page":6,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
+ 'active',1,'{"source":"official_program_pdf","course_slug":"diseno-grafico-en-photoshop","offering_code":"diseno_photoshop","catalog_url":"https://mystudyx.com/diplomado/diseno-grafico-en-photoshop/","pdf_sha256":"eb9db1dd629056691c137d420c6df0ead6e0d9d9b0a820242cfc12f1d0788bf5","source_page":6,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
 ('df15be46-5dc2-48e8-a063-f66ab611cbe0','b0000000-0000-4000-8000-000000000001','offering',
  'Programa — Diseño Gráfico con Photoshop — página 7 — parte 1',
  'Curso: Diseño Gráfico con Photoshop.
@@ -1422,14 +1422,14 @@ Los exámenes te ayudaran a
 fortalecer y afirmar conceptos
 fundamentales
 Programa completo: https://mystudyx.com/diplomado/diseno-grafico-en-photoshop/',
- 'active',1,'{"source":"official_program_pdf","course_slug":"diseno-grafico-en-photoshop","offering_code":null,"catalog_url":"https://mystudyx.com/diplomado/diseno-grafico-en-photoshop/","pdf_sha256":"eb9db1dd629056691c137d420c6df0ead6e0d9d9b0a820242cfc12f1d0788bf5","source_page":7,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
+ 'active',1,'{"source":"official_program_pdf","course_slug":"diseno-grafico-en-photoshop","offering_code":"diseno_photoshop","catalog_url":"https://mystudyx.com/diplomado/diseno-grafico-en-photoshop/","pdf_sha256":"eb9db1dd629056691c137d420c6df0ead6e0d9d9b0a820242cfc12f1d0788bf5","source_page":7,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
 ('3a99638c-e0a4-498f-aad0-3350f0982d5e','b0000000-0000-4000-8000-000000000001','offering',
  'Programa — Diseño Gráfico con Photoshop — página 7 — parte 2',
  'Curso: Diseño Gráfico con Photoshop.
 Fuente oficial: programa StudyX, página 7 de 14.
 ¿Por que elegirnos?
 Programa completo: https://mystudyx.com/diplomado/diseno-grafico-en-photoshop/',
- 'active',1,'{"source":"official_program_pdf","course_slug":"diseno-grafico-en-photoshop","offering_code":null,"catalog_url":"https://mystudyx.com/diplomado/diseno-grafico-en-photoshop/","pdf_sha256":"eb9db1dd629056691c137d420c6df0ead6e0d9d9b0a820242cfc12f1d0788bf5","source_page":7,"source_part":2,"extracted_at":"2026-10-29"}'::jsonb),
+ 'active',1,'{"source":"official_program_pdf","course_slug":"diseno-grafico-en-photoshop","offering_code":"diseno_photoshop","catalog_url":"https://mystudyx.com/diplomado/diseno-grafico-en-photoshop/","pdf_sha256":"eb9db1dd629056691c137d420c6df0ead6e0d9d9b0a820242cfc12f1d0788bf5","source_page":7,"source_part":2,"extracted_at":"2026-10-29"}'::jsonb),
 ('a356eb10-c3f3-4c24-a583-96e9ef7bb72f','b0000000-0000-4000-8000-000000000001','offering',
  'Programa — Diseño Gráfico con Photoshop — página 8 — parte 1',
  'Curso: Diseño Gráfico con Photoshop.
@@ -1457,7 +1457,7 @@ Guardar imagen como .jpg
 Diseño Gráfico con
 Photoshop
 Programa completo: https://mystudyx.com/diplomado/diseno-grafico-en-photoshop/',
- 'active',1,'{"source":"official_program_pdf","course_slug":"diseno-grafico-en-photoshop","offering_code":null,"catalog_url":"https://mystudyx.com/diplomado/diseno-grafico-en-photoshop/","pdf_sha256":"eb9db1dd629056691c137d420c6df0ead6e0d9d9b0a820242cfc12f1d0788bf5","source_page":8,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
+ 'active',1,'{"source":"official_program_pdf","course_slug":"diseno-grafico-en-photoshop","offering_code":"diseno_photoshop","catalog_url":"https://mystudyx.com/diplomado/diseno-grafico-en-photoshop/","pdf_sha256":"eb9db1dd629056691c137d420c6df0ead6e0d9d9b0a820242cfc12f1d0788bf5","source_page":8,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
 ('f03275a7-8feb-4a34-9d66-e0b21089dbdf','b0000000-0000-4000-8000-000000000001','offering',
  'Programa — Diseño Gráfico con Photoshop — página 9 — parte 1',
  'Curso: Diseño Gráfico con Photoshop.
@@ -1485,7 +1485,7 @@ pegar y duplicar.
 Diseño Gráfico con
 Photoshop
 Programa completo: https://mystudyx.com/diplomado/diseno-grafico-en-photoshop/',
- 'active',1,'{"source":"official_program_pdf","course_slug":"diseno-grafico-en-photoshop","offering_code":null,"catalog_url":"https://mystudyx.com/diplomado/diseno-grafico-en-photoshop/","pdf_sha256":"eb9db1dd629056691c137d420c6df0ead6e0d9d9b0a820242cfc12f1d0788bf5","source_page":9,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
+ 'active',1,'{"source":"official_program_pdf","course_slug":"diseno-grafico-en-photoshop","offering_code":"diseno_photoshop","catalog_url":"https://mystudyx.com/diplomado/diseno-grafico-en-photoshop/","pdf_sha256":"eb9db1dd629056691c137d420c6df0ead6e0d9d9b0a820242cfc12f1d0788bf5","source_page":9,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
 ('1c2b0002-07d9-4089-8411-c8f975489a9d','b0000000-0000-4000-8000-000000000001','offering',
  'Programa — Diseño Gráfico con Photoshop — página 10 — parte 1',
  'Curso: Diseño Gráfico con Photoshop.
@@ -1515,7 +1515,7 @@ tapa.
 Diseño Gráfico con
 Photoshop
 Programa completo: https://mystudyx.com/diplomado/diseno-grafico-en-photoshop/',
- 'active',1,'{"source":"official_program_pdf","course_slug":"diseno-grafico-en-photoshop","offering_code":null,"catalog_url":"https://mystudyx.com/diplomado/diseno-grafico-en-photoshop/","pdf_sha256":"eb9db1dd629056691c137d420c6df0ead6e0d9d9b0a820242cfc12f1d0788bf5","source_page":10,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
+ 'active',1,'{"source":"official_program_pdf","course_slug":"diseno-grafico-en-photoshop","offering_code":"diseno_photoshop","catalog_url":"https://mystudyx.com/diplomado/diseno-grafico-en-photoshop/","pdf_sha256":"eb9db1dd629056691c137d420c6df0ead6e0d9d9b0a820242cfc12f1d0788bf5","source_page":10,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
 ('45625780-59a6-468b-9916-8f8321b106b9','b0000000-0000-4000-8000-000000000001','offering',
  'Programa — Diseño Gráfico con Photoshop — página 11 — parte 1',
  'Curso: Diseño Gráfico con Photoshop.
@@ -1543,7 +1543,7 @@ Transformación libre. Duplicar capas en
 distintos archivos. Añadir máscara. Uso y
 configuración. Herramienta Degradado.
 Programa completo: https://mystudyx.com/diplomado/diseno-grafico-en-photoshop/',
- 'active',1,'{"source":"official_program_pdf","course_slug":"diseno-grafico-en-photoshop","offering_code":null,"catalog_url":"https://mystudyx.com/diplomado/diseno-grafico-en-photoshop/","pdf_sha256":"eb9db1dd629056691c137d420c6df0ead6e0d9d9b0a820242cfc12f1d0788bf5","source_page":11,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
+ 'active',1,'{"source":"official_program_pdf","course_slug":"diseno-grafico-en-photoshop","offering_code":"diseno_photoshop","catalog_url":"https://mystudyx.com/diplomado/diseno-grafico-en-photoshop/","pdf_sha256":"eb9db1dd629056691c137d420c6df0ead6e0d9d9b0a820242cfc12f1d0788bf5","source_page":11,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
 ('9f5d0a5a-0a89-45a2-9f7d-1ec6111e4451','b0000000-0000-4000-8000-000000000001','offering',
  'Programa — Diseño Gráfico con Photoshop — página 11 — parte 2',
  'Curso: Diseño Gráfico con Photoshop.
@@ -1552,7 +1552,7 @@ Estilos, configuración y aplicación.
 Diseño Gráfico con
 Photoshop
 Programa completo: https://mystudyx.com/diplomado/diseno-grafico-en-photoshop/',
- 'active',1,'{"source":"official_program_pdf","course_slug":"diseno-grafico-en-photoshop","offering_code":null,"catalog_url":"https://mystudyx.com/diplomado/diseno-grafico-en-photoshop/","pdf_sha256":"eb9db1dd629056691c137d420c6df0ead6e0d9d9b0a820242cfc12f1d0788bf5","source_page":11,"source_part":2,"extracted_at":"2026-10-29"}'::jsonb),
+ 'active',1,'{"source":"official_program_pdf","course_slug":"diseno-grafico-en-photoshop","offering_code":"diseno_photoshop","catalog_url":"https://mystudyx.com/diplomado/diseno-grafico-en-photoshop/","pdf_sha256":"eb9db1dd629056691c137d420c6df0ead6e0d9d9b0a820242cfc12f1d0788bf5","source_page":11,"source_part":2,"extracted_at":"2026-10-29"}'::jsonb),
 ('fd3a2ec1-00c1-4c63-9b40-22407477f762','b0000000-0000-4000-8000-000000000001','offering',
  'Programa — Diseño Gráfico con Photoshop — página 12 — parte 1',
  'Curso: Diseño Gráfico con Photoshop.
@@ -1579,7 +1579,7 @@ nuevos pinceles.
 Diseño Gráfico con
 Photoshop
 Programa completo: https://mystudyx.com/diplomado/diseno-grafico-en-photoshop/',
- 'active',1,'{"source":"official_program_pdf","course_slug":"diseno-grafico-en-photoshop","offering_code":null,"catalog_url":"https://mystudyx.com/diplomado/diseno-grafico-en-photoshop/","pdf_sha256":"eb9db1dd629056691c137d420c6df0ead6e0d9d9b0a820242cfc12f1d0788bf5","source_page":12,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
+ 'active',1,'{"source":"official_program_pdf","course_slug":"diseno-grafico-en-photoshop","offering_code":"diseno_photoshop","catalog_url":"https://mystudyx.com/diplomado/diseno-grafico-en-photoshop/","pdf_sha256":"eb9db1dd629056691c137d420c6df0ead6e0d9d9b0a820242cfc12f1d0788bf5","source_page":12,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
 ('7c46126f-ad54-414b-b5dc-79d8fc5055f3','b0000000-0000-4000-8000-000000000001','offering',
  'Programa — Diseño Gráfico con Photoshop — página 13 — parte 1',
  'Curso: Diseño Gráfico con Photoshop.
@@ -1601,7 +1601,7 @@ Examen Final
 Diseño Gráfico con
 Photoshop
 Programa completo: https://mystudyx.com/diplomado/diseno-grafico-en-photoshop/',
- 'active',1,'{"source":"official_program_pdf","course_slug":"diseno-grafico-en-photoshop","offering_code":null,"catalog_url":"https://mystudyx.com/diplomado/diseno-grafico-en-photoshop/","pdf_sha256":"eb9db1dd629056691c137d420c6df0ead6e0d9d9b0a820242cfc12f1d0788bf5","source_page":13,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
+ 'active',1,'{"source":"official_program_pdf","course_slug":"diseno-grafico-en-photoshop","offering_code":"diseno_photoshop","catalog_url":"https://mystudyx.com/diplomado/diseno-grafico-en-photoshop/","pdf_sha256":"eb9db1dd629056691c137d420c6df0ead6e0d9d9b0a820242cfc12f1d0788bf5","source_page":13,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
 ('fed4407a-843f-4616-b788-880a0c9febc0','b0000000-0000-4000-8000-000000000001','offering',
  'Programa — Diseño Gráfico con Photoshop — página 14 — parte 1',
  'Curso: Diseño Gráfico con Photoshop.
@@ -1613,7 +1613,7 @@ mystudyx.com
 instagram.com/studyxacademia
 facebook.com/Studyx-Academia
 Programa completo: https://mystudyx.com/diplomado/diseno-grafico-en-photoshop/',
- 'active',1,'{"source":"official_program_pdf","course_slug":"diseno-grafico-en-photoshop","offering_code":null,"catalog_url":"https://mystudyx.com/diplomado/diseno-grafico-en-photoshop/","pdf_sha256":"eb9db1dd629056691c137d420c6df0ead6e0d9d9b0a820242cfc12f1d0788bf5","source_page":14,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
+ 'active',1,'{"source":"official_program_pdf","course_slug":"diseno-grafico-en-photoshop","offering_code":"diseno_photoshop","catalog_url":"https://mystudyx.com/diplomado/diseno-grafico-en-photoshop/","pdf_sha256":"eb9db1dd629056691c137d420c6df0ead6e0d9d9b0a820242cfc12f1d0788bf5","source_page":14,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
 ('c4e399ee-a617-4aa0-90b7-b9d2771d02b1','b0000000-0000-4000-8000-000000000001','offering',
  'Programa — Energía Solar Fotovoltaica — página 3 — parte 1',
  'Curso: Energía Solar Fotovoltaica.
@@ -1641,7 +1641,7 @@ diferentes áreas + Actividades prácticas con exámenes
 parciales y Final.
 Módulos
 Programa completo: https://mystudyx.com/diplomado/energia-solar-fotovoltaica/',
- 'active',1,'{"source":"official_program_pdf","course_slug":"energia-solar-fotovoltaica","offering_code":null,"catalog_url":"https://mystudyx.com/diplomado/energia-solar-fotovoltaica/","pdf_sha256":"6f3bbc99f5aeb99ec31dda52656b3463b2e6edcef58f349acd3fa3b3f8c74950","source_page":3,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
+ 'active',1,'{"source":"official_program_pdf","course_slug":"energia-solar-fotovoltaica","offering_code":"energia_solar_fotovoltaica","catalog_url":"https://mystudyx.com/diplomado/energia-solar-fotovoltaica/","pdf_sha256":"6f3bbc99f5aeb99ec31dda52656b3463b2e6edcef58f349acd3fa3b3f8c74950","source_page":3,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
 ('2f8bfd86-c8c6-44b4-a233-bff6ce27836d','b0000000-0000-4000-8000-000000000001','offering',
  'Programa — Energía Solar Fotovoltaica — página 4 — parte 1',
  'Curso: Energía Solar Fotovoltaica.
@@ -1667,7 +1667,7 @@ Los principales objetivos que nos
 planteamos en esta capacitación
 son:
 Programa completo: https://mystudyx.com/diplomado/energia-solar-fotovoltaica/',
- 'active',1,'{"source":"official_program_pdf","course_slug":"energia-solar-fotovoltaica","offering_code":null,"catalog_url":"https://mystudyx.com/diplomado/energia-solar-fotovoltaica/","pdf_sha256":"6f3bbc99f5aeb99ec31dda52656b3463b2e6edcef58f349acd3fa3b3f8c74950","source_page":4,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
+ 'active',1,'{"source":"official_program_pdf","course_slug":"energia-solar-fotovoltaica","offering_code":"energia_solar_fotovoltaica","catalog_url":"https://mystudyx.com/diplomado/energia-solar-fotovoltaica/","pdf_sha256":"6f3bbc99f5aeb99ec31dda52656b3463b2e6edcef58f349acd3fa3b3f8c74950","source_page":4,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
 ('26364dff-c0c8-46c4-ab90-131a624e4702','b0000000-0000-4000-8000-000000000001','offering',
  'Programa — Energía Solar Fotovoltaica — página 5 — parte 1',
  'Curso: Energía Solar Fotovoltaica.
@@ -1708,14 +1708,14 @@ Los exámenes te ayudaran a
 fortalecer y afirmar conceptos
 fundamentales
 Programa completo: https://mystudyx.com/diplomado/energia-solar-fotovoltaica/',
- 'active',1,'{"source":"official_program_pdf","course_slug":"energia-solar-fotovoltaica","offering_code":null,"catalog_url":"https://mystudyx.com/diplomado/energia-solar-fotovoltaica/","pdf_sha256":"6f3bbc99f5aeb99ec31dda52656b3463b2e6edcef58f349acd3fa3b3f8c74950","source_page":5,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
+ 'active',1,'{"source":"official_program_pdf","course_slug":"energia-solar-fotovoltaica","offering_code":"energia_solar_fotovoltaica","catalog_url":"https://mystudyx.com/diplomado/energia-solar-fotovoltaica/","pdf_sha256":"6f3bbc99f5aeb99ec31dda52656b3463b2e6edcef58f349acd3fa3b3f8c74950","source_page":5,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
 ('bd01fa64-7436-4154-8fe3-45d784bc31a3','b0000000-0000-4000-8000-000000000001','offering',
  'Programa — Energía Solar Fotovoltaica — página 5 — parte 2',
  'Curso: Energía Solar Fotovoltaica.
 Fuente oficial: programa StudyX, página 5 de 10.
 ¿Por que elegirnos?
 Programa completo: https://mystudyx.com/diplomado/energia-solar-fotovoltaica/',
- 'active',1,'{"source":"official_program_pdf","course_slug":"energia-solar-fotovoltaica","offering_code":null,"catalog_url":"https://mystudyx.com/diplomado/energia-solar-fotovoltaica/","pdf_sha256":"6f3bbc99f5aeb99ec31dda52656b3463b2e6edcef58f349acd3fa3b3f8c74950","source_page":5,"source_part":2,"extracted_at":"2026-10-29"}'::jsonb),
+ 'active',1,'{"source":"official_program_pdf","course_slug":"energia-solar-fotovoltaica","offering_code":"energia_solar_fotovoltaica","catalog_url":"https://mystudyx.com/diplomado/energia-solar-fotovoltaica/","pdf_sha256":"6f3bbc99f5aeb99ec31dda52656b3463b2e6edcef58f349acd3fa3b3f8c74950","source_page":5,"source_part":2,"extracted_at":"2026-10-29"}'::jsonb),
 ('318bdd03-6f57-4e28-a959-d4848c1334d9','b0000000-0000-4000-8000-000000000001','offering',
  'Programa — Energía Solar Fotovoltaica — página 6 — parte 1',
  'Curso: Energía Solar Fotovoltaica.
@@ -1742,7 +1742,7 @@ Baterías
 Bloque de Carga
 Bloque de Cables
 Programa completo: https://mystudyx.com/diplomado/energia-solar-fotovoltaica/',
- 'active',1,'{"source":"official_program_pdf","course_slug":"energia-solar-fotovoltaica","offering_code":null,"catalog_url":"https://mystudyx.com/diplomado/energia-solar-fotovoltaica/","pdf_sha256":"6f3bbc99f5aeb99ec31dda52656b3463b2e6edcef58f349acd3fa3b3f8c74950","source_page":6,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
+ 'active',1,'{"source":"official_program_pdf","course_slug":"energia-solar-fotovoltaica","offering_code":"energia_solar_fotovoltaica","catalog_url":"https://mystudyx.com/diplomado/energia-solar-fotovoltaica/","pdf_sha256":"6f3bbc99f5aeb99ec31dda52656b3463b2e6edcef58f349acd3fa3b3f8c74950","source_page":6,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
 ('a0687972-4ca8-4fc1-8be0-a8933ff8cbc7','b0000000-0000-4000-8000-000000000001','offering',
  'Programa — Energía Solar Fotovoltaica — página 7 — parte 1',
  'Curso: Energía Solar Fotovoltaica.
@@ -1782,7 +1782,7 @@ Punto de máxima potencia
 4.
 5.
 Programa completo: https://mystudyx.com/diplomado/energia-solar-fotovoltaica/',
- 'active',1,'{"source":"official_program_pdf","course_slug":"energia-solar-fotovoltaica","offering_code":null,"catalog_url":"https://mystudyx.com/diplomado/energia-solar-fotovoltaica/","pdf_sha256":"6f3bbc99f5aeb99ec31dda52656b3463b2e6edcef58f349acd3fa3b3f8c74950","source_page":7,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
+ 'active',1,'{"source":"official_program_pdf","course_slug":"energia-solar-fotovoltaica","offering_code":"energia_solar_fotovoltaica","catalog_url":"https://mystudyx.com/diplomado/energia-solar-fotovoltaica/","pdf_sha256":"6f3bbc99f5aeb99ec31dda52656b3463b2e6edcef58f349acd3fa3b3f8c74950","source_page":7,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
 ('94ed817b-9803-4e81-b0bc-513d389a3891','b0000000-0000-4000-8000-000000000001','offering',
  'Programa — Energía Solar Fotovoltaica — página 8 — parte 1',
  'Curso: Energía Solar Fotovoltaica.
@@ -1809,7 +1809,7 @@ Proceso de Reciclaje
 1.
 2.
 Programa completo: https://mystudyx.com/diplomado/energia-solar-fotovoltaica/',
- 'active',1,'{"source":"official_program_pdf","course_slug":"energia-solar-fotovoltaica","offering_code":null,"catalog_url":"https://mystudyx.com/diplomado/energia-solar-fotovoltaica/","pdf_sha256":"6f3bbc99f5aeb99ec31dda52656b3463b2e6edcef58f349acd3fa3b3f8c74950","source_page":8,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
+ 'active',1,'{"source":"official_program_pdf","course_slug":"energia-solar-fotovoltaica","offering_code":"energia_solar_fotovoltaica","catalog_url":"https://mystudyx.com/diplomado/energia-solar-fotovoltaica/","pdf_sha256":"6f3bbc99f5aeb99ec31dda52656b3463b2e6edcef58f349acd3fa3b3f8c74950","source_page":8,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
 ('3b34763a-3a72-44dc-9ef3-c5fb5b670b82','b0000000-0000-4000-8000-000000000001','offering',
  'Programa — Energía Solar Fotovoltaica — página 9 — parte 1',
  'Curso: Energía Solar Fotovoltaica.
@@ -1843,7 +1843,7 @@ Medición De La Salida Del Inversor
 Protecciones Típicas
 Clase 9: Examen Final
 Programa completo: https://mystudyx.com/diplomado/energia-solar-fotovoltaica/',
- 'active',1,'{"source":"official_program_pdf","course_slug":"energia-solar-fotovoltaica","offering_code":null,"catalog_url":"https://mystudyx.com/diplomado/energia-solar-fotovoltaica/","pdf_sha256":"6f3bbc99f5aeb99ec31dda52656b3463b2e6edcef58f349acd3fa3b3f8c74950","source_page":9,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
+ 'active',1,'{"source":"official_program_pdf","course_slug":"energia-solar-fotovoltaica","offering_code":"energia_solar_fotovoltaica","catalog_url":"https://mystudyx.com/diplomado/energia-solar-fotovoltaica/","pdf_sha256":"6f3bbc99f5aeb99ec31dda52656b3463b2e6edcef58f349acd3fa3b3f8c74950","source_page":9,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
 ('ef1d9db0-a788-4df6-8219-56b7bbeb4746','b0000000-0000-4000-8000-000000000001','offering',
  'Programa — Energía Solar Fotovoltaica — página 10 — parte 1',
  'Curso: Energía Solar Fotovoltaica.
@@ -1855,7 +1855,7 @@ mystudyx.com
 instagram.com/studyxacademia
 facebook.com/Studyx-Academia
 Programa completo: https://mystudyx.com/diplomado/energia-solar-fotovoltaica/',
- 'active',1,'{"source":"official_program_pdf","course_slug":"energia-solar-fotovoltaica","offering_code":null,"catalog_url":"https://mystudyx.com/diplomado/energia-solar-fotovoltaica/","pdf_sha256":"6f3bbc99f5aeb99ec31dda52656b3463b2e6edcef58f349acd3fa3b3f8c74950","source_page":10,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
+ 'active',1,'{"source":"official_program_pdf","course_slug":"energia-solar-fotovoltaica","offering_code":"energia_solar_fotovoltaica","catalog_url":"https://mystudyx.com/diplomado/energia-solar-fotovoltaica/","pdf_sha256":"6f3bbc99f5aeb99ec31dda52656b3463b2e6edcef58f349acd3fa3b3f8c74950","source_page":10,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
 ('a5c2c52a-54db-4565-9b1b-f3d1f67ebfa3','b0000000-0000-4000-8000-000000000001','offering',
  'Programa — Entrenamiento Funcional — página 3 — parte 1',
  'Curso: Entrenamiento Funcional.
@@ -3326,7 +3326,7 @@ diferentes áreas + Actividades prácticas + Exámenes
 parciales y Final.
 Módulos
 Programa completo: https://mystudyx.com/diplomado/marketing-digital/',
- 'active',1,'{"source":"official_program_pdf","course_slug":"marketing-digital","offering_code":null,"catalog_url":"https://mystudyx.com/diplomado/marketing-digital/","pdf_sha256":"61b53957bd2c84813d22266faf572802ef6a9d0b20700b5690475da84c9500e0","source_page":3,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
+ 'active',1,'{"source":"official_program_pdf","course_slug":"marketing-digital","offering_code":"marketing_digital","catalog_url":"https://mystudyx.com/diplomado/marketing-digital/","pdf_sha256":"61b53957bd2c84813d22266faf572802ef6a9d0b20700b5690475da84c9500e0","source_page":3,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
 ('d661eb2b-7f14-4803-9a59-179aec08c3ab','b0000000-0000-4000-8000-000000000001','offering',
  'Programa — Marketing Digital — página 4 — parte 1',
  'Curso: Marketing Digital.
@@ -3352,7 +3352,7 @@ conceptos que te ayudarán a
 manejar el Marketing digital de la
 mejor manera.
 Programa completo: https://mystudyx.com/diplomado/marketing-digital/',
- 'active',1,'{"source":"official_program_pdf","course_slug":"marketing-digital","offering_code":null,"catalog_url":"https://mystudyx.com/diplomado/marketing-digital/","pdf_sha256":"61b53957bd2c84813d22266faf572802ef6a9d0b20700b5690475da84c9500e0","source_page":4,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
+ 'active',1,'{"source":"official_program_pdf","course_slug":"marketing-digital","offering_code":"marketing_digital","catalog_url":"https://mystudyx.com/diplomado/marketing-digital/","pdf_sha256":"61b53957bd2c84813d22266faf572802ef6a9d0b20700b5690475da84c9500e0","source_page":4,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
 ('ffd2a438-17ea-43ca-8dc7-374951d24eb8','b0000000-0000-4000-8000-000000000001','offering',
  'Programa — Marketing Digital — página 5 — parte 1',
  'Curso: Marketing Digital.
@@ -3391,7 +3391,7 @@ pasos firmes
 Exámenes
 Los exámenes te ayudaran a
 Programa completo: https://mystudyx.com/diplomado/marketing-digital/',
- 'active',1,'{"source":"official_program_pdf","course_slug":"marketing-digital","offering_code":null,"catalog_url":"https://mystudyx.com/diplomado/marketing-digital/","pdf_sha256":"61b53957bd2c84813d22266faf572802ef6a9d0b20700b5690475da84c9500e0","source_page":5,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
+ 'active',1,'{"source":"official_program_pdf","course_slug":"marketing-digital","offering_code":"marketing_digital","catalog_url":"https://mystudyx.com/diplomado/marketing-digital/","pdf_sha256":"61b53957bd2c84813d22266faf572802ef6a9d0b20700b5690475da84c9500e0","source_page":5,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
 ('0ba1a071-b79a-4aff-82f5-2ecf038ddfbe','b0000000-0000-4000-8000-000000000001','offering',
  'Programa — Marketing Digital — página 5 — parte 2',
  'Curso: Marketing Digital.
@@ -3400,7 +3400,7 @@ fortalecer y afirmar conceptos
 fundamentales
 ¿Por que elegirnos?
 Programa completo: https://mystudyx.com/diplomado/marketing-digital/',
- 'active',1,'{"source":"official_program_pdf","course_slug":"marketing-digital","offering_code":null,"catalog_url":"https://mystudyx.com/diplomado/marketing-digital/","pdf_sha256":"61b53957bd2c84813d22266faf572802ef6a9d0b20700b5690475da84c9500e0","source_page":5,"source_part":2,"extracted_at":"2026-10-29"}'::jsonb),
+ 'active',1,'{"source":"official_program_pdf","course_slug":"marketing-digital","offering_code":"marketing_digital","catalog_url":"https://mystudyx.com/diplomado/marketing-digital/","pdf_sha256":"61b53957bd2c84813d22266faf572802ef6a9d0b20700b5690475da84c9500e0","source_page":5,"source_part":2,"extracted_at":"2026-10-29"}'::jsonb),
 ('8bcda46a-a4c2-4388-bc05-0039fe2f09fb','b0000000-0000-4000-8000-000000000001','offering',
  'Programa — Marketing Digital — página 6 — parte 1',
  'Curso: Marketing Digital.
@@ -3428,7 +3428,7 @@ Clase 17: Examen Final
 Temario Marketing
 Digital en Redes Sociales
 Programa completo: https://mystudyx.com/diplomado/marketing-digital/',
- 'active',1,'{"source":"official_program_pdf","course_slug":"marketing-digital","offering_code":null,"catalog_url":"https://mystudyx.com/diplomado/marketing-digital/","pdf_sha256":"61b53957bd2c84813d22266faf572802ef6a9d0b20700b5690475da84c9500e0","source_page":6,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
+ 'active',1,'{"source":"official_program_pdf","course_slug":"marketing-digital","offering_code":"marketing_digital","catalog_url":"https://mystudyx.com/diplomado/marketing-digital/","pdf_sha256":"61b53957bd2c84813d22266faf572802ef6a9d0b20700b5690475da84c9500e0","source_page":6,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
 ('7be660a7-e598-46ac-bdc8-485319ce8640','b0000000-0000-4000-8000-000000000001','offering',
  'Programa — Marketing Digital — página 7 — parte 1',
  'Curso: Marketing Digital.
@@ -3440,7 +3440,7 @@ mystudyx.com
 instagram.com/studyxacademia
 facebook.com/Studyx-Academia
 Programa completo: https://mystudyx.com/diplomado/marketing-digital/',
- 'active',1,'{"source":"official_program_pdf","course_slug":"marketing-digital","offering_code":null,"catalog_url":"https://mystudyx.com/diplomado/marketing-digital/","pdf_sha256":"61b53957bd2c84813d22266faf572802ef6a9d0b20700b5690475da84c9500e0","source_page":7,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
+ 'active',1,'{"source":"official_program_pdf","course_slug":"marketing-digital","offering_code":"marketing_digital","catalog_url":"https://mystudyx.com/diplomado/marketing-digital/","pdf_sha256":"61b53957bd2c84813d22266faf572802ef6a9d0b20700b5690475da84c9500e0","source_page":7,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
 ('4db0561f-6dd2-4a90-b43c-4213464b7518','b0000000-0000-4000-8000-000000000001','offering',
  'Programa — Masoterapia — página 3 — parte 1',
  'Curso: Masoterapia.
@@ -3812,7 +3812,7 @@ diferentes áreas + Actividades prácticas con Exámenes
 parciales y Final.
 Módulos
 Programa completo: https://mystudyx.com/diplomado/organizador-profesional-de-eventos-sociales/',
- 'active',1,'{"source":"official_program_pdf","course_slug":"organizador-profesional-de-eventos-sociales","offering_code":null,"catalog_url":"https://mystudyx.com/diplomado/organizador-profesional-de-eventos-sociales/","pdf_sha256":"79b223e155dddc746d798012f1c64350cd3b9c9e57eeaf5077c1ece8caaf4b6d","source_page":3,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
+ 'active',1,'{"source":"official_program_pdf","course_slug":"organizador-profesional-de-eventos-sociales","offering_code":"organizador_eventos_sociales","catalog_url":"https://mystudyx.com/diplomado/organizador-profesional-de-eventos-sociales/","pdf_sha256":"79b223e155dddc746d798012f1c64350cd3b9c9e57eeaf5077c1ece8caaf4b6d","source_page":3,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
 ('f258ed97-0a67-4480-a37a-d8cb53af1279','b0000000-0000-4000-8000-000000000001','offering',
  'Programa — Organizador Profesional de Eventos Sociales — página 4 — parte 1',
  'Curso: Organizador Profesional de Eventos Sociales.
@@ -3828,7 +3828,7 @@ Sociales, sino también para vender
 tus servicios y potenciar tu
 emprendimiento en redes sociales.
 Programa completo: https://mystudyx.com/diplomado/organizador-profesional-de-eventos-sociales/',
- 'active',1,'{"source":"official_program_pdf","course_slug":"organizador-profesional-de-eventos-sociales","offering_code":null,"catalog_url":"https://mystudyx.com/diplomado/organizador-profesional-de-eventos-sociales/","pdf_sha256":"79b223e155dddc746d798012f1c64350cd3b9c9e57eeaf5077c1ece8caaf4b6d","source_page":4,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
+ 'active',1,'{"source":"official_program_pdf","course_slug":"organizador-profesional-de-eventos-sociales","offering_code":"organizador_eventos_sociales","catalog_url":"https://mystudyx.com/diplomado/organizador-profesional-de-eventos-sociales/","pdf_sha256":"79b223e155dddc746d798012f1c64350cd3b9c9e57eeaf5077c1ece8caaf4b6d","source_page":4,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
 ('c152d8d6-4cc3-4e40-8287-a8da0aef8f9a','b0000000-0000-4000-8000-000000000001','offering',
  'Programa — Organizador Profesional de Eventos Sociales — página 5 — parte 1',
  'Curso: Organizador Profesional de Eventos Sociales.
@@ -3868,7 +3868,7 @@ Exámenes
 Los exámenes te ayudaran a
 fortalecer y afirmar conceptos
 Programa completo: https://mystudyx.com/diplomado/organizador-profesional-de-eventos-sociales/',
- 'active',1,'{"source":"official_program_pdf","course_slug":"organizador-profesional-de-eventos-sociales","offering_code":null,"catalog_url":"https://mystudyx.com/diplomado/organizador-profesional-de-eventos-sociales/","pdf_sha256":"79b223e155dddc746d798012f1c64350cd3b9c9e57eeaf5077c1ece8caaf4b6d","source_page":5,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
+ 'active',1,'{"source":"official_program_pdf","course_slug":"organizador-profesional-de-eventos-sociales","offering_code":"organizador_eventos_sociales","catalog_url":"https://mystudyx.com/diplomado/organizador-profesional-de-eventos-sociales/","pdf_sha256":"79b223e155dddc746d798012f1c64350cd3b9c9e57eeaf5077c1ece8caaf4b6d","source_page":5,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
 ('7a2d01e7-d895-452b-99b2-6b15f62dc21f','b0000000-0000-4000-8000-000000000001','offering',
  'Programa — Organizador Profesional de Eventos Sociales — página 5 — parte 2',
  'Curso: Organizador Profesional de Eventos Sociales.
@@ -3876,7 +3876,7 @@ Fuente oficial: programa StudyX, página 5 de 8.
 fundamentales
 ¿Por que elegirnos?
 Programa completo: https://mystudyx.com/diplomado/organizador-profesional-de-eventos-sociales/',
- 'active',1,'{"source":"official_program_pdf","course_slug":"organizador-profesional-de-eventos-sociales","offering_code":null,"catalog_url":"https://mystudyx.com/diplomado/organizador-profesional-de-eventos-sociales/","pdf_sha256":"79b223e155dddc746d798012f1c64350cd3b9c9e57eeaf5077c1ece8caaf4b6d","source_page":5,"source_part":2,"extracted_at":"2026-10-29"}'::jsonb),
+ 'active',1,'{"source":"official_program_pdf","course_slug":"organizador-profesional-de-eventos-sociales","offering_code":"organizador_eventos_sociales","catalog_url":"https://mystudyx.com/diplomado/organizador-profesional-de-eventos-sociales/","pdf_sha256":"79b223e155dddc746d798012f1c64350cd3b9c9e57eeaf5077c1ece8caaf4b6d","source_page":5,"source_part":2,"extracted_at":"2026-10-29"}'::jsonb),
 ('b70aa3d7-fb17-4c76-97ee-da0642e91d8d','b0000000-0000-4000-8000-000000000001','offering',
  'Programa — Organizador Profesional de Eventos Sociales — página 6 — parte 1',
  'Curso: Organizador Profesional de Eventos Sociales.
@@ -3909,7 +3909,7 @@ Temario Organizador
 Profesional de Eventos
 Sociales
 Programa completo: https://mystudyx.com/diplomado/organizador-profesional-de-eventos-sociales/',
- 'active',1,'{"source":"official_program_pdf","course_slug":"organizador-profesional-de-eventos-sociales","offering_code":null,"catalog_url":"https://mystudyx.com/diplomado/organizador-profesional-de-eventos-sociales/","pdf_sha256":"79b223e155dddc746d798012f1c64350cd3b9c9e57eeaf5077c1ece8caaf4b6d","source_page":6,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
+ 'active',1,'{"source":"official_program_pdf","course_slug":"organizador-profesional-de-eventos-sociales","offering_code":"organizador_eventos_sociales","catalog_url":"https://mystudyx.com/diplomado/organizador-profesional-de-eventos-sociales/","pdf_sha256":"79b223e155dddc746d798012f1c64350cd3b9c9e57eeaf5077c1ece8caaf4b6d","source_page":6,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
 ('eb1b0254-1ab0-4ea0-be5c-ec1e4265691c','b0000000-0000-4000-8000-000000000001','offering',
  'Programa — Organizador Profesional de Eventos Sociales — página 7 — parte 1',
  'Curso: Organizador Profesional de Eventos Sociales.
@@ -3938,7 +3938,7 @@ Temario Organizador
 Profesional de Eventos
 Sociales
 Programa completo: https://mystudyx.com/diplomado/organizador-profesional-de-eventos-sociales/',
- 'active',1,'{"source":"official_program_pdf","course_slug":"organizador-profesional-de-eventos-sociales","offering_code":null,"catalog_url":"https://mystudyx.com/diplomado/organizador-profesional-de-eventos-sociales/","pdf_sha256":"79b223e155dddc746d798012f1c64350cd3b9c9e57eeaf5077c1ece8caaf4b6d","source_page":7,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
+ 'active',1,'{"source":"official_program_pdf","course_slug":"organizador-profesional-de-eventos-sociales","offering_code":"organizador_eventos_sociales","catalog_url":"https://mystudyx.com/diplomado/organizador-profesional-de-eventos-sociales/","pdf_sha256":"79b223e155dddc746d798012f1c64350cd3b9c9e57eeaf5077c1ece8caaf4b6d","source_page":7,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
 ('54b5e34d-10f9-491f-bb32-1deb880cb725','b0000000-0000-4000-8000-000000000001','offering',
  'Programa — Organizador Profesional de Eventos Sociales — página 8 — parte 1',
  'Curso: Organizador Profesional de Eventos Sociales.
@@ -3951,7 +3951,7 @@ mystudyx.com
 instagram.com/studyxacademia
 facebook.com/Studyx-Academia
 Programa completo: https://mystudyx.com/diplomado/organizador-profesional-de-eventos-sociales/',
- 'active',1,'{"source":"official_program_pdf","course_slug":"organizador-profesional-de-eventos-sociales","offering_code":null,"catalog_url":"https://mystudyx.com/diplomado/organizador-profesional-de-eventos-sociales/","pdf_sha256":"79b223e155dddc746d798012f1c64350cd3b9c9e57eeaf5077c1ece8caaf4b6d","source_page":8,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
+ 'active',1,'{"source":"official_program_pdf","course_slug":"organizador-profesional-de-eventos-sociales","offering_code":"organizador_eventos_sociales","catalog_url":"https://mystudyx.com/diplomado/organizador-profesional-de-eventos-sociales/","pdf_sha256":"79b223e155dddc746d798012f1c64350cd3b9c9e57eeaf5077c1ece8caaf4b6d","source_page":8,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
 ('2dbccfba-dd5f-47c6-bd05-79957603bdaa','b0000000-0000-4000-8000-000000000001','offering',
  'Programa — Paisajismo y Jardinería — página 3 — parte 1',
  'Curso: Paisajismo y Jardinería.
@@ -4237,7 +4237,7 @@ diferentes áreas + Actividades prácticas con exámenes
 parciales y Final.
 Módulos
 Programa completo: https://mystudyx.com/diplomado/publicidad-en-las-redes-sociales/',
- 'active',1,'{"source":"official_program_pdf","course_slug":"publicidad-en-las-redes-sociales","offering_code":null,"catalog_url":"https://mystudyx.com/diplomado/publicidad-en-las-redes-sociales/","pdf_sha256":"5541829b0a3e2f43ad0497ca74825c4d9998c2bbc4d7d94d775ea9e474b1b081","source_page":3,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
+ 'active',1,'{"source":"official_program_pdf","course_slug":"publicidad-en-las-redes-sociales","offering_code":"publicidad_redes_sociales","catalog_url":"https://mystudyx.com/diplomado/publicidad-en-las-redes-sociales/","pdf_sha256":"5541829b0a3e2f43ad0497ca74825c4d9998c2bbc4d7d94d775ea9e474b1b081","source_page":3,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
 ('524cee0b-2e3f-42ae-9b8a-235514695413','b0000000-0000-4000-8000-000000000001','offering',
  'Programa — Publicidad en las Redes Sociales — página 4 — parte 1',
  'Curso: Publicidad en las Redes Sociales.
@@ -4262,7 +4262,7 @@ necesarios para:
 Serán algunos de los conceptos que
 te ayudarán a lograr tus objetivos.
 Programa completo: https://mystudyx.com/diplomado/publicidad-en-las-redes-sociales/',
- 'active',1,'{"source":"official_program_pdf","course_slug":"publicidad-en-las-redes-sociales","offering_code":null,"catalog_url":"https://mystudyx.com/diplomado/publicidad-en-las-redes-sociales/","pdf_sha256":"5541829b0a3e2f43ad0497ca74825c4d9998c2bbc4d7d94d775ea9e474b1b081","source_page":4,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
+ 'active',1,'{"source":"official_program_pdf","course_slug":"publicidad-en-las-redes-sociales","offering_code":"publicidad_redes_sociales","catalog_url":"https://mystudyx.com/diplomado/publicidad-en-las-redes-sociales/","pdf_sha256":"5541829b0a3e2f43ad0497ca74825c4d9998c2bbc4d7d94d775ea9e474b1b081","source_page":4,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
 ('1f56eb0e-a151-4330-ad46-4b768fbfa8fc','b0000000-0000-4000-8000-000000000001','offering',
  'Programa — Publicidad en las Redes Sociales — página 5 — parte 1',
  'Curso: Publicidad en las Redes Sociales.
@@ -4302,7 +4302,7 @@ Exámenes
 Los exámenes te ayudaran a
 fortalecer y afirmar conceptos
 Programa completo: https://mystudyx.com/diplomado/publicidad-en-las-redes-sociales/',
- 'active',1,'{"source":"official_program_pdf","course_slug":"publicidad-en-las-redes-sociales","offering_code":null,"catalog_url":"https://mystudyx.com/diplomado/publicidad-en-las-redes-sociales/","pdf_sha256":"5541829b0a3e2f43ad0497ca74825c4d9998c2bbc4d7d94d775ea9e474b1b081","source_page":5,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
+ 'active',1,'{"source":"official_program_pdf","course_slug":"publicidad-en-las-redes-sociales","offering_code":"publicidad_redes_sociales","catalog_url":"https://mystudyx.com/diplomado/publicidad-en-las-redes-sociales/","pdf_sha256":"5541829b0a3e2f43ad0497ca74825c4d9998c2bbc4d7d94d775ea9e474b1b081","source_page":5,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
 ('22b698dd-2817-43f5-89e0-62058a766b44','b0000000-0000-4000-8000-000000000001','offering',
  'Programa — Publicidad en las Redes Sociales — página 5 — parte 2',
  'Curso: Publicidad en las Redes Sociales.
@@ -4310,7 +4310,7 @@ Fuente oficial: programa StudyX, página 5 de 7.
 fundamentales
 ¿Por que elegirnos?
 Programa completo: https://mystudyx.com/diplomado/publicidad-en-las-redes-sociales/',
- 'active',1,'{"source":"official_program_pdf","course_slug":"publicidad-en-las-redes-sociales","offering_code":null,"catalog_url":"https://mystudyx.com/diplomado/publicidad-en-las-redes-sociales/","pdf_sha256":"5541829b0a3e2f43ad0497ca74825c4d9998c2bbc4d7d94d775ea9e474b1b081","source_page":5,"source_part":2,"extracted_at":"2026-10-29"}'::jsonb),
+ 'active',1,'{"source":"official_program_pdf","course_slug":"publicidad-en-las-redes-sociales","offering_code":"publicidad_redes_sociales","catalog_url":"https://mystudyx.com/diplomado/publicidad-en-las-redes-sociales/","pdf_sha256":"5541829b0a3e2f43ad0497ca74825c4d9998c2bbc4d7d94d775ea9e474b1b081","source_page":5,"source_part":2,"extracted_at":"2026-10-29"}'::jsonb),
 ('66c12942-7abe-44c6-a18c-331dab90c8b7','b0000000-0000-4000-8000-000000000001','offering',
  'Programa — Publicidad en las Redes Sociales — página 6 — parte 1',
  'Curso: Publicidad en las Redes Sociales.
@@ -4333,7 +4333,7 @@ Clase 11: Examen Final
 Temario Publicidad en
 Redes Sociales
 Programa completo: https://mystudyx.com/diplomado/publicidad-en-las-redes-sociales/',
- 'active',1,'{"source":"official_program_pdf","course_slug":"publicidad-en-las-redes-sociales","offering_code":null,"catalog_url":"https://mystudyx.com/diplomado/publicidad-en-las-redes-sociales/","pdf_sha256":"5541829b0a3e2f43ad0497ca74825c4d9998c2bbc4d7d94d775ea9e474b1b081","source_page":6,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
+ 'active',1,'{"source":"official_program_pdf","course_slug":"publicidad-en-las-redes-sociales","offering_code":"publicidad_redes_sociales","catalog_url":"https://mystudyx.com/diplomado/publicidad-en-las-redes-sociales/","pdf_sha256":"5541829b0a3e2f43ad0497ca74825c4d9998c2bbc4d7d94d775ea9e474b1b081","source_page":6,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
 ('4e9fa444-974e-4bfa-a705-d809b7868035','b0000000-0000-4000-8000-000000000001','offering',
  'Programa — Publicidad en las Redes Sociales — página 7 — parte 1',
  'Curso: Publicidad en las Redes Sociales.
@@ -4345,7 +4345,7 @@ mystudyx.com
 instagram.com/studyxacademia
 facebook.com/Studyx-Academia
 Programa completo: https://mystudyx.com/diplomado/publicidad-en-las-redes-sociales/',
- 'active',1,'{"source":"official_program_pdf","course_slug":"publicidad-en-las-redes-sociales","offering_code":null,"catalog_url":"https://mystudyx.com/diplomado/publicidad-en-las-redes-sociales/","pdf_sha256":"5541829b0a3e2f43ad0497ca74825c4d9998c2bbc4d7d94d775ea9e474b1b081","source_page":7,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
+ 'active',1,'{"source":"official_program_pdf","course_slug":"publicidad-en-las-redes-sociales","offering_code":"publicidad_redes_sociales","catalog_url":"https://mystudyx.com/diplomado/publicidad-en-las-redes-sociales/","pdf_sha256":"5541829b0a3e2f43ad0497ca74825c4d9998c2bbc4d7d94d775ea9e474b1b081","source_page":7,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
 ('6b31e9bc-5569-4ced-8402-1ea051d969ef','b0000000-0000-4000-8000-000000000001','offering',
  'Programa — Real Estate — página 1 — parte 1',
  'Curso: Real Estate.

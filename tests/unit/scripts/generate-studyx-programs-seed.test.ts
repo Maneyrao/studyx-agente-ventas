@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   COURSE_NAMES,
+  OFFERING_CODES,
   buildSources,
   generateSql,
   splitPage,
@@ -36,6 +37,18 @@ describe('StudyX official programme knowledge seed', () => {
       expect(source.content).toContain('Programa completo: https://mystudyx.com/diplomado/');
       expect(source.content).not.toMatch(/\$\s*[\d.,]+|\bUSD\b|\bd[oó]lares\b/i);
     }
+  });
+
+  it('links every official programme that has an active StudyX catalog offering', () => {
+    expect(OFFERING_CODES).toMatchObject({
+      'diseno-grafico-con-ilustrator': 'diseno_illustrator',
+      'diseno-grafico-en-coreldraw': 'diseno_corel_draw',
+      'diseno-grafico-en-photoshop': 'diseno_photoshop',
+      'energia-solar-fotovoltaica': 'energia_solar_fotovoltaica',
+      'marketing-digital': 'marketing_digital',
+      'organizador-profesional-de-eventos-sociales': 'organizador_eventos_sociales',
+      'publicidad-en-las-redes-sociales': 'publicidad_redes_sociales',
+    });
   });
 
   it('keeps substantive first pages from the newer short programmes', () => {

@@ -44,17 +44,24 @@ export const COURSE_NAMES = {
   'unas-gelificadas': 'Uñas Gelificadas',
 };
 
-const OFFERING_CODES = {
+export const OFFERING_CODES = {
   'asistente-cuidador-adultos-mayores': 'cuidador_adultos_mayores',
   barista: 'barista',
   'decoracion-interiores': 'decoracion_de_interiores',
+  'diseno-grafico-con-ilustrator': 'diseno_illustrator',
+  'diseno-grafico-en-coreldraw': 'diseno_corel_draw',
+  'diseno-grafico-en-photoshop': 'diseno_photoshop',
+  'energia-solar-fotovoltaica': 'energia_solar_fotovoltaica',
   'entrenamiento-funcional': 'entrenamiento_funcional',
   'fotografia-profesional': 'fotografia_profesional',
   'introduccion-al-vino-la-cata-y-el-maridaje': 'vino_cata_maridaje',
   'maquillaje-profesional': 'maquillaje_profesional',
+  'marketing-digital': 'marketing_digital',
   masoterapia: 'masoterapia',
   'nutricion-y-alimentacion-saludable': 'nutricion_alimentacion',
+  'organizador-profesional-de-eventos-sociales': 'organizador_eventos_sociales',
   'paisajismo-jardineria': 'paisajismo_jardineria',
+  'publicidad-en-las-redes-sociales': 'publicidad_redes_sociales',
   'sushi-para-principiantes': 'sushi_principiantes',
   'tecnica-o-en-depilacion-definitiva': 'depilacion_definitiva',
   'tecnica-o-en-estetica-integral': 'estetica_integral',
