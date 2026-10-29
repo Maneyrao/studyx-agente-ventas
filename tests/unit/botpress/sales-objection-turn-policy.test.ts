@@ -94,6 +94,46 @@ describe('evaluateSalesObjectionTurnV1', () => {
 
 describe('responseProgressesRepeatedPriceObjectionV1', () => {
   it.each([
+    { allow_requested_payment_terms: true },
+    { customer_expressed_real_budget_limit: true },
+  ])('allows a neutral single-payment count with authorization %j', (authorization) => {
+    expect(responseAvoidsDisallowedPriceReframingV1({
+      messages: ['Podés elegir un solo pago de USD 360.'], ...authorization,
+    })).toBe(true);
+  });
+
+  it.each([
+    'Puedes elegir un solo pago por sólo USD 360.',
+    'Puedes elegir un solo pago de apenas USD 360.',
+    'Por sólo USD 30 al mes.',
+  ])('does not let a payment count hide monetary minimization: %s', (message) => {
+    expect(responseAvoidsDisallowedPriceReframingV1({
+      messages: [message], allow_requested_payment_terms: true,
+    })).toBe(false);
+  });
+  it('allows neutral exact terms for a proven budget limit with a useful diagnostic', () => {
+    expect(responseProgressesRepeatedPriceObjectionV1({
+      messages: ['Podés elegir 12 pagos de USD 30. Qué importe mensual te permitiría estudiar sin comprometer tus gastos?'],
+      customer_expressed_real_budget_limit: true,
+    })).toBe(true);
+  });
+
+  it.each(['Podés elegir 12 pagos de USD 30.', 'El plan es USD 30 al mes.'])(
+    'rejects sterile installment repetition even for a proven budget limit: %s', (message) => {
+    expect(responseProgressesRepeatedPriceObjectionV1({
+      messages: [message],
+      customer_expressed_real_budget_limit: true,
+    })).toBe(false);
+  });
+
+  it.each(['Son sólo USD 30.', 'Son apenas USD 30.', 'Es la cuota más barata.', 'Es menos de USD 1 por día.'])(
+    'rejects minimization even for requested terms: %s', (message) => {
+      expect(responseAvoidsDisallowedPriceReframingV1({
+        messages: [message], allow_requested_payment_terms: true,
+      })).toBe(false);
+    },
+  );
+  it.each([
     'Son 12 cuotas de USD 30. Te parece?',
     'Puedes pagar 12 cuotas de USD 30.',
     'Incluye 16 clases para tu trabajo.',
@@ -234,6 +274,13 @@ describe('responseAvoidsDisallowedPriceReframingV1', () => {
       messages: ['Mantengo el precio sin descuentos y te incluyo Fotografía con Celulares gratis.'],
       authorized_bonus_offering_names: ['Fotografía con Celulares'],
     })).toBe(true);
+  });
+
+  it('keeps a following ordinary message outside the preceding gift object', () => {
+    const input={messages:['Te regalo Inglés 1','Podemos revisar el contenido del curso.'],
+      authorized_bonus_offering_names:['Inglés 1']};
+    expect(responseAvoidsDisallowedPriceReframingV1(input)).toBe(true);
+    expect(responseProgressesRepeatedPriceObjectionV1(input)).toBe(true);
   });
 
   it.each([

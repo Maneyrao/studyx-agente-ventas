@@ -217,7 +217,8 @@ export async function processStripeWebhook(
 
   return {
     status: 200,
-    body: { outcome: recorded.outcome, status: recorded.status },
-    verifiedPaymentId: recorded.status === 'paid' ? payment.id : undefined,
+    body: { outcome: recorded.outcome, status: recorded.status,
+      ...(recorded.reconciliation_required ? {reconciliation_required:true}: {}) },
+    verifiedPaymentId: recorded.status === 'paid' && !recorded.reconciliation_required ? payment.id : undefined,
   };
 }

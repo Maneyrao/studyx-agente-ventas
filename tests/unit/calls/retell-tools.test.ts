@@ -510,6 +510,28 @@ describe('Retell P0 tool boundary', () => {
     });
   });
 
+  it('passes exact direct cycle/version through the authenticated voice tool boundary', async () => {
+    const cycle=randomUUID();
+    const readCourseBonusPromotion=vi.fn(async()=>({promotionCode:'direct_bonus',promotionCycleId:cycle,offerVersion:2,
+      bonusOfferings:[{code:'ingles_2',displayName:'Inglés 2'}]}));
+    const requestAgentAPaymentLink=vi.fn(async()=>({sent:true,reference:'checkout',channel:'whatsapp'}));
+    const deps={...dependencies(),orchestration:{readCourseBonusPromotion,requestAgentAPaymentLink} as never};
+    const offer=await invoke('consultar_oferta',envelope('consultar_oferta',{cursos:['reparacion_celulares']}),deps);
+    expect(offer.body.oferta.promocion).toMatchObject({codigo:'direct_bonus',promotion_cycle_id:cycle,offer_version:2});
+    const result=await invoke('enviar_link_pago',envelope('enviar_link_pago',{
+      curso:'reparacion_celulares',plan_code:'one_time',promotion_code:'direct_bonus',
+      promotion_cycle_id:cycle,accepted_offer_version:2,accept_promotion:true,
+    }),deps);
+    expect(result.body).toMatchObject({ok:true});
+    expect(requestAgentAPaymentLink).toHaveBeenCalledWith({callId:internalCallId,contactId,conversationId,workspaceSlug:'studyx',
+      course:'reparacion_celulares',paymentPlan:'one_time',promotionCode:'direct_bonus',promotionCycleId:cycle,acceptedOfferVersion:2,acceptPromotion:true});
+    const unauthorized=await handleRetellToolRequest(request(envelope('enviar_link_pago',{
+      curso:'reparacion_celulares',plan_code:'one_time',promotion_code:'direct_bonus',promotion_cycle_id:cycle,accepted_offer_version:2,accept_promotion:true,
+    }),{secret:'wrong'}),'enviar_link_pago',deps);
+    expect(unauthorized.status).toBe(401);
+    expect(requestAgentAPaymentLink).toHaveBeenCalledTimes(1);
+  });
+
   it('exposes only a backend-authorized active voice promotion with the canonical offer', async () => {
     const deps = {
       ...dependencies(),

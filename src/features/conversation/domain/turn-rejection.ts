@@ -39,6 +39,8 @@ export const TURN_REJECTION_CODES_V1 = [
 export type TurnRejectionCodeV1 = typeof TURN_REJECTION_CODES_V1[number];
 
 export interface TurnRejectionReasonV1 {
+  // Direct bonus refusals use FACT_VALUE_MISMATCH twice: forbidden_promise
+  // activates the same-agent repair; direct_bonus:<reason> preserves its cause.
   readonly code: TurnRejectionCodeV1;
   /**
    * Identificador o código. NUNCA una frase para el cliente.

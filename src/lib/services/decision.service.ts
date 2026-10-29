@@ -1,4 +1,7 @@
 import type { ConversationChannel } from '@/lib/contracts/channel';
+import { randomUUID } from 'node:crypto';
+import { offerDirectCourseBonusV1, acceptDirectCourseBonusV1 } from '@/features/promotions/application/direct-course-bonus-service';
+import type { CourseBonusCapabilityV1 } from '@/features/promotions/application/read-course-bonus-capability';
 import { withSerializableTransaction } from '@/lib/db/transaction';
 import { sql } from '@/lib/db/orchestrator';
 import { jsonbParam } from '@/lib/db/json';
@@ -18,6 +21,7 @@ import {
   type PaymentReportProjectionSubjectV1,
 } from '@/features/payments/domain/payment-report-projection';
 import { auditLog } from '@/lib/audit/logger';
+import { resolveAgentTurnOfferingReferenceV2 } from '@/features/conversation/domain/agent-turn-policy-v2';
 import {
   loadAgentARolloutConfig,
   loadBusinessWorkspaceConfig,
@@ -58,6 +62,7 @@ import { createConfigPaymentLinkResolver } from '@/features/payments/adapters/co
 import {
   PaymentLinkReservationError,
   reservePaymentLink,
+  createValidatedPaymentLinkCourseSelectionV1,
   reserveStripeVerificationLink,
 } from '@/features/payments/application/reserve-payment-link';
 import {
@@ -690,6 +695,7 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
     const workspaceSlug = loadBusinessWorkspaceConfig().workspaceSlug;
     let preparedPipeline: Awaited<ReturnType<typeof prepareConversationPipelineCommitV1>> | null = null;
     let preparedAgentTurn: Awaited<ReturnType<typeof prepareAgentTurnV2>> | null = null;
+    let courseBonusCapability: CourseBonusCapabilityV1 | undefined;
     // El contador de fallbacks tiene que sobrevivir a la supresión, y
     // `preparedPipeline` no: la rama de egress lo anula y con él se iría la
     // única lectura del estado de la conversación.
@@ -816,12 +822,26 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
               WHERE batch_id = ${turn.batch_id}::uuid AND direction = 'inbound'
               ORDER BY conversation_seq ASC, created_at ASC, id ASC
             `;
-        const courseBonusCapability = await readCourseBonusCapabilityV1({
+        const agentCatalogIndex = rawCatalogIndex ? buildCatalogIndexView(rawCatalogIndex) : null;
+        const agentBusinessContext = rawBusiness ? buildBusinessContextView(rawBusiness) : null;
+        const currentMoves=[agentTurnProposal.move.move,...agentTurnProposal.move.secondary_moves];
+        const proposedActionType=validatedInput.agent_turn_v2.requested_action?.type ?? agentTurnProposal.proposed_action.type;
+        const checkoutSelectsCourse=(currentMoves.includes('select_course') || currentMoves.includes('request_call'))
+          && (proposedActionType==='send_payment_link'
+            || (proposedActionType==='none' && currentMoves.includes('request_payment_link')));
+        // Checkout owns the canonical selection of this complete turn. Reading
+        // only the previous state can hide A's supersession or veto a valid B.
+        const checkoutOfferingCode=checkoutSelectsCourse
+          ? resolveAgentTurnOfferingReferenceV2(agentTurnProposal.move.course_reference,
+            agentCatalogIndex?.offerings ?? agentBusinessContext?.offerings ?? [])
+          : pipelineStateBefore?.selected_offering_code ?? null;
+        courseBonusCapability = await readCourseBonusCapabilityV1({
           workspace_slug: workspaceSlug,
           contact_id: turn.contact_id,
           conversation_id: turn.conversation_id,
           channel: 'text',
-          selected_offering_code: pipelineStateBefore?.selected_offering_code ?? null,
+          selected_offering_code: checkoutOfferingCode,
+          source_turn_id: turn.id,
         }, { db });
         preparedAgentTurn = await prepareAgentTurnV2({
           turn: {
@@ -836,8 +856,8 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
           requested_action: validatedInput.agent_turn_v2.requested_action,
           semantic_rejections: 'advisory',
           current_customer_messages: currentMessages.map((message) => message.content),
-          business_context: rawBusiness ? buildBusinessContextView(rawBusiness) : null,
-          catalog_index: rawCatalogIndex ? buildCatalogIndexView(rawCatalogIndex) : null,
+          business_context: agentBusinessContext,
+          catalog_index: agentCatalogIndex,
           course_bonus_capability: courseBonusCapability,
         }, {
           state_store: new PostgresConversationStateStoreV1(db),
@@ -1074,6 +1094,10 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
           AND ad.business_action ->> 'offering_sku' = ${action.offering_sku}
           AND COALESCE(prior_payment.environment, 'live') = ${stripePaymentLinkEnvironment(materialized.block.url) ?? 'live'}
           AND (prior_payment.id IS NULL OR prior_payment.status NOT IN ('failed', 'expired', 'refunded'))
+          AND NOT EXISTS (SELECT 1 FROM payment_intent_supersessions superseded WHERE superseded.payment_id=prior_payment.id)
+          AND (prior_payment.promotion_cycle_id IS NULL OR (
+            prior_payment.promotion_cycle_id=${courseBonusCapability?.promotion_cycle_id ?? null}::uuid
+            AND prior_payment.accepted_offer_version=${courseBonusCapability?.offer_version ?? null}::integer))
           AND COALESCE((
             SELECT array_agg(DISTINCT snapshot.promotion_code_snapshot
               ORDER BY snapshot.promotion_code_snapshot)
@@ -1112,6 +1136,22 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
             payment_link_url: materialized.block.url,
             conversation_id: turn.conversation_id,
             ...(action.promotion_code ? { promotion_code: action.promotion_code } : {}),
+            ...(action.promotion_code && courseBonusCapability?.promotion_cycle_id
+              && ['accepted','attached'].includes(courseBonusCapability.package_status ?? '') ? {
+              promotion_cycle_id:courseBonusCapability.promotion_cycle_id ?? undefined,
+              accepted_offer_version:courseBonusCapability.offer_version ?? undefined,
+            }:{}),
+            ...(action.promotion_code && courseBonusCapability?.package_status === 'accepted'
+              && courseBonusCapability.promotion_cycle_id && preparedAgentTurn?.transition.selected_offering_code
+              && pipelineStateBefore
+              && preparedAgentTurn.transition.selected_offering_code !== pipelineStateBefore.selected_offering_code ? {
+              validated_course_selection:createValidatedPaymentLinkCourseSelectionV1({
+                workspace_id:canonicalWorkspaceId,contact_id:turn.contact_id,conversation_id:turn.conversation_id,
+                source_turn_id:turn.id,expected_state_version:pipelineStateBefore.version,
+                previous_offering_code:pipelineStateBefore.selected_offering_code,
+                selected_offering_code:preparedAgentTurn.transition.selected_offering_code,
+              }),
+            }:{}),
           });
           const configuredUrl = materialized.block.url;
           materialized = {
@@ -1252,11 +1292,20 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
           total: { currency: plan.currency, amount: plan.total_amount },
         })),
       });
+      const proposedDirectBonusCode = committedBusinessAction?.type === 'offer_course_bonus'
+        ? committedBusinessAction.bonus_offering_code : null;
       const inspectCommercialText = (content: string) => enforceCommercialTruthV1({
         content,
         authorized_urls: authorizedUrls,
         canonical: {
           ...canonicalTruth,
+          paid_offering_names: offerings.filter(o => o.code === effectiveAuthorizedOfferingCode).map(o => o.display_name),
+          authorized_bonus_names: [
+            ...(courseBonusCapability?.delivered_bonus_offerings ??
+              (courseBonusCapability?.enabled ? [] : courseBonusCapability?.bonus_offerings ?? []))
+              .map(o => o.display_name),
+            ...offerings.filter(o => o.code === proposedDirectBonusCode).map(o => o.display_name),
+          ],
           // Un plan de pago ya autorizado por la ruta de cobro es verdad
           // canónica para esta respuesta aunque no sea el precio de lista.
           prices: [
@@ -1628,8 +1677,8 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
         final_response: finalResponse,
         authored_messages: preparedAgentTurn?.response_messages ?? null,
         enabled: validatedInput.supports_multi_outbound === true,
-        force_single_message: committedBusinessAction?.type === 'send_payment_link'
-          && authorizedUrls.length > 0,
+        force_single_message: committedBusinessAction?.type === 'offer_course_bonus'
+          || (committedBusinessAction?.type === 'send_payment_link' && authorizedUrls.length > 0),
       });
       const profileRequests = preparedAgentTurn && validatedInput.agent_turn_v2
         ? contactProfileRequestsForPartsV1({
@@ -1651,6 +1700,34 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
         });
         let message: Message;
         try {
+          if (committedBusinessAction?.type === 'offer_course_bonus') {
+            const workspace = await db<Array<{id:string}>>`SELECT id FROM workspaces WHERE slug=${workspaceSlug}`;
+            canonicalWorkspaceId = workspace[0]?.id ?? null;
+            if (!canonicalWorkspaceId) throw new DecisionPolicyError('AGENT_TURN_V2_CONTEXT_NOT_FOUND');
+            const result = await offerDirectCourseBonusV1(db,{
+              workspace_id:canonicalWorkspaceId,contact_id:turn.contact_id,conversation_id:turn.conversation_id,
+              paid_offering_code:committedBusinessAction.interest_offering_code,source_turn_id:turn.id,
+              expected_offer_version:courseBonusCapability?.offer_version ?? 0,
+              promotion_code:courseBonusCapability?.promotion_code,promotion_cycle_id:courseBonusCapability?.promotion_cycle_id,
+              bonus_offering_codes:[committedBusinessAction.bonus_offering_code],
+              outbound:{id:randomUUID(),content,provider:turn.provider,integration_id:turn.integration_id,
+                channel:turn.channel,destination:turn.phone,
+                idempotency_key:validatedInput.supports_multi_outbound ? `outbound:${decisionId}:part:${partIndex}` : `outbound:${decisionId}`},
+            });
+            if (!result.ok) throw new DecisionPolicyError('AGENT_TURN_V2_REJECTED:COMMERCIAL_TRUTH_VIOLATION',
+              ['forbidden_promise',`direct_bonus:${result.reason}`]);
+            const rows = await db<Message[]>`UPDATE messages SET metadata=${jsonbParam(db,{
+              decision_id:decisionId,response_type:decision.response_type,model:validatedInput.model,
+              part_index:partIndex,part_count:partTexts.length,authorized_egress:partManifest,
+              ...(profileRequests[partIndex]?.length ? {contact_profile_requests_v1:profileRequests[partIndex]} : {}),
+            })} WHERE id=${result.outbound_message_id}::uuid RETURNING *`;
+            message = rows[0]!;
+            await db`UPDATE conversations SET last_turn_at=now() WHERE id=${turn.conversation_id}::uuid`;
+            await auditLog({action:'message.registered',entity_type:'message',entity_id:message.id,
+              payload:{conversation_id:turn.conversation_id,direction:'outbound',embedding_status:'pending'},
+              event_key:`decision:${decisionId}:message:${partIndex}`,correlation_id:validatedInput.trace_id,
+              causation_id:turn.id,source_event_id:turn.source_event_id ?? undefined},db);
+          } else {
           ({ message } = await registerMessage({
             conversation_id: turn.conversation_id,
             direction: 'outbound',
@@ -1676,6 +1753,7 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
               source_event_id: turn.source_event_id ?? undefined,
             },
           }));
+          }
         } catch (error) {
           const pg = getPostgresError(error);
           const constraint = pg?.constraint_name ?? pg?.constraint;
@@ -1797,6 +1875,7 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
             contact_id: turn.contact_id,
             conversation_id: turn.conversation_id,
             selected_offering_code: preparedAgentTurn.transition.selected_offering_code,
+            source_turn_id:turn.id,
           });
         }
         await recordPromotionConversationContextV1(db, {
@@ -1817,6 +1896,18 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
           ?? existingSalesContext?.selected_offering_code
           ?? null;
         if (paidOfferingCode) {
+          if (committedBusinessAction.type === 'accept_promotion'
+            && (courseBonusCapability?.enabled === true || courseBonusCapability?.promotion_cycle_id)) {
+            const action = committedBusinessAction;
+            const result = await acceptDirectCourseBonusV1(db,{
+              workspace_id:canonicalWorkspaceId,contact_id:turn.contact_id,conversation_id:turn.conversation_id,
+              paid_offering_code:action.interest_offering_code ?? paidOfferingCode,source_turn_id:turn.id,
+              expected_offer_version:action.offer_version ?? 0,promotion_code:action.promotion_code ?? '',
+              promotion_cycle_id:action.promotion_cycle_id ?? '',
+            });
+            if (!result.ok) throw new DecisionPolicyError('AGENT_TURN_V2_REJECTED:COMMERCIAL_TRUTH_VIOLATION',
+              ['forbidden_promise',`direct_bonus:${result.reason}`]);
+          } else {
           const promotionResult = await commitCommercialActionV1(db, {
             workspace_id: canonicalWorkspaceId,
             contact_id: turn.contact_id,
@@ -1837,6 +1928,7 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
           if (!promotionResult.offer_id) {
             committedBusinessAction = null;
             await db`UPDATE agent_decisions SET business_action = NULL WHERE id = ${decisionId}::uuid`;
+          }
           }
         } else {
           committedBusinessAction = null;
@@ -2087,7 +2179,8 @@ async function projectPendingPaymentsForContact(contactId: string): Promise<void
 export interface DeliveryReportInput {
   outbound_id: string;
   trace_id: string;
-  status: 'submitted_to_botpress' | 'failed';
+  status: 'submitted_to_botpress' | 'delivered' | 'failed';
+  delivered_at?: string | null;
   botpress_message_id: string | null;
   replayed: boolean;
   error_code: string | null;
@@ -2111,7 +2204,7 @@ export interface DeliveryReportResult {
   status: 'recorded' | 'duplicate' | 'stale_ignored';
   replayed: boolean;
   outbound_id: string;
-  delivery_status: 'submitted_to_botpress' | 'failed';
+  delivery_status: 'submitted_to_botpress' | 'delivered' | 'failed';
 }
 
 export class DeliveryReportConflictError extends Error {
@@ -2136,6 +2229,7 @@ export async function recordDeliveryReport(input: DeliveryReportInput): Promise<
     status: input.status,
     botpress_message_id: input.botpress_message_id,
     error_code: input.error_code,
+    ...(input.status === 'delivered' ? {delivered_at:input.delivered_at ?? null} : {}),
   };
   const payloadHash = sha256Hex(semanticPayload);
   const messageIdentity = input.botpress_message_id ?? 'none';
@@ -2147,11 +2241,12 @@ export async function recordDeliveryReport(input: DeliveryReportInput): Promise<
       id: string;
       state: string;
       provider_message_id: string | null;
+      submitted_at: Date | null;
       attempt_count: number;
       outbox_id: string;
       outbox_state: string;
     }>>`
-      SELECT od.id, od.state, od.provider_message_id, od.attempt_count,
+      SELECT od.id, od.state, od.provider_message_id, od.attempt_count, od.submitted_at,
              oe.id AS outbox_id, oe.state AS outbox_state
       FROM outbound_deliveries AS od
       JOIN outbox_events AS oe ON oe.delivery_id = od.id
@@ -2251,7 +2346,15 @@ export async function recordDeliveryReport(input: DeliveryReportInput): Promise<
       };
     }
 
-    if (input.status === 'submitted_to_botpress') {
+    if (input.status === 'delivered') {
+      const deliveredAt = input.delivered_at ? Date.parse(input.delivered_at) : NaN;
+      if (delivery.state !== 'submitted' || !input.botpress_message_id || input.error_code
+        || delivery.provider_message_id !== input.botpress_message_id || !Number.isFinite(deliveredAt)
+        || delivery.submitted_at === null || deliveredAt < new Date(delivery.submitted_at).getTime()
+        || deliveredAt > Date.now()) throw new DeliveryReportConflictError('Invalid confirmed delivery report');
+      await db`UPDATE outbound_deliveries SET state='delivered',delivered_at=${input.delivered_at!}::timestamptz
+        WHERE id=${delivery.id}::uuid AND attempt_count=${reportedAttempt}`;
+    } else if (input.status === 'submitted_to_botpress') {
       if (!input.botpress_message_id || input.error_code) throw new DeliveryReportConflictError('Invalid submitted report');
       if (delivery.state === 'submitted') {
         if (delivery.provider_message_id !== input.botpress_message_id) throw new DeliveryReportConflictError();

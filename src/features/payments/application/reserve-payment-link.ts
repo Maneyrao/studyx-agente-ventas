@@ -20,6 +20,34 @@ export class PaymentLinkReservationError extends Error {
   }
 }
 
+const validatedCourseSelections = new WeakSet<object>();
+const courseSelectionBrand: unique symbol = Symbol('validated-checkout-selection');
+interface PaymentLinkCourseSelectionDetailsV1 {
+  readonly workspace_id: string;
+  readonly contact_id: string;
+  readonly conversation_id: string;
+  readonly source_turn_id: string;
+  readonly expected_state_version: number;
+  readonly previous_offering_code: string | null;
+  readonly selected_offering_code: string;
+}
+export interface ValidatedPaymentLinkCourseSelectionV1 extends PaymentLinkCourseSelectionDetailsV1 {
+  readonly [courseSelectionBrand]: true;
+  toJSON(): never;
+}
+
+/** Internal handoff from an already authorized Agent A transition. The proof
+ * cannot be reconstructed from a public JSON request or used at a root DB. */
+export function createValidatedPaymentLinkCourseSelectionV1(
+  input: PaymentLinkCourseSelectionDetailsV1,
+): ValidatedPaymentLinkCourseSelectionV1 {
+  const proof = Object.freeze({ ...input, [courseSelectionBrand]: true as const,
+    toJSON(): never { throw new Error('Validated checkout selection is not serializable'); },
+  });
+  validatedCourseSelections.add(proof);
+  return proof;
+}
+
 export interface ReservePaymentLinkInput {
   readonly workspace_id: string;
   readonly contact_id: string;
@@ -29,7 +57,10 @@ export interface ReservePaymentLinkInput {
   readonly payment_link_url: string;
   readonly conversation_id?: string;
   readonly promotion_code?: string;
+  readonly promotion_cycle_id?: string;
+  readonly accepted_offer_version?: number;
   readonly promotion_channel?: 'text' | 'voice';
+  readonly validated_course_selection?: ValidatedPaymentLinkCourseSelectionV1;
 }
 
 export interface ReservedPaymentLink {
@@ -87,7 +118,16 @@ export async function reservePaymentLink(
   }
   const environment = stripePaymentLinkEnvironment(input.payment_link_url);
   if (!environment) throw new PaymentLinkReservationError('PAYMENT_LINK_INVALID');
-  if (input.promotion_code && !isCentralCargaBonusEnabledForContact(
+  const hasDirectIdentity=input.promotion_cycle_id !== undefined || input.accepted_offer_version !== undefined;
+  if(hasDirectIdentity && (!input.promotion_code || !input.promotion_cycle_id
+    || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(input.promotion_cycle_id)
+    || !Number.isSafeInteger(input.accepted_offer_version) || (input.accepted_offer_version ?? 0)<1
+    || (input.accepted_offer_version ?? 0)>3)) {
+    throw new PaymentLinkReservationError('PROMOTION_NOT_AUTHORIZED');
+  }
+  // A complete direct tuple is revalidated against the locked, sealed offer
+  // below. Rollback must not disable payment for that existing obligation.
+  if (input.promotion_code && !hasDirectIdentity && !isCentralCargaBonusEnabledForContact(
     loadCentralCargaBonusConfig(),
     input.contact_id,
   )) {
@@ -97,6 +137,12 @@ export async function reservePaymentLink(
   const begin = (db as DbClient & {
     begin?: <T>(fn: (transaction: DbClient) => Promise<T>) => Promise<T>;
   }).begin;
+  const selection = input.validated_course_selection;
+  if (selection && (typeof begin === 'function' || !validatedCourseSelections.has(selection)
+    || selection.workspace_id !== input.workspace_id || selection.contact_id !== input.contact_id
+    || selection.conversation_id !== input.conversation_id)) {
+    throw new PaymentLinkReservationError('PROMOTION_NOT_AUTHORIZED');
+  }
   if (typeof begin === 'function') {
     return (await begin.call(db, (transaction) => reservePaymentLink(transaction, input))) as ReservedPaymentLink;
   }
@@ -104,6 +150,9 @@ export async function reservePaymentLink(
   // The replay read must happen after the shared promotion lock. Otherwise a
   // concurrent identical request can observe no payment, wait for the first
   // reservation, then incorrectly reject the now-attached offer.
+  if(input.conversation_id) await db`SELECT conversation_id FROM conversation_sales_context_states_v1
+    WHERE workspace_id=${input.workspace_id}::uuid AND contact_id=${input.contact_id}::uuid
+      AND conversation_id=${input.conversation_id}::uuid FOR UPDATE`;
   if (input.promotion_code) {
     await lockPromotionRedemptionV1(db, {
       workspace_id: input.workspace_id,
@@ -123,10 +172,14 @@ export async function reservePaymentLink(
     environment: 'test' | 'live';
     promotion_codes: string[];
     bonus_snapshot_sealed_at: Date | null;
+    promotion_cycle_id: string | null;
+    accepted_offer_version: number | null;
+    source_conversation_id: string | null;
   }>>`
     SELECT payment.id, payment.status, payment.workspace_id, payment.contact_id,
       payment.offering_id, payment.plan_code, payment.checkout_url, payment.environment,
-      payment.bonus_snapshot_sealed_at,
+      payment.bonus_snapshot_sealed_at, payment.promotion_cycle_id,
+      payment.accepted_offer_version, payment.source_conversation_id,
       COALESCE((
         SELECT array_agg(DISTINCT snapshot.promotion_code_snapshot ORDER BY snapshot.promotion_code_snapshot)
         FROM payment_bonus_offerings snapshot WHERE snapshot.payment_id = payment.id
@@ -143,6 +196,9 @@ export async function reservePaymentLink(
       || found.plan_code !== input.plan_code
       || found.environment !== environment
       || !found.checkout_url
+      || found.promotion_cycle_id !== (input.promotion_cycle_id ?? null)
+      || found.accepted_offer_version !== (input.accepted_offer_version ?? null)
+      || found.source_conversation_id !== (input.conversation_id ?? null)
       || (input.promotion_code === undefined
         ? found.promotion_codes.length !== 0
         : found.promotion_codes.length !== 1 || found.promotion_codes[0] !== input.promotion_code)
@@ -156,10 +212,42 @@ export async function reservePaymentLink(
     return { payment_id: found.id, status: found.status, url: found.checkout_url };
   }
 
+  // A fresh ordinary request cannot bypass an attached package's manual path
+  // by omitting promotion_code. Historical exact replays above stay durable.
+  const supersededPackage=await db<Array<{id:string}>>`
+    SELECT offer.id FROM promotion_offers offer
+    JOIN payment_intent_supersessions superseded ON superseded.payment_id=offer.payment_id
+    WHERE offer.workspace_id=${input.workspace_id}::uuid AND offer.contact_id=${input.contact_id}::uuid
+      AND offer.conversation_id=${input.conversation_id ?? null}::uuid
+      AND offer.paid_offering_id=${input.offering_id}::uuid
+      AND offer.package_mode='direct' AND offer.status='attached'
+    LIMIT 1`;
+  if(supersededPackage[0]) throw new PaymentLinkReservationError('PROMOTION_NOT_AUTHORIZED');
+
+  let validatedCurrentSelection = false;
+  if (selection) {
+    const authorized = await db<Array<{ id: string }>>`
+      SELECT selected.id FROM conversation_sales_context_states_v1 context
+      JOIN messages source ON source.id=${selection.source_turn_id}::uuid
+        AND source.conversation_id=context.conversation_id AND source.contact_id=context.contact_id
+        AND source.direction='inbound'
+      JOIN offerings selected ON selected.workspace_id=context.workspace_id
+        AND selected.id=${input.offering_id}::uuid AND selected.code=${selection.selected_offering_code}
+        AND selected.status='active'
+      WHERE context.workspace_id=${input.workspace_id}::uuid AND context.contact_id=${input.contact_id}::uuid
+        AND context.conversation_id=${input.conversation_id ?? null}::uuid
+        AND context.version=${selection.expected_state_version}
+        AND context.selected_offering_code IS NOT DISTINCT FROM ${selection.previous_offering_code}
+    `;
+    if (!authorized[0]) throw new PaymentLinkReservationError('PROMOTION_NOT_AUTHORIZED');
+    validatedCurrentSelection = true;
+  }
+
   let authorizedPromotion: {
     promotion_id: string;
     offer_id: string;
     bonus_count: number;
+    package_mode: 'direct' | 'review';
   } | null = null;
   if (input.promotion_code) {
     if (!input.conversation_id) throw new PaymentLinkReservationError('PROMOTION_NOT_AUTHORIZED');
@@ -167,8 +255,9 @@ export async function reservePaymentLink(
       promotion_id: string;
       offer_id: string;
       bonus_count: number;
+      package_mode: 'direct' | 'review';
     }>>`
-      SELECT promotion.id AS promotion_id, offer.id AS offer_id,
+      SELECT promotion.id AS promotion_id, offer.id AS offer_id, offer.package_mode,
         (SELECT count(*)::integer FROM promotion_offer_bonus_offerings candidate
           WHERE candidate.offer_id = offer.id) AS bonus_count
       FROM promotions promotion
@@ -177,13 +266,24 @@ export async function reservePaymentLink(
         AND promotion.promotion_code = ${input.promotion_code}
         AND promotion.paid_offering_id = ${input.offering_id}::uuid
         AND promotion.active = true
-        AND ${input.promotion_channel ?? 'text'} = ANY(promotion.channels)
+        AND (${input.promotion_channel ?? 'text'} = ANY(promotion.channels) OR offer.package_mode='direct')
         AND (promotion.valid_from IS NULL OR promotion.valid_from <= now())
         AND (promotion.valid_until IS NULL OR promotion.valid_until > now())
         AND offer.workspace_id = ${input.workspace_id}::uuid
         AND offer.contact_id = ${input.contact_id}::uuid
         AND offer.conversation_id = ${input.conversation_id}::uuid
         AND offer.paid_offering_id = ${input.offering_id}::uuid
+        AND ((offer.package_mode = 'review' AND ${!hasDirectIdentity}) OR (offer.package_mode='direct' AND
+          offer.promotion_cycle_id = ${input.promotion_cycle_id ?? null}::uuid
+          AND offer.offer_version = ${input.accepted_offer_version ?? null}::integer
+          AND (offer.accepted_source_turn_id IS NOT NULL OR EXISTS (
+            SELECT 1 FROM promotion_voice_acceptances evidence WHERE evidence.offer_id=offer.id
+              AND evidence.promotion_cycle_id=offer.promotion_cycle_id AND evidence.offer_version=offer.offer_version))
+          AND (${validatedCurrentSelection} OR EXISTS (SELECT 1 FROM conversation_sales_context_states_v1 context
+            JOIN offerings selected ON selected.workspace_id=context.workspace_id AND selected.code=context.selected_offering_code
+            WHERE context.workspace_id=offer.workspace_id AND context.contact_id=offer.contact_id
+              AND context.conversation_id=offer.conversation_id AND selected.id=offer.paid_offering_id))
+        ))
         AND (
           (${input.promotion_channel ?? 'text'}::text = 'text' AND offer.status = 'accepted')
           OR (${input.promotion_channel ?? 'text'}::text = 'voice'
@@ -223,7 +323,8 @@ export async function reservePaymentLink(
       INSERT INTO payments (
         id, workspace_id, contact_id, offering_id, amount, currency, status,
         provider, environment, checkout_mode, idempotency_key, checkout_url, plan_code,
-        registration_email, registration_name, source_conversation_id
+        registration_email, registration_name, source_conversation_id,
+        promotion_offer_id,promotion_cycle_id,accepted_offer_version
       ) VALUES (
         ${paymentId}::uuid, ${input.workspace_id}::uuid, ${input.contact_id}::uuid,
         ${input.offering_id}::uuid, ${presentation.installment_amount},
@@ -231,7 +332,10 @@ export async function reservePaymentLink(
         ${input.idempotency_key}, ${checkoutUrl}, ${input.plan_code},
         (SELECT lower(trim(email)) FROM contacts WHERE id = ${input.contact_id}::uuid),
         (SELECT name FROM contacts WHERE id = ${input.contact_id}::uuid),
-        ${input.conversation_id ?? null}::uuid
+        ${input.conversation_id ?? null}::uuid,
+        ${authorizedPromotion?.package_mode === 'direct' ? authorizedPromotion.offer_id : null}::uuid,
+        ${authorizedPromotion?.package_mode === 'direct' ? input.promotion_cycle_id ?? null : null}::uuid,
+        ${authorizedPromotion?.package_mode === 'direct' ? input.accepted_offer_version ?? null : null}::integer
       )
       ON CONFLICT (idempotency_key) DO NOTHING
       RETURNING id, status, checkout_url
@@ -244,6 +348,9 @@ export async function reservePaymentLink(
           plan_code: input.plan_code,
           source: 'stripe_payment_link',
           ...(input.promotion_code ? { promotion_code: input.promotion_code } : {}),
+          ...(authorizedPromotion?.package_mode === 'direct' ? {
+            promotion_cycle_id:input.promotion_cycle_id,accepted_offer_version:input.accepted_offer_version,
+          } : {}),
         })}
       FROM inserted_payment
       ON CONFLICT (provider, provider_event_id) DO NOTHING

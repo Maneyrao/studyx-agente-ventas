@@ -2373,6 +2373,11 @@ export const processInboundTurn = new Workflow({
         turn_id: owned.turn_id,
         error_code: state.errorCode,
       })
+      if (agentTurnV2Commit !== null) {
+        turnDiagnostics = {schema_version:1,generation_attempts:agentAGenerationAttempts,
+          failure_stage:'backend_commit',failure_codes:['AGENT_A_COMMIT_FAILED'],action_status:'rejected'}
+        return recoverRejectedTurn()
+      }
       emitTimings()
       return finish()
     }

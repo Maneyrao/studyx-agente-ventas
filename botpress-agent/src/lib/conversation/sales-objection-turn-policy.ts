@@ -1,4 +1,5 @@
 import type { AgentAContextV1 } from '../../schemas/agent-a-brain';
+import { inspectCourseBonusClaimsV1 } from '../../../../src/shared/conversation/course-bonus-claim';
 
 export type SalesObjectionTurnKindV1 =
   | 'none'
@@ -22,10 +23,6 @@ function normalized(value: string): string {
     .trim();
 }
 
-function regexLiteral(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
-}
-
 function isEmploymentOfferTextV1(value: string): boolean {
   return /\bofertas?\s+(?:laborales?|de\s+(?:trabajo|empleo))\b/u.test(value)
     || /\b(?:trabajo|empleo)\b[^.!?\n]{0,32}\bofertas?\b/u.test(value);
@@ -37,29 +34,6 @@ function isPromotionOptOutTextV1(value: string): boolean {
     || /\bno\s+me\s+ofrec\p{L}*\s+mas\s+ofertas?\b/u.test(value);
 }
 
-function authorizedCourseBonusClaimV1(
-  text: string,
-  authorizedNames: readonly string[],
-): { readonly matched: boolean; readonly remaining: string } {
-  let remaining = text;
-  let matched = false;
-  for (const rawName of authorizedNames) {
-    const name = normalized(rawName);
-    if (!name) continue;
-    const escapedName = regexLiteral(name);
-    const patterns = [
-      new RegExp(`\\b(?:te\\s+)?(?:puedo\\s+)?(?:inclu\\p{L}*|sum\\p{L}*|agreg\\p{L}*|bonific\\p{L}*|regal\\p{L}*|ofrec\\p{L}*)\\b\\s+(?:(?:el|la|un|una)\\s+)?(?:curso\\s+(?:de\\s+)?)?${escapedName}(?:\\s+(?:gratis|sin\\s+costo(?:\\s+adicional)?|incluid\\p{L}*|bonific\\p{L}*))?`, 'gu'),
-      new RegExp(`${escapedName}(?:\\s+(?:queda|va|esta|seria|se\\s+incluye|te\\s+lo\\s+dejo))?\\s+(?:gratis|sin\\s+costo(?:\\s+adicional)?|incluid\\p{L}*|bonific\\p{L}*)\\b`, 'gu'),
-    ];
-    for (const pattern of patterns) {
-      remaining = remaining.replace(pattern, () => {
-        matched = true;
-        return ' ';
-      });
-    }
-  }
-  return { matched, remaining };
-}
 
 export function isPriceObjectionTextV1(text: string): boolean {
   const value = normalized(text);
@@ -151,34 +125,45 @@ export function evaluateSalesObjectionTurnV1(
   return { kind: 'none' };
 }
 
+function mentionsInstallmentTermsV1(text: string): boolean {
+  return /\b(?:\d+|seis|doce)\s+(?:pagos?|cuotas?|mensualidades?)\b/u.test(text)
+    || /\b(?:cuota|plan)\b[^.!?\n]{0,48}\b(?:usd|dolares?)\b/u.test(text)
+    || /\b(?:usd\s*)?\d+(?:[.,]\d+)?\s*(?:dolar(?:es)?)?\s+(?:al\s+mes|mensual(?:es|mente)?)\b/u.test(text)
+    || /\b(?:pagarlo|pagalo|pagar|abonarlo|abonar)\b[^.!?\n]{0,36}\b(?:en\s+)?(?:cuotas?|pagos?\s+mensuales?|mensualidades?)\b/u.test(text);
+}
+
 /**
  * Price objections are handled by clarifying the real friction and connecting
  * authorized value to the customer's context. A valid catalog price may still
- * answer a direct price question, but it must not be used as a tactic to make
- * an objection feel cheaper.
+ * answer a direct price question or inform a proven budget constraint, but it
+ * must not be used as a tactic to make an objection feel cheaper.
  */
 export function responseAvoidsDisallowedPriceReframingV1(input: {
   readonly messages: readonly string[];
   readonly call_offer?: string | null;
   readonly allow_requested_payment_terms?: boolean;
+  readonly customer_expressed_real_budget_limit?: boolean;
   readonly authorized_bonus_offering_names?: readonly string[];
+  readonly paid_offering_names?: readonly string[];
 }): boolean {
-  const text = normalized([
+  const visible = [
     ...input.messages,
     ...(input.call_offer ? [input.call_offer] : []),
-  ].join('\n'));
-  const installmentFacts = /\b(?:\d+|seis|doce)\s+(?:pagos?|cuotas?|mensualidades?)\b/u.test(text)
-    || /\b(?:cuota|plan)\b[^.!?\n]{0,48}\b(?:usd|dolares?)\b/u.test(text)
-    || /\b(?:usd\s*)?\d+(?:[.,]\d+)?\s*(?:dolar(?:es)?)?\s+(?:al\s+mes|mensual(?:es|mente)?)\b/u.test(text)
-    || /\b(?:pagarlo|pagalo|pagar|abonarlo|abonar)\b[^.!?\n]{0,36}\b(?:en\s+)?(?:cuotas?|pagos?\s+mensuales?|mensualidades?)\b/u.test(text);
-  const monthlyMinimization = /\b(?:solo|apenas)\b[^.!?\n]{0,32}\b(?:usd|\d+|dolar(?:es)?)\b[^.!?\n]{0,24}\b(?:al\s+mes|mensual(?:es|mente)?)\b/u.test(text)
+  ].join('\n');
+  const text = normalized(visible);
+  const installmentFacts = mentionsInstallmentTermsV1(text);
+  // "Un solo pago" counts payments; any separate "sólo/apenas USD" still
+  // minimizes money and must be checked independently of that quantifier.
+  const monetaryEmphasis = text.replace(/\b(?:un|1)\s+solo\s+pago\b/gu, 'un pago');
+  const monthlyMinimization = /\b(?:solo|apenas)\b[^.!?\n]{0,16}\b(?:usd|dolares?)\s*\d/u.test(monetaryEmphasis)
+    || /\b(?:solo|apenas)\b[^.!?\n]{0,32}\b(?:usd|\d+|dolar(?:es)?)\b[^.!?\n]{0,24}\b(?:al\s+mes|mensual(?:es|mente)?)\b/u.test(monetaryEmphasis)
     || /\b(?:opcion|plan|cuota)\s+mensual\b[^.!?\n]{0,32}\b(?:mas\s+)?(?:accesible|barat[oa]|baj[oa]|livian[oa])\b/u.test(text)
     || /\b(?:cuota|plan|opcion)\b[^.!?\n]{0,40}\b(?:mas\s+)?(?:baj[oa]|chic[oa]|livian[oa]|accesible|barat[oa])\b/u.test(text)
     || /\b(?:te\s+)?recomiend\p{L}*\b[^.!?\n]{0,56}\b(?:cuota|plan|pagos?|mensualidad)\b/u.test(text)
     || /\b(?:asi|porque)\b[^.!?\n]{0,32}\b(?:resulta|queda|es|sea)\b[^.!?\n]{0,20}\b(?:mas\s+)?(?:accesible|barat[oa]|livian[oa])\b/u.test(text)
     || /\b(?:menos\s+pesa|pesa\s+menos)\b/u.test(text);
   const installmentPitch = monthlyMinimization
-    || (!input.allow_requested_payment_terms && installmentFacts);
+    || (!input.allow_requested_payment_terms && !input.customer_expressed_real_budget_limit && installmentFacts);
   const dailyComparison = /\b(?:menos\s+de\s+)?(?:usd\s*)?(?:\d+(?:[.,]\d+)?|un[oa]?)\s*(?:dolar(?:es)?)?\s+(?:por|al)\s+dia\b/u.test(text)
     || /\b(?:cafe|gasto\s+cotidiano|lo\s+que\s+gastas?)\b[^.!?\n]{0,56}\b(?:por\s+dia|diario|inversion|cuesta|precio)\b/u.test(text)
     || /\b(?:inversion|cuesta|precio)\b[^.!?\n]{0,56}\b(?:cafe|gasto\s+cotidiano|lo\s+que\s+gastas?)\b/u.test(text);
@@ -187,16 +172,13 @@ export function responseAvoidsDisallowedPriceReframingV1(input: {
     || /\b(?:bajar|reducir)\b[^.!?\n]{0,24}\b(?:el\s+)?precio\b/u.test(textWithoutDiscountNegation);
   const courseBonus = /\b(?:bonific\p{L}*|gratis|sin\s+costo|regal\p{L}*)\b/u.test(text)
     || /\b(?:agregar|sumar|incluir)\b[^.!?\n]{0,56}\b(?:otro\s+)?curso\b[^.!?\n]{0,48}\b(?:mismo\s+(?:precio|valor)|incluido)\b/u.test(text);
-  const authorizedClaim = authorizedCourseBonusClaimV1(
-    text,
-    input.authorized_bonus_offering_names ?? [],
-  );
-  const unconsumedGift = /\b(?:bonific\p{L}*|gratis|sin\s+costo|regal\p{L}*)\b/u.test(authorizedClaim.remaining)
-    || /\b(?:agregar|sumar|incluir)\b[^.!?\n]{0,56}\b(?:otro\s+)?curso\b[^.!?\n]{0,48}\b(?:mismo\s+(?:precio|valor)|incluido)\b/u.test(authorizedClaim.remaining);
+  const claims = inspectCourseBonusClaimsV1({content:visible,
+    authorized_bonus_names:input.authorized_bonus_offering_names ?? [],
+    paid_offering_names:input.paid_offering_names});
   return !installmentPitch
     && !dailyComparison
     && !priceReduction
-    && (!courseBonus || (authorizedClaim.matched && !unconsumedGift));
+    && (!courseBonus || !claims.has_unauthorized_claim);
 }
 
 /**
@@ -210,23 +192,24 @@ export function responseProgressesRepeatedPriceObjectionV1(input: {
   readonly call_offer?: string | null;
   readonly customer_expressed_real_budget_limit?: boolean;
   readonly authorized_bonus_offering_names?: readonly string[];
+  readonly paid_offering_names?: readonly string[];
 }): boolean {
   if (!responseAvoidsDisallowedPriceReframingV1(input)) return false;
   if ((input.authorized_bonus_offering_names?.length ?? 0) > 0) {
     const authorizedOfferText = normalized(input.messages.join('\n'));
-    const authorizedClaim = authorizedCourseBonusClaimV1(
-      authorizedOfferText,
-      input.authorized_bonus_offering_names!,
-    );
+    const authorizedClaim = inspectCourseBonusClaimsV1({content:input.messages.join('\n'),
+      authorized_bonus_names:input.authorized_bonus_offering_names!,
+      paid_offering_names:input.paid_offering_names});
     const mentionsIncludedCourse = /\b(?:bonific\p{L}*|gratis|sin\s+costo|regal\p{L}*)\b/u.test(authorizedOfferText)
       || /\b(?:agregar|sumar|incluir)\b[^.!?\n]{0,56}\b(?:otro\s+)?curso\b[^.!?\n]{0,48}\b(?:mismo\s+(?:precio|valor)|incluido)\b/u.test(authorizedOfferText);
-    if (authorizedClaim.matched && mentionsIncludedCourse) return true;
+    if (authorizedClaim.has_authorized_claim && mentionsIncludedCourse) return true;
   }
   // Once the customer has explicitly said they cannot afford the purchase,
-  // any non-empty answer that preserves the price guard may acknowledge or
-  // close naturally. Requiring a specific sentence here caused valid replies
-  // to enter repair and, if repair failed, disappear from the conversation.
-  if (input.customer_expressed_real_budget_limit && input.messages.some((message) => message.trim().length > 0)) {
+  // Acknowledge or close naturally after a proven budget limit. Repeating
+  // terms still needs a diagnostic or contextual value advance below.
+  const repeatsInstallments = mentionsInstallmentTermsV1(normalized(input.messages.join('\n')));
+  if (input.customer_expressed_real_budget_limit && !repeatsInstallments
+    && input.messages.some((message) => message.trim().length > 0)) {
     return true;
   }
   const visible = input.messages.join('\n');

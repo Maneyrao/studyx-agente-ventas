@@ -25,6 +25,37 @@ const CANONICAL: CanonicalTruthSetV1 = {
 const NO_CERTIFICATION: CanonicalTruthSetV1 = { ...CANONICAL, certification: false };
 const UNKNOWN_CERTIFICATION: CanonicalTruthSetV1 = { ...CANONICAL, certification: null };
 
+it.each([
+  ['Te regalo Inglés 1 y Astrología.', false],
+  ['No te regalo Inglés 1, pero te regalo Redes.', false],
+  ['No tengo problema en regalarte Redes.', false],
+  ['No tenemos problema en regalarte Redes.', false],
+  ['Te regalo Inglés 1 para complementar tu formación.', true],
+  ['Te regalo Inglés 1, que te sirve para practicar.', true],
+  ['Te regalo Inglés 1 y Astrología para complementar tu formación.', false],
+  ['Te regalo Inglés 1 para regalarte Redes.', false],
+  ['Te regalo Inglés 1 al comprar Redes.', true],
+  ['Redes incluye Inglés 1 de regalo.', true],
+  ['No te regalo Redes. Inglés 1 te puede servir para tu objetivo.', true],
+])('validates the complete gift object without gifting its paid-course condition: %s', (content, allowed) => {
+  const result=enforce(content as string,{...CANONICAL,offering_names:['Inglés 1','Excel','Redes'],
+    authorized_bonus_names:['Inglés 1'],paid_offering_names:['Redes']});
+  expect(result.violations.some(v=>v.code==='FORBIDDEN_PROMISE')).toBe(!allowed);
+  if (allowed) expect(result).toMatchObject({content,violations:[],removed:[]});
+});
+
+it('restricts gift assertions to delivered and provisionally authorized course names', () => {
+  const canonical = {...CANONICAL,offering_names:['Inglés 1','Excel Integral','Redes'],
+    authorized_bonus_names:['Inglés 1','Excel Integral']};
+  expect(enforce('Te regalo Inglés 1 y Excel Integral.',canonical).violations).toEqual([]);
+  expect(enforce('Te regalo Redes.',canonical).violations).toContainEqual({code:'FORBIDDEN_PROMISE',value:'promise'});
+  expect(enforce('Te regalo Redes e Inglés 1.',canonical).violations)
+    .toContainEqual({code:'FORBIDDEN_PROMISE',value:'promise'});
+  expect(enforce('Inglés 1 sigue de regalo. Te regalo Excel Integral.',
+    {...canonical,authorized_bonus_names:['Inglés 1']}).content).toBe('Inglés 1 sigue de regalo.');
+  expect(enforce('Te regalo un curso.',canonical).violations).toContainEqual({code:'FORBIDDEN_PROMISE',value:'promise'});
+});
+
 function enforce(content: string, canonical: CanonicalTruthSetV1 = CANONICAL, urls: string[] = []) {
   return enforceCommercialTruthV1({ content, authorized_urls: urls, canonical });
 }

@@ -83,6 +83,19 @@ const completeIntake = async () => ({
 });
 
 describe('prepareAgentTurnV2', () => {
+  it('retains an authorized direct bonus as the committed business action', async () => {
+    const action = {type:'offer_course_bonus',interest_offering_code:'redes_informaticas',bonus_offering_code:'excel_integral'} as const;
+    const prepared = await prepareAgentTurnV2({
+      turn:{id:ids.turn,workspace_id:ids.workspace,conversation_id:ids.conversation,contact_id:ids.contact},
+      workspace_slug:'studyx',business_context:business,
+      catalog_index:{...index,offerings:[...index.offerings,{code:'excel_integral',display_name:'Excel Integral',aliases:[],academy:'Tecnología'}]},
+      proposal:proposal({proposed_action:action,response:{messages:['Te regalo Excel Integral.']}}),
+      course_bonus_capability:{status:'checkin_available',enabled:true,max_bonus_courses:2,may_offer_bonus:true,
+        may_schedule_checkin:false,may_request_review:false,may_accept_offer:false,may_send_promoted_payment:false,
+        promotion_code:null,interest_offering_code:'redes_informaticas',bonus_offerings:[]},
+    },{state_store:store(state({selected_offering_code:'redes_informaticas'})),contact_intake:completeIntake});
+    expect(prepared.decision.business_action).toEqual(action);
+  });
   it.each(['missing', 'complete'] as const)('keeps the original explicit tool intent while continuation sends only prose: %s intake', async intakeCase => {
     const messages = ['Para avanzar, vemos los datos necesarios.'];
     const prepared = await prepareAgentTurnV2({
@@ -1485,7 +1498,8 @@ describe('prepareAgentTurnV2', () => {
     },
   );
 
-  it('marks an explicit switch away from the paid course as abandoning the pending package', async () => {
+  it.each((['offer_available','accepted','no_capability'] as const).flatMap(status =>
+    (['select_course','request_call'] as const).map(move => ({status,move}))))('marks an effective course switch to retire previous payment intent ($status/$move)', async ({status,move}) => {
     const packageIndex: CatalogIndexView = {
       ...index,
       offerings_total: 2,
@@ -1505,8 +1519,8 @@ describe('prepareAgentTurnV2', () => {
       turn: { id: ids.turn, workspace_id: ids.workspace, conversation_id: ids.conversation, contact_id: ids.contact },
       workspace_slug: 'studyx', business_context: packageBusiness, catalog_index: packageIndex,
       current_customer_messages: ['No quiero el paquete. Quiero comprar solamente Excel'],
-      course_bonus_capability: {
-        status: 'offer_available',
+      course_bonus_capability: status === 'no_capability' ? undefined : {
+        status,
         may_schedule_checkin: false,
         may_request_review: false,
         may_accept_offer: true,
@@ -1517,7 +1531,7 @@ describe('prepareAgentTurnV2', () => {
       },
       proposal: proposal({
         move: {
-          schema_version: 1, move: 'select_course', secondary_moves: [], vetoes: [],
+          schema_version: 1, move, secondary_moves: [], vetoes: [],
           course_reference: 'excel', confidence: 1,
         },
         response: { messages: ['Perfecto, seguimos únicamente con Excel Integral.'] },

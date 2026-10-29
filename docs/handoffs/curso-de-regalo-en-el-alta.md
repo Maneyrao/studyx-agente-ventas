@@ -2,6 +2,36 @@
 
 Oct 22, 2026 · @Lucas Bozzolo
 
+## Actualización de entrega — 28 oct 2026
+
+El cuerpo del 22 de octubre describe el pedido y estado histórico, no el estado
+de despliegue actual. El orquestador ahora tiene contratos locales de paquetes
+directos versionados de 1–3 regalos, aceptación/snapshot, checkout, recuperación
+parcial y continuidad de voz. La evidencia local está en el
+[reporte Task 9](../reports/2026-10-28-agent-a-direct-bonus-verification.md).
+La integración completa sigue **889 passed, 7 failed, 1 skipped**, incluyendo
+sensibilidad de reloj/orden de fuentes en contact-profile. No equivale a aprobación
+de producción ni a una Central o configuración de voz desplegada.
+
+El [runbook de cutover V2](../runbooks/direct-course-bonus-v2-cutover.md) fija el
+orden obligatorio y la matriz de canary: migraciones/backend aditivos en review,
+readiness/schema y compatibilidad del ADK anterior, publicar ADK dual-mode y recién
+entonces direct sólo para contactos allowlisted con global apagado. Volver a review
+bloquea ofertas/ampliaciones nuevas y conserva la aceptación de la versión exacta
+ya entregada y el pago/alta de obligaciones accepted/attached; mantener el ADK
+dual-mode y nunca borrar migraciones ni promesas aceptadas.
+
+Lucas coordina con Central la versión desplegada, mappings, Moodle nuevo/existente,
+replay sin duplicación/email y recuperación real sólo del subconjunto pendiente
+con `supports_partial_recovery:true`; coordina negocio y forwarding autenticado
+Retell/Xendra. Thiago/nosotros verificamos suites, bundle/manifest y readiness,
+compatibilidad y recibos WhatsApp autenticados de entrega confirmada. Cada entrega
+requiere IDs de release, hashes, códigos/estados/tiempos y responsable de pendientes,
+sin secretos/PII. Acceso, publicación, deploy, entrega real WhatsApp, recuperación
+Central y forwarding externos siguen pendientes; no se inventa su ejecución.
+El manifest local falló cerrado por falta de evidencia del prompt renderizado.
+La tabla de owners y campos exactos del runbook es la lista de handoff vigente.
+
 **Para:** Thiago · **Base:** `codex/orchestrator-mvp-closure` (o `main` cuando esté mergeada)
 
 ## Qué se pidió y qué se acordó con la Central

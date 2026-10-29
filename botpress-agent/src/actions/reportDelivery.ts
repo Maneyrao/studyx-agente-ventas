@@ -5,7 +5,7 @@ import { requestStudyxJson } from '../utils/http'
 export const reportDelivery = new Action<any, any>({
   name: 'reportDelivery',
   title: 'Report StudyX delivery state',
-  description: 'Records Botpress submission or failure without claiming provider delivery.',
+  description: 'Records submission, failure, or an explicitly confirmed provider delivery receipt.',
   input: DeliveryReportInputSchema as any,
   output: DeliveryReportResponseSchema as any,
   cached: false,

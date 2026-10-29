@@ -19,14 +19,17 @@ import { assemblePostSaleMessage } from '@/features/fulfillment/post-sale/servic
 import { commitAgentDecision } from '@/lib/services/decision.service';
 import { authorizeAgentTurnV2 } from '@/features/conversation/domain/agent-turn-policy-v2';
 import { createDefaultConversationStateV1 } from '@/features/conversation/domain/conversation-planner';
+import Stripe from 'stripe';
+import { processStripeWebhook } from '@/features/payments/application/process-stripe-webhook';
 
 const run = process.env.TEST_DATABASE_URL ? it : it.skip;
 const db = process.env.TEST_DATABASE_URL ? openLocalTestDatabase() : null;
 const priorBonusFlag = process.env.CENTRAL_CARGA_BONUS_ENABLED;
 const priorCanaryContacts = process.env.CENTRAL_CARGA_BONUS_CANARY_CONTACT_IDS;
 const priorWorkspaceSlug = process.env.BUSINESS_WORKSPACE_SLUG;
+const priorFlowMode = process.env.COURSE_BONUS_FLOW_MODE;
 
-beforeAll(() => { process.env.CENTRAL_CARGA_BONUS_ENABLED = 'false'; });
+beforeAll(() => { process.env.CENTRAL_CARGA_BONUS_ENABLED = 'false'; process.env.COURSE_BONUS_FLOW_MODE = 'review'; });
 afterAll(async () => {
   if (priorBonusFlag === undefined) delete process.env.CENTRAL_CARGA_BONUS_ENABLED;
   else process.env.CENTRAL_CARGA_BONUS_ENABLED = priorBonusFlag;
@@ -34,6 +37,8 @@ afterAll(async () => {
   else process.env.CENTRAL_CARGA_BONUS_CANARY_CONTACT_IDS = priorCanaryContacts;
   if (priorWorkspaceSlug === undefined) delete process.env.BUSINESS_WORKSPACE_SLUG;
   else process.env.BUSINESS_WORKSPACE_SLUG = priorWorkspaceSlug;
+  if (priorFlowMode === undefined) delete process.env.COURSE_BONUS_FLOW_MODE;
+  else process.env.COURSE_BONUS_FLOW_MODE = priorFlowMode;
   await db?.end();
 });
 
@@ -308,8 +313,15 @@ run('carries one authorized price-objection bonus through payment, Central v2 an
       offering_code_snapshot:bonus.code,position:1}]);
   await db!`UPDATE payments SET status='creating_checkout' WHERE id=${reservation.payment_id}`;
   await db!`UPDATE payments SET status='pending',provider_session_id=${`cs_test_${suffix}`} WHERE id=${reservation.payment_id}`;
-  await db!`UPDATE payments SET status='paid',paid_at=now() WHERE id=${reservation.payment_id}`;
-  await db!`INSERT INTO fulfillment_jobs(payment_id,workspace_id) VALUES (${reservation.payment_id},${workspace.id})`;
+  const stripe=new Stripe('sk_test_no_network');const secret='whsec_review_workflow';
+  const payload=JSON.stringify({id:`evt_${suffix}`,object:'event',livemode:false,type:'checkout.session.completed',created:Math.floor(Date.now()/1000),
+    data:{object:{id:`cs_test_${suffix}`,object:'checkout.session',client_reference_id:reservation.payment_id,mode:'subscription',
+      payment_status:'paid',amount_total:3000,currency:'usd',metadata:{}}}});
+  const signature=stripe.webhooks.generateTestHeaderString({payload,secret});
+  const paidEvent=()=>processStripeWebhook(payload,signature,{db:db!,stripe,webhookSecret:secret,expectedEnvironment:'test'});
+  expect(await paidEvent()).toMatchObject({status:200,body:{status:'paid'}});
+  expect(await paidEvent()).toMatchObject({status:200,body:{outcome:'duplicate'}});
+  expect(await db!`SELECT id FROM fulfillment_jobs WHERE payment_id=${reservation.payment_id}`).toHaveLength(1);
   const centralFetch = (async (_url:unknown,init?:RequestInit)=>{
     const request=JSON.parse(String(init?.body));
     expect(request).toMatchObject({schema_version:2,bonus_offerings:[{code:bonus.code,

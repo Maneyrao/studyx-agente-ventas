@@ -438,6 +438,7 @@ function plannerlessRejectionError(rejection: TurnRejectionV1): Error {
 }
 
 export type AgentActionRejectionActionV1 =
+  | 'offer_course_bonus'
   | 'request_call_now'
   | 'send_payment_link'
   | 'send_test_payment_link'

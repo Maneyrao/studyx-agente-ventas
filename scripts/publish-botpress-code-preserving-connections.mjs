@@ -13,6 +13,7 @@ import {
   inspectBotpressRemoteCode,
   planBotpressAdditiveConversationTagPatch,
   planBotpressAdditiveEventPatch,
+  planBotpressReviewedActionPatch,
 } from './lib/botpress-additive-event-contract.mjs';
 
 const expectedBotId = '0d7c9ecb-4781-4c65-913d-f7e947fa14d4';
@@ -74,16 +75,10 @@ try {
       }
     }
   }
-  for (const field of ['actions']) {
-    assert(equal(Object.keys(body[field] ?? {}).sort(), Object.keys(before[field] ?? {}).sort()), `CONTRACT_KEYS_CHANGED:${field}`);
-    for (const [key, value] of Object.entries(body[field] ?? {})) {
-      for (const property of field === 'actions' ? ['input', 'output', 'billable', 'cacheable'] : ['schema']) {
-        if (value[property] !== undefined && !equal(value[property], before[field]?.[key]?.[property])) {
-          contractDifferences.push(`${field}.${key}.${property}`);
-        }
-      }
-    }
-  }
+  const actionPatch = planBotpressReviewedActionPatch({
+    remoteActions: before.actions ?? {},
+    generatedActions: body.actions ?? {},
+  });
   const additiveEventPatch = planBotpressAdditiveEventPatch({
     remoteEvents: before.events ?? {},
     generatedEvents: body.events ?? {},
@@ -151,18 +146,23 @@ try {
     }), integrationCount: aliasesPreserved.length,
     pluginCount: Object.keys(definition.plugins).length, aliasesPreserved, contractsMatch: true,
     additiveEventKeys, additiveConversationTagKeys,
-    publicationMode: additiveEventKeys.length > 0 || additiveConversationTagKeys.length > 0
-      ? 'code+additive-contract' : 'code-only', publish };
+    reviewedActionKeys: Object.keys(actionPatch).sort(),
+    publicationMode: additiveEventKeys.length > 0
+      || additiveConversationTagKeys.length > 0
+      || Object.keys(actionPatch).length > 0
+      ? 'code+reviewed-contract' : 'code-only', publish };
   record('preflight.json', preflight);
   if (publish) {
     // Omitting integrations/plugins/configuration/secrets is deliberate. Never
     // run missing-dependency deletion here. The only permitted contract change
-    // is the reviewed additive commercial-followup event.
+    // is the reviewed additive commercial-followup event and the exact pinned
+    // reportDelivery additive contract.
     const update = buildBotpressAdditiveEventUpdate({
       botId: ctx.botId,
       code: bundle.toString('utf8'),
       eventPatch: additiveEventPatch,
       conversationTagPatch,
+      actionPatch,
     });
     await client.updateBot(update);
     const after = (await client.getBot({ id: ctx.botId })).bot;
@@ -176,6 +176,10 @@ try {
       remoteTags: after.conversation?.tags ?? {},
       generatedTags: body.conversation?.tags ?? {},
     })).length === 0;
+    const actionContractCurrent = Object.keys(planBotpressReviewedActionPatch({
+      remoteActions: after.actions ?? {},
+      generatedActions: body.actions ?? {},
+    })).length === 0;
     const remoteCodeEvidence = inspectBotpressRemoteCode({
       remoteCode: after.code,
       expectedSha256: preflight.bundleSha256,
@@ -183,10 +187,14 @@ try {
     const remoteCodeMatches = remoteCodeEvidence.matches;
     const result = { ...preflight, deployedAt: after.deployedAt, previousDeployedAt: before.deployedAt,
       configurationUnchanged, eventContractCurrent, conversationTagContractCurrent,
+      actionContractCurrent,
       remoteCodeEvidence, remoteCodeMatches,
-      codeOnly: additiveEventKeys.length === 0 && additiveConversationTagKeys.length === 0 };
+      codeOnly: additiveEventKeys.length === 0
+        && additiveConversationTagKeys.length === 0
+        && Object.keys(actionPatch).length === 0 };
     record('publication.json', result);
     assert(configurationUnchanged && eventContractCurrent && conversationTagContractCurrent
+      && actionContractCurrent
       && remoteCodeMatches !== false
       && after.deployedAt !== before.deployedAt, 'POST_PUBLICATION_PARITY_FAILED');
     console.log(JSON.stringify(result));

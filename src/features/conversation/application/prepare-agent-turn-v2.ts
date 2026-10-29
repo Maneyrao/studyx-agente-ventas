@@ -50,7 +50,7 @@ export class AgentTurnV2RejectedError extends Error {
 
 export interface AgentActionRejectionV1 {
   readonly action: 'request_call_now' | 'send_payment_link' | 'send_test_payment_link'
-    | 'schedule_price_objection_checkin' | 'request_promotion_review' | 'accept_promotion';
+    | 'schedule_price_objection_checkin' | 'request_promotion_review' | 'offer_course_bonus' | 'accept_promotion';
   readonly status: 'needs_input' | 'rejected';
   readonly code: string;
   readonly codes: readonly string[];
@@ -129,6 +129,9 @@ function responseType(input: {
   readonly response: string;
 }): DecisionV4['response_type'] {
   if (input.proposal.proposed_action.type === 'request_call_now') return 'call_confirmation';
+  // The promotion is the committed effect; an optional invitation remains
+  // authored conversation and its existing state transition still applies.
+  if (input.proposal.proposed_action.type === 'offer_course_bonus') return 'commercial_reply';
   const declaredOffer = input.proposal.response.call_offer;
   if ((declaredOffer && solicitsACall(declaredOffer, true)) || solicitsACall(input.response)) return 'call_offer';
   if (input.proposal.move.move === 'greeting') return 'social_reply';
@@ -155,7 +158,7 @@ function decisionFromAuthorizedTurn(input: {
         ? { type: 'send_test_payment_link', offering_sku: action.offering_code }
         : action.type === 'schedule_price_objection_checkin'
           ? action
-          : action.type === 'request_promotion_review'
+          : action.type === 'request_promotion_review' || action.type === 'offer_course_bonus'
             ? action
             : action.type === 'accept_promotion'
               ? action
@@ -230,7 +233,7 @@ export async function prepareAgentTurnV2(input: {
   readonly discussed_offering_code: string | null;
   readonly commercial_interest_offering_code: string | null;
   readonly records_price_objection: boolean;
-  /** Model-owned select_course moved away from an open package's paid course. */
+  /** Explicit course switch retires open packages and prior unpaid intents. */
   readonly abandons_course_bonus_offer: boolean;
 }> {
   const nowMs = deps.now?.() ?? Date.now();
@@ -430,18 +433,16 @@ export async function prepareAgentTurnV2(input: {
       candidate.type === 'objection' && candidate.key === 'price_objection'
     ))
   );
-  const openCourseBonusStatus = input.course_bonus_capability?.status;
-  const explicitlySelectsAnotherCourse = [
-    effectiveProposal.move.move,
-    ...effectiveProposal.move.secondary_moves,
-  ].includes('select_course')
-    && authority.transition.selected_offering_code !== null
-    && input.course_bonus_capability?.interest_offering_code !== null
-    && input.course_bonus_capability?.interest_offering_code !== undefined
+  const previousPurchaseCourse = state.selected_offering_code
+    ?? input.course_bonus_capability?.interest_offering_code;
+  // The policy owns effective selection, including an exact course carried by
+  // request_call. Information/comparison moves preserve the prior selection.
+  const explicitlySelectsAnotherCourse = authority.transition.selected_offering_code !== null
+    && previousPurchaseCourse !== null
+    && previousPurchaseCourse !== undefined
     && authority.transition.selected_offering_code
-      !== input.course_bonus_capability.interest_offering_code;
+      !== previousPurchaseCourse;
   const abandonsCourseBonusOffer = authority.action.type !== 'accept_promotion'
-    && ['review_pending', 'offer_available', 'accepted'].includes(openCourseBonusStatus ?? '')
     && explicitlySelectsAnotherCourse;
   return {
     decision,

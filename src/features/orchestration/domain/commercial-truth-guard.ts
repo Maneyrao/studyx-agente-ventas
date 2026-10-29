@@ -1,4 +1,5 @@
 import { courseLogisticsInV1 as courseLogisticsIn, type CourseLogisticsFactV1 } from '../../../shared/conversation/course-logistics';
+import { inspectCourseBonusClaimsV1 } from '../../../shared/conversation/course-bonus-claim';
 
 /**
  * Frontera de verdad comercial.
@@ -17,6 +18,9 @@ import { courseLogisticsInV1 as courseLogisticsIn, type CourseLogisticsFactV1 } 
  */
 
 export interface CanonicalTruthSetV1 {
+  /** Delivered package plus the single transactionally pending proposed course. */
+  readonly authorized_bonus_names?: readonly string[];
+  readonly paid_offering_names?: readonly string[];
   /** Precios asertables del registro, p. ej. `['USD 360', 'USD 30']`. */
   readonly prices: readonly string[];
   /** Duraciones asertables, p. ej. `['38 clases']`. */
@@ -426,7 +430,11 @@ function sentenceViolations(
     violations.push({ code: 'CERTIFICATION_CONTRADICTS_CANONICAL', value: 'certification' });
   }
 
-  if (FORBIDDEN_PROMISE.test(normalized) || offersUnauthorizedBenefit(normalized)) {
+  const giftClaims = inspectCourseBonusClaimsV1({content:sentence,
+    authorized_bonus_names:canonical.authorized_bonus_names ?? [],
+    paid_offering_names:canonical.paid_offering_names});
+  if (FORBIDDEN_PROMISE.test(normalized) || offersUnauthorizedBenefit(normalized)
+    || giftClaims.has_unauthorized_claim) {
     violations.push({ code: 'FORBIDDEN_PROMISE', value: 'promise' });
   }
 

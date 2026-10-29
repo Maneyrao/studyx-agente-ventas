@@ -5,12 +5,14 @@ import { reducePaymentState, type PaymentStateEvent, type PaymentStatus } from '
 /**
  * Records one provider event against the payment ledger, atomically:
  *   1. append to payment_events — (provider, provider_event_id) unique, so a
- *      replayed webhook short-circuits as 'duplicate' with NO state change;
+ *      replayed webhook returns 'duplicate' with NO state change;
  *   2. reduce the payment state with the pure state machine — an event that
  *      does not apply (out-of-order, terminal state) is 'ignored', recorded
  *      but harmless;
- *   3. when the reduction lands on `paid`, enqueue EXACTLY ONE fulfillment
- *      job (unique per payment). The webhook never fulfills anything itself.
+ *   3. trusted paid evidence for a superseded intent creates/reuses its manual
+ *      case, even when the canonical terminal state ignores that paid event;
+ *   4. an ordinary reduction to `paid` enqueues exactly one fulfillment job.
+ *      Superseded intents never enqueue fulfillment or retarget the course.
  *
  * Everything happens in one transaction with zero network I/O.
  */
@@ -27,6 +29,7 @@ export interface RecordPaymentEventInput {
 export interface RecordPaymentEventResult {
   outcome: 'applied' | 'ignored' | 'duplicate';
   status: PaymentStatus;
+  reconciliation_required?: true;
 }
 
 export class PaymentEventError extends Error {
@@ -46,6 +49,11 @@ export async function recordPaymentEvent(
     `;
     if (!payments[0]) throw new PaymentEventError('PAYMENT_NOT_FOUND');
     const current = payments[0].status;
+    const supersessions=await tx<Array<{id:string;case_id:string|null}>>`
+      SELECT s.id,c.id AS case_id FROM payment_intent_supersessions s
+      LEFT JOIN payment_reconciliation_cases c ON c.payment_id=s.payment_id
+      WHERE s.payment_id=${input.payment_id}::uuid`;
+    let reconciliation=supersessions[0]?.case_id ? {reconciliation_required:true as const} : {};
 
     const appended = await tx<Array<{ id: string }>>`
       INSERT INTO payment_events (
@@ -58,13 +66,28 @@ export async function recordPaymentEvent(
       ON CONFLICT (provider, provider_event_id) DO NOTHING
       RETURNING id
     `;
+    const trustedPaidEvent=input.provider==='stripe'
+      && (input.event.type==='checkout_completed_paid' || input.event.type==='async_payment_succeeded');
+    if(supersessions[0] && trustedPaidEvent) {
+      // Look up exact durable evidence on replay too; a reused provider ID for
+      // another payment must never manufacture evidence for this reference.
+      const evidence=appended[0] ?? (await tx<Array<{id:string}>>`SELECT id FROM payment_events
+        WHERE payment_id=${input.payment_id}::uuid AND provider=${input.provider}
+          AND provider_event_id=${input.provider_event_id} AND event_type=${input.event.type}`)[0];
+      if(evidence) {
+        await tx`INSERT INTO payment_reconciliation_cases(payment_id,supersession_id,payment_event_id)
+          VALUES (${input.payment_id}::uuid,${supersessions[0].id}::uuid,${evidence.id}::uuid)
+          ON CONFLICT(payment_id) DO NOTHING`;
+        reconciliation={reconciliation_required:true as const};
+      }
+    }
     if (appended.length === 0) {
-      return { outcome: 'duplicate' as const, status: current };
+      return { outcome: 'duplicate' as const, status: current,...reconciliation };
     }
 
     const transition = reducePaymentState(current, input.event);
     if (!transition.applied) {
-      return { outcome: 'ignored' as const, status: current };
+      return { outcome: 'ignored' as const, status: current,...reconciliation };
     }
 
     await tx`
@@ -76,13 +99,13 @@ export async function recordPaymentEvent(
     `;
 
     if (transition.next === 'paid') {
-      await tx`
+      if(!supersessions[0]) await tx`
         INSERT INTO fulfillment_jobs (payment_id, workspace_id)
         SELECT id, workspace_id FROM payments WHERE id = ${input.payment_id}::uuid
         ON CONFLICT (payment_id) DO NOTHING
       `;
     }
 
-    return { outcome: 'applied' as const, status: transition.next };
+    return { outcome: 'applied' as const, status: transition.next,...reconciliation };
   });
 }

@@ -118,5 +118,60 @@ los cursos bonificados allí enumerados y, ante aceptación, copiar exactamente
 no aparece, B no ofrece ningún regalo. La ausencia de promoción no modifica el
 precio, el plan ni el flujo ordinario.
 
+En modo direct, la promoción leída del chat original incluye además
+`promotion_cycle_id` y `offer_version`. Esta lectura es atómica y no crea,
+amplía ni sella el paquete. B puede explicar exclusivamente los cursos de esa
+versión. Para aceptar y enviar el link, copia el código, ciclo y versión exactos
+en `promotion_code`, `promotion_cycle_id`, `accepted_offer_version` y envía
+`accept_promotion: true` sólo tras la aceptación explícita del cliente.
+Una versión anterior, identidad parcial, entrega aún no confirmada o llamada
+no correlacionada se rechaza sin crear checkout. No se admite agregar regalos
+desde la llamada. Los argumentos de la herramienta no autorizan el paquete:
+el backend vuelve a validar el estado durable bajo bloqueo.
+
+La herramienta autenticada por firma Retell o secreto del relay autorizado y
+correlacionada por el backend registra una fila inmutable en
+`promotion_voice_acceptances`: llamada Retell activa, workspace, contacto,
+conversación original, ciclo, versión y hora de recepción del servidor posterior
+a la entrega confirmada de esa versión. No se crea un mensaje entrante de chat.
+Esta evidencia usa las mismas comprobaciones de elegibilidad y paquete que la
+aceptación por texto; permite sellar una sola versión y reservar el checkout
+con el snapshot completo. Un replay exacto de la misma llamada reutiliza la
+evidencia y el checkout; otra llamada no reutiliza la aceptación de voz anterior.
+El paquete aceptado permanece inmutable, incluso al volver a modo review, y
+el link se entrega al `conversation_id` original de la llamada. El contrato
+legacy de promoción review conserva sus argumentos y comportamiento.
+
+La omisión de todos los campos de promoción nunca descarta una obligación:
+el backend busca el paquete direct durable del curso efectivo bajo bloqueo.
+Si sólo está ofrecido, `enviar_link_pago` responde
+`PROMOTION_ACCEPTANCE_REQUIRED` para que B consulte la versión actual y obtenga
+aceptación explícita. Si ya está aceptado y sellado, enlaza automáticamente
+el ciclo y versión exactos al checkout. Una identidad explícita parcial o stale
+se rechaza; un curso sin paquete vigente mantiene el checkout ordinario.
+
+Una selección de curso confirmada por voz registra evidencia inmutable en
+`voice_course_selections`, con llamada correlacionada, scope, estado previo,
+nuevo curso, versión del contexto y hora del servidor. La selección, cancelación
+de ofertas abiertas y supersesión de intentos de pago pendientes ocurren en
+una sola transacción. Las supersesiones exigen exactamente una fuente durable:
+`source_turn_id` del chat XOR `source_voice_selection_id` de voz. Volver al curso
+anterior no reactiva una oferta cancelada ni reexpone un checkout supersedido;
+el pago y su snapshot originales permanecen intactos. Un checkout que implica
+un cambio de curso usa la misma transición y revierte todos esos efectos si la
+reserva falla. Las solicitudes de llamadas anteriores a otra llamada del mismo
+scope se rechazan; un resultado autenticado de la llamada recién completada
+puede conservar su selección, sin reutilizar el inbound que solicitó la llamada.
+
+El cierre de entrega vuelve a bloquear el contexto y valida el `payment_id`
+y URL exactos reservados, su scope, curso/plan, estado no terminal, que siga
+siendo el checkout actual de esa conversación y que no tenga supersesión.
+Coincidir sólo en curso y plan no basta: una vuelta A→B→A no reactiva el pago A.
+Si la entrega física termina después de que su checkout quedó viejo, la
+herramienta conserva el contexto actual y responde `PAYMENT_LINK_STALE` con
+`sent: false`; no afirma que haya un checkout vigente ni vuelve a poner el
+chat en espera de confirmación de ese pago. El envío físico ya completado
+puede conservar su evidencia histórica de entrega.
+
 No configurar una URL directa de Retell hacia StudyX en este modo: Xendra
 conserva el webhook de Retell y reenvía los eventos autenticados.

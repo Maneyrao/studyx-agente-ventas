@@ -1,4 +1,5 @@
 import type { ConversationMoveV1 } from './conversation-pipeline';
+import type { CourseBonusMaxCoursesV1, DirectCourseBonusPromotionV1 } from '../../promotions/domain/course-bonus';
 import type {
   ContactProfileContextV1,
   ContactProfileRequestV1,
@@ -69,6 +70,7 @@ export interface AgentAContextV1 {
     readonly instagram: string | null;
   } | null;
   readonly commercial_state: {
+    readonly promotion?: DirectCourseBonusPromotionV1 | null;
     readonly selected_offering_code: string | null;
     readonly selected_payment_plan: AgentAPaymentPlanV1 | null;
     readonly stage: 'exploring' | 'qualified' | 'course_selected' | 'plan_selected' | 'payment_link_sent' | 'handoff' | 'closed';
@@ -131,6 +133,14 @@ export interface AgentAContextV1 {
     readonly may_send_payment_link: boolean;
     readonly authorized_payment_plan: AgentAPaymentPlanV1 | null;
     readonly course_bonus?: {
+      readonly enabled?: boolean;
+      readonly may_offer_bonus?: boolean;
+      readonly promotion_cycle_id?: string | null;
+      readonly offer_version?: number;
+      readonly accepted_at?: string | null;
+      readonly package_status?: 'pending_review' | 'offered' | 'accepted' | 'cancelled' | 'expired' | 'attached' | null;
+      readonly delivered_bonus_offerings?: ReadonlyArray<{ readonly code: string; readonly display_name: string; readonly position: number }>;
+      readonly max_bonus_courses?: CourseBonusMaxCoursesV1;
       readonly status: 'unavailable' | 'needs_interest' | 'not_eligible' | 'checkin_available'
         | 'review_available' | 'review_pending' | 'offer_available' | 'accepted';
       readonly may_schedule_checkin: boolean;
@@ -141,6 +151,7 @@ export interface AgentAContextV1 {
       readonly bonus_selection_mode?: 'configured' | 'any_active_course';
       readonly interest_offering_code?: string | null;
       readonly bonus_offerings: ReadonlyArray<{
+        readonly offered_at?: string;
         readonly code: string;
         readonly display_name: string;
         readonly position: number;
@@ -163,6 +174,18 @@ export type AgentAProposedActionV1 =
       readonly bonus_offering_code?: string;
     }
   | { readonly type: 'accept_promotion' }
+  | {
+      readonly type: 'accept_promotion';
+      readonly promotion_code: string;
+      readonly interest_offering_code: string;
+      readonly promotion_cycle_id: string;
+      readonly offer_version: number;
+    }
+  | {
+      readonly type: 'offer_course_bonus';
+      readonly bonus_offering_code: string;
+      readonly interest_offering_code: string;
+    }
   | {
       /** Temporary, hidden Stripe verification checkout. Never a commercial plan. */
       readonly type: 'send_test_payment_link';

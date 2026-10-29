@@ -81,6 +81,13 @@ export async function loadLatestPaymentVerificationV1(input: {
     LEFT JOIN central_enrollments AS enrollment
       ON enrollment.payment_id = payment.id
      AND enrollment.workspace_id = payment.workspace_id
+     AND enrollment.enrollment_status IN ('active','already_enrolled')
+     AND NOT EXISTS (
+       SELECT 1 FROM payment_bonus_offerings promised WHERE promised.payment_id=payment.id
+         AND NOT EXISTS (SELECT 1 FROM central_bonus_enrollment_items verified
+           WHERE verified.payment_id=payment.id AND verified.offering_code=promised.offering_code_snapshot
+             AND verified.position=promised.position AND verified.enrollment_status IN ('active','already_enrolled'))
+     )
     LEFT JOIN LATERAL (
       SELECT notification.status, notification.sent_at
       FROM post_sale_notifications AS notification

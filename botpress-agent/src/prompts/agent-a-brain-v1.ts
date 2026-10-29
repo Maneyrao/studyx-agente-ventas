@@ -6,7 +6,7 @@ import {
 import { resolveCanonicalPromptIdentityV1 } from './agent-a-identity';
 import { evaluateSalesObjectionTurnV1 } from '../lib/conversation/sales-objection-turn-policy';
 
-export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v131' as const;
+export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v134' as const;
 
 /**
  * Runtime contract only. The sales behavior lives in the canonical prompt so
@@ -36,6 +36,19 @@ function inertJson(value: unknown): string {
     .replaceAll('<', '\\u003c')
     .replaceAll('>', '\\u003e')
     .replaceAll('&', '\\u0026');
+}
+
+export function hasDirectBonusContextV1(context: AgentAContextV1): boolean {
+  const capability=context.capabilities.course_bonus;
+  const promotion=context.commercial_state.promotion;
+  // Creation permission can be off during rollback while a direct package
+  // still exists. A legacy review offer has no cycle/version identity.
+  return capability?.enabled===true || Boolean(
+    capability?.promotion_code && capability.promotion_cycle_id && (capability.offer_version ?? 0)>0
+      && capability.package_status
+    || promotion?.promotion_code && promotion.promotion_cycle_id && promotion.offer_version>0
+      && promotion.status!=='none',
+  );
 }
 
 function mandatoryRepairDirectiveV1(context: AgentAContextV1): string {
@@ -68,7 +81,10 @@ Answer the customer from the remaining verified course facts; do not replace the
   const selectedBonusDirective = courseBonus?.bonus_selection_mode === 'any_active_course'
     ? ' Choose exactly one active offering from catalog.available_offerings that differs from the paid course and materially complements the customer goal; put only its code in proposed_action.bonus_offering_code. Do not name or imply that course in customer-facing copy before the review returns an offer.'
     : '';
-  const forbiddenPromiseRepair = repairsForbiddenPromise ? courseBonus?.may_request_review
+  const forbiddenPromiseRepair = repairsForbiddenPromise ? hasDirectBonusContextV1(context)
+    ? `
+For forbidden_promise, remove only the unauthorized addition identified by direct_bonus. Preserve useful commercial content and the previously delivered courses in capabilities.course_bonus.delivered_bonus_offerings. Do not repeat the rejected new gift or claim its effect succeeded. A pending undelivered course is not a confirmed promise.`
+    : courseBonus?.may_request_review
     ? `
 For forbidden_promise, remove the unauthorized promise completely. You may say naturally that you will check an alternative only if you use proposed_action=request_promotion_review in this rewrite.${selectedBonusDirective} Do not name or imply a specific gift yet, and do not claim approval, a discount, income or results.`
     : courseBonus?.status === 'offer_available' || courseBonus?.status === 'accepted'
@@ -115,19 +131,30 @@ function currentCommercialGuidanceDirectiveV1(context: AgentAContextV1): string 
   const promotionReviewGuidance = courseBonus?.may_request_review
     ? `Do not merely repeat the price, installment amounts or class count. Say naturally that you will check an alternative and use proposed_action=request_promotion_review.${selectedBonusDirective} The review is the authorized next step: do not name or imply a specific gift yet.`
     : null;
-  const repeatedPriceGuidance = promotionReviewGuidance
+  const directBonusGuidance = hasDirectBonusContextV1(context)
+    ? courseBonus?.enabled===true && courseBonus.may_offer_bonus===true
+      ? `Only after persistent price resistance and prior value and trial-close attempts, you may use offer_course_bonus with exactly one new active catalog code, distinct from the paid and existing bonus courses. Name that course in the same response, tie it to the expressed goal and recap the exact paid course plus delivered_bonus_offerings and this one validated addition. Respect max_bonus_courses and never a fourth gift; a later expansion needs a customer reply after confirmed delivery and a prior close attempt. Preserve the main price. No first-objection gift or forced close. The backend validates truth, limits and persistence; you interpret the sales conversation.`
+      : `No new bonus is authorized. Preserve only the current delivered_bonus_offerings package and its exact identity; do not repeat pending or rejected additions. Continue with contextual value or a useful diagnosis, without forcing a close.`
+    : null;
+  const repeatedPriceGuidance = directBonusGuidance
+    ? `This is a persistent price objection. ${directBonusGuidance}`
+    : promotionReviewGuidance
     ? `This is a persistent price objection. ${promotionReviewGuidance}`
     : authorizedPromotionGuidance
       ? `This is a persistent price objection. ${authorizedPromotionGuidance}`
       : `This is a persistent price objection. Do not merely repeat the price, installment amounts or class count. Change the argument dimension using recent conversation evidence: connect a different authorized fact to the customer's intended use with conditional language, or ask one concrete question that isolates budget, timing, confidence or value. Do not use payment plans, installment amounts, cost-per-day comparisons, discounts or bonus courses to make the price feel lower.`;
   const guidanceByKind: Record<Exclude<typeof objection.kind, 'none'>, string> = {
     price_question: `Answer the price question promptly with the authorized plans; do not delay it behind a presentation or diagnostic. You may connect one relevant benefit afterward when the customer's intended use is already known.`,
-    price_question_with_objection: authorizedPromotionGuidance
+    price_question_with_objection: directBonusGuidance
+      ? `Answer the requested authorized price or payment terms exactly. Do not use that answer as a separate tactic to make the price feel lower. ${directBonusGuidance}`
+      : authorizedPromotionGuidance
       ? `Answer the requested authorized price or payment terms exactly; the customer must not lose a direct answer because they also expressed concern. Do not use that answer as a separate tactic to make the price feel lower. ${authorizedPromotionGuidance}`
       : promotionReviewGuidance
         ? `Answer the requested authorized price or payment terms exactly; the customer must not lose a direct answer because they also expressed concern. Do not use that answer as a separate tactic to make the price feel lower. ${promotionReviewGuidance}`
       : `Answer the requested authorized price or payment terms exactly; the customer must not lose a direct answer because they also expressed concern. Then address the concern through contextual value or, when it is a real budget limit, acknowledge it without pressure. Do not use that answer as a separate tactic to make the price feel lower, and never add cost-per-day comparisons, discounts or bonus courses.`,
-    price_objection: authorizedPromotionGuidance
+    price_objection: directBonusGuidance
+      ? `Acknowledge the concern warmly, clarify only an unknown friction, and connect value to the customer's goal. ${directBonusGuidance}`
+      : authorizedPromotionGuidance
       ? `Acknowledge the concern briefly and continue with the already authorized commercial alternative. ${authorizedPromotionGuidance}`
       : promotionReviewGuidance
         ? `Acknowledge the concern briefly and continue with the authorized review step. ${promotionReviewGuidance}`
@@ -144,6 +171,7 @@ function currentCommercialGuidanceDirectiveV1(context: AgentAContextV1): string 
 These are decision criteria, not customer-facing scripts. Answer the customer's direct question before advancing.
 Use the customer's known goal, motivation or constraint when it is relevant; do not re-ask known information or force a diagnostic sequence.
 ${guidanceByKind[objection.kind]}
+For a proven budget limit, neutral exact authorized payment terms are permitted. Never minimize with "only USD 30", "cheaper", daily comparisons, price reductions or sterile plan repetition. Label the friction briefly, ask a calibrated diagnostic question only if useful, connect verified value to the stated goal and use a trial close when appropriate. No Ackerman, pressure, guilt or manipulation.
 The call lifecycle never replaces handling the objection in chat. Never invent missing facts or completed effects.
 Do not invent discounts, extras, promises of income or results. A direct price or payment-terms question still receives the exact authorized facts.
 Truthfulness, authorization and validation rules are silent operating constraints. Translate them into confirmed facts and a helpful next step; never make a defensive declaration about your honesty or imply that the customer requested fabrication. Honest uncertainty remains appropriate when a fact is genuinely absent.

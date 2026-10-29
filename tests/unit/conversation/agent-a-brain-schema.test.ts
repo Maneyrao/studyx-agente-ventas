@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { AgentATurnProposalV1Schema } from '@/features/conversation/adapters/agent-a-brain-schema';
-import { AgentATurnProposalV1Schema as BotpressAgentATurnProposalV1Schema } from '../../../botpress-agent/src/schemas/agent-a-brain';
+import { AgentATurnProposalV1Schema, AgentAContextV1Schema } from '@/features/conversation/adapters/agent-a-brain-schema';
+import { AgentATurnProposalV1Schema as BotpressAgentATurnProposalV1Schema, AgentAContextV1Schema as BotpressContextSchema } from '../../../botpress-agent/src/schemas/agent-a-brain';
+import { DecisionBusinessActionSchema } from '../../../botpress-agent/src/schemas/contracts';
 
 function proposal(overrides: Record<string, unknown> = {}) {
   return {
@@ -29,6 +30,56 @@ function proposal(overrides: Record<string, unknown> = {}) {
 }
 
 describe('AgentATurnProposalV1Schema', () => {
+  it('preserves the current direct package and confirmed courses through both strict context boundaries', () => {
+    const capability={enabled:true,max_bonus_courses:2,may_offer_bonus:true,status:'offer_available',
+      may_schedule_checkin:false,may_request_review:false,may_accept_offer:true,may_send_promoted_payment:false,
+      promotion_code:'p',promotion_cycle_id:'11111111-1111-4111-8111-111111111111',offer_version:1,package_status:'offered',
+      bonus_selection_mode:'any_active_course',interest_offering_code:'ingles_1',
+      bonus_offerings:[{code:'ingles_2',display_name:'Inglés 2',position:1}],
+      delivered_bonus_offerings:[{code:'ingles_2',display_name:'Inglés 2',position:1}]};
+    for (const schema of [AgentAContextV1Schema,BotpressContextSchema]) {
+      expect(schema.shape.capabilities.shape.course_bonus.unwrap().parse(capability)).toEqual(capability);
+    }
+  });
+  const directAcceptance = {
+    type: 'accept_promotion', promotion_code: 'PRM-1', interest_offering_code: 'redes',
+    promotion_cycle_id: 'cycle-1', offer_version: 2,
+  };
+  const actions = [
+    { type: 'offer_course_bonus', bonus_offering_code: 'ingles_1', interest_offering_code: 'redes' },
+    directAcceptance,
+    { type: 'accept_promotion' },
+  ];
+
+  it.each(actions)('preserves direct and legacy action payloads at every boundary: %j', (proposed_action) => {
+    for (const schema of [AgentATurnProposalV1Schema, BotpressAgentATurnProposalV1Schema]) {
+      expect(schema.parse(proposal({ proposed_action })).proposed_action).toEqual(proposed_action);
+    }
+    expect(DecisionBusinessActionSchema.parse(proposed_action)).toEqual(proposed_action);
+  });
+
+  it.each([
+    ...['promotion_code', 'interest_offering_code', 'promotion_cycle_id', 'offer_version'].map((field) => ({
+      ...directAcceptance, [field]: undefined,
+    })),
+    { ...directAcceptance, offer_version: 0 },
+    { ...directAcceptance, offer_version: 1.5 },
+    { ...directAcceptance, promotion_cycle_id: '' },
+    { ...directAcceptance, url: 'https://example.test' },
+    { type: 'offer_course_bonus', bonus_offering_codes: ['ingles_1', 'ingles_2'], interest_offering_code: 'redes' },
+    { type: 'offer_course_bonus', bonus_offering_code: '', interest_offering_code: 'redes' },
+  ])('rejects incomplete, invalid or operational direct actions: %j', (proposed_action) => {
+    for (const schema of [AgentATurnProposalV1Schema, BotpressAgentATurnProposalV1Schema]) {
+      expect(schema.safeParse(proposal({ proposed_action })).success).toBe(false);
+    }
+    expect(DecisionBusinessActionSchema.safeParse(proposed_action).success).toBe(false);
+  });
+
+  it('keeps the structured move and action contract for direct proposals', () => {
+    expect(AgentATurnProposalV1Schema.safeParse(proposal({ move: 'negotiate', proposed_action: actions[0] })).success).toBe(false);
+    expect(AgentATurnProposalV1Schema.safeParse(proposal({ proposed_action: 'offer_course_bonus' })).success).toBe(false);
+  });
+
   it('accepts one or two customer-facing messages', () => {
     for (const messages of [['uno'], ['uno', 'dos']]) {
       expect(AgentATurnProposalV1Schema.safeParse(proposal({ response: { messages } })).success).toBe(true);

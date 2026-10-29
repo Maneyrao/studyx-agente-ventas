@@ -48,7 +48,7 @@ async function sources(db: postgres.Sql, config: PostSaleConfig, id?: string, pa
   return db<Source[]>`
     SELECT n.*, p.workspace_id, p.contact_id, p.source_conversation_id AS conversation_id,
       t.metadata->>'botpress_conversation_id' AS botpress_conversation_id,
-      w.display_name AS academy_name, o.display_name AS offering_name,
+      w.display_name AS academy_name, COALESCE(e.offering_display_name_snapshot,o.display_name) AS offering_name,
       COALESCE(p.registration_email, c.email) AS registration_email,
       COALESCE(p.registration_name, c.name) AS registration_name,
       e.enrollment_status, e.student_was_created, e.login_email, e.login_url,
@@ -79,7 +79,12 @@ async function sources(db: postgres.Sql, config: PostSaleConfig, id?: string, pa
       AND p.provider = 'stripe' AND p.plan_code IS NOT NULL AND c.deleted_at IS NULL
       AND n.status IN ('pending', 'dispatched', 'processing')
       AND (${id ?? null}::uuid IS NOT NULL OR (n.available_at <= now() AND (n.lease_until IS NULL OR n.lease_until <= now())))
-      AND (n.kind <> 'access_delayed' OR e.payment_id IS NULL)
+      AND (n.kind <> 'access_delayed' OR e.payment_id IS NULL OR e.enrollment_status='processing' OR EXISTS (
+        SELECT 1 FROM payment_bonus_offerings pending WHERE pending.payment_id=p.id
+          AND NOT EXISTS (SELECT 1 FROM central_bonus_enrollment_items active
+            WHERE active.payment_id=p.id AND active.offering_code=pending.offering_code_snapshot
+              AND active.position=pending.position AND active.enrollment_status IN ('active','already_enrolled'))
+      ))
       AND NULLIF(t.metadata->>'botpress_conversation_id', '') IS NOT NULL AND t.unusable_at IS NULL
       AND (${id ?? null}::uuid IS NULL OR n.id = ${id ?? null}::uuid)
       AND (${paymentId ?? null}::uuid IS NULL OR p.id = ${paymentId ?? null}::uuid)
@@ -146,7 +151,7 @@ function hasCompleteBonusEvidence(source: BonusEvidence): boolean {
     const item = verified[index];
     return item?.offering_code === bonus.code
       && item.position === bonus.position
-      && item.enrollment_status === 'active';
+      && ['active', 'already_enrolled'].includes(item.enrollment_status);
   });
 }
 

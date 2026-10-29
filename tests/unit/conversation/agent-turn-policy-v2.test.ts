@@ -109,6 +109,35 @@ function authorize(input: {
 }
 
 describe('plannerless Agent A authority', () => {
+  it.each([
+    {from:'excel_integral',to:'redes_informaticas',reference:'redes',blocked:true},
+    {from:'redes_informaticas',to:'excel_integral',reference:'excel',blocked:false},
+  ])('checks superseded package identity for combined $from -> $to checkout',({from,to,reference,blocked})=>{
+    const result=authorize({state:state({selected_offering_code:from}),intake:completeIntake,
+      customerText:'Quiero este curso en un pago, pasame el link de pago',
+      courseBonus:{status:'accepted',package_status:'attached',interest_offering_code:'redes_informaticas',promotion_code:'old',
+        may_send_promoted_payment:false,may_accept_offer:false,may_request_review:false,may_schedule_checkin:false,
+        bonus_offerings:[{code:'excel_integral',display_name:'Excel Integral',position:1}]},
+      proposal:proposal({move:{schema_version:1,move:'select_course',secondary_moves:['select_payment_plan','request_payment_link'],
+        course_reference:reference,payment_plan:'one_time',vetoes:[],confidence:1},
+        proposed_action:{type:'send_payment_link',offering_code:to,payment_plan:'one_time'}})});
+    expect(result).toMatchObject(blocked ? {ok:false,reasons:['ACTION_NOT_AUTHORIZED']}
+      : {ok:true,action:{type:'send_payment_link',offering_code:to,payment_plan:'one_time'}});
+  });
+  it('authorizes exactly one active direct course only with the capability', () => {
+    const p = proposal({ proposed_action: { type: 'offer_course_bonus',
+      interest_offering_code: 'redes_informaticas', bonus_offering_code: 'excel_integral' } });
+    const cap = { status: 'checkin_available', enabled: true, max_bonus_courses: 2,
+      may_offer_bonus: true, may_schedule_checkin: false, may_request_review: false,
+      may_accept_offer: false, may_send_promoted_payment: false, promotion_code: null,
+      interest_offering_code: 'redes_informaticas', bonus_offerings: [] } as const;
+    expect(authorize({ proposal: p, state: state({selected_offering_code:'redes_informaticas'}),
+      courseBonus: cap })).toMatchObject({ok:true, action:p.proposed_action});
+    expect(authorize({ proposal:p, state:state({selected_offering_code:'redes_informaticas'}),
+      courseBonus:{...cap,may_offer_bonus:false}, actionRejections:'structured' }))
+      .toMatchObject({ok:false, reasons:['COMMERCIAL_TRUTH_VIOLATION'],
+        rejection_subjects:['forbidden_promise','direct_bonus:bonus_disabled']});
+  });
   it('replaces a stale course before handing an exact current course to the call', () => {
     const result = authorizeAgentTurnV2({
       state: state({

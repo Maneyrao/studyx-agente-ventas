@@ -3,6 +3,7 @@ import { afterAll, describe, it, expect } from 'vitest';
 import { openLocalTestDatabase } from '../helpers/db';
 import { claimNotification, deliverNotification, dispatchNotifications, releaseNotification } from '@/features/fulfillment/post-sale/service';
 import { runEnrollmentWorker } from '@/features/fulfillment/central-carga/worker';
+import { loadLatestPaymentVerificationV1 } from '@/features/payments/application/read-payment-verification';
 const run = process.env.TEST_DATABASE_URL ? describe : describe.skip;
 const db = process.env.TEST_DATABASE_URL ? openLocalTestDatabase() : null;
 afterAll(async () => db?.end());
@@ -43,11 +44,40 @@ async function fixture(environment = 'test', options: { bonus?: boolean } = {}) 
   await db!`INSERT INTO fulfillment_jobs(payment_id,workspace_id) VALUES (${p.id},${w.id})`;
   const [n] = await db!`SELECT id FROM post_sale_notifications WHERE payment_id=${p.id} AND kind='payment_received'`;
   return { paymentId: p.id as string, notificationId:n.id as string, botpressId:suffix,
+    workspaceSlug:suffix,contactId:c.id as string,
     bonusCode: bonus?.code ?? null, bonusName: bonus?.display_name ?? null };
 }
 const eventFetch = (async () => new Response(JSON.stringify({event:{id:'event-confirmed'}}),{status:201})) as typeof fetch;
 const deps = () => ({ db: db!, config, fetchImpl: eventFetch });
 run('post-sale payment / central / Agent A pipeline', () => {
+  it('dispatches access-delayed for a partial bonus despite an active paid enrollment', async () => {
+    process.env.BOTPRESS_MANAGED_EGRESS_TOKEN='synthetic'; process.env.BOTPRESS_MANAGED_EGRESS_BOT_ID='bot-test';
+    const f=await fixture('test',{bonus:true});
+    await db!`UPDATE fulfillment_jobs SET max_attempts=1 WHERE payment_id=${f.paymentId}`;
+    const fetchImpl=(async () => new Response(JSON.stringify({payment_id:f.paymentId,enrollment_id:'partial-paid',
+      student_id:'existing-student',enrollment_status:'already_enrolled',student_was_created:false,
+      access:{login_email:'ana@example.com',welcome_sent:false},supports_partial_recovery:true,
+      bonus_enrollments:[{offering_code:f.bonusCode,enrollment_status:'failed'}]}),{status:200})) as typeof fetch;
+    expect(await runEnrollmentWorker({scoped:true,payment_id:f.paymentId,limit:1},{sql:db!,fetchImpl,
+      config:{enabled:true,baseUrl:'https://central.test',signingSecret:'secret-synthetic-123456',
+        environment:'test',paidAfter:config.paidAfter,allowSandboxContacts:true}})).toMatchObject({dead_lettered:1});
+    expect(await db!`SELECT id FROM post_sale_notifications WHERE payment_id=${f.paymentId} AND kind='access_ready'`).toHaveLength(0);
+    expect(await loadLatestPaymentVerificationV1({workspace_slug:f.workspaceSlug,contact_id:f.contactId},db!))
+      .toMatchObject({status:'paid',fulfillment:null});
+    expect(await dispatchNotifications(f.paymentId,deps())).toEqual({dispatched:1});
+    const [delayed]=await db!`SELECT id FROM post_sale_notifications WHERE payment_id=${f.paymentId} AND kind='access_delayed'`;
+    const claim=await claimNotification(delayed.id,f.botpressId,deps());
+    expect(claim).toMatchObject({claimed:true,kind:'access_delayed'});
+    if (!claim.claimed) throw new Error('delay claim');
+    const messages:string[]=[];
+    expect(await deliverNotification(delayed.id,{claim_token:claim.claim_token,botpress_conversation_id:f.botpressId,
+      narrative:{intro:'Recibimos tu pago. Estamos revisando el alta de tus cursos.',suggestion:''}},
+    {...deps(),sender:async (input:{text:string})=>{messages.push(input.text);return {
+      outcome:'sent' as const,channel:'whatsapp' as const,providerMessageId:'delay-sent',deliveryId:null,reason:null,
+    };}})).toEqual({outcome:'sent'});
+    expect(messages).toHaveLength(1);
+    expect(messages[0]).not.toMatch(/CONTRASEÑA|USUARIO|CURSOS HABILITADOS|campus-virtual/);
+  });
   it('does not dispatch another environment; concurrent events have one claimant and one send', async () => {
     process.env.BOTPRESS_MANAGED_EGRESS_TOKEN='synthetic'; process.env.BOTPRESS_MANAGED_EGRESS_BOT_ID='bot-test';
     const live=await fixture('live');
