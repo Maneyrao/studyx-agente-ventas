@@ -223,6 +223,7 @@ export interface CanonicalFactRefV1 {
     | 'offering_description'
     | 'offering_duration'
     | 'offering_modality'
+    | 'offering_syllabus'
     | 'payment_plan_label'
     | 'payment_plan_price'
     | 'payment_link';
@@ -231,7 +232,7 @@ export interface CanonicalFactRefV1 {
 }
 
 export interface CanonicalFactV1 extends CanonicalFactRefV1 {
-  readonly source: 'business_snapshot' | 'payment_config';
+  readonly source: 'business_snapshot' | 'payment_config' | 'knowledge_base';
   readonly value: string;
   readonly area_code?: string;
 }

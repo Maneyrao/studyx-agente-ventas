@@ -78,6 +78,43 @@ function courseBonusEffectContract(instructions: string): string {
 }
 
 describe('Agent A Brain prompt', () => {
+  it('renders the accepted-call availability boundary as an execution contract', () => {
+    const current = context();
+    current.commercial_state.call_preference = 'call';
+    current.commercial_state.call_offer_status = 'accepted';
+    current.commercial_state.awaiting_reply = 'call_or_chat';
+    current.capabilities.may_request_call_now = false;
+    current.capabilities.call_execution = {
+      next_step: 'confirm_availability',
+      request_call_now_authorized: false,
+    };
+
+    const instructions = buildAgentABrainInstructionsV1(current);
+
+    expect(instructions).toContain('<current_effect_contract kind="call">');
+    expect(instructions).toContain('ask once whether the customer can take the call now');
+    expect(instructions).toContain('proposed_action=none');
+    expect(instructions).toContain('Do not claim that the call was placed.');
+  });
+
+  it('does not force a call follow-up after the customer chooses to continue by chat', () => {
+    const current = context();
+    current.turn.batch_messages = [{ id: 'm3', text: 'Ahora no puedo, sigamos por chat' }];
+    current.commercial_state.call_preference = 'call';
+    current.commercial_state.call_offer_status = 'accepted';
+    current.commercial_state.awaiting_reply = 'call_or_chat';
+    current.capabilities.may_request_call_now = false;
+    current.capabilities.call_execution = {
+      next_step: 'none',
+      request_call_now_authorized: false,
+    };
+
+    const instructions = buildAgentABrainInstructionsV1(current);
+
+    expect(instructions).not.toContain('<current_effect_contract kind="call">');
+    expect(instructions).not.toContain('ask once whether the customer can take the call now');
+  });
+
   it.each(['capability','commercial_state','disabled_with_may_offer'] as const)('preserves only delivered direct gifts during review rollback using %s identity', identity => {
     const current=context();
     current.turn.batch_messages=[{id:'m3',text:'Me sigue pareciendo caro'}];
@@ -159,7 +196,7 @@ describe('Agent A Brain prompt', () => {
     expect(JSON.parse(encoded)).toEqual(current);
     expect(instructions).not.toContain('<current_turn_guidance>');
     expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v101');
-    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v137');
+    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v138');
   });
 
   it('does not override the authority price ladder with a second commercial strategy', () => {

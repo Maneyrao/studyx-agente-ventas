@@ -193,6 +193,110 @@ function claimedTurn(): ClaimedTurn {
 }
 
 describe('buildAgentAContextV1', () => {
+  it('projects the exact course syllabus as an authorized fact instead of leaving it only in retrieval text', () => {
+    const claimed = claimedTurn();
+    claimed.context.knowledge_base = [{
+      source_uri: 'knowledge-source:11111111-1111-4111-8111-111111111111',
+      title: 'Temario — Redes Informáticas',
+      content: 'Clase 1: fundamentos de redes. Clase 2: direccionamiento IP.',
+      similarity: 1,
+      offering_code: 'redes-informaticas',
+    }];
+
+    const context = buildAgentAContextV1(claimed)!;
+
+    expect(context.catalog.selected_offering?.facts).toContainEqual({
+      id: 'knowledge-source:11111111-1111-4111-8111-111111111111',
+      kind: 'offering_syllabus',
+      value: 'Clase 1: fundamentos de redes. Clase 2: direccionamiento IP.',
+    });
+  });
+
+  it('bounds a long syllabus to the canonical fact contract', () => {
+    const claimed = claimedTurn();
+    claimed.context.knowledge_base = [{
+      source_uri: 'knowledge-source:11111111-1111-4111-8111-111111111111',
+      title: 'Temario largo — Redes Informáticas',
+      content: `Clase 1: ${'contenido '.repeat(180)}`,
+      similarity: 1,
+      offering_code: 'redes-informaticas',
+    }];
+
+    const context = buildAgentAContextV1(claimed)!;
+    const syllabus = context.catalog.selected_offering?.facts.find((fact) => fact.kind === 'offering_syllabus');
+
+    expect(syllabus?.value).toHaveLength(1_200);
+  });
+
+  it('exposes the pending availability checkpoint after accepted-call contact data is complete', () => {
+    const claimed = claimedTurn();
+    claimed.context.batch_messages[0] = {
+      ...claimed.context.batch_messages[0]!,
+      content: 'Soy Ana Pérez, ana@example.com, +5491112345678',
+    };
+    claimed.conversation_state_v1 = {
+      ...claimed.conversation_state_v1!,
+      call_preference: 'call',
+      call_offer_status: 'accepted',
+      awaiting_reply: 'call_or_chat',
+    };
+    claimed.call_intake_readiness = { status: 'ready', requirements: [] };
+    claimed.sales_context.allowed_actions = [];
+
+    const context = buildAgentAContextV1(claimed)!;
+
+    expect(context.capabilities.call_execution).toEqual({
+      next_step: 'confirm_availability',
+      request_call_now_authorized: false,
+    });
+  });
+
+  it('retires the call execution checkpoint when the customer explicitly chooses chat', () => {
+    const claimed = claimedTurn();
+    claimed.context.batch_messages[0] = {
+      ...claimed.context.batch_messages[0]!,
+      content: 'Ahora no puedo, sigamos por chat',
+    };
+    claimed.conversation_state_v1 = {
+      ...claimed.conversation_state_v1!,
+      call_preference: 'call',
+      call_offer_status: 'accepted',
+      awaiting_reply: 'call_or_chat',
+    };
+    claimed.call_intake_readiness = { status: 'ready', requirements: [] };
+    claimed.sales_context.allowed_actions = [];
+
+    const context = buildAgentAContextV1(claimed)!;
+
+    expect(context.capabilities.call_execution).toEqual({
+      next_step: 'none',
+      request_call_now_authorized: false,
+    });
+  });
+
+  it('authorizes dispatch when availability is confirmed after the checkpoint', () => {
+    const claimed = claimedTurn();
+    claimed.context.batch_messages[0] = {
+      ...claimed.context.batch_messages[0]!,
+      content: 'Sí, ahora puedo atender',
+    };
+    claimed.conversation_state_v1 = {
+      ...claimed.conversation_state_v1!,
+      call_preference: 'call',
+      call_offer_status: 'accepted',
+      awaiting_reply: 'call_or_chat',
+    };
+    claimed.call_intake_readiness = { status: 'ready', requirements: [] };
+    claimed.sales_context.allowed_actions = [];
+
+    const context = buildAgentAContextV1(claimed)!;
+
+    expect(context.capabilities.call_execution).toEqual({
+      next_step: 'dispatch_authorized',
+      request_call_now_authorized: true,
+    });
+  });
+
   it.each(['offered','accepted','attached'] as const)('projects durable %s direct identity with new-offer creation disabled', status => {
     const claimed=claimedTurn();
     claimed.course_bonus_capability={enabled:false,max_bonus_courses:2,may_offer_bonus:false,

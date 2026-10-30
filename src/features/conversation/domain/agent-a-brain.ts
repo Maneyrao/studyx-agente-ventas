@@ -22,6 +22,7 @@ export const AGENT_A_FACT_KINDS_V1 = [
   'offering_description',
   'offering_duration',
   'offering_modality',
+  'offering_syllabus',
   'payment_plan_label',
   'payment_plan_price',
 ] as const;
@@ -161,6 +162,10 @@ export interface AgentAContextV1 {
       readonly field: 'nombre' | 'apellido' | 'correo' | 'telefono';
       readonly reason: 'missing' | 'written_whatsapp_confirmation_required';
     }>;
+    readonly call_execution?: {
+      readonly next_step: 'none' | 'collect_contact_details' | 'confirm_availability' | 'dispatch_authorized';
+      readonly request_call_now_authorized: boolean;
+    };
   };
 }
 

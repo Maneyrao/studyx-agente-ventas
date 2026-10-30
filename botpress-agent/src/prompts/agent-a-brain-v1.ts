@@ -6,7 +6,7 @@ import {
 import { resolveCanonicalPromptIdentityV1 } from './agent-a-identity';
 import { evaluateSalesObjectionTurnV1 } from '../lib/conversation/sales-objection-turn-policy';
 
-export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v137' as const;
+export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v138' as const;
 
 /**
  * Runtime contract only. The sales behavior lives in the canonical prompt so
@@ -147,6 +147,16 @@ Use only authorized course, package and payment facts. Never claim a completed e
 </current_effect_contract>`;
 }
 
+function currentCallEffectContractV1(context: AgentAContextV1): string {
+  const execution = context.capabilities.call_execution;
+  if (execution?.next_step !== 'confirm_availability') return '';
+  return `<current_effect_contract kind="call">
+The accepted call has complete contact data, but request_call_now is not authorized in this turn.
+Keep move=request_call, use proposed_action=none, and ask once whether the customer can take the call now.
+Do not claim that the call was placed. The customer's later availability confirmation is the separate dispatch authority.
+</current_effect_contract>`;
+}
+
 const LISANDRO_VOICE_GATE = `<lisandro_voice_gate>
 Identify the current commercial phase from context before writing. Use stage_hypothesis only for the allowed durable milestone enum; it is diagnostic and does not represent the flexible sales phase.
 Use one or two short WhatsApp messages and at most one main question. The backend does not decide sales quality.
@@ -180,6 +190,8 @@ ${inertJson(context)}
 ${currentCatalogResolutionDirectiveV1(context)}
 
 ${currentCommercialGuidanceDirectiveV1(context)}
+
+${currentCallEffectContractV1(context)}
 
 ${mandatoryRepairDirectiveV1(context)}
 

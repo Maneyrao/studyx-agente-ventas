@@ -83,6 +83,30 @@ const completeIntake = async () => ({
 });
 
 describe('prepareAgentTurnV2', () => {
+  it('accepts a syllabus citation reloaded from the canonical knowledge source', async () => {
+    const syllabusFact = {
+      id: 'knowledge-source:11111111-1111-4111-8111-111111111111',
+      kind: 'offering_syllabus' as const,
+      source: 'knowledge_base' as const,
+      value: 'Clase 1: fundamentos de redes. Clase 2: direccionamiento IP.',
+      offering_code: 'redes_informaticas',
+    };
+    const prepared = await prepareAgentTurnV2({
+      turn: { id: ids.turn, workspace_id: ids.workspace, conversation_id: ids.conversation, contact_id: ids.contact },
+      workspace_slug: 'studyx', business_context: business, catalog_index: index,
+      authorized_knowledge_facts: [syllabusFact],
+      proposal: proposal({
+        move: { schema_version: 1, move: 'ask_course_information', secondary_moves: [], vetoes: [],
+          course_reference: 'redes_informaticas', confidence: 1 },
+        response: { messages: [syllabusFact.value] },
+        used_fact_ids: [syllabusFact.id],
+      }),
+    }, { state_store: store(state({ selected_offering_code: 'redes_informaticas' })) });
+
+    expect(prepared.response_messages).toEqual([syllabusFact.value]);
+    expect(prepared.decision.business_action).toBeNull();
+  });
+
   it('retains an authorized direct bonus as the committed business action', async () => {
     const action = {type:'offer_course_bonus',interest_offering_code:'redes_informaticas',bonus_offering_code:'excel_integral'} as const;
     const prepared = await prepareAgentTurnV2({

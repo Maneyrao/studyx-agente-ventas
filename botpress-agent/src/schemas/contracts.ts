@@ -398,6 +398,7 @@ export const KnowledgeItemSchema = z.object({
   title: z.string(),
   content: z.string(),
   similarity: z.number(),
+  offering_code: z.string().min(1).max(160).optional(),
 })
 
 /**

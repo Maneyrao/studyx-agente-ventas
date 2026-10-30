@@ -24,6 +24,8 @@ export interface RetrievedKnowledge {
   readonly title: string;
   readonly content: string;
   readonly similarity: number;
+  /** Present only when this document was resolved by a canonical offering code. */
+  readonly offering_code?: string;
 }
 
 /**

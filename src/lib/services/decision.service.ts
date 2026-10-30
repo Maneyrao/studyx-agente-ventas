@@ -826,15 +826,42 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
         const agentBusinessContext = rawBusiness ? buildBusinessContextView(rawBusiness) : null;
         const currentMoves=[agentTurnProposal.move.move,...agentTurnProposal.move.secondary_moves];
         const proposedActionType=validatedInput.agent_turn_v2.requested_action?.type ?? agentTurnProposal.proposed_action.type;
+        const proposalOfferingCode=resolveAgentTurnOfferingReferenceV2(
+          agentTurnProposal.move.course_reference,
+          agentCatalogIndex?.offerings ?? agentBusinessContext?.offerings ?? [],
+        );
         const checkoutSelectsCourse=(currentMoves.includes('select_course') || currentMoves.includes('request_call'))
           && (proposedActionType==='send_payment_link'
             || (proposedActionType==='none' && currentMoves.includes('request_payment_link')));
         // Checkout owns the canonical selection of this complete turn. Reading
         // only the previous state can hide A's supersession or veto a valid B.
         const checkoutOfferingCode=checkoutSelectsCourse
-          ? resolveAgentTurnOfferingReferenceV2(agentTurnProposal.move.course_reference,
-            agentCatalogIndex?.offerings ?? agentBusinessContext?.offerings ?? [])
+          ? proposalOfferingCode
           : pipelineStateBefore?.selected_offering_code ?? null;
+        const knowledgeOfferingCode=proposalOfferingCode ?? pipelineStateBefore?.selected_offering_code ?? null;
+        const citedKnowledgeSourceIds=agentTurnProposal.used_fact_ids
+          .flatMap((factId) => {
+            const match=factId.match(/^knowledge-source:([0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/iu);
+            return match ? [match[1]!] : [];
+          });
+        const authorizedKnowledgeFacts: Array<{
+          id:string;kind:'offering_syllabus';source:'knowledge_base';value:string;offering_code:string;
+        }>=[];
+        if(knowledgeOfferingCode!==null) {
+          for(const knowledgeId of citedKnowledgeSourceIds) {
+            const [row]=await db<Array<{id:string;content:string;offering_code:string}>>`
+              SELECT id::text, left(content,1200) AS content,
+                COALESCE(metadata->>'course_code',metadata->>'offering_code') AS offering_code
+              FROM knowledge_sources
+              WHERE workspace_id=${workspaceId}::uuid AND id=${knowledgeId}::uuid
+                AND status='active' AND source_type='offering'
+                AND COALESCE(metadata->>'course_code',metadata->>'offering_code')=${knowledgeOfferingCode}
+              LIMIT 1
+            `;
+            if(row) authorizedKnowledgeFacts.push({id:`knowledge-source:${row.id}`,kind:'offering_syllabus',
+              source:'knowledge_base',value:row.content,offering_code:row.offering_code});
+          }
+        }
         courseBonusCapability = await readCourseBonusCapabilityV1({
           workspace_slug: workspaceSlug,
           contact_id: turn.contact_id,
@@ -858,6 +885,7 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
           current_customer_messages: currentMessages.map((message) => message.content),
           business_context: agentBusinessContext,
           catalog_index: agentCatalogIndex,
+          authorized_knowledge_facts: authorizedKnowledgeFacts,
           course_bonus_capability: courseBonusCapability,
         }, {
           state_store: new PostgresConversationStateStoreV1(db),

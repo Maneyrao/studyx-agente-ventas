@@ -206,6 +206,8 @@ export async function prepareAgentTurnV2(input: {
   readonly semantic_rejections?: 'blocking' | 'advisory';
   readonly business_context: BusinessContextView | null;
   readonly catalog_index: CatalogIndexView | null;
+  /** Canonical knowledge rows reloaded by the backend from cited fact IDs. */
+  readonly authorized_knowledge_facts?: readonly CanonicalFactV1[];
   readonly course_bonus_capability?: CourseBonusCapabilityV1;
 }, deps: {
   readonly state_store: Pick<ConversationStateStoreV1, 'load'>;
@@ -287,7 +289,18 @@ export async function prepareAgentTurnV2(input: {
     business_context: input.business_context,
     catalog_index: input.catalog_index,
   });
-  const facts = [...registry.facts.values()];
+  const canonicalOfferingCodes = new Set(
+    (input.catalog_index?.offerings ?? input.business_context?.offerings ?? []).map((offering) => offering.code),
+  );
+  const supplementalFacts = (input.authorized_knowledge_facts ?? []).filter((fact) => (
+    fact.kind === 'offering_syllabus'
+    && fact.source === 'knowledge_base'
+    && /^knowledge-source:[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(fact.id)
+    && fact.offering_code !== undefined
+    && canonicalOfferingCodes.has(fact.offering_code)
+    && !registry.facts.has(fact.id)
+  ));
+  const facts = [...registry.facts.values(), ...supplementalFacts];
   const offerings = (input.catalog_index?.offerings ?? input.business_context?.offerings ?? []).map(
     (offering) => ({
       code: offering.code,

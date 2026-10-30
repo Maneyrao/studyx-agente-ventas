@@ -51,7 +51,7 @@ const MemoryTypeSchema = z.enum([
 ]);
 const FactKindSchema = z.enum([
   'area_name', 'offering_name', 'offering_description', 'offering_duration',
-  'offering_modality', 'payment_plan_label', 'payment_plan_price',
+  'offering_modality', 'offering_syllabus', 'payment_plan_label', 'payment_plan_price',
 ]);
 const IdentifierSchema = z.string().trim().min(1).max(160);
 const CustomerMessageSchema = z.string().trim().min(1).max(2_000).refine(
@@ -305,6 +305,10 @@ export const AgentAContextV1Schema = z.object({
       field: ProfileFieldSchema,
       reason: z.enum(['missing', 'written_whatsapp_confirmation_required']),
     }).strict()).optional(),
+    call_execution: z.object({
+      next_step: z.enum(['none', 'collect_contact_details', 'confirm_availability', 'dispatch_authorized']),
+      request_call_now_authorized: z.boolean(),
+    }).strict().optional(),
   }).strict(),
 }).strict();
 

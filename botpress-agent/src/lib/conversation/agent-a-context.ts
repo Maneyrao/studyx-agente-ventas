@@ -5,6 +5,7 @@ import {
 import type { ClaimedTurn } from '../../schemas/contracts';
 import type { ConversationMoveV1 } from '../../schemas/conversation-pipeline';
 import { classifyBatchSalesSignal } from '../../../../src/features/orchestration/domain/sales-signal';
+import { supportsChatPreferenceV1 } from './channel-preference-evidence';
 
 const MEMORY_TYPES = new Set([
   'study_goal', 'study_context', 'preference', 'constraint',
@@ -328,6 +329,14 @@ function selectedOfferingFacts(claimed: ClaimedTurn, offeringCode: string) {
       });
     }
   }
+  for (const item of claimed.context.knowledge_base ?? []) {
+    if (item.offering_code !== offeringCode || !item.source_uri.startsWith('knowledge-source:')) continue;
+    facts.push({
+      id: item.source_uri,
+      kind: 'offering_syllabus',
+      value: item.content.slice(0, 1_200),
+    });
+  }
   for (const option of claimed.business_context?.workspace.payment_options ?? []) {
     facts.push({
       id: `payment:${offeringCode}:${option.code}:label:v1`,
@@ -620,6 +629,32 @@ export function buildAgentAContextV1(
     && effectiveAwaitingReply === 'call_or_chat';
   const availabilityConfirmed = currentSalesSignal.type === 'direct_call_request'
     || currentSalesSignal.type === 'call_acceptance';
+  const currentTurnChoosesChat = supportsChatPreferenceV1(
+    currentLogicalMessages.map((message) => message.content).join('\n'),
+    awaitingCallAvailability,
+  );
+  const callIntentRemainsActive = currentSalesSignal.type !== 'call_decline'
+    && currentSalesSignal.type !== 'opt_out'
+    && !currentTurnChoosesChat;
+  const mayRequestCallNow = claimed.policy.may_respond
+    && hasReadableCurrentInput
+    && !claimed.contact.blocked
+    && claimed.sales_context.active_call === null
+    && (currentCallAuthorization || (
+      awaitingCallAvailability
+      && availabilityConfirmed
+    ))
+    && !['handoff', 'closed'].includes(effectiveStage)
+    && callIntakeReadiness?.status === 'ready';
+  const callExecutionNextStep = mayRequestCallNow
+    ? 'dispatch_authorized' as const
+    : callIntentRemainsActive
+      && effectiveCallPreference === 'call' && effectiveCallOfferStatus === 'accepted'
+      && requiredContactFields.call.length > 0
+      ? 'collect_contact_details' as const
+      : callIntentRemainsActive && awaitingCallAvailability
+        ? 'confirm_availability' as const
+        : 'none' as const;
 
   return AgentAContextV1Schema.parse({
     schema_version: 1,
@@ -776,19 +811,10 @@ export function buildAgentAContextV1(
         && !['handoff', 'closed', 'payment_link_sent'].includes(effectiveStage)
         && !effectivePaymentReported
         && callOfferCount < 2,
-      may_request_call_now: claimed.policy.may_respond
-        && hasReadableCurrentInput
-        && !claimed.contact.blocked
-        && claimed.sales_context.active_call === null
-        // A direct request is sufficient in this turn. A short acceptance is
-        // sufficient only after the persisted availability question, never
-        // while an invitation or contact-data request is still pending.
-        && (currentCallAuthorization || (
-          awaitingCallAvailability
-          && availabilityConfirmed
-        ))
-        && !['handoff', 'closed'].includes(effectiveStage)
-        && callIntakeReadiness?.status === 'ready',
+      // A direct request is sufficient in this turn. A short acceptance is
+      // sufficient only after the persisted availability question, never
+      // while an invitation or contact-data request is still pending.
+      may_request_call_now: mayRequestCallNow,
       may_present_payment_options: claimed.policy.may_respond
         && (claimed.business_context?.workspace.payment_options.length ?? 0) > 0,
       may_send_payment_link: hasReadableCurrentInput && maySendPaymentLink,
@@ -800,6 +826,10 @@ export function buildAgentAContextV1(
       intake_missing: intakeMissing,
       required_contact_fields: requiredContactFields,
       call_contact_requirements: callRequirements,
+      call_execution: {
+        next_step: callExecutionNextStep,
+        request_call_now_authorized: mayRequestCallNow,
+      },
     },
   });
 }

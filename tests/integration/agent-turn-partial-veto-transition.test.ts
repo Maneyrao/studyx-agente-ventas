@@ -240,6 +240,58 @@ run('commercial-truth boundary', () => {
     expect(state?.stage).toBe('course_selected');
   });
 
+  it('reloads a cited active syllabus source through the decision boundary', async () => {
+    const seeded = await seedConversationForAgentTurn({
+      selected_offering_code: 'entrenamiento_funcional',
+      intake_complete: true,
+    });
+    const syllabus = 'Clase 1: fundamentos del entrenamiento. Clase 2: planificación de rutinas.';
+    const [source] = await sql<Array<{ id: string }>>`
+      INSERT INTO knowledge_sources (
+        workspace_id, source_type, title, content, status, metadata
+      ) VALUES (
+        ${seeded.workspace_id}::uuid,
+        'offering',
+        ${`Temario prueba — ${seeded.trace_id}`},
+        ${syllabus},
+        'active',
+        ${sql.json({ course_code: 'entrenamiento_funcional' })}
+      )
+      RETURNING id
+    `;
+
+    const committed = await commitAgentDecision({
+      turn_id: seeded.turn_id,
+      trace_id: seeded.trace_id,
+      supports_multi_outbound: true,
+      authorized_offering_code: 'entrenamiento_funcional',
+      authorized_payment_plan: null,
+      conversation_pipeline_v1: null,
+      agent_turn_v2: {
+        schema_version: 2,
+        proposal: {
+          ...seeded.proposalWithCallOfferAndFalsePrice,
+          move: {
+            schema_version: 1,
+            move: 'ask_course_information',
+            secondary_moves: [],
+            vetoes: [],
+            confidence: 1,
+            course_reference: 'entrenamiento_funcional',
+          },
+          response: { messages: [syllabus], call_offer: null },
+          used_fact_ids: [`knowledge-source:${source!.id}`],
+          proposed_action: { type: 'none' },
+        } as never,
+      },
+      decision: seeded.placeholderDecision as never,
+      model: seeded.model as never,
+    });
+
+    expect(committed.status).toBe('committed');
+    expect(committed.outbound?.content).toBe(syllabus);
+  });
+
   it('persists one canonical course named by Agent A through prepare, commit and capability read', async () => {
     const previousBonusFlag = process.env.CENTRAL_CARGA_BONUS_ENABLED;
     process.env.CENTRAL_CARGA_BONUS_ENABLED = 'true';

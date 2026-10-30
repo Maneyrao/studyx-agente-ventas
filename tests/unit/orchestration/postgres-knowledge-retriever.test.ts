@@ -82,7 +82,7 @@ describe('PostgresKnowledgeRetriever workspace scoping', () => {
     await expect(retriever.searchByOfferingCode({
       offering_code: 'coaching_liderazgo',
       limit: 5,
-    })).resolves.toEqual([row]);
+    })).resolves.toEqual([{ ...row, offering_code: 'coaching_liderazgo' }]);
 
     expect(calls).toHaveLength(1);
     expect(calls[0].params).toEqual([

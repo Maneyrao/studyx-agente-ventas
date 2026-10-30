@@ -201,6 +201,7 @@ export class PostgresKnowledgeRetriever implements KnowledgeRetriever {
       title: row.title,
       content: row.content,
       similarity: row.similarity,
+      offering_code: input.offering_code,
     }));
   }
 }
