@@ -505,6 +505,17 @@ function requestedCallAvailabilityIsObserved(observation: GoldenTurnObservationV
     && /[?]/u.test(observation.response);
 }
 
+function onlyCanonicalBackendPaymentLinksAreObserved(
+  observation: GoldenTurnObservationV1,
+): boolean {
+  if (actionType(observation) !== 'send_payment_link'
+    && observation.backendAction !== 'send_payment_link') return false;
+  const delivered = new Set(observation.deliveredLinks);
+  const visibleUrls = observation.response.match(/https?:\/\/[^\s]+/gu)
+    ?.map((url) => url.replace(/[),.;\]]+$/u, '')) ?? [];
+  return visibleUrls.length > 0 && visibleUrls.every((url) => delivered.has(url));
+}
+
 function semanticFailureContradictedByObjectiveEvidence(input: {
   readonly failure: RawSemanticTurnVerdictV1['failures'][number];
   readonly requirement: string;
@@ -540,6 +551,9 @@ function semanticFailureContradictedByObjectiveEvidence(input: {
   if (input.failure.code === 'SEMANTIC_MUST_NOT_FAILED'
     && input.requirement === 'No hacer varias preguntas juntas.'
     && (input.observation.response.match(/[?]/gu) ?? []).length <= 1) return true;
+  if (input.failure.code === 'SEMANTIC_MUST_NOT_FAILED'
+    && input.requirement.includes('no escribir una URL inventada')
+    && onlyCanonicalBackendPaymentLinksAreObserved(input.observation)) return true;
   if (input.failure.code === 'SEMANTIC_MUST_FAILED'
     && input.requirement === 'Conservar move=request_call, usar proposed_action=none y preguntar una sola vez si puede atender ahora; puede ofrecer seguir más tarde si ahora no puede.'
     && requestedCallAvailabilityIsObserved(input.observation)) return true;
@@ -598,6 +612,7 @@ async function judgeTurnSemantically(input: {
       preconditions,
       authorized_facts: input.observation.authorizedFacts,
       used_fact_ids: input.observation.usedFactIds,
+      delivered_links: input.observation.deliveredLinks,
       capabilities: { may_offer_call: input.observation.mayOfferCall ?? null },
     },
   };
@@ -622,7 +637,7 @@ async function judgeTurnSemantically(input: {
         headers: { authorization: `Bearer ${input.apiKey}`, 'content-type': 'application/json' },
         body: JSON.stringify({
           model: input.model,
-          instructions: 'Sos un juez estricto de comportamiento conversacional. Evalúa únicamente la respuesta real, la acción efectiva del backend, el estado y las precondiciones suministradas. No premies intención ni inventes hechos. Juzga cada requisito de forma independiente: nunca traslades el incumplimiento de un requisito a otro. Un requisito must falla si no se observa. Un must_not falla ÚNICAMENTE cuando la conducta prohibida sí ocurre; la ausencia de respuesta o de evidencia nunca viola un must_not. Después de recomendar exactamente un curso, preguntar por equipo o por una preferencia entre contenidos de ese mismo curso (por ejemplo, cámara o edición) no equivale a abrir un menú de cursos. Un nombre completo como "Ana Pérez" satisface nombre y apellido; no se exige mostrarlos en campos separados. En preconditions.price_objection_memory, present=true prueba que la objeción del turno actual o de la conversación quedó registrada; priorSourceMessageIds prueba exclusivamente que ya existía en un turno anterior. may_offer_call gobierna una oferta proactiva, no invalida una llamada que el cliente pidió y confirmó; backend_action=request_call_now con workflow.commitSucceeded=true prueba que el despacho fue autorizado. Para cada fallo elegí el requirement_id exacto, el authority_line_index y evidence_source. En observed_evidence copia literalmente el fragmento de esa fuente que prueba el fallo; para un must ausente puede quedar vacío, pero para un must_not debe ser un fragmento no vacío presente en la fuente. El runner expande la línea de autoridad; no redactes ni alteres citas. No juzgues reglas no incluidas.',
+          instructions: 'Sos un juez estricto de comportamiento conversacional. Evalúa únicamente la respuesta real, la acción efectiva del backend, el estado y las precondiciones suministradas. No premies intención ni inventes hechos. Juzga cada requisito de forma independiente: nunca traslades el incumplimiento de un requisito a otro. Un requisito must falla si no se observa. Un must_not falla ÚNICAMENTE cuando la conducta prohibida sí ocurre; la ausencia de respuesta o de evidencia nunca viola un must_not. Después de recomendar exactamente un curso, preguntar por equipo o por una preferencia entre contenidos de ese mismo curso (por ejemplo, cámara o edición) no equivale a abrir un menú de cursos. Un nombre completo como "Ana Pérez" satisface nombre y apellido; no se exige mostrarlos en campos separados. En preconditions.price_objection_memory, present=true prueba que la objeción del turno actual o de la conversación quedó registrada; priorSourceMessageIds prueba exclusivamente que ya existía en un turno anterior. may_offer_call gobierna una oferta proactiva, no invalida una llamada que el cliente pidió y confirmó; backend_action=request_call_now con workflow.commitSucceeded=true prueba que el despacho fue autorizado. Si backend_action=send_payment_link y una URL visible coincide exactamente con actual.delivered_links, esa URL fue añadida por el backend y no fue escrita ni inventada por el agente. Para cada fallo elegí el requirement_id exacto, el authority_line_index y evidence_source. En observed_evidence copia literalmente el fragmento de esa fuente que prueba el fallo; para un must ausente puede quedar vacío, pero para un must_not debe ser un fragmento no vacío presente en la fuente. El runner expande la línea de autoridad; no redactes ni alteres citas. No juzgues reglas no incluidas.',
           input: JSON.stringify(payload),
           reasoning: { effort: 'none' }, temperature: 0, stream: false, max_output_tokens: 1200,
           text: { format: { type: 'json_schema', name: 'studyx_golden_semantic_turn_judge_v2', schema: {

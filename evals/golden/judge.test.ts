@@ -398,6 +398,40 @@ describe('golden hard judge', () => {
     fetchMock.mockRestore();
   });
 
+  it('does not attribute a canonical backend-appended payment URL to Agent A', async () => {
+    const base = GOLDEN_CASES[10]!;
+    const turn = base.turns.find((candidate) => candidate.id === 'plan_and_link')!;
+    const scenario = { ...base, turns: [turn] };
+    const canonicalLink = 'https://buy.stripe.com/test_studyx_golden_12m';
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      output_text: JSON.stringify({ verdict: {
+        turn_id: 'plan_and_link', approved: false, failures: [{
+          code: 'SEMANTIC_MUST_NOT_FAILED', requirement_id: 'must_not:0',
+          authority_line_index: 0, evidence_source: 'response', observed_evidence: canonicalLink,
+          explanation: 'La respuesta contiene una URL.',
+        }],
+      } }),
+    }), { status: 200, headers: { 'content-type': 'application/json' } }));
+
+    await expect(judgeCaseSemantically({
+      apiKey: 'test', model: 'deepseek-test', scenario,
+      observations: [observation({
+        response: `Perfecto, acá tienes el enlace para completar la inscripción.\n\n${canonicalLink}`,
+        move: 'select_payment_plan',
+        proposedAction: {
+          type: 'send_payment_link',
+          offering_code: 'fotografia_profesional',
+          payment_plan: 'monthly_12',
+        },
+        backendAction: 'send_payment_link',
+        deliveredLinks: [canonicalLink],
+      })],
+    })).resolves.toEqual([{
+      turn_id: 'plan_and_link', approved: true, failures: [], evaluation_error: null,
+    }]);
+    fetchMock.mockRestore();
+  });
+
   it('presents the single-course rule atomically so an equipment question is not judged as a menu', async () => {
     const base = GOLDEN_CASES[2]!;
     const turn = base.turns.find((candidate) => candidate.id === 'recommend')!;

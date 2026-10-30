@@ -47,7 +47,7 @@ const model = process.env.STUDYX_GOLDEN_DEEPSEEK_MODEL ?? 'deepseek-v4-flash';
 const resultsDirectory = path.resolve(process.cwd(), 'evals/golden/results');
 const reuseObservations = process.env.STUDYX_GOLDEN_REUSE_OBSERVATIONS === 'true';
 const evaluatedSha = process.env.STUDYX_GOLDEN_EVALUATED_SHA ?? '';
-const resultStem = 'baseline-v6';
+const resultStem = 'baseline-v8';
 
 type Sql = ReturnType<typeof openLocalTestDatabase>;
 
@@ -515,7 +515,7 @@ async function prepareFulfilledBonusPackage(input: {
 function markdown(cases: readonly CaseResultV1[]): string {
   const escape = (value: unknown) => String(value ?? '').replaceAll('|', '\\|').replaceAll('\n', '<br>');
   const lines = [
-    `# Agent A golden baseline v6 — ${evaluatedSha.slice(0, 7)}`, '',
+    `# Agent A golden baseline v8 — ${evaluatedSha.slice(0, 7)}`, '',
     `- SHA evaluado: \`${evaluatedSha}\``,
     `- Origen de la línea de base de autoridad: \`${GOLDEN_BASE_SHA}\``,
     `- Brain: \`${AGENT_A_BRAIN_PROMPT_VERSION}\``,

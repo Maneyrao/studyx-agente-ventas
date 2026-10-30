@@ -1,4 +1,4 @@
-# Agent A golden baseline v6 — 8a46ee1
+# Agent A golden baseline v7 — 8a46ee1
 
 - SHA evaluado: `8a46ee15b9e0f0bba37455362afb17706793e717`
 - Origen de la línea de base de autoridad: `028f272fc3a6f6dc4806d19b251564169b55e6d6`
