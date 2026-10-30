@@ -80,6 +80,16 @@ This prevents Botpress Workflow retries from intentionally creating another chan
 
 ## Verification
 
+Install both dependency sets from a clean checkout before running ADK commands.
+The adapter intentionally imports shared contracts from the repository root, so
+the root dependencies are part of the build input:
+
+```bash
+npm ci
+cd botpress-agent
+npm ci
+```
+
 ```bash
 npm run typecheck
 npm run check
