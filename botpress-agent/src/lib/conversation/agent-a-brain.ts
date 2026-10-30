@@ -2049,7 +2049,12 @@ export function validateAgentATurnProposalV1(input: {
       || input.proposal.move.vetoes.includes('purchase')
     )
   );
-  const mustGuideIntake = missingIntake.length > 0 && !paymentDeferred && (
+  const promotionEffectOwnsThisTurn = input.proposal.proposed_action.type === 'offer_course_bonus'
+    || input.proposal.proposed_action.type === 'accept_promotion';
+  const mustGuideIntake = missingIntake.length > 0
+    && !paymentDeferred
+    && !promotionEffectOwnsThisTurn
+    && (
     input.context.commercial_state.awaiting_reply === 'contact_details'
     || moves.has('request_payment_link')
   );

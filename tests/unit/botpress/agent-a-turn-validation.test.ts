@@ -109,6 +109,75 @@ describe('validación de la propuesta del turno', () => {
     ]);
   });
 
+  it('no convierte el intake pendiente en una décima condición para ofrecer una bonificación', () => {
+    const current = context({
+      turn: {
+        batch_messages: [{ id: 'm2', text: 'Prefiero seguir por chat. El precio sigue siendo lo único que me frena.' }],
+        recent_turns: [{ id: 'm1', direction: 'inbound', content: 'El precio es lo único que me frena.' }],
+      },
+      commercial_state: {
+        ...context().commercial_state,
+        awaiting_reply: 'contact_details',
+      },
+      catalog: {
+        ...context().catalog,
+        available_offerings: [
+          { code: 'redes-informaticas', display_name: 'Redes Informáticas', area_code: 'tecnologia', fact_id: 'paid' },
+          { code: 'excel-integral', display_name: 'Excel Integral', area_code: 'tecnologia', fact_id: 'bonus' },
+        ],
+      },
+      capabilities: {
+        ...context().capabilities,
+        intake_missing: ['nombre', 'apellido', 'correo', 'telefono'],
+        course_bonus: {
+          enabled: true,
+          max_bonus_courses: 3,
+          may_offer_bonus: true,
+          status: 'checkin_available',
+          may_schedule_checkin: false,
+          may_request_review: false,
+          may_accept_offer: false,
+          may_send_promoted_payment: false,
+          promotion_code: null,
+          interest_offering_code: 'redes-informaticas',
+          bonus_offerings: [],
+          delivered_bonus_offerings: [],
+        },
+      },
+    } as Partial<AgentAContextV1>);
+    const rejection = validateAgentATurnProposalV1({
+      proposal: proposal({
+        move: {
+          schema_version: 1,
+          move: 'continue_by_chat',
+          secondary_moves: [],
+          vetoes: [],
+          confidence: 1,
+        },
+        response: {
+          messages: [
+            'Puedo sumarte Excel Integral sin costo extra para complementar lo que vas a aplicar. El precio de Redes Informáticas no cambia. Avanzamos con las 12 cuotas de USD 30?',
+          ],
+          call_offer: null,
+        },
+        proposed_action: {
+          type: 'offer_course_bonus',
+          interest_offering_code: 'redes-informaticas',
+          bonus_offering_code: 'excel-integral',
+        },
+        used_fact_ids: [],
+      }),
+      context: current,
+      planned_fact_ids: [],
+      rejection_id: '00000000-0000-4000-8000-000000000001',
+    });
+
+    expect(rejection?.rejections ?? []).not.toContainEqual({
+      code: 'MISSING_INTAKE',
+      subject: 'nombre',
+    });
+  });
+
   it('requires the model to ask for the missing phone before acknowledging a requested call', () => {
     const current = context({
       turn: {
