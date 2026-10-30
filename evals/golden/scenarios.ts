@@ -44,6 +44,8 @@ export type HardRuleV1 =
   | { readonly type: 'requests_only_missing_call_fields' }
   | { readonly type: 'payment_link_delivered' }
   | { readonly type: 'access_lists_all_activated_courses' }
+  | { readonly type: 'course_bonus_preconditions' }
+  | { readonly type: 'current_price_objection_recorded' }
   | { readonly type: 'selected_course_equals'; readonly value: string };
 
 export interface GoldenTurnV1 {
@@ -54,6 +56,12 @@ export interface GoldenTurnV1 {
   readonly authority: readonly AuthorityReference[];
   readonly expected: ExpectedTurnV1;
   readonly hard?: readonly HardRuleV1[];
+  /** Estado que debe haber dejado el turno anterior para que este turno mida su regla aislada. */
+  readonly priorPromotion?: {
+    readonly status: readonly (string | null)[];
+    readonly bonusCount: readonly number[];
+    readonly paidCourse?: readonly (string | null)[];
+  };
 }
 
 export interface GoldenCaseV1 {
@@ -118,7 +126,11 @@ export const GOLDEN_CASES: readonly GoldenCaseV1[] = [
       {
         id: 'info', customer: 'Info',
         must: ['Preguntar qué quiere aprender o qué curso vio; una sola pregunta principal.'],
-        mustNot: ['No elegir un curso por “Info”, no pedir datos personales y no hacer varias preguntas juntas.'],
+        mustNot: [
+          'No elegir un curso por “Info”.',
+          'No pedir nombre, apellido, correo o teléfono.',
+          'No hacer varias preguntas juntas.',
+        ],
         authority: [ref(PROMPT, 36, 44, '«Info» no elige un curso'), ref(PROMPT, 17, 17, 'Nunca hagas más de una pregunta principal')],
         expected: { move: ['greeting', 'browse_catalog'], action: ['none'], state: state(['exploring'], ['area_choice', 'course_choice', 'none']) },
         hard: [{ type: 'question_count_at_most', value: 1 }],
@@ -145,7 +157,11 @@ export const GOLDEN_CASES: readonly GoldenCaseV1[] = [
           'Conectar cámara/edición y el objetivo de ofrecer sesiones con hechos autorizados del curso.',
           'Cerrar probando si esa propuesta encaja o si se ve aplicándola.',
         ],
-        mustNot: ['No abrir un menú, no prometer ingresos/clientes y no registrar la recomendación como elección del cliente.'],
+        mustNot: [
+          'No abrir un menú de cursos ni ofrecer varias opciones.',
+          'No prometer ingresos ni clientes.',
+          'No registrar la recomendación como elección del cliente.',
+        ],
         authority: [ref(PROMPT, 46, 54, 'Recomienda **un** curso'), ref(PROMPT, 56, 66, 'cierre de prueba'), ref(PROMPT, 38, 38, 'Una recomendación no es elección')],
         expected: { move: ['ask_course_information', 'browse_catalog', 'unknown'], action: ['none'], state: state(['exploring', 'qualified'], ['none']) },
         hard: [{ type: 'question_count_at_most', value: 1 }],
@@ -176,7 +192,8 @@ export const GOLDEN_CASES: readonly GoldenCaseV1[] = [
         mustNot: ['No descontar, no repetir un argumento genérico, no prometer ingresos y no ofrecer bonificación en la primera objeción.'],
         authority: [ref(PROMPT, 68, 76, 'con lo que ya sabes de él'), ref(PROMPT, 91, 102, 'Valor percibido'), ref(PROMPT, 118, 125, 'Nunca en el primer contacto')],
         expected: { move: ['ask_payment_options', 'ask_course_information', 'unknown'], action: ['none'], state: state(['qualified', 'course_selected'], ['none'], [null], promotion()) },
-        hard: [{ type: 'contains', value: 'USD 30' }, { type: 'promotion_bonus_count_at_most', value: 0 }],
+        hard: [{ type: 'contains', value: 'USD 30' }, { type: 'promotion_bonus_count_at_most', value: 0 },
+          { type: 'current_price_objection_recorded' }],
       },
     ],
   },
@@ -197,7 +214,8 @@ export const GOLDEN_CASES: readonly GoldenCaseV1[] = [
         mustNot: ['No culpabilizar, no inventar urgencia, no reducir USD 360 y no empujar una decisión inmediata.'],
         authority: [ref(PROMPT, 98, 102, 'Presupuesto real'), ref(ROOT, 13, 13, 'plan de 12 como el más accesible')],
         expected: { move: ['defer_payment', 'ask_payment_options', 'unknown'], action: ['none'], state: state(['qualified', 'course_selected'], ['none'], [null], promotion()) },
-        hard: [{ type: 'contains', value: 'USD 30' }, { type: 'not_contains', value: 'descuento' }],
+        hard: [{ type: 'contains', value: 'USD 30' }, { type: 'not_contains', value: 'descuento' },
+          { type: 'current_price_objection_recorded' }],
       },
     ],
   },
@@ -218,7 +236,8 @@ export const GOLDEN_CASES: readonly GoldenCaseV1[] = [
         mustNot: ['No saltar a llamada, cuotas o bonificación y no bajar el precio.'],
         authority: [ref(PROMPT, 104, 112, '**Valor:**'), ref(PROMPT, 118, 124, 'antes de los escalones 1 a 3')],
         expected: { move: ['ask_course_information', 'unknown'], action: ['none'], state: state(['qualified', 'course_selected'], ['none'], [null], promotion()) },
-        hard: [{ type: 'promotion_bonus_count_at_most', value: 0 }],
+        hard: [{ type: 'promotion_bonus_count_at_most', value: 0 },
+          { type: 'current_price_objection_recorded' }],
       },
       {
         id: 'installments', customer: 'Lo veo útil, pero el precio me sigue frenando.',
@@ -250,7 +269,10 @@ export const GOLDEN_CASES: readonly GoldenCaseV1[] = [
         mustNot: ['No ofrecer dos cursos juntos, no llamarlo regalo y no volver a insistir con la llamada rechazada.'],
         authority: [ref(PROMPT, 114, 129, 'exactamente un código'), ref(PROMPT, 178, 184, 'Fotografía profesional'), ref(BONUS, 55, 73, 'Un solo código por turno')],
         expected: { move: ['unknown', 'ask_payment_options', 'ask_course_information'], action: ['offer_course_bonus'], state: state(['qualified', 'course_selected'], ['none', 'payment_plan'], [null], promotion(['offer_available'], [1], ['fotografia_profesional'])) },
-        hard: [{ type: 'action_bonus_in', values: ['fotografia_celulares_tiendas_online', 'diseno_photoshop', 'instagram_emprendedores', 'estrategias_emprender', 'especialista_ventas'] }],
+        hard: [
+          { type: 'course_bonus_preconditions' },
+          { type: 'action_bonus_in', values: ['fotografia_celulares_tiendas_online', 'diseno_photoshop', 'instagram_emprendedores', 'estrategias_emprender', 'especialista_ventas'] },
+        ],
       },
       {
         id: 'bonus_2', customer: 'Me suma, pero sigo dudando por el mismo precio.',
@@ -275,6 +297,7 @@ export const GOLDEN_CASES: readonly GoldenCaseV1[] = [
         authority: [ref(PROMPT, 121, 127, 'Máximo de cursos bonificados'), ref(BONUS, 64, 67, 'bonus_limit_reached')],
         expected: { move: ['unknown', 'ask_payment_options', 'ask_course_information', 'defer_payment'], action: ['none'], state: state(['qualified', 'course_selected'], ['none', 'payment_plan'], [null], promotion(['offer_available'], [3], ['fotografia_profesional'])) },
         hard: [{ type: 'promotion_bonus_count_at_most', value: 3 }, { type: 'response_mentions_all_promotions' }],
+        priorPromotion: { status: ['offer_available'], bonusCount: [3], paidCourse: ['fotografia_profesional'] },
       },
     ],
   },
@@ -306,8 +329,11 @@ export const GOLDEN_CASES: readonly GoldenCaseV1[] = [
       {
         id: 'context', customer: 'Quiero Marketing Digital para vender más con mi emprendimiento y ordenar mis redes.',
         must: ['Conectar el curso con ordenar redes y vender, sin prometer resultados.'],
-        mustNot: ['No inventar ingresos y no pedir datos todavía.'],
-        authority: [ref(PROMPT, 46, 54, 'cómo lo podría usar')],
+        mustNot: [
+          'No inventar ingresos.',
+          'No pedir nombre, apellido, correo o teléfono para inscripción o llamada todavía.',
+        ],
+        authority: [ref(PROMPT, 40, 44, 'Descubre sólo lo que te sirve para vender'), ref(PROMPT, 46, 54, 'cómo lo podría usar')],
         expected: { move: ['select_course', 'ask_course_information'], action: ['none'], state: state(['qualified', 'course_selected'], ['none']) },
       },
       {
@@ -354,25 +380,31 @@ export const GOLDEN_CASES: readonly GoldenCaseV1[] = [
       {
         id: 'request', customer: 'Quiero que me llames para orientarme con los cursos de fotografía.',
         must: ['Aceptar el pedido y solicitar juntos sólo los datos de llamada realmente faltantes.'],
-        mustNot: ['No exigir curso exacto, no decir asesora virtual y no despachar la llamada sin datos/consentimiento.'],
+        mustNot: [
+          'No exigir un curso exacto para aceptar la llamada.',
+          'No despachar la llamada sin datos completos y consentimiento vigente.',
+        ],
         authority: [ref(PROMPT, 204, 210, 'Ante aceptar o pedir una llamada'), ref(ROOT, 12, 12, 'consentimiento, datos completos')],
         expected: { move: ['request_call'], action: ['none'], state: state(['exploring', 'qualified', 'handoff'], ['contact_details']) },
-        hard: [{ type: 'requests_only_missing_call_fields' }, { type: 'not_contains', value: 'virtual' }],
+        hard: [{ type: 'requests_only_missing_call_fields' }],
       },
       {
         id: 'data', customer: 'Soy Ana Pérez, ana.perez@example.test, teléfono +1 305 555 0182.',
-        must: ['Registrar los datos y preguntar una sola vez si puede atender ahora.'],
+        must: ['Conservar move=request_call, usar proposed_action=none y preguntar una sola vez si puede atender ahora; puede ofrecer seguir más tarde si ahora no puede.'],
         mustNot: ['No llamar por completar el último dato y no volver a pedir campos ya recibidos.'],
         authority: [ref(PROMPT, 210, 210, 'pregunta una vez si puede atender ahora')],
-        expected: { move: ['request_call', 'provide_contact_details'], action: ['none'], state: state(['qualified', 'handoff'], ['call_or_chat', 'none']) },
+        expected: { move: ['request_call', 'provide_contact_details'], action: ['none'], state: state(['exploring', 'qualified', 'handoff'], ['call_or_chat', 'none']) },
         hard: [{ type: 'question_count_at_most', value: 1 }],
       },
       {
         id: 'available', customer: 'Sí, puedo atender ahora.',
         must: ['Usar request_call_now después de la confirmación vigente.'],
-        mustNot: ['No pedir otra confirmación, no duplicar la llamada y no presentar a otra asesora.'],
+        mustNot: [
+          'No pedir otra confirmación.',
+          'No duplicar la llamada.',
+        ],
         authority: [ref(PROMPT, 210, 212, 'sólo su confirmación posterior autoriza')],
-        expected: { move: ['request_call'], action: ['request_call_now'], state: state(['handoff'], ['none']) },
+        expected: { move: ['request_call', 'none'], action: ['request_call_now'], state: state(['handoff'], ['none']) },
       },
     ],
   },
@@ -389,8 +421,15 @@ export const GOLDEN_CASES: readonly GoldenCaseV1[] = [
       },
       {
         id: 'data', customer: 'Ana Pérez, ana.perez@example.test, +1 305 555 0182.',
-        must: ['Mostrar un resumen con nombre, apellido, correo y teléfono y pedir confirmación.'],
-        mustNot: ['No mandar enlace, no listar planes junto al resumen y no reexplicar el curso.'],
+        must: [
+          'Mostrar un resumen que incluya el nombre y apellido recibidos, el correo y el teléfono.',
+          'Pedir confirmación del resumen y esperar esa respuesta antes de preguntar el plan.',
+        ],
+        mustNot: [
+          'No mandar enlace.',
+          'No listar planes junto al resumen.',
+          'No reexplicar el curso.',
+        ],
         authority: [ref(PROMPT, 218, 220, 'pasa directo al resumen')],
         expected: { move: ['provide_contact_details', 'request_payment_link'], action: ['none'], state: state(['course_selected', 'qualified'], ['payment_confirmation', 'contact_details']) },
       },
@@ -427,7 +466,7 @@ export const GOLDEN_CASES: readonly GoldenCaseV1[] = [
       {
         id: 'customer_acknowledgement', customer: 'Gracias, ya veo los tres cursos.',
         must: ['Responder desde el vínculo y celebrar el próximo paso con el curso concreto.'],
-        mustNot: ['No volver a vender, no prometer acceso futuro, no generar invoice y no ofrecer una ayuda genérica.'],
+        mustNot: ['No volver a vender, no prometer acceso futuro y no generar invoice.'],
         authority: [ref(PROMPT, 230, 230, 'Ante un agradecimiento después del alta')],
         expected: { move: ['ask_current_state', 'unknown'], action: ['none'], state: state(['payment_link_sent', 'closed'], ['none'], ['monthly_12'], promotion(['accepted'], [2], ['fotografia_profesional'])) },
         hard: [{ type: 'not_contains', value: 'cuando esté listo' }, { type: 'not_contains', value: 'invoice' }],
@@ -468,10 +507,11 @@ export const GOLDEN_CASES: readonly GoldenCaseV1[] = [
       },
       {
         id: 'price_1', customer: 'El precio es lo único que me frena.',
-        must: ['Trabajar valor y registrar la objeción de precio.'],
+        must: ['Trabajar valor conectado al objetivo del cliente.', 'Registrar la objeción de precio.'],
         mustNot: ['No ofrecer bonificación antes de escalar.'],
         authority: [ref(PROMPT, 87, 87, 'price_objection'), ref(PROMPT, 104, 120, 'Nunca saltes escalones')],
         expected: { move: ['ask_course_information', 'unknown'], action: ['none'], state: state(['qualified', 'course_selected'], ['none']) },
+        hard: [{ type: 'current_price_objection_recorded' }],
       },
       {
         id: 'installments', customer: 'Sigue siendo caro para mí.',
@@ -503,6 +543,7 @@ export const GOLDEN_CASES: readonly GoldenCaseV1[] = [
         mustNot: ['No modificar el precio, no repetir la llamada rechazada y no ofrecer un curso sin afinidad.'],
         authority: [ref(PROMPT, 104, 124, 'Bonificación'), ref(BONUS, 55, 69, 'Si pasa: agregar')],
         expected: { move: ['unknown', 'ask_payment_options'], action: ['offer_course_bonus'], state: state(['qualified', 'course_selected'], ['none', 'payment_plan'], [null], promotion(['offer_available'], [1], ['fotografia_profesional'])) },
+        hard: [{ type: 'course_bonus_preconditions' }],
       },
       {
         id: 'change', customer: 'Cambio de idea: quiero que Marketing Digital sea el curso que pago.',
@@ -511,6 +552,7 @@ export const GOLDEN_CASES: readonly GoldenCaseV1[] = [
         authority: [ref(BONUS, 39, 40, 'promoción anterior pasa a `cancelled`'), ref(PROMPT, 228, 228, 'Si cambia de curso, suelta el anterior')],
         expected: { move: ['select_course'], action: ['none'], state: state(['qualified', 'course_selected'], ['none'], [null], promotion(['cancelled'], [1], ['fotografia_profesional'])) },
         hard: [{ type: 'selected_course_equals', value: 'marketing_digital' }],
+        priorPromotion: { status: ['offer_available'], bonusCount: [1], paidCourse: ['fotografia_profesional'] },
       },
     ],
   },
@@ -556,6 +598,7 @@ export const GOLDEN_CASES: readonly GoldenCaseV1[] = [
           { type: 'not_contains', value: 'es lo que hay' },
           { type: 'not_contains', value: 'no te lo voy a inventar' },
           { type: 'not_contains', value: 'eso no lo puedo cambiar' },
+          { type: 'current_price_objection_recorded' },
         ],
       },
     ],

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   extractAuthorizedContextV1,
+  extractFinalBackendDecisionErrorV1,
   extractContextEvidenceV1,
   extractModelAttemptsV1,
   normalizePromotionStatusV1,
@@ -75,5 +76,42 @@ describe('golden live runner evidence extraction', () => {
     expect(evidence.selectedOfferingFacts.map((fact) => fact.id)).toEqual([
       'offering:foto:syllabus:v1',
     ]);
+  });
+
+  it('records the effective course-bonus preconditions exposed to the real model', () => {
+    const evidence = extractContextEvidenceV1([{
+      boundary: 'deepseek', status: 200, error: null, responseBody: {},
+      requestBody: { instructions: `<authorized_context>${JSON.stringify({
+        capabilities: { course_bonus: {
+          enabled: true,
+          max_bonus_courses: 3,
+          may_offer_bonus: true,
+          status: 'checkin_available',
+        } },
+      })}</authorized_context>` },
+    }]);
+
+    expect(evidence.courseBonus).toEqual({
+      enabled: true,
+      maxBonusCourses: 3,
+      mayOfferBonus: true,
+      status: 'checkin_available',
+    });
+  });
+
+  it('distinguishes a repaired decision rejection from the final backend failure', () => {
+    const rejected = {
+      boundary: 'backend' as const, status: 422, error: null, requestBody: {},
+      url: 'http://127.0.0.1:3217/api/agent/turns/turn-1/decision',
+      responseBody: { error: 'DECISION_REJECTED', reason: 'AGENT_TURN_V2_REJECTED:ACTION_NOT_AUTHORIZED' },
+    };
+    const repaired = {
+      ...rejected, status: 200,
+      responseBody: { status: 'committed' },
+    };
+
+    expect(extractFinalBackendDecisionErrorV1([rejected]))
+      .toBe('AGENT_TURN_V2_REJECTED:ACTION_NOT_AUTHORIZED');
+    expect(extractFinalBackendDecisionErrorV1([rejected, repaired])).toBeNull();
   });
 });

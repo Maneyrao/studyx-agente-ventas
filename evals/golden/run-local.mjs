@@ -1,5 +1,7 @@
 import { spawn, spawnSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import { parseEnv } from 'node:util';
 
 const BASE_SHA = '028f272fc3a6f6dc4806d19b251564169b55e6d6';
@@ -61,6 +63,7 @@ const environment = {
   TEST_DATABASE_URL: databaseUrl,
   STUDYX_EVAL_API_BASE_URL: apiBaseUrl,
   STUDYX_GOLDEN_LIVE: 'true',
+  STUDYX_GOLDEN_REUSE_OBSERVATIONS: process.env.STUDYX_GOLDEN_REUSE_OBSERVATIONS ?? 'false',
   STUDYX_GOLDEN_DEEPSEEK_MODEL: process.env.STUDYX_GOLDEN_DEEPSEEK_MODEL ?? 'deepseek-v4-flash',
   STUDYX_WORKFLOW_REPORT_DIR: 'evals/golden/results/runtime',
   DEEPSEEK_API_KEY: deepseekKey,
@@ -76,6 +79,7 @@ const environment = {
   PAYMENT_LINK_6M: 'https://payments.example.invalid/6m',
   PAYMENT_LINK_CONTADO: 'https://payments.example.invalid/contado',
   PAYMENT_LINK_STRIPE_VERIFICATION: 'https://payments.example.invalid/verification-050',
+  VOICE_PROVIDER: 'telegram_sandbox',
   AGENT_A_BRAIN_V1_ENABLED: 'true',
   AGENT_A_BRAIN_V1_SHADOW: 'false',
   AGENT_A_REPAIR_ENABLED: 'true',
@@ -107,14 +111,29 @@ for (const filename of [
 
 let backend;
 let ownsPostgres = false;
+const tsconfigPath = path.resolve('tsconfig.json');
+const originalTsconfig = readFileSync(tsconfigPath, 'utf8');
+const bootstrapDirectory = mkdtempSync(path.join(tmpdir(), 'studyx-golden-pg-'));
+const bootstrapScript = path.join(bootstrapDirectory, 'pg-native-up.sh');
+const bootstrapSource = readFileSync('scripts/pg-native-up.sh', 'utf8');
+const authenticatedRoleAnchor = 'psql_run -c "DO \\$\\$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = \'authenticated\') THEN CREATE ROLE authenticated NOLOGIN; END IF; END \\$\\$;" >/dev/null';
+if (!bootstrapSource.includes(authenticatedRoleAnchor)) {
+  throw new Error('GOLDEN_POSTGRES_BOOTSTRAP_ANCHOR_MISSING');
+}
+writeFileSync(bootstrapScript, bootstrapSource.replace(
+  authenticatedRoleAnchor,
+  `${authenticatedRoleAnchor}\npsql_run -c "DO \\$\\$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'service_role') THEN CREATE ROLE service_role NOLOGIN; END IF; END \\$\\$;" >/dev/null`,
+));
 const stop = () => {
   if (backend && backend.exitCode === null) backend.kill('SIGTERM');
   if (ownsPostgres) spawnSync('bash', ['scripts/pg-native-down.sh', POSTGRES_PORT], { stdio: 'inherit' });
+  if (readFileSync(tsconfigPath, 'utf8') !== originalTsconfig) writeFileSync(tsconfigPath, originalTsconfig);
+  rmSync(bootstrapDirectory, { recursive: true, force: true });
 };
 for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => { stop(); process.exit(130); });
 
 try {
-  command('bash', ['scripts/pg-native-up.sh', POSTGRES_PORT, '--seed'], { env: environment });
+  command('bash', [bootstrapScript, POSTGRES_PORT, '--seed'], { env: environment });
   ownsPostgres = true;
   backend = spawn('npx', ['next', 'dev', '--hostname', '127.0.0.1', '--port', BACKEND_PORT], {
     env: environment,
@@ -130,6 +149,10 @@ try {
     await new Promise((resolve) => setTimeout(resolve, 500));
   }
   if (!ready) throw new Error('GOLDEN_BACKEND_NOT_READY');
+  // Next 16 may append a generated dev-types include to tsconfig.json. The
+  // evaluator must leave the repository exactly as it found it, and the live
+  // diff guard must inspect the pinned source rather than that runtime edit.
+  if (readFileSync(tsconfigPath, 'utf8') !== originalTsconfig) writeFileSync(tsconfigPath, originalTsconfig);
   command('npx', ['vitest', 'run', '--config', 'evals/golden/vitest.config.mts', 'evals/golden/live-runner.test.ts'], {
     env: environment,
   });

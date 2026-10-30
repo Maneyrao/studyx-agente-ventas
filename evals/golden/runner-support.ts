@@ -2,10 +2,24 @@ import type { GoldenModelAttemptV1 } from './judge';
 
 interface ExchangeLikeV1 {
   readonly boundary: 'deepseek' | 'backend';
+  readonly url?: string;
   readonly requestBody: unknown;
   readonly responseBody: unknown;
   readonly status: number | null;
   readonly error: string | null;
+}
+
+export function extractFinalBackendDecisionErrorV1(
+  exchanges: readonly ExchangeLikeV1[],
+): string | null {
+  const finalDecision = exchanges.filter((exchange) => (
+    exchange.boundary === 'backend' && exchange.url?.endsWith('/decision')
+  )).at(-1);
+  if (!finalDecision || (finalDecision.status !== null && finalDecision.status < 400)) return null;
+  const body = record(finalDecision.responseBody);
+  if (typeof body?.reason === 'string') return body.reason;
+  if (typeof body?.error === 'string') return body.error;
+  return finalDecision.error ?? `BACKEND_DECISION_HTTP_${String(finalDecision.status)}`;
 }
 
 function record(value: unknown): Record<string, unknown> | null {
@@ -137,6 +151,12 @@ export function extractContextEvidenceV1(exchanges: readonly ExchangeLikeV1[]): 
   readonly selectedOfferingFacts: readonly { readonly id: string; readonly kind: string; readonly value: string }[];
   readonly callRequirements: readonly string[];
   readonly mayOfferCall: boolean | null;
+  readonly courseBonus: {
+    readonly enabled: boolean | null;
+    readonly maxBonusCourses: number | null;
+    readonly mayOfferBonus: boolean | null;
+    readonly status: string | null;
+  };
 } {
   const contexts = exchanges.filter((exchange) => exchange.boundary === 'deepseek')
     .map((exchange) => extractAuthorizedContextV1(exchange.requestBody)).filter(Boolean) as Record<string, unknown>[];
@@ -165,6 +185,7 @@ export function extractContextEvidenceV1(exchanges: readonly ExchangeLikeV1[]): 
     return [{ id, kind, value }];
   });
   const capabilities = record(context.capabilities);
+  const courseBonus = record(capabilities?.course_bonus);
   const callContactRequirements = Array.isArray(capabilities?.call_contact_requirements)
     ? capabilities.call_contact_requirements : [];
   const rawRequirements = callContactRequirements.length > 0
@@ -186,5 +207,13 @@ export function extractContextEvidenceV1(exchanges: readonly ExchangeLikeV1[]): 
       ? rawRequirements.filter((value): value is string => typeof value === 'string') : [],
     mayOfferCall: typeof capabilities?.may_offer_call === 'boolean'
       ? capabilities.may_offer_call : null,
+    courseBonus: {
+      enabled: typeof courseBonus?.enabled === 'boolean' ? courseBonus.enabled : null,
+      maxBonusCourses: typeof courseBonus?.max_bonus_courses === 'number'
+        ? courseBonus.max_bonus_courses : null,
+      mayOfferBonus: typeof courseBonus?.may_offer_bonus === 'boolean'
+        ? courseBonus.may_offer_bonus : null,
+      status: typeof courseBonus?.status === 'string' ? courseBonus.status : null,
+    },
   };
 }

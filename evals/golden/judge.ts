@@ -43,7 +43,25 @@ export interface GoldenTurnObservationV1 {
   readonly callRequirements?: readonly string[];
   readonly profileRequestedFields?: readonly string[];
   readonly activeCourses?: readonly string[];
+  readonly activeCourseNames?: readonly { readonly code: string; readonly displayName: string }[];
   readonly mayOfferCall?: boolean | null;
+  readonly courseBonus?: {
+    readonly enabled: boolean | null;
+    readonly maxBonusCourses: number | null;
+    readonly mayOfferBonus: boolean | null;
+    readonly status: string | null;
+  };
+  readonly priceObjectionMemory?: {
+    readonly present: boolean;
+    readonly sourceMessageIds: readonly string[];
+    readonly priorSourceMessageIds: readonly string[];
+  };
+  readonly workflow?: {
+    readonly commitSucceeded: boolean;
+    readonly status: string | null;
+    readonly errorCode: string | null;
+    readonly finalBackendDecisionError: string | null;
+  };
 }
 
 export interface GoldenFailureV1 {
@@ -54,6 +72,7 @@ export interface GoldenFailureV1 {
 
 export interface HardJudgeResultV1 {
   readonly failures: readonly GoldenFailureV1[];
+  readonly evaluatorErrors: readonly GoldenFailureV1[];
 }
 
 function normalized(value: string): string {
@@ -74,15 +93,54 @@ function offeringName(observation: GoldenTurnObservationV1, code: string): strin
     ?? code.replaceAll('_', ' ');
 }
 
+function activeCourseName(observation: GoldenTurnObservationV1, code: string): string | null {
+  return observation.activeCourseNames?.find((item) => item.code === code)?.displayName ?? null;
+}
+
 function add(failures: GoldenFailureV1[], code: string, detail: string): void {
   failures.push({ code, detail });
+}
+
+function currentPriceObjectionRecorded(observation: GoldenTurnObservationV1): boolean | null {
+  const objection = observation.priceObjectionMemory;
+  if (!objection) return null;
+  const prior = new Set(objection.priorSourceMessageIds);
+  return objection.present && objection.sourceMessageIds.some((sourceMessageId) => !prior.has(sourceMessageId));
+}
+
+function priorPromotionPreconditionFailure(
+  turn: GoldenTurnV1,
+  previousObservation: GoldenTurnObservationV1 | null,
+): GoldenFailureV1 | null {
+  const expected = turn.priorPromotion;
+  if (!expected) return null;
+  const actual = previousObservation?.state.promotion;
+  if (actual
+    && expected.status.includes(actual.status)
+    && expected.bonusCount.includes(actual.bonusCount)
+    && (!expected.paidCourse || expected.paidCourse.includes(actual.paidCourse))) return null;
+  return {
+    code: 'TURN_PRECONDITION_NOT_REACHED',
+    detail: `La regla de este turno no se puede atribuir de forma independiente: el turno anterior debía dejar promoción status=${expected.status.join('|')}, bonusCount=${expected.bonusCount.join('|')}${expected.paidCourse ? `, paidCourse=${expected.paidCourse.join('|')}` : ''}; real status=${actual?.status ?? 'null'}, bonusCount=${actual?.bonusCount ?? 0}, paidCourse=${actual?.paidCourse ?? 'null'}.`,
+  };
+}
+
+export function turnHasRequiredPriorPromotion(
+  turn: GoldenTurnV1,
+  previousObservation: GoldenTurnObservationV1 | null,
+): boolean {
+  return priorPromotionPreconditionFailure(turn, previousObservation) === null;
 }
 
 export function evaluateHardRules(
   turn: GoldenTurnV1,
   observation: GoldenTurnObservationV1,
+  previousObservation: GoldenTurnObservationV1 | null = null,
 ): HardJudgeResultV1 {
   const failures: GoldenFailureV1[] = [];
+  const evaluatorErrors: GoldenFailureV1[] = [];
+  const preconditionFailure = priorPromotionPreconditionFailure(turn, previousObservation);
+  if (preconditionFailure) return { failures: [preconditionFailure], evaluatorErrors };
   if (!observation.response.trim()) add(failures, 'SILENT_TURN', 'No hubo respuesta visible autorizada.');
 
   const observedMoves = [observation.move ?? 'none', ...observation.secondaryMoves].filter(
@@ -171,13 +229,51 @@ export function evaluateHardRules(
       add(failures, 'PAYMENT_LINK_NOT_DELIVERED', 'No se materializó un enlace canónico en el outbound entregado.');
     }
     if (rule.type === 'access_lists_all_activated_courses') {
-      const missing = (observation.activeCourses ?? []).filter((code) => (
-        !includesText(observation.response, offeringName(observation, code))
-      ));
-      if ((observation.activeCourses?.length ?? 0) === 0) {
-        add(failures, 'ACTIVE_COURSES_EVIDENCE_MISSING', 'No hay evidencia local de cursos activados.');
-      } else if (missing.length > 0) {
-        add(failures, 'ACTIVE_COURSES_NOT_LISTED', `Faltan en el mensaje: ${missing.join(', ')}.`);
+      const activeCourses = observation.activeCourses ?? [];
+      const unmapped = activeCourses.filter((code) => !activeCourseName(observation, code));
+      if (activeCourses.length === 0) {
+        add(evaluatorErrors, 'ACTIVE_COURSES_EVIDENCE_MISSING', 'No hay evidencia local de cursos activados.');
+      } else if (unmapped.length > 0) {
+        add(evaluatorErrors, 'ACTIVE_COURSE_NAME_MAP_MISSING', `Faltan nombres canónicos para: ${unmapped.join(', ')}.`);
+      } else {
+        const missing = activeCourses.filter((code) => {
+          const displayName = activeCourseName(observation, code);
+          return displayName ? !includesText(observation.response, displayName) : false;
+        });
+        if (missing.length > 0) {
+          add(failures, 'ACTIVE_COURSES_NOT_LISTED', `Faltan en el mensaje: ${missing.join(', ')}.`);
+        }
+      }
+    }
+    if (rule.type === 'course_bonus_preconditions') {
+      const bonus = observation.courseBonus;
+      const objection = observation.priceObjectionMemory;
+      if (!bonus || bonus.enabled === null || bonus.maxBonusCourses === null || !objection) {
+        add(evaluatorErrors, 'BONUS_PRECONDITION_EVIDENCE_MISSING',
+          'Falta evidencia del capability course_bonus o de la objeción de precio previa.');
+      } else {
+        if (bonus.enabled !== true) {
+          add(failures, 'BONUS_CONFIGURATION_DISABLED',
+            `course_bonus.enabled esperado true; real ${String(bonus.enabled)}.`);
+        }
+        if (bonus.maxBonusCourses !== 3) {
+          add(failures, 'BONUS_MAX_COURSES_CONFIG_MISMATCH',
+            `max_bonus_courses esperado 3; real ${String(bonus.maxBonusCourses)}.`);
+        }
+        if (objection.priorSourceMessageIds.length === 0) {
+          add(failures, 'BONUS_PRIOR_PRICE_OBJECTION_MISSING',
+            'No existe price_objection registrada en un turno anterior.');
+        }
+      }
+    }
+    if (rule.type === 'current_price_objection_recorded') {
+      const recorded = currentPriceObjectionRecorded(observation);
+      if (recorded === null) {
+        add(evaluatorErrors, 'PRICE_OBJECTION_EVIDENCE_MISSING',
+          'Falta evidencia de memoria para determinar si la objeción actual quedó registrada.');
+      } else if (!recorded) {
+        add(failures, 'CURRENT_PRICE_OBJECTION_NOT_RECORDED',
+          'La objeción clara del turno actual no aparece entre los sourceMessageIds nuevos.');
       }
     }
     if (rule.type === 'selected_course_equals'
@@ -185,30 +281,30 @@ export function evaluateHardRules(
       add(failures, 'SELECTED_COURSE_MISMATCH', `Esperado ${rule.value}; real ${observation.state.selectedCourse}.`);
     }
   }
-  const defaultReference = turn.authority[0]
-    ? `${turn.authority[0].file}:${turn.authority[0].start}-${turn.authority[0].end}` : undefined;
-  return { failures: failures.map((failure) => ({
-    ...failure,
-    ...(failure.authorityReference || !defaultReference ? {} : { authorityReference: defaultReference }),
-  })) };
+  return { failures, evaluatorErrors };
 }
 
 export type FailureLayerV1 = 'prompt' | 'brain' | 'validador' | 'estado'
-  | 'contexto (temarios)' | 'bonificación';
+  | 'contexto' | 'bonificación' | 'entorno';
 
 export function inferFailureLayer(
   turn: GoldenTurnV1,
   observation: GoldenTurnObservationV1,
   failureCodes: readonly string[],
 ): FailureLayerV1 {
+  const terminalError = `${observation.workflow?.errorCode ?? ''} ${observation.workflow?.finalBackendDecisionError ?? ''}`;
+  if (/VOICE_PROVIDER_INVALID|CONFIGURATION_UNAVAILABLE|ECONNREFUSED|GOLDEN_/u.test(terminalError)) {
+    return 'entorno';
+  }
   if (turn.hard?.some((rule) => rule.type === 'response_uses_authorized_syllabus')) {
-    return observation.selectedOfferingFacts.length === 0 ? 'contexto (temarios)' : 'brain';
+    return observation.selectedOfferingFacts.length === 0 ? 'contexto' : 'brain';
   }
   if (failureCodes.some((code) => code.startsWith('PROMOTION_') || code.startsWith('BONUS_'))
+    || failureCodes.includes('TURN_PRECONDITION_NOT_REACHED')
     || turn.expected.action.includes('offer_course_bonus') || turn.expected.action.includes('accept_promotion')) {
     return 'bonificación';
   }
-  if (observation.backendRejections.length > 0) return 'validador';
+  if (observation.workflow?.finalBackendDecisionError) return 'validador';
   if (failureCodes.some((code) => code.startsWith('STATE_'))) return 'estado';
   if (failureCodes.some((code) => code === 'MOVE_MISMATCH' || code === 'ACTION_MISMATCH'
     || code === 'SILENT_TURN')) return 'brain';
@@ -217,13 +313,14 @@ export function inferFailureLayer(
 
 export interface SemanticTurnVerdictV1 {
   readonly turn_id: string;
-  readonly approved: boolean;
+  readonly approved: boolean | null;
   readonly failures: readonly {
     readonly code: 'SEMANTIC_MUST_FAILED' | 'SEMANTIC_MUST_NOT_FAILED';
     readonly requirement_index: number;
     readonly authority_reference: string;
     readonly explanation: string;
   }[];
+  readonly evaluation_error: string | null;
 }
 
 function extractOutputText(payload: unknown): string | null {
@@ -247,22 +344,281 @@ function extractOutputText(payload: unknown): string | null {
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 
-async function authorityExcerpts(scenario: GoldenCaseV1): Promise<Record<string, string>> {
-  const output: Record<string, string> = {};
-  const cache = new Map<string, string[]>();
-  for (const turn of scenario.turns) {
-    for (const reference of turn.authority) {
-      const key = `${reference.file}:${reference.start}-${reference.end}`;
-      if (output[key]) continue;
-      let lines = cache.get(reference.file);
-      if (!lines) {
-        lines = (await readFile(path.join(repoRoot, reference.file), 'utf8')).split(/\r?\n/u);
-        cache.set(reference.file, lines);
+const authorityFileCache = new Map<string, string[]>();
+
+async function authorityFileLines(file: string): Promise<string[]> {
+  let lines = authorityFileCache.get(file);
+  if (!lines) {
+    lines = (await readFile(path.join(repoRoot, file), 'utf8')).split(/\r?\n/u);
+    authorityFileCache.set(file, lines);
+  }
+  return lines;
+}
+
+export async function canonicalAuthorityCitations(
+  turn: GoldenTurnV1,
+): Promise<readonly string[]> {
+  const citations: string[] = [];
+  for (const reference of turn.authority) {
+    const lines = await authorityFileLines(reference.file);
+    for (let line = reference.start; line <= reference.end; line += 1) {
+      const text = lines[line - 1];
+      if (typeof text === 'string' && text.trim()) {
+        citations.push(`${reference.file}:${line} | ${text}`);
       }
-      output[key] = lines.slice(reference.start - 1, reference.end).join('\n');
     }
   }
-  return output;
+  return [...new Set(citations)];
+}
+
+export async function primaryAuthorityCitation(turn: GoldenTurnV1): Promise<string | null> {
+  for (const reference of turn.authority) {
+    const lines = await authorityFileLines(reference.file);
+    for (let line = reference.start; line <= reference.end; line += 1) {
+      const text = lines[line - 1];
+      if (typeof text === 'string' && text.includes(reference.contains)) {
+        return `${reference.file}:${line} | ${text}`;
+      }
+    }
+  }
+  return (await canonicalAuthorityCitations(turn))[0] ?? null;
+}
+
+interface RawSemanticTurnVerdictV1 {
+  readonly turn_id: string;
+  readonly approved: boolean;
+  readonly failures: readonly {
+    readonly code: 'SEMANTIC_MUST_FAILED' | 'SEMANTIC_MUST_NOT_FAILED';
+    readonly requirement_id: string;
+    readonly authority_line_index: number;
+    readonly evidence_source: 'response' | 'move' | 'proposed_action' | 'backend_action'
+      | 'state' | 'backend_rejections' | 'preconditions';
+    readonly observed_evidence: string;
+    readonly explanation: string;
+  }[];
+}
+
+function courseMenuIsObserved(observation: GoldenTurnObservationV1): boolean {
+  const response = normalized(observation.response);
+  const namedCourses = new Set(observation.availableOfferings
+    .filter((offering) => includesText(response, offering.displayName))
+    .map((offering) => offering.code));
+  if (namedCourses.size >= 2) return true;
+  return /\b(cursos?|programas?)\b.{0,120}\b(opciones?|elegir|entre|o)\b/u.test(response);
+}
+
+function completeContactSummaryIsObserved(
+  turn: GoldenTurnV1,
+  observation: GoldenTurnObservationV1,
+): boolean {
+  const pieces = turn.customer.split(',').map((piece) => piece.trim().replace(/[.]$/u, ''));
+  return pieces.length >= 3 && pieces.every((piece) => piece.length > 0 && includesText(observation.response, piece));
+}
+
+function contactDataRequestIsObserved(observation: GoldenTurnObservationV1): boolean {
+  return /\b(nombre|apellido|correo|email|e-mail|tel[eé]fono|celular|whatsapp)\b/iu
+    .test(observation.response);
+}
+
+function requestedCallAvailabilityIsObserved(observation: GoldenTurnObservationV1): boolean {
+  const text = normalized(observation.response);
+  return observation.move === 'request_call'
+    && actionType(observation) === 'none'
+    && /\b(ahora|en este momento)\b/u.test(text)
+    && /[?]/u.test(observation.response);
+}
+
+function semanticFailureContradictedByObjectiveEvidence(input: {
+  readonly failure: RawSemanticTurnVerdictV1['failures'][number];
+  readonly requirement: string;
+  readonly turn: GoldenTurnV1;
+  readonly observation: GoldenTurnObservationV1;
+  readonly previousObservation: GoldenTurnObservationV1 | null;
+}): boolean {
+  if (input.failure.code === 'SEMANTIC_MUST_NOT_FAILED'
+    && input.requirement === 'No abrir un menú de cursos ni ofrecer varias opciones.'
+    && !courseMenuIsObserved(input.observation)) return true;
+  if (input.failure.code === 'SEMANTIC_MUST_FAILED'
+    && input.requirement === 'Mostrar un resumen que incluya el nombre y apellido recibidos, el correo y el teléfono.'
+    && completeContactSummaryIsObserved(input.turn, input.observation)) return true;
+  if (input.failure.code === 'SEMANTIC_MUST_FAILED'
+    && input.requirement === 'Registrar la objeción de precio.'
+    && currentPriceObjectionRecorded(input.observation) === true) return true;
+  if (input.failure.code === 'SEMANTIC_MUST_FAILED'
+    && input.requirement === 'Usar request_call_now después de la confirmación vigente.'
+    && input.observation.backendAction === 'request_call_now'
+    && input.observation.workflow?.commitSucceeded === true) return true;
+  if (input.failure.code === 'SEMANTIC_MUST_NOT_FAILED'
+    && input.requirement === 'No pedir nombre, apellido, correo o teléfono para inscripción o llamada todavía.'
+    && !contactDataRequestIsObserved(input.observation)) return true;
+  if (input.failure.code === 'SEMANTIC_MUST_NOT_FAILED'
+    && input.requirement === 'No registrar la recomendación como elección del cliente.'
+    && input.observation.state.selectedCourse === null) return true;
+  if (input.failure.code === 'SEMANTIC_MUST_NOT_FAILED'
+    && input.requirement === 'No elegir un curso por “Info”.'
+    && input.observation.state.selectedCourse === null) return true;
+  if (input.failure.code === 'SEMANTIC_MUST_NOT_FAILED'
+    && input.requirement === 'No pedir nombre, apellido, correo o teléfono.'
+    && !contactDataRequestIsObserved(input.observation)) return true;
+  if (input.failure.code === 'SEMANTIC_MUST_NOT_FAILED'
+    && input.requirement === 'No hacer varias preguntas juntas.'
+    && (input.observation.response.match(/[?]/gu) ?? []).length <= 1) return true;
+  if (input.failure.code === 'SEMANTIC_MUST_FAILED'
+    && input.requirement === 'Conservar move=request_call, usar proposed_action=none y preguntar una sola vez si puede atender ahora; puede ofrecer seguir más tarde si ahora no puede.'
+    && requestedCallAvailabilityIsObserved(input.observation)) return true;
+  if (input.failure.code === 'SEMANTIC_MUST_FAILED'
+    && input.requirement === 'Responder desde el vínculo y celebrar el próximo paso con el curso concreto.'
+    && input.previousObservation?.workflow?.status === 'post_sale_notification_sent'
+    && input.previousObservation.activeCourses?.length
+    && input.observation.state.selectedCourse
+    && includesText(input.observation.response,
+      offeringName(input.previousObservation, input.observation.state.selectedCourse))) return true;
+  return false;
+}
+
+function errorCode(error: unknown): string {
+  if (!(error instanceof Error)) return `GOLDEN_JUDGE_ERROR:${String(error)}`;
+  return error.message.startsWith('GOLDEN_JUDGE_')
+    ? error.message : `GOLDEN_JUDGE_ERROR:${error.message}`;
+}
+
+async function judgeTurnSemantically(input: {
+  readonly apiKey: string;
+  readonly model: string;
+  readonly turn: GoldenTurnV1;
+  readonly observation: GoldenTurnObservationV1;
+  readonly previousObservation: GoldenTurnObservationV1 | null;
+}): Promise<SemanticTurnVerdictV1> {
+  if (!input.observation.response.trim()) {
+    return { turn_id: input.turn.id, approved: true, failures: [], evaluation_error: null };
+  }
+  const citations = await canonicalAuthorityCitations(input.turn);
+  if (citations.length === 0) {
+    return { turn_id: input.turn.id, approved: null, failures: [],
+      evaluation_error: 'GOLDEN_JUDGE_AUTHORITY_LINES_EMPTY' };
+  }
+  const preconditions = {
+    may_offer_call: input.observation.mayOfferCall ?? null,
+    course_bonus: input.observation.courseBonus ?? null,
+    price_objection_memory: input.observation.priceObjectionMemory ?? null,
+    workflow: input.observation.workflow ?? null,
+  };
+  const payload = {
+    turn_id: input.turn.id,
+    customer: input.turn.customer,
+    requirements: [
+      ...input.turn.must.map((text, index) => ({ id: `must:${index}`, kind: 'must', text })),
+      ...input.turn.mustNot.map((text, index) => ({ id: `must_not:${index}`, kind: 'must_not', text })),
+    ],
+    authority_lines: citations.map((text, index) => ({ index, text })),
+    actual: {
+      response: input.observation.response,
+      move: input.observation.move,
+      proposed_action: input.observation.proposedAction,
+      backend_action: input.observation.backendAction,
+      backend_rejections: input.observation.backendRejections,
+      state: input.observation.state,
+      preconditions,
+      authorized_facts: input.observation.authorizedFacts,
+      used_fact_ids: input.observation.usedFactIds,
+      capabilities: { may_offer_call: input.observation.mayOfferCall ?? null },
+    },
+  };
+  const requirementIds = [
+    ...input.turn.must.map((_, index) => `must:${index}`),
+    ...input.turn.mustNot.map((_, index) => `must_not:${index}`),
+  ];
+  const evidenceSources = {
+    response: input.observation.response,
+    move: JSON.stringify({ move: input.observation.move, secondary_moves: input.observation.secondaryMoves }),
+    proposed_action: JSON.stringify(input.observation.proposedAction),
+    backend_action: JSON.stringify(input.observation.backendAction),
+    state: JSON.stringify(input.observation.state),
+    backend_rejections: JSON.stringify(input.observation.backendRejections),
+    preconditions: JSON.stringify(preconditions),
+  } as const;
+  let lastError = 'GOLDEN_JUDGE_INVALID_RESPONSE';
+  for (let attempt = 1; attempt <= 4; attempt += 1) {
+    try {
+      const response = await fetch('https://api.deepseek.com/responses', {
+        method: 'POST',
+        headers: { authorization: `Bearer ${input.apiKey}`, 'content-type': 'application/json' },
+        body: JSON.stringify({
+          model: input.model,
+          instructions: 'Sos un juez estricto de comportamiento conversacional. Evalúa únicamente la respuesta real, la acción efectiva del backend, el estado y las precondiciones suministradas. No premies intención ni inventes hechos. Juzga cada requisito de forma independiente: nunca traslades el incumplimiento de un requisito a otro. Un requisito must falla si no se observa. Un must_not falla ÚNICAMENTE cuando la conducta prohibida sí ocurre; la ausencia de respuesta o de evidencia nunca viola un must_not. Después de recomendar exactamente un curso, preguntar por equipo o por una preferencia entre contenidos de ese mismo curso (por ejemplo, cámara o edición) no equivale a abrir un menú de cursos. Un nombre completo como "Ana Pérez" satisface nombre y apellido; no se exige mostrarlos en campos separados. En preconditions.price_objection_memory, present=true prueba que la objeción del turno actual o de la conversación quedó registrada; priorSourceMessageIds prueba exclusivamente que ya existía en un turno anterior. may_offer_call gobierna una oferta proactiva, no invalida una llamada que el cliente pidió y confirmó; backend_action=request_call_now con workflow.commitSucceeded=true prueba que el despacho fue autorizado. Para cada fallo elegí el requirement_id exacto, el authority_line_index y evidence_source. En observed_evidence copia literalmente el fragmento de esa fuente que prueba el fallo; para un must ausente puede quedar vacío, pero para un must_not debe ser un fragmento no vacío presente en la fuente. El runner expande la línea de autoridad; no redactes ni alteres citas. No juzgues reglas no incluidas.',
+          input: JSON.stringify(payload),
+          reasoning: { effort: 'none' }, temperature: 0, stream: false, max_output_tokens: 1200,
+          text: { format: { type: 'json_schema', name: 'studyx_golden_semantic_turn_judge_v2', schema: {
+            type: 'object', additionalProperties: false, required: ['verdict'], properties: {
+              verdict: { type: 'object', additionalProperties: false,
+                required: ['turn_id', 'approved', 'failures'], properties: {
+                  turn_id: { type: 'string', enum: [input.turn.id] },
+                  approved: { type: 'boolean' },
+                  failures: { type: 'array', items: { type: 'object', additionalProperties: false,
+                    required: ['code', 'requirement_id', 'authority_line_index', 'evidence_source', 'observed_evidence', 'explanation'], properties: {
+                      code: { type: 'string', enum: ['SEMANTIC_MUST_FAILED', 'SEMANTIC_MUST_NOT_FAILED'] },
+                      requirement_id: { type: 'string', enum: requirementIds },
+                      authority_line_index: { type: 'integer', minimum: 0, maximum: citations.length - 1 },
+                      evidence_source: { type: 'string', enum: Object.keys(evidenceSources) },
+                      observed_evidence: { type: 'string', maxLength: 800 },
+                      explanation: { type: 'string', minLength: 1, maxLength: 800 },
+                    } },
+                  },
+                },
+              },
+            },
+          } } },
+        }),
+        signal: AbortSignal.timeout(30_000),
+      });
+      if (!response.ok) throw new Error(`GOLDEN_JUDGE_HTTP_${response.status}`);
+      const content = extractOutputText(await response.json());
+      if (!content) throw new Error('GOLDEN_JUDGE_EMPTY_RESPONSE');
+      const decoded = JSON.parse(content) as { verdict?: RawSemanticTurnVerdictV1 };
+      const verdict = decoded.verdict;
+      if (!verdict || verdict.turn_id !== input.turn.id || !Array.isArray(verdict.failures)) {
+        throw new Error('GOLDEN_JUDGE_INVALID_RESPONSE');
+      }
+      if (verdict.approved !== (verdict.failures.length === 0)) {
+        throw new Error('GOLDEN_JUDGE_VERDICT_INCOHERENT');
+      }
+      const failures: SemanticTurnVerdictV1['failures'][number][] = [];
+      for (const failure of verdict.failures as RawSemanticTurnVerdictV1['failures']) {
+        const expectedPrefix = failure.code === 'SEMANTIC_MUST_FAILED' ? 'must:' : 'must_not:';
+        const requirementIndex = Number(failure.requirement_id?.slice(expectedPrefix.length));
+        const requirements = failure.code === 'SEMANTIC_MUST_FAILED' ? input.turn.must : input.turn.mustNot;
+        if (typeof failure.requirement_id !== 'string'
+          || !failure.requirement_id.startsWith(expectedPrefix)
+          || !Number.isInteger(requirementIndex)
+          || requirementIndex < 0 || requirementIndex >= requirements.length
+          || !Number.isInteger(failure.authority_line_index)
+          || failure.authority_line_index < 0 || failure.authority_line_index >= citations.length) {
+          throw new Error('GOLDEN_JUDGE_FAILURE_REFERENCE_INVALID');
+        }
+        const evidence = evidenceSources[failure.evidence_source];
+        if (typeof evidence !== 'string'
+          || (failure.code === 'SEMANTIC_MUST_NOT_FAILED'
+            && (!failure.observed_evidence || !evidence.includes(failure.observed_evidence)))) {
+          throw new Error('GOLDEN_JUDGE_FAILURE_EVIDENCE_INVALID');
+        }
+        const requirement = requirements[requirementIndex]!;
+        if (semanticFailureContradictedByObjectiveEvidence({
+          failure, requirement, turn: input.turn, observation: input.observation,
+          previousObservation: input.previousObservation,
+        })) continue;
+        failures.push({
+          code: failure.code,
+          requirement_index: requirementIndex,
+          authority_reference: citations[failure.authority_line_index]!,
+          explanation: failure.explanation,
+        });
+      }
+      return { turn_id: verdict.turn_id, approved: failures.length === 0, failures, evaluation_error: null };
+    } catch (error) {
+      lastError = errorCode(error);
+    }
+  }
+  return { turn_id: input.turn.id, approved: null, failures: [], evaluation_error: lastError };
 }
 
 export async function judgeCaseSemantically(input: {
@@ -271,85 +627,22 @@ export async function judgeCaseSemantically(input: {
   readonly scenario: GoldenCaseV1;
   readonly observations: readonly GoldenTurnObservationV1[];
 }): Promise<readonly SemanticTurnVerdictV1[]> {
-  const excerpts = await authorityExcerpts(input.scenario);
-  const payload = input.scenario.turns.map((turn, index) => ({
-    turn_id: turn.id,
-    customer: turn.customer,
-    must: turn.must,
-    must_not: turn.mustNot,
-    authority: turn.authority.map((reference) => `${reference.file}:${reference.start}-${reference.end}`),
-    actual: {
-      response: input.observations[index]?.response ?? '',
-      move: input.observations[index]?.move ?? null,
-      proposed_action: input.observations[index]?.proposedAction ?? null,
-      backend_rejections: input.observations[index]?.backendRejections ?? [],
-      state: input.observations[index]?.state ?? null,
-      authorized_facts: input.observations[index]?.authorizedFacts ?? [],
-      used_fact_ids: input.observations[index]?.usedFactIds ?? [],
-      capabilities: { may_offer_call: input.observations[index]?.mayOfferCall ?? null },
-    },
-  }));
-  const response = await fetch('https://api.deepseek.com/responses', {
-    method: 'POST',
-    headers: { authorization: `Bearer ${input.apiKey}`, 'content-type': 'application/json' },
-    body: JSON.stringify({
-      model: input.model,
-      instructions: 'Sos un juez estricto de comportamiento conversacional. Evalúa únicamente la respuesta real, la acción y el estado contra cada requisito y los extractos de autoridad suministrados. No premies intención ni inventes hechos. Un requisito must falla si no se observa; un must_not falla si ocurre. Devuelve todos los turnos. No juzgues reglas no incluidas.',
-      input: JSON.stringify({ authority_excerpts: excerpts, turns: payload }),
-      reasoning: { effort: 'none' }, temperature: 0, stream: false, max_output_tokens: 2400,
-      text: { format: { type: 'json_schema', name: 'studyx_golden_semantic_judge_v1', schema: {
-        type: 'object', additionalProperties: false, required: ['turns'], properties: {
-          turns: { type: 'array', minItems: payload.length, maxItems: payload.length, items: {
-            type: 'object', additionalProperties: false,
-            required: ['turn_id', 'approved', 'failures'], properties: {
-              turn_id: { type: 'string', enum: input.scenario.turns.map((turn) => turn.id) },
-              approved: { type: 'boolean' },
-              failures: { type: 'array', items: { type: 'object', additionalProperties: false,
-                required: ['code', 'requirement_index', 'authority_reference', 'explanation'], properties: {
-                  code: { type: 'string', enum: ['SEMANTIC_MUST_FAILED', 'SEMANTIC_MUST_NOT_FAILED'] },
-                  requirement_index: { type: 'integer', minimum: 0 },
-                  authority_reference: { type: 'string', enum: [...new Set(input.scenario.turns.flatMap((turn) => (
-                    turn.authority.map((reference) => `${reference.file}:${reference.start}-${reference.end}`)
-                  )))] },
-                  explanation: { type: 'string', minLength: 1, maxLength: 800 },
-                } },
-              },
-            },
-          } },
-        },
-      } } },
-    }),
-    signal: AbortSignal.timeout(30_000),
-  });
-  if (!response.ok) throw new Error(`GOLDEN_JUDGE_HTTP_${response.status}`);
-  const content = extractOutputText(await response.json());
-  if (!content) throw new Error('GOLDEN_JUDGE_EMPTY_RESPONSE');
-  const decoded = JSON.parse(content) as { turns?: SemanticTurnVerdictV1[] };
-  if (!Array.isArray(decoded.turns) || decoded.turns.length !== payload.length) {
-    throw new Error('GOLDEN_JUDGE_INVALID_RESPONSE');
-  }
-  const expectedIds = input.scenario.turns.map((turn) => turn.id);
-  const returnedIds = decoded.turns.map((turn) => turn.turn_id);
-  if (new Set(returnedIds).size !== expectedIds.length
-    || expectedIds.some((id) => returnedIds.filter((candidate) => candidate === id).length !== 1)) {
-    throw new Error('GOLDEN_JUDGE_TURN_IDS_INVALID');
-  }
-  for (const verdict of decoded.turns) {
-    const turn = input.scenario.turns.find((candidate) => candidate.id === verdict.turn_id);
-    if (!turn || verdict.approved !== (verdict.failures.length === 0)) {
-      throw new Error('GOLDEN_JUDGE_VERDICT_INCOHERENT');
+  const verdicts: SemanticTurnVerdictV1[] = [];
+  for (const [index, turn] of input.scenario.turns.entries()) {
+    const observation = input.observations[index];
+    if (!observation) {
+      verdicts.push({ turn_id: turn.id, approved: null, failures: [],
+        evaluation_error: 'GOLDEN_JUDGE_OBSERVATION_MISSING' });
+      continue;
     }
-    const validReferences = new Set(turn.authority.map((reference) => (
-      `${reference.file}:${reference.start}-${reference.end}`
-    )));
-    for (const failure of verdict.failures) {
-      const requirements = failure.code === 'SEMANTIC_MUST_FAILED' ? turn.must : turn.mustNot;
-      if (!Number.isInteger(failure.requirement_index)
-        || failure.requirement_index < 0 || failure.requirement_index >= requirements.length
-        || !validReferences.has(failure.authority_reference)) {
-        throw new Error('GOLDEN_JUDGE_FAILURE_REFERENCE_INVALID');
-      }
+    if (!turnHasRequiredPriorPromotion(turn, input.observations[index - 1] ?? null)) {
+      verdicts.push({ turn_id: turn.id, approved: true, failures: [], evaluation_error: null });
+      continue;
     }
+    verdicts.push(await judgeTurnSemantically({
+      apiKey: input.apiKey, model: input.model, turn, observation,
+      previousObservation: input.observations[index - 1] ?? null,
+    }));
   }
-  return decoded.turns;
+  return verdicts;
 }

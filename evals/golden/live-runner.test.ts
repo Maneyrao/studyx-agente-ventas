@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -25,12 +25,14 @@ import {
   evaluateHardRules,
   inferFailureLayer,
   judgeCaseSemantically,
+  primaryAuthorityCitation,
   type GoldenFailureV1,
   type GoldenTurnObservationV1,
 } from './judge';
 import {
   extractBackendRejectionsV1,
   extractContextEvidenceV1,
+  extractFinalBackendDecisionErrorV1,
   extractLastProposalV1,
   extractModelAttemptsV1,
   normalizePromotionStatusV1,
@@ -42,6 +44,7 @@ const databaseUrl = process.env.TEST_DATABASE_URL ?? '';
 const apiBaseUrl = process.env.STUDYX_EVAL_API_BASE_URL ?? '';
 const model = process.env.STUDYX_GOLDEN_DEEPSEEK_MODEL ?? 'deepseek-v4-flash';
 const resultsDirectory = path.resolve(process.cwd(), 'evals/golden/results');
+const reuseObservations = process.env.STUDYX_GOLDEN_REUSE_OBSERVATIONS === 'true';
 
 type Sql = ReturnType<typeof openLocalTestDatabase>;
 
@@ -70,6 +73,12 @@ interface TurnResultV1 {
   readonly failures: readonly GoldenFailureV1[];
   readonly failure_layer: ReturnType<typeof inferFailureLayer> | null;
   readonly model_attempts: GoldenTurnObservationV1['modelAttempts'];
+  readonly preconditions: {
+    readonly course_bonus: GoldenTurnObservationV1['courseBonus'];
+    readonly price_objection_memory: GoldenTurnObservationV1['priceObjectionMemory'];
+    readonly may_offer_call: boolean | null;
+    readonly workflow: GoldenTurnObservationV1['workflow'];
+  };
 }
 
 interface CaseResultV1 {
@@ -115,7 +124,10 @@ function blankObservation(): GoldenTurnObservationV1 {
       promotion: { status: null, bonusCount: 0, paidCourse: null, bonusCourses: [] } },
     deliveredLinks: [], authorizedFactIds: [], authorizedFacts: [], usedFactIds: [], availableOfferings: [],
     selectedOfferingFacts: [], modelAttempts: [], callRequirements: [],
-    profileRequestedFields: [], activeCourses: [], mayOfferCall: null,
+    profileRequestedFields: [], activeCourses: [], activeCourseNames: [], mayOfferCall: null,
+    courseBonus: { enabled: null, maxBonusCourses: null, mayOfferBonus: null, status: null },
+    priceObjectionMemory: { present: false, sourceMessageIds: [], priorSourceMessageIds: [] },
+    workflow: { commitSucceeded: false, status: null, errorCode: null, finalBackendDecisionError: null },
   };
 }
 
@@ -170,8 +182,11 @@ async function promotionEvidence(externalConversationId: string): Promise<Promot
   };
 }
 
-async function activatedCourses(externalConversationId: string): Promise<readonly string[]> {
-  const rows = await db<Array<{ code: string }>>`
+async function activatedCourseEvidence(externalConversationId: string): Promise<{
+  readonly codes: readonly string[];
+  readonly names: readonly { readonly code: string; readonly displayName: string }[];
+}> {
+  const rows = await db<Array<{ code: string; display_name: string }>>`
     WITH target AS (
       SELECT conversation.id, conversation.contact_id
       FROM channel_threads thread JOIN conversations conversation ON conversation.channel_thread_id=thread.id
@@ -181,15 +196,58 @@ async function activatedCourses(externalConversationId: string): Promise<readonl
       SELECT payment.* FROM payments payment JOIN target ON target.contact_id=payment.contact_id
       WHERE payment.status='paid' ORDER BY payment.paid_at DESC LIMIT 1
     )
-    SELECT offering.code FROM latest_payment payment
+    SELECT offering.code,offering.display_name FROM latest_payment payment
     JOIN offerings offering ON offering.id=payment.offering_id
     JOIN central_enrollments enrollment ON enrollment.payment_id=payment.id
     UNION ALL
-    SELECT item.offering_code FROM latest_payment payment
+    SELECT item.offering_code AS code,snapshot.offering_display_name_snapshot AS display_name FROM latest_payment payment
     JOIN central_bonus_enrollment_items item ON item.payment_id=payment.id
+    JOIN payment_bonus_offerings snapshot ON snapshot.payment_id=payment.id
+      AND snapshot.offering_code_snapshot=item.offering_code
     ORDER BY code
   `;
-  return rows.map((row) => row.code);
+  return {
+    codes: rows.map((row) => row.code),
+    names: rows.map((row) => ({ code: row.code, displayName: row.display_name })),
+  };
+}
+
+async function priceObjectionMemoryEvidence(
+  externalConversationId: string,
+  currentTurnId: string | null,
+): Promise<NonNullable<GoldenTurnObservationV1['priceObjectionMemory']>> {
+  const rows = await db<Array<{ source_message_id: string }>>`
+    WITH target AS (
+      SELECT conversation.id AS conversation_id,conversation.contact_id
+      FROM channel_threads thread
+      JOIN conversations conversation ON conversation.channel_thread_id=thread.id
+      WHERE thread.external_conversation_id=${externalConversationId}
+      ORDER BY conversation.created_at DESC LIMIT 1
+    )
+    SELECT memory.source_message_id::text AS source_message_id
+    FROM target
+    JOIN selected_memories memory ON memory.conversation_id=target.conversation_id
+      AND memory.contact_id=target.contact_id
+    JOIN messages source ON source.id=memory.source_message_id
+    WHERE memory.status IN ('active','accepted','superseded')
+      AND memory.memory_type='objection' AND memory.memory_key='price_objection'
+      AND memory.valid_from<=now() AND (memory.valid_until IS NULL OR memory.valid_until>now())
+      AND source.direction='inbound'
+    UNION
+    SELECT decision.turn_id::text AS source_message_id
+    FROM target
+    JOIN agent_decisions decision ON true
+    JOIN messages source ON source.id=decision.turn_id
+      AND source.conversation_id=target.conversation_id AND source.contact_id=target.contact_id
+    WHERE source.direction='inbound'
+      AND decision.memory_candidates @> '[{"type":"objection","key":"price_objection"}]'::jsonb
+    ORDER BY source_message_id
+  `;
+  const sourceMessageIds = [...new Set(rows.map((row) => row.source_message_id))];
+  const priorSourceMessageIds = currentTurnId === null
+    ? [...sourceMessageIds]
+    : sourceMessageIds.filter((sourceMessageId) => sourceMessageId !== currentTurnId);
+  return { present: sourceMessageIds.length > 0, sourceMessageIds, priorSourceMessageIds };
 }
 
 async function observeTurn(input: {
@@ -205,6 +263,7 @@ async function observeTurn(input: {
   const proposal = extractLastProposalV1(input.evidence.httpExchanges);
   const context = extractContextEvidenceV1(input.evidence.httpExchanges);
   const promotion = await promotionEvidence(input.externalConversationId);
+  const activeCourseEvidence = await activatedCourseEvidence(input.externalConversationId);
   const decision = persisted.decisions.find((item) => item.turnId === input.evidence.turnId);
   return {
     response: input.evidence.authorizedMessages.join('\n'),
@@ -229,8 +288,20 @@ async function observeTurn(input: {
     modelAttempts: extractModelAttemptsV1(input.evidence.httpExchanges),
     callRequirements: context.callRequirements,
     profileRequestedFields: proposal.profileRequestedFields,
-    activeCourses: await activatedCourses(input.externalConversationId),
+    activeCourses: activeCourseEvidence.codes,
+    activeCourseNames: activeCourseEvidence.names,
     mayOfferCall: context.mayOfferCall,
+    courseBonus: context.courseBonus,
+    priceObjectionMemory: await priceObjectionMemoryEvidence(
+      input.externalConversationId,
+      input.evidence.turnId,
+    ),
+    workflow: {
+      commitSucceeded: input.evidence.commitSucceeded,
+      status: input.evidence.status,
+      errorCode: input.evidence.errorCode,
+      finalBackendDecisionError: extractFinalBackendDecisionErrorV1(input.evidence.httpExchanges),
+    },
   };
 }
 
@@ -431,11 +502,12 @@ async function prepareFulfilledBonusPackage(input: {
 function markdown(cases: readonly CaseResultV1[]): string {
   const escape = (value: unknown) => String(value ?? '').replaceAll('|', '\\|').replaceAll('\n', '<br>');
   const lines = [
-    '# Agent A golden baseline — 028f272', '',
+    '# Agent A golden baseline v2 — 028f272', '',
     `- Brain: \`${AGENT_A_BRAIN_PROMPT_VERSION}\``,
     `- Prompt canónico: \`${STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION}\``,
     `- Modelo: \`${model}\``,
-    `- Casos: ${cases.filter((item) => item.approved === true).length}/${cases.length} aprobados`, '',
+    `- Casos: ${cases.filter((item) => item.approved === true).length} aprobados; ${cases.filter((item) => item.approved === false).length} fallidos; ${cases.filter((item) => item.approved === null).length} con error del evaluador`,
+    `- Turnos: ${cases.flatMap((item) => item.turns).filter((turn) => turn.approved === true).length} aprobados; ${cases.flatMap((item) => item.turns).filter((turn) => turn.approved === false).length} fallidos; ${cases.flatMap((item) => item.turns).filter((turn) => turn.execution_status === 'evaluation_error').length} con error del evaluador`, '',
     '| Caso/turno | Resultado | Autoridad | Respuesta real | Move / acción | Rechazos backend | Hipótesis de capa |',
     '|---|---|---|---|---|---|---|',
   ];
@@ -449,16 +521,32 @@ function markdown(cases: readonly CaseResultV1[]): string {
   for (const item of cases) for (const turn of item.turns.filter((candidate) => candidate.approved !== true)) {
     lines.push(`- **${item.case_id}/${turn.turn_id} — ${turn.failure_layer ?? turn.execution_status}:** ${turn.failures.map((failure) => `${failure.code} [${failure.authorityReference ?? turn.authority[0] ?? 'sin referencia'}]: ${failure.detail}`).join(' | ')}`);
   }
+  lines.push('', '## Evidencia de entorno y precondiciones', '');
+  for (const item of cases.filter((candidate) => ['06_repeated_price_bonus_ladder', '10_requested_call',
+    '11_purchase_to_payment_link', '14_course_change_cancels_promotion'].includes(candidate.case_id))) {
+    for (const turn of item.turns) {
+      lines.push(`- **${item.case_id}/${turn.turn_id}:** ${escape(JSON.stringify(turn.preconditions))}`);
+    }
+  }
   return `${lines.join('\n')}\n`;
 }
 
 function baselineReport(cases: readonly CaseResultV1[]) {
   return {
-    schema_version: 1,
+    schema_version: 2,
     generated_at: new Date().toISOString(),
     base_sha: GOLDEN_BASE_SHA,
     execution_harness: 'processInboundTurn',
     environment: 'isolated_local',
+    environment_configuration: {
+      voice_provider: process.env.VOICE_PROVIDER ?? null,
+      payment_provider: process.env.PAYMENT_PROVIDER ?? null,
+      payment_link_environment: process.env.PAYMENT_LINK_ENVIRONMENT ?? null,
+      payment_links_configured: ['PAYMENT_LINK_12M', 'PAYMENT_LINK_6M', 'PAYMENT_LINK_CONTADO']
+        .every((name) => Boolean(process.env[name]?.trim())),
+      course_bonus_flow_mode: process.env.COURSE_BONUS_FLOW_MODE ?? null,
+      course_bonus_max_courses: process.env.COURSE_BONUS_MAX_COURSES ?? null,
+    },
     production_or_vertice_used: false,
     deepseek_model: model,
     prompt_version: STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION,
@@ -467,6 +555,8 @@ function baselineReport(cases: readonly CaseResultV1[]) {
       approved: cases.filter((item) => item.approved === true).length,
       failed: cases.filter((item) => item.approved === false).length,
       not_evaluated: cases.filter((item) => item.approved === null).length,
+      evaluator_errors: cases.flatMap((item) => item.turns)
+        .filter((turn) => turn.execution_status === 'evaluation_error').length,
       completed: cases.length,
       total: GOLDEN_CASES.length,
     },
@@ -476,8 +566,8 @@ function baselineReport(cases: readonly CaseResultV1[]) {
 
 async function writeRawProgress(): Promise<void> {
   await mkdir(resultsDirectory, { recursive: true });
-  await writeFile(path.join(resultsDirectory, 'baseline-028f272-observations.partial.json'), `${JSON.stringify({
-    schema_version: 1,
+  await writeFile(path.join(resultsDirectory, 'baseline-028f272-v2-observations.partial.json'), `${JSON.stringify({
+    schema_version: 2,
     base_sha: GOLDEN_BASE_SHA,
     completed_cases: pendingCases.length,
     total_cases: GOLDEN_CASES.length,
@@ -487,8 +577,8 @@ async function writeRawProgress(): Promise<void> {
 
 async function writeCompletedProgress(): Promise<void> {
   await mkdir(resultsDirectory, { recursive: true });
-  await writeFile(path.join(resultsDirectory, 'baseline-028f272.json'), `${JSON.stringify(baselineReport(completedCases), null, 2)}\n`);
-  await writeFile(path.join(resultsDirectory, 'baseline-028f272.md'), markdown(completedCases));
+  await writeFile(path.join(resultsDirectory, 'baseline-028f272-v2.json'), `${JSON.stringify(baselineReport(completedCases), null, 2)}\n`);
+  await writeFile(path.join(resultsDirectory, 'baseline-028f272-v2.md'), markdown(completedCases));
 }
 
 beforeAll(async () => {
@@ -534,6 +624,35 @@ afterAll(async () => {
 
 live('authority-only Agent A golden baseline through the real workflow', () => {
   it('executes every scenario and preserves raw evidence for semantic judgment', async () => {
+    if (reuseObservations) {
+      const raw = JSON.parse(await readFile(
+        path.join(resultsDirectory, 'baseline-028f272-v2-observations.partial.json'),
+        'utf8',
+      )) as {
+        readonly base_sha?: string;
+        readonly completed_cases?: number;
+        readonly cases?: readonly {
+          readonly scenario?: { readonly id?: string };
+          readonly observations?: readonly GoldenTurnObservationV1[];
+          readonly setupEvidence?: unknown;
+          readonly executionError?: string;
+        }[];
+      };
+      expect(raw.base_sha).toBe(GOLDEN_BASE_SHA);
+      expect(raw.completed_cases).toBe(GOLDEN_CASES.length);
+      for (const scenario of GOLDEN_CASES) {
+        const saved = raw.cases?.find((candidate) => candidate.scenario?.id === scenario.id);
+        expect(saved, `GOLDEN_REUSED_OBSERVATIONS_MISSING:${scenario.id}`).toBeTruthy();
+        pendingCases.push({
+          scenario,
+          observations: [...(saved?.observations ?? [])],
+          ...(saved?.setupEvidence === undefined ? {} : { setupEvidence: saved.setupEvidence }),
+          ...(saved?.executionError ? { executionError: saved.executionError } : {}),
+        });
+      }
+      expect(pendingCases).toHaveLength(GOLDEN_CASES.length);
+      return;
+    }
     for (const scenario of GOLDEN_CASES) {
       const id = identity(scenario.id);
       const captures: WorkflowTurnEvidenceV1['adapterCaptures'][number][] = [];
@@ -554,6 +673,7 @@ live('authority-only Agent A golden baseline through the real workflow', () => {
           const persisted = await readWorkflowDbEvidenceV1({
             databaseUrl, externalConversationId: id.conversationId, adapterCaptures: captures,
           });
+          const activeCourseEvidence = await activatedCourseEvidence(id.conversationId);
           observations.push({
             response: fulfilled.accessMessage,
             move: null,
@@ -572,13 +692,22 @@ live('authority-only Agent A golden baseline through the real workflow', () => {
             authorizedFactIds: [],
             authorizedFacts: [],
             usedFactIds: [],
-            availableOfferings: [],
+            availableOfferings: activeCourseEvidence.names,
             selectedOfferingFacts: [],
             modelAttempts: [fulfilled.modelAttempt],
             callRequirements: [],
             profileRequestedFields: [],
-            activeCourses: await activatedCourses(id.conversationId),
+            activeCourses: activeCourseEvidence.codes,
+            activeCourseNames: activeCourseEvidence.names,
             mayOfferCall: null,
+            courseBonus: { enabled: true, maxBonusCourses: 3, mayOfferBonus: false, status: 'accepted' },
+            priceObjectionMemory: await priceObjectionMemoryEvidence(id.conversationId, null),
+            workflow: {
+              commitSucceeded: true,
+              status: 'post_sale_notification_sent',
+              errorCode: null,
+              finalBackendDecisionError: null,
+            },
           });
           firstConversationalTurn = 1;
         }
@@ -619,37 +748,53 @@ live('authority-only Agent A golden baseline through the real workflow', () => {
       } else if (!evaluationError) {
         evaluationError = `OBSERVATION_COUNT_MISMATCH:${pending.observations.length}/${pending.scenario.turns.length}`;
       }
-      const turns: TurnResultV1[] = pending.scenario.turns.map((turn, index) => {
+      const turns: TurnResultV1[] = [];
+      for (const [index, turn] of pending.scenario.turns.entries()) {
         const actualObservation = pending.observations[index];
         const observation = actualObservation ?? blankObservation();
-        const hard = actualObservation ? evaluateHardRules(turn, observation).failures : [];
+        const primaryCitation = await primaryAuthorityCitation(turn);
+        const hard = actualObservation ? evaluateHardRules(
+          turn,
+          observation,
+          pending.observations[index - 1] ?? null,
+        )
+          : { failures: [], evaluatorErrors: [] };
+        const hardFailures = hard.failures.map((failure) => ({
+          ...failure,
+          ...(failure.authorityReference || !primaryCitation
+            ? {} : { authorityReference: primaryCitation }),
+        }));
         const semanticVerdict = semantic.find((item) => item.turn_id === turn.id);
         const semanticFailures: GoldenFailureV1[] = (semanticVerdict?.failures ?? []).map((failure) => ({
           code: failure.code,
           detail: failure.explanation,
           authorityReference: failure.authority_reference,
         }));
-        const authorityReference = turn.authority[0]
-          ? `${turn.authority[0].file}:${turn.authority[0].start}-${turn.authority[0].end}` : undefined;
+        const evaluatorErrors = [
+          ...(evaluationError ? [evaluationError] : []),
+          ...(!evaluationError && !semanticVerdict ? ['GOLDEN_JUDGE_VERDICT_MISSING'] : []),
+          ...(semanticVerdict?.evaluation_error ? [semanticVerdict.evaluation_error] : []),
+          ...hard.evaluatorErrors.map((error) => `${error.code}:${error.detail}`),
+        ];
         const technicalFailures: GoldenFailureV1[] = !actualObservation ? [{
           code: 'TURN_NOT_EXECUTED',
           detail: evaluationError ?? 'El runner no produjo una observación para este turno.',
-          ...(authorityReference ? { authorityReference } : {}),
-        }] : evaluationError ? [{
-          code: 'EVALUATION_INCOMPLETE',
-          detail: evaluationError,
-          ...(authorityReference ? { authorityReference } : {}),
-        }] : [];
-        const failures = [...hard, ...semanticFailures, ...technicalFailures];
+          ...(primaryCitation ? { authorityReference: primaryCitation } : {}),
+        }] : evaluatorErrors.map((detail) => ({
+          code: 'EVALUATOR_ERROR',
+          detail,
+          ...(primaryCitation ? { authorityReference: primaryCitation } : {}),
+        }));
+        const failures = [...hardFailures, ...semanticFailures, ...technicalFailures];
         const executionStatus: TurnResultV1['execution_status'] = !actualObservation
-          ? 'not_executed' : evaluationError ? 'evaluation_error' : 'executed';
-        return {
+          ? 'not_executed' : evaluatorErrors.length > 0 ? 'evaluation_error' : 'executed';
+        turns.push({
           case_id: pending.scenario.id,
           turn_id: turn.id,
           customer: turn.customer,
           approved: executionStatus === 'executed' ? failures.length === 0 : null,
           execution_status: executionStatus,
-          authority: turn.authority.map((reference) => `${reference.file}:${reference.start}-${reference.end}`),
+          authority: primaryCitation ? [primaryCitation] : [],
           must: turn.must,
           must_not: turn.mustNot,
           response_real: observation.response,
@@ -662,8 +807,14 @@ live('authority-only Agent A golden baseline through the real workflow', () => {
           failure_layer: executionStatus !== 'executed' || failures.length === 0 ? null
             : inferFailureLayer(turn, observation, failures.map((failure) => failure.code)),
           model_attempts: observation.modelAttempts,
-        };
-      });
+          preconditions: {
+            course_bonus: observation.courseBonus,
+            price_objection_memory: observation.priceObjectionMemory,
+            may_offer_call: observation.mayOfferCall ?? null,
+            workflow: observation.workflow,
+          },
+        });
+      }
       const hasUnevaluatedTurns = turns.some((turn) => turn.execution_status !== 'executed');
       completedCases.push({
         case_id: pending.scenario.id,
