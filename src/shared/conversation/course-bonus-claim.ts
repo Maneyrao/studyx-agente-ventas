@@ -31,8 +31,9 @@ const GIFT_TAIL_ASSERTION = /\b(?:regal\p{L}*|gratis|sin\s+(?:costo|cargo)|bonif
 const GIFT_TAIL_PREDICATE = /\b(?:regal\p{L}*|bonific\p{L}*|incluy\p{L}*|sum\p{L}*|agreg\p{L}*)\b/u;
 const GIFT_TAIL_ADDITIONAL_COURSE = /\b(?:(?:otro|un)\s+)?curso\s+(?:adicional|extra)\b/u;
 const GIFT_TAIL_PARALLEL_OBJECT = /\b(?:con|ademas|y)\s+[^,;]{1,120}\s+tambien\b/u;
-const GIFT_DESCRIPTOR = /\s+(?:de\s+regalo|gratis|sin\s+(?:costo|cargo)(?:\s+adicional)?|bonificad[oa]s?|incluid[oa]s?)\s*$/u;
-const GIFT_PREDICATE = /\b(regalo|regalamos|regala|regalarte|bonifico|bonificamos|bonifica|incluyo|incluimos|incluye|incluyen|incluir|sumo|sumamos|sumar|agrego|agregamos|agregar|ofrezco)\s+(.+)$/u;
+const GIFT_DESCRIPTOR = /\s+(?:de\s+regalo|gratis|sin\s+(?:costo|cargo)(?:\s+(?:adicional|extra))?|bonificad[oa]s?|incluid[oa]s?)\s*$/u;
+const GIFT_PREDICATE = /\b(regalo|regalamos|regala|regalarte|bonifico|bonificamos|bonifica|incluyo|incluimos|incluye|incluyen|incluir|sumo|sumamos|sumar|sumarte|agrego|agregamos|agregar|ofrezco)\s+(.+)$/u;
+const EXPLANATION_BOUNDARY = /\s+para\s+|,\s*(?:que|para)\s+|:\s*(?=(?:te\s+sirve|para\b|porque\b|asi\b|que\b))/gu;
 
 function giftObject(clause: string, paidNames: readonly string[]): string | null {
   let gift = clause;
@@ -112,16 +113,30 @@ export function inspectCourseBonusClaimsV1(input: {
     const deniedExistence = /^\s*(?:no|nunca|tampoco)\s+(?:tengo|tenemos|hacemos|ofrecemos|damos|hay)\s+(?:(?:ningun[oa]?|un[oa]?|mas)\s+)?(?:regalos?|bonificaciones?|promociones?|cursos?\s+(?:gratis|bonificados?))\b/u.test(clause);
     const deniedDescriptor = /\b(?:no|nunca|tampoco)\s+(?:es|esta|va|queda)\s+(?:de\s+regalo|gratis|bonificad[oa]|sin\s+(?:costo|cargo))\b/u.test(clause);
     if (markers.length === 1 && (deniedPredicate || deniedExistence || deniedDescriptor)) continue;
+    const paidNames = input.paid_offering_names ?? [];
     let asserted = clause.trim();
-    const explanation = clause.match(/\s+para\s+|,\s*que\s+/u);
-    if (explanation && explanation.index! > (markers[0]?.index ?? Infinity)) {
-      asserted = clause.slice(0, explanation.index).trim();
-      // Explanations are outside the object list, but cannot hide another
-      // affirmative gift. Process their own gift predicates independently.
-      clauses.push(clause.slice(explanation.index).replace(/^,\s*/u, '').trim());
+    let object = giftObject(asserted, paidNames);
+    let objectAuthorized = object !== null && authorizedObjects(object, input.authorized_bonus_names);
+    if (!objectAuthorized) {
+      // Course identities may contain "para" (for example, "Fotografía con
+      // Celulares para Tiendas Online"). Test each possible explanation
+      // boundary and accept only the first prefix whose whole gift object is
+      // an authorized identity. The detached tail is processed as its own
+      // clause so an extra gift can never hide in the explanation.
+      for (const boundary of clause.matchAll(EXPLANATION_BOUNDARY)) {
+        if (boundary.index <= (markers[0]?.index ?? Infinity)) continue;
+        const candidate = clause.slice(0, boundary.index).trim();
+        const candidateObject = giftObject(candidate, paidNames);
+        if (candidateObject === null
+          || !authorizedObjects(candidateObject, input.authorized_bonus_names)) continue;
+        asserted = candidate;
+        object = candidateObject;
+        objectAuthorized = true;
+        clauses.push(clause.slice(boundary.index).replace(/^[:,]\s*/u, '').trim());
+        break;
+      }
     }
-    const object = giftObject(asserted, input.paid_offering_names ?? []);
-    if (object !== null && authorizedObjects(object, input.authorized_bonus_names)) authorized = true;
+    if (objectAuthorized) authorized = true;
     else unauthorized = true;
   }
   return { has_authorized_claim: authorized, has_unauthorized_claim: unauthorized };

@@ -92,9 +92,32 @@ describe('Agent A Brain prompt', () => {
     const instructions = buildAgentABrainInstructionsV1(current);
 
     expect(instructions).toContain('<current_effect_contract kind="call">');
+    expect(instructions).toContain('Keep move=request_call');
     expect(instructions).toContain('ask once whether the customer can take the call now');
     expect(instructions).toContain('proposed_action=none');
     expect(instructions).toContain('Do not claim that the call was placed.');
+  });
+
+  it('maps accepted-call intake and checkout checkpoints to their durable moves', () => {
+    const current = context();
+    current.commercial_state.call_preference = 'call';
+    current.commercial_state.call_offer_status = 'accepted';
+    current.commercial_state.awaiting_reply = 'contact_details';
+    current.capabilities.call_execution = {
+      next_step: 'collect_contact_details', request_call_now_authorized: false,
+    };
+    let instructions = buildAgentABrainInstructionsV1(current);
+    expect(instructions).toContain('keep move=request_call');
+    expect(instructions).toContain('profile_updates');
+    expect(instructions).toContain('provide_contact_details as a secondary move');
+
+    current.commercial_state.call_preference = 'unknown';
+    current.commercial_state.call_offer_status = 'not_offered';
+    current.commercial_state.awaiting_reply = 'payment_confirmation';
+    current.capabilities.call_execution = undefined;
+    instructions = buildAgentABrainInstructionsV1(current);
+    expect(instructions).toContain('include ask_payment_options');
+    expect(instructions).toContain('payment_plan');
   });
 
   it('does not force a call follow-up after the customer chooses to continue by chat', () => {
@@ -174,10 +197,11 @@ describe('Agent A Brain prompt', () => {
     expect(guidance).toContain('offer_course_bonus');
     expect(guidance).toContain('one new active catalog code');
     expect(guidance).toContain('does not choose the sales strategy or rung');
+    expect(guidance).toContain('does not prove that the negotiation ladder reached the bonus rung');
+    expect(guidance).toContain('only a delivered assistant reply counts as a completed rung');
     expect(guidance).toContain('delivered_bonus_offerings');
     expect(guidance).not.toContain('request_promotion_review');
-    expect(guidance).not.toContain('Inspect recent turns');
-    expect(guidance).not.toContain('use exactly the next missing rung');
+    expect(guidance).toContain('Inspect recent delivered turns');
   });
   it('makes phase identification and brevity an Agent A responsibility', () => {
     const instructions = buildAgentABrainInstructionsV1(context());
@@ -196,7 +220,7 @@ describe('Agent A Brain prompt', () => {
     expect(JSON.parse(encoded)).toEqual(current);
     expect(instructions).not.toContain('<current_turn_guidance>');
     expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v101');
-    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v138');
+    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v139');
   });
 
   it('does not override the authority price ladder with a second commercial strategy', () => {

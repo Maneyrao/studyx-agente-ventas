@@ -6,7 +6,7 @@ import {
 import { resolveCanonicalPromptIdentityV1 } from './agent-a-identity';
 import { evaluateSalesObjectionTurnV1 } from '../lib/conversation/sales-objection-turn-policy';
 
-export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v138' as const;
+export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v139' as const;
 
 /**
  * Runtime contract only. The sales behavior lives in the canonical prompt so
@@ -133,7 +133,7 @@ function currentCommercialGuidanceDirectiveV1(context: AgentAContextV1): string 
     : null;
   const directBonusGuidance = hasDirectBonusContextV1(context)
     ? courseBonus?.enabled===true && courseBonus.may_offer_bonus===true
-      ? `The effect offer_course_bonus is currently authorized. If canonical_sales_behavior chooses that effect, use exactly one new active catalog code that differs from the paid course and every delivered_bonus_offerings entry. Keep the paid course price unchanged, respect max_bonus_courses, and include the same course in the customer-facing package recap. A later offer requires a customer reply after confirmed delivery. The backend validates the effect and package identity; this block does not choose the sales strategy or rung.`
+      ? `The effect offer_course_bonus is currently authorized, but this capability does not prove that the negotiation ladder reached the bonus rung. Inspect recent delivered turns and follow the literal ladder in canonical_sales_behavior one rung at a time; only a delivered assistant reply counts as a completed rung, never a rejected attempt. If canonical_sales_behavior chooses the bonus effect now, use exactly one new active catalog code that differs from the paid course and every delivered_bonus_offerings entry. Keep the paid course price unchanged, respect max_bonus_courses, and include the same course in the customer-facing package recap. A later offer requires a customer reply after confirmed delivery. The backend validates the effect and package identity; this block does not choose the sales strategy or rung.`
       : `The effect offer_course_bonus is not currently authorized. Preserve the exact delivered_bonus_offerings package identity and do not repeat pending or rejected additions. This is an effect boundary, not a sales instruction.`
     : null;
   const effectGuidance = directBonusGuidance
@@ -149,12 +149,34 @@ Use only authorized course, package and payment facts. Never claim a completed e
 
 function currentCallEffectContractV1(context: AgentAContextV1): string {
   const execution = context.capabilities.call_execution;
+  if (execution?.next_step === 'collect_contact_details') {
+    return `<current_effect_contract kind="call">
+The customer has an accepted or requested call whose contact intake is incomplete.
+While collecting the missing fields, keep move=request_call. Put received values in profile_updates and, if useful, include provide_contact_details as a secondary move; never replace the call intent with provide_contact_details as the primary move.
+Use proposed_action=none. Once all four call fields are complete, ask once whether the customer can take the call now; a later confirmation separately authorizes request_call_now.
+</current_effect_contract>`;
+  }
   if (execution?.next_step !== 'confirm_availability') return '';
   return `<current_effect_contract kind="call">
 The accepted call has complete contact data, but request_call_now is not authorized in this turn.
 Keep move=request_call, use proposed_action=none, and ask once whether the customer can take the call now.
 Do not claim that the call was placed. The customer's later availability confirmation is the separate dispatch authority.
 </current_effect_contract>`;
+}
+
+function currentCheckoutEffectContractV1(context: AgentAContextV1): string {
+  if (context.commercial_state.awaiting_reply === 'payment_confirmation') {
+    return `<current_effect_contract kind="checkout">
+The customer is answering the contact-summary confirmation. If the data is confirmed and no payment plan is selected, ask how they prefer to pay and include ask_payment_options as the primary or secondary move so the durable checkpoint becomes payment_plan. Use proposed_action=none in that confirmation turn.
+If the customer corrects a field instead, use provide_contact_details, update only that field and reconfirm the summary.
+</current_effect_contract>`;
+  }
+  if (context.commercial_state.awaiting_reply === 'payment_plan') {
+    return `<current_effect_contract kind="checkout">
+The customer is answering the requested payment-plan choice. For a clear canonical choice, use move=select_payment_plan with its payment_plan and proposed_action=send_payment_link in this same turn. Do not request another confirmation.
+</current_effect_contract>`;
+  }
+  return '';
 }
 
 const LISANDRO_VOICE_GATE = `<lisandro_voice_gate>
@@ -192,6 +214,8 @@ ${currentCatalogResolutionDirectiveV1(context)}
 ${currentCommercialGuidanceDirectiveV1(context)}
 
 ${currentCallEffectContractV1(context)}
+
+${currentCheckoutEffectContractV1(context)}
 
 ${mandatoryRepairDirectiveV1(context)}
 

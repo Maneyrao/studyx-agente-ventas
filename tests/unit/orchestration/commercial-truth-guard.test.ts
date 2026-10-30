@@ -37,9 +37,13 @@ it.each([
   ['Te regalo Inglés 1 al comprar Redes.', true],
   ['Redes incluye Inglés 1 de regalo.', true],
   ['No te regalo Redes. Inglés 1 te puede servir para tu objetivo.', true],
+  ['Te sumo Fotografía con Celulares para Tiendas Online sin costo extra, para que puedas resolver fotos de producto.', true],
+  ['Puedo sumarte Fotografía con Celulares para Tiendas Online sin costo extra: te sirve para producir imágenes para tiendas.', true],
+  ['Te sumo Fotografía con Celulares para Tiendas Online sin costo extra, para complementar, y te regalo Astrología.', false],
 ])('validates the complete gift object without gifting its paid-course condition: %s', (content, allowed) => {
-  const result=enforce(content as string,{...CANONICAL,offering_names:['Inglés 1','Excel','Redes'],
-    authorized_bonus_names:['Inglés 1'],paid_offering_names:['Redes']});
+  const result=enforce(content as string,{...CANONICAL,
+    offering_names:['Inglés 1','Excel','Redes','Fotografía con Celulares para Tiendas Online'],
+    authorized_bonus_names:['Inglés 1','Fotografía con Celulares para Tiendas Online'],paid_offering_names:['Redes']});
   expect(result.violations.some(v=>v.code==='FORBIDDEN_PROMISE')).toBe(!allowed);
   if (allowed) expect(result).toMatchObject({content,violations:[],removed:[]});
 });

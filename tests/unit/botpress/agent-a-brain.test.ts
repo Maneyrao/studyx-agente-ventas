@@ -145,6 +145,45 @@ describe('Agent A Brain V1', () => {
       expect(rejection?.rejections.some(r => r.subject === 'forbidden_promise') ?? false).toBe(forbidden);
     }
   });
+
+  it('accepts the real direct-bonus copy with a course name containing para and rejects an extra gift', () => {
+    const current = context();
+    current.turn.batch_messages = [{ id: 'current', text: 'Prefiero seguir por chat. El precio sigue siendo lo único que me frena.' }];
+    current.turn.recent_turns = [{ id: 'earlier', direction: 'inbound', content: 'El precio es lo único que me frena.' }];
+    current.catalog.selected_offering = {
+      code: 'fotografia_profesional', display_name: 'Fotografía Profesional', area_code: 'diseno',
+      facts: [],
+    };
+    current.commercial_state.selected_offering_code = 'fotografia_profesional';
+    current.catalog.available_offerings = [
+      { code: 'fotografia_profesional', display_name: 'Fotografía Profesional', area_code: 'diseno', fact_id: 'paid' },
+      { code: 'fotografia_celulares_tiendas_online', display_name: 'Fotografía con Celulares para Tiendas Online', area_code: 'diseno', fact_id: 'bonus' },
+      { code: 'ingles_1', display_name: 'Inglés 1', area_code: 'cultural', fact_id: 'extra' },
+    ];
+    current.capabilities.course_bonus = {
+      enabled: true, max_bonus_courses: 3, may_offer_bonus: true,
+      status: 'checkin_available', may_schedule_checkin: false, may_request_review: false,
+      may_accept_offer: false, may_send_promoted_payment: false,
+      promotion_code: null, interest_offering_code: 'fotografia_profesional',
+      bonus_offerings: [], delivered_bonus_offerings: [],
+    };
+    const action = { type: 'offer_course_bonus' as const,
+      interest_offering_code: 'fotografia_profesional',
+      bonus_offering_code: 'fotografia_celulares_tiendas_online' };
+    for (const [message, forbidden] of [
+      ['Perfecto, seguimos por acá. Te sumo Fotografía con Celulares para Tiendas Online sin costo extra, para que puedas resolver fotos de producto. El precio de Fotografía Profesional no cambia.', false],
+      ['Te sumo Fotografía con Celulares para Tiendas Online sin costo extra: te sirve para producir imágenes para tiendas. Además te regalo Inglés 1.', true],
+    ] as const) {
+      const parsed = parseAgentATurnProposalV1(proposal({
+        move: { schema_version: 1, move: 'continue_by_chat', secondary_moves: [], vetoes: [], confidence: 1 },
+        response: { messages: [message], call_offer: null }, proposed_action: action,
+      }), current);
+      const rejection = validateAgentATurnProposalV1({ proposal: parsed, context: current,
+        planned_fact_ids: [], rejection_id: '00000000-0000-4000-8000-000000000001' });
+      expect(rejection?.rejections.some((item) => item.subject === 'forbidden_promise') ?? false)
+        .toBe(forbidden);
+    }
+  });
   it('accepts neutral exact terms for a real budget limit without a price-reframe rejection', () => {
     const current = context();
     current.turn.batch_messages = [{ id: 'current', text: 'No me alcanza el presupuesto' }];
