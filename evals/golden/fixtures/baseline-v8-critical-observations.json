@@ -1,0 +1,2817 @@
+{
+  "schema_version": 2,
+  "base_sha": "eb483cbf887959398f0d53e5712baedaba42f35b",
+  "cases": [
+    {
+      "scenario_id": "10_requested_call",
+      "observations": [
+        {
+          "response": "Hola, soy Emma, asesora de Studyx. Con gusto te oriento por llamada. En fotografía tenemos dos caminos: Fotografía Profesional, desde cero con el proceso digital, y Fotografía con Celulares para Tiendas Online, enfocado en productos y redes.\nPara coordinar la llamada, me pasás tu nombre, apellido, correo y teléfono?",
+          "move": "request_call",
+          "secondaryMoves": [
+            "browse_catalog"
+          ],
+          "proposedAction": {
+            "type": "none"
+          },
+          "backendAction": null,
+          "backendRejections": [],
+          "state": {
+            "selectedCourse": null,
+            "stage": "exploring",
+            "awaitingReply": "contact_details",
+            "plan": null,
+            "promotion": {
+              "status": null,
+              "bonusCount": 0,
+              "paidCourse": null,
+              "bonusCourses": []
+            }
+          },
+          "deliveredLinks": [],
+          "authorizedFactIds": [
+            "offering:fotografia_celulares_tiendas_online:description:v1",
+            "offering:fotografia_celulares_tiendas_online:duration:v1",
+            "offering:fotografia_celulares_tiendas_online:modality:v1",
+            "offering:fotografia_profesional:description:v1",
+            "offering:fotografia_profesional:duration:v1",
+            "offering:fotografia_profesional:modality:v1"
+          ],
+          "authorizedFacts": [
+            {
+              "id": "offering:fotografia_celulares_tiendas_online:description:v1",
+              "kind": "offering_description",
+              "value": "Academia de Marketing. 20 clases. En este curso vamos a ver cómo aprovechar al máximo la cámara de nuestro celular, técnicas de iluminación, conceptos de fotografía y exposición, edición y retoque de los productos, creación de videos promocionales y cómo aplicar todo a nuestra red social preferida para el impulso de nuestro negocio."
+            },
+            {
+              "id": "offering:fotografia_celulares_tiendas_online:duration:v1",
+              "kind": "offering_duration",
+              "value": "20 clases"
+            },
+            {
+              "id": "offering:fotografia_celulares_tiendas_online:modality:v1",
+              "kind": "offering_modality",
+              "value": "online"
+            },
+            {
+              "id": "offering:fotografia_profesional:description:v1",
+              "kind": "offering_description",
+              "value": "Academia de Emprendedores. 41 clases. Este curso está apuntado a todo aquel que quiera conocer desde cero el proceso fotográfico actual, con esto nos referimos al digital."
+            },
+            {
+              "id": "offering:fotografia_profesional:duration:v1",
+              "kind": "offering_duration",
+              "value": "41 clases"
+            },
+            {
+              "id": "offering:fotografia_profesional:modality:v1",
+              "kind": "offering_modality",
+              "value": "online"
+            }
+          ],
+          "usedFactIds": [
+            "offering:fotografia_profesional:name:v1",
+            "offering:fotografia_profesional:description:v1",
+            "offering:fotografia_celulares_tiendas_online:name:v1",
+            "offering:fotografia_celulares_tiendas_online:description:v1"
+          ],
+          "availableOfferings": [
+            {
+              "code": "aires_acondicionados",
+              "displayName": "Instalación de Aires Acondicionados"
+            },
+            {
+              "code": "armado_reparacion_pc",
+              "displayName": "Armado y Reparación de PC"
+            },
+            {
+              "code": "autocad_interiores",
+              "displayName": "AutoCAD orientado al Diseño de Interiores"
+            },
+            {
+              "code": "camaras_seguridad",
+              "displayName": "Instalación y Configuración de Cámaras de Seguridad"
+            },
+            {
+              "code": "coaching_liderazgo",
+              "displayName": "Coaching y Liderazgo"
+            },
+            {
+              "code": "community_manager",
+              "displayName": "Community Manager"
+            },
+            {
+              "code": "comunicacion_interna_empresas",
+              "displayName": "Comunicación Interna en Empresas"
+            },
+            {
+              "code": "decoracion_de_interiores",
+              "displayName": "Decoración de Interiores"
+            },
+            {
+              "code": "diseno_corel_draw",
+              "displayName": "Diseño Gráfico con Corel Draw"
+            },
+            {
+              "code": "diseno_illustrator",
+              "displayName": "Diseño Gráfico con Illustrator"
+            },
+            {
+              "code": "diseno_photoshop",
+              "displayName": "Diseño Gráfico con Photoshop"
+            },
+            {
+              "code": "energia_solar_fotovoltaica",
+              "displayName": "Energía Solar Fotovoltaica"
+            },
+            {
+              "code": "entrenamiento_funcional",
+              "displayName": "Entrenamiento Funcional"
+            },
+            {
+              "code": "especialista_marketing",
+              "displayName": "Especialista en Marketing"
+            },
+            {
+              "code": "especialista_ventas",
+              "displayName": "Especialista en Ventas"
+            },
+            {
+              "code": "estrategias_emprender",
+              "displayName": "Estrategias para Emprender"
+            },
+            {
+              "code": "excel_integral",
+              "displayName": "Excel Integral"
+            },
+            {
+              "code": "fotografia_celulares_tiendas_online",
+              "displayName": "Fotografía con Celulares para Tiendas Online"
+            },
+            {
+              "code": "fotografia_profesional",
+              "displayName": "Fotografía Profesional"
+            },
+            {
+              "code": "influencers_creadores_contenidos",
+              "displayName": "Influencers y Creadores de Contenidos"
+            },
+            {
+              "code": "ingles_1",
+              "displayName": "Inglés 1"
+            },
+            {
+              "code": "ingles_2",
+              "displayName": "Inglés 2"
+            },
+            {
+              "code": "ingles_3",
+              "displayName": "Inglés 3"
+            },
+            {
+              "code": "instagram_emprendedores",
+              "displayName": "Instagram para Emprendedores"
+            },
+            {
+              "code": "introduccion_catering",
+              "displayName": "Introducción al Catering"
+            },
+            {
+              "code": "introduccion_criptomonedas",
+              "displayName": "Introducción a las Criptomonedas"
+            },
+            {
+              "code": "introduccion_ecommerce",
+              "displayName": "Introducción al Ecommerce"
+            },
+            {
+              "code": "maquillaje_profesional",
+              "displayName": "Maquillaje Profesional"
+            },
+            {
+              "code": "marketing_digital",
+              "displayName": "Marketing Digital"
+            },
+            {
+              "code": "nutricion_alimentacion",
+              "displayName": "Nutrición y Alimentación Saludable"
+            },
+            {
+              "code": "oratoria",
+              "displayName": "Oratoria"
+            },
+            {
+              "code": "organizacion_baby_shower",
+              "displayName": "Organización de Baby Shower"
+            },
+            {
+              "code": "organizador_eventos_sociales",
+              "displayName": "Organizador Profesional de Eventos Sociales"
+            },
+            {
+              "code": "paisajismo_jardineria",
+              "displayName": "Paisajismo y Jardinería"
+            },
+            {
+              "code": "publicidad_redes_sociales",
+              "displayName": "Publicidad en Redes Sociales"
+            },
+            {
+              "code": "redes_informaticas",
+              "displayName": "Redes Informáticas"
+            },
+            {
+              "code": "reparacion_celulares",
+              "displayName": "Reparación de Celulares"
+            },
+            {
+              "code": "sushi_principiantes",
+              "displayName": "Sushi para Principiantes"
+            },
+            {
+              "code": "unas_gelificadas",
+              "displayName": "Uñas Gelificadas"
+            },
+            {
+              "code": "vino_cata_maridaje",
+              "displayName": "Introducción al Vino, la Cata y el Maridaje"
+            }
+          ],
+          "selectedOfferingFacts": [],
+          "callRequirements": [
+            "nombre",
+            "apellido",
+            "correo",
+            "telefono"
+          ],
+          "profileRequestedFields": [
+            "nombre",
+            "apellido",
+            "correo",
+            "telefono"
+          ],
+          "activeCourses": [],
+          "activeCourseNames": [],
+          "mayOfferCall": true,
+          "courseBonus": {
+            "enabled": true,
+            "maxBonusCourses": 3,
+            "mayOfferBonus": null,
+            "status": "needs_interest"
+          },
+          "priceObjectionMemory": {
+            "present": false,
+            "sourceMessageIds": [],
+            "priorSourceMessageIds": []
+          },
+          "workflow": {
+            "commitSucceeded": true,
+            "status": "waiting_user",
+            "errorCode": null,
+            "finalBackendDecisionError": null
+          }
+        },
+        {
+          "response": "Perfecto, ya tengo tus datos: Ana Pérez, ana.perez@example.test, +1 305 555 0182.\nPuedes atender la llamada ahora?",
+          "move": "request_call",
+          "secondaryMoves": [
+            "provide_contact_details"
+          ],
+          "proposedAction": {
+            "type": "none"
+          },
+          "backendAction": null,
+          "backendRejections": [],
+          "state": {
+            "selectedCourse": null,
+            "stage": "exploring",
+            "awaitingReply": "call_or_chat",
+            "plan": null,
+            "promotion": {
+              "status": null,
+              "bonusCount": 0,
+              "paidCourse": null,
+              "bonusCourses": []
+            }
+          },
+          "deliveredLinks": [],
+          "authorizedFactIds": [
+            "offering:fotografia_profesional:description:v1",
+            "offering:fotografia_profesional:duration:v1",
+            "offering:fotografia_profesional:modality:v1",
+            "offering:fotografia_celulares_tiendas_online:description:v1",
+            "offering:fotografia_celulares_tiendas_online:duration:v1",
+            "offering:fotografia_celulares_tiendas_online:modality:v1"
+          ],
+          "authorizedFacts": [
+            {
+              "id": "offering:fotografia_profesional:description:v1",
+              "kind": "offering_description",
+              "value": "Academia de Emprendedores. 41 clases. Este curso está apuntado a todo aquel que quiera conocer desde cero el proceso fotográfico actual, con esto nos referimos al digital."
+            },
+            {
+              "id": "offering:fotografia_profesional:duration:v1",
+              "kind": "offering_duration",
+              "value": "41 clases"
+            },
+            {
+              "id": "offering:fotografia_profesional:modality:v1",
+              "kind": "offering_modality",
+              "value": "online"
+            },
+            {
+              "id": "offering:fotografia_celulares_tiendas_online:description:v1",
+              "kind": "offering_description",
+              "value": "Academia de Marketing. 20 clases. En este curso vamos a ver cómo aprovechar al máximo la cámara de nuestro celular, técnicas de iluminación, conceptos de fotografía y exposición, edición y retoque de los productos, creación de videos promocionales y cómo aplicar todo a nuestra red social preferida para el impulso de nuestro negocio."
+            },
+            {
+              "id": "offering:fotografia_celulares_tiendas_online:duration:v1",
+              "kind": "offering_duration",
+              "value": "20 clases"
+            },
+            {
+              "id": "offering:fotografia_celulares_tiendas_online:modality:v1",
+              "kind": "offering_modality",
+              "value": "online"
+            }
+          ],
+          "usedFactIds": [],
+          "availableOfferings": [
+            {
+              "code": "aires_acondicionados",
+              "displayName": "Instalación de Aires Acondicionados"
+            },
+            {
+              "code": "armado_reparacion_pc",
+              "displayName": "Armado y Reparación de PC"
+            },
+            {
+              "code": "autocad_interiores",
+              "displayName": "AutoCAD orientado al Diseño de Interiores"
+            },
+            {
+              "code": "camaras_seguridad",
+              "displayName": "Instalación y Configuración de Cámaras de Seguridad"
+            },
+            {
+              "code": "coaching_liderazgo",
+              "displayName": "Coaching y Liderazgo"
+            },
+            {
+              "code": "community_manager",
+              "displayName": "Community Manager"
+            },
+            {
+              "code": "comunicacion_interna_empresas",
+              "displayName": "Comunicación Interna en Empresas"
+            },
+            {
+              "code": "decoracion_de_interiores",
+              "displayName": "Decoración de Interiores"
+            },
+            {
+              "code": "diseno_corel_draw",
+              "displayName": "Diseño Gráfico con Corel Draw"
+            },
+            {
+              "code": "diseno_illustrator",
+              "displayName": "Diseño Gráfico con Illustrator"
+            },
+            {
+              "code": "diseno_photoshop",
+              "displayName": "Diseño Gráfico con Photoshop"
+            },
+            {
+              "code": "energia_solar_fotovoltaica",
+              "displayName": "Energía Solar Fotovoltaica"
+            },
+            {
+              "code": "entrenamiento_funcional",
+              "displayName": "Entrenamiento Funcional"
+            },
+            {
+              "code": "especialista_marketing",
+              "displayName": "Especialista en Marketing"
+            },
+            {
+              "code": "especialista_ventas",
+              "displayName": "Especialista en Ventas"
+            },
+            {
+              "code": "estrategias_emprender",
+              "displayName": "Estrategias para Emprender"
+            },
+            {
+              "code": "excel_integral",
+              "displayName": "Excel Integral"
+            },
+            {
+              "code": "fotografia_celulares_tiendas_online",
+              "displayName": "Fotografía con Celulares para Tiendas Online"
+            },
+            {
+              "code": "fotografia_profesional",
+              "displayName": "Fotografía Profesional"
+            },
+            {
+              "code": "influencers_creadores_contenidos",
+              "displayName": "Influencers y Creadores de Contenidos"
+            },
+            {
+              "code": "ingles_1",
+              "displayName": "Inglés 1"
+            },
+            {
+              "code": "ingles_2",
+              "displayName": "Inglés 2"
+            },
+            {
+              "code": "ingles_3",
+              "displayName": "Inglés 3"
+            },
+            {
+              "code": "instagram_emprendedores",
+              "displayName": "Instagram para Emprendedores"
+            },
+            {
+              "code": "introduccion_catering",
+              "displayName": "Introducción al Catering"
+            },
+            {
+              "code": "introduccion_criptomonedas",
+              "displayName": "Introducción a las Criptomonedas"
+            },
+            {
+              "code": "introduccion_ecommerce",
+              "displayName": "Introducción al Ecommerce"
+            },
+            {
+              "code": "maquillaje_profesional",
+              "displayName": "Maquillaje Profesional"
+            },
+            {
+              "code": "marketing_digital",
+              "displayName": "Marketing Digital"
+            },
+            {
+              "code": "nutricion_alimentacion",
+              "displayName": "Nutrición y Alimentación Saludable"
+            },
+            {
+              "code": "oratoria",
+              "displayName": "Oratoria"
+            },
+            {
+              "code": "organizacion_baby_shower",
+              "displayName": "Organización de Baby Shower"
+            },
+            {
+              "code": "organizador_eventos_sociales",
+              "displayName": "Organizador Profesional de Eventos Sociales"
+            },
+            {
+              "code": "paisajismo_jardineria",
+              "displayName": "Paisajismo y Jardinería"
+            },
+            {
+              "code": "publicidad_redes_sociales",
+              "displayName": "Publicidad en Redes Sociales"
+            },
+            {
+              "code": "redes_informaticas",
+              "displayName": "Redes Informáticas"
+            },
+            {
+              "code": "reparacion_celulares",
+              "displayName": "Reparación de Celulares"
+            },
+            {
+              "code": "sushi_principiantes",
+              "displayName": "Sushi para Principiantes"
+            },
+            {
+              "code": "unas_gelificadas",
+              "displayName": "Uñas Gelificadas"
+            },
+            {
+              "code": "vino_cata_maridaje",
+              "displayName": "Introducción al Vino, la Cata y el Maridaje"
+            }
+          ],
+          "selectedOfferingFacts": [],
+          "callRequirements": [
+            "nombre",
+            "apellido",
+            "correo",
+            "telefono"
+          ],
+          "profileRequestedFields": [],
+          "activeCourses": [],
+          "activeCourseNames": [],
+          "mayOfferCall": false,
+          "courseBonus": {
+            "enabled": true,
+            "maxBonusCourses": 3,
+            "mayOfferBonus": null,
+            "status": "needs_interest"
+          },
+          "priceObjectionMemory": {
+            "present": false,
+            "sourceMessageIds": [],
+            "priorSourceMessageIds": []
+          },
+          "workflow": {
+            "commitSucceeded": true,
+            "status": "waiting_user",
+            "errorCode": null,
+            "finalBackendDecisionError": null
+          }
+        },
+        {
+          "response": "Perfecto. Registré la llamada; nuestra asesora intenta comunicarse ahora.",
+          "move": null,
+          "secondaryMoves": [],
+          "proposedAction": null,
+          "backendAction": "request_call_now",
+          "backendRejections": [],
+          "state": {
+            "selectedCourse": null,
+            "stage": "handoff",
+            "awaitingReply": "none",
+            "plan": null,
+            "promotion": {
+              "status": null,
+              "bonusCount": 0,
+              "paidCourse": null,
+              "bonusCourses": []
+            }
+          },
+          "deliveredLinks": [],
+          "authorizedFactIds": [],
+          "authorizedFacts": [],
+          "usedFactIds": [],
+          "availableOfferings": [],
+          "selectedOfferingFacts": [],
+          "callRequirements": [],
+          "profileRequestedFields": [],
+          "activeCourses": [],
+          "activeCourseNames": [],
+          "mayOfferCall": null,
+          "courseBonus": {
+            "enabled": null,
+            "maxBonusCourses": null,
+            "mayOfferBonus": null,
+            "status": null
+          },
+          "priceObjectionMemory": {
+            "present": false,
+            "sourceMessageIds": [],
+            "priorSourceMessageIds": []
+          },
+          "workflow": {
+            "commitSucceeded": true,
+            "status": "waiting_user",
+            "errorCode": null,
+            "finalBackendDecisionError": null
+          }
+        }
+      ]
+    },
+    {
+      "scenario_id": "11_purchase_to_payment_link",
+      "observations": [
+        {
+          "response": "Soy Emma, asesora de Studyx. Fotografía Profesional son 41 clases online, desde cero con el proceso digital, así que arrancás sin experiencia previa.\nPara dejarte la inscripción lista necesito tu nombre, apellido, correo y teléfono.",
+          "move": "select_course",
+          "secondaryMoves": [],
+          "proposedAction": {
+            "type": "none"
+          },
+          "backendAction": null,
+          "backendRejections": [],
+          "state": {
+            "selectedCourse": "fotografia_profesional",
+            "stage": "course_selected",
+            "awaitingReply": "contact_details",
+            "plan": null,
+            "promotion": {
+              "status": null,
+              "bonusCount": 0,
+              "paidCourse": null,
+              "bonusCourses": []
+            }
+          },
+          "deliveredLinks": [],
+          "authorizedFactIds": [
+            "offering:fotografia_profesional:name:v1",
+            "offering:fotografia_profesional:description:v1",
+            "offering:fotografia_profesional:duration:v1",
+            "offering:fotografia_profesional:modality:v1",
+            "payment:fotografia_profesional:monthly_12:label:v1",
+            "payment:fotografia_profesional:monthly_12:price:v1",
+            "payment:fotografia_profesional:monthly_6:label:v1",
+            "payment:fotografia_profesional:monthly_6:price:v1",
+            "payment:fotografia_profesional:one_time:label:v1",
+            "payment:fotografia_profesional:one_time:price:v1"
+          ],
+          "authorizedFacts": [
+            {
+              "id": "offering:fotografia_profesional:name:v1",
+              "kind": "offering_name",
+              "value": "Fotografía Profesional"
+            },
+            {
+              "id": "offering:fotografia_profesional:description:v1",
+              "kind": "offering_description",
+              "value": "Academia de Emprendedores. 41 clases. Este curso está apuntado a todo aquel que quiera conocer desde cero el proceso fotográfico actual, con esto nos referimos al digital."
+            },
+            {
+              "id": "offering:fotografia_profesional:duration:v1",
+              "kind": "offering_duration",
+              "value": "41 clases"
+            },
+            {
+              "id": "offering:fotografia_profesional:modality:v1",
+              "kind": "offering_modality",
+              "value": "online"
+            },
+            {
+              "id": "payment:fotografia_profesional:monthly_12:label:v1",
+              "kind": "payment_plan_label",
+              "value": "12 pagos mensuales de USD 30"
+            },
+            {
+              "id": "payment:fotografia_profesional:monthly_12:price:v1",
+              "kind": "payment_plan_price",
+              "value": "USD 360.00"
+            },
+            {
+              "id": "payment:fotografia_profesional:monthly_6:label:v1",
+              "kind": "payment_plan_label",
+              "value": "6 pagos mensuales de USD 60"
+            },
+            {
+              "id": "payment:fotografia_profesional:monthly_6:price:v1",
+              "kind": "payment_plan_price",
+              "value": "USD 360.00"
+            },
+            {
+              "id": "payment:fotografia_profesional:one_time:label:v1",
+              "kind": "payment_plan_label",
+              "value": "Pago único de USD 360"
+            },
+            {
+              "id": "payment:fotografia_profesional:one_time:price:v1",
+              "kind": "payment_plan_price",
+              "value": "USD 360.00"
+            }
+          ],
+          "usedFactIds": [
+            "offering:fotografia_profesional:name:v1",
+            "offering:fotografia_profesional:description:v1",
+            "offering:fotografia_profesional:duration:v1",
+            "offering:fotografia_profesional:modality:v1"
+          ],
+          "availableOfferings": [
+            {
+              "code": "aires_acondicionados",
+              "displayName": "Instalación de Aires Acondicionados"
+            },
+            {
+              "code": "armado_reparacion_pc",
+              "displayName": "Armado y Reparación de PC"
+            },
+            {
+              "code": "autocad_interiores",
+              "displayName": "AutoCAD orientado al Diseño de Interiores"
+            },
+            {
+              "code": "camaras_seguridad",
+              "displayName": "Instalación y Configuración de Cámaras de Seguridad"
+            },
+            {
+              "code": "coaching_liderazgo",
+              "displayName": "Coaching y Liderazgo"
+            },
+            {
+              "code": "community_manager",
+              "displayName": "Community Manager"
+            },
+            {
+              "code": "comunicacion_interna_empresas",
+              "displayName": "Comunicación Interna en Empresas"
+            },
+            {
+              "code": "decoracion_de_interiores",
+              "displayName": "Decoración de Interiores"
+            },
+            {
+              "code": "diseno_corel_draw",
+              "displayName": "Diseño Gráfico con Corel Draw"
+            },
+            {
+              "code": "diseno_illustrator",
+              "displayName": "Diseño Gráfico con Illustrator"
+            },
+            {
+              "code": "diseno_photoshop",
+              "displayName": "Diseño Gráfico con Photoshop"
+            },
+            {
+              "code": "energia_solar_fotovoltaica",
+              "displayName": "Energía Solar Fotovoltaica"
+            },
+            {
+              "code": "entrenamiento_funcional",
+              "displayName": "Entrenamiento Funcional"
+            },
+            {
+              "code": "especialista_marketing",
+              "displayName": "Especialista en Marketing"
+            },
+            {
+              "code": "especialista_ventas",
+              "displayName": "Especialista en Ventas"
+            },
+            {
+              "code": "estrategias_emprender",
+              "displayName": "Estrategias para Emprender"
+            },
+            {
+              "code": "excel_integral",
+              "displayName": "Excel Integral"
+            },
+            {
+              "code": "fotografia_celulares_tiendas_online",
+              "displayName": "Fotografía con Celulares para Tiendas Online"
+            },
+            {
+              "code": "fotografia_profesional",
+              "displayName": "Fotografía Profesional"
+            },
+            {
+              "code": "influencers_creadores_contenidos",
+              "displayName": "Influencers y Creadores de Contenidos"
+            },
+            {
+              "code": "ingles_1",
+              "displayName": "Inglés 1"
+            },
+            {
+              "code": "ingles_2",
+              "displayName": "Inglés 2"
+            },
+            {
+              "code": "ingles_3",
+              "displayName": "Inglés 3"
+            },
+            {
+              "code": "instagram_emprendedores",
+              "displayName": "Instagram para Emprendedores"
+            },
+            {
+              "code": "introduccion_catering",
+              "displayName": "Introducción al Catering"
+            },
+            {
+              "code": "introduccion_criptomonedas",
+              "displayName": "Introducción a las Criptomonedas"
+            },
+            {
+              "code": "introduccion_ecommerce",
+              "displayName": "Introducción al Ecommerce"
+            },
+            {
+              "code": "maquillaje_profesional",
+              "displayName": "Maquillaje Profesional"
+            },
+            {
+              "code": "marketing_digital",
+              "displayName": "Marketing Digital"
+            },
+            {
+              "code": "nutricion_alimentacion",
+              "displayName": "Nutrición y Alimentación Saludable"
+            },
+            {
+              "code": "oratoria",
+              "displayName": "Oratoria"
+            },
+            {
+              "code": "organizacion_baby_shower",
+              "displayName": "Organización de Baby Shower"
+            },
+            {
+              "code": "organizador_eventos_sociales",
+              "displayName": "Organizador Profesional de Eventos Sociales"
+            },
+            {
+              "code": "paisajismo_jardineria",
+              "displayName": "Paisajismo y Jardinería"
+            },
+            {
+              "code": "publicidad_redes_sociales",
+              "displayName": "Publicidad en Redes Sociales"
+            },
+            {
+              "code": "redes_informaticas",
+              "displayName": "Redes Informáticas"
+            },
+            {
+              "code": "reparacion_celulares",
+              "displayName": "Reparación de Celulares"
+            },
+            {
+              "code": "sushi_principiantes",
+              "displayName": "Sushi para Principiantes"
+            },
+            {
+              "code": "unas_gelificadas",
+              "displayName": "Uñas Gelificadas"
+            },
+            {
+              "code": "vino_cata_maridaje",
+              "displayName": "Introducción al Vino, la Cata y el Maridaje"
+            }
+          ],
+          "selectedOfferingFacts": [],
+          "callRequirements": [
+            "nombre",
+            "apellido",
+            "correo",
+            "telefono"
+          ],
+          "profileRequestedFields": [
+            "nombre",
+            "apellido",
+            "correo",
+            "telefono"
+          ],
+          "activeCourses": [],
+          "activeCourseNames": [],
+          "mayOfferCall": true,
+          "courseBonus": {
+            "enabled": true,
+            "maxBonusCourses": 3,
+            "mayOfferBonus": false,
+            "status": "checkin_available"
+          },
+          "priceObjectionMemory": {
+            "present": false,
+            "sourceMessageIds": [],
+            "priorSourceMessageIds": []
+          },
+          "workflow": {
+            "commitSucceeded": true,
+            "status": "waiting_user",
+            "errorCode": null,
+            "finalBackendDecisionError": null
+          }
+        },
+        {
+          "response": "Perfecto, con estos datos dejo tu inscripción a Fotografía Profesional lista:\nAna Pérez\nana.perez@example.test\n+1 305 555 0182\nEstán correctos?",
+          "move": "provide_contact_details",
+          "secondaryMoves": [],
+          "proposedAction": {
+            "type": "none"
+          },
+          "backendAction": null,
+          "backendRejections": [],
+          "state": {
+            "selectedCourse": "fotografia_profesional",
+            "stage": "course_selected",
+            "awaitingReply": "payment_confirmation",
+            "plan": null,
+            "promotion": {
+              "status": null,
+              "bonusCount": 0,
+              "paidCourse": null,
+              "bonusCourses": []
+            }
+          },
+          "deliveredLinks": [],
+          "authorizedFactIds": [
+            "offering:fotografia_profesional:name:v1",
+            "offering:fotografia_profesional:description:v1",
+            "offering:fotografia_profesional:duration:v1",
+            "offering:fotografia_profesional:modality:v1",
+            "payment:fotografia_profesional:monthly_12:label:v1",
+            "payment:fotografia_profesional:monthly_12:price:v1",
+            "payment:fotografia_profesional:monthly_6:label:v1",
+            "payment:fotografia_profesional:monthly_6:price:v1",
+            "payment:fotografia_profesional:one_time:label:v1",
+            "payment:fotografia_profesional:one_time:price:v1"
+          ],
+          "authorizedFacts": [
+            {
+              "id": "offering:fotografia_profesional:name:v1",
+              "kind": "offering_name",
+              "value": "Fotografía Profesional"
+            },
+            {
+              "id": "offering:fotografia_profesional:description:v1",
+              "kind": "offering_description",
+              "value": "Academia de Emprendedores. 41 clases. Este curso está apuntado a todo aquel que quiera conocer desde cero el proceso fotográfico actual, con esto nos referimos al digital."
+            },
+            {
+              "id": "offering:fotografia_profesional:duration:v1",
+              "kind": "offering_duration",
+              "value": "41 clases"
+            },
+            {
+              "id": "offering:fotografia_profesional:modality:v1",
+              "kind": "offering_modality",
+              "value": "online"
+            },
+            {
+              "id": "payment:fotografia_profesional:monthly_12:label:v1",
+              "kind": "payment_plan_label",
+              "value": "12 pagos mensuales de USD 30"
+            },
+            {
+              "id": "payment:fotografia_profesional:monthly_12:price:v1",
+              "kind": "payment_plan_price",
+              "value": "USD 360.00"
+            },
+            {
+              "id": "payment:fotografia_profesional:monthly_6:label:v1",
+              "kind": "payment_plan_label",
+              "value": "6 pagos mensuales de USD 60"
+            },
+            {
+              "id": "payment:fotografia_profesional:monthly_6:price:v1",
+              "kind": "payment_plan_price",
+              "value": "USD 360.00"
+            },
+            {
+              "id": "payment:fotografia_profesional:one_time:label:v1",
+              "kind": "payment_plan_label",
+              "value": "Pago único de USD 360"
+            },
+            {
+              "id": "payment:fotografia_profesional:one_time:price:v1",
+              "kind": "payment_plan_price",
+              "value": "USD 360.00"
+            }
+          ],
+          "usedFactIds": [
+            "offering:fotografia_profesional:name:v1"
+          ],
+          "availableOfferings": [
+            {
+              "code": "aires_acondicionados",
+              "displayName": "Instalación de Aires Acondicionados"
+            },
+            {
+              "code": "armado_reparacion_pc",
+              "displayName": "Armado y Reparación de PC"
+            },
+            {
+              "code": "autocad_interiores",
+              "displayName": "AutoCAD orientado al Diseño de Interiores"
+            },
+            {
+              "code": "camaras_seguridad",
+              "displayName": "Instalación y Configuración de Cámaras de Seguridad"
+            },
+            {
+              "code": "coaching_liderazgo",
+              "displayName": "Coaching y Liderazgo"
+            },
+            {
+              "code": "community_manager",
+              "displayName": "Community Manager"
+            },
+            {
+              "code": "comunicacion_interna_empresas",
+              "displayName": "Comunicación Interna en Empresas"
+            },
+            {
+              "code": "decoracion_de_interiores",
+              "displayName": "Decoración de Interiores"
+            },
+            {
+              "code": "diseno_corel_draw",
+              "displayName": "Diseño Gráfico con Corel Draw"
+            },
+            {
+              "code": "diseno_illustrator",
+              "displayName": "Diseño Gráfico con Illustrator"
+            },
+            {
+              "code": "diseno_photoshop",
+              "displayName": "Diseño Gráfico con Photoshop"
+            },
+            {
+              "code": "energia_solar_fotovoltaica",
+              "displayName": "Energía Solar Fotovoltaica"
+            },
+            {
+              "code": "entrenamiento_funcional",
+              "displayName": "Entrenamiento Funcional"
+            },
+            {
+              "code": "especialista_marketing",
+              "displayName": "Especialista en Marketing"
+            },
+            {
+              "code": "especialista_ventas",
+              "displayName": "Especialista en Ventas"
+            },
+            {
+              "code": "estrategias_emprender",
+              "displayName": "Estrategias para Emprender"
+            },
+            {
+              "code": "excel_integral",
+              "displayName": "Excel Integral"
+            },
+            {
+              "code": "fotografia_celulares_tiendas_online",
+              "displayName": "Fotografía con Celulares para Tiendas Online"
+            },
+            {
+              "code": "fotografia_profesional",
+              "displayName": "Fotografía Profesional"
+            },
+            {
+              "code": "influencers_creadores_contenidos",
+              "displayName": "Influencers y Creadores de Contenidos"
+            },
+            {
+              "code": "ingles_1",
+              "displayName": "Inglés 1"
+            },
+            {
+              "code": "ingles_2",
+              "displayName": "Inglés 2"
+            },
+            {
+              "code": "ingles_3",
+              "displayName": "Inglés 3"
+            },
+            {
+              "code": "instagram_emprendedores",
+              "displayName": "Instagram para Emprendedores"
+            },
+            {
+              "code": "introduccion_catering",
+              "displayName": "Introducción al Catering"
+            },
+            {
+              "code": "introduccion_criptomonedas",
+              "displayName": "Introducción a las Criptomonedas"
+            },
+            {
+              "code": "introduccion_ecommerce",
+              "displayName": "Introducción al Ecommerce"
+            },
+            {
+              "code": "maquillaje_profesional",
+              "displayName": "Maquillaje Profesional"
+            },
+            {
+              "code": "marketing_digital",
+              "displayName": "Marketing Digital"
+            },
+            {
+              "code": "nutricion_alimentacion",
+              "displayName": "Nutrición y Alimentación Saludable"
+            },
+            {
+              "code": "oratoria",
+              "displayName": "Oratoria"
+            },
+            {
+              "code": "organizacion_baby_shower",
+              "displayName": "Organización de Baby Shower"
+            },
+            {
+              "code": "organizador_eventos_sociales",
+              "displayName": "Organizador Profesional de Eventos Sociales"
+            },
+            {
+              "code": "paisajismo_jardineria",
+              "displayName": "Paisajismo y Jardinería"
+            },
+            {
+              "code": "publicidad_redes_sociales",
+              "displayName": "Publicidad en Redes Sociales"
+            },
+            {
+              "code": "redes_informaticas",
+              "displayName": "Redes Informáticas"
+            },
+            {
+              "code": "reparacion_celulares",
+              "displayName": "Reparación de Celulares"
+            },
+            {
+              "code": "sushi_principiantes",
+              "displayName": "Sushi para Principiantes"
+            },
+            {
+              "code": "unas_gelificadas",
+              "displayName": "Uñas Gelificadas"
+            },
+            {
+              "code": "vino_cata_maridaje",
+              "displayName": "Introducción al Vino, la Cata y el Maridaje"
+            }
+          ],
+          "selectedOfferingFacts": [],
+          "callRequirements": [
+            "nombre",
+            "apellido",
+            "correo",
+            "telefono"
+          ],
+          "profileRequestedFields": [],
+          "activeCourses": [],
+          "activeCourseNames": [],
+          "mayOfferCall": true,
+          "courseBonus": {
+            "enabled": true,
+            "maxBonusCourses": 3,
+            "mayOfferBonus": false,
+            "status": "checkin_available"
+          },
+          "priceObjectionMemory": {
+            "present": false,
+            "sourceMessageIds": [],
+            "priorSourceMessageIds": []
+          },
+          "workflow": {
+            "commitSucceeded": true,
+            "status": "waiting_user",
+            "errorCode": null,
+            "finalBackendDecisionError": null
+          }
+        },
+        {
+          "response": "Listo, quedan así para Fotografía Profesional. Cómo prefieres pagar: 12 cuotas de USD 30, 6 de USD 60 o un pago único de USD 360?",
+          "move": "ask_payment_options",
+          "secondaryMoves": [],
+          "proposedAction": {
+            "type": "none"
+          },
+          "backendAction": null,
+          "backendRejections": [],
+          "state": {
+            "selectedCourse": "fotografia_profesional",
+            "stage": "course_selected",
+            "awaitingReply": "payment_plan",
+            "plan": null,
+            "promotion": {
+              "status": null,
+              "bonusCount": 0,
+              "paidCourse": null,
+              "bonusCourses": []
+            }
+          },
+          "deliveredLinks": [],
+          "authorizedFactIds": [
+            "offering:fotografia_profesional:name:v1",
+            "offering:fotografia_profesional:description:v1",
+            "offering:fotografia_profesional:duration:v1",
+            "offering:fotografia_profesional:modality:v1",
+            "payment:fotografia_profesional:monthly_12:label:v1",
+            "payment:fotografia_profesional:monthly_12:price:v1",
+            "payment:fotografia_profesional:monthly_6:label:v1",
+            "payment:fotografia_profesional:monthly_6:price:v1",
+            "payment:fotografia_profesional:one_time:label:v1",
+            "payment:fotografia_profesional:one_time:price:v1"
+          ],
+          "authorizedFacts": [
+            {
+              "id": "offering:fotografia_profesional:name:v1",
+              "kind": "offering_name",
+              "value": "Fotografía Profesional"
+            },
+            {
+              "id": "offering:fotografia_profesional:description:v1",
+              "kind": "offering_description",
+              "value": "Academia de Emprendedores. 41 clases. Este curso está apuntado a todo aquel que quiera conocer desde cero el proceso fotográfico actual, con esto nos referimos al digital."
+            },
+            {
+              "id": "offering:fotografia_profesional:duration:v1",
+              "kind": "offering_duration",
+              "value": "41 clases"
+            },
+            {
+              "id": "offering:fotografia_profesional:modality:v1",
+              "kind": "offering_modality",
+              "value": "online"
+            },
+            {
+              "id": "payment:fotografia_profesional:monthly_12:label:v1",
+              "kind": "payment_plan_label",
+              "value": "12 pagos mensuales de USD 30"
+            },
+            {
+              "id": "payment:fotografia_profesional:monthly_12:price:v1",
+              "kind": "payment_plan_price",
+              "value": "USD 360.00"
+            },
+            {
+              "id": "payment:fotografia_profesional:monthly_6:label:v1",
+              "kind": "payment_plan_label",
+              "value": "6 pagos mensuales de USD 60"
+            },
+            {
+              "id": "payment:fotografia_profesional:monthly_6:price:v1",
+              "kind": "payment_plan_price",
+              "value": "USD 360.00"
+            },
+            {
+              "id": "payment:fotografia_profesional:one_time:label:v1",
+              "kind": "payment_plan_label",
+              "value": "Pago único de USD 360"
+            },
+            {
+              "id": "payment:fotografia_profesional:one_time:price:v1",
+              "kind": "payment_plan_price",
+              "value": "USD 360.00"
+            }
+          ],
+          "usedFactIds": [
+            "offering:fotografia_profesional:name:v1",
+            "payment:fotografia_profesional:monthly_12:label:v1",
+            "payment:fotografia_profesional:monthly_6:label:v1",
+            "payment:fotografia_profesional:one_time:label:v1"
+          ],
+          "availableOfferings": [
+            {
+              "code": "aires_acondicionados",
+              "displayName": "Instalación de Aires Acondicionados"
+            },
+            {
+              "code": "armado_reparacion_pc",
+              "displayName": "Armado y Reparación de PC"
+            },
+            {
+              "code": "autocad_interiores",
+              "displayName": "AutoCAD orientado al Diseño de Interiores"
+            },
+            {
+              "code": "camaras_seguridad",
+              "displayName": "Instalación y Configuración de Cámaras de Seguridad"
+            },
+            {
+              "code": "coaching_liderazgo",
+              "displayName": "Coaching y Liderazgo"
+            },
+            {
+              "code": "community_manager",
+              "displayName": "Community Manager"
+            },
+            {
+              "code": "comunicacion_interna_empresas",
+              "displayName": "Comunicación Interna en Empresas"
+            },
+            {
+              "code": "decoracion_de_interiores",
+              "displayName": "Decoración de Interiores"
+            },
+            {
+              "code": "diseno_corel_draw",
+              "displayName": "Diseño Gráfico con Corel Draw"
+            },
+            {
+              "code": "diseno_illustrator",
+              "displayName": "Diseño Gráfico con Illustrator"
+            },
+            {
+              "code": "diseno_photoshop",
+              "displayName": "Diseño Gráfico con Photoshop"
+            },
+            {
+              "code": "energia_solar_fotovoltaica",
+              "displayName": "Energía Solar Fotovoltaica"
+            },
+            {
+              "code": "entrenamiento_funcional",
+              "displayName": "Entrenamiento Funcional"
+            },
+            {
+              "code": "especialista_marketing",
+              "displayName": "Especialista en Marketing"
+            },
+            {
+              "code": "especialista_ventas",
+              "displayName": "Especialista en Ventas"
+            },
+            {
+              "code": "estrategias_emprender",
+              "displayName": "Estrategias para Emprender"
+            },
+            {
+              "code": "excel_integral",
+              "displayName": "Excel Integral"
+            },
+            {
+              "code": "fotografia_celulares_tiendas_online",
+              "displayName": "Fotografía con Celulares para Tiendas Online"
+            },
+            {
+              "code": "fotografia_profesional",
+              "displayName": "Fotografía Profesional"
+            },
+            {
+              "code": "influencers_creadores_contenidos",
+              "displayName": "Influencers y Creadores de Contenidos"
+            },
+            {
+              "code": "ingles_1",
+              "displayName": "Inglés 1"
+            },
+            {
+              "code": "ingles_2",
+              "displayName": "Inglés 2"
+            },
+            {
+              "code": "ingles_3",
+              "displayName": "Inglés 3"
+            },
+            {
+              "code": "instagram_emprendedores",
+              "displayName": "Instagram para Emprendedores"
+            },
+            {
+              "code": "introduccion_catering",
+              "displayName": "Introducción al Catering"
+            },
+            {
+              "code": "introduccion_criptomonedas",
+              "displayName": "Introducción a las Criptomonedas"
+            },
+            {
+              "code": "introduccion_ecommerce",
+              "displayName": "Introducción al Ecommerce"
+            },
+            {
+              "code": "maquillaje_profesional",
+              "displayName": "Maquillaje Profesional"
+            },
+            {
+              "code": "marketing_digital",
+              "displayName": "Marketing Digital"
+            },
+            {
+              "code": "nutricion_alimentacion",
+              "displayName": "Nutrición y Alimentación Saludable"
+            },
+            {
+              "code": "oratoria",
+              "displayName": "Oratoria"
+            },
+            {
+              "code": "organizacion_baby_shower",
+              "displayName": "Organización de Baby Shower"
+            },
+            {
+              "code": "organizador_eventos_sociales",
+              "displayName": "Organizador Profesional de Eventos Sociales"
+            },
+            {
+              "code": "paisajismo_jardineria",
+              "displayName": "Paisajismo y Jardinería"
+            },
+            {
+              "code": "publicidad_redes_sociales",
+              "displayName": "Publicidad en Redes Sociales"
+            },
+            {
+              "code": "redes_informaticas",
+              "displayName": "Redes Informáticas"
+            },
+            {
+              "code": "reparacion_celulares",
+              "displayName": "Reparación de Celulares"
+            },
+            {
+              "code": "sushi_principiantes",
+              "displayName": "Sushi para Principiantes"
+            },
+            {
+              "code": "unas_gelificadas",
+              "displayName": "Uñas Gelificadas"
+            },
+            {
+              "code": "vino_cata_maridaje",
+              "displayName": "Introducción al Vino, la Cata y el Maridaje"
+            }
+          ],
+          "selectedOfferingFacts": [],
+          "callRequirements": [],
+          "profileRequestedFields": [],
+          "activeCourses": [],
+          "activeCourseNames": [],
+          "mayOfferCall": true,
+          "courseBonus": {
+            "enabled": true,
+            "maxBonusCourses": 3,
+            "mayOfferBonus": false,
+            "status": "checkin_available"
+          },
+          "priceObjectionMemory": {
+            "present": false,
+            "sourceMessageIds": [],
+            "priorSourceMessageIds": []
+          },
+          "workflow": {
+            "commitSucceeded": true,
+            "status": "waiting_user",
+            "errorCode": null,
+            "finalBackendDecisionError": null
+          }
+        },
+        {
+          "response": "Perfecto, 12 cuotas de USD 30 para Fotografía Profesional. Te dejo el enlace para completar el pago.\n\n12 pagos mensuales de USD 30: https://buy.stripe.com/test_studyx_golden_12m?client_reference_id=3242f964-dd03-4a52-b39c-98a84f9dc321",
+          "move": "select_payment_plan",
+          "secondaryMoves": [],
+          "proposedAction": {
+            "type": "send_payment_link",
+            "offering_code": "fotografia_profesional",
+            "payment_plan": "monthly_12"
+          },
+          "backendAction": "send_payment_link",
+          "backendRejections": [],
+          "state": {
+            "selectedCourse": "fotografia_profesional",
+            "stage": "payment_link_sent",
+            "awaitingReply": "none",
+            "plan": "monthly_12",
+            "promotion": {
+              "status": null,
+              "bonusCount": 0,
+              "paidCourse": null,
+              "bonusCourses": []
+            }
+          },
+          "deliveredLinks": [
+            "https://buy.stripe.com/test_studyx_golden_12m?client_reference_id=3242f964-dd03-4a52-b39c-98a84f9dc321"
+          ],
+          "authorizedFactIds": [
+            "offering:fotografia_profesional:name:v1",
+            "offering:fotografia_profesional:description:v1",
+            "offering:fotografia_profesional:duration:v1",
+            "offering:fotografia_profesional:modality:v1",
+            "payment:fotografia_profesional:monthly_12:label:v1",
+            "payment:fotografia_profesional:monthly_12:price:v1",
+            "payment:fotografia_profesional:monthly_6:label:v1",
+            "payment:fotografia_profesional:monthly_6:price:v1",
+            "payment:fotografia_profesional:one_time:label:v1",
+            "payment:fotografia_profesional:one_time:price:v1"
+          ],
+          "authorizedFacts": [
+            {
+              "id": "offering:fotografia_profesional:name:v1",
+              "kind": "offering_name",
+              "value": "Fotografía Profesional"
+            },
+            {
+              "id": "offering:fotografia_profesional:description:v1",
+              "kind": "offering_description",
+              "value": "Academia de Emprendedores. 41 clases. Este curso está apuntado a todo aquel que quiera conocer desde cero el proceso fotográfico actual, con esto nos referimos al digital."
+            },
+            {
+              "id": "offering:fotografia_profesional:duration:v1",
+              "kind": "offering_duration",
+              "value": "41 clases"
+            },
+            {
+              "id": "offering:fotografia_profesional:modality:v1",
+              "kind": "offering_modality",
+              "value": "online"
+            },
+            {
+              "id": "payment:fotografia_profesional:monthly_12:label:v1",
+              "kind": "payment_plan_label",
+              "value": "12 pagos mensuales de USD 30"
+            },
+            {
+              "id": "payment:fotografia_profesional:monthly_12:price:v1",
+              "kind": "payment_plan_price",
+              "value": "USD 360.00"
+            },
+            {
+              "id": "payment:fotografia_profesional:monthly_6:label:v1",
+              "kind": "payment_plan_label",
+              "value": "6 pagos mensuales de USD 60"
+            },
+            {
+              "id": "payment:fotografia_profesional:monthly_6:price:v1",
+              "kind": "payment_plan_price",
+              "value": "USD 360.00"
+            },
+            {
+              "id": "payment:fotografia_profesional:one_time:label:v1",
+              "kind": "payment_plan_label",
+              "value": "Pago único de USD 360"
+            },
+            {
+              "id": "payment:fotografia_profesional:one_time:price:v1",
+              "kind": "payment_plan_price",
+              "value": "USD 360.00"
+            }
+          ],
+          "usedFactIds": [
+            "offering:fotografia_profesional:name:v1",
+            "payment:fotografia_profesional:monthly_12:label:v1"
+          ],
+          "availableOfferings": [
+            {
+              "code": "aires_acondicionados",
+              "displayName": "Instalación de Aires Acondicionados"
+            },
+            {
+              "code": "armado_reparacion_pc",
+              "displayName": "Armado y Reparación de PC"
+            },
+            {
+              "code": "autocad_interiores",
+              "displayName": "AutoCAD orientado al Diseño de Interiores"
+            },
+            {
+              "code": "camaras_seguridad",
+              "displayName": "Instalación y Configuración de Cámaras de Seguridad"
+            },
+            {
+              "code": "coaching_liderazgo",
+              "displayName": "Coaching y Liderazgo"
+            },
+            {
+              "code": "community_manager",
+              "displayName": "Community Manager"
+            },
+            {
+              "code": "comunicacion_interna_empresas",
+              "displayName": "Comunicación Interna en Empresas"
+            },
+            {
+              "code": "decoracion_de_interiores",
+              "displayName": "Decoración de Interiores"
+            },
+            {
+              "code": "diseno_corel_draw",
+              "displayName": "Diseño Gráfico con Corel Draw"
+            },
+            {
+              "code": "diseno_illustrator",
+              "displayName": "Diseño Gráfico con Illustrator"
+            },
+            {
+              "code": "diseno_photoshop",
+              "displayName": "Diseño Gráfico con Photoshop"
+            },
+            {
+              "code": "energia_solar_fotovoltaica",
+              "displayName": "Energía Solar Fotovoltaica"
+            },
+            {
+              "code": "entrenamiento_funcional",
+              "displayName": "Entrenamiento Funcional"
+            },
+            {
+              "code": "especialista_marketing",
+              "displayName": "Especialista en Marketing"
+            },
+            {
+              "code": "especialista_ventas",
+              "displayName": "Especialista en Ventas"
+            },
+            {
+              "code": "estrategias_emprender",
+              "displayName": "Estrategias para Emprender"
+            },
+            {
+              "code": "excel_integral",
+              "displayName": "Excel Integral"
+            },
+            {
+              "code": "fotografia_celulares_tiendas_online",
+              "displayName": "Fotografía con Celulares para Tiendas Online"
+            },
+            {
+              "code": "fotografia_profesional",
+              "displayName": "Fotografía Profesional"
+            },
+            {
+              "code": "influencers_creadores_contenidos",
+              "displayName": "Influencers y Creadores de Contenidos"
+            },
+            {
+              "code": "ingles_1",
+              "displayName": "Inglés 1"
+            },
+            {
+              "code": "ingles_2",
+              "displayName": "Inglés 2"
+            },
+            {
+              "code": "ingles_3",
+              "displayName": "Inglés 3"
+            },
+            {
+              "code": "instagram_emprendedores",
+              "displayName": "Instagram para Emprendedores"
+            },
+            {
+              "code": "introduccion_catering",
+              "displayName": "Introducción al Catering"
+            },
+            {
+              "code": "introduccion_criptomonedas",
+              "displayName": "Introducción a las Criptomonedas"
+            },
+            {
+              "code": "introduccion_ecommerce",
+              "displayName": "Introducción al Ecommerce"
+            },
+            {
+              "code": "maquillaje_profesional",
+              "displayName": "Maquillaje Profesional"
+            },
+            {
+              "code": "marketing_digital",
+              "displayName": "Marketing Digital"
+            },
+            {
+              "code": "nutricion_alimentacion",
+              "displayName": "Nutrición y Alimentación Saludable"
+            },
+            {
+              "code": "oratoria",
+              "displayName": "Oratoria"
+            },
+            {
+              "code": "organizacion_baby_shower",
+              "displayName": "Organización de Baby Shower"
+            },
+            {
+              "code": "organizador_eventos_sociales",
+              "displayName": "Organizador Profesional de Eventos Sociales"
+            },
+            {
+              "code": "paisajismo_jardineria",
+              "displayName": "Paisajismo y Jardinería"
+            },
+            {
+              "code": "publicidad_redes_sociales",
+              "displayName": "Publicidad en Redes Sociales"
+            },
+            {
+              "code": "redes_informaticas",
+              "displayName": "Redes Informáticas"
+            },
+            {
+              "code": "reparacion_celulares",
+              "displayName": "Reparación de Celulares"
+            },
+            {
+              "code": "sushi_principiantes",
+              "displayName": "Sushi para Principiantes"
+            },
+            {
+              "code": "unas_gelificadas",
+              "displayName": "Uñas Gelificadas"
+            },
+            {
+              "code": "vino_cata_maridaje",
+              "displayName": "Introducción al Vino, la Cata y el Maridaje"
+            }
+          ],
+          "selectedOfferingFacts": [],
+          "callRequirements": [],
+          "profileRequestedFields": [],
+          "activeCourses": [],
+          "activeCourseNames": [],
+          "mayOfferCall": true,
+          "courseBonus": {
+            "enabled": true,
+            "maxBonusCourses": 3,
+            "mayOfferBonus": false,
+            "status": "checkin_available"
+          },
+          "priceObjectionMemory": {
+            "present": false,
+            "sourceMessageIds": [],
+            "priorSourceMessageIds": []
+          },
+          "workflow": {
+            "commitSucceeded": true,
+            "status": "waiting_user",
+            "errorCode": null,
+            "finalBackendDecisionError": null
+          }
+        }
+      ]
+    },
+    {
+      "scenario_id": "12_verified_payment_bonus_fulfillment",
+      "observations": [
+        {
+          "response": "Tu acceso ya está habilitado. Bienvenido a Studyx.\n\nCURSOS HABILITADOS\n📚 CURSO PRINCIPAL: Fotografía Profesional\n🎁 CURSO BONIFICADO: Fotografía con Celulares para Tiendas Online\n🎁 CURSO BONIFICADO: Marketing Digital\n\nLINK DIRECTO AL CAMPUS VIRTUAL 👇🏻\n\nhttps://mystudyx.com/campus-virtual\n\n📌 USUARIO: ana.golden@example.test\n\n📌 CONTRASEÑA: Escuela.123\n\nRECUERDA LA «E» EN MAYÚSCULA\n\nC A N A L E S  O F I C I A L E S  D E  C O N T A C T O\n\nWHATSAPP OFICIAL DE LA ACADEMIA: 786-916-4372 (solo WhatsApp)\nNÚMERO DE ASISTENCIA AL ALUMNO: 866-217-7282 ☎️📚\nADMINISTRACIÓN: info@mystudyx.com\nDEPARTAMENTO DE PROFESORES: studyxtutorias@gmail.com\n\nSi quieres, puedes cambiar tu contraseña después de ingresar.",
+          "move": null,
+          "secondaryMoves": [],
+          "proposedAction": null,
+          "backendAction": null,
+          "backendRejections": [
+            {
+              "subject": "post_sale_narrative",
+              "reason": "POST_SALE_CHANGE_MUST_BE_OPTIONAL"
+            }
+          ],
+          "state": {
+            "selectedCourse": "fotografia_profesional",
+            "stage": "payment_link_sent",
+            "awaitingReply": "none",
+            "plan": "monthly_12",
+            "promotion": {
+              "status": "accepted",
+              "bonusCount": 2,
+              "paidCourse": "fotografia_profesional",
+              "bonusCourses": [
+                "fotografia_celulares_tiendas_online",
+                "marketing_digital"
+              ]
+            }
+          },
+          "deliveredLinks": [],
+          "authorizedFactIds": [],
+          "authorizedFacts": [],
+          "usedFactIds": [],
+          "availableOfferings": [
+            {
+              "code": "fotografia_celulares_tiendas_online",
+              "displayName": "Fotografía con Celulares para Tiendas Online"
+            },
+            {
+              "code": "fotografia_profesional",
+              "displayName": "Fotografía Profesional"
+            },
+            {
+              "code": "marketing_digital",
+              "displayName": "Marketing Digital"
+            }
+          ],
+          "selectedOfferingFacts": [],
+          "callRequirements": [],
+          "profileRequestedFields": [],
+          "activeCourses": [
+            "fotografia_celulares_tiendas_online",
+            "fotografia_profesional",
+            "marketing_digital"
+          ],
+          "activeCourseNames": [
+            {
+              "code": "fotografia_celulares_tiendas_online",
+              "displayName": "Fotografía con Celulares para Tiendas Online"
+            },
+            {
+              "code": "fotografia_profesional",
+              "displayName": "Fotografía Profesional"
+            },
+            {
+              "code": "marketing_digital",
+              "displayName": "Marketing Digital"
+            }
+          ],
+          "mayOfferCall": null,
+          "courseBonus": {
+            "enabled": true,
+            "maxBonusCourses": 3,
+            "mayOfferBonus": false,
+            "status": "accepted"
+          },
+          "priceObjectionMemory": {
+            "present": false,
+            "sourceMessageIds": [],
+            "priorSourceMessageIds": []
+          },
+          "workflow": {
+            "commitSucceeded": true,
+            "status": "post_sale_notification_sent",
+            "errorCode": null,
+            "finalBackendDecisionError": null
+          }
+        },
+        {
+          "response": "Perfecto, ahí ya tienes el acceso activo con los tres cursos de tu formación en Fotografía Profesional.\nCualquier duda con la plataforma o con el contenido, me escribes y lo vemos.",
+          "move": "ask_current_state",
+          "secondaryMoves": [],
+          "proposedAction": {
+            "type": "none"
+          },
+          "backendAction": null,
+          "backendRejections": [],
+          "state": {
+            "selectedCourse": "fotografia_profesional",
+            "stage": "payment_link_sent",
+            "awaitingReply": "none",
+            "plan": "monthly_12",
+            "promotion": {
+              "status": "accepted",
+              "bonusCount": 2,
+              "paidCourse": "fotografia_profesional",
+              "bonusCourses": [
+                "fotografia_celulares_tiendas_online",
+                "marketing_digital"
+              ]
+            }
+          },
+          "deliveredLinks": [],
+          "authorizedFactIds": [
+            "offering:armado_reparacion_pc:description:v1",
+            "offering:armado_reparacion_pc:duration:v1",
+            "offering:armado_reparacion_pc:modality:v1",
+            "offering:autocad_interiores:description:v1",
+            "offering:autocad_interiores:duration:v1",
+            "offering:autocad_interiores:modality:v1",
+            "offering:coaching_liderazgo:description:v1",
+            "offering:coaching_liderazgo:duration:v1",
+            "offering:coaching_liderazgo:modality:v1"
+          ],
+          "authorizedFacts": [
+            {
+              "id": "offering:armado_reparacion_pc:description:v1",
+              "kind": "offering_description",
+              "value": "Academia de Oficios. 22 clases. Este curso abarca el mantenimiento de computadoras de escritorio desde cero con casos reales otorgando las herramientas necesarias para que el futuro técnico sepa cuándo reparar y cuándo reemplazar los componentes dañados como también asesorar a sus clientes con las mejores soluciones a su equipamiento."
+            },
+            {
+              "id": "offering:armado_reparacion_pc:duration:v1",
+              "kind": "offering_duration",
+              "value": "22 clases"
+            },
+            {
+              "id": "offering:armado_reparacion_pc:modality:v1",
+              "kind": "offering_modality",
+              "value": "online"
+            },
+            {
+              "id": "offering:autocad_interiores:description:v1",
+              "kind": "offering_description",
+              "value": "Academia de Diseño Informático. 11 clases. En este Curso de AutoCAD vamos a adquirir el conocimiento práctico y teórico para dominar las técnicas de dibujo en forma digital y realizar planos técnicos en dos dimensiones."
+            },
+            {
+              "id": "offering:autocad_interiores:duration:v1",
+              "kind": "offering_duration",
+              "value": "11 clases"
+            },
+            {
+              "id": "offering:autocad_interiores:modality:v1",
+              "kind": "offering_modality",
+              "value": "online"
+            },
+            {
+              "id": "offering:coaching_liderazgo:description:v1",
+              "kind": "offering_description",
+              "value": "Academia de Negocios. 16 clases. En este curso permitiremos desarrollar actitudes, capacidades y habilidades que posibiliten enfrentar adecuadamente los desafíos del mercado laboral, en especial a nivel gerencial."
+            },
+            {
+              "id": "offering:coaching_liderazgo:duration:v1",
+              "kind": "offering_duration",
+              "value": "16 clases"
+            },
+            {
+              "id": "offering:coaching_liderazgo:modality:v1",
+              "kind": "offering_modality",
+              "value": "online"
+            }
+          ],
+          "usedFactIds": [
+            "offering:fotografia_profesional:name:v1"
+          ],
+          "availableOfferings": [
+            {
+              "code": "aires_acondicionados",
+              "displayName": "Instalación de Aires Acondicionados"
+            },
+            {
+              "code": "armado_reparacion_pc",
+              "displayName": "Armado y Reparación de PC"
+            },
+            {
+              "code": "autocad_interiores",
+              "displayName": "AutoCAD orientado al Diseño de Interiores"
+            },
+            {
+              "code": "camaras_seguridad",
+              "displayName": "Instalación y Configuración de Cámaras de Seguridad"
+            },
+            {
+              "code": "coaching_liderazgo",
+              "displayName": "Coaching y Liderazgo"
+            },
+            {
+              "code": "community_manager",
+              "displayName": "Community Manager"
+            },
+            {
+              "code": "comunicacion_interna_empresas",
+              "displayName": "Comunicación Interna en Empresas"
+            },
+            {
+              "code": "decoracion_de_interiores",
+              "displayName": "Decoración de Interiores"
+            },
+            {
+              "code": "diseno_corel_draw",
+              "displayName": "Diseño Gráfico con Corel Draw"
+            },
+            {
+              "code": "diseno_illustrator",
+              "displayName": "Diseño Gráfico con Illustrator"
+            },
+            {
+              "code": "diseno_photoshop",
+              "displayName": "Diseño Gráfico con Photoshop"
+            },
+            {
+              "code": "energia_solar_fotovoltaica",
+              "displayName": "Energía Solar Fotovoltaica"
+            },
+            {
+              "code": "entrenamiento_funcional",
+              "displayName": "Entrenamiento Funcional"
+            },
+            {
+              "code": "especialista_marketing",
+              "displayName": "Especialista en Marketing"
+            },
+            {
+              "code": "especialista_ventas",
+              "displayName": "Especialista en Ventas"
+            },
+            {
+              "code": "estrategias_emprender",
+              "displayName": "Estrategias para Emprender"
+            },
+            {
+              "code": "excel_integral",
+              "displayName": "Excel Integral"
+            },
+            {
+              "code": "fotografia_celulares_tiendas_online",
+              "displayName": "Fotografía con Celulares para Tiendas Online"
+            },
+            {
+              "code": "fotografia_profesional",
+              "displayName": "Fotografía Profesional"
+            },
+            {
+              "code": "influencers_creadores_contenidos",
+              "displayName": "Influencers y Creadores de Contenidos"
+            },
+            {
+              "code": "ingles_1",
+              "displayName": "Inglés 1"
+            },
+            {
+              "code": "ingles_2",
+              "displayName": "Inglés 2"
+            },
+            {
+              "code": "ingles_3",
+              "displayName": "Inglés 3"
+            },
+            {
+              "code": "instagram_emprendedores",
+              "displayName": "Instagram para Emprendedores"
+            },
+            {
+              "code": "introduccion_catering",
+              "displayName": "Introducción al Catering"
+            },
+            {
+              "code": "introduccion_criptomonedas",
+              "displayName": "Introducción a las Criptomonedas"
+            },
+            {
+              "code": "introduccion_ecommerce",
+              "displayName": "Introducción al Ecommerce"
+            },
+            {
+              "code": "maquillaje_profesional",
+              "displayName": "Maquillaje Profesional"
+            },
+            {
+              "code": "marketing_digital",
+              "displayName": "Marketing Digital"
+            },
+            {
+              "code": "nutricion_alimentacion",
+              "displayName": "Nutrición y Alimentación Saludable"
+            },
+            {
+              "code": "oratoria",
+              "displayName": "Oratoria"
+            },
+            {
+              "code": "organizacion_baby_shower",
+              "displayName": "Organización de Baby Shower"
+            },
+            {
+              "code": "organizador_eventos_sociales",
+              "displayName": "Organizador Profesional de Eventos Sociales"
+            },
+            {
+              "code": "paisajismo_jardineria",
+              "displayName": "Paisajismo y Jardinería"
+            },
+            {
+              "code": "publicidad_redes_sociales",
+              "displayName": "Publicidad en Redes Sociales"
+            },
+            {
+              "code": "redes_informaticas",
+              "displayName": "Redes Informáticas"
+            },
+            {
+              "code": "reparacion_celulares",
+              "displayName": "Reparación de Celulares"
+            },
+            {
+              "code": "sushi_principiantes",
+              "displayName": "Sushi para Principiantes"
+            },
+            {
+              "code": "unas_gelificadas",
+              "displayName": "Uñas Gelificadas"
+            },
+            {
+              "code": "vino_cata_maridaje",
+              "displayName": "Introducción al Vino, la Cata y el Maridaje"
+            }
+          ],
+          "selectedOfferingFacts": [],
+          "callRequirements": [
+            "apellido",
+            "correo",
+            "telefono"
+          ],
+          "profileRequestedFields": [],
+          "activeCourses": [
+            "fotografia_celulares_tiendas_online",
+            "fotografia_profesional",
+            "marketing_digital"
+          ],
+          "activeCourseNames": [
+            {
+              "code": "fotografia_celulares_tiendas_online",
+              "displayName": "Fotografía con Celulares para Tiendas Online"
+            },
+            {
+              "code": "fotografia_profesional",
+              "displayName": "Fotografía Profesional"
+            },
+            {
+              "code": "marketing_digital",
+              "displayName": "Marketing Digital"
+            }
+          ],
+          "mayOfferCall": true,
+          "courseBonus": {
+            "enabled": true,
+            "maxBonusCourses": 3,
+            "mayOfferBonus": null,
+            "status": "needs_interest"
+          },
+          "priceObjectionMemory": {
+            "present": false,
+            "sourceMessageIds": [],
+            "priorSourceMessageIds": []
+          },
+          "workflow": {
+            "commitSucceeded": true,
+            "status": "waiting_user",
+            "errorCode": null,
+            "finalBackendDecisionError": null
+          }
+        }
+      ]
+    },
+    {
+      "scenario_id": "13_real_syllabus",
+      "observations": [
+        {
+          "response": "Soy Emma, asesora de Studyx. Te paso el temario de Fotografía Profesional, son 41 clases online: arranca con tipos de cámara, sensor, ISO, obturador, diafragma y distancia focal; sigue con enfoque, balance de blancos, histograma y composición.\nDespués viene retrato, flash, filtros, trípode, campañas publicitarias y edición en Lightroom, Premiere y Photoshop, cerrando con examen final. Lo quieres para dedicarte a la fotografía o más para tu emprendimiento?",
+          "move": "ask_course_information",
+          "secondaryMoves": [],
+          "proposedAction": {
+            "type": "none"
+          },
+          "backendAction": null,
+          "backendRejections": [],
+          "state": {
+            "selectedCourse": null,
+            "stage": "exploring",
+            "awaitingReply": "none",
+            "plan": null,
+            "promotion": {
+              "status": null,
+              "bonusCount": 0,
+              "paidCourse": null,
+              "bonusCourses": []
+            }
+          },
+          "deliveredLinks": [],
+          "authorizedFactIds": [
+            "offering:fotografia_profesional:name:v1",
+            "offering:fotografia_profesional:description:v1",
+            "offering:fotografia_profesional:duration:v1",
+            "offering:fotografia_profesional:modality:v1",
+            "knowledge-source:7c728d8e-b21b-4001-8073-99322ae80a7a",
+            "knowledge-source:6de68ecc-89d6-4733-8e06-d1f7ee2eb6e7",
+            "knowledge-source:116d901b-b934-4a06-80b9-2fd37fa6fde5",
+            "knowledge-source:730af5c4-a96c-4955-8f1c-b7e125d6aa90",
+            "knowledge-source:d1da08f4-382f-4acf-9b78-ee5729cf61ba",
+            "payment:fotografia_profesional:monthly_12:label:v1",
+            "payment:fotografia_profesional:monthly_12:price:v1",
+            "payment:fotografia_profesional:monthly_6:label:v1",
+            "payment:fotografia_profesional:monthly_6:price:v1",
+            "payment:fotografia_profesional:one_time:label:v1",
+            "payment:fotografia_profesional:one_time:price:v1"
+          ],
+          "authorizedFacts": [
+            {
+              "id": "offering:fotografia_profesional:name:v1",
+              "kind": "offering_name",
+              "value": "Fotografía Profesional"
+            },
+            {
+              "id": "offering:fotografia_profesional:description:v1",
+              "kind": "offering_description",
+              "value": "Academia de Emprendedores. 41 clases. Este curso está apuntado a todo aquel que quiera conocer desde cero el proceso fotográfico actual, con esto nos referimos al digital."
+            },
+            {
+              "id": "offering:fotografia_profesional:duration:v1",
+              "kind": "offering_duration",
+              "value": "41 clases"
+            },
+            {
+              "id": "offering:fotografia_profesional:modality:v1",
+              "kind": "offering_modality",
+              "value": "online"
+            },
+            {
+              "id": "knowledge-source:7c728d8e-b21b-4001-8073-99322ae80a7a",
+              "kind": "offering_syllabus",
+              "value": "Curso: Fotografía Profesional.\nFuente oficial: programa StudyX, página 7 de 10.\nClase 1: Introducción. Tipos de cámaras\ndigitales. Tipos de visores.\nClase 2: Aprendiendo a leer una cámara réflex\no mirrorless. Valor de exposición (EV) y\nfotómetro. El sensor digital.\nClase 3: Sensibilidad / Velocidad de ISO\nClase 4: Obturador. Tiempo de exposición o\nvelocidad de obturación.\nClase 5: Apertura de diafragma. Profundidad\nde campo. Modificadores de profundidad de\ncampo.\nClase 6: Distancia focal. Tamaño del sensor y\nsu relación con la distancia focal\nClase 7: Lente / Objetivo. Categorías de lentes.\nClase 8: Sistema de enfoque y medición.\nZona de Medición. Zonas de enfoque. Modos\nde enfoque.\nClase 9: Balance de Blancos (White Balance\n‘WB’). Balance de Blancos y Zona de\nMedición.\nClase 10: Histograma. Formato y calidad de\nimagen. RAW, JPEG y TIFF.\nClase 11: Composición. Secuencia de\nFibonacci.\nTemario Fotografía\nProfesional\nPrograma completo: https://mystudyx.com/diplomado/fotografia-profesional/"
+            },
+            {
+              "id": "knowledge-source:6de68ecc-89d6-4733-8e06-d1f7ee2eb6e7",
+              "kind": "offering_syllabus",
+              "value": "Curso: Fotografía Profesional.\nFuente oficial: programa StudyX, página 8 de 10.\nClase 12: Otras formas de componer.\nClase 13: Retrato. Equipo. Lentes para retrato\n– Pros y contras. Fijo o Zoom.\nClase 14: Planos de recorte. Ángulos de toma.\nClase 15: Compresión de planos.\nClase 16: Consejos y tips para retratos.\nClase 17: Flash. Flash de Zapata. Temperatura\nde la luz. Ventajas y desventajas del flash.\nModos de disparo.\nClase 18: Velocidad de sincronización de flash\n(hss/fp). Remotos y radios para flashes.\nClase 19: Difusores y accesorios de flash.\nAccesorios flash “pop-up” o rebatible.\nAccesorios flash de zapata o speedlight.\nAccesorios flash estudio o con montura.\nClase 20: Filtros para lentes. Tipos de filtros.\nStep-Up (ampliadores) y Step-Down\n(reductores).\nClase 21: Barrido / Panning. Zooming.\nClase 22: Trípodes. Monopie. Patas o topes.\nClase 23: Disparadores de cámara. Disparador\nPrograma completo: https://mystudyx.com/diplomado/fotografia-profesional/"
+            },
+            {
+              "id": "knowledge-source:116d901b-b934-4a06-80b9-2fd37fa6fde5",
+              "kind": "offering_syllabus",
+              "value": "Curso: Fotografía Profesional.\nFuente oficial: programa StudyX, página 8 de 10.\ncableado. Disparador inalámbrico por\ninfrarrojo. Disparadores inalámbricos por\nradio. Intervalómetro.\nTemario Fotografía\nProfesional\nPrograma completo: https://mystudyx.com/diplomado/fotografia-profesional/"
+            },
+            {
+              "id": "knowledge-source:730af5c4-a96c-4955-8f1c-b7e125d6aa90",
+              "kind": "offering_syllabus",
+              "value": "Curso: Fotografía Profesional.\nFuente oficial: programa StudyX, página 9 de 10.\nClase 24: Campañas publicitarias. Constantes\ny variables.\nClase 25: Segmentación de público. Tabla\nABC tradicional / Pirámide salarial. Tabla ABC\npor segmentación de clientes. Tabla VALS /\nValores y actitudes. Innovadores. Pensadores.\nCreyentes. Triunfadores. Esforzados. Vividores\nde experiencias. Realizados. Supervivientes.\nClase 26: Edición de video. Formato.\nResolución. Calidad. Cuadros por segundo.\nClase 27: CC - Lightroom\nClase 28: Biblioteca y metadatos\nClase 29: Paneles Módulo Revelar\nClase 30: Ajustes básicos\nClase 31: Quitar manchas y ojos rojos\nClase 32: Filtros degradado y puntual\nClase 33: Exportación y calidades\nClase 34: Premiere – Introducción\nClase 35: Sincronizar audio y video\nClase 36: Agregado de música- efectos y\ncortes\nClase 37: Exportar y renderizado\nClase 38: Photoshop - Introducción\nClase 39: Maquillaje digital\nPrograma completo: https://mystudyx.com/diplomado/fotografia-profesional/"
+            },
+            {
+              "id": "knowledge-source:d1da08f4-382f-4acf-9b78-ee5729cf61ba",
+              "kind": "offering_syllabus",
+              "value": "Curso: Fotografía Profesional.\nFuente oficial: programa StudyX, página 9 de 10.\nClase 40: Cambio de color de ojo\nClase 41: Collage fotoproducto\nClase 42: Examen Final\nTemario Fotografía\nProfesional\nPrograma completo: https://mystudyx.com/diplomado/fotografia-profesional/"
+            },
+            {
+              "id": "payment:fotografia_profesional:monthly_12:label:v1",
+              "kind": "payment_plan_label",
+              "value": "12 pagos mensuales de USD 30"
+            },
+            {
+              "id": "payment:fotografia_profesional:monthly_12:price:v1",
+              "kind": "payment_plan_price",
+              "value": "USD 360.00"
+            },
+            {
+              "id": "payment:fotografia_profesional:monthly_6:label:v1",
+              "kind": "payment_plan_label",
+              "value": "6 pagos mensuales de USD 60"
+            },
+            {
+              "id": "payment:fotografia_profesional:monthly_6:price:v1",
+              "kind": "payment_plan_price",
+              "value": "USD 360.00"
+            },
+            {
+              "id": "payment:fotografia_profesional:one_time:label:v1",
+              "kind": "payment_plan_label",
+              "value": "Pago único de USD 360"
+            },
+            {
+              "id": "payment:fotografia_profesional:one_time:price:v1",
+              "kind": "payment_plan_price",
+              "value": "USD 360.00"
+            }
+          ],
+          "usedFactIds": [
+            "offering:fotografia_profesional:name:v1",
+            "offering:fotografia_profesional:duration:v1",
+            "offering:fotografia_profesional:modality:v1",
+            "knowledge-source:7c728d8e-b21b-4001-8073-99322ae80a7a",
+            "knowledge-source:6de68ecc-89d6-4733-8e06-d1f7ee2eb6e7",
+            "knowledge-source:730af5c4-a96c-4955-8f1c-b7e125d6aa90",
+            "knowledge-source:d1da08f4-382f-4acf-9b78-ee5729cf61ba"
+          ],
+          "availableOfferings": [
+            {
+              "code": "aires_acondicionados",
+              "displayName": "Instalación de Aires Acondicionados"
+            },
+            {
+              "code": "armado_reparacion_pc",
+              "displayName": "Armado y Reparación de PC"
+            },
+            {
+              "code": "autocad_interiores",
+              "displayName": "AutoCAD orientado al Diseño de Interiores"
+            },
+            {
+              "code": "camaras_seguridad",
+              "displayName": "Instalación y Configuración de Cámaras de Seguridad"
+            },
+            {
+              "code": "coaching_liderazgo",
+              "displayName": "Coaching y Liderazgo"
+            },
+            {
+              "code": "community_manager",
+              "displayName": "Community Manager"
+            },
+            {
+              "code": "comunicacion_interna_empresas",
+              "displayName": "Comunicación Interna en Empresas"
+            },
+            {
+              "code": "decoracion_de_interiores",
+              "displayName": "Decoración de Interiores"
+            },
+            {
+              "code": "diseno_corel_draw",
+              "displayName": "Diseño Gráfico con Corel Draw"
+            },
+            {
+              "code": "diseno_illustrator",
+              "displayName": "Diseño Gráfico con Illustrator"
+            },
+            {
+              "code": "diseno_photoshop",
+              "displayName": "Diseño Gráfico con Photoshop"
+            },
+            {
+              "code": "energia_solar_fotovoltaica",
+              "displayName": "Energía Solar Fotovoltaica"
+            },
+            {
+              "code": "entrenamiento_funcional",
+              "displayName": "Entrenamiento Funcional"
+            },
+            {
+              "code": "especialista_marketing",
+              "displayName": "Especialista en Marketing"
+            },
+            {
+              "code": "especialista_ventas",
+              "displayName": "Especialista en Ventas"
+            },
+            {
+              "code": "estrategias_emprender",
+              "displayName": "Estrategias para Emprender"
+            },
+            {
+              "code": "excel_integral",
+              "displayName": "Excel Integral"
+            },
+            {
+              "code": "fotografia_celulares_tiendas_online",
+              "displayName": "Fotografía con Celulares para Tiendas Online"
+            },
+            {
+              "code": "fotografia_profesional",
+              "displayName": "Fotografía Profesional"
+            },
+            {
+              "code": "influencers_creadores_contenidos",
+              "displayName": "Influencers y Creadores de Contenidos"
+            },
+            {
+              "code": "ingles_1",
+              "displayName": "Inglés 1"
+            },
+            {
+              "code": "ingles_2",
+              "displayName": "Inglés 2"
+            },
+            {
+              "code": "ingles_3",
+              "displayName": "Inglés 3"
+            },
+            {
+              "code": "instagram_emprendedores",
+              "displayName": "Instagram para Emprendedores"
+            },
+            {
+              "code": "introduccion_catering",
+              "displayName": "Introducción al Catering"
+            },
+            {
+              "code": "introduccion_criptomonedas",
+              "displayName": "Introducción a las Criptomonedas"
+            },
+            {
+              "code": "introduccion_ecommerce",
+              "displayName": "Introducción al Ecommerce"
+            },
+            {
+              "code": "maquillaje_profesional",
+              "displayName": "Maquillaje Profesional"
+            },
+            {
+              "code": "marketing_digital",
+              "displayName": "Marketing Digital"
+            },
+            {
+              "code": "nutricion_alimentacion",
+              "displayName": "Nutrición y Alimentación Saludable"
+            },
+            {
+              "code": "oratoria",
+              "displayName": "Oratoria"
+            },
+            {
+              "code": "organizacion_baby_shower",
+              "displayName": "Organización de Baby Shower"
+            },
+            {
+              "code": "organizador_eventos_sociales",
+              "displayName": "Organizador Profesional de Eventos Sociales"
+            },
+            {
+              "code": "paisajismo_jardineria",
+              "displayName": "Paisajismo y Jardinería"
+            },
+            {
+              "code": "publicidad_redes_sociales",
+              "displayName": "Publicidad en Redes Sociales"
+            },
+            {
+              "code": "redes_informaticas",
+              "displayName": "Redes Informáticas"
+            },
+            {
+              "code": "reparacion_celulares",
+              "displayName": "Reparación de Celulares"
+            },
+            {
+              "code": "sushi_principiantes",
+              "displayName": "Sushi para Principiantes"
+            },
+            {
+              "code": "unas_gelificadas",
+              "displayName": "Uñas Gelificadas"
+            },
+            {
+              "code": "vino_cata_maridaje",
+              "displayName": "Introducción al Vino, la Cata y el Maridaje"
+            }
+          ],
+          "selectedOfferingFacts": [
+            {
+              "id": "knowledge-source:7c728d8e-b21b-4001-8073-99322ae80a7a",
+              "kind": "offering_syllabus",
+              "value": "Curso: Fotografía Profesional.\nFuente oficial: programa StudyX, página 7 de 10.\nClase 1: Introducción. Tipos de cámaras\ndigitales. Tipos de visores.\nClase 2: Aprendiendo a leer una cámara réflex\no mirrorless. Valor de exposición (EV) y\nfotómetro. El sensor digital.\nClase 3: Sensibilidad / Velocidad de ISO\nClase 4: Obturador. Tiempo de exposición o\nvelocidad de obturación.\nClase 5: Apertura de diafragma. Profundidad\nde campo. Modificadores de profundidad de\ncampo.\nClase 6: Distancia focal. Tamaño del sensor y\nsu relación con la distancia focal\nClase 7: Lente / Objetivo. Categorías de lentes.\nClase 8: Sistema de enfoque y medición.\nZona de Medición. Zonas de enfoque. Modos\nde enfoque.\nClase 9: Balance de Blancos (White Balance\n‘WB’). Balance de Blancos y Zona de\nMedición.\nClase 10: Histograma. Formato y calidad de\nimagen. RAW, JPEG y TIFF.\nClase 11: Composición. Secuencia de\nFibonacci.\nTemario Fotografía\nProfesional\nPrograma completo: https://mystudyx.com/diplomado/fotografia-profesional/"
+            },
+            {
+              "id": "knowledge-source:6de68ecc-89d6-4733-8e06-d1f7ee2eb6e7",
+              "kind": "offering_syllabus",
+              "value": "Curso: Fotografía Profesional.\nFuente oficial: programa StudyX, página 8 de 10.\nClase 12: Otras formas de componer.\nClase 13: Retrato. Equipo. Lentes para retrato\n– Pros y contras. Fijo o Zoom.\nClase 14: Planos de recorte. Ángulos de toma.\nClase 15: Compresión de planos.\nClase 16: Consejos y tips para retratos.\nClase 17: Flash. Flash de Zapata. Temperatura\nde la luz. Ventajas y desventajas del flash.\nModos de disparo.\nClase 18: Velocidad de sincronización de flash\n(hss/fp). Remotos y radios para flashes.\nClase 19: Difusores y accesorios de flash.\nAccesorios flash “pop-up” o rebatible.\nAccesorios flash de zapata o speedlight.\nAccesorios flash estudio o con montura.\nClase 20: Filtros para lentes. Tipos de filtros.\nStep-Up (ampliadores) y Step-Down\n(reductores).\nClase 21: Barrido / Panning. Zooming.\nClase 22: Trípodes. Monopie. Patas o topes.\nClase 23: Disparadores de cámara. Disparador\nPrograma completo: https://mystudyx.com/diplomado/fotografia-profesional/"
+            },
+            {
+              "id": "knowledge-source:116d901b-b934-4a06-80b9-2fd37fa6fde5",
+              "kind": "offering_syllabus",
+              "value": "Curso: Fotografía Profesional.\nFuente oficial: programa StudyX, página 8 de 10.\ncableado. Disparador inalámbrico por\ninfrarrojo. Disparadores inalámbricos por\nradio. Intervalómetro.\nTemario Fotografía\nProfesional\nPrograma completo: https://mystudyx.com/diplomado/fotografia-profesional/"
+            },
+            {
+              "id": "knowledge-source:730af5c4-a96c-4955-8f1c-b7e125d6aa90",
+              "kind": "offering_syllabus",
+              "value": "Curso: Fotografía Profesional.\nFuente oficial: programa StudyX, página 9 de 10.\nClase 24: Campañas publicitarias. Constantes\ny variables.\nClase 25: Segmentación de público. Tabla\nABC tradicional / Pirámide salarial. Tabla ABC\npor segmentación de clientes. Tabla VALS /\nValores y actitudes. Innovadores. Pensadores.\nCreyentes. Triunfadores. Esforzados. Vividores\nde experiencias. Realizados. Supervivientes.\nClase 26: Edición de video. Formato.\nResolución. Calidad. Cuadros por segundo.\nClase 27: CC - Lightroom\nClase 28: Biblioteca y metadatos\nClase 29: Paneles Módulo Revelar\nClase 30: Ajustes básicos\nClase 31: Quitar manchas y ojos rojos\nClase 32: Filtros degradado y puntual\nClase 33: Exportación y calidades\nClase 34: Premiere – Introducción\nClase 35: Sincronizar audio y video\nClase 36: Agregado de música- efectos y\ncortes\nClase 37: Exportar y renderizado\nClase 38: Photoshop - Introducción\nClase 39: Maquillaje digital\nPrograma completo: https://mystudyx.com/diplomado/fotografia-profesional/"
+            },
+            {
+              "id": "knowledge-source:d1da08f4-382f-4acf-9b78-ee5729cf61ba",
+              "kind": "offering_syllabus",
+              "value": "Curso: Fotografía Profesional.\nFuente oficial: programa StudyX, página 9 de 10.\nClase 40: Cambio de color de ojo\nClase 41: Collage fotoproducto\nClase 42: Examen Final\nTemario Fotografía\nProfesional\nPrograma completo: https://mystudyx.com/diplomado/fotografia-profesional/"
+            }
+          ],
+          "callRequirements": [
+            "nombre",
+            "apellido",
+            "correo",
+            "telefono"
+          ],
+          "profileRequestedFields": [],
+          "activeCourses": [],
+          "activeCourseNames": [],
+          "mayOfferCall": true,
+          "courseBonus": {
+            "enabled": true,
+            "maxBonusCourses": 3,
+            "mayOfferBonus": false,
+            "status": "checkin_available"
+          },
+          "priceObjectionMemory": {
+            "present": false,
+            "sourceMessageIds": [],
+            "priorSourceMessageIds": []
+          },
+          "workflow": {
+            "commitSucceeded": true,
+            "status": "waiting_user",
+            "errorCode": null,
+            "finalBackendDecisionError": null
+          }
+        },
+        {
+          "response": "No quiero suponer algo incorrecto. Dime qué necesitas o a qué curso te refieres y lo resolvemos por aquí.",
+          "move": "ask_course_information",
+          "secondaryMoves": [],
+          "proposedAction": {
+            "type": "none"
+          },
+          "backendAction": null,
+          "backendRejections": [
+            {
+              "schema_version": 1,
+              "rejection_id": "220435d8-faa8-4631-81ea-7812c642aaf9",
+              "attempt": 1,
+              "rejections": [
+                {
+                  "code": "FACT_VALUE_MISMATCH",
+                  "subject": "course_logistics"
+                },
+                {
+                  "code": "FACT_VALUE_MISMATCH",
+                  "subject": "course_logistics.self_paced"
+                }
+              ],
+              "authorized_alternatives": {
+                "fact_ids": [
+                  "offering:fotografia_profesional:name:v1",
+                  "offering:fotografia_profesional:description:v1",
+                  "offering:fotografia_profesional:duration:v1",
+                  "offering:fotografia_profesional:modality:v1",
+                  "payment:fotografia_profesional:monthly_12:label:v1",
+                  "payment:fotografia_profesional:monthly_12:price:v1",
+                  "payment:fotografia_profesional:monthly_6:label:v1",
+                  "payment:fotografia_profesional:monthly_6:price:v1",
+                  "payment:fotografia_profesional:one_time:label:v1",
+                  "payment:fotografia_profesional:one_time:price:v1",
+                  "offering:aires_acondicionados:name:v1",
+                  "offering:armado_reparacion_pc:name:v1",
+                  "offering:autocad_interiores:name:v1",
+                  "offering:camaras_seguridad:name:v1",
+                  "offering:coaching_liderazgo:name:v1",
+                  "offering:community_manager:name:v1",
+                  "offering:comunicacion_interna_empresas:name:v1",
+                  "offering:decoracion_de_interiores:name:v1",
+                  "offering:diseno_corel_draw:name:v1",
+                  "offering:diseno_illustrator:name:v1",
+                  "offering:diseno_photoshop:name:v1",
+                  "offering:energia_solar_fotovoltaica:name:v1",
+                  "offering:entrenamiento_funcional:name:v1",
+                  "offering:especialista_marketing:name:v1",
+                  "offering:especialista_ventas:name:v1",
+                  "offering:estrategias_emprender:name:v1",
+                  "offering:excel_integral:name:v1",
+                  "offering:fotografia_celulares_tiendas_online:name:v1",
+                  "offering:fotografia_profesional:name:v1",
+                  "offering:influencers_creadores_contenidos:name:v1",
+                  "offering:ingles_1:name:v1",
+                  "offering:ingles_2:name:v1",
+                  "offering:ingles_3:name:v1",
+                  "offering:instagram_emprendedores:name:v1",
+                  "offering:introduccion_catering:name:v1",
+                  "offering:introduccion_criptomonedas:name:v1",
+                  "offering:introduccion_ecommerce:name:v1",
+                  "offering:maquillaje_profesional:name:v1",
+                  "offering:marketing_digital:name:v1",
+                  "offering:nutricion_alimentacion:name:v1",
+                  "offering:oratoria:name:v1",
+                  "offering:organizacion_baby_shower:name:v1",
+                  "offering:organizador_eventos_sociales:name:v1",
+                  "offering:paisajismo_jardineria:name:v1",
+                  "offering:publicidad_redes_sociales:name:v1",
+                  "offering:redes_informaticas:name:v1",
+                  "offering:reparacion_celulares:name:v1",
+                  "offering:sushi_principiantes:name:v1",
+                  "offering:unas_gelificadas:name:v1",
+                  "offering:vino_cata_maridaje:name:v1",
+                  "area:academia-de-oficios:name:v1",
+                  "area:academia-de-diseno-informatico:name:v1",
+                  "area:academia-de-negocios:name:v1",
+                  "area:academia-de-marketing:name:v1",
+                  "area:academia-de-emprendedores:name:v1",
+                  "area:academia-de-salud-y-bienestar:name:v1",
+                  "area:academia-cultural:name:v1",
+                  "area:academia-gastronomica:name:v1",
+                  "area:academia-de-moda-y-belleza:name:v1",
+                  "payment:fotografia_profesional:monthly_12:label:v1",
+                  "payment:fotografia_profesional:monthly_6:label:v1",
+                  "payment:fotografia_profesional:one_time:label:v1",
+                  "payment-test:stripe_verification_050:label:v1"
+                ],
+                "actions": [
+                  "none",
+                  "send_test_payment_link"
+                ],
+                "missing_information": [
+                  "nombre",
+                  "apellido",
+                  "correo",
+                  "telefono"
+                ]
+              }
+            }
+          ],
+          "state": {
+            "selectedCourse": null,
+            "stage": "exploring",
+            "awaitingReply": "none",
+            "plan": null,
+            "promotion": {
+              "status": null,
+              "bonusCount": 0,
+              "paidCourse": null,
+              "bonusCourses": []
+            }
+          },
+          "deliveredLinks": [],
+          "authorizedFactIds": [
+            "offering:fotografia_profesional:name:v1",
+            "offering:fotografia_profesional:description:v1",
+            "offering:fotografia_profesional:duration:v1",
+            "offering:fotografia_profesional:modality:v1",
+            "payment:fotografia_profesional:monthly_12:label:v1",
+            "payment:fotografia_profesional:monthly_12:price:v1",
+            "payment:fotografia_profesional:monthly_6:label:v1",
+            "payment:fotografia_profesional:monthly_6:price:v1",
+            "payment:fotografia_profesional:one_time:label:v1",
+            "payment:fotografia_profesional:one_time:price:v1"
+          ],
+          "authorizedFacts": [
+            {
+              "id": "offering:fotografia_profesional:name:v1",
+              "kind": "offering_name",
+              "value": "Fotografía Profesional"
+            },
+            {
+              "id": "offering:fotografia_profesional:description:v1",
+              "kind": "offering_description",
+              "value": "Academia de Emprendedores. 41 clases. Este curso está apuntado a todo aquel que quiera conocer desde cero el proceso fotográfico actual, con esto nos referimos al digital."
+            },
+            {
+              "id": "offering:fotografia_profesional:duration:v1",
+              "kind": "offering_duration",
+              "value": "41 clases"
+            },
+            {
+              "id": "offering:fotografia_profesional:modality:v1",
+              "kind": "offering_modality",
+              "value": "online"
+            },
+            {
+              "id": "payment:fotografia_profesional:monthly_12:label:v1",
+              "kind": "payment_plan_label",
+              "value": "12 pagos mensuales de USD 30"
+            },
+            {
+              "id": "payment:fotografia_profesional:monthly_12:price:v1",
+              "kind": "payment_plan_price",
+              "value": "USD 360.00"
+            },
+            {
+              "id": "payment:fotografia_profesional:monthly_6:label:v1",
+              "kind": "payment_plan_label",
+              "value": "6 pagos mensuales de USD 60"
+            },
+            {
+              "id": "payment:fotografia_profesional:monthly_6:price:v1",
+              "kind": "payment_plan_price",
+              "value": "USD 360.00"
+            },
+            {
+              "id": "payment:fotografia_profesional:one_time:label:v1",
+              "kind": "payment_plan_label",
+              "value": "Pago único de USD 360"
+            },
+            {
+              "id": "payment:fotografia_profesional:one_time:price:v1",
+              "kind": "payment_plan_price",
+              "value": "USD 360.00"
+            }
+          ],
+          "usedFactIds": [
+            "offering:fotografia_profesional:duration:v1",
+            "offering:fotografia_profesional:modality:v1"
+          ],
+          "availableOfferings": [
+            {
+              "code": "aires_acondicionados",
+              "displayName": "Instalación de Aires Acondicionados"
+            },
+            {
+              "code": "armado_reparacion_pc",
+              "displayName": "Armado y Reparación de PC"
+            },
+            {
+              "code": "autocad_interiores",
+              "displayName": "AutoCAD orientado al Diseño de Interiores"
+            },
+            {
+              "code": "camaras_seguridad",
+              "displayName": "Instalación y Configuración de Cámaras de Seguridad"
+            },
+            {
+              "code": "coaching_liderazgo",
+              "displayName": "Coaching y Liderazgo"
+            },
+            {
+              "code": "community_manager",
+              "displayName": "Community Manager"
+            },
+            {
+              "code": "comunicacion_interna_empresas",
+              "displayName": "Comunicación Interna en Empresas"
+            },
+            {
+              "code": "decoracion_de_interiores",
+              "displayName": "Decoración de Interiores"
+            },
+            {
+              "code": "diseno_corel_draw",
+              "displayName": "Diseño Gráfico con Corel Draw"
+            },
+            {
+              "code": "diseno_illustrator",
+              "displayName": "Diseño Gráfico con Illustrator"
+            },
+            {
+              "code": "diseno_photoshop",
+              "displayName": "Diseño Gráfico con Photoshop"
+            },
+            {
+              "code": "energia_solar_fotovoltaica",
+              "displayName": "Energía Solar Fotovoltaica"
+            },
+            {
+              "code": "entrenamiento_funcional",
+              "displayName": "Entrenamiento Funcional"
+            },
+            {
+              "code": "especialista_marketing",
+              "displayName": "Especialista en Marketing"
+            },
+            {
+              "code": "especialista_ventas",
+              "displayName": "Especialista en Ventas"
+            },
+            {
+              "code": "estrategias_emprender",
+              "displayName": "Estrategias para Emprender"
+            },
+            {
+              "code": "excel_integral",
+              "displayName": "Excel Integral"
+            },
+            {
+              "code": "fotografia_celulares_tiendas_online",
+              "displayName": "Fotografía con Celulares para Tiendas Online"
+            },
+            {
+              "code": "fotografia_profesional",
+              "displayName": "Fotografía Profesional"
+            },
+            {
+              "code": "influencers_creadores_contenidos",
+              "displayName": "Influencers y Creadores de Contenidos"
+            },
+            {
+              "code": "ingles_1",
+              "displayName": "Inglés 1"
+            },
+            {
+              "code": "ingles_2",
+              "displayName": "Inglés 2"
+            },
+            {
+              "code": "ingles_3",
+              "displayName": "Inglés 3"
+            },
+            {
+              "code": "instagram_emprendedores",
+              "displayName": "Instagram para Emprendedores"
+            },
+            {
+              "code": "introduccion_catering",
+              "displayName": "Introducción al Catering"
+            },
+            {
+              "code": "introduccion_criptomonedas",
+              "displayName": "Introducción a las Criptomonedas"
+            },
+            {
+              "code": "introduccion_ecommerce",
+              "displayName": "Introducción al Ecommerce"
+            },
+            {
+              "code": "maquillaje_profesional",
+              "displayName": "Maquillaje Profesional"
+            },
+            {
+              "code": "marketing_digital",
+              "displayName": "Marketing Digital"
+            },
+            {
+              "code": "nutricion_alimentacion",
+              "displayName": "Nutrición y Alimentación Saludable"
+            },
+            {
+              "code": "oratoria",
+              "displayName": "Oratoria"
+            },
+            {
+              "code": "organizacion_baby_shower",
+              "displayName": "Organización de Baby Shower"
+            },
+            {
+              "code": "organizador_eventos_sociales",
+              "displayName": "Organizador Profesional de Eventos Sociales"
+            },
+            {
+              "code": "paisajismo_jardineria",
+              "displayName": "Paisajismo y Jardinería"
+            },
+            {
+              "code": "publicidad_redes_sociales",
+              "displayName": "Publicidad en Redes Sociales"
+            },
+            {
+              "code": "redes_informaticas",
+              "displayName": "Redes Informáticas"
+            },
+            {
+              "code": "reparacion_celulares",
+              "displayName": "Reparación de Celulares"
+            },
+            {
+              "code": "sushi_principiantes",
+              "displayName": "Sushi para Principiantes"
+            },
+            {
+              "code": "unas_gelificadas",
+              "displayName": "Uñas Gelificadas"
+            },
+            {
+              "code": "vino_cata_maridaje",
+              "displayName": "Introducción al Vino, la Cata y el Maridaje"
+            }
+          ],
+          "selectedOfferingFacts": [],
+          "callRequirements": [
+            "nombre",
+            "apellido",
+            "correo",
+            "telefono"
+          ],
+          "profileRequestedFields": [],
+          "activeCourses": [],
+          "activeCourseNames": [],
+          "mayOfferCall": true,
+          "courseBonus": {
+            "enabled": true,
+            "maxBonusCourses": 3,
+            "mayOfferBonus": false,
+            "status": "checkin_available"
+          },
+          "priceObjectionMemory": {
+            "present": false,
+            "sourceMessageIds": [],
+            "priorSourceMessageIds": []
+          },
+          "workflow": {
+            "commitSucceeded": true,
+            "status": "waiting_user",
+            "errorCode": null,
+            "finalBackendDecisionError": null
+          }
+        }
+      ]
+    }
+  ]
+}

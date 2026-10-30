@@ -398,6 +398,38 @@ run('atomic direct bonus service', () => {
     expect(await offerDirectCourseBonusV1(db!,first)).toMatchObject({ok:true,offer_version:1,outbound_message_id:first.outbound.id});
   });
 
+  it('delivers a second and third bonus, refuses a fourth, and cancels the open package when the paid course changes',async()=>{
+    const f=await fixture();
+    vi.stubEnv('COURSE_BONUS_MAX_COURSES','3');
+
+    const first=f.input();
+    expect(await offerDirectCourseBonusV1(db!,first)).toMatchObject({ok:true,offer_version:1});
+    await f.deliver(first.outbound.id);
+
+    const second=f.input(await f.inbound(2),2,1);
+    expect(await offerDirectCourseBonusV1(db!,second)).toMatchObject({ok:true,offer_version:2});
+    await f.deliver(second.outbound.id);
+
+    const third=f.input(await f.inbound(3),3,2);
+    expect(await offerDirectCourseBonusV1(db!,third)).toMatchObject({ok:true,offer_version:3});
+    await f.deliver(third.outbound.id);
+
+    const fourth=f.input(await f.inbound(4),4,3);
+    expect(await offerDirectCourseBonusV1(db!,fourth)).toEqual({ok:false,reason:'bonus_limit_reached'});
+    expect((await db!`SELECT count(*)::int AS count FROM promotion_offer_bonus_offerings
+      WHERE offer_id=(SELECT id FROM promotion_offers WHERE promotion_cycle_id=${f.identity.promotion_cycle_id})`)[0].count).toBe(3);
+    expect((await db!`SELECT offer_version,status FROM promotion_offers
+      WHERE promotion_cycle_id=${f.identity.promotion_cycle_id}`)[0]).toEqual({offer_version:3,status:'offered'});
+
+    expect(await cancelOpenCourseBonusOffersForCourseChangeV1(db!,{
+      ...f.identity,
+      selected_offering_code:f.courses[4].code as string,
+    })).toBe(1);
+    expect((await db!`SELECT status,cancel_reason FROM promotion_offers
+      WHERE promotion_cycle_id=${f.identity.promotion_cycle_id}`)[0])
+      .toEqual({status:'cancelled',cancel_reason:'CUSTOMER_CHANGED_COURSE'});
+  });
+
   it('persists one durable result, replays exactly, seals delivered current version and preserves accepted obligations', async () => {
     const f=await fixture();const input=f.input();
     const result=await offerDirectCourseBonusV1(db!,input);
