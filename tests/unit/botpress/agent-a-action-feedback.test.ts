@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { continueAgentAAfterActionFeedbackV1, continuationCallOfferAuthorizedV1, fencedAgentARequestV1, plannerlessActionFeedbackV1 } from '../../../botpress-agent/src/lib/conversation/agent-a-action-feedback';
+import { authorizedPromotionActionsV1, continueAgentAAfterActionFeedbackV1, continuationCallOfferAuthorizedV1, fencedAgentARequestV1, plannerlessActionFeedbackV1 } from '../../../botpress-agent/src/lib/conversation/agent-a-action-feedback';
 import type { AgentAContextV1 } from '../../../botpress-agent/src/schemas/agent-a-brain';
 
 function context(): AgentAContextV1 {
@@ -96,6 +96,93 @@ describe('Agent A conversation from action feedback', () => {
 
     expect(rejection.authorized_alternatives.actions)
       .toEqual(['none', 'request_promotion_review']);
+  });
+
+  it('retains a direct bonus effect while Agent A repairs only its rejected wording', () => {
+    const current = context();
+    current.capabilities.course_bonus = {
+      status: 'offer_available',
+      enabled: true,
+      max_bonus_courses: 3,
+      may_offer_bonus: true,
+      may_schedule_checkin: false,
+      may_request_review: false,
+      may_accept_offer: true,
+      may_send_promoted_payment: false,
+      promotion_code: 'PROMO-DIRECT',
+      promotion_cycle_id: '00000000-0000-4000-8000-000000000002',
+      offer_version: 1,
+      interest_offering_code: 'fotografia_profesional',
+      bonus_offerings: [{
+        code: 'fotografia_celulares_tiendas_online',
+        display_name: 'Fotografía con Celulares para Tiendas Online',
+        position: 1,
+      }],
+    };
+
+    expect(authorizedPromotionActionsV1(current)).toEqual([
+      'none',
+      'offer_course_bonus',
+      'accept_promotion',
+    ]);
+  });
+
+  it('allows the corrected direct bonus effect through the bounded continuation', async () => {
+    const current = context();
+    current.commercial_state.selected_offering_code = 'fotografia_profesional';
+    current.commercial_state.call_preference = 'declined';
+    current.commercial_state.call_offer_status = 'declined';
+    current.catalog.available_offerings = [{
+      code: 'diseno_photoshop',
+      display_name: 'Diseño Gráfico con Photoshop',
+      area_code: 'diseno',
+      fact_id: 'offering:diseno_photoshop:name:v1',
+    }];
+    current.capabilities.course_bonus = {
+      status: 'offer_available', enabled: true, max_bonus_courses: 3,
+      may_offer_bonus: true, may_schedule_checkin: false, may_request_review: false,
+      may_accept_offer: true, may_send_promoted_payment: false,
+      promotion_code: 'PROMO-DIRECT',
+      promotion_cycle_id: '00000000-0000-4000-8000-000000000002',
+      offer_version: 1, interest_offering_code: 'fotografia_profesional',
+      bonus_offerings: [{
+        code: 'fotografia_celulares_tiendas_online',
+        display_name: 'Fotografía con Celulares para Tiendas Online',
+        position: 1,
+      }],
+      delivered_bonus_offerings: [{
+        code: 'fotografia_celulares_tiendas_online',
+        display_name: 'Fotografía con Celulares para Tiendas Online',
+        position: 1,
+      }],
+    };
+    const rejection = {
+      schema_version: 1 as const,
+      rejection_id: '00000000-0000-4000-8000-000000000003',
+      attempt: 1 as const,
+      rejections: [{ code: 'FACT_VALUE_MISMATCH' as const, subject: 'forbidden_promise' }],
+      authorized_alternatives: {
+        fact_ids: [], actions: authorizedPromotionActionsV1(current), missing_information: [],
+      },
+    };
+    const draft = reply('Te sumo Diseño Gráfico con Photoshop sin costo extra.');
+    const authored = { ...draft, proposal: {
+      ...draft.proposal,
+      proposed_action: {
+        type: 'offer_course_bonus' as const,
+        interest_offering_code: 'fotografia_profesional',
+        bonus_offering_code: 'diseno_photoshop',
+      },
+      repair_of: { rejection_id: rejection.rejection_id, attempt: 1 as const },
+    } };
+
+    const result = await continueAgentAAfterActionFeedbackV1({
+      context: current, rejection, effects_allowed: true,
+      apiKey: 'fixture', signal: new AbortController().signal,
+      model: 'deepseek-v4-flash', generate: vi.fn(async () => authored),
+    });
+
+    expect(result.proposal.proposed_action).toEqual(authored.proposal.proposed_action);
   });
 
   it('preserves Agent A payment intent while fencing the physical effect', async () => {

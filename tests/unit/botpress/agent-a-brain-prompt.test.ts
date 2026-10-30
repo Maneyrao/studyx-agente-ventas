@@ -183,6 +183,7 @@ describe('Agent A Brain prompt', () => {
 
   it('guides a direct expansion without legacy review wording or hidden course names', () => {
     const current = context();
+    current.commercial_state.call_offer_count = 1;
     current.turn.batch_messages = [{ id: 'm2', text: 'Me sigue pareciendo caro' }];
     current.turn.recent_turns = [{ id: 'm1', direction: 'inbound', content: 'Es caro' }];
     current.capabilities.course_bonus = {
@@ -202,6 +203,26 @@ describe('Agent A Brain prompt', () => {
     expect(guidance).toContain('delivered_bonus_offerings');
     expect(guidance).not.toContain('request_promotion_review');
     expect(guidance).toContain('Inspect recent delivered turns');
+    expect(guidance).not.toContain('do not use offer_course_bonus in this turn');
+  });
+
+  it('keeps the canonical call rung ahead of a technically available direct bonus', () => {
+    const current = context();
+    current.turn.batch_messages = [{ id: 'm2', text: 'Me sigue pareciendo caro' }];
+    current.turn.recent_turns = [{ id: 'm1', direction: 'inbound', content: 'Es caro' }];
+    current.capabilities.course_bonus = {
+      enabled: true, max_bonus_courses: 3, may_offer_bonus: true,
+      status: 'offer_available', may_schedule_checkin: false, may_request_review: false,
+      may_accept_offer: false, may_send_promoted_payment: false,
+      promotion_code: null, interest_offering_code: 'redes-informaticas',
+      bonus_offerings: [], delivered_bonus_offerings: [],
+    };
+
+    const guidance = courseBonusEffectContract(buildAgentABrainInstructionsV1(current));
+
+    expect(guidance).toContain('Do not use offer_course_bonus in this turn');
+    expect(guidance).toContain('complete the call rung first');
+    expect(guidance).toContain('use proposed_action=none');
   });
 
   it('makes checkout, accepted-call and bonus sequencing an explicit final consistency check', () => {
@@ -249,7 +270,7 @@ describe('Agent A Brain prompt', () => {
     expect(JSON.parse(encoded)).toEqual(current);
     expect(instructions).not.toContain('<current_turn_guidance>');
     expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v101');
-    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v140');
+    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v141');
   });
 
   it('does not override the authority price ladder with a second commercial strategy', () => {
@@ -572,6 +593,8 @@ describe('Agent A Brain prompt', () => {
     expect(repair).toContain('Online alone does not authorize self-paced study or access from any location');
     expect(repair).toContain('Omit those logistics claims unless their exact values appear in authorized facts');
     expect(repair).toContain('Answer the customer from the remaining verified course facts');
+    expect(repair).toContain('Preserve the already resolved course reference');
+    expect(repair).toContain('Never ask which course the customer means');
   });
 
   it('applies Lisandro voice after context and repair without changing the structured contract', () => {

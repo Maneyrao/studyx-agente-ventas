@@ -80,7 +80,7 @@ import {
 } from '../lib/conversation/agent-a-attempt'
 import { resolveAgentAProposalV1 } from '../lib/conversation/resolve-agent-a-proposal'
 import { resolveAgentAPlannerlessProposalV2 } from '../lib/conversation/resolve-agent-a-plannerless'
-import { continueAgentAAfterActionFeedbackV1, fencedAgentARequestV1, plannerlessActionFeedbackV1 } from '../lib/conversation/agent-a-action-feedback'
+import { authorizedPromotionActionsV1, continueAgentAAfterActionFeedbackV1, fencedAgentARequestV1, plannerlessActionFeedbackV1 } from '../lib/conversation/agent-a-action-feedback'
 import { evaluateCallOfferTurnPolicyV1 } from '../lib/conversation/call-offer-turn-policy'
 import type { AgentATurnProposalV1 } from '../schemas/agent-a-brain'
 import type { AgentATurnCommitV2 } from '../schemas/agent-turn-v2'
@@ -505,14 +505,11 @@ function backendCommitTurnRejectionV1(input: {
     ...input.context.catalog.payment_plans.map((plan) => plan.fact_id),
     ...(input.context.catalog.test_payment_options?.map((option) => option.fact_id) ?? []),
   ]
-  const actions = ['none']
+  const actions = authorizedPromotionActionsV1(input.context)
   const promotionAcceptancePending = input.context.capabilities.course_bonus?.may_accept_offer === true
   if (input.context.capabilities.may_send_payment_link && !promotionAcceptancePending) {
     actions.push('send_payment_link')
   }
-  if (input.context.capabilities.course_bonus?.may_schedule_checkin) actions.push('schedule_price_objection_checkin')
-  if (input.context.capabilities.course_bonus?.may_request_review) actions.push('request_promotion_review')
-  if (input.context.capabilities.course_bonus?.may_accept_offer) actions.push('accept_promotion')
   if ((input.context.catalog.test_payment_options?.length ?? 0) > 0) actions.push('send_test_payment_link')
   if (input.context.capabilities.may_request_call_now) actions.push('request_call_now')
   const rejectedActions = new Set(mapped.flatMap((reason) => (

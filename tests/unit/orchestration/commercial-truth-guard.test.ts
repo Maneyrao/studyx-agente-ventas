@@ -41,6 +41,7 @@ it.each([
   ['Puedo sumarte Fotografía con Celulares para Tiendas Online sin costo extra: te sirve para producir imágenes para tiendas.', true],
   ['A Fotografía Profesional te sumo Fotografía con Celulares para Tiendas Online, sin costo extra: te sirve para cubrir también las fotos rápidas que piden las tiendas.', true],
   ['Ya te sumé Fotografía con Celulares para Tiendas Online sin costo extra, y eso sigue en pie: podés usarlo para fotos de producto.', true],
+  ['Ya tenés sumado Fotografía con Celulares para Tiendas Online sin costo extra, así cubrís también las fotos de producto.', true],
   ['Te sumo Fotografía con Celulares para Tiendas Online sin costo extra, para complementar, y te regalo Astrología.', false],
 ])('validates the complete gift object without gifting its paid-course condition: %s', (content, allowed) => {
   const result=enforce(content as string,{...CANONICAL,

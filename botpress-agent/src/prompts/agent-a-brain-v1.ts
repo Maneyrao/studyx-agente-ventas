@@ -6,7 +6,7 @@ import {
 import { resolveCanonicalPromptIdentityV1 } from './agent-a-identity';
 import { evaluateSalesObjectionTurnV1 } from '../lib/conversation/sales-objection-turn-policy';
 
-export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v140' as const;
+export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v141' as const;
 
 /**
  * Runtime contract only. The sales behavior lives in the canonical prompt so
@@ -73,7 +73,8 @@ For an unresolved or non-canonical offering, remove that offering claim complete
   const courseLogisticsRepair = repairsCourseLogistics ? `
 Online alone does not authorize self-paced study or access from any location.
 Omit those logistics claims unless their exact values appear in authorized facts.
-Answer the customer from the remaining verified course facts; do not replace the rejected detail with another inferred logistical promise.` : '';
+Answer the customer from the remaining verified course facts; do not replace the rejected detail with another inferred logistical promise.
+Preserve the already resolved course reference and the customer's exact question. When an authorized duration, syllabus or modality fact answers it, answer that fact directly. Never ask which course the customer means when catalog.selected_offering, catalog.candidate_offerings or the recent delivered exchange already resolves it.` : '';
   const repairsForbiddenPromise = rejection.rejections.some(reason => (
     reason.code === 'FACT_VALUE_MISMATCH' && reason.subject === 'forbidden_promise'
   ));
@@ -131,9 +132,15 @@ function currentCommercialGuidanceDirectiveV1(context: AgentAContextV1): string 
   const promotionReviewGuidance = courseBonus?.may_request_review
     ? `Do not merely repeat the price, installment amounts or class count. Say naturally that you will check an alternative and use proposed_action=request_promotion_review.${selectedBonusDirective} The review is the authorized next step: do not name or imply a specific gift yet.`
     : null;
+  const callRungStillPending = context.capabilities.may_offer_call === true
+    && context.commercial_state.call_offer_count === 0
+    && context.commercial_state.call_offer_status === 'not_offered'
+    && context.commercial_state.call_preference === 'unknown';
   const directBonusGuidance = hasDirectBonusContextV1(context)
     ? courseBonus?.enabled===true && courseBonus.may_offer_bonus===true
-      ? `The effect offer_course_bonus is currently authorized, but this capability does not prove that the negotiation ladder reached the bonus rung. Inspect recent delivered turns and follow the literal ladder in canonical_sales_behavior one rung at a time; only a delivered assistant reply counts as a completed rung, never a rejected attempt. If canonical_sales_behavior chooses the bonus effect now, use exactly one new active catalog code that differs from the paid course and every delivered_bonus_offerings entry. Keep the paid course price unchanged, respect max_bonus_courses, and include the same course in the customer-facing package recap. A later offer requires a customer reply after confirmed delivery. The backend validates the effect and package identity; this block does not choose the sales strategy or rung.`
+      ? callRungStillPending
+        ? `The effect offer_course_bonus is currently authorized, but durable call state proves rung 4 has not been delivered. Inspect recent delivered turns: only a delivered assistant reply counts as a completed rung, never a rejected attempt. Do not use offer_course_bonus in this turn. Answer the current objection and complete the call rung first with one concrete, natural invitation; use proposed_action=none. Only the customer reply after that delivered invitation can advance to the bonus rung. This is the literal canonical_sales_behavior sequence, not a backend decision about sales quality.`
+        : `The effect offer_course_bonus is currently authorized, but this capability does not prove that the negotiation ladder reached the bonus rung and does not choose the sales strategy or rung. Inspect recent delivered turns and follow the literal ladder in canonical_sales_behavior one rung at a time; only a delivered assistant reply counts as a completed rung, never a rejected attempt. If canonical_sales_behavior chooses the bonus effect now, use exactly one new active catalog code that differs from the paid course and every delivered_bonus_offerings entry. Name that exact new course in the response, connect it to the stated goal, keep the paid course price unchanged, respect max_bonus_courses, and include the same course in the customer-facing package recap. A later offer requires a customer reply after confirmed delivery. The backend validates only the effect and package identity.`
       : `The effect offer_course_bonus is not currently authorized. Preserve the exact delivered_bonus_offerings package identity and do not repeat pending or rejected additions. This is an effect boundary, not a sales instruction.`
     : null;
   const effectGuidance = directBonusGuidance

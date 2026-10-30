@@ -37,7 +37,7 @@ const GIFT_DESCRIPTOR_BEFORE_EXPLANATION = new RegExp(
   `(?:,\\s*|\\s+)${GIFT_DESCRIPTOR_SOURCE}(?=\\s*(?:,|:|$))`,
   'u',
 );
-const GIFT_PREDICATE = /\b(regalo|regalamos|regala|regalarte|bonifico|bonificamos|bonifica|incluyo|incluimos|incluye|incluyen|incluir|inclui|sumo|sumamos|sumar|sumarte|sume|agrego|agregamos|agregar|agregue|ofrezco)\s+(.+)$/u;
+const GIFT_PREDICATE = /\b(regalo|regalamos|regala|regalarte|bonifico|bonificamos|bonifica|incluyo|incluimos|incluye|incluyen|incluir|inclui|sumo|sumamos|sumar|sumarte|sume|sumad[oa]|agrego|agregamos|agregar|agregue|ofrezco)\s+(.+)$/u;
 const EXPLANATION_BOUNDARY = /\s+para\s+|,\s*(?:que|para)\s+|:\s*(?=(?:te\s+sirve|para\b|porque\b|asi\b|que\b))/gu;
 
 function giftObject(clause: string, paidNames: readonly string[]): string | null {

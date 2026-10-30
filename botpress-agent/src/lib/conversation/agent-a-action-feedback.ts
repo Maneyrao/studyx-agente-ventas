@@ -14,6 +14,9 @@ export function authorizedPromotionActionsV1(context: AgentAContextV1): string[]
   const courseBonus = context.capabilities.course_bonus
   if (courseBonus?.may_schedule_checkin) actions.push('schedule_price_objection_checkin')
   if (courseBonus?.may_request_review) actions.push('request_promotion_review')
+  if (courseBonus?.enabled === true && courseBonus.may_offer_bonus === true) {
+    actions.push('offer_course_bonus')
+  }
   if (courseBonus?.may_accept_offer) actions.push('accept_promotion')
   return actions
 }
