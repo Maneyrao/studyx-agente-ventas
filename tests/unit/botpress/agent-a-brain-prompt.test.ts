@@ -203,6 +203,35 @@ describe('Agent A Brain prompt', () => {
     expect(guidance).not.toContain('request_promotion_review');
     expect(guidance).toContain('Inspect recent delivered turns');
   });
+
+  it('makes checkout, accepted-call and bonus sequencing an explicit final consistency check', () => {
+    const current = context();
+    current.turn.batch_messages = [{ id: 'm2', text: 'Sigue caro, si resolvemos eso avanzo' }];
+    current.turn.recent_turns = [
+      { id: 'm1', direction: 'outbound', content: 'Con este curso podés ofrecer el servicio que buscás.' },
+    ];
+    current.capabilities.course_bonus = {
+      enabled: true, max_bonus_courses: 3, may_offer_bonus: true,
+      status: 'checkin_available', may_schedule_checkin: false, may_request_review: false,
+      may_accept_offer: false, may_send_promoted_payment: false,
+      promotion_code: null, interest_offering_code: 'redes-informaticas',
+      bonus_offerings: [], delivered_bonus_offerings: [],
+    };
+
+    const instructions = buildAgentABrainInstructionsV1(current);
+    const check = instructions
+      .split('<execution_consistency_check>')[1]!
+      .split('</execution_consistency_check>')[0]!;
+
+    expect(check).toContain('primary move=request_call');
+    expect(check).toContain('summary confirmation only');
+    expect(check).toContain('payment_confirmation');
+    expect(check).toContain('payment_plan');
+    expect(check).toContain('offer_course_bonus');
+    expect(check).toContain('delivered assistant call invitation');
+    expect(check).toContain('bonus_offerings already contains');
+    expect(check).toContain('decline_purchase');
+  });
   it('makes phase identification and brevity an Agent A responsibility', () => {
     const instructions = buildAgentABrainInstructionsV1(context());
 
@@ -220,7 +249,7 @@ describe('Agent A Brain prompt', () => {
     expect(JSON.parse(encoded)).toEqual(current);
     expect(instructions).not.toContain('<current_turn_guidance>');
     expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v101');
-    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v139');
+    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v140');
   });
 
   it('does not override the authority price ladder with a second commercial strategy', () => {

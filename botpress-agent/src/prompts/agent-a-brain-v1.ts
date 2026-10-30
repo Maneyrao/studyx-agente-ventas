@@ -6,7 +6,7 @@ import {
 import { resolveCanonicalPromptIdentityV1 } from './agent-a-identity';
 import { evaluateSalesObjectionTurnV1 } from '../lib/conversation/sales-objection-turn-policy';
 
-export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v139' as const;
+export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v140' as const;
 
 /**
  * Runtime contract only. The sales behavior lives in the canonical prompt so
@@ -191,6 +191,16 @@ Do not narrate internal state or validation. Ask only when the conversation need
 Truthfulness, authorization and validation limits remain silent. Express the confirmed fact and a useful next step without defending your honesty or blaming the customer.
 </lisandro_voice_gate>`;
 
+const EXECUTION_CONSISTENCY_CHECK = `<execution_consistency_check>
+Before returning AgentATurnProposalV1, make response, move, profile metadata and proposed_action describe the same next step.
+- An accepted or requested call stays primary move=request_call while collecting contact data and while asking availability. provide_contact_details may be secondary, never the primary replacement for that live call intent.
+- When the current customer message supplies the final missing checkout contact fields, return the complete contact summary confirmation only. Ask whether those data are correct; do not ask for a payment plan in that same turn. A later confirmed payment_confirmation moves to ask_payment_options; a clear answer while awaiting payment_plan moves to select_payment_plan plus send_payment_link in the same turn.
+- A temporal pause such as “tengo que pensarlo” is not decline_purchase and never closes the sale. Ask what remains unresolved and keep the conversation open.
+- Before offer_course_bonus, inspect delivered assistant turns in chronological order. Capability may_offer_bonus is only effect permission. With no prior delivered bonus, require delivered evidence of personalized value, the USD 30 installment reframe, isolation/conditional close, and—when may_offer_call is true—a delivered assistant call invitation followed by the customer's reply. If the earliest required rung is missing, answer only that rung with proposed_action=none.
+- Once commercial_state.promotion.bonus_offerings already contains one or more delivered bonuses and the customer replied afterward with the same price objection, offer exactly one new complementary course with offer_course_bonus until max_bonus_courses. Never repeat an existing code; recap the paid course plus all prior bonuses and the one new course. At the maximum, offer none.
+- A rejected attempt is not a delivered rung or delivered bonus. Use only recent delivered assistant turns and commercial_state.promotion as proof.
+</execution_consistency_check>`;
+
 export function buildAgentABrainInstructionsV1(context: AgentAContextV1): string {
   const canonicalPrompt = context.identity === null
     ? STUDYX_AGENT_A_CANONICAL_PROMPT
@@ -219,5 +229,7 @@ ${currentCheckoutEffectContractV1(context)}
 
 ${mandatoryRepairDirectiveV1(context)}
 
-${LISANDRO_VOICE_GATE}`;
+${LISANDRO_VOICE_GATE}
+
+${EXECUTION_CONSISTENCY_CHECK}`;
 }

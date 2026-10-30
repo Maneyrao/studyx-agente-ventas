@@ -172,6 +172,8 @@ describe('Agent A Brain V1', () => {
       bonus_offering_code: 'fotografia_celulares_tiendas_online' };
     for (const [message, forbidden] of [
       ['Perfecto, seguimos por acá. Te sumo Fotografía con Celulares para Tiendas Online sin costo extra, para que puedas resolver fotos de producto. El precio de Fotografía Profesional no cambia.', false],
+      ['A Fotografía Profesional te sumo Fotografía con Celulares para Tiendas Online, sin costo extra: te sirve para cubrir también las fotos rápidas que piden las tiendas. El precio del curso principal sigue igual.', false],
+      ['Ya te sumé Fotografía con Celulares para Tiendas Online sin costo extra, y eso sigue en pie: podés usarlo para fotos de producto. El precio de Fotografía Profesional no cambia.', false],
       ['Te sumo Fotografía con Celulares para Tiendas Online sin costo extra: te sirve para producir imágenes para tiendas. Además te regalo Inglés 1.', true],
     ] as const) {
       const parsed = parseAgentATurnProposalV1(proposal({

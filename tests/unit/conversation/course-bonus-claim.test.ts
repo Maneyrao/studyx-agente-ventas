@@ -48,7 +48,11 @@ it.each([
   ['Te sumo Fotografía con Celulares para Tiendas Online sin costo extra, para que puedas resolver fotos de producto.', true],
   ['Te sumo Fotografía con Celulares para Tiendas Online sin costo extra: te sirve para producir imágenes para tiendas.', true],
   ['Puedo sumarte Fotografía con Celulares para Tiendas Online sin costo extra, para complementar el curso principal.', true],
+  ['A Fotografía Profesional te sumo Fotografía con Celulares para Tiendas Online, sin costo extra: te sirve para cubrir también las fotos rápidas que piden las tiendas.', true],
+  ['Junto con Fotografía Profesional te incluyo Fotografía con Celulares para Tiendas Online, sin costo extra: te sirve para producir imágenes de producto.', true],
+  ['Ya te sumé Fotografía con Celulares para Tiendas Online sin costo extra, y eso sigue en pie: podés usarlo para fotos de producto.', true],
   ['Te sumo Fotografía con Celulares para Tiendas Online sin costo extra, para que puedas resolver fotos, y además Inglés gratis.', false],
+  ['A Fotografía Profesional te sumo Fotografía con Celulares para Tiendas Online, sin costo extra, y además Inglés gratis.', false],
   ['Te sumo Fotografía con Celulares para Tiendas Online sin costo extra: te sirve para producir imágenes, y te regalo Astrología.', false],
 ])('consumes bounded gift scope and preserves ordinary clauses: %s', (content, allowed) => {
   expect(inspectCourseBonusClaimsV1({content:content as string,

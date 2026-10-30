@@ -31,8 +31,13 @@ const GIFT_TAIL_ASSERTION = /\b(?:regal\p{L}*|gratis|sin\s+(?:costo|cargo)|bonif
 const GIFT_TAIL_PREDICATE = /\b(?:regal\p{L}*|bonific\p{L}*|incluy\p{L}*|sum\p{L}*|agreg\p{L}*)\b/u;
 const GIFT_TAIL_ADDITIONAL_COURSE = /\b(?:(?:otro|un)\s+)?curso\s+(?:adicional|extra)\b/u;
 const GIFT_TAIL_PARALLEL_OBJECT = /\b(?:con|ademas|y)\s+[^,;]{1,120}\s+tambien\b/u;
-const GIFT_DESCRIPTOR = /\s+(?:de\s+regalo|gratis|sin\s+(?:costo|cargo)(?:\s+(?:adicional|extra))?|bonificad[oa]s?|incluid[oa]s?)\s*$/u;
-const GIFT_PREDICATE = /\b(regalo|regalamos|regala|regalarte|bonifico|bonificamos|bonifica|incluyo|incluimos|incluye|incluyen|incluir|sumo|sumamos|sumar|sumarte|agrego|agregamos|agregar|ofrezco)\s+(.+)$/u;
+const GIFT_DESCRIPTOR_SOURCE = '(?:de\\s+regalo|gratis|sin\\s+(?:costo|cargo)(?:\\s+(?:adicional|extra))?|bonificad[oa]s?|incluid[oa]s?)';
+const GIFT_DESCRIPTOR = new RegExp(`(?:,\\s*|\\s+)${GIFT_DESCRIPTOR_SOURCE}\\s*$`, 'u');
+const GIFT_DESCRIPTOR_BEFORE_EXPLANATION = new RegExp(
+  `(?:,\\s*|\\s+)${GIFT_DESCRIPTOR_SOURCE}(?=\\s*(?:,|:|$))`,
+  'u',
+);
+const GIFT_PREDICATE = /\b(regalo|regalamos|regala|regalarte|bonifico|bonificamos|bonifica|incluyo|incluimos|incluye|incluyen|incluir|inclui|sumo|sumamos|sumar|sumarte|sume|agrego|agregamos|agregar|agregue|ofrezco)\s+(.+)$/u;
 const EXPLANATION_BOUNDARY = /\s+para\s+|,\s*(?:que|para)\s+|:\s*(?=(?:te\s+sirve|para\b|porque\b|asi\b|que\b))/gu;
 
 function giftObject(clause: string, paidNames: readonly string[]): string | null {
@@ -73,6 +78,16 @@ function giftObject(clause: string, paidNames: readonly string[]): string | null
       // object scope; ordinary persuasion and plan alternatives are not
       // interpreted by this fact/effect guard.
       if (!assertsAnotherGift) object = object.slice(0, priceExplanation.index).trim();
+    }
+    const descriptorExplanation = object.match(GIFT_DESCRIPTOR_BEFORE_EXPLANATION);
+    if (descriptorExplanation?.index !== undefined) {
+      const descriptorEnd = descriptorExplanation.index + descriptorExplanation[0].length;
+      const tail = object.slice(descriptorEnd);
+      const assertsAnotherGift = GIFT_TAIL_ASSERTION.test(tail)
+        || GIFT_TAIL_PREDICATE.test(tail)
+        || GIFT_TAIL_ADDITIONAL_COURSE.test(tail)
+        || GIFT_TAIL_PARALLEL_OBJECT.test(tail);
+      if (!assertsAnotherGift) object = object.slice(0, descriptorEnd).trim();
     }
     return object.replace(GIFT_DESCRIPTOR, '').trim();
   }
