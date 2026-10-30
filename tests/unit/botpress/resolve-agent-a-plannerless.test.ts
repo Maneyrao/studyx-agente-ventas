@@ -2571,6 +2571,37 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
     });
   });
 
+  it('materializes the link when a canonical plan answers the durable payment-plan checkpoint', async () => {
+    const current = context();
+    current.turn.batch_messages[0].text = 'Prefiero las 12 cuotas';
+    current.commercial_state.selected_payment_plan = null;
+    current.commercial_state.awaiting_reply = 'payment_plan';
+    current.capabilities.may_send_payment_link = true;
+    current.capabilities.intake_missing = [];
+    const initial = generated(proposal({
+      move: {
+        schema_version: 1, move: 'select_payment_plan', secondary_moves: [], vetoes: [],
+        payment_plan: 'monthly_12', confidence: 1,
+      },
+      response: { messages: ['Perfecto, te comparto el enlace seguro.'], call_offer: null },
+      proposed_action: { type: 'none' },
+      used_fact_ids: [],
+    }));
+    const repair = vi.fn();
+
+    const result = await resolveAgentAPlannerlessProposalV2({
+      initial, context: current, repair_enabled: true, repair,
+      rejection_id: '00000000-0000-4000-8000-000000000001',
+    });
+
+    expect(repair).not.toHaveBeenCalled();
+    expect(result.effective.proposal.proposed_action).toEqual({
+      type: 'send_payment_link',
+      offering_code: 'maquillaje-profesional',
+      payment_plan: 'monthly_12',
+    });
+  });
+
   it('requires the agent to ask for a payment plan when a link is requested without one', async () => {
     const current = context();
     current.turn.batch_messages[0].text = 'Dale, mandame el link';

@@ -1888,6 +1888,97 @@ describe('plannerless Agent A authority', () => {
 
 // A pending intake carries link consent only after an explicit request.
 describe('payment link consent across intake', () => {
+  it('starts the checkout checkpoint when Agent A asks for payment contact data before a plan exists', () => {
+    const result = authorize({
+      customerText: 'Dale, quiero comprar Redes Informáticas',
+      state: state(),
+      proposal: proposal({
+        move: {
+          schema_version: 1, move: 'select_course', secondary_moves: [], vetoes: [],
+          course_reference: 'redes', confidence: 1,
+        },
+        response: { messages: ['Para avanzar, pasame nombre, apellido, correo y teléfono.'] },
+        profile_requests: [{
+          message_index: 0,
+          fields: ['nombre', 'apellido', 'correo', 'telefono'],
+          purpose: 'payment',
+          mode: 'collect',
+        }],
+      }),
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      action: { type: 'none' },
+      transition: {
+        selected_offering_code: 'redes_informaticas',
+        selected_payment_plan: null,
+        stage: 'course_selected',
+        awaiting_reply: 'contact_details',
+      },
+    });
+  });
+
+  it('moves completed payment intake to confirmation without requiring a selected plan', () => {
+    const result = authorize({
+      customerText: 'Soy Ana Pérez, ana@example.com, +5491112345678',
+      state: state({
+        selected_offering_code: 'redes_informaticas',
+        stage: 'course_selected',
+        awaiting_reply: 'contact_details',
+      }),
+      intake: completeIntake,
+      proposal: proposal({
+        move: {
+          schema_version: 1, move: 'provide_contact_details', secondary_moves: [], vetoes: [],
+          confidence: 1,
+        },
+        response: { messages: ['Te resumo los datos. ¿Están correctos?'] },
+      }),
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      action: { type: 'none' },
+      transition: {
+        selected_offering_code: 'redes_informaticas',
+        selected_payment_plan: null,
+        stage: 'course_selected',
+        awaiting_reply: 'payment_confirmation',
+      },
+    });
+  });
+
+  it('persists the payment-plan choice checkpoint after the customer confirms the data summary', () => {
+    const result = authorize({
+      customerText: 'Sí, están correctos',
+      state: state({
+        selected_offering_code: 'redes_informaticas',
+        stage: 'course_selected',
+        awaiting_reply: 'payment_confirmation',
+      }),
+      intake: completeIntake,
+      proposal: proposal({
+        move: {
+          schema_version: 1, move: 'ask_payment_options', secondary_moves: [], vetoes: [],
+          course_reference: 'redes_informaticas', confidence: 1,
+        },
+        response: { messages: ['¿Preferís 12 cuotas, 6 cuotas o un pago?'] },
+      }),
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      action: { type: 'none' },
+      transition: {
+        selected_offering_code: 'redes_informaticas',
+        selected_payment_plan: null,
+        stage: 'course_selected',
+        awaiting_reply: 'payment_plan',
+      },
+    });
+  });
+
   it.each(['continue_by_chat', 'decline_call'] as const)(
     'preserves explicit link consent while the customer chooses %s', (chatMove) => {
       const result = authorize({

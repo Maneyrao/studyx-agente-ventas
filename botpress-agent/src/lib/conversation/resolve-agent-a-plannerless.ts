@@ -93,6 +93,8 @@ function validatePlannerless(input: {
   // primary move records the current course or plan selection.
   const paymentActionRequested = !paymentDeferred && (action.type === 'send_payment_link'
     || moves.has('request_payment_link')
+    || (moves.has('select_payment_plan')
+      && input.context.commercial_state.awaiting_reply === 'payment_plan')
     || (moves.has('provide_contact_details')
       && input.context.commercial_state.payment_link_request?.status === 'pending'))
   if (action.type === 'none' && claimsImmediatePaymentLinkDelivery(input.proposal)) {
@@ -239,7 +241,9 @@ function materializeAuthorizedPaymentAction<T extends AgentAProposalEnvelopeV1>(
     input.initial.proposal.move.move,
     ...input.initial.proposal.move.secondary_moves,
   ])
-  if (!moves.has('request_payment_link')) return input.initial
+  const answersPaymentPlanCheckpoint = moves.has('select_payment_plan')
+    && input.context.commercial_state.awaiting_reply === 'payment_plan'
+  if (!moves.has('request_payment_link') && !answersPaymentPlanCheckpoint) return input.initial
   if (moves.has('defer_payment') || moves.has('decline_purchase')) return input.initial
   if (input.initial.proposal.move.vetoes.includes('payment_link')
     || input.initial.proposal.move.vetoes.includes('purchase')) return input.initial

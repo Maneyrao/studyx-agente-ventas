@@ -294,7 +294,8 @@ export function authorizeAgentTurnV2(input: {
     const browsingCourseDetail = factOffering === null && fact !== undefined
       && (fact.kind === 'offering_description'
         || fact.kind === 'offering_duration'
-        || fact.kind === 'offering_modality')
+        || fact.kind === 'offering_modality'
+        || fact.kind === 'offering_syllabus')
       && input.offerings.some((offering) => offering.code === fact.offering_code);
     const selectedOfferingFact = fact !== undefined
       && fact.kind !== 'payment_link'
@@ -455,6 +456,9 @@ export function authorizeAgentTurnV2(input: {
       || answersRequestedPaymentPlan);
   const paymentLinkRequested = paymentLinkRequestedNow
     || (!paymentRequestWithdrawn && pendingPaymentRequest !== null && moves.has('provide_contact_details'));
+  const requestsPaymentContactDetails = (proposal.profile_requests ?? []).some((request) => (
+    request.purpose === 'payment'
+  ));
   if (proposal.proposed_action.type === 'request_call_now') {
     if (!requestedCallNow || proposal.move.vetoes.includes('call')) reasons.push('ACTION_NOT_AUTHORIZED');
     else action = resumesAcceptedCall && state.stage !== 'handoff'
@@ -666,6 +670,19 @@ export function authorizeAgentTurnV2(input: {
     // request below can carry that permission through a pending intake.
     awaitingReply = 'payment_confirmation';
   }
+  // Checkout starts with identity, not with a payment plan. Persist the
+  // model-owned request as a durable checkpoint even when no plan exists yet;
+  // otherwise the next customer turn loses the commercial step that prompted
+  // those details and the model starts the sale over.
+  if (
+    requestsPaymentContactDetails
+    && selectedOffering !== null
+    && !stateFacts.has('state:intake_recorded:v1')
+  ) {
+    nextOffering = selectedOffering;
+    stage = nextPlan === null ? 'course_selected' : 'plan_selected';
+    awaitingReply = 'contact_details';
+  }
   if (
     paymentLinkRequestedNow
     && selectedOffering !== null
@@ -692,12 +709,24 @@ export function authorizeAgentTurnV2(input: {
   if (
     moves.has('provide_contact_details')
     && selectedOffering !== null
-    && selectedPlan !== null
     && stateFacts.has('state:intake_recorded:v1')
     && state.stage !== 'payment_link_sent'
+    && !(changesCourse && courseChanged)
+    && (state.awaiting_reply === 'contact_details'
+      || requestsPaymentContactDetails
+      || pendingPaymentRequest !== null)
   ) {
-    stage = 'plan_selected';
+    stage = selectedPlan === null ? 'course_selected' : 'plan_selected';
     awaitingReply = 'payment_confirmation';
+  }
+  if (
+    moves.has('ask_payment_options')
+    && selectedOffering !== null
+    && stateFacts.has('state:intake_recorded:v1')
+    && state.awaiting_reply === 'payment_confirmation'
+  ) {
+    stage = selectedPlan === null ? 'course_selected' : 'plan_selected';
+    awaitingReply = 'payment_plan';
   }
   if (supportedChannelChoice) {
     // A refusal rejects the current invitation; it is not a global opt-out.
