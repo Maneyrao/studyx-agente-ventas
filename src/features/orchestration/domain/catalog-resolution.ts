@@ -86,11 +86,25 @@ const CATALOG_INTENT_PATTERN =
 
 const COURSE_DETAIL_REQUEST_PATTERN = /\b(?:plan de estudios?|temarios?)\b/u;
 
+// `programa` also means software in ordinary customer language, so it cannot
+// be treated as a syllabus request by itself. These labels only become course
+// detail requests when the customer actually asks to see or receive them.
+const COURSE_DETAIL_EXTENDED_REQUEST_PATTERN =
+  /\b(?:(?:cual es|quiero(?: ver)?|necesito(?: ver)?|dame|pasame|me pasas|mandame|enviame|mostrame|puedo ver|quisiera ver)\s+(?:(?:el|la)\s+)?(?:programas?|cronogramas?)|necesito informacion (?:de|del|sobre)\s+(?:(?:el|la)\s+)?(?:programas?|cronogramas?))\b/u;
+
 const COURSE_DETAIL_SUBJECT_PATTERN =
-  /\b(?:plan de estudios?|temarios?)\s+(?:de|del|para|sobre)\s+(?:(?:el|la|un|una)\s+)?(?:(?:curso|diplomado|programa)\s+(?:de\s+)?)?([\p{L}\p{N}].*)$/u;
+  /\b(?:plan de estudios?|temarios?|programas?|cronogramas?)\s+(?:de|del|para|sobre)\s+(?:(?:el|la|los|las|un|una)\s+)?(?:(?:curso|diplomado|programa)\s+(?:de\s+)?)?(?!(?:clases?|curso|diplomado|programa)\b)([\p{L}\p{N}].*)$/u;
 
 const COURSE_DETAIL_FOLLOWUP_SUBJECT_PATTERN =
   /^(?:de|del|para|sobre)\s+(?:(?:el|la|un|una)\s+)?(?:(?:curso|diplomado|programa)\s+(?:de\s+)?)?[\p{L}\p{N}]/u;
+
+function courseDetailSubject(message: string): string | null {
+  const subject = COURSE_DETAIL_SUBJECT_PATTERN.exec(message)?.[1]?.trim() ?? null;
+  if (subject === null) return null;
+  return /^(?:(?:el|la|los|las)\s+)?(?:clases?|curso|diplomado|programa)$/u.test(subject)
+    ? null
+    : subject;
+}
 
 const SELECTION_CUE_PATTERN =
   /\b(?:prefiero|elijo|elegi|selecciono|me quedo con|voy con|quiero|mejor|cambio a)\b/gu;
@@ -531,8 +545,8 @@ function partialSubjectMatches(
     // arbitrary words would turn "fotografía forense" into an available
     // course, or confuse "fot" with "fotovoltaica". A bare title fragment is
     // also a subject; surrounding unrelated prose is not stripped from it.
-    const detailSubject = COURSE_DETAIL_SUBJECT_PATTERN.exec(normalized)?.[1];
-    const cues = detailSubject === undefined
+    const detailSubject = courseDetailSubject(normalized);
+    const cues = detailSubject === null
       ? [...normalized.matchAll(
           /\b(?:cursos?|diplomados?|capacitaciones|capacitacion|formaciones|formacion|programas?|estudiar|aprender|busco|quiero|me interesa|me interesan|informacion sobre)\s+(?:(?:el|la|un|una|de)\s+)*/gu,
         )]
@@ -553,7 +567,10 @@ function partialSubjectMatches(
 }
 
 export function isCatalogDetailRequest(text: string | readonly string[]): boolean {
-  return toMessages(text).some((message) => COURSE_DETAIL_REQUEST_PATTERN.test(message));
+  return toMessages(text).some((message) => (
+    COURSE_DETAIL_REQUEST_PATTERN.test(message)
+    || COURSE_DETAIL_EXTENDED_REQUEST_PATTERN.test(message)
+  ));
 }
 
 /** True only when a plan/temario request genuinely leaves its course implicit. */
@@ -561,9 +578,9 @@ export function catalogDetailRequestOmitsSubject(
   text: string | readonly string[],
 ): boolean {
   const messages = toMessages(text);
-  const detailIndex = messages.findIndex((message) => COURSE_DETAIL_REQUEST_PATTERN.test(message));
+  const detailIndex = messages.findIndex((message) => isCatalogDetailRequest(message));
   if (detailIndex < 0) return false;
-  if (messages.some((message) => COURSE_DETAIL_SUBJECT_PATTERN.test(message))) return false;
+  if (messages.some((message) => courseDetailSubject(message) !== null)) return false;
   return !messages.slice(detailIndex + 1).some((message) => (
     COURSE_DETAIL_FOLLOWUP_SUBJECT_PATTERN.test(message)
   ));
@@ -686,7 +703,10 @@ function hasCatalogIntent(messages: readonly string[]): boolean {
  */
 export function isCatalogRequestNeutral(text: string | readonly string[]): boolean {
   const messages = toMessages(text);
-  return !hasCatalogIntent(messages)
+  return (
+    !hasCatalogIntent(messages)
+    || isCatalogDetailRequest(messages) && catalogDetailRequestOmitsSubject(messages)
+  )
     && !messages.some((message) => CATALOG_REJECTION_PATTERN.test(message));
 }
 
@@ -829,6 +849,10 @@ export function resolveCatalogRequest(
     const selected = explicitSelection(resolutionMessages, positiveHits);
     if (selected !== null) return exact(selected.offering, 'canonical');
     return ambiguous(request, literalMatches.map((match) => match.offering));
+  }
+
+  if (isCatalogDetailRequest(messages) && catalogDetailRequestOmitsSubject(messages)) {
+    return { kind: 'no_catalog_intent' };
   }
 
   const computerRepair = computerRepairMatches(resolutionMessages, offerings);

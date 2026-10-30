@@ -236,6 +236,25 @@ function areaCode(value: string | null): string | null {
   return output || null
 }
 
+function normalizedVisibleText(value: string): string {
+  return value.normalize('NFD').replace(/[\u0300-\u036f]/gu, '').toLocaleLowerCase('es')
+}
+
+function mentionsProposedBonusOfferingV1(input: {
+  readonly proposal: AgentATurnProposalV1
+  readonly messages: readonly string[]
+  readonly context: NonNullable<ReturnType<typeof buildAgentAContextV1>>
+}): boolean {
+  const action = input.proposal.proposed_action
+  if (action.type !== 'offer_course_bonus') return false
+  const bonusOffering = input.context.catalog.available_offerings.find((offering) => (
+    offering.code === action.bonus_offering_code
+  ))
+  if (!bonusOffering) return false
+  const identity = normalizedVisibleText(bonusOffering.display_name)
+  return input.messages.some((message) => normalizedVisibleText(message).includes(identity))
+}
+
 function buildInterpreterInput(owned: ClaimedTurn): ConversationInterpreterInputV1 | null {
   const state = owned.conversation_state_v1
   if (!state) return null
@@ -1773,6 +1792,15 @@ export const processInboundTurn = new Workflow({
             if (pipelineFailureDecision?.reason_code === 'AGENT_A_CONTINUATION_REJECTED') {
               candidateLoop: for (const candidate of [...precommitModelAuthoredCandidates].reverse()) {
                 for (const candidateProposal of literalConversationVariants(candidate.proposal)) {
+                  const candidateCopy = [
+                    ...candidateProposal.response.messages,
+                    candidateProposal.response.call_offer ?? '',
+                  ]
+                  if (mentionsProposedBonusOfferingV1({
+                    proposal: candidateProposal,
+                    messages: candidateCopy,
+                    context: agentABrainContext,
+                  })) continue
                   try {
                     const conversationCandidate = {
                       ...candidate,
@@ -2526,6 +2554,12 @@ export const processInboundTurn = new Workflow({
                 ...candidateProposal.response.messages,
                 candidateProposal.response.call_offer ?? '',
               ]
+              const repeatsRejectedBonus = !retainAuthorizedEffect
+                && mentionsProposedBonusOfferingV1({
+                  proposal: candidateProposal,
+                  messages: candidateCopy,
+                  context: repairContext,
+                })
               // The claim snapshot may still advertise a capability that the
               // authoritative commit has just rejected. In that case a floor
               // candidate cannot keep customer-facing success wording after
@@ -2539,6 +2573,7 @@ export const processInboundTurn = new Workflow({
                   )
                 ))
                 || rejectedPaymentEffect && candidateCopy.some(claimsImmediatePaymentLinkDeliveryV1)
+                || repeatsRejectedBonus
               )) continue
               const conversationCandidate = {
                 ...candidate,

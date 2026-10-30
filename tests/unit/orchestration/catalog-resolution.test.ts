@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import {
   catalogDetailRequestOmitsSubject,
+  isCatalogDetailRequest,
   isCatalogRequestNeutral,
   resolveCatalogRequest,
   type CatalogResolutionSnapshot,
@@ -303,6 +304,31 @@ describe('resolveCatalogRequest', () => {
   });
 
   it.each([
+    'me pasás el programa de las clases?',
+    'quiero el programa del curso',
+    'quiero el cronograma de Marketing Digital',
+  ])('recognizes the real course-detail wording used in WhatsApp: %s', (text) => {
+    expect(isCatalogDetailRequest(text)).toBe(true);
+  });
+
+  it.each([
+    'quiero aprender a usar un programa de diseño',
+    'necesito un programa para editar fotos',
+  ])('does not confuse software needs with a course-detail request: %s', (text) => {
+    expect(isCatalogDetailRequest(text)).toBe(false);
+  });
+
+  it.each([
+    'Me interesa Inglés 2, me pasás el temario?',
+    'Inglés 2: pasame el programa',
+  ])('keeps an explicit course reference ahead of the implicit-detail fallback: %s', (text) => {
+    expect(resolveCatalogRequest(text, snapshot([
+      offering('ingles_1', 'Inglés 1', 'Idiomas'),
+      offering('ingles_2', 'Inglés 2', 'Idiomas'),
+    ]))).toMatchObject({ kind: 'exact', offeringCode: 'ingles_2' });
+  });
+
+  it.each([
     '¿Me das el plan de estudio?',
     '¿Cuál es el plan de pago?',
   ])('keeps a generic plan request neutral when it does not identify a course: %s', (text) => {
@@ -314,7 +340,11 @@ describe('resolveCatalogRequest', () => {
 
   it.each([
     ['¿Me pasás el temario?', true],
+    ['¿Me pasás el programa de las clases?', true],
+    ['¿Me pasás el cronograma?', true],
     ['¿Me pasás el temario de Astronomía?', false],
+    ['¿Me pasás el programa de Astronomía?', false],
+    ['¿Me pasás el cronograma de Astronomía?', false],
     [['¿Me pasás el temario?', 'de Astronomía'], false],
     ['¿Me das el plan de estudio sobre Coaching deportivo?', false],
   ])('detects whether a course-detail request genuinely omits its subject: %j', (text, expected) => {
@@ -364,6 +394,7 @@ describe('resolveCatalogRequest', () => {
       kind: 'no_catalog_intent',
     });
     expect(isCatalogRequestNeutral(text)).toBe(true);
+    expect(isCatalogDetailRequest(text)).toBe(false);
   });
 
   it.each([

@@ -1989,7 +1989,103 @@ describe('processInboundTurn hot path', () => {
     }
   });
 
-  it('rescues an authorized literal bubble when a rejected bonus continuation fails before commit', async () => {
+  it('removes a rejected bonus promise before committing the conversational floor', async () => {
+    const claimed = claimedResponse() as unknown as ClaimedTurn;
+    claimed.features = {
+      agent_loop_v3_mode: 'off', conversation_pipeline_v1_enabled: false,
+      agent_a_brain_v1_enabled: true, agent_a_brain_v1_shadow: false,
+      agent_a_repair_enabled: true,
+    };
+    claimed.conversation_state_v1 = {
+      selected_offering_code: 'marketing_digital', selected_payment_plan: null,
+      stage: 'course_selected', call_preference: 'unknown', call_offer_status: 'not_offered',
+      call_offer_count: 2, awaiting_reply: 'none', version: 47,
+    };
+    claimed.context.batch_messages[0].content = 'Me sigue pareciendo caro';
+    claimed.catalog_index = {
+      as_of: NOW, offerings_total: 2,
+      offerings: [
+        { code: 'marketing_digital', display_name: 'Marketing Digital', academy: 'Marketing', aliases: [] },
+        { code: 'community_manager', display_name: 'Community Manager', academy: 'Marketing', aliases: [] },
+      ],
+      injection_suspected_count: 0,
+    };
+    const baseBusiness = paymentBusinessContext();
+    claimed.business_context = {
+      ...baseBusiness,
+      offerings: [
+        { ...baseBusiness.offerings[0], code: 'marketing_digital', display_name: 'Marketing Digital' },
+        { ...baseBusiness.offerings[0], code: 'community_manager', display_name: 'Community Manager' },
+      ],
+    };
+    claimed.business_context_available = true;
+    actionSpies.claim.mockResolvedValue(claimed);
+    configuration.agentAPlannerlessV2Enabled = true;
+
+    const safeText = 'Revisemos primero qué te frena del precio.';
+    const rejectedBonusText = 'Te llevás también Community Manager.';
+    actionSpies.agentABrainDeepSeek
+      .mockResolvedValueOnce({
+        proposal: {
+          schema_version: 1,
+          move: { schema_version: 1, move: 'ask_payment_options', secondary_moves: [], vetoes: [],
+            course_reference: 'marketing_digital', confidence: 1 },
+          response: { messages: [safeText, rejectedBonusText], call_offer: null },
+          proposed_action: { type: 'offer_course_bonus',
+            interest_offering_code: 'marketing_digital', bonus_offering_code: 'community_manager' },
+          used_fact_ids: [], used_memory_ids: [], memory_candidates: [], repair_of: null,
+        },
+        provider: 'deepseek-direct', model: 'deepseek-v4-flash', latency_ms: 1, attempt_count: 1,
+      })
+      .mockRejectedValueOnce(new Error('BRAIN_DEEPSEEK_TIMEOUT'));
+    actionSpies.commit
+      .mockRejectedValueOnce(new StudyxHttpError(
+        'DECISION_REJECTED', false, 422, 1,
+        { error: 'DECISION_REJECTED', reason: 'AGENT_TURN_V2_REJECTED:COMMERCIAL_TRUTH_VIOLATION',
+          subjects: ['forbidden_promise'] },
+      ))
+      .mockResolvedValueOnce({
+        status: 'committed', replayed: false, trace_id: UUID, turn_id: UUID,
+        decision_id: UUID, next_state: 'waiting_user',
+        outbound: { id: UUID, content: safeText, status: 'pending', delivery_attempt: 1,
+          authorized_egress: { schema_version: 1,
+            content_hash: 'c748dab62a273cdd2f2e3d8148bf3182ab4368fa31eb810c1688026bce0af039',
+            authorized_urls: [], protected_facts: [] } },
+        outbounds: [{ id: UUID, content: safeText, status: 'pending', delivery_attempt: 1,
+          authorized_egress: { schema_version: 1,
+            content_hash: 'c748dab62a273cdd2f2e3d8148bf3182ab4368fa31eb810c1688026bce0af039',
+            authorized_urls: [], protected_facts: [] } }],
+        call_request: null,
+      });
+
+    const createMessage = vi.fn(async () => ({ message: { id: 'bp-bonus-floor-message' } }));
+    const step = Object.assign(
+      async (_name: string, run: () => Promise<unknown>) => run(),
+      { sleep: vi.fn(async () => undefined) },
+    );
+    const result = await (processInboundTurn as unknown as {
+      definition: { handler: (args: Record<string, unknown>) => Promise<unknown> };
+    }).definition.handler({
+      input: workflowInput(), state: processingState(), step,
+      execute: vi.fn(), client: { createMessage }, signal: new AbortController().signal,
+      workflow: { id: 'rejected-bonus-floor-test' },
+    });
+
+    expect(actionSpies.commit).toHaveBeenCalledTimes(2);
+    expect(actionSpies.commit.mock.calls[1]![0].input.agent_turn_v2).toMatchObject({
+      conversation_only: true,
+      proposal: {
+        response: { messages: [safeText], call_offer: null },
+        proposed_action: { type: 'none' },
+      },
+    });
+    expect(JSON.stringify(actionSpies.commit.mock.calls[1]![0].input)).not.toContain(rejectedBonusText);
+    expect(result).toMatchObject({ status: 'waiting_user', delivery_status: 'submitted_to_botpress',
+      error_code: null });
+    expect(createMessage).toHaveBeenCalledTimes(1);
+  });
+
+  it('removes a rejected bonus promise in the precommit conversational floor', async () => {
     const claimed = claimedResponse() as unknown as ClaimedTurn;
     claimed.features = {
       agent_loop_v3_mode: 'off', conversation_pipeline_v1_enabled: false,
@@ -2001,19 +2097,27 @@ describe('processInboundTurn hot path', () => {
       stage: 'course_selected', call_preference: 'unknown', call_offer_status: 'not_offered',
       call_offer_count: 0, awaiting_reply: 'none', version: 1,
     };
-    claimed.catalog_index = { as_of: NOW, offerings_total: 1,
-      offerings: [{ code: 'redes-informaticas', display_name: 'Redes Informáticas',
-        academy: 'Tecnología', aliases: ['redes'] }], injection_suspected_count: 0 };
-    claimed.business_context = paymentBusinessContext();
+    claimed.catalog_index = { as_of: NOW, offerings_total: 2,
+      offerings: [
+        { code: 'redes-informaticas', display_name: 'Redes Informáticas',
+          academy: 'Tecnología', aliases: ['redes'] },
+        { code: 'community_manager', display_name: 'Community Manager',
+          academy: 'Marketing', aliases: [] },
+      ], injection_suspected_count: 0 };
+    const baseBusiness = paymentBusinessContext();
+    claimed.business_context = { ...baseBusiness, offerings: [
+      ...baseBusiness.offerings,
+      { ...baseBusiness.offerings[0], code: 'community_manager', display_name: 'Community Manager' },
+    ] };
     claimed.business_context_available = true;
     actionSpies.claim.mockResolvedValue(claimed);
     configuration.agentAPlannerlessV2Enabled = true;
 
     const safeText = 'Revisemos primero qué te frena del precio.';
-    const rejectedBonusText = 'Te sumo Fotografía con Celulares sin costo extra.';
+    const rejectedBonusText = 'Te llevás también Community Manager.';
     actionSpies.agentABrainValidate.mockImplementation(({ proposal }: {
-      proposal: { response: { messages: string[] } };
-    }) => proposal.response.messages.some((message) => message.includes('sin costo extra')) ? {
+      proposal: { proposed_action: { type: string } };
+    }) => proposal.proposed_action.type === 'offer_course_bonus' ? {
       schema_version: 1, rejection_id: UUID, attempt: 1,
       rejections: [{ code: 'FACT_VALUE_MISMATCH', subject: 'forbidden_promise' }],
       authorized_alternatives: { fact_ids: [], actions: ['none'], missing_information: [] },
@@ -2030,10 +2134,10 @@ describe('processInboundTurn hot path', () => {
             course_reference: 'redes-informaticas', confidence: 1 },
           response: { messages: generation === 1
             ? [safeText, rejectedBonusText] : [rejectedBonusText], call_offer: null },
-          proposed_action: generation === 1 ? {
+          proposed_action: {
             type: 'offer_course_bonus', interest_offering_code: 'redes-informaticas',
-            bonus_offering_code: 'fotografia_celulares_tiendas_online',
-          } : { type: 'none' },
+            bonus_offering_code: 'community_manager',
+          },
           used_fact_ids: [], used_memory_ids: [], memory_candidates: [],
           repair_of: input.context.turn_rejection
             ? { rejection_id: input.context.turn_rejection.rejection_id, attempt: 1 } : null },

@@ -23,6 +23,85 @@ function authorizedObjects(value: string, names: readonly string[]): boolean {
   return false;
 }
 
+const NAMED_GIFT_DESCRIPTOR = /^(?:,\s*)?(?:tambien\s+)?(?:de\s+regalo|gratis|sin\s+(?:costo|cargo)(?:\s+(?:extra|adicional))?|bonificad[oa]|incluid[oa])\b/u;
+
+function namedIdentityAtStart(value: string, identities: readonly string[]): string | null {
+  return identities.find(identity => value.startsWith(identity)
+    && !/^[\p{L}\p{N}_]/u.test(value.slice(identity.length))) ?? null;
+}
+
+/**
+ * Extract only catalog identities asserted by the narrow conversational form
+ * "te llevás también X". The text after X remains free commercial copy unless
+ * it contains another explicit course delivery (a direct list, or
+ * "con <curso> también/gratis").
+ */
+function namedAdditiveCourseClaims(value: string, names: readonly string[]): {
+  readonly claims: readonly string[];
+  readonly has_unresolved_gift_tail: boolean;
+} {
+  const identities = [...new Set(names.map(normalize).filter(Boolean))]
+    .sort((a, b) => b.length - a.length);
+  let remaining = normalize(value)
+    .replace(/^(?:(?:el|la|un|una)\s+)?(?:curso\s+(?:de\s+)?)?/u, '')
+    .trim();
+  const claims: string[] = [];
+
+  const first = namedIdentityAtStart(remaining, identities);
+  if (!first) return { claims: [], has_unresolved_gift_tail: false };
+  claims.push(first);
+  remaining = remaining.slice(first.length).trim();
+
+  // A descriptor qualifies the identity just consumed; it never expands the
+  // claimed object to the rest of the sales sentence.
+  remaining = remaining.replace(NAMED_GIFT_DESCRIPTOR, '').trim();
+
+  // Consume only an explicit list of immediately adjacent catalog courses.
+  // A connector followed by ordinary closing copy ("y avanzamos") is not an
+  // invalid effect and remains outside this fact validator.
+  while (remaining) {
+    const connector = remaining.match(/^(?:,\s*(?:(?:y|e)\s+)?|(?:y|e)\s+)(?:tambien\s+)?/u);
+    if (!connector) break;
+    const candidate = remaining.slice(connector[0].length).trim()
+      .replace(/^(?:(?:el|la|un|una)\s+)?(?:curso\s+(?:de\s+)?)?/u, '');
+    const identity = namedIdentityAtStart(candidate, identities);
+    if (!identity) break;
+    claims.push(identity);
+    remaining = candidate.slice(identity.length).trim();
+    remaining = remaining.replace(NAMED_GIFT_DESCRIPTOR, '').trim();
+  }
+
+  // An explanatory tail can contain a second, independently asserted course.
+  // Recognize only the bounded form; do not interpret persuasion or closing
+  // language as an effect.
+  const parallel = /\b(?:con|ademas)\s+/gu;
+  let sanitizedTail = '';
+  let sanitizedCursor = 0;
+  for (const match of remaining.matchAll(parallel)) {
+    const prefixEnd = (match.index ?? 0) + match[0].length;
+    const rawCandidate = remaining.slice(prefixEnd);
+    const objectPrefix = rawCandidate.match(/^(?:(?:el|la|un|una)\s+)?(?:curso\s+(?:de\s+)?)?/u)?.[0] ?? '';
+    const candidate = rawCandidate.slice(objectPrefix.length);
+    const identity = namedIdentityAtStart(candidate, identities);
+    if (!identity) continue;
+    const tail = candidate.slice(identity.length).trim();
+    const assertion = tail.match(/^(?:tambien(?:\s+(?:de\s+regalo|gratis|sin\s+(?:costo|cargo)(?:\s+(?:extra|adicional))?|bonificad[oa]|incluid[oa]))?|(?:,\s*)?(?:de\s+regalo|gratis|sin\s+(?:costo|cargo)(?:\s+(?:extra|adicional))?|bonificad[oa]|incluid[oa]))\b/u);
+    if (!assertion) continue;
+    claims.push(identity);
+    const assertionEnd = prefixEnd + objectPrefix.length + identity.length
+      + candidate.slice(identity.length).indexOf(tail) + assertion[0].length;
+    sanitizedTail += remaining.slice(sanitizedCursor, match.index);
+    sanitizedCursor = assertionEnd;
+  }
+  sanitizedTail += remaining.slice(sanitizedCursor);
+
+  return {
+    claims: [...new Set(claims)],
+    has_unresolved_gift_tail: GIFT_TAIL_ASSERTION.test(sanitizedTail)
+      || GIFT_TAIL_ADDITIONAL_COURSE.test(sanitizedTail),
+  };
+}
+
 const GIFT_MARKER = /\b(?:regal\p{L}*|gratis|sin\s+(?:costo|cargo)|bonific\p{L}*|bono\s+de\s+curso)\b/gu;
 // Tail inspection also includes descriptors that are meaningful only after a
 // gift predicate ("Inglés incluido"). Keeping them here prevents an ordinary
@@ -105,6 +184,7 @@ function giftObject(clause: string, paidNames: readonly string[]): string | null
 export function inspectCourseBonusClaimsV1(input: {
   readonly content: string;
   readonly authorized_bonus_names: readonly string[];
+  readonly known_offering_names?: readonly string[];
   readonly paid_offering_names?: readonly string[];
 }): { readonly has_authorized_claim: boolean; readonly has_unauthorized_claim: boolean } {
   // Keep question closings attached to the offer clause. Splitting on `?`
@@ -112,11 +192,31 @@ export function inspectCourseBonusClaimsV1(input: {
   // checked (and would also detach a legitimate closing question).
   const normalizedContent = normalize(input.content).replace(/[¿?]/gu, '');
   const hasExplicitGiftContext = GIFT_TAIL_ASSERTION.test(normalizedContent);
-  const clauses = normalizedContent.split(/[.!;\n]+|\b(?:pero|aunque|sin embargo)\b|,\s*(?=(?:no\s+)?(?:te\s+)?(?:regal|inclu|bonific|sum|agreg))|\by\s+(?=(?:no\s+)?(?:te\s+)?(?:regal|inclu|bonific|sum|agreg))/u);
+  const clauses = normalizedContent.split(/[.!;\n]+|\b(?:pero|aunque|sin embargo)\b|,\s*(?=(?:no\s+)?(?:te\s+)?(?:regal|inclu|bonific|sum|agreg|llev))|\by\s+(?=(?:no\s+)?(?:te\s+)?(?:regal|inclu|bonific|sum|agreg|llev))/u);
   let authorized = false;
   let unauthorized = false;
   for (let index = 0; index < clauses.length; index += 1) {
     const clause = clauses[index]!;
+    // A rejected direct-bonus proposal can lose its structured action during
+    // recovery while retaining natural copy such as "te llevás también X".
+    // Treat it as an effect claim only when X resolves to a real course; this
+    // keeps ordinary benefits such as a certificate outside the bonus guard.
+    const additiveCourse = clause.match(/\b(?:te\s+)?llevas\s+tambien\s+(.+)$/u)?.[1]?.trim() ?? null;
+    if (additiveCourse !== null) {
+      const authorizedNames = new Set(input.authorized_bonus_names.map(normalize));
+      const scope = namedAdditiveCourseClaims(additiveCourse, [
+        ...input.authorized_bonus_names,
+        ...(input.known_offering_names ?? []),
+      ]);
+      if (scope.claims.length > 0) {
+        if (scope.claims.some((claim) => authorizedNames.has(claim))) authorized = true;
+        if (scope.has_unresolved_gift_tail
+          || scope.claims.some((claim) => !authorizedNames.has(claim))) {
+          unauthorized = true;
+        }
+        continue;
+      }
+    }
     const markers = [...clause.matchAll(GIFT_MARKER)];
     const implicitGift = /\b(?:agregar|sumar|incluir)\b.*\bcurso\b.*\b(?:mismo\s+(?:precio|valor)|incluid[oa])\b/u.test(clause);
     const contextualAdditiveGift = hasExplicitGiftContext

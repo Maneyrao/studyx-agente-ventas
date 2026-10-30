@@ -1268,7 +1268,11 @@ describe('claimBatch business context', () => {
     expect(result.context.injection_suspected_count).toBe(1);
   });
 
-  it('loads the selected course syllabus when a follow-up detail request omits the course name', async () => {
+  it.each([
+    '¿Me pasás el temario?',
+    '¿Me pasás el programa de las clases?',
+    '¿Me pasás el cronograma?',
+  ])('loads the selected course syllabus for a real follow-up detail request: %s', async (message) => {
     const canonicalCourseKnowledge = {
       source_uri: 'knowledge://coaching_liderazgo/manual',
       title: 'Manual StudyX — Coaching y Liderazgo',
@@ -1289,7 +1293,7 @@ describe('claimBatch business context', () => {
       ...buildDeps({
         knowledge,
         messagesResult: [{
-          id: 'm1', conversation_seq: 2, content: '¿Me pasás el temario?',
+          id: 'm1', conversation_seq: 2, content: message,
           created_at: '2026-08-11T12:00:00.000Z', message_type: 'text',
         }],
         factsResult: facts({

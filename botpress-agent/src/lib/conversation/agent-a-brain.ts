@@ -1776,7 +1776,9 @@ export function validateAgentATurnProposalV1(input: {
   const paidOfferingNames = paidOffering ? [paidOffering.display_name] : [];
   if (inspectCourseBonusClaimsV1({content:[...input.proposal.response.messages,
     ...(input.proposal.response.call_offer ? [input.proposal.response.call_offer] : [])].join('\n'),
-    authorized_bonus_names:authorizedBonusOfferingNames,paid_offering_names:paidOfferingNames}).has_unauthorized_claim) {
+    authorized_bonus_names:authorizedBonusOfferingNames,
+    known_offering_names:input.context.catalog.available_offerings.map(offering => offering.display_name),
+    paid_offering_names:paidOfferingNames}).has_unauthorized_claim) {
     rejections.push({code:'FACT_VALUE_MISMATCH',subject:'forbidden_promise'});
   }
   // V2 — cada hecho citado existe en el registro materializado del turno.

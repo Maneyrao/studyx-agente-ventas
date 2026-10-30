@@ -432,6 +432,7 @@ function sentenceViolations(
 
   const giftClaims = inspectCourseBonusClaimsV1({content:sentence,
     authorized_bonus_names:canonical.authorized_bonus_names ?? [],
+    known_offering_names:canonical.offering_names ?? [],
     paid_offering_names:canonical.paid_offering_names});
   if (FORBIDDEN_PROMISE.test(normalized) || offersUnauthorizedBenefit(normalized)
     || giftClaims.has_unauthorized_claim) {
