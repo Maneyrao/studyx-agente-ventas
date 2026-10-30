@@ -31,7 +31,21 @@ it.each([
   ['Te regalo Inglés 1\nEl total es USD 360.', true],
   ['Redes incluye prácticas y un proyecto final.', true],
   ['Puedo incluir otro curso incluido.', false],
+  ['Si te sumo Fotografía con Celulares para Tiendas Online como curso bonificado, sin cambiar el precio, ¿avanzarías hoy?', true],
+  ['Te sumo Excel como curso bonificado, sin cambiar el precio, ¿te sirve así?', true],
+  ['Te sumo Excel como curso bonificado, sin cambiar el precio, ¿avanzamos?', true],
+  ['Te sumo Excel como curso bonificado, sin cambiar el precio, ¿preferís 12 cuotas o 6?', true],
+  ['Te sumo Excel como curso bonificado, además Inglés gratis.', false],
+  ['Te sumo Excel como curso bonificado, e Inglés también gratis.', false],
+  ['Te sumo Excel como curso bonificado, sin cambiar el precio, además Inglés gratis.', false],
+  ['Te sumo Excel como curso bonificado, sin cambiar el precio y con Inglés bonificado.', false],
+  ['Te sumo Excel como curso bonificado, sin cambiar el precio, con Inglés incluido.', false],
+  ['Te sumo Excel como curso bonificado, sin cambiar el precio y un curso adicional incluido.', false],
+  ['Te sumo Excel como curso bonificado, sin cambiar el precio, además te sumo Inglés.', false],
+  ['Te sumo Excel como curso bonificado, sin cambiar el precio, te sumo Inglés.', false],
+  ['Te sumo Excel como curso bonificado, sin cambiar el precio y un curso adicional.', false],
+  ['Te sumo Excel como curso bonificado, sin cambiar el precio, con Inglés también.', false],
 ])('consumes bounded gift scope and preserves ordinary clauses: %s', (content, allowed) => {
   expect(inspectCourseBonusClaimsV1({content:content as string,
-    authorized_bonus_names:['Inglés 1','Excel'],paid_offering_names:['Redes']}).has_unauthorized_claim).toBe(!allowed);
+    authorized_bonus_names:['Inglés 1','Excel','Fotografía con Celulares para Tiendas Online'],paid_offering_names:['Redes']}).has_unauthorized_claim).toBe(!allowed);
 });

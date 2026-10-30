@@ -56,6 +56,32 @@ async function fixture() {
 }
 
 run('atomic direct bonus service', () => {
+  it.each([
+    ['paid in another conversation', 'paid', true],
+    ['refunded in this conversation', 'refunded', false],
+  ] as const)('does not close a new bonus sale for a historical payment: %s', async (_label, status, otherConversation) => {
+    const f = await fixture();
+    const sourceConversationId = otherConversation
+      ? (await db!`INSERT INTO conversations(contact_id,channel) VALUES (${f.c.id},'telegram') RETURNING id`)[0].id
+      : f.v.id;
+    await db!`INSERT INTO payments(workspace_id,contact_id,offering_id,amount,currency,status,provider,
+      environment,checkout_mode,idempotency_key,plan_code,source_conversation_id,paid_at)
+      VALUES (${f.w.id},${f.c.id},${f.courses[0].id},360,'USD',${status},'fake','test','payment',
+        ${randomUUID()},'one_time',${sourceConversationId},now()-interval '1 day')`;
+
+    expect(await offerDirectCourseBonusV1(db!, f.input())).toMatchObject({ ok: true, offer_version: 1 });
+  });
+
+  it('still closes the current sale after a paid payment in this conversation', async () => {
+    const f = await fixture();
+    await db!`INSERT INTO payments(workspace_id,contact_id,offering_id,amount,currency,status,provider,
+      environment,checkout_mode,idempotency_key,plan_code,source_conversation_id,paid_at)
+      VALUES (${f.w.id},${f.c.id},${f.courses[0].id},360,'USD','paid','fake','test','payment',
+        ${randomUUID()},'one_time',${f.v.id},now())`;
+
+    expect(await offerDirectCourseBonusV1(db!, f.input())).toEqual({ ok: false, reason: 'sale_already_closed' });
+  });
+
   it('clears historical promotion interest when a new generic sales cycle starts', async () => {
     const f = await fixture();
     await recordPromotionConversationContextV1(db!, {

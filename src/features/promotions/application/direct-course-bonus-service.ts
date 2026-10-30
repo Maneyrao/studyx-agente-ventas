@@ -186,7 +186,8 @@ async function validateOpen(tx: DbClient, input: Identity, context: {stage:strin
   const [facts] = await tx<Array<{paid: boolean;eligible: boolean}>>`
     SELECT EXISTS(SELECT 1 FROM payments WHERE workspace_id=${input.workspace_id}::uuid
       AND contact_id=${input.contact_id}::uuid AND offering_id=${context.paid_id}::uuid
-      AND status IN ('paid','refunded')) AS paid,
+      AND source_conversation_id=${input.conversation_id}::uuid
+      AND status='paid') AS paid,
       EXISTS(SELECT 1 FROM contacts WHERE id=${input.contact_id}::uuid AND status<>'inactivo'
         AND deleted_at IS NULL AND NOT EXISTS (SELECT 1 FROM contact_channel_permissions permission
           JOIN conversations conversation ON conversation.id=${input.conversation_id}::uuid

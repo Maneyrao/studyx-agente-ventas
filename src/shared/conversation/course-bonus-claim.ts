@@ -24,6 +24,13 @@ function authorizedObjects(value: string, names: readonly string[]): boolean {
 }
 
 const GIFT_MARKER = /\b(?:regal\p{L}*|gratis|sin\s+(?:costo|cargo)|bonific\p{L}*|bono\s+de\s+curso)\b/gu;
+// Tail inspection also includes descriptors that are meaningful only after a
+// gift predicate ("Inglés incluido"). Keeping them here prevents an ordinary
+// price explanation from swallowing a second asserted course.
+const GIFT_TAIL_ASSERTION = /\b(?:regal\p{L}*|gratis|sin\s+(?:costo|cargo)|bonific\p{L}*|bono\s+de\s+curso|incluid[oa]s?)\b/u;
+const GIFT_TAIL_PREDICATE = /\b(?:regal\p{L}*|bonific\p{L}*|incluy\p{L}*|sum\p{L}*|agreg\p{L}*)\b/u;
+const GIFT_TAIL_ADDITIONAL_COURSE = /\b(?:(?:otro|un)\s+)?curso\s+(?:adicional|extra)\b/u;
+const GIFT_TAIL_PARALLEL_OBJECT = /\b(?:con|ademas|y)\s+[^,;]{1,120}\s+tambien\b/u;
 const GIFT_DESCRIPTOR = /\s+(?:de\s+regalo|gratis|sin\s+(?:costo|cargo)(?:\s+adicional)?|bonificad[oa]s?|incluid[oa]s?)\s*$/u;
 const GIFT_PREDICATE = /\b(regalo|regalamos|regala|regalarte|bonifico|bonificamos|bonifica|incluyo|incluimos|incluye|incluyen|incluir|sumo|sumamos|sumar|agrego|agregamos|agregar|ofrezco)\s+(.+)$/u;
 
@@ -42,7 +49,31 @@ function giftObject(clause: string, paidNames: readonly string[]): string | null
       if (subject && !authorizedObjects(subject, paidNames)
         && !/^(?:(?:el|tu|este)\s+(?:paquete|curso)|(?:la|tu|esta)\s+promocion)$/u.test(subject)) return null;
     }
-    return predicate[2]!.replace(GIFT_DESCRIPTOR, '').trim();
+    let object = predicate[2]!
+      // Natural offers often qualify the exact course after naming it. That
+      // qualifier is not part of the catalog identity (and course names may
+      // legitimately contain "para", so it cannot be treated as an
+      // explanation boundary).
+      .replace(/\s+como\s+(?:curso\s+)?(?:bonificad[oa]|regalo|gratis)(?=\s*(?:,|$))/u, '')
+      .trim();
+    // A price-preservation explanation and its ordinary closing question may
+    // follow the exact gift object. Never consume that tail if it contains a
+    // second gift marker: the complete asserted scope must remain visible to
+    // the authorization check below.
+    const priceExplanation = object.match(/,\s*(?:y\s+)?sin\s+cambiar\s+(?:el\s+)?(?:precio|valor)\b/u);
+    if (priceExplanation?.index !== undefined) {
+      const tail = object.slice(priceExplanation.index + priceExplanation[0].length);
+      const assertsAnotherGift = GIFT_TAIL_ASSERTION.test(tail)
+        || GIFT_TAIL_PREDICATE.test(tail)
+        || GIFT_TAIL_ADDITIONAL_COURSE.test(tail)
+        || GIFT_TAIL_PARALLEL_OBJECT.test(tail);
+      // The commercial closing remains free-form. Only an independently
+      // recognizable additional gift keeps the tail inside the asserted
+      // object scope; ordinary persuasion and plan alternatives are not
+      // interpreted by this fact/effect guard.
+      if (!assertsAnotherGift) object = object.slice(0, priceExplanation.index).trim();
+    }
+    return object.replace(GIFT_DESCRIPTOR, '').trim();
   }
   if (!GIFT_DESCRIPTOR.test(gift)) return null;
   return gift.replace(GIFT_DESCRIPTOR, '')
@@ -60,14 +91,21 @@ export function inspectCourseBonusClaimsV1(input: {
   readonly authorized_bonus_names: readonly string[];
   readonly paid_offering_names?: readonly string[];
 }): { readonly has_authorized_claim: boolean; readonly has_unauthorized_claim: boolean } {
-  const clauses = normalize(input.content).split(/[.!?;\n]+|\b(?:pero|aunque|sin embargo)\b|,\s*(?=(?:no\s+)?(?:te\s+)?(?:regal|inclu|bonific|sum|agreg))|\by\s+(?=(?:no\s+)?(?:te\s+)?(?:regal|inclu|bonific|sum|agreg))/u);
+  // Keep question closings attached to the offer clause. Splitting on `?`
+  // would let an unsafe tail disappear before the complete gift scope is
+  // checked (and would also detach a legitimate closing question).
+  const normalizedContent = normalize(input.content).replace(/[¿?]/gu, '');
+  const hasExplicitGiftContext = GIFT_TAIL_ASSERTION.test(normalizedContent);
+  const clauses = normalizedContent.split(/[.!;\n]+|\b(?:pero|aunque|sin embargo)\b|,\s*(?=(?:no\s+)?(?:te\s+)?(?:regal|inclu|bonific|sum|agreg))|\by\s+(?=(?:no\s+)?(?:te\s+)?(?:regal|inclu|bonific|sum|agreg))/u);
   let authorized = false;
   let unauthorized = false;
   for (let index = 0; index < clauses.length; index += 1) {
     const clause = clauses[index]!;
     const markers = [...clause.matchAll(GIFT_MARKER)];
     const implicitGift = /\b(?:agregar|sumar|incluir)\b.*\bcurso\b.*\b(?:mismo\s+(?:precio|valor)|incluid[oa])\b/u.test(clause);
-    if (!markers.length && !implicitGift) continue;
+    const contextualAdditiveGift = hasExplicitGiftContext
+      && /^\s*(?:ademas\s+)?(?:te\s+)?(?:sumo|agrego|incluyo)\b/u.test(clause);
+    if (!markers.length && !implicitGift && !contextualAdditiveGift) continue;
     // Only this clause's denied predicate is exempt. A later affirmative
     // predicate is split above and must independently resolve its whole object.
     const deniedPredicate = /^\s*(?:no|nunca|tampoco)\s+(?:(?:te|lo|la|le|les|se)\s+)?(?:(?:puedo|podemos)\s+)?(?:regal\p{L}*|inclu\p{L}*|bonific\p{L}*)\b/u.test(clause);
