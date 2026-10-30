@@ -629,9 +629,9 @@ beforeAll(async () => {
     monthly_6: paymentLinkResolver.resolve('monthly_6'),
     one_time: paymentLinkResolver.resolve('one_time'),
   }, 'GOLDEN_PAYMENT_LINK_RESOLVER_NOT_CONFIGURED').toEqual({
-    monthly_12: 'https://payments.example.invalid/12m',
-    monthly_6: 'https://payments.example.invalid/6m',
-    one_time: 'https://payments.example.invalid/contado',
+    monthly_12: 'https://buy.stripe.com/test_studyx_golden_12m',
+    monthly_6: 'https://buy.stripe.com/test_studyx_golden_6m',
+    one_time: 'https://buy.stripe.com/test_studyx_golden_contado',
   });
   ({ recordDeliveryReport: recordDeliveryReportFn } = await import('@/lib/services/decision.service'));
   ({ projectAgentAMemories: projectAgentAMemoriesFn } = await import('@/features/memory/application/project-agent-a-memories'));
