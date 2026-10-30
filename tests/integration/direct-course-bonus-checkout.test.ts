@@ -133,7 +133,9 @@ run('direct bonus checkout exact accepted package',()=>{
       return commitAgentDecision({turn_id:turn.turn_id,trace_id:randomUUID(),supports_multi_outbound:true,
         authorized_offering_code:code,authorized_payment_plan:null,
         agent_turn_v2:{schema_version:2,proposal:{...f.proposalWithCallOfferAndFalsePrice,
-          move:{schema_version:1,move:'request_call',secondary_moves:[],vetoes:[],confidence:1,course_reference:reference},
+          // Authority: changing the paid course cancels the prior promotion;
+          // a call request about a course must not masquerade as that change.
+          move:{schema_version:1,move:'select_course',secondary_moves:[],vetoes:[],confidence:1,course_reference:reference},
           proposed_action:{type:'none'},response:{messages:[`Seguimos con ${reference}.`],call_offer:null}} as never},
         decision:f.placeholderDecision as never,model:f.model as never});
     }
