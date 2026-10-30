@@ -76,6 +76,13 @@ const environment = {
   VERCEL_GIT_COMMIT_SHA: headSha,
   PAYMENT_PROVIDER: 'fake',
   PAYMENT_LINK_ENVIRONMENT: 'test',
+  // Readiness requires the canonical production variable names to exist even
+  // when the resolver is explicitly running against the sandbox set below.
+  // Keep both sets synthetic: PAYMENT_LINK_ENVIRONMENT=test guarantees that
+  // the golden runner never selects these canonical placeholders.
+  PAYMENT_LINK_12M: 'https://payments.example.invalid/unused-production-12m',
+  PAYMENT_LINK_6M: 'https://payments.example.invalid/unused-production-6m',
+  PAYMENT_LINK_CONTADO: 'https://payments.example.invalid/unused-production-contado',
   PAYMENT_LINK_SANDBOX_12M: 'https://payments.example.invalid/12m',
   PAYMENT_LINK_SANDBOX_6M: 'https://payments.example.invalid/6m',
   PAYMENT_LINK_SANDBOX_CONTADO: 'https://payments.example.invalid/contado',
