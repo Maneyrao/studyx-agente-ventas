@@ -6,7 +6,7 @@ import {
 import { resolveCanonicalPromptIdentityV1 } from './agent-a-identity';
 import { evaluateSalesObjectionTurnV1 } from '../lib/conversation/sales-objection-turn-policy';
 
-export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v136' as const;
+export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v137' as const;
 
 /**
  * Runtime contract only. The sales behavior lives in the canonical prompt so
@@ -133,53 +133,18 @@ function currentCommercialGuidanceDirectiveV1(context: AgentAContextV1): string 
     : null;
   const directBonusGuidance = hasDirectBonusContextV1(context)
     ? courseBonus?.enabled===true && courseBonus.may_offer_bonus===true
-      ? `Permission is not proof that the earlier negotiation rungs were completed. The backend capability only authorizes use of the bonus rung. Inspect recent turns since the current paid-course focus. If prior assistant turns already attempted personalized value, the neutral authorized installment reframe and a conditional close that isolated price, this turn use offer_course_bonus with exactly one new active catalog code, distinct from the paid and existing bonus courses. Otherwise use exactly the next missing rung now; do not deny that an alternative exists, invent one or skip ahead. When the prior rungs are complete, name the bonus course in the same response, tie it to the expressed goal and recap the exact paid course plus delivered_bonus_offerings and this one validated addition. Respect max_bonus_courses and never a fourth gift; a later expansion needs a customer reply after confirmed delivery and a prior close attempt. Preserve the main price and close naturally. Do not postpone or merely describe an offer whose ladder is complete. The backend validates truth, limits and package identity; you interpret the sales conversation and its completed rungs.`
-      : `No new bonus is authorized. Preserve only the current delivered_bonus_offerings package and its exact identity; do not repeat pending or rejected additions. Continue with contextual value or a useful diagnosis, without forcing a close.`
+      ? `The effect offer_course_bonus is currently authorized. If canonical_sales_behavior chooses that effect, use exactly one new active catalog code that differs from the paid course and every delivered_bonus_offerings entry. Keep the paid course price unchanged, respect max_bonus_courses, and include the same course in the customer-facing package recap. A later offer requires a customer reply after confirmed delivery. The backend validates the effect and package identity; this block does not choose the sales strategy or rung.`
+      : `The effect offer_course_bonus is not currently authorized. Preserve the exact delivered_bonus_offerings package identity and do not repeat pending or rejected additions. This is an effect boundary, not a sales instruction.`
     : null;
-  const repeatedPriceGuidance = directBonusGuidance
-    ? `This is a persistent price objection. ${directBonusGuidance}`
-    : promotionReviewGuidance
-    ? `This is a persistent price objection. ${promotionReviewGuidance}`
-    : authorizedPromotionGuidance
-      ? `This is a persistent price objection. ${authorizedPromotionGuidance}`
-      : `This is a persistent price objection. Follow the next unused negotiation rung visible in recent turns: personalized value; then use the authorized 12-payment plan once as the next negotiation step; then isolate price and use a conditional close; then offer a reasoned call when authorized. Do not merely repeat the price, installment amounts or class count. Change the argument dimension using recent conversation evidence. Never call a plan cheaper or more accessible, minimize it with "only", use cost-per-day comparisons, lower the total price or invent a bonus.`;
-  const guidanceByKind: Record<Exclude<typeof objection.kind, 'none'>, string> = {
-    price_question: `Answer the price question promptly with the authorized plans; do not delay it behind a presentation or diagnostic. You may connect one relevant benefit afterward when the customer's intended use is already known.`,
-    price_question_with_objection: directBonusGuidance
-      ? `Answer the requested authorized price or payment terms exactly. Do not use that answer as a separate tactic to make the price feel lower. ${directBonusGuidance}`
-      : authorizedPromotionGuidance
-      ? `Answer the requested authorized price or payment terms exactly; the customer must not lose a direct answer because they also expressed concern. Do not use that answer as a separate tactic to make the price feel lower. ${authorizedPromotionGuidance}`
-      : promotionReviewGuidance
-        ? `Answer the requested authorized price or payment terms exactly; the customer must not lose a direct answer because they also expressed concern. Do not use that answer as a separate tactic to make the price feel lower. ${promotionReviewGuidance}`
-      : `Answer the requested authorized price or payment terms exactly; the customer must not lose a direct answer because they also expressed concern. Then address the concern through contextual value or, when it is a real budget limit, acknowledge it without pressure. Do not use that answer as a separate tactic to make the price feel lower, and never add cost-per-day comparisons, discounts or bonus courses.`,
-    price_objection: directBonusGuidance
-      ? `Acknowledge the concern warmly, clarify only an unknown friction, and connect value to the customer's goal. ${directBonusGuidance}`
-      : authorizedPromotionGuidance
-      ? `Acknowledge the concern briefly and continue with the already authorized commercial alternative. ${authorizedPromotionGuidance}`
-      : promotionReviewGuidance
-        ? `Acknowledge the concern briefly and continue with the authorized review step. ${promotionReviewGuidance}`
-      : `Distinguish a perceived-value gap from a real inability to pay, but only ask one brief discriminating question when existing context does not already make that clear. For a value gap, connect the customer's stated goal or constraint to one authorized course capability and describe a possible application conditionally. For a real budget limit, acknowledge it without pressure. Follow the negotiation ladder: value first, then use the authorized 12-payment plan once as the next negotiation step when value alone did not resolve the concern. Present it only as the same total distributed over time, never as cheaper, more accessible or "only USD 30". Do not describe your honesty or internal authorization. Never use cost-per-day comparisons, lower the price or invent a bonus.`,
-    repeated_price_objection: repeatedPriceGuidance,
-    payment_terms_question: `Answer the payment-terms question directly. Do not infer how payment cadence affects study, access or certification; state that relationship only when authorized_context explicitly supports it.`,
-    time_or_schedule_objection: `Separate a real schedule conflict from fear of sustaining the course only when the context does not make it clear. Use only authorized duration, modality, schedule, recording, access or dedication facts. If the needed detail is absent, say you cannot confirm it instead of filling the gap.`,
-    readiness_or_requirements_objection: `Respond to the concrete readiness concern with authorized prerequisites, level, equipment or course-description facts. Do not claim beginner suitability or that equipment is unnecessary unless authorized_context explicitly supports it.`,
-    trust_objection: `Use concrete authorized evidence, not reassuring adjectives. Website, Instagram, certification, contact channels, graduate evidence or physical-certificate claims are usable only when they appear in authorized_context. Treat an expectation mismatch about live teaching or recorded video as high risk: acknowledge it, do not assert either format unless it is authorized, and offer an immediate call only when the call policy authorizes it.`,
-    payment_friction: `Lower pressure and preserve the customer's purchase intent without pretending an operation occurred. Offer only payment alternatives present in authorized_context. Do not claim a reserved place or a loaded pre-enrollment, and do not suggest Apple Pay or Google Pay unless specifically authorized.`,
-    decision_deferral: `Treat this as a decision deferral, not a definitive rejection. Ask what remains unresolved before ending the sale, then use the customer's known goal and one authorized fact to address that friction. If a payment plan was explicitly chosen earlier or in the same batch, preserve it without claiming enrollment, sending a payment link or inventing another action. Do not offer a bonus unless the customer has actually expressed a persistent price objection. If the call policy authorizes an invitation and speaking would help resolve the uncertainty, put a brief reasoned invitation only in response.call_offer. Respect a clear request to stop or a definitive lack of interest.`,
-    offer_timing_question: `Answer with an authorized real start date or expiry only. Never invent an expiry, start date, scarcity or urgency; if no date is authorized, say you cannot confirm it and keep the next step practical.`,
-  };
-  return `<current_commercial_guidance kind="${objection.kind}">
-These are decision criteria, not customer-facing scripts. Answer the customer's direct question before advancing.
-Use the customer's known goal, motivation or constraint when it is relevant; do not re-ask known information or force a diagnostic sequence.
-${guidanceByKind[objection.kind]}
-Neutral exact authorized payment terms are permitted as one rung of a price-objection negotiation, even when the customer describes a value concern rather than a literal inability to pay. Never minimize with "only USD 30", "cheaper", "more accessible", daily comparisons, price reductions or sterile plan repetition. Label the friction briefly, ask a calibrated diagnostic question only if useful, connect verified value to the stated goal and use a trial close when appropriate. No Ackerman, pressure, guilt or manipulation.
-The call lifecycle never replaces handling the objection in chat. Never invent missing facts or completed effects.
-Do not invent discounts, extras, promises of income or results. A direct price or payment-terms question still receives the exact authorized facts.
-Truthfulness, authorization and validation rules are silent operating constraints. Translate them into confirmed facts and a helpful next step; never make a defensive declaration about your honesty or imply that the customer requested fabrication. Honest uncertainty remains appropriate when a fact is genuinely absent.
-When a requested discount or promotion is unavailable, do not say "I cannot offer it", "I cannot change that", "I will not invent it", "that is what there is" or close equivalents. State the stable commercial fact neutrally and keep helping through an authorized next step.
-If the call policy permits or requires an invitation, put it only in response.call_offer and briefly explain what the call would help resolve.
-Choose the wording and structure yourself; this is guidance, not a script.
-</current_commercial_guidance>`;
+  const effectGuidance = directBonusGuidance
+    ?? promotionReviewGuidance
+    ?? authorizedPromotionGuidance;
+  if (effectGuidance === null) return '';
+  return `<current_effect_contract kind="course_bonus" source_objection="${objection.kind}">
+${effectGuidance}
+This block exposes only the current bonus capability and its effect boundary. The canonical sales behavior owns commercial interpretation, sequencing and wording.
+Use only authorized course, package and payment facts. Never claim a completed effect before the matching action commits.
+</current_effect_contract>`;
 }
 
 const LISANDRO_VOICE_GATE = `<lisandro_voice_gate>

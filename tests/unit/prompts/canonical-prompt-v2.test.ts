@@ -15,18 +15,19 @@ const source = readFileSync(
 // Exact-prose assertions from v41 would preserve the overloaded prompt.
 describe('canonical prompt deployment parity', () => {
   it('loads the same source used to generate the deployed behavior', () => {
-    expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v100');
+    // Authority: prompt lines 91-129 replace the previous commercial ladder.
+    expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v101');
     expect(STUDYX_AGENT_A_CANONICAL_PROMPT).toBe(source);
   });
 
   it('keeps diagnosis, value-based objection handling and calls while fencing promotions', () => {
-    expect(source).toContain('El diagnóstico es contexto acumulado');
-    expect(source).toContain('La llamada sirve para descubrir, orientar, convencer y cerrar');
-    expect(source).toContain('Nunca bonifiques ante la primera objeción');
-    expect(source).toContain('Nómbralo en la misma respuesta');
-    expect(source).toContain('request_promotion_review');
+    expect(source).toContain('Descubre sólo lo que te sirve para vender');
+    expect(source).toContain('La llamada es una herramienta de cierre complementaria');
+    expect(source).toContain('Nunca en el primer contacto, ante la primera mención de precio');
+    expect(source).toContain('en el mismo turno, presenta el curso en tu respuesta');
+    expect(source).toContain('`accept_promotion` lleva la identidad completa del contexto');
     expect(source).toContain('schedule_price_objection_checkin');
-    expect(source).toContain('No bajes ni cambies el precio');
+    expect(source).toContain('El precio total no se baja ni se modifica');
   });
 
   it('ships the complete sales system requested by Lisandro instead of a compressed summary', () => {
