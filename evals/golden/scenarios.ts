@@ -230,9 +230,9 @@ export const GOLDEN_CASES: readonly GoldenCaseV1[] = [
       },
       {
         id: 'value', customer: 'Me interesa, pero está caro.',
-        must: ['Escalón 1: conectar valor con ofrecer fotos a tiendas/emprendedores y volver a cerrar.'],
-        mustNot: ['No saltar a llamada, cuotas o bonificación y no bajar el precio.'],
-        authority: [ref(PROMPT, 104, 112, '**Valor:**'), ref(PROMPT, 118, 124, 'antes de los escalones 1 a 3')],
+        must: ['Conectar valor con ofrecer fotos a tiendas/emprendedores, poder reencuadrar con la cuota mensual y volver a cerrar.'],
+        mustNot: ['No saltar a llamada o bonificación y no bajar el precio.'],
+        authority: [ref(PROMPT, 98, 104, '**Valor percibido**'), ref(PROMPT, 118, 124, 'antes de los escalones 1 a 3')],
         expected: { move: ['ask_course_information', 'ask_payment_options', 'unknown'], action: ['none'], state: state({ promotion: promotion() }) },
         hard: [{ type: 'promotion_bonus_count_at_most', value: 0 },
           { type: 'current_price_objection_recorded' }],
