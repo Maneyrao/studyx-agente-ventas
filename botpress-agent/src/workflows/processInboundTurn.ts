@@ -43,6 +43,7 @@ import {
   constrainModelToAdvisory,
   suppress,
   technicalFallback,
+  technicalContinuityFallback,
   modelUnavailableFallback,
 } from '../utils/decision-policy'
 import {
@@ -67,8 +68,11 @@ import {
 import { isLegacyConversationPipelineEligibleV1 } from '../lib/conversation/agent-a-routing'
 import {
   DEFAULT_AGENT_A_BRAIN_DEEPSEEK_MODEL,
+  claimsImmediateCallDispatchV1,
   generateDeepSeekAgentATurnProposalV1,
+  type GeneratedAgentATurnProposalV1,
 } from '../lib/conversation/agent-a-brain'
+import { claimsImmediatePaymentLinkDeliveryV1 } from '../../../src/shared/conversation/payment-link-claim'
 import {
   classifyAgentAAttemptFailure,
   isAgentAProviderFailure,
@@ -296,6 +300,65 @@ function customerVisibleModelFallback(
   return modelUnavailableFallback(claimed, reason)
 }
 
+/**
+ * Exact model-authored conversation slices, ordered from most complete to
+ * smallest. The helper never rewrites customer-facing copy: every candidate
+ * still has to cross the complete fact/effect validator before commit.
+ */
+function literalConversationVariants(
+  proposal: AgentATurnProposalV1,
+): AgentATurnProposalV1[] {
+  const variants: AgentATurnProposalV1[] = []
+  const seen = new Set<string>()
+  const isSubstantive = (messages: readonly string[]): boolean => {
+    const tokens = messages.join(' ')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/gu, '')
+      .toLocaleLowerCase('es')
+      .match(/[\p{L}\p{N}]+/gu) ?? []
+    const acknowledgements = new Set([
+      'bien', 'bueno', 'claro', 'dale', 'de', 'acuerdo', 'entiendo',
+      'gracias', 'listo', 'ok', 'okay', 'perfecto', 'si',
+    ])
+    return tokens.length > 0 && !tokens.every((token) => acknowledgements.has(token))
+  }
+  const pushMessages = (messages: string[]): void => {
+    const normalized = messages.map((message) => message.trim()).filter(Boolean)
+    if (normalized.length === 0 || !isSubstantive(normalized)) return
+    const key = normalized.join('\u0000')
+    if (seen.has(key)) return
+    seen.add(key)
+    variants.push({
+      ...proposal,
+      response: { ...proposal.response, messages: normalized },
+    })
+  }
+  const originalMessages = [...proposal.response.messages]
+  pushMessages(originalMessages)
+  for (let length = originalMessages.length; length >= 1; length -= 1) {
+    for (let start = 0; start + length <= originalMessages.length; start += 1) {
+      pushMessages(originalMessages.slice(start, start + length))
+    }
+  }
+  for (const message of originalMessages) {
+    const boundaries = [0]
+    for (const match of message.matchAll(/\n+|(?<=[.!?])\s+/gu)) {
+      if (typeof match.index === 'number') boundaries.push(match.index + match[0].length)
+    }
+    boundaries.push(message.length)
+    const uniqueBoundaries = [...new Set(boundaries)].sort((left, right) => left - right)
+    for (let span = uniqueBoundaries.length - 1; span >= 1; span -= 1) {
+      for (let start = 0; start + span < uniqueBoundaries.length; start += 1) {
+        pushMessages([message.slice(
+          uniqueBoundaries[start]!,
+          uniqueBoundaries[start + span]!,
+        )])
+      }
+    }
+  }
+  return variants
+}
+
 const workflowStateSchema = z.object({
   phase: ProcessingStateSchema.default('received'),
   turnId: z.string().uuid().nullable().default(null),
@@ -452,6 +515,9 @@ function backendCommitTurnRejectionV1(input: {
   if (input.context.capabilities.course_bonus?.may_accept_offer) actions.push('accept_promotion')
   if ((input.context.catalog.test_payment_options?.length ?? 0) > 0) actions.push('send_test_payment_link')
   if (input.context.capabilities.may_request_call_now) actions.push('request_call_now')
+  const rejectedActions = new Set(mapped.flatMap((reason) => (
+    reason.code === 'ACTION_NOT_AUTHORIZED' ? [reason.subject] : []
+  )))
 
   return {
     schema_version: 1,
@@ -460,7 +526,10 @@ function backendCommitTurnRejectionV1(input: {
     rejections: mapped,
     authorized_alternatives: {
       fact_ids: [...new Set(factIds)],
-      actions,
+      // The durable backend receipt outranks the claim snapshot. Never feed
+      // the exact rejected effect back as authorized merely because an older
+      // local capability still allowed it.
+      actions: actions.filter((action) => !rejectedActions.has(action)),
       missing_information: [...missingInformation],
     },
   }
@@ -1025,6 +1094,7 @@ export const processInboundTurn = new Workflow({
     let pipelineDecisionModel = 'conversation-pipeline-v1'
     let pipelinePromptVersion = `${CONVERSATION_INTERPRETER_PROMPT_VERSION}+${CONVERSATION_COMPOSER_PROMPT_VERSION}+${STUDYX_SALES_BEHAVIOR_VERSION}`
     let pipelineMemoryCandidates: Decision['memory_candidates'] = []
+    const precommitModelAuthoredCandidates: GeneratedAgentATurnProposalV1[] = []
     let turnDiagnostics: TurnDiagnosticsV1 | null = null
     let agentAGenerationAttempts: 0 | 1 | 2 | 3 = 0
     let physicalAgentARequests = 0
@@ -1286,6 +1356,7 @@ export const processInboundTurn = new Workflow({
           action_status: 'none',
         }
         let generated = generatedAttempt.value
+        precommitModelAuthoredCandidates.push(generated)
         await persistProfileProposal(generated.proposal)
         timings.agent_a_brain_ms = Date.now() - brainStartedAt
         safeLog('studyx.turn.agent_a_brain_generation', {
@@ -1363,6 +1434,7 @@ export const processInboundTurn = new Workflow({
                   }),
                   { maxAttempts: 1 },
                 )
+                precommitModelAuthoredCandidates.push(repaired)
                 await persistProfileProposal(repaired.proposal, rejection)
                 return repaired
                 } catch (continuationError) {
@@ -1387,6 +1459,7 @@ export const processInboundTurn = new Workflow({
                   model: typeof configuration.agentABrainDeepSeekModel === 'string'
                     ? configuration.agentABrainDeepSeekModel : DEFAULT_AGENT_A_BRAIN_DEEPSEEK_MODEL,
                 }), { maxAttempts: 1 })
+              precommitModelAuthoredCandidates.push(effectiveGenerated)
               await persistProfileProposal(effectiveGenerated.proposal, resolved.rejection!)
               turnDiagnostics = {
                 schema_version: 1, generation_attempts: agentAGenerationAttempts,
@@ -1670,6 +1743,7 @@ export const processInboundTurn = new Workflow({
                     model: typeof configuration.agentABrainDeepSeekModel === 'string'
                       ? configuration.agentABrainDeepSeekModel : DEFAULT_AGENT_A_BRAIN_DEEPSEEK_MODEL,
                   }), { maxAttempts: 1 })
+                precommitModelAuthoredCandidates.push(continuation)
                 await persistProfileProposal(continuation.proposal, profileRejection)
                 agentTurnV2Commit = {
                   schema_version: 2,
@@ -1699,8 +1773,65 @@ export const processInboundTurn = new Workflow({
                 }
               }
             }
+            if (pipelineFailureDecision?.reason_code === 'AGENT_A_CONTINUATION_REJECTED') {
+              candidateLoop: for (const candidate of [...precommitModelAuthoredCandidates].reverse()) {
+                for (const candidateProposal of literalConversationVariants(candidate.proposal)) {
+                  try {
+                    const conversationCandidate = {
+                      ...candidate,
+                      proposal: {
+                        ...candidateProposal,
+                        proposed_action: { type: 'none' as const },
+                      },
+                    }
+                    const revalidated = await resolveAgentAPlannerlessProposalV2({
+                      initial: conversationCandidate,
+                      context: agentABrainContext,
+                      repair_enabled: false,
+                      semantic_rejections: 'blocking',
+                      rejection_id: randomUUID(),
+                      repair: async () => {
+                        throw new Error('AGENT_A_PRECOMMIT_FLOOR_REPAIR_NOT_ALLOWED')
+                      },
+                    })
+                    agentTurnV2Commit = {
+                      schema_version: 2,
+                      proposal: revalidated.effective.proposal,
+                      ...fencedAgentARequestV1(),
+                    }
+                    pipelineCommit = null
+                    pipelineMemoryCandidates = revalidated.effective.proposal.memory_candidates
+                    pipelineDecisionProvider = revalidated.effective.provider
+                    pipelineDecisionModel = revalidated.effective.model
+                    pipelinePromptVersion = AGENT_A_BRAIN_PROMPT_VERSION
+                    pipelineFailureDecision = null
+                    turnDiagnostics = { ...turnDiagnostics, action_status: 'none' }
+                    safeLog('studyx.turn.agent_a_precommit_conversational_floor', {
+                      trace_id: input.trace_id,
+                      turn_id: owned.turn_id,
+                    })
+                    break candidateLoop
+                  } catch (floorError) {
+                    if (!(floorError instanceof Error)) throw floorError
+                    safeLog('studyx.turn.agent_a_precommit_conversational_floor_invalid', {
+                      trace_id: input.trace_id,
+                      turn_id: owned.turn_id,
+                      failure_code: errorCode(floorError),
+                    })
+                  }
+                }
+              }
+            }
+            if (pipelineFailureDecision?.reason_code === 'AGENT_A_CONTINUATION_REJECTED') {
+              pipelineFailureDecision = technicalContinuityFallback(owned)
+              safeLog('studyx.turn.agent_a_precommit_technical_continuity', {
+                trace_id: input.trace_id,
+                turn_id: owned.turn_id,
+                failure_codes: turnDiagnostics.failure_codes,
+              })
+            }
           } else {
-            pipelineFailureDecision = suppress('AGENT_A_CONTINUATION_REJECTED')
+            pipelineFailureDecision = technicalContinuityFallback(owned)
           }
         }
       }
@@ -2146,10 +2277,29 @@ export const processInboundTurn = new Workflow({
       })
         latestRejection = rejection
         let currentBackendRejection = rejection
+        // Keep only proposals that already crossed the local authority
+        // boundary. If their business effect becomes stale at commit time,
+        // one of these can still provide Agent A's own conversational reply
+        // after the effect is removed and the complete proposal is validated
+        // again. Backend-authored deterministic copy is deliberately excluded.
+        const modelAuthoredCommitCandidates: Array<{
+          readonly proposal: AgentATurnProposalV1
+          readonly provider: typeof decisionProvider
+          readonly model: string
+        }> = decisionProvider === 'botpress' ? [] : [{
+          proposal: rejectedProposal,
+          provider: decisionProvider,
+          model: decisionModel,
+        }]
         let rejectionCodes = [...new Set(
           rejection.rejections.map((item) => item.code),
         )].slice(0, 8)
-        let repairEffectsAllowed = rejection.authorized_alternatives.actions
+        const rejectedEffectRemainsAuthorized = (
+          proposal: AgentATurnProposalV1,
+          receipt: typeof currentBackendRejection,
+        ): boolean => proposal.proposed_action.type !== 'none'
+          && receipt.authorized_alternatives.actions.includes(proposal.proposed_action.type)
+        let repairEffectsAllowed = currentBackendRejection.authorized_alternatives.actions
           .some((action) => action !== 'none')
         const deepSeekApiKey = secrets.DEEPSEEK_API_KEY
         // A second backend rejection does not authorize the backend to write
@@ -2195,13 +2345,18 @@ export const processInboundTurn = new Workflow({
               initial: repaired,
               context: repairContext,
               repair_enabled: false,
-              semantic_rejections: 'advisory',
+              semantic_rejections: 'blocking',
               rejection_id: currentBackendRejection.rejection_id,
               repair: async () => {
                 throw new Error('AGENT_A_SECOND_REPAIR_NOT_ALLOWED')
               },
             })
             const effectiveRepair = resolvedRepair.effective
+            modelAuthoredCommitCandidates.push({
+              proposal: effectiveRepair.proposal,
+              provider: effectiveRepair.provider,
+              model: effectiveRepair.model,
+            })
             agentTurnV2Commit = {
               schema_version: 2,
               proposal: effectiveRepair.proposal,
@@ -2283,6 +2438,11 @@ export const processInboundTurn = new Workflow({
               { maxAttempts: 1 },
             )
             await persistProfileProposal(finalContinuation.proposal, currentBackendRejection)
+            modelAuthoredCommitCandidates.push({
+              proposal: finalContinuation.proposal,
+              provider: finalContinuation.provider,
+              model: finalContinuation.model,
+            })
             agentTurnV2Commit = {
               schema_version: 2,
               proposal: finalContinuation.proposal,
@@ -2327,6 +2487,8 @@ export const processInboundTurn = new Workflow({
                 rejectionCodes = [...new Set(
                   renewedRejection.rejections.map((item) => item.code),
                 )].slice(0, 8)
+                repairEffectsAllowed = renewedRejection.authorized_alternatives.actions
+                  .some((action) => action !== 'none')
               }
             }
             safeLog('studyx.turn.backend_commit_final_agent_a_failed', {
@@ -2339,16 +2501,152 @@ export const processInboundTurn = new Workflow({
         }
 
         if (committed === null) {
-          // No safe model-authored continuation exists. Persist the exact
-          // rejection without inventing customer prose or claiming an outage.
+          // A rejected effect must not erase independently safe conversation.
+          // Try the newest model-authored candidate first, retain an effect
+          // only when the latest authoritative receipt explicitly allows it,
+          // and re-run the complete local fact/effect boundary. If a candidate
+          // mixes safe prose with a rejected operational claim, exact leading
+          // substantive sentences are tried without
+          // rewriting any model text. Claims such as "te llamo" or "ya envié
+          // el link" therefore cannot survive after their effect is removed.
+          let floorCandidateIndex = 0
+          candidateLoop: for (const candidate of [...modelAuthoredCommitCandidates].reverse()) {
+            for (const candidateProposal of literalConversationVariants(candidate.proposal)) {
+              const candidateIndex = floorCandidateIndex
+              floorCandidateIndex += 1
+              const candidateAction = candidateProposal.proposed_action.type
+              const retainAuthorizedEffect = rejectedEffectRemainsAuthorized(
+                candidateProposal,
+                currentBackendRejection,
+              )
+              const rejectedCallEffect = currentBackendRejection.rejections.some((reason) => (
+                reason.subject === 'request_call_now' || reason.subject.startsWith('call')
+              ))
+              const rejectedPaymentEffect = currentBackendRejection.rejections.some((reason) => (
+                reason.subject === 'send_payment_link' || reason.subject.startsWith('payment')
+              ))
+              const candidateCopy = [
+                ...candidateProposal.response.messages,
+                candidateProposal.response.call_offer ?? '',
+              ]
+              // The claim snapshot may still advertise a capability that the
+              // authoritative commit has just rejected. In that case a floor
+              // candidate cannot keep customer-facing success wording after
+              // the structured effect is removed; only a literal prefix that
+              // no longer makes the rejected claim may cross the boundary.
+              if (!retainAuthorizedEffect && (
+                rejectedCallEffect && candidateCopy.some((message) => (
+                  claimsImmediateCallDispatchV1(
+                    message,
+                    repairContext.commercial_state.active_call?.status,
+                  )
+                ))
+                || rejectedPaymentEffect && candidateCopy.some(claimsImmediatePaymentLinkDeliveryV1)
+              )) continue
+              const conversationCandidate = {
+                ...candidate,
+                proposal: {
+                  ...candidateProposal,
+                  proposed_action: retainAuthorizedEffect
+                    ? candidateProposal.proposed_action
+                    : { type: 'none' as const },
+                },
+              }
+              try {
+              const revalidated = await resolveAgentAPlannerlessProposalV2({
+                initial: conversationCandidate,
+                context: repairContext,
+                repair_enabled: false,
+                semantic_rejections: 'blocking',
+                rejection_id: currentBackendRejection.rejection_id,
+                repair: async () => {
+                  throw new Error('AGENT_A_CONVERSATIONAL_FLOOR_REPAIR_NOT_ALLOWED')
+                },
+              })
+              const effectiveConversation = revalidated.effective
+              agentTurnV2Commit = {
+                schema_version: 2,
+                proposal: effectiveConversation.proposal,
+                ...(!retainAuthorizedEffect ? fencedAgentARequestV1() : {}),
+              }
+              pipelineCommit = null
+              pipelineMemoryCandidates = effectiveConversation.proposal.memory_candidates
+              decision = pipelinePlaceholder(pipelineMemoryCandidates)
+              decisionProvider = effectiveConversation.provider
+              decisionModel = effectiveConversation.model
+              pipelinePromptVersion = AGENT_A_BRAIN_PROMPT_VERSION
+              turnDiagnostics = {
+                schema_version: 1,
+                generation_attempts: agentAGenerationAttempts,
+                failure_stage: 'backend_commit',
+                failure_codes: rejectionCodes,
+                action_status: retainAuthorizedEffect ? 'authorized' : 'none',
+              }
+              committed = await commitCurrentDecision(
+                `commit-agent-a-conversational-floor-v1-${candidateIndex}`,
+              )
+              safeLog('studyx.turn.agent_a_conversational_floor_committed', {
+                trace_id: input.trace_id,
+                turn_id: owned.turn_id,
+                candidate_index: candidateIndex,
+                retained_action_type: retainAuthorizedEffect ? candidateAction : 'none',
+                rejection_codes: rejectionCodes,
+              })
+                break candidateLoop
+              } catch (floorError) {
+                if (!(floorError instanceof Error)) throw floorError
+                const floorFailure = classifyAgentAAttemptFailure(floorError)
+                if (floorFailure.stage === 'policy' || floorFailure.stage === 'schema') {
+                  safeLog('studyx.turn.agent_a_conversational_floor_invalid', {
+                    trace_id: input.trace_id,
+                    turn_id: owned.turn_id,
+                    candidate_index: candidateIndex,
+                    failure_code: floorFailure.code,
+                  })
+                  continue
+                }
+                const floorRejection = backendCommitTurnRejectionV1({
+                  error: floorError,
+                  proposal: conversationCandidate.proposal,
+                  context: repairContext,
+                  rejectionId: randomUUID(),
+                })
+                if (floorRejection !== null) {
+                  currentBackendRejection = floorRejection
+                  latestRejection = floorRejection
+                  rejectionCodes = [...new Set(
+                    floorRejection.rejections.map((item) => item.code),
+                  )].slice(0, 8)
+                  safeLog('studyx.turn.agent_a_conversational_floor_rejected', {
+                    trace_id: input.trace_id,
+                    turn_id: owned.turn_id,
+                    candidate_index: candidateIndex,
+                    rejection_codes: rejectionCodes,
+                  })
+                  continue
+                }
+                // A transport or durable runtime failure is not safe to retry
+                // as another commit because its outcome may be ambiguous.
+                throw floorError
+              }
+            }
+          }
+        }
+
+        if (committed === null) {
+          // No authorized model-authored response survived both boundaries.
+          // The existing technical continuity reply is deliberately free of
+          // the rejected effect and commercial promises. Commit it now so a
+          // provider/reparation failure never turns into customer silence;
+          // this is a last-resort operational fallback, not a sales decision.
           agentTurnV2Commit = null
           pipelineCommit = null
           pipelineMemoryCandidates = []
           const generationUnavailable = continuationFailure !== null
             && isAgentAProviderFailure(continuationFailure)
-          decision = suppress('AGENT_A_CONTINUATION_REJECTED')
+          decision = technicalContinuityFallback(owned)
           decisionProvider = 'botpress'
-          decisionModel = 'policy:agent-a-repair-unavailable'
+          decisionModel = 'policy:agent-a-authorized-floor-unavailable'
           turnDiagnostics = {
             schema_version: 1,
             generation_attempts: agentAGenerationAttempts,
@@ -2357,7 +2655,22 @@ export const processInboundTurn = new Workflow({
               : [...new Set([...rejectionCodes, ...attemptFailureDiagnosticCodes(continuationFailure)])].slice(0, 8),
             action_status: 'rejected',
           }
-          return await recoverRejectedTurn()
+          try {
+            committed = await commitCurrentDecision('commit-agent-a-technical-continuity-v1')
+            safeLog('studyx.turn.agent_a_technical_continuity_committed', {
+              trace_id: input.trace_id,
+              turn_id: owned.turn_id,
+              rejection_codes: rejectionCodes,
+            })
+          } catch (continuityError) {
+            if (!(continuityError instanceof Error)) throw continuityError
+            safeLog('studyx.turn.agent_a_technical_continuity_failed', {
+              trace_id: input.trace_id,
+              turn_id: owned.turn_id,
+              error_code: errorCode(continuityError),
+            })
+            return await recoverRejectedTurn()
+          }
         }
       }
     } catch (error) {

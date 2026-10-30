@@ -59,6 +59,18 @@ export function technicalFallback(
   }
 }
 
+/**
+ * Last-resort continuity after Agent A prose and effects have both crossed
+ * their dedicated repair budget. It reuses the fact-free technical reply and
+ * the same final policy boundary; it never invokes the lexical sales fallback.
+ */
+export function technicalContinuityFallback(claimed: ClaimedTurn): Decision {
+  const responseType = claimed.policy.allowed_response_types.includes('commercial_reply')
+    ? 'commercial_reply'
+    : 'technical_fallback'
+  return applyDecisionPolicy(technicalFallback(responseType), claimed)
+}
+
 /** Customer-safe clarification after Agent A exhausts its one correction. */
 export function validationExhaustedNotice(
   responseType: 'technical_fallback' | 'commercial_reply' = 'technical_fallback',
