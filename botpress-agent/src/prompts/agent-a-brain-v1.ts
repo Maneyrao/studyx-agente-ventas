@@ -6,7 +6,7 @@ import {
 import { resolveCanonicalPromptIdentityV1 } from './agent-a-identity';
 import { evaluateSalesObjectionTurnV1 } from '../lib/conversation/sales-objection-turn-policy';
 
-export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v141' as const;
+export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v142' as const;
 
 /**
  * Runtime contract only. The sales behavior lives in the canonical prompt so
@@ -54,10 +54,16 @@ export function hasDirectBonusContextV1(context: AgentAContextV1): boolean {
 function mandatoryRepairDirectiveV1(context: AgentAContextV1): string {
   const rejection = context.turn_rejection;
   if (!rejection) return '';
-  const repairsCall = rejection.rejections.some(reason => (
-    reason.subject === 'request_call_now' || reason.subject.startsWith('call')
+  const repairsCallOfferBoundary = rejection.rejections.some(reason => (
+    reason.code === 'CALL_OFFER_MESSAGE_BOUNDARY_INVALID'
   ));
-  const callRepair = repairsCall ? `
+  const repairsCallDispatch = rejection.rejections.some(reason => (
+    reason.subject === 'request_call_now'
+      || (reason.subject.startsWith('call') && reason.code !== 'CALL_OFFER_MESSAGE_BOUNDARY_INVALID')
+  ));
+  const callRepair = repairsCallOfferBoundary ? `
+For a duplicated call invitation, preserve the authorized invitation and its concrete reason. Keep the invitation only in response.call_offer and remove the duplicate invitation from response.messages. Use proposed_action=none. Do not ask for contact data until the customer accepts, and do not claim that a call was placed.`
+    : repairsCallDispatch ? `
 For an unavailable request_call_now, retain move=request_call and use proposed_action=none.
 Ask only for missing call data among nombre, apellido, correo and telefono. If correo is known but call_contact_requirements says written_whatsapp_confirmation_required, ask only that they type it in this chat. Keep the customer's intent and write the request naturally in the canonical voice.
 Do not claim the call was placed.` : '';
@@ -136,10 +142,13 @@ function currentCommercialGuidanceDirectiveV1(context: AgentAContextV1): string 
     && context.commercial_state.call_offer_count === 0
     && context.commercial_state.call_offer_status === 'not_offered'
     && context.commercial_state.call_preference === 'unknown';
+  const deliveredBonusCount = courseBonus?.delivered_bonus_offerings?.length ?? 0;
   const directBonusGuidance = hasDirectBonusContextV1(context)
     ? courseBonus?.enabled===true && courseBonus.may_offer_bonus===true
       ? callRungStillPending
         ? `The effect offer_course_bonus is currently authorized, but durable call state proves rung 4 has not been delivered. Inspect recent delivered turns: only a delivered assistant reply counts as a completed rung, never a rejected attempt. Do not use offer_course_bonus in this turn. Answer the current objection and complete the call rung first with one concrete, natural invitation; use proposed_action=none. Only the customer reply after that delivered invitation can advance to the bonus rung. This is the literal canonical_sales_behavior sequence, not a backend decision about sales quality.`
+        : deliveredBonusCount > 0
+          ? `The direct package already contains ${deliveredBonusCount} delivered course bonus${deliveredBonusCount === 1 ? '' : 'es'} and the customer has replied with the same price objection. Under canonical_sales_behavior, the canonical next rung is exactly one additional course bonus while the count is below max_bonus_courses. Use proposed_action=offer_course_bonus in this turn with exactly one new active catalog code that differs from the paid course and every delivered_bonus_offerings entry. Name that exact new course, explain its affinity to the stated goal, keep the paid course price unchanged, and recap the paid course plus every prior bonus plus the new course. Do not restart value, installments, isolation or the call rung. A later offer still requires another customer reply after confirmed delivery.`
         : `The effect offer_course_bonus is currently authorized, but this capability does not prove that the negotiation ladder reached the bonus rung and does not choose the sales strategy or rung. Inspect recent delivered turns and follow the literal ladder in canonical_sales_behavior one rung at a time; only a delivered assistant reply counts as a completed rung, never a rejected attempt. If canonical_sales_behavior chooses the bonus effect now, use exactly one new active catalog code that differs from the paid course and every delivered_bonus_offerings entry. Name that exact new course in the response, connect it to the stated goal, keep the paid course price unchanged, respect max_bonus_courses, and include the same course in the customer-facing package recap. A later offer requires a customer reply after confirmed delivery. The backend validates only the effect and package identity.`
       : `The effect offer_course_bonus is not currently authorized. Preserve the exact delivered_bonus_offerings package identity and do not repeat pending or rejected additions. This is an effect boundary, not a sales instruction.`
     : null;

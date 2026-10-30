@@ -197,13 +197,35 @@ describe('Agent A Brain prompt', () => {
     const guidance = courseBonusEffectContract(buildAgentABrainInstructionsV1(current));
     expect(guidance).toContain('offer_course_bonus');
     expect(guidance).toContain('one new active catalog code');
-    expect(guidance).toContain('does not choose the sales strategy or rung');
-    expect(guidance).toContain('does not prove that the negotiation ladder reached the bonus rung');
-    expect(guidance).toContain('only a delivered assistant reply counts as a completed rung');
     expect(guidance).toContain('delivered_bonus_offerings');
+    expect(guidance).toContain('the canonical next rung is exactly one additional course bonus');
+    expect(guidance).toContain('Use proposed_action=offer_course_bonus in this turn');
     expect(guidance).not.toContain('request_promotion_review');
-    expect(guidance).toContain('Inspect recent delivered turns');
     expect(guidance).not.toContain('do not use offer_course_bonus in this turn');
+  });
+
+  it('repairs a duplicated call invitation without turning the offer into call intake', () => {
+    const current = context();
+    current.turn.batch_messages = [{ id: 'm2', text: 'Sigue siendo caro' }];
+    current.turn_rejection = {
+      schema_version: 1,
+      rejection_id: '00000000-0000-4000-8000-000000000019',
+      attempt: 1,
+      rejections: [
+        { code: 'CALL_OFFER_MESSAGE_BOUNDARY_INVALID', subject: 'call_offer' },
+        { code: 'CALL_OFFER_MESSAGE_BOUNDARY_INVALID', subject: 'duplicate_call_offer' },
+      ],
+      authorized_alternatives: { fact_ids: [], actions: ['none'], missing_information: [] },
+    };
+
+    const repair = buildAgentABrainInstructionsV1(current)
+      .split('<mandatory_repair')[1]!
+      .split('</mandatory_repair>')[0]!;
+
+    expect(repair).toContain('Keep the invitation only in response.call_offer');
+    expect(repair).toContain('remove the duplicate invitation from response.messages');
+    expect(repair).toContain('Do not ask for contact data until the customer accepts');
+    expect(repair).not.toContain('For an unavailable request_call_now');
   });
 
   it('keeps the canonical call rung ahead of a technically available direct bonus', () => {
@@ -270,7 +292,7 @@ describe('Agent A Brain prompt', () => {
     expect(JSON.parse(encoded)).toEqual(current);
     expect(instructions).not.toContain('<current_turn_guidance>');
     expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v101');
-    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v141');
+    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v142');
   });
 
   it('does not override the authority price ladder with a second commercial strategy', () => {
