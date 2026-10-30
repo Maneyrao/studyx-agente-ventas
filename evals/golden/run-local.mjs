@@ -35,9 +35,9 @@ const headSha = captured('git', ['rev-parse', 'HEAD']);
 if (spawnSync('git', ['merge-base', '--is-ancestor', BASE_SHA, headSha], { stdio: 'ignore' }).status !== 0) {
   throw new Error('GOLDEN_BASE_SHA_NOT_ANCESTOR');
 }
-const changedFromBase = captured('git', ['diff', '--name-only', BASE_SHA])
+const changedInWorktree = captured('git', ['diff', '--name-only', 'HEAD'])
   .split(/\r?\n/u).filter(Boolean);
-if (changedFromBase.some((filename) => !filename.startsWith('evals/golden/'))) {
+if (changedInWorktree.some((filename) => !filename.startsWith('evals/golden/'))) {
   throw new Error('GOLDEN_AGENT_CODE_DIFFERS_FROM_BASE');
 }
 const unsafeUntracked = captured('git', ['ls-files', '--others', '--exclude-standard'])
@@ -63,6 +63,7 @@ const environment = {
   TEST_DATABASE_URL: databaseUrl,
   STUDYX_EVAL_API_BASE_URL: apiBaseUrl,
   STUDYX_GOLDEN_LIVE: 'true',
+  STUDYX_GOLDEN_EVALUATED_SHA: headSha,
   STUDYX_GOLDEN_REUSE_OBSERVATIONS: process.env.STUDYX_GOLDEN_REUSE_OBSERVATIONS ?? 'false',
   STUDYX_GOLDEN_DEEPSEEK_MODEL: process.env.STUDYX_GOLDEN_DEEPSEEK_MODEL ?? 'deepseek-v4-flash',
   STUDYX_WORKFLOW_REPORT_DIR: 'evals/golden/results/runtime',
@@ -72,7 +73,7 @@ const environment = {
   ORCHESTRATOR_KEY_ID: 'botpress-eval',
   STUDYX_SIGNING_SECRET: 'eval-signing-secret',
   CRON_SECRET: 'local-eval-cron',
-  VERCEL_GIT_COMMIT_SHA: BASE_SHA,
+  VERCEL_GIT_COMMIT_SHA: headSha,
   PAYMENT_PROVIDER: 'fake',
   PAYMENT_LINK_ENVIRONMENT: 'test',
   PAYMENT_LINK_12M: 'https://payments.example.invalid/12m',

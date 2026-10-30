@@ -45,6 +45,8 @@ const apiBaseUrl = process.env.STUDYX_EVAL_API_BASE_URL ?? '';
 const model = process.env.STUDYX_GOLDEN_DEEPSEEK_MODEL ?? 'deepseek-v4-flash';
 const resultsDirectory = path.resolve(process.cwd(), 'evals/golden/results');
 const reuseObservations = process.env.STUDYX_GOLDEN_REUSE_OBSERVATIONS === 'true';
+const evaluatedSha = process.env.STUDYX_GOLDEN_EVALUATED_SHA ?? '';
+const resultStem = 'baseline-v4';
 
 type Sql = ReturnType<typeof openLocalTestDatabase>;
 
@@ -503,7 +505,9 @@ async function prepareFulfilledBonusPackage(input: {
 function markdown(cases: readonly CaseResultV1[]): string {
   const escape = (value: unknown) => String(value ?? '').replaceAll('|', '\\|').replaceAll('\n', '<br>');
   const lines = [
-    '# Agent A golden baseline v2 — 028f272', '',
+    `# Agent A golden baseline v4 — ${evaluatedSha.slice(0, 7)}`, '',
+    `- SHA evaluado: \`${evaluatedSha}\``,
+    `- Origen de la línea de base de autoridad: \`${GOLDEN_BASE_SHA}\``,
     `- Brain: \`${AGENT_A_BRAIN_PROMPT_VERSION}\``,
     `- Prompt canónico: \`${STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION}\``,
     `- Modelo: \`${model}\``,
@@ -539,7 +543,8 @@ function baselineReport(cases: readonly CaseResultV1[]) {
   return {
     schema_version: 2,
     generated_at: new Date().toISOString(),
-    base_sha: GOLDEN_BASE_SHA,
+    base_sha: evaluatedSha,
+    authority_baseline_origin_sha: GOLDEN_BASE_SHA,
     execution_harness: 'processInboundTurn',
     environment: 'isolated_local',
     environment_configuration: {
@@ -570,9 +575,10 @@ function baselineReport(cases: readonly CaseResultV1[]) {
 
 async function writeRawProgress(): Promise<void> {
   await mkdir(resultsDirectory, { recursive: true });
-  await writeFile(path.join(resultsDirectory, 'baseline-028f272-v2-observations.partial.json'), `${JSON.stringify({
+  await writeFile(path.join(resultsDirectory, `${resultStem}-observations.partial.json`), `${JSON.stringify({
     schema_version: 2,
-    base_sha: GOLDEN_BASE_SHA,
+    base_sha: evaluatedSha,
+    authority_baseline_origin_sha: GOLDEN_BASE_SHA,
     completed_cases: pendingCases.length,
     total_cases: GOLDEN_CASES.length,
     cases: pendingCases,
@@ -581,15 +587,16 @@ async function writeRawProgress(): Promise<void> {
 
 async function writeCompletedProgress(): Promise<void> {
   await mkdir(resultsDirectory, { recursive: true });
-  await writeFile(path.join(resultsDirectory, 'baseline-028f272-v2.json'), `${JSON.stringify(baselineReport(completedCases), null, 2)}\n`);
-  await writeFile(path.join(resultsDirectory, 'baseline-028f272-v2.md'), markdown(completedCases));
+  await writeFile(path.join(resultsDirectory, `${resultStem}.json`), `${JSON.stringify(baselineReport(completedCases), null, 2)}\n`);
+  await writeFile(path.join(resultsDirectory, `${resultStem}.md`), markdown(completedCases));
 }
 
 beforeAll(async () => {
   const head = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
+  expect(evaluatedSha).toBe(head);
   expect(() => execFileSync('git', ['merge-base', '--is-ancestor', GOLDEN_BASE_SHA, head]))
     .not.toThrow();
-  const changed = execFileSync('git', ['diff', '--name-only', GOLDEN_BASE_SHA], { encoding: 'utf8' })
+  const changed = execFileSync('git', ['diff', '--name-only', 'HEAD'], { encoding: 'utf8' })
     .split(/\r?\n/u).filter(Boolean);
   expect(changed.every((filename) => filename.startsWith('evals/golden/')),
     `GOLDEN_AGENT_CODE_DIFFERS_FROM_BASE:${changed.join(',')}`).toBe(true);
@@ -630,7 +637,7 @@ live('authority-only Agent A golden baseline through the real workflow', () => {
   it('executes every scenario and preserves raw evidence for semantic judgment', async () => {
     if (reuseObservations) {
       const raw = JSON.parse(await readFile(
-        path.join(resultsDirectory, 'baseline-028f272-v2-observations.partial.json'),
+        path.join(resultsDirectory, `${resultStem}-observations.partial.json`),
         'utf8',
       )) as {
         readonly base_sha?: string;
@@ -642,7 +649,7 @@ live('authority-only Agent A golden baseline through the real workflow', () => {
           readonly executionError?: string;
         }[];
       };
-      expect(raw.base_sha).toBe(GOLDEN_BASE_SHA);
+      expect(raw.base_sha).toBe(evaluatedSha);
       expect(raw.completed_cases).toBe(GOLDEN_CASES.length);
       for (const scenario of GOLDEN_CASES) {
         const saved = raw.cases?.find((candidate) => candidate.scenario?.id === scenario.id);

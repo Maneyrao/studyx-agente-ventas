@@ -677,7 +677,6 @@ describe('golden hard judge', () => {
 
   it('uses the verified access event as evidence for the following acknowledgement', async () => {
     const base = GOLDEN_CASES[11]!;
-    const turn = base.turns.find((candidate) => candidate.id === 'customer_acknowledgement')!;
     const previous = observation({
       response: 'Acceso activo: Fotografía Profesional, Marketing Digital.',
       availableOfferings: [{ code: 'fotografia_profesional', displayName: 'Fotografía Profesional' }],
