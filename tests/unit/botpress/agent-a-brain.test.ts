@@ -722,7 +722,7 @@ describe('Agent A Brain V1', () => {
 
   it('leaves the timing of an optional call invitation to the conversational model', () => {
     expect(buildAgentABrainInstructionsV1(context())).toContain(
-      'La llamada sirve para descubrir, orientar, convencer y cerrar',
+      'ofrece la llamada cuando el cliente la pida, cuando una duda o comparación compleja se resuelva mejor hablando, o como escalón 4',
     );
   });
 
@@ -795,7 +795,8 @@ describe('Agent A Brain V1', () => {
     expect(BackendAgentATurnProposalV1Schema.safeParse(threePartTurn).success).toBe(true);
   });
 
-  it('rejects a new greeting after the agent already opened the conversation', () => {
+  it('does not treat a changed reply as an exact duplicate solely for repeating a greeting', () => {
+    // Authority: AGENTS.md lines 25-27 reserve conversational quality to Agent A.
     const current = context();
     current.customer.display_name = 'Thiago';
     current.capabilities.may_offer_call = false;
@@ -817,10 +818,7 @@ describe('Agent A Brain V1', () => {
       context: current,
       planned_fact_ids: parsed.used_fact_ids,
       rejection_id: '00000000-0000-4000-8000-000000000003',
-    })?.rejections).toContainEqual({
-      code: 'REPEATED_AGENT_REPLY',
-      subject: 'repeated_greeting',
-    });
+    })?.rejections.filter((reason) => reason.code === 'REPEATED_AGENT_REPLY') ?? []).toEqual([]);
   });
 
   it('does not force a second call reminder on a repeated course question', () => {

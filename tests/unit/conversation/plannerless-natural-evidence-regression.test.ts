@@ -122,7 +122,7 @@ describe('plannerless natural evidence regression', () => {
     });
   });
 
-  it('requires the first call invitation after useful English guidance even without a selected level', () => {
+  it('allows but does not require the first call invitation after useful English guidance', () => {
     const context = {
       schema_version: 1,
       turn: {
@@ -177,13 +177,13 @@ describe('plannerless natural evidence regression', () => {
     } satisfies AgentAContextV1;
 
     expect(evaluateCallOfferTurnPolicyV1({ context })).toMatchObject({
-      offer_required: true,
+      offer_required: false,
       offer_allowed: true,
       reason: 'FIRST_OFFER_DUE',
     });
   });
 
-  it('requires the first call invitation when the customer names English and shows uncertainty before a level is recommended', () => {
+  it('allows but does not require a call when the customer names English and is uncertain', () => {
     const context = {
       schema_version: 1,
       turn: {
@@ -238,7 +238,7 @@ describe('plannerless natural evidence regression', () => {
     } satisfies AgentAContextV1;
 
     expect(evaluateCallOfferTurnPolicyV1({ context })).toMatchObject({
-      offer_required: true,
+      offer_required: false,
       offer_allowed: true,
       reason: 'FIRST_OFFER_DUE',
     });
@@ -307,7 +307,7 @@ describe('plannerless natural evidence regression', () => {
     'Estoy entre Inglés 1 e Inglés 2 y no sé cuál me conviene.',
     'Me pasas el temario y todos los detalles?',
     'Qué beneficios tiene el curso de marketing?',
-  ])('requires one natural first call invitation once the course is already known: %s', (text) => {
+  ])('leaves the first useful call invitation to Agent A once the course is known: %s', (text) => {
     const context = {
       schema_version: 1,
       turn: {
@@ -341,7 +341,7 @@ describe('plannerless natural evidence regression', () => {
     } satisfies AgentAContextV1;
 
     expect(evaluateCallOfferTurnPolicyV1({ context })).toMatchObject({
-      offer_required: true,
+      offer_required: false,
       offer_allowed: true,
       reason: 'FIRST_OFFER_DUE',
     });
@@ -387,7 +387,7 @@ describe('plannerless natural evidence regression', () => {
     } satisfies AgentAContextV1;
 
     expect(evaluateCallOfferTurnPolicyV1({ context })).toMatchObject({
-      offer_required: true,
+      offer_required: false,
       offer_allowed: true,
       reason: 'FIRST_OFFER_DUE',
     });
@@ -399,7 +399,7 @@ describe('plannerless natural evidence regression', () => {
     ['No tienen alguna promo?', 'FIRST_EXCEPTION_REQUEST'],
     ['No vas a negociar?', 'FIRST_EXCEPTION_REQUEST'],
     ['Me puedes agregar Marketing por el mismo valor?', 'FIRST_EXCEPTION_REQUEST'],
-  ] as const)('requires the first call invitation only at a useful Gabi/Lisandro trigger: %s', (text, reason) => {
+  ] as const)('allows but never forces the first call invitation at a useful trigger: %s', (text, reason) => {
     const context = {
       schema_version: 1,
       turn: {
@@ -433,13 +433,13 @@ describe('plannerless natural evidence regression', () => {
     } satisfies AgentAContextV1;
 
     expect(evaluateCallOfferTurnPolicyV1({ context })).toMatchObject({
-      offer_required: true,
+      offer_required: false,
       offer_allowed: true,
       reason,
     });
   });
 
-  it('gives Agent A one bounded rewrite when a useful call opportunity was missed', async () => {
+  it('does not rewrite an authorized answer merely because Agent A did not offer a call', async () => {
     const context = {
       schema_version: 1,
       turn: {
@@ -512,9 +512,10 @@ describe('plannerless natural evidence regression', () => {
       },
     });
 
-    expect(repairCalls).toBe(1);
-    expect(resolved.evidence).toMatchObject({ repair_attempted: true, repaired: true });
-    expect(resolved.effective.proposal.response.call_offer).toContain('llamada breve');
+    // Authority: AGENTS.md “El backend no obliga a ofrecerla”.
+    expect(repairCalls).toBe(0);
+    expect(resolved.evidence).toMatchObject({ repair_attempted: false, repaired: false });
+    expect(resolved.effective).toBe(initial);
   });
 
   it.each([

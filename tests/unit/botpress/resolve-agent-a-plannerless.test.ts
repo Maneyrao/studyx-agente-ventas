@@ -147,7 +147,8 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
     expect(repair).not.toHaveBeenCalled();
   });
 
-  it('records price-objection quality guidance without blocking Agent A wording', async () => {
+  it('does not emit a backend rejection for an authorized price reframe', async () => {
+    // Authority: prompt lines 93-102; AGENTS.md lines 25-27.
     const current = context();
     current.turn = {
       batch_messages: [{ id: 'price-objection', text: 'me parece super caro' }],
@@ -172,12 +173,13 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
 
     expect(result.effective).toBe(initial);
     expect(result.effective.proposal.response.messages).toEqual(messages);
-    expect(result.evidence.rejection_codes).toContain('FACT_VALUE_MISMATCH');
+    expect(result.evidence.rejection_codes).toEqual([]);
     expect(result.evidence).toMatchObject({ repair_attempted: false, proposal_generation_calls: 1 });
     expect(repair).not.toHaveBeenCalled();
   });
 
-  it('does not silence a repeated price objection because a commercial heuristic dislikes the reply', async () => {
+  it('does not run a commercial-quality repair for a repeated price objection', async () => {
+    // Authority: AGENTS.md lines 25-27 reserve sales strategy to Agent A.
     const current = context();
     current.turn = {
       batch_messages: [
@@ -210,14 +212,15 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
     expect(result.effective).toBe(initial);
     expect(result.effective.proposal.response.messages).toEqual(messages);
     expect(result.evidence).toMatchObject({
-      repair_attempted: true,
+      repair_attempted: false,
       repaired: false,
-      proposal_generation_calls: 2,
+      proposal_generation_calls: 1,
     });
-    expect(repair).toHaveBeenCalledTimes(1);
+    expect(repair).not.toHaveBeenCalled();
   });
 
-  it('keeps the reply when persistent objection and price-reframing guidance coincide', async () => {
+  it('accepts a repeated objection response without backend sales judgment', async () => {
+    // Authority: prompt lines 68-76; the model owns the argument dimension.
     const current = context();
     current.turn = {
       batch_messages: [
@@ -249,16 +252,13 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
 
     expect(result.effective).toBe(initial);
     expect(result.effective.proposal.response.messages).toEqual(messages);
-    expect(result.evidence.rejection_codes).toEqual(expect.arrayContaining([
-      'REPEATED_AGENT_REPLY',
-      'FACT_VALUE_MISMATCH',
-    ]));
+    expect(result.evidence.rejection_codes).toEqual([]);
     expect(result.evidence).toMatchObject({
-      repair_attempted: true,
+      repair_attempted: false,
       repaired: false,
-      proposal_generation_calls: 2,
+      proposal_generation_calls: 1,
     });
-    expect(repair).toHaveBeenCalledTimes(1);
+    expect(repair).not.toHaveBeenCalled();
   });
 
   it('still blocks a false price when it coincides with commercial guidance', async () => {
@@ -896,7 +896,8 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
     expect(repair).toHaveBeenCalledTimes(1);
     expect(result.effective.proposal.response.messages.join(' ')).not.toContain('Ahí va');
   });
-  it('asks A to add the first qualified call invitation without inserting copy in the orchestrator', async () => {
+  it('does not force a first call invitation when Agent A did not choose one', async () => {
+    // Authority: AGENTS.md line 12; the backend never requires the offer.
     const current = context();
     current.turn.batch_messages = [{ id: 'm2', text: 'Mmm no lo sé' }];
     current.turn.recent_turns = [{
@@ -924,14 +925,14 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
       rejection_id: '00000000-0000-4000-8000-0000000000b1',
     });
 
-    expect(repair).toHaveBeenCalledTimes(1);
-    expect(result.effective.proposal.response.call_offer).toBe(
-      'Si prefieres, puedo llamarte y orientarte por teléfono 🙂',
-    );
-    expect(result.evidence).toMatchObject({ repair_attempted: true, repaired: true });
+    expect(repair).not.toHaveBeenCalled();
+    expect(result.effective).toBe(initial);
+    expect(result.effective.proposal.response.call_offer).toBeNull();
+    expect(result.evidence).toMatchObject({ repair_attempted: false, repaired: false });
   });
 
-  it('preserves the repaired call invitation for uncertain English discovery without selecting a level', async () => {
+  it('leaves an optional English-discovery call to Agent A without forcing repair', async () => {
+    // Authority: prompt lines 204-210; an invitation is optional when appropriate.
     const current = context();
     current.turn.batch_messages = [
       { id: 'm2', text: 'Quizás es para estudiar.' },
@@ -994,16 +995,15 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
       rejection_id: '00000000-0000-4000-8000-0000000000b4',
     });
 
-    expect(repair).toHaveBeenCalledTimes(1);
-    expect(result.effective.proposal.response).toEqual({
-      messages: ['Para orientarte bien, lo querés principalmente para estudiar, trabajar, viajar o algo personal?'],
-      call_offer: 'Si querés, te llamo y vemos tu objetivo y el nivel que mejor te sirve.',
-    });
+    expect(repair).not.toHaveBeenCalled();
+    expect(result.effective).toBe(initial);
+    expect(result.effective.proposal.response.call_offer).toBeNull();
     expect(result.effective.proposal.move.course_reference).toBeUndefined();
-    expect(result.evidence).toMatchObject({ repair_attempted: true, repaired: true });
+    expect(result.evidence).toMatchObject({ repair_attempted: false, repaired: false });
   });
 
-  it('returns a persistent price objection to A when the answer only repeats course facts', async () => {
+  it('does not make the backend judge whether a price-objection answer advances', async () => {
+    // Authority: AGENTS.md lines 25-27.
     const current = context();
     current.turn.batch_messages = [
       { id: 'm2', text: 'me sigue pareciendo caro' },
@@ -1038,18 +1038,20 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
       rejection_id: '00000000-0000-4000-8000-0000000000b5',
     });
 
-    expect(repair).toHaveBeenCalledTimes(1);
+    expect(repair).not.toHaveBeenCalled();
+    expect(result.effective).toBe(initial);
     expect(result.effective.proposal.response.messages).toEqual([
-      'Para saber si te conviene de verdad, qué querés poder hacer con Marketing Digital cuando termines?',
+      'Te entiendo. Son 38 clases para aprender sobre el tema y es una inversión.',
     ]);
     expect(result.evidence).toMatchObject({
-      rejection_codes: expect.arrayContaining(['REPEATED_AGENT_REPLY']),
-      repair_attempted: true,
-      repaired: true,
+      rejection_codes: [],
+      repair_attempted: false,
+      repaired: false,
     });
   });
 
-  it('does not silence the turn when a persistent-price quality repair still fails', async () => {
+  it('does not invoke a quality repair for a persistent-price answer', async () => {
+    // Authority: AGENTS.md lines 25-27.
     const current = context();
     current.turn.batch_messages = [
       { id: 'm2', text: 'me sigue pareciendo caro' },
@@ -1081,9 +1083,9 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
     expect(result.effective).toBe(initial);
     expect(result.effective.proposal.response.messages).toEqual([sterile]);
     expect(result.evidence).toMatchObject({
-      repair_attempted: true,
+      repair_attempted: false,
       repaired: false,
-      rejection_codes: expect.arrayContaining(['REPEATED_AGENT_REPLY', 'FACT_VALUE_MISMATCH']),
+      rejection_codes: [],
     });
   });
 
@@ -1092,7 +1094,7 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
     'Es un tema de presupuesto o de confianza en la formación?',
     'Es presupuesto o confianza?',
     'Qué te hace dudar?',
-  ])('accepts a natural diagnostic repair without forcing one sentence form: %s', async (diagnostic) => {
+  ])('does not force a diagnostic rewrite from the backend: %s', async (diagnostic) => {
     const current = context();
     current.turn.batch_messages = [{ id: 'm2', text: 'me sigue pareciendo caro' }];
     current.turn.recent_turns = [
@@ -1103,27 +1105,30 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
     current.commercial_state.call_offer_status = 'accepted';
     current.capabilities.may_offer_call = false;
 
-    const result = await resolveAgentAPlannerlessProposalV2({
-      initial: generated(proposal({
+    const original = generated(proposal({
         response: { messages: ['Son 38 clases y la cuota más baja es de USD 30.'], call_offer: null },
-      })),
+      }));
+    const repair = vi.fn(async rejection => generated(proposal({
+      response: { messages: [diagnostic], call_offer: null },
+      repair_of: { rejection_id: rejection.rejection_id, attempt: 1 },
+    })));
+    const result = await resolveAgentAPlannerlessProposalV2({
+      initial: original,
       context: current,
       repair_enabled: true,
-      repair: async rejection => generated(proposal({
-        response: { messages: [diagnostic], call_offer: null },
-        repair_of: { rejection_id: rejection.rejection_id, attempt: 1 },
-      })),
+      repair,
       rejection_id: '00000000-0000-4000-8000-0000000000b8',
     });
 
-    expect(result.effective.proposal.response.messages).toEqual([diagnostic]);
-    expect(result.evidence).toMatchObject({ repair_attempted: true, repaired: true });
+    expect(result.effective).toBe(original);
+    expect(repair).not.toHaveBeenCalled();
+    expect(result.evidence).toMatchObject({ repair_attempted: false, repaired: false });
   });
 
   it.each([
     'Son 12 cuotas de USD 30. Qué te parece?',
     'Cuál plan quieres?',
-  ])('does not replace the original with a failed persistent-price repair: %s', async (pseudoDiagnostic) => {
+  ])('does not request a persistent-price repair: %s', async (pseudoDiagnostic) => {
     const current = context();
     current.turn.batch_messages = [{ id: 'm2', text: 'me sigue pareciendo caro' }];
     current.turn.recent_turns = [
@@ -1137,22 +1142,24 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
     const original = generated(proposal({
       response: { messages: ['Son 38 clases y la cuota más baja es de USD 30.'], call_offer: null },
     }));
+    const repair = vi.fn(async rejection => generated(proposal({
+      response: { messages: [pseudoDiagnostic], call_offer: null },
+      repair_of: { rejection_id: rejection.rejection_id, attempt: 1 },
+    })));
     const result = await resolveAgentAPlannerlessProposalV2({
       initial: original,
       context: current,
       repair_enabled: true,
-      repair: async rejection => generated(proposal({
-        response: { messages: [pseudoDiagnostic], call_offer: null },
-        repair_of: { rejection_id: rejection.rejection_id, attempt: 1 },
-      })),
+      repair,
       rejection_id: '00000000-0000-4000-8000-0000000000b9',
     });
 
     expect(result.effective).toBe(original);
-    expect(result.evidence).toMatchObject({ repair_attempted: true, repaired: false });
+    expect(repair).not.toHaveBeenCalled();
+    expect(result.evidence).toMatchObject({ repair_attempted: false, repaired: false });
   });
 
-  it('does not salvage a required invitation that falsely claims an immediate call', async () => {
+  it('does not generate a required invitation when no call is required', async () => {
     const current = context();
     current.turn.batch_messages = [{ id: 'm2', text: 'Algo con marketing, pero no estoy seguro' }];
     current.turn.recent_turns = [{
@@ -1181,7 +1188,7 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
     });
 
     expect(result.effective.proposal.response).toEqual(initial.proposal.response);
-    expect(result.evidence).toMatchObject({ repair_attempted: true, repaired: false });
+    expect(result.evidence).toMatchObject({ repair_attempted: false, repaired: false });
   });
 
   it('keeps a grounded English-level follow-up instead of showing a technical fallback', async () => {
@@ -1926,7 +1933,8 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
       .toEqual(['Fotografía Profesional tiene 41 clases online.', 'Si preferís, podemos coordinar una llamada breve.']);
   });
 
-  it('retains the model-authored repair of a repeated explanation and call offer', async () => {
+  it('does not treat a repeated fragment as an exact whole-response duplicate', async () => {
+    // Authority: AGENTS.md lines 25-27; only exact textual duplicate remains.
     const current = context();
     current.commercial_state.call_offer_count = 1;
     current.commercial_state.call_offer_status = 'offered';
@@ -1957,15 +1965,13 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
       rejection_id: '00000000-0000-4000-8000-000000000002',
     });
 
-    expect(resolved.effective.proposal).toEqual(repaired.proposal);
-    expect(resolved.effective.proposal.response).toEqual({
-      messages: ['Qué parte de la formación quieres conocer?'], call_offer: null,
-    });
+    expect(resolved.effective).toBe(initial);
+    expect(resolved.effective.proposal.response).toEqual(initial.proposal.response);
     expect(resolved.effective.proposal.proposed_action).toEqual({ type: 'none' });
-    expect(repair).toHaveBeenCalledTimes(1);
+    expect(repair).not.toHaveBeenCalled();
     expect(resolved.evidence).toMatchObject({
-      rejection_codes: ['REPEATED_AGENT_REPLY'], repair_attempted: true,
-      repaired: true, proposal_generation_calls: 2,
+      rejection_codes: [], repair_attempted: false,
+      repaired: false, proposal_generation_calls: 1,
     });
   });
 
@@ -2199,7 +2205,8 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
     expect(repair).toHaveBeenCalledTimes(1);
   });
 
-  it('retains the model-authored replacement of a repeated prior question', async () => {
+  it('does not make the backend rewrite a repeated prior question fragment', async () => {
+    // Authority: AGENTS.md lines 25-27.
     const current = context();
     current.capabilities.may_offer_call = false;
     current.turn.batch_messages[0].text = 'Prefiero seguir por chat';
@@ -2234,14 +2241,14 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
       rejection_id: '00000000-0000-4000-8000-000000000001',
     });
 
-    expect(repair).toHaveBeenCalledTimes(1);
-    expect(result.effective.proposal).toEqual(repaired.proposal);
-    expect(result.effective.proposal.response.messages).toEqual(['Seguimos por chat. Qué te gustaría saber de la formación?']);
+    expect(repair).not.toHaveBeenCalled();
+    expect(result.effective).toBe(initial);
+    expect(result.effective.proposal.response.messages).toEqual(initial.proposal.response.messages);
     expect(result.effective.proposal.proposed_action).toEqual({ type: 'none' });
     expect(result.evidence).toMatchObject({
-      rejection_codes: ['REPEATED_AGENT_REPLY'],
-      repair_attempted: true, repaired: true,
-      proposal_generation_calls: 2,
+      rejection_codes: [],
+      repair_attempted: false, repaired: false,
+      proposal_generation_calls: 1,
     });
   });
 
@@ -2296,7 +2303,8 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
     });
   });
 
-  it('retains the model-authored replacement of a repeated greeting', async () => {
+  it('does not make the backend rewrite a repeated greeting fragment', async () => {
+    // Authority: AGENTS.md lines 25-27.
     const current = context();
     current.capabilities.may_offer_call = false;
     current.customer.display_name = 'Thiago';
@@ -2329,20 +2337,19 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
       rejection_id: '00000000-0000-4000-8000-000000000003',
     });
 
-    expect(repair).toHaveBeenCalledTimes(1);
-    expect(result.effective.proposal).toEqual(repaired.proposal);
-    expect(result.effective.proposal.response.messages).toEqual([
-      'Thiago, la formación tiene 38 clases y puedo orientarte con tus dudas.',
-    ]);
+    expect(repair).not.toHaveBeenCalled();
+    expect(result.effective).toBe(initial);
+    expect(result.effective.proposal.response.messages).toEqual(initial.proposal.response.messages);
     expect(result.effective.proposal.proposed_action).toEqual({ type: 'none' });
     expect(result.evidence).toMatchObject({
-      rejection_codes: ['REPEATED_AGENT_REPLY'],
-      repair_attempted: true, repaired: true,
-      proposal_generation_calls: 2,
+      rejection_codes: [],
+      repair_attempted: false, repaired: false,
+      proposal_generation_calls: 1,
     });
   });
 
-  it('repairs the repeated greeting while keeping candidate wording as conversational guidance', async () => {
+  it('keeps candidate wording without a backend greeting-quality rewrite', async () => {
+    // Authority: AGENTS.md lines 25-27.
     const current = context();
     current.customer.display_name = 'Thiago';
     current.turn.batch_messages = [
@@ -2387,8 +2394,7 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
     }));
     const repair = vi.fn(async () => repaired);
 
-    const result = await resolveAgentAPlannerlessProposalV2({
-      initial: generated(proposal({
+    const initial = generated(proposal({
         move: {
           schema_version: 1,
           move: 'browse_catalog',
@@ -2401,24 +2407,23 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
           'offering:marketing_digital:name:v1',
           'offering:community_manager:name:v1',
         ],
-      })),
+      }));
+    const result = await resolveAgentAPlannerlessProposalV2({
+      initial,
       context: current,
       repair_enabled: true,
       repair,
       rejection_id: '00000000-0000-4000-8000-000000000004',
     });
 
-    expect(repair).toHaveBeenCalledTimes(1);
-    expect(result.effective.proposal).toEqual(repaired.proposal);
-    expect(result.effective.proposal.response.messages).toEqual(repairedMessages);
+    expect(repair).not.toHaveBeenCalled();
+    expect(result.effective).toBe(initial);
+    expect(result.effective.proposal.response.messages).toEqual(messages);
     expect(result.effective.proposal.proposed_action).toEqual({ type: 'none' });
     expect(result.evidence).toMatchObject({
-      rejection_codes: [
-        'REPEATED_AGENT_REPLY',
-        'FACT_VALUE_MISMATCH',
-      ],
-      repair_attempted: true, repaired: true,
-      proposal_generation_calls: 2,
+      rejection_codes: ['FACT_VALUE_MISMATCH'],
+      repair_attempted: false, repaired: false,
+      proposal_generation_calls: 1,
     });
   });
 
@@ -2431,7 +2436,7 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
       draft: 'De acuerdo, seguimos por escrito. La formación tiene 38 clases. ¿Ya tenías pensado estudiar maquillaje o recién estás empezando a averiguar?',
       authored: 'Te explico por aquí: el programa completo tiene 38 clases.',
     },
-  ])('retains the model-authored repair of a repeated question inside one compound message: $authored', async ({ draft, authored }) => {
+  ])('does not make the backend rewrite a repeated question fragment: $authored', async ({ draft, authored }) => {
     const current = context();
     current.turn.batch_messages[0].text = 'No quiero que me llamen, prefiero por chat';
     current.turn.recent_turns = [{
@@ -2457,14 +2462,14 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
       rejection_id: '00000000-0000-4000-8000-000000000001',
     });
 
-    expect(repair).toHaveBeenCalledTimes(1);
-    expect(result.effective.proposal).toEqual(repaired.proposal);
-    expect(result.effective.proposal.response.messages).toEqual([authored]);
+    expect(repair).not.toHaveBeenCalled();
+    expect(result.effective).toBe(initial);
+    expect(result.effective.proposal.response.messages).toEqual([draft]);
     expect(result.effective.proposal.move).toEqual(initial.proposal.move);
     expect(result.effective.proposal.proposed_action).toEqual(initial.proposal.proposed_action);
     expect(result.evidence).toMatchObject({
-      rejection_codes: ['REPEATED_AGENT_REPLY'], repair_attempted: true,
-      repaired: true, proposal_generation_calls: 2,
+      rejection_codes: [], repair_attempted: false,
+      repaired: false, proposal_generation_calls: 1,
     });
   });
 

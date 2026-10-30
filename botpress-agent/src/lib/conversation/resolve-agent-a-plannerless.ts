@@ -119,8 +119,6 @@ function validatePlannerless(input: {
   if (rejection !== null && paymentTransitionAuthorized) {
     const remaining = rejection.rejections.filter((reason) => !(
       reason.subject === 'send_payment_link'
-      // Invitation guidance cannot revoke a canonical, fully backed payment.
-      || reason.code === 'CALL_OFFER_REQUIRED'
       || (reason.code === 'PLAN_NOT_SELECTED' && reason.subject === 'payment_plan')
     ))
     rejection = remaining.length === 0 ? null : { ...rejection, rejections: remaining }
@@ -282,18 +280,13 @@ function preparePlannerlessProposal<T extends AgentAProposalEnvelopeV1>(input: {
   const effective = input.initial
   const rejection = validate(effective)
   if (rejection === null) return { effective, rejection, originalRejection }
-  const requiresCallOfferRewrite = rejection.rejections.some(
-    (reason) => reason.code === 'CALL_OFFER_REQUIRED',
-  )
-  // An unavailable call needs the existing model repair: changing only the
-  // action would publish an acknowledgement for a call that never occurred.
-  if (!requiresCallOfferRewrite && (
+  if (
     input.semantic_rejections === 'advisory'
       && !rejection.rejections.some((reason) => requiresModelCorrection(reason, effective.proposal))
       && !claimsImmediatePaymentLinkDelivery(effective.proposal)
       && !hasUnbackedCallDispatchClaim(effective.proposal, rejection, input.context)
     || hasOnlyNonBlockingGuidance(effective.proposal, rejection, input.context)
-  )) {
+  ) {
     return { effective, rejection: null, originalRejection }
   }
   return { effective, rejection, originalRejection }
@@ -305,7 +298,6 @@ function preparePlannerlessProposal<T extends AgentAProposalEnvelopeV1>(input: {
  * model-authored reply or trigger a second paid generation.
  */
 const NON_BLOCKING_GUIDANCE_CODES = new Set([
-  'CALL_OFFER_REQUIRED',
   'CHANNEL_PREFERENCE_NOT_SUPPORTED',
   'COURSE_NOT_RESOLVED',
   'MISSING_INTAKE',
@@ -318,7 +310,6 @@ function requiresModelCorrection(
   if (reason.code === 'ACTION_NOT_AUTHORIZED'
     && reason.subject.startsWith('contact_profile.already_confirmed.')) return true
   if (reason.code === 'FACT_VALUE_MISMATCH') {
-    if (reason.subject === 'price_objection_reframe') return false
     // Candidate naming/resolution heuristics remain guidance. The backend
     // independently validates actual catalogue values before any delivery.
     return !['candidate_course_detail', 'candidate_course_names'].includes(reason.subject)
@@ -338,7 +329,6 @@ function isNonBlockingGuidanceReason(
     && [
       'candidate_course_detail',
       'candidate_course_names',
-      'price_objection_reframe',
     ].includes(reason.subject)) return true
   return NON_BLOCKING_GUIDANCE_CODES.has(reason.code)
 }
@@ -373,43 +363,6 @@ function mayDegradeToBackendBoundary(
   return rejection.rejections.every(reason => reason.code === 'REPEATED_AGENT_REPLY'
     || reason.code === 'PLAN_NOT_SELECTED'
     || isNonBlockingGuidanceReason(reason))
-}
-
-/**
- * The sole repair sometimes authors the required invitation twice: once in
- * messages and once in response.call_offer. Keep the useful original answer
- * and the model-authored structured invitation, then run the complete
- * validator again. The backend never invents or rewrites customer copy.
- */
-function salvageRequiredCallOfferFromRepairV1<T extends AgentAProposalEnvelopeV1>(input: {
-  readonly initial: T
-  readonly repaired: T
-  readonly rejection: TurnRejectionV1
-  readonly context: AgentAContextV1
-  readonly authorized_fact_ids: readonly string[]
-}): T | null {
-  if (!input.rejection.rejections.some((reason) => reason.code === 'CALL_OFFER_REQUIRED')) return null
-  const callOffer = input.repaired.proposal.response.call_offer?.trim()
-  if (!callOffer) return null
-
-  const candidate = {
-    ...input.initial,
-    proposal: {
-      ...input.initial.proposal,
-      response: {
-        ...input.initial.proposal.response,
-        call_offer: callOffer,
-      },
-      repair_of: input.repaired.proposal.repair_of,
-    },
-  } as T
-  const candidateRejection = validatePlannerless({
-    proposal: candidate.proposal,
-    context: input.context,
-    rejection_id: input.rejection.rejection_id,
-    authorized_fact_ids: input.authorized_fact_ids,
-  })
-  return candidateRejection === null ? candidate : null
 }
 
 function hasOnlyNonBlockingGuidance(
@@ -609,28 +562,6 @@ export async function resolveAgentAPlannerlessProposalV2<
           },
           rejection: originalRejection,
           action_rejection: repairedActionRejection,
-        }
-      }
-      const salvagedCallOffer = salvageRequiredCallOfferFromRepairV1({
-        initial,
-        repaired: candidate,
-        rejection,
-        context: input.context,
-        authorized_fact_ids: factIds,
-      })
-      if (salvagedCallOffer !== null) {
-        return {
-          effective: salvagedCallOffer,
-          evidence: {
-            rejection_codes: rejectedCodes(),
-            repair_attempted: true, repaired: true, proposal_generation_calls: 2,
-          },
-          rejection: originalRejection,
-          action_rejection: actionRejectionV1(
-            salvagedCallOffer.proposal,
-            null,
-            input.context,
-          ),
         }
       }
       terminalRejection = repaired.rejection

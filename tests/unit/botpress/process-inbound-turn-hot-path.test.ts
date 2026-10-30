@@ -2509,8 +2509,9 @@ describe('processInboundTurn hot path', () => {
     }) => proposal.response.messages.includes(safeText) ? null : {
       schema_version: 1, rejection_id: UUID, attempt: 1,
       rejections: [
-        { code: 'REPEATED_AGENT_REPLY', subject: 'response.messages' },
-        { code: 'FACT_VALUE_MISMATCH', subject: 'price_objection_reframe' },
+        // Authority: exact whole-response duplication remains; sales quality
+        // and price reframing are owned by Agent A.
+        { code: 'REPEATED_AGENT_REPLY', subject: 'previous_agent_reply' },
       ],
       authorized_alternatives: {
         fact_ids: [], actions: ['none', 'request_promotion_review'], missing_information: [],

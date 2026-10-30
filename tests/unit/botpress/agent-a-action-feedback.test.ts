@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { continueAgentAAfterActionFeedbackV1, fencedAgentARequestV1, plannerlessActionFeedbackV1 } from '../../../botpress-agent/src/lib/conversation/agent-a-action-feedback';
+import { continueAgentAAfterActionFeedbackV1, continuationCallOfferAuthorizedV1, fencedAgentARequestV1, plannerlessActionFeedbackV1 } from '../../../botpress-agent/src/lib/conversation/agent-a-action-feedback';
 import type { AgentAContextV1 } from '../../../botpress-agent/src/schemas/agent-a-brain';
 
 function context(): AgentAContextV1 {
@@ -153,6 +153,107 @@ describe('Agent A conversation from action feedback', () => {
         }),
       }) }),
     }));
+  });
+
+  it('allows an authorized call invitation in a conversation-only continuation', async () => {
+    // Authority: prompt lines 204-210; invitation and dispatch are separate.
+    const current = context();
+    // This wording intentionally does not satisfy the retired
+    // FIRST_NOT_YET_USEFUL commercial heuristic. The capability and lifecycle,
+    // not a backend opinion about timing, authorize the invitation.
+    current.turn.batch_messages = [{ id: 'm1', text: 'Gracias por la información.' }];
+    current.turn.recent_turns = [{
+      id: 'prior-agent', direction: 'outbound', content: 'Contame qué querés aprender y te oriento.',
+    }];
+    current.commercial_state.call_preference = 'unknown';
+    current.commercial_state.call_offer_status = 'not_offered';
+    current.commercial_state.call_offer_count = 0;
+    current.commercial_state.awaiting_reply = 'none';
+    current.capabilities.may_offer_call = true;
+    const rejection = plannerlessActionFeedbackV1({
+      context: current,
+      failure_code: 'PLANNERLESS_PROPOSAL_REJECTED:FACT_VALUE_MISMATCH:course_fact',
+      rejection_id: '00000000-0000-4000-8000-000000000001',
+    });
+    const draft = reply('Por lo que querés lograr, Inglés 1 es el mejor punto de partida.');
+    const authored = { ...draft, proposal: {
+      ...draft.proposal,
+      response: {
+        ...draft.proposal.response,
+        call_offer: 'Si querés, lo vemos en una llamada breve y despejamos tus dudas.',
+      },
+      repair_of: { rejection_id: rejection.rejection_id, attempt: 1 as const },
+    } };
+
+    const result = await continueAgentAAfterActionFeedbackV1({
+      context: current,
+      rejection,
+      apiKey: 'fixture',
+      signal: new AbortController().signal,
+      model: 'deepseek-v4-flash',
+      generate: vi.fn(async () => authored),
+    });
+
+    expect(result.proposal.response.call_offer).toContain('llamada breve');
+    expect(result.proposal.proposed_action).toEqual({ type: 'none' });
+  });
+
+  it('keeps continuation call invitations behind lifecycle, cap and consent boundaries', () => {
+    // Authority: AGENTS.md line 12 preserves max two, consent and may_offer_call.
+    const authorized = context();
+    authorized.capabilities.may_offer_call = true;
+    authorized.commercial_state.call_preference = 'unknown';
+    authorized.commercial_state.call_offer_status = 'not_offered';
+    authorized.commercial_state.call_offer_count = 0;
+    authorized.commercial_state.awaiting_reply = 'none';
+    expect(continuationCallOfferAuthorizedV1(authorized)).toBe(true);
+
+    const capped = structuredClone(authorized);
+    capped.commercial_state.call_offer_count = 2;
+    expect(continuationCallOfferAuthorizedV1(capped)).toBe(false);
+
+    const chat = structuredClone(authorized);
+    chat.commercial_state.call_preference = 'chat';
+    expect(continuationCallOfferAuthorizedV1(chat)).toBe(false);
+
+    const accepted = structuredClone(authorized);
+    accepted.commercial_state.call_preference = 'call';
+    accepted.commercial_state.call_offer_status = 'accepted';
+    expect(continuationCallOfferAuthorizedV1(accepted)).toBe(false);
+
+    const active = structuredClone(authorized);
+    active.commercial_state.active_call = {
+      call_id: '00000000-0000-4000-8000-000000000001', status: 'pending',
+    };
+    expect(continuationCallOfferAuthorizedV1(active)).toBe(false);
+  });
+
+  it('still rejects a continuation call invitation when the turn has no call authorization', async () => {
+    // Authority: AGENTS.md line 12 preserves may_offer_call and the two-offer limit.
+    const current = context();
+    current.turn.batch_messages = [{ id: 'm1', text: 'Seguimos por chat.' }];
+    current.commercial_state.call_preference = 'chat';
+    current.capabilities.may_offer_call = false;
+    const rejection = plannerlessActionFeedbackV1({
+      context: current,
+      failure_code: 'PLANNERLESS_PROPOSAL_REJECTED:FACT_VALUE_MISMATCH:course_fact',
+      rejection_id: '00000000-0000-4000-8000-000000000001',
+    });
+    const draft = reply('Te explico por acá.');
+    const authored = { ...draft, proposal: {
+      ...draft.proposal,
+      response: { ...draft.proposal.response, call_offer: 'Si querés, te llamo.' },
+      repair_of: { rejection_id: rejection.rejection_id, attempt: 1 as const },
+    } };
+
+    await expect(continueAgentAAfterActionFeedbackV1({
+      context: current,
+      rejection,
+      apiKey: 'fixture',
+      signal: new AbortController().signal,
+      model: 'deepseek-v4-flash',
+      generate: vi.fn(async () => authored),
+    })).rejects.toThrow('PLANNERLESS_PROPOSAL_REJECTED');
   });
 
   it('never delivers an unsupported call promise or invents a second repair', async () => {

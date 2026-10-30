@@ -2,13 +2,6 @@ import { courseLogisticsInV1 } from '../../../../src/shared/conversation/course-
 import { inspectCourseBonusClaimsV1 } from '../../../../src/shared/conversation/course-bonus-claim';
 import { eligibleContactRequestFieldsV1 } from './contact-profile-request-policy';
 import { supportsChatPreferenceV1 } from './channel-preference-evidence';
-import { evaluateCallOfferTurnPolicyV1 } from './call-offer-turn-policy';
-import {
-  customerExpressesRealBudgetLimitV1,
-  evaluateSalesObjectionTurnV1,
-  responseAvoidsDisallowedPriceReframingV1,
-  responseProgressesRepeatedPriceObjectionV1,
-} from './sales-objection-turn-policy';
 import type { TurnRejectionV1 } from '../../schemas/turn-rejection'
 import {
   AgentATurnProposalV1Schema,
@@ -486,10 +479,8 @@ function normalizedCurrentCustomerTextV1(context: AgentAContextV1): string {
 }
 
 function naturalnessRepairDirectiveV1(context: AgentAContextV1): string {
-  const objectionRepair = evaluateSalesObjectionTurnV1(context).kind === 'repeated_price_objection'
-    ? ' The customer repeated a price objection: do not answer by merely repeating plans, amounts or class count. Either connect an authorized fact to their intended use with conditional language or ask one concrete diagnostic question. A call invitation belongs only in response.call_offer when permitted.'
-    : '';
-  return `Preserve the customer intent and the natural rhythm of the original answer. Use one or two short messages as needed, change only the rejected fact or action, and do not add unsupported claims.${objectionRepair}`;
+  void context;
+  return 'Preserve the customer intent and the natural rhythm of the original answer. Use one or two short messages as needed, change only the rejected fact or action, and do not add unsupported claims.';
 }
 
 function closedObject(properties: Record<string, unknown>) {
@@ -1510,38 +1501,6 @@ function sameVisibleText(messages: readonly string[], previous: string): boolean
   return draft.length > 0 && draft === normalize(previous);
 }
 
-function sameVisibleFragment(value: string, previous: string): boolean {
-  const normalize = (text: string): string => text.replace(/\s+/gu, ' ').trim();
-  const fragment = normalize(value);
-  return fragment.length > 0 && normalize(previous).includes(fragment);
-}
-
-function normalizedQuestionKeys(value: string): Set<string> {
-  const questions = value.split('?').slice(0, -1).map((fragment) => {
-    const start = Math.max(
-      fragment.lastIndexOf('¿'),
-      fragment.lastIndexOf('\n'),
-      fragment.lastIndexOf('.'),
-      fragment.lastIndexOf('!'),
-    );
-    return fragment.slice(start + 1);
-  });
-  return new Set(questions.map((question) => question
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/gu, '')
-    .toLocaleLowerCase('es')
-    .replace(/[^a-z0-9]+/gu, ' ')
-    .trim())
-    .filter(Boolean));
-}
-
-function repeatsPreviousQuestion(messages: readonly string[], previous: string): boolean {
-  const previousQuestions = normalizedQuestionKeys(previous);
-  if (previousQuestions.size === 0) return false;
-  return [...normalizedQuestionKeys(messages.join('\n'))]
-    .some((question) => previousQuestions.has(question));
-}
-
 const CUSTOMER_REQUESTS_REPEAT = /\b(?:rep(?:et|[ií]t)|otra\s+vez|no\s+entend|de\s+nuevo)\w*/iu;
 const UNSUPPORTED_PREREQUISITE_ASSERTION = /(?:\bno\s+(?:necesit\w*|hace\s+falta|se\s+requiere|tienen)\b[^.!?\n]{0,80}\b(?:experiencia|conocimientos?|requisitos?)\b|\bsin\s+(?:experiencia|conocimientos?\s+previos?)\b|\b(?:pod[eé]s|puedes|empez[aá]s?|part[ií]s?)\b[^.!?\n]{0,32}\bdesde\s+cero\b|\b(?:pensad[oa]|dise[nñ]ad[oa])\w*\b[^.!?\n]{0,80}\b(?:(?:empe\w*)\s+)?(?:desde\s+(?:cero|la\s+base|lo\s+b[aá]sico)|paso\s+a\s+paso)\b|\bdesde\s+los\s+fundamentos\b)/iu;
 const REMOVABLE_UNSUPPORTED_PREREQUISITE_CLAUSE = /\s*,?\s*para\s+(?:quienes|personas?\s+que)\s+no\s+tienen\s+conocimientos?\s+previos\b/iu;
@@ -1590,51 +1549,6 @@ export function removeUnsupportedPrerequisiteAssertionsV1(message: string): stri
         ? [stripped]
         : [];
     });
-}
-
-/**
- * Quita la pregunta ya hecha, no el mensaje que la contiene.
- *
- * Descartar el mensaje entero funcionaba sólo cuando la repetición venía sola.
- * Pegada a algo útil —"Perfecto, seguimos por chat. ¿Ya tenías pensado
- * estudiar maquillaje...?"— el filtro dejaba el turno sin mensajes, la poda se
- * abortaba por lista vacía y la repetición llegaba igual al cliente.
- *
- * Se corta por oración y se descarta sólo la interrogativa que ya se hizo. Si
- * de un mensaje no queda nada, ese mensaje desaparece; si no queda ninguno, el
- * llamador decide qué hacer, como antes.
- *
- * Cuando la persona pide que se lo repitan, no se poda nada: ahí repetir es la
- * respuesta correcta.
- */
-export function removeRepeatedAgentQuestionMessagesV1(
-  messages: readonly string[],
-  previous: string,
-  currentCustomerText: string,
-): string[] {
-  if (CUSTOMER_REQUESTS_REPEAT.test(currentCustomerText)) return [...messages];
-  return messages
-    .map((message) => message
-      .split(/(?<=[.!?\n])/u)
-      .filter((sentence) => !repeatsPreviousQuestion([sentence], previous))
-      .join('')
-      .replace(/\s+/gu, ' ')
-      .trim())
-    .filter((message) => message.length > 0);
-}
-
-const REPEATED_GREETING_PREFIX = /^\s*[¡¿]*\s*(?:hola|buen\s+d[ií]a|buenos\s+d[ií]as|buenas(?:\s+tardes|\s+noches)?)\b(?:\s*,?\s*[\p{L}'’-]+(?:\s+[\p{L}'’-]+){0,2})?\s*[!.,:;—-]+\s*/iu;
-const REPEATED_IDENTITY_PREFIX = /^\s*(?:soy|me\s+presento,?\s+soy)\s+(?:(?:el|la|tu)\s+)?asistente\s+virtual(?:\s+de\s+StudyX)?\s*[!.,:;—-]*\s*/iu;
-
-/** Removes the salutation and self-introduction from a later response. */
-export function removeRepeatedAgentOpeningMessagesV1(messages: readonly string[]): string[] {
-  return messages
-    .map((message) => message
-      .replace(REPEATED_GREETING_PREFIX, '')
-      .replace(REPEATED_IDENTITY_PREFIX, '')
-      .replace(/\s+/gu, ' ')
-      .trim())
-    .filter((message) => message.length > 0);
 }
 
 export function mentionsMissingIntakeField(messages: readonly string[], missing: readonly string[]): boolean {
@@ -1833,41 +1747,9 @@ export function validateAgentATurnProposalV1(input: {
   const previousReply = lastAgentReplyV1(input.context.turn.recent_turns);
   const currentCustomerText = input.context.turn.batch_messages.map((message) => message.text).join('\n');
   const customerRequestsRepeat = CUSTOMER_REQUESTS_REPEAT.test(currentCustomerText);
-  const progressesProfileCollection = (input.proposal.profile_updates?.length ?? 0) > 0
-    && (input.proposal.profile_requests ?? []).some((request) => (
-      request.fields.length > 0
-      && request.fields.every((field) => input.context.capabilities.intake_missing.includes(field))
-    ));
   if (previousReply && !customerRequestsRepeat && sameVisibleText(input.proposal.response.messages, previousReply)) {
     rejections.push({ code: 'REPEATED_AGENT_REPLY', subject: 'previous_agent_reply' });
   }
-  if (previousReply && !customerRequestsRepeat && input.proposal.response.messages.some((message) => {
-    const withoutOpening = removeRepeatedAgentOpeningMessagesV1([message]);
-    // The helper also normalizes whitespace for delivery. A multiline answer
-    // therefore differs byte-for-byte even when no greeting was removed; only
-    // a visible-text change proves that a repeated opening was present.
-    return withoutOpening.length === 0 || !sameVisibleText(withoutOpening, message);
-  })) {
-    rejections.push({ code: 'REPEATED_AGENT_REPLY', subject: 'repeated_greeting' });
-  }
-  if (
-    previousReply
-    && !customerRequestsRepeat
-    && !progressesProfileCollection
-    && input.proposal.response.call_offer
-    && sameVisibleFragment(input.proposal.response.call_offer, previousReply)
-  ) {
-    rejections.push({ code: 'REPEATED_AGENT_REPLY', subject: 'previous_call_offer' });
-  }
-  if (
-    previousReply
-    && !customerRequestsRepeat
-    && !progressesProfileCollection
-    && repeatsPreviousQuestion(input.proposal.response.messages, previousReply)
-  ) {
-    rejections.push({ code: 'REPEATED_AGENT_REPLY', subject: 'previous_agent_question' });
-  }
-  const salesObjection = evaluateSalesObjectionTurnV1(input.context);
   const authorizedBonusOffer = input.context.capabilities.course_bonus?.status === 'offer_available'
     || input.context.capabilities.course_bonus?.status === 'accepted';
   const directBonusCapability = input.context.capabilities.course_bonus;
@@ -1897,37 +1779,6 @@ export function validateAgentATurnProposalV1(input: {
     authorized_bonus_names:authorizedBonusOfferingNames,paid_offering_names:paidOfferingNames}).has_unauthorized_claim) {
     rejections.push({code:'FACT_VALUE_MISMATCH',subject:'forbidden_promise'});
   }
-  if (
-    salesObjection.kind === 'repeated_price_objection'
-    && !responseProgressesRepeatedPriceObjectionV1({
-      ...input.proposal.response,
-      allow_price_objection_installment_reframe: true,
-      prior_assistant_messages: input.context.turn.recent_turns
-        .filter((turn) => turn.direction === 'outbound')
-        .map((turn) => turn.content),
-      customer_expressed_real_budget_limit: customerExpressesRealBudgetLimitV1(currentCustomerText),
-      authorized_bonus_offering_names: authorizedBonusOfferingNames,
-      paid_offering_names:paidOfferingNames,
-    })
-  ) {
-    rejections.push({ code: 'REPEATED_AGENT_REPLY', subject: 'persistent_price_objection' });
-  }
-  if (
-    (salesObjection.kind === 'price_objection'
-      || salesObjection.kind === 'repeated_price_objection'
-      || salesObjection.kind === 'price_question_with_objection')
-    && !responseAvoidsDisallowedPriceReframingV1({
-      ...input.proposal.response,
-      allow_requested_payment_terms: salesObjection.kind === 'price_question_with_objection',
-      allow_price_objection_installment_reframe: true,
-      customer_expressed_real_budget_limit: customerExpressesRealBudgetLimitV1(currentCustomerText),
-      authorized_bonus_offering_names: authorizedBonusOfferingNames,
-      paid_offering_names:paidOfferingNames,
-    })
-  ) {
-    rejections.push({ code: 'FACT_VALUE_MISMATCH', subject: 'price_objection_reframe' });
-  }
-
   // V2 — cada hecho citado existe en el registro materializado del turno.
   for (const factId of input.proposal.used_fact_ids) {
     if (!planned.has(factId)) {
@@ -2242,17 +2093,6 @@ export function validateAgentATurnProposalV1(input: {
   const offersACall = !unsupportedDeclaredOffer && typeof declaredCallOffer === 'string'
     && solicitsACallV1(declaredCallOffer, true)
     || !requestedCallNow && input.proposal.response.messages.some((message) => solicitsACallV1(message))
-  const callOfferPolicy = evaluateCallOfferTurnPolicyV1({
-    context: input.context,
-    response_messages: input.proposal.response.messages,
-    proposed_course_reference: input.proposal.move.course_reference,
-  });
-  if (callOfferPolicy.offer_required && !offersACall && !requestedCallNow) {
-    // The model remains the sole author. This rejection opens its one allowed
-    // rewrite; if that rewrite fails, the original useful answer still
-    // degrades through NON_BLOCKING_GUIDANCE instead of becoming a fallback.
-    rejections.push({ code: 'CALL_OFFER_REQUIRED', subject: 'call_offer' });
-  }
   if (offersACall && !callRequestSupported && (!input.context.capabilities.may_offer_call
     || input.context.commercial_state.call_offer_count >= 2)) {
     rejections.push({ code: 'CALL_BUDGET_EXHAUSTED', subject: 'call_offer' })
