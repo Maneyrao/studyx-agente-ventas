@@ -233,7 +233,7 @@ export const GOLDEN_CASES: readonly GoldenCaseV1[] = [
         must: ['Escalón 1: conectar valor con ofrecer fotos a tiendas/emprendedores y volver a cerrar.'],
         mustNot: ['No saltar a llamada, cuotas o bonificación y no bajar el precio.'],
         authority: [ref(PROMPT, 104, 112, '**Valor:**'), ref(PROMPT, 118, 124, 'antes de los escalones 1 a 3')],
-        expected: { move: ['ask_course_information', 'unknown'], action: ['none'], state: state({ promotion: promotion() }) },
+        expected: { move: ['ask_course_information', 'ask_payment_options', 'unknown'], action: ['none'], state: state({ promotion: promotion() }) },
         hard: [{ type: 'promotion_bonus_count_at_most', value: 0 },
           { type: 'current_price_objection_recorded' }],
       },
@@ -264,9 +264,9 @@ export const GOLDEN_CASES: readonly GoldenCaseV1[] = [
       {
         id: 'bonus_1', customer: 'Prefiero seguir por chat. El precio sigue siendo lo único que me frena.',
         must: ['Ofrecer exactamente un primer curso afín, explicar por qué suma, mantener USD 360 y cerrar.'],
-        mustNot: ['No ofrecer dos cursos juntos, no llamarlo regalo y no volver a insistir con la llamada rechazada.'],
+        mustNot: ['No ofrecer dos bonificados nuevos en el mismo turno, no llamarlo regalo y no volver a insistir con la llamada rechazada.'],
         authority: [ref(PROMPT, 114, 129, 'exactamente un código'), ref(PROMPT, 178, 184, 'Fotografía profesional'), ref(BONUS, 55, 73, 'Un solo código por turno')],
-        expected: { move: ['unknown', 'ask_payment_options', 'ask_course_information'], action: ['offer_course_bonus'], state: state({ promotion: promotion(['offer_available'], [1], ['fotografia_profesional']) }) },
+        expected: { move: ['continue_by_chat', 'unknown', 'ask_payment_options', 'ask_course_information'], action: ['offer_course_bonus'], state: state({ promotion: promotion(['offer_available'], [1], ['fotografia_profesional']) }) },
         hard: [
           { type: 'course_bonus_preconditions' },
           { type: 'action_bonus_in', values: ['fotografia_celulares_tiendas_online', 'diseno_photoshop', 'instagram_emprendedores', 'estrategias_emprender', 'especialista_ventas'] },
@@ -508,7 +508,7 @@ export const GOLDEN_CASES: readonly GoldenCaseV1[] = [
         must: ['Trabajar valor conectado al objetivo del cliente.', 'Registrar la objeción de precio.'],
         mustNot: ['No ofrecer bonificación antes de escalar.'],
         authority: [ref(PROMPT, 87, 87, 'price_objection'), ref(PROMPT, 104, 120, 'Nunca saltes escalones')],
-        expected: { move: ['ask_course_information', 'unknown'], action: ['none'], state: state() },
+        expected: { move: ['ask_course_information', 'ask_payment_options', 'unknown'], action: ['none'], state: state() },
         hard: [{ type: 'current_price_objection_recorded' }],
       },
       {
@@ -540,7 +540,7 @@ export const GOLDEN_CASES: readonly GoldenCaseV1[] = [
         must: ['Con los escalones previos completos, ofrecer un solo complemento afín mediante offer_course_bonus.'],
         mustNot: ['No modificar el precio, no repetir la llamada rechazada y no ofrecer un curso sin afinidad.'],
         authority: [ref(PROMPT, 104, 124, 'Bonificación'), ref(BONUS, 55, 69, 'Si pasa: agregar')],
-        expected: { move: ['unknown', 'ask_payment_options'], action: ['offer_course_bonus'], state: state({ promotion: promotion(['offer_available'], [1], ['fotografia_profesional']) }) },
+        expected: { move: ['continue_by_chat', 'unknown', 'ask_payment_options'], action: ['offer_course_bonus'], state: state({ promotion: promotion(['offer_available'], [1], ['fotografia_profesional']) }) },
         hard: [{ type: 'course_bonus_preconditions' }],
       },
       {

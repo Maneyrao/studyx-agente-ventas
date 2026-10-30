@@ -16,6 +16,7 @@ import {
 } from '../../botpress-agent/src/prompts/studyx-agent-a-canonical.generated';
 import { AGENT_A_DEEPSEEK_MODEL } from '../../botpress-agent/src/config/agent-a-model';
 import { resolveCanonicalPromptIdentityV1 } from '../../botpress-agent/src/prompts/agent-a-identity';
+import { createConfigPaymentLinkResolver } from '../../src/features/payments/adapters/config-payment-link.resolver';
 import {
   buildPostSaleInstructions,
   fallbackPostSaleNarrative,
@@ -46,7 +47,7 @@ const model = process.env.STUDYX_GOLDEN_DEEPSEEK_MODEL ?? 'deepseek-v4-flash';
 const resultsDirectory = path.resolve(process.cwd(), 'evals/golden/results');
 const reuseObservations = process.env.STUDYX_GOLDEN_REUSE_OBSERVATIONS === 'true';
 const evaluatedSha = process.env.STUDYX_GOLDEN_EVALUATED_SHA ?? '';
-const resultStem = 'baseline-v4';
+const resultStem = 'baseline-v6';
 
 type Sql = ReturnType<typeof openLocalTestDatabase>;
 
@@ -315,11 +316,13 @@ async function prepareFulfilledBonusPackage(input: {
   const [identityRow] = await db<Array<{
     workspace_id: string; contact_id: string; conversation_id: string;
   }>>`
-    SELECT state.workspace_id, conversation.contact_id, conversation.id AS conversation_id
+    SELECT membership.workspace_id, conversation.contact_id, conversation.id AS conversation_id
     FROM channel_threads thread
     JOIN conversations conversation ON conversation.channel_thread_id=thread.id
-    JOIN conversation_sales_context_states_v1 state ON state.conversation_id=conversation.id
+    JOIN workspace_contacts membership ON membership.contact_id=conversation.contact_id
+    JOIN workspaces workspace ON workspace.id=membership.workspace_id
     WHERE thread.external_conversation_id=${input.externalConversationId}
+      AND workspace.slug=${process.env.BUSINESS_WORKSPACE_SLUG ?? 'studyx'}
     ORDER BY conversation.created_at DESC LIMIT 1
   `;
   if (!identityRow || !input.setupTurn.turnId || !input.setupTurn.outboundId) {
@@ -474,9 +477,16 @@ async function prepareFulfilledBonusPackage(input: {
   if (delivery.outcome !== 'sent' || !accessMessages[0]) {
     throw new Error(`GOLDEN_POST_SALE_DELIVERY_FAILED:${delivery.outcome}`);
   }
-  await db`UPDATE conversation_sales_context_states_v1 SET selected_offering_code=${paid.code},
-    selected_payment_plan='monthly_12',stage='payment_link_sent',awaiting_reply='none'
-    WHERE conversation_id=${identityRow.conversation_id}`;
+  await db`INSERT INTO conversation_sales_context_states_v1(
+      workspace_id,conversation_id,contact_id,selected_offering_code,selected_payment_plan,
+      stage,awaiting_reply,source_turn_id)
+    VALUES (${identityRow.workspace_id},${identityRow.conversation_id},${identityRow.contact_id},${paid.code},
+      'monthly_12','payment_link_sent','none',${input.setupTurn.turnId})
+    ON CONFLICT (workspace_id,conversation_id) DO UPDATE SET
+      selected_offering_code=EXCLUDED.selected_offering_code,
+      selected_payment_plan=EXCLUDED.selected_payment_plan,
+      stage=EXCLUDED.stage,awaiting_reply=EXCLUDED.awaiting_reply,
+      source_turn_id=EXCLUDED.source_turn_id,updated_at=now()`;
   return {
     evidence: {
       fixture_kind: 'controlled_local_paid_and_fulfilled_package',
@@ -505,7 +515,7 @@ async function prepareFulfilledBonusPackage(input: {
 function markdown(cases: readonly CaseResultV1[]): string {
   const escape = (value: unknown) => String(value ?? '').replaceAll('|', '\\|').replaceAll('\n', '<br>');
   const lines = [
-    `# Agent A golden baseline v4 — ${evaluatedSha.slice(0, 7)}`, '',
+    `# Agent A golden baseline v6 — ${evaluatedSha.slice(0, 7)}`, '',
     `- SHA evaluado: \`${evaluatedSha}\``,
     `- Origen de la línea de base de autoridad: \`${GOLDEN_BASE_SHA}\``,
     `- Brain: \`${AGENT_A_BRAIN_PROMPT_VERSION}\``,
@@ -551,8 +561,8 @@ function baselineReport(cases: readonly CaseResultV1[]) {
       voice_provider: process.env.VOICE_PROVIDER ?? null,
       payment_provider: process.env.PAYMENT_PROVIDER ?? null,
       payment_link_environment: process.env.PAYMENT_LINK_ENVIRONMENT ?? null,
-      payment_links_configured: ['PAYMENT_LINK_12M', 'PAYMENT_LINK_6M', 'PAYMENT_LINK_CONTADO']
-        .every((name) => Boolean(process.env[name]?.trim())),
+      payment_links_configured: (['monthly_12', 'monthly_6', 'one_time'] as const)
+        .every((plan) => createConfigPaymentLinkResolver(process.env).resolve(plan) !== null),
       course_bonus_flow_mode: process.env.COURSE_BONUS_FLOW_MODE ?? null,
       course_bonus_max_courses: process.env.COURSE_BONUS_MAX_COURSES ?? null,
     },
@@ -613,6 +623,16 @@ beforeAll(async () => {
   configuration.agentAAdvisorName = 'Emma';
   configuration.agentABrainDeepSeekModel = model;
   expect((await fetch(`${apiBaseUrl}/api/ready`, { signal: AbortSignal.timeout(4_000) })).ok).toBe(true);
+  const paymentLinkResolver = createConfigPaymentLinkResolver(process.env);
+  expect({
+    monthly_12: paymentLinkResolver.resolve('monthly_12'),
+    monthly_6: paymentLinkResolver.resolve('monthly_6'),
+    one_time: paymentLinkResolver.resolve('one_time'),
+  }, 'GOLDEN_PAYMENT_LINK_RESOLVER_NOT_CONFIGURED').toEqual({
+    monthly_12: 'https://payments.example.invalid/12m',
+    monthly_6: 'https://payments.example.invalid/6m',
+    one_time: 'https://payments.example.invalid/contado',
+  });
   ({ recordDeliveryReport: recordDeliveryReportFn } = await import('@/lib/services/decision.service'));
   ({ projectAgentAMemories: projectAgentAMemoriesFn } = await import('@/features/memory/application/project-agent-a-memories'));
   ({ runEnrollmentWorker: runEnrollmentWorkerFn } = await import('@/features/fulfillment/central-carga/worker'));
