@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import {
   evaluateHardRules,
+  inferFailureAttribution,
   inferFailureLayer,
   judgeCaseSemantically,
   type GoldenTurnObservationV1,
@@ -57,7 +58,7 @@ describe('golden hard judge', () => {
     }), ['SEMANTIC_MUST_FAILED'])).toBe('brain');
   });
 
-  it('attributes a final voice-provider failure to the eval environment, not historical validator noise', () => {
+  it('attributes environment failures and gives backend rejections priority with exact code and subject', () => {
     const turn = GOLDEN_CASES[9]!.turns[2]!;
     expect(inferFailureLayer(turn, observation({
       response: '',
@@ -69,15 +70,26 @@ describe('golden hard judge', () => {
       },
     }), ['SILENT_TURN'])).toBe('entorno');
 
-    expect(inferFailureLayer(turn, observation({
-      backendRejections: [{ reason: 'repaired' }],
+    const rejected = observation({
+      backendRejections: [{ rejections: [
+        { code: 'FACT_VALUE_MISMATCH', subject: 'price_objection_reframe' },
+        { code: 'CALL_OFFER_REQUIRED', subject: 'call_offer' },
+      ] }],
       workflow: {
         commitSucceeded: true,
         status: 'completed',
         errorCode: null,
         finalBackendDecisionError: null,
       },
-    }), ['STATE_STAGE_MISMATCH'])).toBe('estado');
+    });
+    expect(inferFailureAttribution(turn, rejected, ['PROMOTION_STATUS_MISMATCH']))
+      .toEqual({
+        layer: 'validador',
+        validatorRejections: [
+          { code: 'FACT_VALUE_MISMATCH', subject: 'price_objection_reframe' },
+          { code: 'CALL_OFFER_REQUIRED', subject: 'call_offer' },
+        ],
+      });
 
     expect(inferFailureLayer(turn, observation({
       workflow: {
@@ -87,6 +99,33 @@ describe('golden hard judge', () => {
         finalBackendDecisionError: 'AGENT_TURN_V2_REJECTED:COMMERCIAL_TRUTH_VIOLATION',
       },
     }), ['STATE_STAGE_MISMATCH', 'SILENT_TURN'])).toBe('validador');
+  });
+
+  it('checks only authority-defined checkout and closure state', () => {
+    const partner = GOLDEN_CASES[7]!.turns.find((candidate) => candidate.id === 'partner')!;
+    expect(evaluateHardRules(partner, observation({
+      response: 'Te ayudo con lo clave y, si quieren, también podemos verlo en una llamada.',
+      move: 'request_call',
+      state: { selectedCourse: null, stage: 'qualified', awaitingReply: 'call_or_chat', plan: null,
+        promotion: { status: null, bonusCount: 0, paidCourse: null, bonusCourses: [] } },
+    })).failures.map((failure) => failure.code)).not.toEqual(expect.arrayContaining([
+      'STATE_STAGE_MISMATCH', 'STATE_AWAITING_REPLY_MISMATCH', 'CHECKOUT_STATE_MISMATCH',
+    ]));
+
+    const buy = GOLDEN_CASES[10]!.turns.find((candidate) => candidate.id === 'buy')!;
+    expect(evaluateHardRules(buy, observation({
+      move: 'request_payment_link',
+      response: 'Para inscribirte necesito nombre, apellido, correo y teléfono.',
+      state: { selectedCourse: 'fotografia_profesional', stage: 'course_selected', awaitingReply: 'none', plan: null,
+        promotion: { status: null, bonusCount: 0, paidCourse: null, bonusCourses: [] } },
+    })).failures.map((failure) => failure.code)).toContain('CHECKOUT_STATE_MISMATCH');
+
+    const definitive = GOLDEN_CASES[8]!.turns.find((candidate) => candidate.id === 'definitive')!;
+    expect(evaluateHardRules(definitive, observation({
+      move: 'decline_purchase', response: 'Claro, te dejo la puerta abierta.',
+      state: { selectedCourse: null, stage: 'qualified', awaitingReply: 'none', plan: null,
+        promotion: { status: null, bonusCount: 0, paidCourse: null, bonusCourses: [] } },
+    })).failures.map((failure) => failure.code)).toContain('CLOSURE_STATE_MISMATCH');
   });
 
   it('accepts the effective backend call action when the authorized fast path has no model proposal', () => {

@@ -38,12 +38,19 @@ describe('Agent A authority-only golden specification', () => {
         expect(turn.authority.length, `${scenario.id}/${turn.id}: authority`).toBeGreaterThan(0);
         expect(turn.expected.move.length, `${scenario.id}/${turn.id}: move`).toBeGreaterThan(0);
         expect(turn.expected.action.length, `${scenario.id}/${turn.id}: action`).toBeGreaterThan(0);
-        expect(turn.expected.state).toHaveProperty('stage');
-        expect(turn.expected.state).toHaveProperty('awaitingReply');
-        expect(turn.expected.state).toHaveProperty('plan');
-        expect(turn.expected.state).toHaveProperty('promotion');
+        expect(Object.keys(turn.expected.state).every((key) => (
+          ['checkout', 'closed', 'plan', 'promotion'].includes(key)
+        )), `${scenario.id}/${turn.id}: state authority boundary`).toBe(true);
+        expect(turn.expected.state).not.toHaveProperty('stage');
+        expect(turn.expected.state).not.toHaveProperty('awaitingReply');
       }
     }
+    const requestedCall = GOLDEN_CASES.find((item) => item.id === '10_requested_call')!;
+    expect(requestedCall.turns.find((turn) => turn.id === 'request')?.expected.state.checkout)
+      .toEqual(['contact_details']);
+    const purchase = GOLDEN_CASES.find((item) => item.id === '11_purchase_to_payment_link')!;
+    expect(purchase.turns.map((turn) => turn.expected.state.checkout ?? null))
+      .toEqual([['contact_details'], ['payment_confirmation'], ['payment_plan'], ['link']]);
     await expect(validateGoldenAuthorityReferences()).resolves.toEqual([]);
   });
 });

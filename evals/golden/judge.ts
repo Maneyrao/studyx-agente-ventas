@@ -153,23 +153,29 @@ export function evaluateHardRules(
   if (!turn.expected.action.includes(actualAction)) {
     add(failures, 'ACTION_MISMATCH', `Esperada ${turn.expected.action.join('|')}; real ${actualAction}.`);
   }
-  if (!turn.expected.state.stage.includes(observation.state.stage ?? '')) {
-    add(failures, 'STATE_STAGE_MISMATCH', `Esperado ${turn.expected.state.stage.join('|')}; real ${observation.state.stage}.`);
+  const expectedCheckout = turn.expected.state.checkout;
+  if (expectedCheckout) {
+    const actualCheckout = observation.state.stage === 'payment_link_sent'
+      ? 'link' : observation.state.awaitingReply;
+    if (!expectedCheckout.includes(actualCheckout as typeof expectedCheckout[number])) {
+      add(failures, 'CHECKOUT_STATE_MISMATCH', `Esperado ${expectedCheckout.join('|')}; real ${actualCheckout}.`);
+    }
   }
-  if (!turn.expected.state.awaitingReply.includes(observation.state.awaitingReply ?? '')) {
-    add(failures, 'STATE_AWAITING_REPLY_MISMATCH', `Esperado ${turn.expected.state.awaitingReply.join('|')}; real ${observation.state.awaitingReply}.`);
+  if (turn.expected.state.closed !== undefined
+    && (observation.state.stage === 'closed') !== turn.expected.state.closed) {
+    add(failures, 'CLOSURE_STATE_MISMATCH', `Esperado closed=${String(turn.expected.state.closed)}; real stage=${observation.state.stage}.`);
   }
-  if (!turn.expected.state.plan.includes(observation.state.plan)) {
+  if (turn.expected.state.plan && !turn.expected.state.plan.includes(observation.state.plan)) {
     add(failures, 'STATE_PLAN_MISMATCH', `Esperado ${turn.expected.state.plan.join('|')}; real ${observation.state.plan}.`);
   }
   const expectedPromotion = turn.expected.state.promotion;
-  if (!expectedPromotion.status.includes(observation.state.promotion.status)) {
+  if (expectedPromotion && !expectedPromotion.status.includes(observation.state.promotion.status)) {
     add(failures, 'PROMOTION_STATUS_MISMATCH', `Esperado ${expectedPromotion.status.join('|')}; real ${observation.state.promotion.status}.`);
   }
-  if (!expectedPromotion.bonusCount.includes(observation.state.promotion.bonusCount)) {
+  if (expectedPromotion && !expectedPromotion.bonusCount.includes(observation.state.promotion.bonusCount)) {
     add(failures, 'PROMOTION_BONUS_COUNT_MISMATCH', `Esperado ${expectedPromotion.bonusCount.join('|')}; real ${observation.state.promotion.bonusCount}.`);
   }
-  if (expectedPromotion.paidCourse && !expectedPromotion.paidCourse.includes(observation.state.promotion.paidCourse)) {
+  if (expectedPromotion?.paidCourse && !expectedPromotion.paidCourse.includes(observation.state.promotion.paidCourse)) {
     add(failures, 'PROMOTION_PAID_COURSE_MISMATCH', `Esperado ${expectedPromotion.paidCourse.join('|')}; real ${observation.state.promotion.paidCourse}.`);
   }
 
@@ -287,28 +293,99 @@ export function evaluateHardRules(
 export type FailureLayerV1 = 'prompt' | 'brain' | 'validador' | 'estado'
   | 'contexto' | 'bonificación' | 'entorno';
 
+export interface ValidatorRejectionV1 {
+  readonly code: string;
+  readonly subject: string | null;
+}
+
+export interface FailureAttributionV1 {
+  readonly layer: FailureLayerV1;
+  readonly validatorRejections: readonly ValidatorRejectionV1[];
+}
+
+const TERMINAL_VALIDATOR_CODES = [
+  'COMMERCIAL_TRUTH_VIOLATION',
+  'ACTION_NOT_AUTHORIZED',
+] as const;
+
+function collectValidatorRejections(
+  value: unknown,
+  output: ValidatorRejectionV1[],
+): void {
+  if (Array.isArray(value)) {
+    for (const item of value) collectValidatorRejections(item, output);
+    return;
+  }
+  if (!value || typeof value !== 'object') return;
+  const record = value as Record<string, unknown>;
+  if (typeof record.code === 'string') {
+    output.push({
+      code: record.code,
+      subject: typeof record.subject === 'string' ? record.subject : null,
+    });
+  }
+  for (const child of Object.values(record)) collectValidatorRejections(child, output);
+}
+
+export function validatorRejectionsV1(
+  observation: GoldenTurnObservationV1,
+): readonly ValidatorRejectionV1[] {
+  const collected: ValidatorRejectionV1[] = [];
+  collectValidatorRejections(observation.backendRejections, collected);
+  const terminal = [
+    observation.workflow?.errorCode,
+    observation.workflow?.finalBackendDecisionError,
+  ].filter((value): value is string => typeof value === 'string');
+  for (const text of terminal) {
+    for (const code of TERMINAL_VALIDATOR_CODES) {
+      if (text.includes(code)) collected.push({ code, subject: null });
+    }
+  }
+  const seen = new Set<string>();
+  return collected.filter((item) => {
+    const key = `${item.code}\u0000${item.subject ?? ''}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+export function inferFailureAttribution(
+  turn: GoldenTurnV1,
+  observation: GoldenTurnObservationV1,
+  failureCodes: readonly string[],
+): FailureAttributionV1 {
+  const validatorRejections = validatorRejectionsV1(observation);
+  if (observation.backendRejections.length > 0 || validatorRejections.length > 0) {
+    return { layer: 'validador', validatorRejections };
+  }
+  const terminalError = `${observation.workflow?.errorCode ?? ''} ${observation.workflow?.finalBackendDecisionError ?? ''}`;
+  if (/VOICE_PROVIDER_INVALID|CONFIGURATION_UNAVAILABLE|ECONNREFUSED|GOLDEN_/u.test(terminalError)) {
+    return { layer: 'entorno', validatorRejections };
+  }
+  if (turn.hard?.some((rule) => rule.type === 'response_uses_authorized_syllabus')) {
+    return { layer: observation.selectedOfferingFacts.length === 0 ? 'contexto' : 'brain', validatorRejections };
+  }
+  if (failureCodes.some((code) => code.startsWith('PROMOTION_') || code.startsWith('BONUS_'))
+    || failureCodes.includes('TURN_PRECONDITION_NOT_REACHED')
+    || turn.expected.action.includes('offer_course_bonus') || turn.expected.action.includes('accept_promotion')) {
+    return { layer: 'bonificación', validatorRejections };
+  }
+  if (failureCodes.some((code) => code.startsWith('STATE_')
+    || code === 'CHECKOUT_STATE_MISMATCH' || code === 'CLOSURE_STATE_MISMATCH')) {
+    return { layer: 'estado', validatorRejections };
+  }
+  if (failureCodes.some((code) => code === 'MOVE_MISMATCH' || code === 'ACTION_MISMATCH'
+    || code === 'SILENT_TURN')) return { layer: 'brain', validatorRejections };
+  return { layer: 'prompt', validatorRejections };
+}
+
 export function inferFailureLayer(
   turn: GoldenTurnV1,
   observation: GoldenTurnObservationV1,
   failureCodes: readonly string[],
 ): FailureLayerV1 {
-  const terminalError = `${observation.workflow?.errorCode ?? ''} ${observation.workflow?.finalBackendDecisionError ?? ''}`;
-  if (/VOICE_PROVIDER_INVALID|CONFIGURATION_UNAVAILABLE|ECONNREFUSED|GOLDEN_/u.test(terminalError)) {
-    return 'entorno';
-  }
-  if (turn.hard?.some((rule) => rule.type === 'response_uses_authorized_syllabus')) {
-    return observation.selectedOfferingFacts.length === 0 ? 'contexto' : 'brain';
-  }
-  if (failureCodes.some((code) => code.startsWith('PROMOTION_') || code.startsWith('BONUS_'))
-    || failureCodes.includes('TURN_PRECONDITION_NOT_REACHED')
-    || turn.expected.action.includes('offer_course_bonus') || turn.expected.action.includes('accept_promotion')) {
-    return 'bonificación';
-  }
-  if (observation.workflow?.finalBackendDecisionError) return 'validador';
-  if (failureCodes.some((code) => code.startsWith('STATE_'))) return 'estado';
-  if (failureCodes.some((code) => code === 'MOVE_MISMATCH' || code === 'ACTION_MISMATCH'
-    || code === 'SILENT_TURN')) return 'brain';
-  return 'prompt';
+  return inferFailureAttribution(turn, observation, failureCodes).layer;
 }
 
 export interface SemanticTurnVerdictV1 {

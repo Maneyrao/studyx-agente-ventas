@@ -23,7 +23,7 @@ import {
 
 import {
   evaluateHardRules,
-  inferFailureLayer,
+  inferFailureAttribution,
   judgeCaseSemantically,
   primaryAuthorityCitation,
   type GoldenFailureV1,
@@ -71,7 +71,8 @@ interface TurnResultV1 {
   readonly backend_rejections: readonly unknown[];
   readonly state: GoldenTurnObservationV1['state'];
   readonly failures: readonly GoldenFailureV1[];
-  readonly failure_layer: ReturnType<typeof inferFailureLayer> | null;
+  readonly failure_layer: ReturnType<typeof inferFailureAttribution>['layer'] | null;
+  readonly validator_rejections: ReturnType<typeof inferFailureAttribution>['validatorRejections'];
   readonly model_attempts: GoldenTurnObservationV1['modelAttempts'];
   readonly preconditions: {
     readonly course_bonus: GoldenTurnObservationV1['courseBonus'];
@@ -515,7 +516,10 @@ function markdown(cases: readonly CaseResultV1[]): string {
     const result = turn.execution_status === 'not_executed' ? 'NO_EJECUTADO'
       : turn.execution_status === 'evaluation_error' ? 'ERROR_EVALUACIÓN'
         : turn.approved ? 'APROBADO' : 'FALLIDO';
-    lines.push(`| ${escape(`${item.case_id}/${turn.turn_id}`)} | ${result} | ${escape(turn.authority.join('; '))} | ${escape(turn.response_real)} | ${escape(`${turn.move ?? 'null'} / ${JSON.stringify(turn.proposed_action)}`)} | ${escape(JSON.stringify(turn.backend_rejections))} | ${escape(turn.failure_layer ?? '—')} |`);
+    const layer = turn.failure_layer === 'validador' && turn.validator_rejections.length > 0
+      ? `validador — ${turn.validator_rejections.map((rejection) => `${rejection.code}${rejection.subject ? ` / ${rejection.subject}` : ''}`).join('; ')}`
+      : turn.failure_layer ?? '—';
+    lines.push(`| ${escape(`${item.case_id}/${turn.turn_id}`)} | ${result} | ${escape(turn.authority.join('; '))} | ${escape(turn.response_real)} | ${escape(`${turn.move ?? 'null'} / ${JSON.stringify(turn.proposed_action)}`)} | ${escape(JSON.stringify(turn.backend_rejections))} | ${escape(layer)} |`);
   }
   lines.push('', '## Fallos', '');
   for (const item of cases) for (const turn of item.turns.filter((candidate) => candidate.approved !== true)) {
@@ -788,6 +792,8 @@ live('authority-only Agent A golden baseline through the real workflow', () => {
         const failures = [...hardFailures, ...semanticFailures, ...technicalFailures];
         const executionStatus: TurnResultV1['execution_status'] = !actualObservation
           ? 'not_executed' : evaluatorErrors.length > 0 ? 'evaluation_error' : 'executed';
+        const attribution = executionStatus !== 'executed' || failures.length === 0 ? null
+          : inferFailureAttribution(turn, observation, failures.map((failure) => failure.code));
         turns.push({
           case_id: pending.scenario.id,
           turn_id: turn.id,
@@ -804,8 +810,8 @@ live('authority-only Agent A golden baseline through the real workflow', () => {
           backend_rejections: observation.backendRejections,
           state: observation.state,
           failures,
-          failure_layer: executionStatus !== 'executed' || failures.length === 0 ? null
-            : inferFailureLayer(turn, observation, failures.map((failure) => failure.code)),
+          failure_layer: attribution?.layer ?? null,
+          validator_rejections: attribution?.validatorRejections ?? [],
           model_attempts: observation.modelAttempts,
           preconditions: {
             course_bonus: observation.courseBonus,
