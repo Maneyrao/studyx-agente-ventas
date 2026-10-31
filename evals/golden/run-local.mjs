@@ -1,5 +1,5 @@
 import { spawn, spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { parseEnv } from 'node:util';
@@ -25,10 +25,14 @@ function portInUse(port) {
   return spawnSync('lsof', ['-nP', `-iTCP:${port}`, '-sTCP:LISTEN'], { stdio: 'ignore' }).status === 0;
 }
 
-function localEvalKey() {
-  if (process.env.DEEPSEEK_API_KEY?.trim()) return process.env.DEEPSEEK_API_KEY.trim();
-  if (!existsSync('.eval/.env.local')) return null;
-  return parseEnv(readFileSync('.eval/.env.local', 'utf8')).DEEPSEEK_API_KEY?.trim() ?? null;
+function localEvalSecrets() {
+  const file = existsSync('.eval/.env.local')
+    ? parseEnv(readFileSync('.eval/.env.local', 'utf8'))
+    : {};
+  return {
+    deepseek: process.env.DEEPSEEK_API_KEY?.trim() || file.DEEPSEEK_API_KEY?.trim() || null,
+    nvidia: process.env.NVIDIA_API_KEY?.trim() || file.NVIDIA_API_KEY?.trim() || null,
+  };
 }
 
 const headSha = captured('git', ['rev-parse', 'HEAD']);
@@ -47,9 +51,73 @@ const unsafeUntracked = captured('git', ['ls-files', '--others', '--exclude-stan
 if (unsafeUntracked.length > 0) throw new Error('GOLDEN_UNTRACKED_RUNTIME_FILES_PRESENT');
 if (portInUse(POSTGRES_PORT)) throw new Error(`GOLDEN_POSTGRES_PORT_IN_USE:${POSTGRES_PORT}`);
 if (portInUse(BACKEND_PORT)) throw new Error(`GOLDEN_BACKEND_PORT_IN_USE:${BACKEND_PORT}`);
-const deepseekKey = localEvalKey();
-if (!deepseekKey) {
-  throw new Error('DEEPSEEK_API_KEY_MISSING: exportala sólo para esta corrida o guardala en .eval/.env.local');
+const providerName = process.env.STUDYX_GOLDEN_PROVIDER ?? 'deepseek';
+if (!['deepseek', 'nvidia_nim'].includes(providerName)) {
+  throw new Error(`GOLDEN_PROVIDER_UNSUPPORTED:${providerName}`);
+}
+const localSecrets = localEvalSecrets();
+const providerBaseUrl = process.env.STUDYX_GOLDEN_PROVIDER_BASE_URL
+  ?? (providerName === 'nvidia_nim' ? 'https://integrate.api.nvidia.com/v1' : 'https://api.deepseek.com');
+const providerModel = process.env.STUDYX_GOLDEN_PROVIDER_MODEL
+  ?? (providerName === 'nvidia_nim' ? 'deepseek-ai/deepseek-v4-flash' : 'deepseek-v4-flash');
+const resultStem = process.env.STUDYX_GOLDEN_RESULT_STEM
+  ?? (providerName === 'nvidia_nim' ? `acceptance-${headSha.slice(0, 7)}-nim` : 'baseline-v9');
+if (providerName === 'deepseek' && !localSecrets.deepseek) {
+  throw new Error('DEEPSEEK_API_KEY_MISSING: guardala sólo en .eval/.env.local');
+}
+if (providerName === 'nvidia_nim' && !localSecrets.nvidia) {
+  throw new Error('NVIDIA_API_KEY_MISSING: guardala sólo en .eval/.env.local');
+}
+if (providerName === 'nvidia_nim'
+  && [resultStem, `${resultStem}-observations.partial`, `${resultStem}-provider`,
+    `${resultStem}-provider.partial`, `${resultStem}-run-state`]
+    .some((stem) => existsSync(`evals/golden/results/${stem}.json`))) {
+  throw new Error(`GOLDEN_NIM_ACCEPTANCE_ALREADY_STARTED:${resultStem}`);
+}
+
+if (providerName === 'nvidia_nim') {
+  const base = providerBaseUrl.replace(/\/+$/u, '');
+  if (new URL(base).origin !== 'https://integrate.api.nvidia.com') {
+    throw new Error('GOLDEN_NIM_BASE_URL_NOT_ALLOWLISTED');
+  }
+  const response = await fetch(`${base}/models`, {
+    headers: { authorization: `Bearer ${localSecrets.nvidia}` },
+    signal: AbortSignal.timeout(15_000),
+  });
+  if (!response.ok) throw new Error(`GOLDEN_NIM_MODEL_PREFLIGHT_HTTP_${response.status}`);
+  const payload = await response.json();
+  const available = Array.isArray(payload?.data)
+    ? payload.data.map((item) => item?.id).filter((id) => typeof id === 'string')
+    : [];
+  if (!available.includes(providerModel)) {
+    throw new Error(`GOLDEN_NIM_MODEL_UNAVAILABLE:${providerModel};available=${available.join(',')}`);
+  }
+}
+
+const runStatePath = `evals/golden/results/${resultStem}-run-state.json`;
+const runStartedAt = new Date().toISOString();
+function runState(status, extra = {}) {
+  return `${JSON.stringify({
+    schema_version: 1,
+    status,
+    evaluated_sha: headSha,
+    provider: providerName,
+    model: providerModel,
+    started_at: runStartedAt,
+    updated_at: new Date().toISOString(),
+    ...extra,
+  }, null, 2)}\n`;
+}
+function writeRunState(status, extra = {}) {
+  if (providerName !== 'nvidia_nim') return;
+  const temporary = `${runStatePath}.tmp`;
+  writeFileSync(temporary, runState(status, extra), { mode: 0o600 });
+  renameSync(temporary, runStatePath);
+}
+if (providerName === 'nvidia_nim') {
+  writeFileSync(runStatePath, runState('started', { catalog_preflight_calls: 1 }), {
+    flag: 'wx', mode: 0o600,
+  });
 }
 
 const environment = {
@@ -66,8 +134,12 @@ const environment = {
   STUDYX_GOLDEN_EVALUATED_SHA: headSha,
   STUDYX_GOLDEN_REUSE_OBSERVATIONS: process.env.STUDYX_GOLDEN_REUSE_OBSERVATIONS ?? 'false',
   STUDYX_GOLDEN_DEEPSEEK_MODEL: process.env.STUDYX_GOLDEN_DEEPSEEK_MODEL ?? 'deepseek-v4-flash',
+  STUDYX_GOLDEN_PROVIDER: providerName,
+  STUDYX_GOLDEN_PROVIDER_BASE_URL: providerBaseUrl,
+  STUDYX_GOLDEN_PROVIDER_MODEL: providerModel,
+  STUDYX_GOLDEN_RESULT_STEM: resultStem,
   STUDYX_WORKFLOW_REPORT_DIR: 'evals/golden/results/runtime',
-  DEEPSEEK_API_KEY: deepseekKey,
+  DEEPSEEK_API_KEY: 'managed-by-golden-evaluator',
   BUSINESS_WORKSPACE_SLUG: 'studyx',
   ORCHESTRATOR_API_KEY: 'eval-orchestrator-key',
   ORCHESTRATOR_KEY_ID: 'botpress-eval',
@@ -116,6 +188,13 @@ for (const filename of [
     if (!(name in environment)) environment[name] = '';
   }
 }
+const evaluatorEnvironment = {
+  ...environment,
+  DEEPSEEK_API_KEY: providerName === 'deepseek'
+    ? localSecrets.deepseek
+    : 'managed-by-golden-nim-adapter',
+  ...(providerName === 'nvidia_nim' ? { NVIDIA_API_KEY: localSecrets.nvidia } : {}),
+};
 
 let backend;
 let ownsPostgres = false;
@@ -138,7 +217,11 @@ const stop = () => {
   if (readFileSync(tsconfigPath, 'utf8') !== originalTsconfig) writeFileSync(tsconfigPath, originalTsconfig);
   rmSync(bootstrapDirectory, { recursive: true, force: true });
 };
-for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => { stop(); process.exit(130); });
+for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => {
+  writeRunState('interrupted', { signal });
+  stop();
+  process.exit(130);
+});
 
 try {
   command('bash', [bootstrapScript, POSTGRES_PORT, '--seed'], { env: environment });
@@ -162,8 +245,14 @@ try {
   // diff guard must inspect the pinned source rather than that runtime edit.
   if (readFileSync(tsconfigPath, 'utf8') !== originalTsconfig) writeFileSync(tsconfigPath, originalTsconfig);
   command('npx', ['vitest', 'run', '--config', 'evals/golden/vitest.config.mts', 'evals/golden/live-runner.test.ts'], {
-    env: environment,
+    env: evaluatorEnvironment,
   });
+  writeRunState('completed');
+} catch (error) {
+  writeRunState('interrupted', {
+    error_code: error instanceof Error ? error.message.split(':', 1)[0].slice(0, 120) : 'UNKNOWN',
+  });
+  throw error;
 } finally {
   stop();
 }

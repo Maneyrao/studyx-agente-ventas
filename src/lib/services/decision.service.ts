@@ -1,3 +1,4 @@
+import { backendReleaseSha } from './turn-evidence.service';
 import type { ConversationChannel } from '@/lib/contracts/channel';
 import { randomUUID } from 'node:crypto';
 import { offerDirectCourseBonusV1, acceptDirectCourseBonusV1 } from '@/features/promotions/application/direct-course-bonus-service';
@@ -2104,6 +2105,9 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
         next_state: decision.next_state,
         outbound_id: outbound?.id ?? null,
         egress_hash: outbound?.authorized_egress.content_hash ?? null,
+        authorized_saved_text: finalResponse,
+        backend_sha: backendReleaseSha(),
+        model: validatedInput.model,
         call_id: callRequest?.call_id ?? null,
       },
       event_key: `decision:${decisionId}:committed`,
@@ -2471,7 +2475,7 @@ export async function recordDeliveryReport(input: DeliveryReportInput): Promise<
       action: 'outbound.delivery.reported',
       entity_type: 'message',
       entity_id: input.outbound_id,
-      payload: semanticPayload,
+      payload: { ...semanticPayload, backend_sha: backendReleaseSha() },
       event_key: `audit:${eventKey}`,
       correlation_id: input.trace_id,
     }, db);

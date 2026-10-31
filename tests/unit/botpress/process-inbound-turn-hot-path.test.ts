@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import * as evidencePersistence from '../../../botpress-agent/src/lib/observability/persist-turn-evidence';
 
 const actionSpies = vi.hoisted(() => ({
   ingest: vi.fn(),
@@ -485,6 +486,29 @@ describe('processInboundTurn hot path', () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+  });
+
+  it.each([false, true])('pauses an evidence failure before provider send without claiming ambiguity (multipart=%s)', async multipart => {
+    const receipt = technicalContinuityCommitResponse();
+    actionSpies.commit.mockResolvedValue({ ...receipt, ...(multipart ? { outbounds: [
+      { ...receipt.outbound, part_index: 0, part_count: 1, status: 'pending', delivery_attempt: 1 },
+    ] } : {}) });
+    vi.spyOn(evidencePersistence, 'persistTurnEvidence').mockImplementation(async (_subject, event) => {
+      if (event.kind === 'provider_send_attempt') throw new Error('DB_UNAVAILABLE');
+    });
+    const client = technicalContinuityClient();
+    const state = processingState();
+    const step = Object.assign(async (_name: string, run: () => Promise<unknown>) => run(), {
+      sleep: vi.fn(async () => undefined),
+    });
+    const result = await (processInboundTurn as unknown as {
+      definition: { handler: (args: Record<string, unknown>) => Promise<unknown> };
+    }).definition.handler({ input: workflowInput(), state, step, client,
+      execute: vi.fn(), signal: new AbortController().signal,
+      workflow: { id: 'evidence-before-send', setTimeout: vi.fn() } });
+    expect(client.createMessage).not.toHaveBeenCalled();
+    expect(result).toMatchObject({ error_code: 'TURN_EVIDENCE_UNAVAILABLE' });
+    expect(state).toMatchObject({ phase: 'paused_error', errorCode: 'TURN_EVIDENCE_UNAVAILABLE' });
   });
 
   it('abandons a queued WhatsApp turn for a non-allowed business number before ingesting it', async () => {
@@ -5868,7 +5892,7 @@ describe('processInboundTurn — decision provider selection', () => {
     }
   });
 
-  function invokeHandler(execute: ReturnType<typeof vi.fn>) {
+  function invokeHandler(execute: ReturnType<typeof vi.fn>, workflow = { id: 'workflow-test', tags: {} }) {
     const step = Object.assign(
       async (_name: string, run: () => Promise<unknown>) => run(),
       { sleep: vi.fn(async () => undefined) },
@@ -5884,9 +5908,22 @@ describe('processInboundTurn — decision provider selection', () => {
       execute,
       client: {},
       signal: new AbortController().signal,
-      workflow: { id: 'workflow-test' },
+      workflow,
     });
   }
+
+  it('retains legacy evidence failures for review instead of falling back or regenerating', async () => {
+    configuration.decisionProvider = 'gemini_direct';
+    secrets.GEMINI_API_KEY = 'synthetic-key';
+    actionSpies.geminiDecision.mockResolvedValue({});
+    vi.spyOn(evidencePersistence, 'persistTurnEvidence').mockRejectedValue(new Error('DB_UNAVAILABLE'));
+    const workflow = { id: 'legacy-evidence-review', tags: {} };
+    const result = await invokeHandler(vi.fn(), workflow);
+    expect(result).toMatchObject({ error_code: 'TURN_EVIDENCE_UNAVAILABLE' });
+    expect(workflow.tags).toMatchObject({ studyxEvidenceReview: 'true' });
+    expect(actionSpies.geminiDecision).toHaveBeenCalledTimes(1);
+    expect(actionSpies.commit).not.toHaveBeenCalled();
+  });
 
   it('gemini_direct: calls the Gemini adapter directly with the same instructions shape and never calls execute', async () => {
     configuration.decisionProvider = 'gemini_direct';

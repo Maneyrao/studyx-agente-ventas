@@ -11,6 +11,9 @@ import {
 } from '@/features/orchestration/domain/egress-guard';
 import { runEnrollmentWorker } from '../central-carga/worker';
 import { logger } from '@/lib/observability/structured-log';
+import { auditLog } from '@/lib/audit/logger';
+import { sha256Hex } from '@/lib/idempotency/canonical-json';
+import { backendReleaseSha } from '@/lib/services/turn-evidence.service';
 
 export const INITIAL_PASSWORD = 'Escuela.123';
 export const CAMPUS_URL = 'https://mystudyx.com/campus-virtual';
@@ -305,11 +308,18 @@ export async function deliverNotification(id: string, input: { claim_token: stri
   const db = deps.db ?? defaultDb;
   const [source] = await sources(db, config, id);
   if (!source || source.botpress_conversation_id !== input.botpress_conversation_id || !validateNotificationSource(source)) return { outcome: 'not_authorized' };
+  const evidenceKey = `post-sale-evidence:${id}:${input.claim_token}:${sha256Hex(input.narrative)}`;
+  await auditLog({ action: 'post_sale.narrative.received', entity_type: 'post_sale_notification', entity_id: id,
+    event_key: `${evidenceKey}:proposal`, payload: { narrative: input.narrative, backend_sha: backendReleaseSha() },
+  }, db);
   let text: string;
   try {
     text = assemblePostSaleMessage(source, NarrativeSchema.parse(input.narrative));
   } catch (error) {
     if (error instanceof PostSaleContentError) {
+      await auditLog({ action: 'post_sale.narrative.rejected', entity_type: 'post_sale_notification', entity_id: id,
+        event_key: `${evidenceKey}:rejection`, payload: { code: error.code, subject: 'post_sale_narrative' },
+      }, db);
       return { outcome: 'invalid_content' as const, reason: error.code };
     }
     throw error;
@@ -325,6 +335,9 @@ export async function deliverNotification(id: string, input: { claim_token: stri
     ),
   });
   if (!verifyAuthorizedEgress({ content: text, manifest: authorization }).ok) {
+    await auditLog({ action: 'post_sale.narrative.rejected', entity_type: 'post_sale_notification', entity_id: id,
+      event_key: `${evidenceKey}:egress-rejection`, payload: { code: 'POST_SALE_EGRESS_INVALID', subject: 'post_sale_narrative' },
+    }, db);
     return { outcome: 'invalid_content' as const, reason: 'POST_SALE_EGRESS_INVALID' as const };
   }
   const [locked] = await db<Array<{ id: string }>>`
@@ -332,6 +345,10 @@ export async function deliverNotification(id: string, input: { claim_token: stri
     WHERE id = ${id}::uuid AND status = 'processing' AND claim_token = ${input.claim_token}::uuid
       AND lease_until > now() RETURNING id`;
   if (!locked) return { outcome: 'claim_lost' };
+  await auditLog({ action: 'post_sale.narrative.authorized', entity_type: 'post_sale_notification', entity_id: id,
+    event_key: `${evidenceKey}:authorized`, payload: { authorized_text: text, authorized_egress: authorization,
+      backend_sha: backendReleaseSha() },
+  }, db);
   // Transition before external I/O: a crash cannot silently send the credentials twice.
   const sender = deps.sender ?? createManagedOutboundSender(db, source.botpress_conversation_id);
   let result;

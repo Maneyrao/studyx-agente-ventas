@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
-import { randomUUID } from 'node:crypto';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { createHash, randomUUID } from 'node:crypto';
+import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -30,6 +30,12 @@ import {
   type GoldenFailureV1,
   type GoldenTurnObservationV1,
 } from './judge';
+import { absoluteGoldenAcceptanceV1, compareGoldenRunsV1 } from './comparison';
+import {
+  createGoldenResponsesProviderV1,
+  type GoldenProviderReportV1,
+  type GoldenResponsesProviderV1,
+} from './provider';
 import {
   extractBackendRejectionsV1,
   extractContextEvidenceV1,
@@ -44,10 +50,13 @@ const live = process.env.STUDYX_GOLDEN_LIVE === 'true' ? describe : describe.ski
 const databaseUrl = process.env.TEST_DATABASE_URL ?? '';
 const apiBaseUrl = process.env.STUDYX_EVAL_API_BASE_URL ?? '';
 const model = process.env.STUDYX_GOLDEN_DEEPSEEK_MODEL ?? 'deepseek-v4-flash';
+const providerName = process.env.STUDYX_GOLDEN_PROVIDER ?? 'deepseek';
+const providerBaseUrl = process.env.STUDYX_GOLDEN_PROVIDER_BASE_URL ?? 'https://api.deepseek.com';
+const providerModel = process.env.STUDYX_GOLDEN_PROVIDER_MODEL ?? model;
 const resultsDirectory = path.resolve(process.cwd(), 'evals/golden/results');
 const reuseObservations = process.env.STUDYX_GOLDEN_REUSE_OBSERVATIONS === 'true';
 const evaluatedSha = process.env.STUDYX_GOLDEN_EVALUATED_SHA ?? '';
-const resultStem = 'baseline-v9';
+const resultStem = process.env.STUDYX_GOLDEN_RESULT_STEM ?? 'baseline-v9';
 
 type Sql = ReturnType<typeof openLocalTestDatabase>;
 
@@ -115,6 +124,14 @@ let recordDeliveryReportFn: typeof import('@/lib/services/decision.service')['re
 let projectAgentAMemoriesFn: typeof import('@/features/memory/application/project-agent-a-memories')['projectAgentAMemories'];
 let runEnrollmentWorkerFn: typeof import('@/features/fulfillment/central-carga/worker')['runEnrollmentWorker'];
 let postSaleFns: typeof import('@/features/fulfillment/post-sale/service');
+let goldenProvider: GoldenResponsesProviderV1 | null = null;
+let baselineV8Cases: Array<{
+  readonly case_id: string;
+  readonly approved: boolean | null;
+  readonly turns: Array<{ readonly turn_id: string; readonly approved: boolean | null }>;
+}> = [];
+let harnessFingerprint = '';
+let harnessFiles: string[] = [];
 
 function errorText(error: unknown): string {
   return error instanceof Error ? `${error.name}: ${error.message}` : String(error);
@@ -514,17 +531,27 @@ async function prepareFulfilledBonusPackage(input: {
 
 function markdown(cases: readonly CaseResultV1[]): string {
   const escape = (value: unknown) => String(value ?? '').replaceAll('|', '\\|').replaceAll('\n', '<br>');
+  const providerReport = goldenProvider?.report() ?? null;
+  const comparison = compareGoldenRunsV1({
+    baselineLabel: 'baseline-v8', candidateLabel: resultStem,
+    baselineProvider: 'deepseek', candidateProvider: providerName,
+    baselineCases: baselineV8Cases, candidateCases: cases,
+  });
   const lines = [
-    `# Agent A golden baseline v9 — ${evaluatedSha.slice(0, 7)}`, '',
+    `# Agent A golden ${resultStem} — ${evaluatedSha.slice(0, 7)}`, '',
+    `- Criterio absoluto: ${absoluteGoldenAcceptanceV1(cases).approved ? 'APROBADO' : 'NO APROBADO'}; ${absoluteGoldenAcceptanceV1(cases).passed_turns}/48 turnos, mínimo 41 y críticos 07/10/11/12/15 aprobados.`,
     `- SHA evaluado: \`${evaluatedSha}\``,
     `- Origen de la línea de base de autoridad: \`${GOLDEN_BASE_SHA}\``,
     `- Brain: \`${AGENT_A_BRAIN_PROMPT_VERSION}\``,
     `- Prompt canónico: \`${STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION}\``,
-    `- Modelo: \`${model}\``,
+    `- Modelo interno del agente: \`${model}\``,
+    `- Proveedor/modelo de evaluación: \`${providerName}\` / \`${providerModel}\``,
+    `- Llamadas/intentos al proveedor: ${providerReport?.logical_calls ?? 'no registrado'} / ${providerReport?.attempts ?? 'no registrado'}`,
+    `- Tokens: entrada ${providerReport?.tokens?.input ?? 'no informado'}, salida ${providerReport?.tokens?.output ?? 'no informado'}, total ${providerReport?.tokens?.total ?? 'no informado'}`,
     `- Casos: ${cases.filter((item) => item.approved === true).length} aprobados; ${cases.filter((item) => item.approved === false).length} fallidos; ${cases.filter((item) => item.approved === null).length} con error del evaluador`,
     `- Turnos: ${cases.flatMap((item) => item.turns).filter((turn) => turn.approved === true).length} aprobados; ${cases.flatMap((item) => item.turns).filter((turn) => turn.approved === false).length} fallidos; ${cases.flatMap((item) => item.turns).filter((turn) => turn.execution_status === 'evaluation_error').length} con error del evaluador`, '',
-    '| Caso/turno | Resultado | Autoridad | Respuesta real | Move / acción | Rechazos backend | Hipótesis de capa |',
-    '|---|---|---|---|---|---|---|',
+    '| Caso/turno | Resultado | Autoridad | Borradores originales y reparaciones | Texto entregado al transporte | Move / acción | Rechazos backend | Hipótesis de capa |',
+    '|---|---|---|---|---|---|---|---|',
   ];
   for (const item of cases) for (const turn of item.turns) {
     const result = turn.execution_status === 'not_executed' ? 'NO_EJECUTADO'
@@ -533,7 +560,7 @@ function markdown(cases: readonly CaseResultV1[]): string {
     const layer = turn.failure_layer === 'validador' && turn.validator_rejections.length > 0
       ? `validador — ${turn.validator_rejections.map((rejection) => `${rejection.code}${rejection.subject ? ` / ${rejection.subject}` : ''}`).join('; ')}`
       : turn.failure_layer ?? '—';
-    lines.push(`| ${escape(`${item.case_id}/${turn.turn_id}`)} | ${result} | ${escape(turn.authority.join('; '))} | ${escape(turn.response_real)} | ${escape(`${turn.move ?? 'null'} / ${JSON.stringify(turn.proposed_action)}`)} | ${escape(JSON.stringify(turn.backend_rejections))} | ${escape(layer)} |`);
+    lines.push(`| ${escape(`${item.case_id}/${turn.turn_id}`)} | ${result} | ${escape(turn.authority.join('; '))} | ${escape(turn.model_attempts.map(attempt => `Intento ${attempt.attempt}: ${attempt.response ?? '(sin texto)'}`).join('\n'))} | ${escape(turn.response_real)} | ${escape(`${turn.move ?? 'null'} / ${JSON.stringify(turn.proposed_action)}`)} | ${escape(JSON.stringify(turn.backend_rejections))} | ${escape(layer)} |`);
   }
   lines.push('', '## Fallos', '');
   for (const item of cases) for (const turn of item.turns.filter((candidate) => candidate.approved !== true)) {
@@ -546,12 +573,23 @@ function markdown(cases: readonly CaseResultV1[]): string {
       lines.push(`- **${item.case_id}/${turn.turn_id}:** ${escape(JSON.stringify(turn.preconditions))}`);
     }
   }
+  lines.push('', '## Comparación con baseline-v8', '',
+    `- ${comparison.disclosure}`,
+    `- Casos: ${comparison.summary.cases_improved} mejoraron, ${comparison.summary.cases_regressed} retrocedieron, ${comparison.summary.cases_unchanged} sin cambio.`,
+    `- Turnos: ${comparison.summary.turns_improved} mejoraron, ${comparison.summary.turns_regressed} retrocedieron, ${comparison.summary.turns_unchanged} sin cambio, ${comparison.summary.turns_missing} faltantes.`, '',
+    '| Caso/turno | v8 | NIM | Cambio |',
+    '|---|---:|---:|---|');
+  for (const turn of comparison.turns) {
+    lines.push(`| ${escape(`${turn.case_id}/${turn.turn_id}`)} | ${escape(turn.baseline)} | ${escape(turn.candidate)} | ${turn.change} |`);
+  }
   return `${lines.join('\n')}\n`;
 }
 
 function baselineReport(cases: readonly CaseResultV1[]) {
+  const providerReport: GoldenProviderReportV1 | null = goldenProvider?.report() ?? null;
   return {
-    schema_version: 2,
+    schema_version: 3,
+    absolute_acceptance: absoluteGoldenAcceptanceV1(cases),
     generated_at: new Date().toISOString(),
     base_sha: evaluatedSha,
     authority_baseline_origin_sha: GOLDEN_BASE_SHA,
@@ -565,9 +603,31 @@ function baselineReport(cases: readonly CaseResultV1[]) {
         .every((plan) => createConfigPaymentLinkResolver(process.env).resolve(plan) !== null),
       course_bonus_flow_mode: process.env.COURSE_BONUS_FLOW_MODE ?? null,
       course_bonus_max_courses: process.env.COURSE_BONUS_MAX_COURSES ?? null,
+      provider_transport: {
+        protocol: providerName === 'nvidia_nim' ? 'openai_chat_completions' : 'responses_api',
+        source_envelope: 'responses_api',
+        max_requests_per_minute: providerName === 'nvidia_nim' ? 40 : null,
+        max_attempts: providerName === 'nvidia_nim' ? 4 : null,
+        retry_base_delay_ms: providerName === 'nvidia_nim' ? 500 : null,
+        request_timeouts_ms: { agent: 15_000, judge: 30_000, post_sale: 10_000 },
+        reasoning_mapping: providerName === 'nvidia_nim'
+          ? 'Responses reasoning effort none is omitted; NVIDIA documents thinking disabled by default for DeepSeek V4.1 Flash.'
+          : 'native',
+      },
     },
     production_or_vertice_used: false,
     deepseek_model: model,
+    evaluation_provider: {
+      name: providerName,
+      base_url: providerBaseUrl,
+      model: providerModel,
+      report: providerReport,
+    },
+    evaluation_harness: {
+      sha256: harnessFingerprint,
+      files: harnessFiles,
+      agent_runtime_sha: evaluatedSha,
+    },
     prompt_version: STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION,
     brain_version: AGENT_A_BRAIN_PROMPT_VERSION,
     case_summary: {
@@ -580,30 +640,97 @@ function baselineReport(cases: readonly CaseResultV1[]) {
       total: GOLDEN_CASES.length,
     },
     cases,
+    comparison_to_v8: compareGoldenRunsV1({
+      baselineLabel: 'baseline-v8', candidateLabel: resultStem,
+      baselineProvider: 'deepseek', candidateProvider: providerName,
+      baselineCases: baselineV8Cases, candidateCases: cases,
+    }),
   };
 }
 
 async function writeRawProgress(): Promise<void> {
   await mkdir(resultsDirectory, { recursive: true });
   await writeFile(path.join(resultsDirectory, `${resultStem}-observations.partial.json`), `${JSON.stringify({
-    schema_version: 2,
+    schema_version: 3,
     base_sha: evaluatedSha,
     authority_baseline_origin_sha: GOLDEN_BASE_SHA,
     completed_cases: pendingCases.length,
     total_cases: GOLDEN_CASES.length,
+    evaluation_provider: {
+      name: providerName, base_url: providerBaseUrl, model: providerModel,
+      report: goldenProvider?.report() ?? null,
+    },
     cases: pendingCases,
   }, null, 2)}\n`);
 }
 
 async function writeCompletedProgress(): Promise<void> {
   await mkdir(resultsDirectory, { recursive: true });
+  // Local synthetic DB only. Keep original drafts and physical-send evidence
+  // after the runner tears down its disposable database; no secrets/headers.
+  const durable = await db`SELECT a.id,a.occurred_at,a.action,a.entity_type,a.entity_id,a.correlation_id,a.payload
+    FROM audit_log a WHERE a.action IN ('agent.turn.evidence','agent.decision.committed',
+      'outbound.delivery.reported','outbound.provider.attempt','outbound.provider.result',
+      'post_sale.narrative.received','post_sale.narrative.rejected','post_sale.narrative.authorized')
+    ORDER BY a.occurred_at,a.id`;
+  await writeFile(path.join(resultsDirectory, `${resultStem}-durable-evidence.json`), `${JSON.stringify({
+    evaluated_sha: evaluatedSha, records: durable,
+  }, null, 2)}\n`);
   await writeFile(path.join(resultsDirectory, `${resultStem}.json`), `${JSON.stringify(baselineReport(completedCases), null, 2)}\n`);
   await writeFile(path.join(resultsDirectory, `${resultStem}.md`), markdown(completedCases));
+}
+
+async function writeProviderProgress(report: GoldenProviderReportV1): Promise<void> {
+  await mkdir(resultsDirectory, { recursive: true });
+  const target = path.join(resultsDirectory, `${resultStem}-provider.partial.json`);
+  const temporary = `${target}.tmp`;
+  await writeFile(temporary, `${JSON.stringify({
+    schema_version: 1,
+    status: 'running',
+    evaluated_sha: evaluatedSha,
+    harness_sha256: harnessFingerprint,
+    updated_at: new Date().toISOString(),
+    report,
+  }, null, 2)}\n`, { mode: 0o600 });
+  await rename(temporary, target);
+}
+
+async function writeProviderCompleted(report: GoldenProviderReportV1): Promise<void> {
+  const target = path.join(resultsDirectory, `${resultStem}-provider.json`);
+  const temporary = `${target}.tmp`;
+  await writeFile(temporary, `${JSON.stringify({
+    schema_version: 1,
+    status: 'completed',
+    evaluated_sha: evaluatedSha,
+    harness_sha256: harnessFingerprint,
+    completed_at: new Date().toISOString(),
+    report,
+  }, null, 2)}\n`, { mode: 0o600 });
+  await rename(temporary, target);
+}
+
+async function fingerprintHarness(): Promise<void> {
+  harnessFiles = execFileSync('git', [
+    'ls-files', '--cached', '--others', '--exclude-standard', 'evals/golden',
+  ], { encoding: 'utf8' })
+    .split(/\r?\n/u)
+    .filter((filename) => filename.endsWith('.ts') || filename.endsWith('.mts') || filename.endsWith('.mjs'))
+    .sort();
+  const hash = createHash('sha256');
+  for (const filename of harnessFiles) {
+    hash.update(filename);
+    hash.update('\0');
+    hash.update(await readFile(filename));
+    hash.update('\0');
+  }
+  harnessFingerprint = hash.digest('hex');
 }
 
 beforeAll(async () => {
   const head = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
   expect(evaluatedSha).toBe(head);
+  await fingerprintHarness();
+  expect(harnessFingerprint).toMatch(/^[a-f0-9]{64}$/u);
   expect(() => execFileSync('git', ['merge-base', '--is-ancestor', GOLDEN_BASE_SHA, head]))
     .not.toThrow();
   const changed = execFileSync('git', ['diff', '--name-only', 'HEAD'], { encoding: 'utf8' })
@@ -616,6 +743,11 @@ beforeAll(async () => {
       && !filename.startsWith('docs/reports/evidence/'));
   expect(unsafeUntracked, `GOLDEN_UNTRACKED_RUNTIME_FILES_PRESENT:${unsafeUntracked.join(',')}`).toEqual([]);
   expect(secrets.DEEPSEEK_API_KEY?.trim(), 'DEEPSEEK_API_KEY_MISSING').toBeTruthy();
+  expect(['deepseek', 'nvidia_nim']).toContain(providerName);
+  if (providerName === 'nvidia_nim') {
+    expect(new URL(providerBaseUrl).origin).toBe('https://integrate.api.nvidia.com');
+    expect(process.env.NVIDIA_API_KEY?.trim(), 'NVIDIA_API_KEY_MISSING').toBeTruthy();
+  }
   expect(new URL(apiBaseUrl).origin).toBe('http://127.0.0.1:3217');
   expect(new URL(databaseUrl).origin).toBe('null');
   configuration.apiBaseUrl = apiBaseUrl;
@@ -637,12 +769,32 @@ beforeAll(async () => {
   ({ projectAgentAMemories: projectAgentAMemoriesFn } = await import('@/features/memory/application/project-agent-a-memories'));
   ({ runEnrollmentWorker: runEnrollmentWorkerFn } = await import('@/features/fulfillment/central-carga/worker'));
   postSaleFns = await import('@/features/fulfillment/post-sale/service');
+  const baselineV8 = JSON.parse(await readFile(
+    path.join(resultsDirectory, 'baseline-v8.json'), 'utf8',
+  )) as { readonly cases?: typeof baselineV8Cases };
+  baselineV8Cases = [...(baselineV8.cases ?? [])];
+  expect(baselineV8Cases).toHaveLength(GOLDEN_CASES.length);
   db = openLocalTestDatabase();
   nativeFetch = globalThis.fetch;
+  if (providerName === 'nvidia_nim') {
+    goldenProvider = createGoldenResponsesProviderV1({
+      provider: 'nvidia_nim',
+      baseUrl: providerBaseUrl,
+      model: providerModel,
+      apiKey: process.env.NVIDIA_API_KEY!,
+      maxRequestsPerMinute: 40,
+      maxAttempts: 4,
+      retryBaseDelayMs: 500,
+    }, { fetchImpl: nativeFetch, onReport: writeProviderProgress });
+  }
   globalThis.fetch = async (request, init) => {
     const url = new URL(request instanceof Request ? request.url : String(request));
     if (url.origin !== 'https://api.deepseek.com' && url.origin !== new URL(apiBaseUrl).origin) {
       throw new Error(`GOLDEN_UNEXPECTED_EXTERNAL_REQUEST:${url.hostname}`);
+    }
+    if (url.origin === 'https://api.deepseek.com' && goldenProvider) {
+      expect(url.pathname).toBe('/responses');
+      return goldenProvider.fetch(request, init);
     }
     return nativeFetch(request, init);
   };
@@ -859,5 +1011,6 @@ live('authority-only Agent A golden baseline through the real workflow', () => {
       await writeCompletedProgress();
     }
     expect(completedCases).toHaveLength(GOLDEN_CASES.length);
+    if (goldenProvider) await writeProviderCompleted(goldenProvider.report());
   }, 600_000);
 });

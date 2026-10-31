@@ -1,3 +1,5 @@
+import { createTurnEvidenceJournal, isTurnEvidencePersistenceError, TurnEvidencePersistenceError } from '../lib/observability/turn-evidence'
+import { persistTurnEvidence } from '../lib/observability/persist-turn-evidence'
 import { commitDecisionWithRejectionReceiptV1, backendDecisionRejectionReason, backendDecisionRejectionSubjects } from '../lib/delivery/commit-decision-receipt'
 import { eligibleContactRequestFieldsV1 } from '../lib/conversation/contact-profile-request-policy'
 import { scheduleTurnRecovery } from '../actions/scheduleTurnRecovery'
@@ -6,7 +8,7 @@ import { captureContactProfile, ContactProfileReceiptSchema } from '../actions/c
 import { randomUUID } from 'node:crypto'
 import { Autonomous, Workflow, actions as runtimeActions, configuration, context, secrets, z } from '@botpress/runtime'
 import { claimBatch } from '../actions/claimBatch'
-import { commitDecision } from '../actions/commitDecision'
+import { commitDecision as commitDecisionUnobserved } from '../actions/commitDecision'
 import { dispatchCall } from '../actions/dispatchCall'
 import { flushLeadProjection } from '../actions/flushLeadProjection'
 import { ingestTurn } from '../actions/ingestTurn'
@@ -50,8 +52,8 @@ import {
   routeCommercialTurn,
 } from '../utils/commercial-router'
 import { verifyAuthorizedEgressPortable } from '../utils/authorized-egress'
-import { generateGeminiDecision, MAX_GEMINI_DECISION_TIMEOUT_MS } from '../lib/decision/gemini-direct'
-import { generateGroqDecision } from '../lib/decision/groq-direct'
+import { generateGeminiDecision as generateGeminiUnobserved, MAX_GEMINI_DECISION_TIMEOUT_MS } from '../lib/decision/gemini-direct'
+import { generateGroqDecision as generateGroqUnobserved } from '../lib/decision/groq-direct'
 import {
   generateGroqConversationMoveV1,
   type ConversationInterpreterInputV1,
@@ -69,7 +71,7 @@ import { isLegacyConversationPipelineEligibleV1 } from '../lib/conversation/agen
 import {
   DEFAULT_AGENT_A_BRAIN_DEEPSEEK_MODEL,
   claimsImmediateCallDispatchV1,
-  generateDeepSeekAgentATurnProposalV1,
+  generateDeepSeekAgentATurnProposalV1 as generateDeepSeekUnobserved,
   type GeneratedAgentATurnProposalV1,
 } from '../lib/conversation/agent-a-brain'
 import { claimsImmediatePaymentLinkDeliveryV1 } from '../../../src/shared/conversation/payment-link-claim'
@@ -379,6 +381,10 @@ function literalConversationVariants(
 }
 
 const workflowStateSchema = z.object({
+  evidenceReview: z.object({ workflow_id: z.string(), subject_id: z.string(), reason: z.string(),
+    evidence_location: z.string() }).nullable().default(null),
+  pendingEvidence: z.array(z.object({ event_id: z.string().uuid(), kind: z.string(),
+    data: z.record(z.string(), z.unknown()) })).default([]),
   phase: ProcessingStateSchema.default('received'),
   turnId: z.string().uuid().nullable().default(null),
   batchId: z.string().uuid().nullable().default(null),
@@ -577,6 +583,7 @@ export const processInboundTurn = new Workflow({
     input = WorkflowInputSchema.parse(input)
     state.phase = 'processing'
     state.errorCode = null
+    let evidenceJournal: ReturnType<typeof createTurnEvidenceJournal> | null = null
     let whatsappTypingActive = false
     const startWhatsAppTyping = async (): Promise<void> => {
       if (whatsappTypingActive
@@ -591,6 +598,7 @@ export const processInboundTurn = new Workflow({
         whatsappTypingActive = true
         safeLog('studyx.turn.typing_indicator_started', { trace_id: input.trace_id })
       } catch (error) {
+      if (isTurnEvidencePersistenceError(error)) throw error
         if (!(error instanceof Error)) throw error
         // Presence is UX only. A provider or integration failure must never
         // prevent the durable turn from producing the actual answer.
@@ -609,6 +617,7 @@ export const processInboundTurn = new Workflow({
           messageId: input.external_message_id,
         })
       } catch (error) {
+      if (isTurnEvidencePersistenceError(error)) throw error
         if (!(error instanceof Error)) throw error
         safeLog('studyx.turn.typing_indicator_stop_failed', {
           trace_id: input.trace_id,
@@ -618,6 +627,18 @@ export const processInboundTurn = new Workflow({
     }
     const finish = async (): Promise<WorkflowResult> => {
       await stopWhatsAppTyping()
+      if (evidenceJournal) {
+        evidenceJournal.capture({ kind: 'workflow_finished', phase: state.phase, error_code: state.errorCode, delivery_status: state.deliveryStatus })
+        try { await evidenceJournal.flush() } catch {
+          state.phase = 'paused_error'; state.errorCode = 'TURN_EVIDENCE_UNAVAILABLE'
+        }
+      }
+      if (state.errorCode?.startsWith('TURN_EVIDENCE_')) {
+        state.evidenceReview = { workflow_id: workflow.id, subject_id: state.turnId ?? input.external_message_id,
+          reason: state.errorCode, evidence_location: 'workflow state.pendingEvidence and cached generation steps' }
+        workflow.tags = { ...workflow.tags, studyxEvidenceReview: 'true' }
+        safeLog('studyx.turn.evidence_review_required', state.evidenceReview)
+      }
       return resultFromState(state, input.trace_id)
     }
 
@@ -676,6 +697,7 @@ export const processInboundTurn = new Workflow({
           async () => {
             try { return await operation() }
             catch (error) {
+      if (isTurnEvidencePersistenceError(error)) throw error
               if (!(error instanceof Error)) throw error
               // ADK rehydrates thrown errors as plain Error. Persist a typed
               // receipt so a durable sleep can replay the retry decision.
@@ -780,6 +802,7 @@ export const processInboundTurn = new Workflow({
           provider: result.provider,
         })
       } catch (error) {
+      if (isTurnEvidencePersistenceError(error)) throw error
         if (!(error instanceof Error)) throw error
         input.message.type = 'unsupported'
         input.message.text = '[audio_no_transcrito]'
@@ -822,6 +845,7 @@ export const processInboundTurn = new Workflow({
           provider: result.provider,
         })
       } catch (error) {
+      if (isTurnEvidencePersistenceError(error)) throw error
         input.message.type = 'unsupported'
         input.message.text = '[imagen_no_interpretada]'
         safeLog('studyx.turn.image_description_failed', {
@@ -857,6 +881,7 @@ export const processInboundTurn = new Workflow({
       state.turnId = ingest.turn_id
       state.batchId = ingest.batch.id
     } catch (error) {
+      if (isTurnEvidencePersistenceError(error)) throw error
       // ADK durable suspension is a control object, not a failed request.
       if (!(error instanceof Error)) throw error
       timings.ingest_ms = Date.now() - ingestStartedAt
@@ -954,6 +979,7 @@ export const processInboundTurn = new Workflow({
         )
         timings.claim_ms += Date.now() - claimStartedAt
       } catch (error) {
+      if (isTurnEvidencePersistenceError(error)) throw error
         if (!(error instanceof Error)) throw error
         timings.claim_ms += Date.now() - claimStartedAt
         state.phase = 'paused_error'
@@ -1054,6 +1080,64 @@ export const processInboundTurn = new Workflow({
       effective_mode: owned.features?.agent_loop_v3_mode ?? 'off',
       kill_switch: agentLoopV3KillSwitch,
     })
+    const journal = createTurnEvidenceJournal(event => persistTurnEvidence({
+      subject_type: 'turn', subject_id: owned.turn_id, trace_id: input.trace_id,
+    }, event), state.pendingEvidence ?? [], pending => { state.pendingEvidence = pending })
+    evidenceJournal = journal
+    if ((state.pendingEvidence?.length ?? 0) > 0) {
+      const generatedWithoutReceipt = state.pendingEvidence.some((event: { kind: string }) =>
+        ['generation_started', 'model_raw', 'generation_failed'].includes(event.kind))
+      try { await journal.flush() } catch {
+        state.phase = 'paused_error'; state.errorCode = 'TURN_EVIDENCE_UNAVAILABLE'; return finish()
+      }
+      if (generatedWithoutReceipt) {
+        state.phase = 'paused_error'; state.errorCode = 'TURN_EVIDENCE_RECOVERED_REQUIRES_REVIEW'
+        return finish()
+      }
+    }
+    const generateDeepSeekAgentATurnProposalV1: typeof generateDeepSeekUnobserved = args => journal.generate(
+      observe => generateDeepSeekUnobserved({ ...args, observe }),
+      { rejection: args.context.turn_rejection ?? null, conversation_only: args.conversation_only === true },
+    )
+    const generateGeminiDecision: typeof generateGeminiUnobserved = args => journal.generate(
+      observe => generateGeminiUnobserved({ ...args, observe }), { route: 'legacy_gemini' },
+    )
+    const generateGroqDecision: typeof generateGroqUnobserved = args => journal.generate(
+      observe => generateGroqUnobserved({ ...args, observe }), { route: 'legacy_groq' },
+    )
+    const commitDecision = { execute: async (args: Parameters<typeof commitDecisionUnobserved.execute>[0]) => {
+      const wire = (args as { input: Record<string, unknown> }).input
+      journal.capture({ kind: 'commit_proposed', proposal: wire.agent_turn_v2 ?? null,
+        fallback_decision: wire.decision, model: wire.model })
+      await journal.flush()
+      try {
+        const receipt = await commitDecisionUnobserved.execute(args)
+        journal.capture({ kind: 'commit_receipt', receipt })
+        await journal.flush()
+        return receipt
+      } catch (error) {
+        if (isTurnEvidencePersistenceError(error)) throw error
+        journal.capture({ kind: 'backend_rejection', code: errorCode(error),
+          reason: backendDecisionRejectionReason(error), subjects: backendDecisionRejectionSubjects(error) })
+        await journal.flush()
+        throw error
+      }
+    } }
+    const observedCreateMessage = async (args: Parameters<typeof client.createMessage>[0]) => {
+      const wire = args as { payload: unknown; tags?: unknown; conversationId: string }
+      journal.capture({ kind: 'provider_send_attempt', text: wire.payload, tags: wire.tags ?? null,
+        conversation_id: wire.conversationId })
+      await journal.flush()
+      try {
+        const receipt = await client.createMessage(args)
+        journal.capture({ kind: 'provider_accepted', receipt })
+        return receipt
+      } catch (error) {
+      if (isTurnEvidencePersistenceError(error)) throw error
+        journal.capture({ kind: 'provider_send_ambiguous', code: errorCode(error) })
+        throw error
+      }
+    }
     const agentABrainContext = buildAgentAContextV1(
       owned,
       typeof configuration.agentAAdvisorName === 'string' ? configuration.agentAAdvisorName : null,
@@ -1416,6 +1500,7 @@ export const processInboundTurn = new Workflow({
               proposal: { ...generated.proposal, move: authoritativeMove },
             }
             const resolved = await resolveAgentAPlannerlessProposalV2({
+              observe: journal.capture,
               initial: authoritativeGenerated,
               context: agentABrainContext,
               repair_enabled: repairEnabled,
@@ -1454,11 +1539,14 @@ export const processInboundTurn = new Workflow({
                 await persistProfileProposal(repaired.proposal, rejection)
                 return repaired
                 } catch (continuationError) {
+      if (isTurnEvidencePersistenceError(continuationError)) throw continuationError
                   agentAContinuationFailure = continuationError
                   throw continuationError
                 }
               },
             })
+            journal.capture({ kind: 'proposal_resolution', rejection: resolved.rejection, action_rejection: resolved.action_rejection, evidence: resolved.evidence })
+            await journal.flush()
             let effectiveGenerated = resolved.effective
             if (resolved.action_rejection !== null) agentAConversationOnly = true
             if (resolved.action_rejection !== null && resolved.rejection !== null
@@ -1483,6 +1571,7 @@ export const processInboundTurn = new Workflow({
                 failure_codes: resolved.action_rejection.codes.slice(0, 8), action_status: 'needs_input',
               }
               } catch (continuationError) {
+      if (isTurnEvidencePersistenceError(continuationError)) throw continuationError
                 if (!(continuationError instanceof Error)) throw continuationError
                 // The first draft has already passed the resolver. Preserve
                 // that safe Agent A reply if a better continuation fails.
@@ -1589,6 +1678,7 @@ export const processInboundTurn = new Workflow({
                 { maxAttempts: 1 },
               )
             } catch (plannerError) {
+      if (isTurnEvidencePersistenceError(plannerError)) throw plannerError
               if (!(plannerError instanceof Error)) throw plannerError
               timings.planner_ms = Date.now() - plannerStartedAt
               const plannerFailureCode = errorCode(plannerError).split(':', 1)[0]!
@@ -1647,6 +1737,7 @@ export const processInboundTurn = new Workflow({
                     { maxAttempts: 1 },
                   )
                 } catch (repairError) {
+      if (isTurnEvidencePersistenceError(repairError)) throw repairError
                   if (!(repairError instanceof Error)) throw repairError
                   safeLog('studyx.turn.agent_a_repair_failed', {
                     trace_id: input.trace_id,
@@ -1694,7 +1785,10 @@ export const processInboundTurn = new Workflow({
           }
         }
       } catch (error) {
-        if (!(error instanceof Error)) throw error
+      if (!(error instanceof Error)) throw error
+        if (isTurnEvidencePersistenceError(error)) {
+          state.phase = 'paused_error'; state.errorCode = 'TURN_EVIDENCE_UNAVAILABLE'; return finish()
+        }
         const effectiveFailure = agentAContinuationFailure ?? error
         const failureCode = errorCode(effectiveFailure)
         const attemptFailure = classifyAgentAAttemptFailure(effectiveFailure)
@@ -1778,6 +1872,7 @@ export const processInboundTurn = new Workflow({
                     : 'authorized',
                 }
               } catch (continuationError) {
+      if (isTurnEvidencePersistenceError(continuationError)) throw continuationError
                 if (!(continuationError instanceof Error)) throw continuationError
                 const continuationFailure = classifyAgentAAttemptFailure(continuationError)
                 turnDiagnostics = { ...turnDiagnostics,
@@ -1810,6 +1905,7 @@ export const processInboundTurn = new Workflow({
                       },
                     }
                     const revalidated = await resolveAgentAPlannerlessProposalV2({
+              observe: journal.capture,
                       initial: conversationCandidate,
                       context: agentABrainContext,
                       repair_enabled: false,
@@ -1837,6 +1933,7 @@ export const processInboundTurn = new Workflow({
                     })
                     break candidateLoop
                   } catch (floorError) {
+      if (isTurnEvidencePersistenceError(floorError)) throw floorError
                     if (!(floorError instanceof Error)) throw floorError
                     safeLog('studyx.turn.agent_a_precommit_conversational_floor_invalid', {
                       trace_id: input.trace_id,
@@ -1958,11 +2055,13 @@ export const processInboundTurn = new Workflow({
                 signal: composerSignal,
               })
               if (!generated.is(ComposerExit)) throw new Error('COMPOSER_EXIT_NOT_REACHED')
+              journal.capture({ kind: 'sdk_exit_observed', route: 'managed_composer', raw_provider_text_available: false, output: generated.output })
               return generated.output
             },
           }),
           { maxAttempts: 1 },
         )
+        await journal.flush()
         timings.composer_ms = Date.now() - composerStartedAt
         pipelineCommit = {
           move: authoritativeMove,
@@ -1981,6 +2080,9 @@ export const processInboundTurn = new Workflow({
           sales_behavior_version: STUDYX_SALES_BEHAVIOR_VERSION,
         })
       } catch (error) {
+        if (isTurnEvidencePersistenceError(error)) {
+          state.phase = 'paused_error'; state.errorCode = 'TURN_EVIDENCE_UNAVAILABLE'; return finish()
+        }
         if (!(error instanceof Error)) throw error
         const failureCode = errorCode(error)
         const brainFailureReason = classifyBrainFailureReason(
@@ -2104,6 +2206,8 @@ export const processInboundTurn = new Workflow({
                 signal,
               })
               if (!generated.is(DecisionExit)) throw new Error('DECISION_EXIT_NOT_REACHED')
+              journal.capture({ kind: 'sdk_exit_observed', route: 'managed_decision', raw_provider_text_available: false, output: generated.output })
+              await journal.flush()
               rawDecision = DecisionSchema.parse(generated.output)
               safeLog('studyx.turn.model_generated', {
                 trace_id: input.trace_id,
@@ -2137,6 +2241,9 @@ export const processInboundTurn = new Workflow({
         decisionModel = generatedTurn.model
         timings.model_ms = Date.now() - modelStartedAt
       } catch (error) {
+        if (isTurnEvidencePersistenceError(error)) {
+          state.phase = 'paused_error'; state.errorCode = 'TURN_EVIDENCE_UNAVAILABLE'; return finish()
+        }
         if (!(error instanceof Error)) throw error
         timings.model_ms = Date.now() - modelStartedAt
         safeLog('studyx.turn.model_failed', {
@@ -2219,6 +2326,7 @@ export const processInboundTurn = new Workflow({
           }), { maxAttempts: 3 })
         }
       } catch (error) {
+      if (isTurnEvidencePersistenceError(error)) throw error
         if (!(error instanceof Error)) throw error
         state.phase = 'paused_error'
         state.errorCode = errorCode(error)
@@ -2277,6 +2385,7 @@ export const processInboundTurn = new Workflow({
       try {
         committed = await commitCurrentDecision('commit-canonical-decision')
       } catch (initialCommitError) {
+      if (isTurnEvidencePersistenceError(initialCommitError)) throw initialCommitError
         if (!(initialCommitError instanceof Error)) throw initialCommitError
       const rejectedProposal = agentTurnV2Commit?.proposal ?? null
       const repairContext = agentABrainContext
@@ -2288,6 +2397,9 @@ export const processInboundTurn = new Workflow({
             rejectionId: randomUUID(),
           })
         : null
+
+      journal.capture({ kind: 'backend_turn_rejection', rejection, code: errorCode(initialCommitError) })
+      await journal.flush()
 
       if (rejection === null || rejectedProposal === null || repairContext === null) {
         throw initialCommitError
@@ -2367,6 +2479,7 @@ export const processInboundTurn = new Workflow({
             )
             await persistProfileProposal(repaired.proposal, currentBackendRejection)
             const resolvedRepair = await resolveAgentAPlannerlessProposalV2({
+              observe: journal.capture,
               initial: repaired,
               context: repairContext,
               repair_enabled: false,
@@ -2411,6 +2524,7 @@ export const processInboundTurn = new Workflow({
               repaired_action_type: effectiveRepair.proposal.proposed_action.type,
             })
           } catch (repairError) {
+      if (isTurnEvidencePersistenceError(repairError)) throw repairError
             if (!(repairError instanceof Error)) throw repairError
             continuationFailure = classifyAgentAAttemptFailure(repairError)
             if (continuationFailure.stage === 'backend_rejected' && agentTurnV2Commit !== null) {
@@ -2497,6 +2611,7 @@ export const processInboundTurn = new Workflow({
               rejection_codes: rejectionCodes,
             })
           } catch (finalError) {
+      if (isTurnEvidencePersistenceError(finalError)) throw finalError
             if (!(finalError instanceof Error)) throw finalError
             continuationFailure = classifyAgentAAttemptFailure(finalError)
             if (continuationFailure.stage === 'backend_rejected' && agentTurnV2Commit !== null) {
@@ -2586,6 +2701,7 @@ export const processInboundTurn = new Workflow({
               }
               try {
               const revalidated = await resolveAgentAPlannerlessProposalV2({
+              observe: journal.capture,
                 initial: conversationCandidate,
                 context: repairContext,
                 repair_enabled: false,
@@ -2626,6 +2742,7 @@ export const processInboundTurn = new Workflow({
               })
                 break candidateLoop
               } catch (floorError) {
+      if (isTurnEvidencePersistenceError(floorError)) throw floorError
                 if (!(floorError instanceof Error)) throw floorError
                 const floorFailure = classifyAgentAAttemptFailure(floorError)
                 if (floorFailure.stage === 'policy' || floorFailure.stage === 'schema') {
@@ -2695,6 +2812,7 @@ export const processInboundTurn = new Workflow({
               rejection_codes: rejectionCodes,
             })
           } catch (continuityError) {
+      if (isTurnEvidencePersistenceError(continuityError)) throw continuityError
             if (!(continuityError instanceof Error)) throw continuityError
             safeLog('studyx.turn.agent_a_technical_continuity_failed', {
               trace_id: input.trace_id,
@@ -2710,6 +2828,9 @@ export const processInboundTurn = new Workflow({
       // suspension remains valid even though semantic retries no longer
       // enqueue a fresh workflow.
       if (!(error instanceof Error)) throw error
+      if (isTurnEvidencePersistenceError(error)) {
+        state.phase = 'paused_error'; state.errorCode = 'TURN_EVIDENCE_UNAVAILABLE'; return finish()
+      }
       timings.commit_ms = Date.now() - commitStartedAt
       state.phase = 'paused_error'
       state.errorCode = errorCode(error)
@@ -2812,6 +2933,7 @@ export const processInboundTurn = new Workflow({
           dispatch_status: dispatched.status,
         })
       } catch (error) {
+      if (isTurnEvidencePersistenceError(error)) throw error
         if (!(error instanceof Error)) throw error
         timings.call_dispatch_ms = Date.now() - dispatchStartedAt
         safeLog('studyx.turn.call_dispatch_unconfirmed', {
@@ -2854,6 +2976,7 @@ export const processInboundTurn = new Workflow({
             delay_ms: delay,
           })
         } catch (error) {
+      if (isTurnEvidencePersistenceError(error)) throw error
           if (!(error instanceof Error)) throw error
           // The visible answer and the rest of the sale are never rolled back
           // because a secondary follow-up could not be scheduled.
@@ -2932,6 +3055,7 @@ export const processInboundTurn = new Workflow({
               outbound_id: outbound.id, trace_id: input.trace_id, delivery_attempt: outbound.delivery_attempt,
             } })
           } catch (error) {
+      if (isTurnEvidencePersistenceError(error)) throw error
             if (!(error instanceof Error)) throw error
             return { authorizationRetry: { code: errorCode(error),
               retryable: error instanceof StudyxHttpError && error.retryable } }
@@ -2976,6 +3100,7 @@ export const processInboundTurn = new Workflow({
               return { message: { id: checked.botpress_message_id as string } }
             }
           } catch (error) {
+      if (isTurnEvidencePersistenceError(error)) throw error
             if (!(error instanceof Error)) throw error
           }
           throw new StudyxHttpError('OUTBOUND_SUBMISSION_AMBIGUOUS', false)
@@ -3043,6 +3168,7 @@ export const processInboundTurn = new Workflow({
               { maxAttempts: 1 }
             )
           } catch (reportError) {
+      if (isTurnEvidencePersistenceError(reportError)) throw reportError
             if (!(reportError instanceof Error)) throw reportError
             safeLog('studyx.turn.delivery_report_failed', {
               trace_id: input.trace_id,
@@ -3094,7 +3220,7 @@ export const processInboundTurn = new Workflow({
                   }
                 }
                 await stopWhatsAppTyping()
-                return client.createMessage({
+                return observedCreateMessage({
                   conversationId: input.botpress_conversation_id,
                   userId: context.get('botId'),
                   type: 'text',
@@ -3109,6 +3235,9 @@ export const processInboundTurn = new Workflow({
               },
             )
         } catch (error) {
+      if (isTurnEvidencePersistenceError(error)) {
+            state.phase = 'paused_error'; state.errorCode = 'TURN_EVIDENCE_UNAVAILABLE'; return finish()
+          }
           if (!(error instanceof Error)) throw error
           state.phase = 'paused_error'
           state.errorCode = errorCode(error)
@@ -3142,6 +3271,7 @@ export const processInboundTurn = new Workflow({
               { maxAttempts: 1 }
             )
           } catch (reportError) {
+      if (isTurnEvidencePersistenceError(reportError)) throw reportError
             if (!(reportError instanceof Error)) throw reportError
             safeLog('studyx.turn.delivery_report_failed', {
               trace_id: input.trace_id,
@@ -3206,6 +3336,7 @@ export const processInboundTurn = new Workflow({
           { maxAttempts: 1 }
         )
       } catch (error) {
+      if (isTurnEvidencePersistenceError(error)) throw error
         if (!(error instanceof Error)) throw error
         safeLog('studyx.turn.projection_flush_skipped', {
           trace_id: input.trace_id,
@@ -3266,6 +3397,7 @@ export const processInboundTurn = new Workflow({
           { maxAttempts: 1 }
         )
       } catch (reportError) {
+      if (isTurnEvidencePersistenceError(reportError)) throw reportError
         if (!(reportError instanceof Error)) throw reportError
         safeLog('studyx.turn.delivery_report_failed', {
           trace_id: input.trace_id,
@@ -3316,7 +3448,7 @@ export const processInboundTurn = new Workflow({
             }
           }
           await stopWhatsAppTyping()
-          return client.createMessage({
+          return observedCreateMessage({
             conversationId: input.botpress_conversation_id,
             // Un mensaje del bot se crea con el userId del BOT (así lo hace el
             // propio runtime en conversation.send). Con el userId del contacto
@@ -3349,6 +3481,9 @@ export const processInboundTurn = new Workflow({
           timings.event_to_visible_outbound_ms >= VISIBLE_OUTBOUND_BUDGET_MS ? 1 : 0
       }
     } catch (error) {
+      if (isTurnEvidencePersistenceError(error)) {
+        state.phase = 'paused_error'; state.errorCode = 'TURN_EVIDENCE_UNAVAILABLE'; return finish()
+      }
       if (!(error instanceof Error)) throw error
       timings.send_ms = Date.now() - sendStartedAt
       state.phase = 'paused_error'
@@ -3383,6 +3518,7 @@ export const processInboundTurn = new Workflow({
           { maxAttempts: 1 }
         )
       } catch (reportError) {
+      if (isTurnEvidencePersistenceError(reportError)) throw reportError
         if (!(reportError instanceof Error)) throw reportError
         safeLog('studyx.turn.delivery_report_failed', {
           trace_id: input.trace_id,
@@ -3441,6 +3577,7 @@ export const processInboundTurn = new Workflow({
         { maxAttempts: 1 }
       )
     } catch (error) {
+      if (isTurnEvidencePersistenceError(error)) throw error
       if (!(error instanceof Error)) throw error
       safeLog('studyx.turn.projection_flush_skipped', {
         trace_id: input.trace_id,

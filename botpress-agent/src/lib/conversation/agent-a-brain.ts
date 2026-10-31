@@ -1,3 +1,4 @@
+import type { ModelObservation } from '../observability/turn-evidence';
 import { courseLogisticsInV1 } from '../../../../src/shared/conversation/course-logistics';
 import { inspectCourseBonusClaimsV1 } from '../../../../src/shared/conversation/course-bonus-claim';
 import { eligibleContactRequestFieldsV1 } from './contact-profile-request-policy';
@@ -212,6 +213,7 @@ function addTokenUsage(
 }
 
 export async function generateDeepSeekAgentATurnProposalV1(input: {
+  readonly observe?: (event: ModelObservation) => void;
   readonly context: AgentAContextV1;
   readonly apiKey: string;
   readonly signal: AbortSignal;
@@ -299,11 +301,13 @@ export async function generateDeepSeekAgentATurnProposalV1(input: {
         extractResponsesTokenUsage(payload),
       );
       const content = extractResponsesContent(payload);
+      input.observe?.({ kind: 'model_raw', raw_content: content, provider: 'deepseek-direct', model, attempt: attempt, status: response.status });
       if (content === null) throw new AgentABrainError('BRAIN_DEEPSEEK_EMPTY_RESPONSE', response.status);
       let decoded: unknown;
       try {
         decoded = parseDeepSeekJsonContent(content);
       } catch {
+        input.observe?.({ kind: 'model_schema_rejected', code: 'BRAIN_DEEPSEEK_INVALID_JSON', subject: 'root', attempt });
         if (attempt === 1 && !input.conversation_only && !controller.signal.aborted) { retryDiagnostic = 'root:invalid_json'; continue; }
         throw new AgentABrainError('BRAIN_DEEPSEEK_INVALID_JSON', response.status);
       }
@@ -314,6 +318,8 @@ export async function generateDeepSeekAgentATurnProposalV1(input: {
           input.context,
         );
       } catch (error) {
+        input.observe?.({ kind: 'model_schema_rejected', code: error instanceof AgentABrainError ? error.code : 'BRAIN_INVALID_SCHEMA',
+          subject: error instanceof AgentABrainError ? error.detail : null, attempt });
         if (
           attempt === 1
           && !input.conversation_only
@@ -378,6 +384,7 @@ function extractGeminiContent(payload: unknown): string | null {
 }
 
 export async function generateGeminiAgentATurnProposalV1(input: {
+  readonly observe?: (event: ModelObservation) => void;
   readonly context: AgentAContextV1;
   readonly apiKey: string;
   readonly signal: AbortSignal;
@@ -425,6 +432,7 @@ export async function generateGeminiAgentATurnProposalV1(input: {
       throw new AgentABrainError('BRAIN_GEMINI_INVALID_RESPONSE', response.status);
     }
     const content = extractGeminiContent(payload);
+    input.observe?.({ kind: 'model_raw', raw_content: content, provider: 'google-ai-direct', model, attempt: 1, status: response.status });
     if (content === null) throw new AgentABrainError('BRAIN_GEMINI_EMPTY_RESPONSE', response.status);
     let decoded: unknown;
     try {
@@ -735,6 +743,7 @@ function extractResponsesContent(payload: unknown): string | null {
 }
 
 export async function generateOpenAIAgentATurnProposalV1(input: {
+  readonly observe?: (event: ModelObservation) => void;
   readonly context: AgentAContextV1;
   readonly apiKey: string;
   readonly signal: AbortSignal;
@@ -812,6 +821,7 @@ export async function generateOpenAIAgentATurnProposalV1(input: {
       throw new AgentABrainError('BRAIN_OPENAI_INVALID_RESPONSE', response.status);
     }
     const content = extractResponsesContent(payload);
+    input.observe?.({ kind: 'model_raw', raw_content: content, provider: 'openai-direct', model, attempt: 1, status: response.status });
     if (content === null) throw new AgentABrainError('BRAIN_OPENAI_EMPTY_RESPONSE', response.status);
     let decoded: unknown;
     try {
@@ -1328,6 +1338,7 @@ function wait(delayMs: number, signal: AbortSignal): Promise<void> {
 }
 
 export async function generateAgentATurnProposalV1(input: {
+  readonly observe?: (event: ModelObservation) => void;
   readonly context: AgentAContextV1;
   readonly apiKey: string;
   readonly signal: AbortSignal;
@@ -1406,6 +1417,7 @@ export async function generateAgentATurnProposalV1(input: {
         throw new AgentABrainError('BRAIN_INVALID_RESPONSE', response.status);
       }
       const content = extractContent(payload);
+      input.observe?.({ kind: 'model_raw', raw_content: content, provider: 'groq-direct', model, attempt: attempt, status: response.status });
       if (content === null) throw new AgentABrainError('BRAIN_EMPTY_RESPONSE', response.status);
       let decoded: unknown;
       try {

@@ -1,3 +1,5 @@
+import type { ModelObservation } from '../observability/turn-evidence'
+import { isTurnEvidencePersistenceError } from '../observability/turn-evidence'
 import type { TurnRejectionV1 } from '../../schemas/turn-rejection'
 import { claimsImmediatePaymentLinkDeliveryV1 } from '../../../../src/shared/conversation/payment-link-claim'
 import { AgentATurnProposalV1Schema, type AgentAContextV1, type AgentATurnProposalV1 } from '../../schemas/agent-a-brain'
@@ -474,6 +476,7 @@ export async function resolveAgentAPlannerlessProposalV2<
   readonly repair: (rejection: TurnRejectionV1) => Promise<T>
   readonly rejection_id: string
   readonly semantic_rejections?: 'blocking' | 'advisory'
+  readonly observe?: (event: ModelObservation) => void
 }): Promise<PlannerlessResolutionV2<T>> {
   const factIds = authorizedFactIds(input.context)
   const boundInitial = materializeAuthorizedPaymentAction({
@@ -488,6 +491,7 @@ export async function resolveAgentAPlannerlessProposalV2<
   const rejection = prepared.rejection
   const initial = prepared.effective
   const originalRejection = prepared.originalRejection ?? rejection
+  if (originalRejection) input.observe?.({ kind: 'proposal_rejected', rejection: originalRejection })
   if (rejection === null) {
     const advisoryActionRejection = input.semantic_rejections === 'advisory'
       ? actionRejectionV1(initial.proposal, originalRejection, input.context)
@@ -569,9 +573,11 @@ export async function resolveAgentAPlannerlessProposalV2<
         }
       }
       terminalRejection = repaired.rejection
+      input.observe?.({ kind: 'proposal_rejected', rejection: terminalRejection })
     }
   } catch (error) {
     if (!(error instanceof Error)) throw error
+    if (isTurnEvidencePersistenceError(error)) throw error
     // A transport error never opens a second rewrite or authorizes a draft.
     // Retain the last structured validation result, not any customer text.
     if (error instanceof AgentABrainError && error.code === 'BRAIN_INVALID_SCHEMA') {
@@ -603,6 +609,7 @@ export async function resolveAgentAPlannerlessProposalV2<
     }
   }
   if (mayDegradeToBackendBoundary(initial.proposal, rejection, input.context)) return degraded(true)
+  input.observe?.({ kind: 'proposal_rejected', rejection: terminalRejection })
   throw plannerlessRejectionError(terminalRejection)
 }
 

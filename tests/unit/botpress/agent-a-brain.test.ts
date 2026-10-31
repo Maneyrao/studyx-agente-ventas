@@ -93,6 +93,19 @@ afterEach(() => {
 });
 
 describe('Agent A Brain V1', () => {
+  it('captures provider output before register or punctuation normalization', async () => {
+    const raw = JSON.stringify(proposal({ response: {
+      messages: ['¿Tenés cámara? Contame qué buscás.'], call_offer: null,
+    } }));
+    vi.stubGlobal('fetch', async () => providerResponse(200, { output_text: raw }));
+    const observed: unknown[] = [];
+    const result = await generateDeepSeekAgentATurnProposalV1({
+      context: context(), apiKey: 'synthetic-key', signal: new AbortController().signal,
+      observe: event => observed.push(event),
+    });
+    expect(observed).toContainEqual(expect.objectContaining({ kind: 'model_raw', raw_content: raw }));
+    expect(result.proposal.response.messages).toEqual(['Tenés cámara? Contame qué buscás.']);
+  });
   it('rejects a pending gift during rollback while allowing the delivered gift', () => {
     const current=context();
     current.catalog.available_offerings=[

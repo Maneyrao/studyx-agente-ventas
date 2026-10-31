@@ -10,8 +10,9 @@ backend.
   `processInboundTurn`, el workflow real del repositorio.
 - El backend y PostgreSQL corren en loopback sobre `127.0.0.1`; los teléfonos
   son sintéticos (`+999`).
-- El modelo y el juez usan DeepSeek real. No hay respuestas del modelo escritas
-  a mano.
+- El modelo y el juez usan un proveedor real configurable. DeepSeek sigue
+  siendo el valor por defecto; NVIDIA NIM se habilita sólo para evaluación.
+  No hay respuestas del modelo escritas a mano.
 - Cada turno conserva propuesta original, reparaciones, respuesta entregada,
   move, acción propuesta, acción materializada, rechazos y estado persistido.
 - El juez estructural controla acciones/estado/hechos. El juez semántico recibe
@@ -30,12 +31,28 @@ La clave se pasa sólo en memoria o desde el archivo ignorado
 DEEPSEEK_API_KEY=... node evals/golden/run-local.mjs
 ```
 
+Para NVIDIA NIM, `NVIDIA_API_KEY` se guarda únicamente en el mismo archivo
+ignorado y se selecciona el proveedor de manera explícita:
+
+```bash
+STUDYX_GOLDEN_PROVIDER=nvidia_nim \
+STUDYX_GOLDEN_PROVIDER_MODEL=deepseek-ai/deepseek-v4.1-flash \
+node evals/golden/run-local.mjs
+```
+
+El adaptador usa exclusivamente `https://integrate.api.nvidia.com/v1`, limita
+de forma compartida agente, reparaciones, juez y postventa a 40 solicitudes por
+minuto, y registra intentos, pausas, estados y tokens. Sólo se ejecutan datos
+sintéticos contra backend y base locales. La corrida NIM no se puede repetir ni
+sobrescribir con el mismo nombre de resultado.
+
 El lanzador se niega a correr si:
 
 - `028f272fc3a6f6dc4806d19b251564169b55e6d6` no es ancestro o hay cambios
   desde esa base fuera de `evals/golden/`;
 - los puertos desechables ya están ocupados;
 - falta la clave de evaluación;
+- el modelo NIM exacto no aparece en el catálogo habilitado para la clave;
 - la base o el backend no son locales.
 
 Además, vacía cualquier variable encontrada en los `.env*` del repositorio y
