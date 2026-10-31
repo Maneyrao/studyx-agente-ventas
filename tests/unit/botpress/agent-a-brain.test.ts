@@ -271,12 +271,24 @@ describe('Agent A Brain V1', () => {
     }
   });
 
-  it('normalizes only opening punctuation and unmistakable voseo in customer-facing copy', () => {
+  // docs/authority/prompt-agente-a-studyx-v2.md:13 preserves the customer's register;
+  // :15 alone authorizes removing inverted opening punctuation.
+  it('preserves voseo and tuteo while removing only inverted opening punctuation', () => {
     expect(normalizeCustomerFacingSpanishV1(
       '¡Buenísimo! ¿Querés que te llame? Si preferís, contame qué tenés en mente.',
     )).toBe(
-      'Buenísimo! Quieres que te llame? Si prefieres, cuéntame qué tienes en mente.',
+      'Buenísimo! Querés que te llame? Si preferís, contame qué tenés en mente.',
     );
+    expect(normalizeCustomerFacingSpanishV1('¿Puedes contarme qué tienes en mente?'))
+      .toBe('Puedes contarme qué tienes en mente?');
+    const parsed = parseAgentATurnProposalV1(proposal({ response: {
+      messages: ['¿Tenés cámara? Contame qué buscás.'],
+      call_offer: '¿Querés que lo conversemos por llamada?',
+    } }), context());
+    expect(parsed.response).toEqual({
+      messages: ['Tenés cámara? Contame qué buscás.'],
+      call_offer: 'Querés que lo conversemos por llamada?',
+    });
     expect(normalizeCustomerFacingSpanishV1(
       'Redes Informáticas tiene 16 clases y cuesta USD 360.',
     )).toBe('Redes Informáticas tiene 16 clases y cuesta USD 360.');
@@ -382,7 +394,7 @@ describe('Agent A Brain V1', () => {
     }), context());
     expect(result.response).toEqual({
       messages: ['Te cuento sobre Redes Informáticas.', 'Podemos ver qué temas te interesan.'],
-      call_offer: 'Si quieres, podemos coordinar una llamada.',
+      call_offer: 'Si querés, podemos coordinar una llamada.',
     });
     expect(BackendAgentATurnProposalV1Schema.safeParse(result).success).toBe(true);
   });
@@ -479,7 +491,7 @@ describe('Agent A Brain V1', () => {
     }), current);
 
     expect(parsed.response.messages).toEqual([
-      'Buenas, de qué curso quieres info?',
+      'Buenas, de qué curso querés info?',
       'Si todavía no elegiste uno, qué te interesa aprender?',
     ]);
     expect(BackendAgentATurnProposalV1Schema.safeParse(parsed).success).toBe(true);
@@ -493,7 +505,7 @@ describe('Agent A Brain V1', () => {
       },
     }), context());
 
-    expect(parsed.response.call_offer).toBe('Prefieres que te llame y te lo explique mejor?');
+    expect(parsed.response.call_offer).toBe('Preferís que te llame y te lo explique mejor?');
     expect(BackendAgentATurnProposalV1Schema.safeParse(parsed).success).toBe(true);
   });
 
@@ -1035,7 +1047,7 @@ describe('Agent A Brain V1', () => {
 
     expect(parsed.response.messages).toEqual([
       'Te cuento sobre el curso.',
-      'Lo buscas para trabajar o para formación personal?',
+      'Lo buscás para trabajar o para formación personal?',
     ]);
     expect(parsed.move.move).toBe('select_course');
     expect(parsed.move.course_reference).toBe('Medicina');
@@ -2485,7 +2497,7 @@ describe('Agent A Brain V1', () => {
     expect(result.model).toBe('gemini-2.5-flash');
     expect(result.proposal.response.messages).toEqual([
       'Te cuento sobre el curso.',
-      'Lo buscas para trabajar o para formación personal?',
+      'Lo buscás para trabajar o para formación personal?',
     ]);
     const [url, init] = fetchMock.mock.calls[0]!;
     expect(String(url)).toContain('/models/gemini-2.5-flash:generateContent');

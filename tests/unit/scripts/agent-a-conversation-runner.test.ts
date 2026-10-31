@@ -1,3 +1,4 @@
+// Register preservation: docs/authority/prompt-agente-a-studyx-v2.md:13; punctuation:15.
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -670,8 +671,8 @@ describe('Agent A conversation runner', () => {
         ...proposal,
         response: {
           messages: [
-            'Te cuento lo más importante y vemos qué necesitas.',
-            'Si quieres, puedo ofrecerte una llamada para asesorarte mejor.',
+            'Te cuento lo más importante y vemos qué necesitás.',
+            'Si querés, puedo ofrecerte una llamada para asesorarte mejor.',
           ],
           call_offer: null,
         },

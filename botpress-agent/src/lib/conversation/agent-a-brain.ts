@@ -832,52 +832,12 @@ export async function generateOpenAIAgentATurnProposalV1(input: {
   }
 }
 
-const NEUTRAL_SPANISH_FORMS = new Map<string, string>([
-  ['querés', 'quieres'],
-  ['tenés', 'tienes'],
-  ['podés', 'puedes'],
-  ['preferís', 'prefieres'],
-  ['hacés', 'haces'],
-  ['decís', 'dices'],
-  ['elegís', 'eliges'],
-  ['seguís', 'sigues'],
-  ['buscás', 'buscas'],
-  ['obtenés', 'obtienes'],
-  ['sabés', 'sabes'],
-  ['necesitás', 'necesitas'],
-  ['estudiás', 'estudias'],
-  ['pagás', 'pagas'],
-  ['avanzás', 'avanzas'],
-  ['aprendés', 'aprendes'],
-  ['pensás', 'piensas'],
-  ['sentís', 'sientes'],
-  ['decidís', 'decides'],
-  ['contame', 'cuéntame'],
-  ['decime', 'dime'],
-  ['pasame', 'pásame'],
-  ['mandame', 'mándame'],
-  ['avisame', 'avísame'],
-  ['confirmame', 'confírmame'],
-  ['enviame', 'envíame'],
-]);
-
 /**
- * Normaliza sólo marcas inequívocas de registro rioplatense. No agrega copy,
- * no altera hechos ni decide el recorrido comercial: DeepSeek conserva la
- * autoría del mensaje y esta frontera mantiene el español neutro solicitado.
+ * docs/authority/prompt-agente-a-studyx-v2.md:13 owns the customer's register.
+ * Only :15 authorizes removing inverted opening punctuation; preserve every word.
  */
 export function normalizeCustomerFacingSpanishV1(value: string): string {
-  const withoutOpeningMarks = value.replace(/[¿¡]/gu, '');
-  return withoutOpeningMarks.replace(
-    /(^|[^\p{L}])(querés|tenés|podés|preferís|hacés|decís|elegís|seguís|buscás|obtenés|sabés|necesitás|estudiás|pagás|avanzás|aprendés|pensás|sentís|decidís|contame|decime|pasame|mandame|avisame|confirmame|enviame)(?=$|[^\p{L}])/giu,
-    (match, prefix: string, form: string) => {
-      const neutral = NEUTRAL_SPANISH_FORMS.get(form.toLocaleLowerCase('es')) ?? form;
-      const adjusted = /^\p{Lu}/u.test(form)
-        ? `${neutral.charAt(0).toLocaleUpperCase('es')}${neutral.slice(1)}`
-        : neutral;
-      return `${prefix}${adjusted}`;
-    },
-  );
+  return value.replace(/[¿¡]/gu, '');
 }
 
 function normalizeStrictProposal(value: unknown, context: AgentAContextV1): unknown {
