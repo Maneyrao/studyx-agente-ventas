@@ -31,6 +31,7 @@ import { claimsImmediateCallDispatchV1, claimsImmediatePaymentLinkDelivery, soli
 import type { ConversationStateStoreV1 } from '../ports/conversation-state-store';
 import type { PaymentVerificationV1 } from '@/features/payments/application/read-payment-verification';
 import type { CourseBonusCapabilityV1 } from '@/features/promotions/application/read-course-bonus-capability';
+import { claimsUnverifiedCallProgressV1 } from '@/shared/conversation/call-progress-claim';
 import {
   evaluateCallIntakeReadinessV1,
   type CallIntakeReadinessV1,
@@ -202,6 +203,7 @@ export async function prepareAgentTurnV2(input: {
   readonly conversation_only?: boolean;
   /** Original explicit request, retained only as semantic evidence by a continuation. */
   readonly requested_action?: AgentAProposedActionV1;
+  readonly operational_continuity?: 'call_consent_revoked';
   /** Production Agent A keeps semantic checks diagnostic-only. */
   readonly semantic_rejections?: 'blocking' | 'advisory';
   readonly business_context: BusinessContextView | null;
@@ -271,6 +273,14 @@ export async function prepareAgentTurnV2(input: {
     currentCustomerMessages,
     { pendingCallReply: sessionState.awaiting_reply === 'call_or_chat' },
   );
+  if (input.operational_continuity === 'call_consent_revoked'
+    && (salesSignal.type !== 'call_decline' || input.conversation_only !== true
+      || input.proposal.move.move !== 'decline_call' || input.proposal.proposed_action.type !== 'none'
+      || input.proposal.move.secondary_moves.length > 0 || input.proposal.move.course_reference !== undefined
+      || input.proposal.move.payment_plan !== undefined || (input.proposal.profile_updates?.length ?? 0) > 0
+      || (input.proposal.profile_requests?.length ?? 0) > 0 || input.proposal.memory_candidates.length > 0)) {
+    throw new AgentTurnV2RejectedError(['ACTION_NOT_AUTHORIZED'], ['call_revocation_outdated']);
+  }
   const state = callFacts === null
     ? sessionState
     : reconcileTerminalCallStateV1(sessionState, callFacts, {
@@ -398,6 +408,20 @@ export async function prepareAgentTurnV2(input: {
 
   if (!authority.ok) {
     throw new AgentTurnV2RejectedError(authority.reasons, authority.rejection_subjects);
+  }
+  // P:208–212/236: a revoked consent cannot survive as a stale accepted
+  // semantic transition. The agent repairs the complete proposal, not its copy.
+  if (salesSignal.type === 'call_decline' && (
+    effectiveProposal.proposed_action.type === 'request_call_now'
+    || effectiveProposal.move.move === 'request_call'
+    || (authority.transition.call_preference === 'call' && authority.transition.call_offer_status === 'accepted')
+  )) throw new AgentTurnV2RejectedError(['ACTION_NOT_AUTHORIZED'], ['call_consent_revoked']);
+  if (state.call_offer_status === 'declined' && !currentCallAuthorization
+    && authority.transition.call_preference === 'call' && authority.transition.call_offer_status === 'accepted') {
+    throw new AgentTurnV2RejectedError(['ACTION_NOT_AUTHORIZED'], ['call_consent_missing']);
+  }
+  if (claimsUnverifiedCallProgressV1(authority.response, callFacts?.active_call?.status)) {
+    throw new AgentTurnV2RejectedError(['UNSUPPORTED_OPERATIONAL_CLAIM'], ['call_in_progress']);
   }
   // Reject a false completion, so Agent A can rewrite it through the existing
   // repair path. Do not publish "here is the link" with a removed side effect.

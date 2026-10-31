@@ -54,10 +54,10 @@ export const processPostSale = new Workflow({
     if (!claimed.claimed) return { outcome: 'not_claimed' }
     // Model output and failures are cached by the durable runtime BEFORE any
     // diagnostic HTTP write. Replaying persistence cannot regenerate prose.
-    const generated = await step('generate-post-sale', async () => {
+    const generateNarrative = async (rejectionCode?: string, rejectedNarrative?: z.infer<typeof Narrative>) => {
       const events: TurnEvidenceEvent[] = []
       const capture = (kind: string, data: Record<string, unknown>) => events.push({ event_id: crypto.randomUUID(), kind, data })
-      capture('generation_started', { route: 'post_sale' })
+      capture('generation_started', { route: 'post_sale', rejection_code: rejectionCode ?? null })
     let narrative: z.infer<typeof Narrative>
     let usedFallback = false
     try {
@@ -81,7 +81,8 @@ export const processPostSale = new Workflow({
         },
         body: JSON.stringify({
           model: AGENT_A_DEEPSEEK_MODEL,
-          instructions: buildPostSaleInstructions(identity.prompt, claimed),
+          instructions: buildPostSaleInstructions(identity.prompt, claimed)
+            + (rejectionCode ? `\n<turn_rejection>${JSON.stringify({ subject: 'post_sale_narrative', code: rejectionCode, rejected_narrative: rejectedNarrative })}</turn_rejection>\nReescribe la respuesta completa corrigiendo únicamente el hecho o requisito rechazado; conserva tu voz. No afirmes efectos nuevos.` : ''),
           input: JSON.stringify(claimed),
           reasoning: { effort: 'none' },
           temperature: 0.3,
@@ -112,7 +113,8 @@ export const processPostSale = new Workflow({
     }
       capture('post_sale_narrative', { narrative, used_fallback: usedFallback })
       return { narrative, usedFallback, events }
-    }, { maxAttempts: 1 })
+    }
+    const generated = await step('generate-post-sale', () => generateNarrative(), { maxAttempts: 1 })
     let { narrative, usedFallback } = generated
     const subject = { subject_type: 'post_sale' as const, subject_id: id, trace_id: traceId }
     const journal = createTurnEvidenceJournal(event => persistTurnEvidence(subject, event), generated.events)
@@ -127,6 +129,21 @@ export const processPostSale = new Workflow({
         traceId, idempotencyKey: `post-sale-deliver:${id}:${claimed.claim_token}`, responseSchema: Delivery,
       }), { maxAttempts: 1 })
       await recordStage('post_sale_primary_receipt', { receipt: delivery })
+      if (delivery.outcome === 'invalid_content' && !usedFallback) {
+        console.warn(JSON.stringify({ event: 'studyx.post_sale.content_rejected', notification_id: id,
+          reason: delivery.reason ?? 'POST_SALE_CONTENT_INVALID' }))
+        const repaired = await step('repair-post-sale', () => generateNarrative(delivery.reason ?? 'POST_SALE_CONTENT_INVALID', narrative), { maxAttempts: 1 })
+        const repairJournal = createTurnEvidenceJournal(event => persistTurnEvidence(subject, event), repaired.events)
+        await repairJournal.flush()
+        narrative = repaired.narrative
+        usedFallback = repaired.usedFallback
+        delivery = await step('deliver-post-sale-repair', () => requestStudyxJson({
+          path: `/api/agent/post-sale/${id}/deliver`,
+          body: { claim_token: claimed.claim_token, botpress_conversation_id: conversationId, narrative },
+          traceId, idempotencyKey: `post-sale-deliver:${id}:${claimed.claim_token}`, responseSchema: Delivery,
+        }), { maxAttempts: 1 })
+        await recordStage('post_sale_repair_receipt', { receipt: delivery, narrative, used_fallback: usedFallback })
+      }
       if (delivery.outcome === 'invalid_content' && !usedFallback) {
         console.warn(JSON.stringify({
           event: 'studyx.post_sale.content_rejected', notification_id: id,

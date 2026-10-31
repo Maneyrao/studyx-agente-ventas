@@ -47,7 +47,7 @@ export function technicalFallback(
     // customer to repeat the exact message that the system already received.
     // Ask for the smallest useful clarification so the conversation keeps
     // moving even while the model path is unavailable.
-    response: 'No quiero suponer algo incorrecto. Dime qué necesitas o a qué curso te refieres y lo resolvemos por aquí.',
+    response: 'Qué dato o qué curso revisamos?',
     response_type: responseType,
     business_action: null,
     memory_candidates: [],
@@ -160,8 +160,8 @@ export function validationExhaustedNotice(
     intent: 'commercial',
     kind: 'reply',
     response: comparisonIsAmbiguous
-      ? 'No quiero asumir cuál es el otro curso. Dime cuáles dos quieres comparar y te marco las diferencias.'
-      : 'No quiero darte información incorrecta. Dime qué dato o qué curso quieres confirmar y lo revisamos por aquí.',
+      ? 'Qué dos cursos comparamos?'
+      : 'Qué dato o qué curso revisamos?',
     response_type: responseType === 'technical_fallback' ? 'commercial_reply' : responseType,
     business_action: null,
     memory_candidates: [],
@@ -321,7 +321,7 @@ export function modelUnavailableFallback(
       : /\b(?:cuanto\s+(?:sale|cuesta)|precio|costo|valor)\b/u.test(latest)
         ? course
           ? `Sigo con ${course}. Quieres que confirme el precio y los planes disponibles?`
-          : 'Puedo confirmar el precio canónico. De qué curso quieres saberlo?'
+          : 'De qué curso te interesa conocer el precio?'
       : /\b(?:caro|cara|presupuesto|conviene)\b/u.test(latest)
         ? 'Puedo ayudarte a ordenar la consulta según tu presupuesto. Qué te preocupa del precio?'
         : course

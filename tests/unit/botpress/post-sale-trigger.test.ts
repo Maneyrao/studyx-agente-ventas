@@ -14,6 +14,27 @@ const notificationId = '8ebdc504-59cc-4b32-9b18-4bfb2b96f88a';
 const claimToken = '15357952-de34-498c-a877-7e19a8c9d266';
 
 describe('post-sale trigger', () => {
+  it('asks Agent A to repair a factual rejection and preserves the repaired narrative', async () => {
+    const repaired = { intro: 'Tu acceso quedó habilitado, qué bueno que sigas aprendiendo.',
+      suggestion: 'Si querés, cambiá la contraseña cuando entres.' };
+    const fetchModel = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(new Response(JSON.stringify({ output_text: JSON.stringify({
+        intro: 'Community Manager ya está habilitado.', suggestion: '',
+      }) }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ output_text: JSON.stringify(repaired) }), { status: 200 }));
+    requestStudyxJson.mockReset()
+      .mockResolvedValueOnce({ claimed: true, claim_token: claimToken, kind: 'access_ready', academy_name: 'Studyx',
+        offering_name: 'Marketing Digital', customer_first_name: 'Ana', new_user: true, existing_user: false, history: [] })
+      .mockResolvedValueOnce({ outcome: 'invalid_content', reason: 'POST_SALE_ACCESS_NOT_VERIFIED' })
+      .mockResolvedValueOnce({ outcome: 'sent' });
+    const handler = (processPostSale as unknown as { definition: { handler: (input: Record<string, unknown>) => Promise<unknown> } }).definition.handler;
+    await handler({ input: { notification_id: notificationId, conversation_id: 'botpress-conversation' },
+      state: {}, step: async (_name: string, run: () => Promise<unknown>) => run(), workflow: { id: 'post-sale-repair' } });
+    expect(fetchModel).toHaveBeenCalledTimes(2);
+    expect(String(fetchModel.mock.calls[1]?.[1]?.body)).toContain('POST_SALE_ACCESS_NOT_VERIFIED');
+    expect(JSON.parse(String(fetchModel.mock.calls[1]?.[1]?.body)).instructions).toContain(JSON.stringify({ intro: 'Community Manager ya está habilitado.', suggestion: '' }));
+    expect(requestStudyxJson.mock.calls[2]?.[0].body.narrative).toEqual(repaired);
+  });
   it('resumes durable raw evidence without releasing the claim or generating again', async () => {
     const fetchModel = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
       output_text: JSON.stringify({ intro: 'Qué bueno que sigas aprendiendo con Studyx.', suggestion: '' }),

@@ -83,6 +83,44 @@ const completeIntake = async () => ({
 });
 
 describe('prepareAgentTurnV2', () => {
+  it('does not retain a request_call move by stripping only its effect after refusal', async () => {
+    await expect(prepareAgentTurnV2({
+      turn: { id: ids.turn, workspace_id: ids.workspace, conversation_id: ids.conversation, contact_id: ids.contact },
+      workspace_slug: 'studyx', business_context: business, catalog_index: index, semantic_rejections: 'advisory',
+      current_customer_messages: ['Sí, dale', 'ahora no'],
+      proposal: proposal({ move: { schema_version: 1, move: 'request_call', secondary_moves: [], vetoes: [], confidence: 1 },
+        proposed_action: { type: 'none' }, response: { messages: ['Seguimos por acá.'] } }),
+    }, { state_store: store(state({ call_preference: 'call', call_offer_status: 'accepted', awaiting_reply: 'call_or_chat' })),
+      contact_intake: completeIntake, now: () => Date.parse(index.as_of),
+    })).rejects.toMatchObject({ rejectionSubjects: ['call_consent_revoked'] });
+  });
+
+  it('does not equate provider acceptance with a connected call', async () => {
+    await expect(prepareAgentTurnV2({
+      turn: { id: ids.turn, workspace_id: ids.workspace, conversation_id: ids.conversation, contact_id: ids.contact },
+      workspace_slug: 'studyx', business_context: business, catalog_index: index, semantic_rejections: 'advisory',
+      proposal: proposal({ response: { messages: ['La llamada ya está conectada.'] } }),
+    }, { state_store: store(state()), contact_intake: completeIntake, now: () => Date.parse(index.as_of),
+      call_facts: { async loadClaimedCallFacts() { return {
+        open_offer: null, open_retry_prompt: null, last_call_result: null, last_decline_at: null,
+        active_call: { call_id: ids.turn, status: 'provider_accepted' },
+      }; } },
+    })).rejects.toMatchObject({ reasons: ['UNSUPPORTED_OPERATIONAL_CLAIM'] });
+  });
+  it.each(['La asesora ya está llamando.', 'Ya te estamos llamando.', 'Tu teléfono ya está sonando.'])(
+    'rejects provider progress supported only by a request reservation: %s', async message => {
+      await expect(prepareAgentTurnV2({
+        turn: { id: ids.turn, workspace_id: ids.workspace, conversation_id: ids.conversation, contact_id: ids.contact },
+        workspace_slug: 'studyx', business_context: business, catalog_index: index,
+        current_customer_messages: ['Llamame'], semantic_rejections: 'advisory',
+        proposal: proposal({
+          move: { schema_version: 1, move: 'request_call', secondary_moves: [], vetoes: [], confidence: 1 },
+          response: { messages: [message] }, proposed_action: { type: 'request_call_now', reason: 'direct_request' },
+        }),
+      }, { state_store: store(state()), contact_intake: completeIntake, now: () => Date.parse(index.as_of) }))
+        .rejects.toMatchObject({ reasons: ['UNSUPPORTED_OPERATIONAL_CLAIM'], rejectionSubjects: ['call_in_progress'] });
+    },
+  );
   it('accepts a syllabus citation reloaded from the canonical knowledge source', async () => {
     const syllabusFact = {
       id: 'knowledge-source:11111111-1111-4111-8111-111111111111',
@@ -1253,7 +1291,7 @@ describe('prepareAgentTurnV2', () => {
   });
 
   it('rejects semantic dispatch after a later call refusal', async () => {
-    const prepared = await prepareAgentTurnV2({
+    const rejected = prepareAgentTurnV2({
       turn: { id: ids.turn, workspace_id: ids.workspace, conversation_id: ids.conversation, contact_id: ids.contact },
       workspace_slug: 'studyx', business_context: business, catalog_index: index,
       current_customer_messages: ['Ahora puedo atender', 'Ahora no puedo atender'],
@@ -1273,7 +1311,8 @@ describe('prepareAgentTurnV2', () => {
       now: () => Date.parse(index.as_of),
     });
 
-    expect(prepared.decision.business_action).toBeNull();
+    // P:208–212/236: do not commit a semantic acceptance of revoked consent.
+    await expect(rejected).rejects.toMatchObject({ rejectionSubjects: ['call_consent_revoked'] });
   });
 
   it('prepares a direct call request and waits for a later availability confirmation', async () => {
@@ -1333,7 +1372,7 @@ describe('prepareAgentTurnV2', () => {
   it.each(['no', 'no, mejor no', 'ahora no', 'por ahora no', 'prefiero que no'])(
     'does not dispatch when a later message in the availability burst says %s',
     async (refusal) => {
-      const prepared = await prepareAgentTurnV2({
+      const rejected = prepareAgentTurnV2({
         turn: { id: ids.turn, workspace_id: ids.workspace, conversation_id: ids.conversation, contact_id: ids.contact },
         workspace_slug: 'studyx', business_context: business, catalog_index: index,
         current_customer_messages: ['sí, dale', refusal],
@@ -1352,8 +1391,7 @@ describe('prepareAgentTurnV2', () => {
         now: () => Date.parse(index.as_of),
       });
 
-      expect(prepared.decision.business_action).toBeNull();
-      expect(prepared.action_rejection).toMatchObject({ action: 'request_call_now' });
+      await expect(rejected).rejects.toMatchObject({ rejectionSubjects: ['call_consent_revoked'] });
     },
   );
 

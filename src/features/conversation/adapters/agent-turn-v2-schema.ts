@@ -12,6 +12,7 @@ export const AgentATurnCommitV2Schema = z.object({
   conversation_only: z.boolean().optional(),
   /** Original model request retained as evidence under the effect fence. */
   requested_action: AgentAProposedActionSchema.optional(),
+  operational_continuity: z.literal('call_consent_revoked').optional(),
 }).strict().refine(value => value.requested_action === undefined || value.conversation_only === true, {
   path: ['requested_action'], message: 'REQUESTED_ACTION_REQUIRES_CONVERSATION_ONLY',
 });

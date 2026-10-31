@@ -127,7 +127,7 @@ describe('matchCallHandoffFastPath', () => {
     expect(decision!.response).not.toMatch(/conectad|en línea|sonando/i);
   });
 
-  it('acknowledges the accepted call before any provider dispatch can happen', () => {
+  it('keeps only a receipt as outage continuity without claiming provider dispatch', () => {
     const decision = matchCallHandoffFastPath(
       claimed({
         texts: ['Sí, llamame'],
@@ -138,7 +138,7 @@ describe('matchCallHandoffFastPath', () => {
     );
 
     expect(decision?.response).toBe(
-      'Perfecto. Registré la llamada; nuestra asesora intenta comunicarse ahora.',
+      'Recibí tu solicitud de llamada.',
     );
   });
 

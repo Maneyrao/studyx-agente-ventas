@@ -168,6 +168,7 @@ export interface CommitDecisionInput {
     readonly proposal: AgentATurnProposalV1;
     readonly conversation_only?: boolean;
     readonly requested_action?: AgentAProposedActionV1;
+    readonly operational_continuity?: 'call_consent_revoked';
   } | null;
   /** Additive capability negotiation: older Botpress bundles keep one outbound. */
   supports_multi_outbound?: boolean;
@@ -882,6 +883,7 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
           proposal: agentTurnProposal,
           conversation_only: validatedInput.agent_turn_v2.conversation_only,
           requested_action: validatedInput.agent_turn_v2.requested_action,
+          operational_continuity: validatedInput.agent_turn_v2.operational_continuity,
           semantic_rejections: 'advisory',
           current_customer_messages: currentMessages.map((message) => message.content),
           business_context: agentBusinessContext,
@@ -2106,6 +2108,8 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
         outbound_id: outbound?.id ?? null,
         egress_hash: outbound?.authorized_egress.content_hash ?? null,
         authorized_saved_text: finalResponse,
+        action_rejection: preparedAgentTurn?.action_rejection ?? null,
+        operational_continuity: validatedInput.agent_turn_v2?.operational_continuity ?? null,
         backend_sha: backendReleaseSha(),
         model: validatedInput.model,
         call_id: callRequest?.call_id ?? null,

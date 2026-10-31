@@ -1,3 +1,4 @@
+import { claimsUnverifiedCallProgressV1 } from '../../../src/shared/conversation/call-progress-claim'
 import { createTurnEvidenceJournal, isTurnEvidencePersistenceError, TurnEvidencePersistenceError } from '../lib/observability/turn-evidence'
 import { persistTurnEvidence } from '../lib/observability/persist-turn-evidence'
 import { commitDecisionWithRejectionReceiptV1, backendDecisionRejectionReason, backendDecisionRejectionSubjects } from '../lib/delivery/commit-decision-receipt'
@@ -321,63 +322,12 @@ function customerVisibleModelFallback(
   return modelUnavailableFallback(claimed, reason)
 }
 
-/**
- * Exact model-authored conversation slices, ordered from most complete to
- * smallest. The helper never rewrites customer-facing copy: every candidate
- * still has to cross the complete fact/effect validator before commit.
+/** P:17/236 and B:71: only a complete model-authored response may be reused.
+ * Repairs happen before this recovery path. A rejected sentence or bubble
+ * never authorizes the backend to choose a different part of the response.
  */
-function literalConversationVariants(
-  proposal: AgentATurnProposalV1,
-): AgentATurnProposalV1[] {
-  const variants: AgentATurnProposalV1[] = []
-  const seen = new Set<string>()
-  const isSubstantive = (messages: readonly string[]): boolean => {
-    const tokens = messages.join(' ')
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/gu, '')
-      .toLocaleLowerCase('es')
-      .match(/[\p{L}\p{N}]+/gu) ?? []
-    const acknowledgements = new Set([
-      'bien', 'bueno', 'claro', 'dale', 'de', 'acuerdo', 'entiendo',
-      'gracias', 'listo', 'ok', 'okay', 'perfecto', 'si',
-    ])
-    return tokens.length > 0 && !tokens.every((token) => acknowledgements.has(token))
-  }
-  const pushMessages = (messages: string[]): void => {
-    const normalized = messages.map((message) => message.trim()).filter(Boolean)
-    if (normalized.length === 0 || !isSubstantive(normalized)) return
-    const key = normalized.join('\u0000')
-    if (seen.has(key)) return
-    seen.add(key)
-    variants.push({
-      ...proposal,
-      response: { ...proposal.response, messages: normalized },
-    })
-  }
-  const originalMessages = [...proposal.response.messages]
-  pushMessages(originalMessages)
-  for (let length = originalMessages.length; length >= 1; length -= 1) {
-    for (let start = 0; start + length <= originalMessages.length; start += 1) {
-      pushMessages(originalMessages.slice(start, start + length))
-    }
-  }
-  for (const message of originalMessages) {
-    const boundaries = [0]
-    for (const match of message.matchAll(/\n+|(?<=[.!?])\s+/gu)) {
-      if (typeof match.index === 'number') boundaries.push(match.index + match[0].length)
-    }
-    boundaries.push(message.length)
-    const uniqueBoundaries = [...new Set(boundaries)].sort((left, right) => left - right)
-    for (let span = uniqueBoundaries.length - 1; span >= 1; span -= 1) {
-      for (let start = 0; start + span < uniqueBoundaries.length; start += 1) {
-        pushMessages([message.slice(
-          uniqueBoundaries[start]!,
-          uniqueBoundaries[start + span]!,
-        )])
-      }
-    }
-  }
-  return variants
+function completeConversationProposals(proposal: AgentATurnProposalV1): AgentATurnProposalV1[] {
+  return [proposal]
 }
 
 const workflowStateSchema = z.object({
@@ -502,7 +452,13 @@ function backendCommitTurnRejectionV1(input: {
           else detailedSubjects.forEach((subject) => push('UNSUPPORTED_OPERATIONAL_CLAIM', subject))
           break
         }
-        case 'ACTION_NOT_AUTHORIZED': push('ACTION_NOT_AUTHORIZED', actionSubject); break
+        case 'ACTION_NOT_AUTHORIZED': {
+          if (detailedSubjects.includes('call_consent_revoked')) {
+            push('ACTION_NOT_AUTHORIZED', 'request_call_now')
+            push('ACTION_NOT_AUTHORIZED', 'call_consent_revoked')
+          } else push('ACTION_NOT_AUTHORIZED', actionSubject)
+          break
+        }
         case 'MISSING_INTAKE': push('MISSING_INTAKE', missingSubject); break
         case 'CALL_OFFER_NOT_AUTHORIZED': push('CALL_BUDGET_EXHAUSTED', 'call_offer'); break
         case 'CALL_OFFER_MESSAGE_BOUNDARY_INVALID': push('CALL_OFFER_MESSAGE_BOUNDARY_INVALID', 'call_offer'); break
@@ -1260,10 +1216,8 @@ export const processInboundTurn = new Workflow({
       && (owned.deterministic_route === null || brainAuthoritative)
       // An explicit direct call request is already fully authorized by the
       // claimed backend snapshot and is revalidated again on commit. Keep it
-      // independent from model availability so a provider outage cannot block
-      // the requested handoff. Accepted-offer projections still go through
-      // Agent A because their surrounding conversational context can be stale.
-      && !deterministicDirectCallHandoff
+      // authorized independently from model availability. Agent A authors
+      // the normal confirmation; outage recovery below preserves the effect.
       && !(deterministicCallHandoff && !brainAuthoritative)
       && agentABrainContext !== null
 
@@ -1281,50 +1235,15 @@ export const processInboundTurn = new Workflow({
       }
     }
 
-    if (deterministicDirectCallHandoff
-      && owned.conversation_state_v1?.call_preference === 'call'
-      && owned.conversation_state_v1.call_offer_status === 'accepted'
-      && owned.conversation_state_v1.call_offer_count === 0
-      && owned.conversation_state_v1.awaiting_reply === 'call_or_chat'
-      && commercialRoute.kind === 'deterministic'
-      && commercialRoute.decision.response !== null
-      && commercialRoute.decision.business_action?.type === 'request_call_now'
-      && commercialRoute.decision.business_action.reason === 'direct_request') {
-      // A short availability answer ("sí, dale") is not a standalone direct
-      // request. Preserve the model-free fast path, but send its structured
-      // move through the backend Agent Turn authority so the persisted
-      // accepted direct request is reloaded and proven before call consent is
-      // materialized. A bare affirmative outside this state never reaches it.
-      agentTurnV2Commit = {
-        schema_version: 2,
-        proposal: {
-          schema_version: 1,
-          move: {
-            schema_version: 1,
-            move: 'request_call',
-            secondary_moves: [],
-            vetoes: [],
-            confidence: 1,
-          },
-          response: { messages: [commercialRoute.decision.response], call_offer: null },
-          proposed_action: { type: 'request_call_now', reason: 'direct_request' },
-          used_fact_ids: [],
-          used_memory_ids: [],
-          memory_candidates: [],
-          profile_updates: [],
-          profile_requests: [],
-          repair_of: null,
-        },
+    const assertCallNarrative = (proposal: AgentATurnProposalV1, effectsAllowed = true) => {
+      if (deterministicDirectCallHandoff && effectsAllowed
+        && proposal.proposed_action.type !== 'request_call_now') {
+        throw new Error('PLANNERLESS_PROPOSAL_REJECTED:ACTION_NOT_AUTHORIZED:request_call_now')
       }
-      pipelineDecisionProvider = 'botpress'
-      pipelineDecisionModel = 'deterministic:direct-call-availability-v1'
-      pipelinePromptVersion = AGENT_A_PROMPT_VERSION
-      turnDiagnostics = {
-        schema_version: 1,
-        generation_attempts: 0,
-        failure_stage: 'none',
-        failure_codes: [],
-        action_status: 'authorized',
+      if (claimsUnverifiedCallProgressV1([
+        ...proposal.response.messages, proposal.response.call_offer ?? '',
+      ].join('\n'), agentABrainContext?.commercial_state.active_call?.status)) {
+        throw new Error('PLANNERLESS_PROPOSAL_REJECTED:UNSUPPORTED_OPERATIONAL_CLAIM:call_in_progress')
       }
     }
 
@@ -1458,6 +1377,7 @@ export const processInboundTurn = new Workflow({
         let generated = generatedAttempt.value
         precommitModelAuthoredCandidates.push(generated)
         await persistProfileProposal(generated.proposal)
+        assertCallNarrative(generated.proposal)
         timings.agent_a_brain_ms = Date.now() - brainStartedAt
         safeLog('studyx.turn.agent_a_brain_generation', {
           trace_id: input.trace_id,
@@ -1839,6 +1759,14 @@ export const processInboundTurn = new Workflow({
               try {
                 const profileRejection = plannerlessActionFeedbackV1({ failure_code: failureCode,
                   context: agentABrainContext, rejection_id: randomUUID() })
+                // This local repair did not revoke the claim's independent
+                // call authorization. Keep it available to the authored repair;
+                // the commit still reloads consent under the backend boundary.
+                if (deterministicDirectCallHandoff && agentABrainContext.capabilities.may_request_call_now) {
+                  profileRejection.authorized_alternatives.actions = [
+                    ...new Set([...profileRejection.authorized_alternatives.actions, 'request_call_now']),
+                  ]
+                }
                 latestRejection = profileRejection
                 const profileEffectsAllowed = profileRejection.authorized_alternatives.actions
                   .some((action) => action !== 'none')
@@ -1855,6 +1783,7 @@ export const processInboundTurn = new Workflow({
                   }), { maxAttempts: 1 })
                 precommitModelAuthoredCandidates.push(continuation)
                 await persistProfileProposal(continuation.proposal, profileRejection)
+                assertCallNarrative(continuation.proposal, profileEffectsAllowed)
                 agentTurnV2Commit = {
                   schema_version: 2,
                   proposal: continuation.proposal,
@@ -1886,7 +1815,7 @@ export const processInboundTurn = new Workflow({
             }
             if (pipelineFailureDecision?.reason_code === 'AGENT_A_CONTINUATION_REJECTED') {
               candidateLoop: for (const candidate of [...precommitModelAuthoredCandidates].reverse()) {
-                for (const candidateProposal of literalConversationVariants(candidate.proposal)) {
+                for (const candidateProposal of completeConversationProposals(candidate.proposal)) {
                   const candidateCopy = [
                     ...candidateProposal.response.messages,
                     candidateProposal.response.call_offer ?? '',
@@ -2102,6 +2031,30 @@ export const processInboundTurn = new Workflow({
             : 'commercial_reply',
         )
       }
+    }
+
+    // P:212/236: Agent A writes the normal confirmation. If generation or
+    // repair is unavailable, retain only the already authorized request and a
+    // minimal receipt. Even direct requests cross backend consent revalidation.
+    if (deterministicDirectCallHandoff && !brainShadow
+      && agentTurnV2Commit?.proposal.proposed_action.type !== 'request_call_now') {
+      agentTurnV2Commit = {
+        schema_version: 2,
+        proposal: {
+          schema_version: 1,
+          move: { schema_version: 1, move: 'request_call', secondary_moves: [], vetoes: [], confidence: 1 },
+          response: { messages: ['Recibí tu solicitud de llamada.'], call_offer: null },
+          proposed_action: { type: 'request_call_now', reason: 'direct_request' },
+          used_fact_ids: [], used_memory_ids: [], memory_candidates: [],
+          profile_updates: [], profile_requests: [], repair_of: null,
+        },
+      }
+      pipelineCommit = null
+      pipelineFailureDecision = null
+      pipelineMemoryCandidates = []
+      pipelineDecisionProvider = 'botpress'
+      pipelineDecisionModel = 'policy:call-request-received-continuity'
+      pipelinePromptVersion = AGENT_A_BRAIN_PROMPT_VERSION
     }
 
     // ---- Pasos 7-9: generar y validar localmente -------------------------
@@ -2645,13 +2598,12 @@ export const processInboundTurn = new Workflow({
           // Try the newest model-authored candidate first, retain an effect
           // only when the latest authoritative receipt explicitly allows it,
           // and re-run the complete local fact/effect boundary. If a candidate
-          // mixes safe prose with a rejected operational claim, exact leading
-          // substantive sentences are tried without
-          // rewriting any model text. Claims such as "te llamo" or "ya envié
+          // mixes safe prose with a rejected operational claim, the complete
+          // response must pass without removing any sentence or bubble. Claims such as "te llamo" or "ya envié
           // el link" therefore cannot survive after their effect is removed.
           let floorCandidateIndex = 0
           candidateLoop: for (const candidate of [...modelAuthoredCommitCandidates].reverse()) {
-            for (const candidateProposal of literalConversationVariants(candidate.proposal)) {
+            for (const candidateProposal of completeConversationProposals(candidate.proposal)) {
               const candidateIndex = floorCandidateIndex
               floorCandidateIndex += 1
               const candidateAction = candidateProposal.proposed_action.type
@@ -2678,7 +2630,7 @@ export const processInboundTurn = new Workflow({
               // The claim snapshot may still advertise a capability that the
               // authoritative commit has just rejected. In that case a floor
               // candidate cannot keep customer-facing success wording after
-              // the structured effect is removed; only a literal prefix that
+              // the structured effect is removed; only a complete response that
               // no longer makes the rejected claim may cross the boundary.
               if (!retainAuthorizedEffect && (
                 rejectedCallEffect && candidateCopy.some((message) => (
@@ -2796,6 +2748,24 @@ export const processInboundTurn = new Workflow({
           decision = technicalContinuityFallback(owned)
           decisionProvider = 'botpress'
           decisionModel = 'policy:agent-a-authorized-floor-unavailable'
+          if (currentBackendRejection.rejections.some(reason => reason.subject === 'call_consent_revoked')) {
+            agentTurnV2Commit = {
+              schema_version: 2, conversation_only: true, operational_continuity: 'call_consent_revoked',
+              proposal: {
+                schema_version: 1,
+                move: { schema_version: 1, move: 'decline_call', secondary_moves: [], vetoes: [], confidence: 1 },
+                response: { messages: ['Seguimos por acá.'], call_offer: null },
+                proposed_action: { type: 'none' }, used_fact_ids: [], used_memory_ids: [], memory_candidates: [],
+                profile_updates: [], profile_requests: [], repair_of: null,
+              },
+            }
+            decision = pipelinePlaceholder()
+            decisionModel = 'policy:call-consent-revoked-continuity'
+            journal.capture({ kind: 'operational_continuity', origin: 'authoritative_call_consent_revoked',
+              rejection: currentBackendRejection, exhausted_generation_attempts: agentAGenerationAttempts,
+              proposal: agentTurnV2Commit.proposal })
+            await journal.flush()
+          }
           turnDiagnostics = {
             schema_version: 1,
             generation_attempts: agentAGenerationAttempts,

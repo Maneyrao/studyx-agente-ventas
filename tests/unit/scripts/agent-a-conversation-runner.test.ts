@@ -780,7 +780,7 @@ describe('Agent A conversation runner', () => {
       expect(commitBody.agent_turn_v2).toBeNull();
       expect(commitBody.decision).toMatchObject({
         kind: 'reply',
-        response: 'No quiero darte información incorrecta. Dime qué dato o qué curso quieres confirmar y lo revisamos por aquí.',
+        response: 'Qué dato o qué curso revisamos?',
         response_type: 'commercial_reply',
         reason_code: 'AGENT_A_VALIDATION_EXHAUSTED',
       });

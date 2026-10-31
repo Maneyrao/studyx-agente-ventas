@@ -1,0 +1,38 @@
+{
+  "product_sha": "06ec3e5ac85825bb51cfec23df10d0c22b72298d",
+  "model_calls": 0,
+  "tokens": 0,
+  "deployments": 0,
+  "source_appearances": 427,
+  "source_text_appearances": 421,
+  "primary_report_attempts": 368,
+  "primary_drafts": 362,
+  "primary_provider_errors_without_draft": 6,
+  "primary_drafts_with_full_runtime": 357,
+  "primary_post_sale_reconstructions": 5,
+  "partial_v6_duplicate_appearances_of_v7": 59,
+  "primary_row_outcomes": {
+    "conditional_precommit_authorized": 308,
+    "conditional_truth_rejected_repair_unavailable": 7,
+    "plannerless_rejected": 16,
+    "repair_required_unavailable": 22,
+    "conditional_preparation_rejected": 3,
+    "post_sale_report_reconstruction": 5,
+    "missing_raw_proposal_or_context": 6,
+    "parser_rejected": 1
+  },
+  "historical_floor_unique_traces": [
+    "4b948416-8dc9-43b7-8015-75c61ed04627",
+    "21e789ab-34c6-44fb-aa78-9d6f38b7d86a",
+    "1c106576-8939-4b87-98a4-e623bcaf8055",
+    "d4f999e2-8fe8-4e70-8a5d-550630941e43",
+    "895a30d0-a815-4559-8aab-e3fe7321bf6f",
+    "30465f1a-b193-4a36-87b6-d4a7d203703d",
+    "d59efa07-7986-41f2-83f2-a0db320fd1f3"
+  ],
+  "historical_floor_primary_turn_appearances": 7,
+  "post_sale_whitelist_rejected_distinct_primary_drafts": 5,
+  "call_fast_path_primary_turn_appearances": 4,
+  "technical_fixed_fallback_primary_turn_appearances": 3,
+  "primary_old_voseo_rewriter_affected_drafts": 226
+}

@@ -1,3 +1,4 @@
+import { buildAuthorizedEgress } from '../../../src/features/orchestration/domain/egress-guard';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as evidencePersistence from '../../../botpress-agent/src/lib/observability/persist-turn-evidence';
 
@@ -1893,15 +1894,20 @@ describe('processInboundTurn hot path', () => {
       ['Dale, mientras coordinamos te sigo ayudando por acá.']],
     ['uses technical continuity instead of mistaking a bare acknowledgement for resolution',
       ['Dale. Te llamo ahora.'], null],
-    ['keeps a substantive authorized prefix and removes the rejected call-dispatch claim',
+    // Authority P:17/236: a failed repair cannot authorize a backend sentence cut.
+    ['rejects the complete draft instead of cutting off a call-dispatch claim',
       ['Entiendo, el total sigue en USD 360.\nTe llamo ahora.'],
-      ['Entiendo, el total sigue en USD 360.']],
-    ['keeps a safe later bubble when the rejected call claim came first',
+      null],
+    ['rejects the complete draft instead of selecting its later bubble',
       ['Te llamo ahora.', 'El total sigue en USD 360.'],
-      ['El total sigue en USD 360.']],
-    ['keeps a safe later sentence when the rejected call claim came first',
+      null],
+    ['rejects the complete draft instead of selecting its later sentence',
       ['Te llamo ahora. El total sigue en USD 360.'],
-      ['El total sigue en USD 360.']],
+      null],
+    ['persists revoked consent when repair is unavailable', ['Recibí tu solicitud de llamada.'], ['Seguimos por acá.']],
+    ['retains every bubble of the closest complete safe draft',
+      ['El total sigue en USD 360.', 'Podemos seguir por acá.'],
+      ['El total sigue en USD 360.', 'Podemos seguir por acá.']],
   ])('%s', async (_case, modelMessages, expectedCommittedMessages) => {
     const claimed = claimedResponse() as unknown as ClaimedTurn;
     claimed.features = {
@@ -1943,7 +1949,8 @@ describe('processInboundTurn hot path', () => {
     actionSpies.commit
       .mockRejectedValueOnce(new StudyxHttpError(
         'DECISION_REJECTED', false, 422, 1,
-        { error: 'DECISION_REJECTED', reason: 'AGENT_TURN_V2_REJECTED:ACTION_NOT_AUTHORIZED' },
+        { error: 'DECISION_REJECTED', reason: 'AGENT_TURN_V2_REJECTED:ACTION_NOT_AUTHORIZED',
+          subjects: _case === 'persists revoked consent when repair is unavailable' ? ['call_consent_revoked'] : [] },
       ))
       .mockResolvedValueOnce({
         status: 'committed', replayed: false, trace_id: UUID, turn_id: UUID,
@@ -1966,6 +1973,19 @@ describe('processInboundTurn hot path', () => {
         }], call_request: null,
       });
 
+    if (_case === 'persists revoked consent when repair is unavailable') {
+      actionSpies.commit.mockReset().mockImplementation(async ({ input }) => {
+        if (!input.agent_turn_v2?.operational_continuity) throw new StudyxHttpError(
+          'DECISION_REJECTED', false, 422, 1, { error: 'DECISION_REJECTED',
+            reason: 'AGENT_TURN_V2_REJECTED:ACTION_NOT_AUTHORIZED', subjects: ['call_consent_revoked'] });
+        const content = input.agent_turn_v2.proposal.response.messages.join('\n\n');
+        const outbound = { id: UUID, content, status: 'pending', delivery_attempt: 1,
+          authorized_egress: buildAuthorizedEgress({ content, authorized_urls: [], protected_facts: [] }) };
+        return { status: 'committed', replayed: false, trace_id: UUID, turn_id: UUID,
+          decision_id: UUID, next_state: 'waiting_user', outbound, outbounds: [outbound], call_request: null };
+      });
+    }
+
     const createMessage = vi.fn(async () => ({ message: { id: 'bp-safe-floor-message' } }));
     const step = Object.assign(
       async (_name: string, run: () => Promise<unknown>) => run(),
@@ -1985,9 +2005,11 @@ describe('processInboundTurn hot path', () => {
     // A rejected effect cannot erase Agent A's independently safe conversation;
     // only exact model-authored text that crosses both validation boundaries may survive.
     expect(actionSpies.agentABrainDeepSeek).toHaveBeenCalledTimes(2);
+    if (_case === 'persists revoked consent when repair is unavailable') expect(actionSpies.commit.mock.calls.at(-1)![0].input.agent_turn_v2)
+      .toMatchObject({ operational_continuity: 'call_consent_revoked', proposal: { move: { move: 'decline_call' } } });
     if (expectedCommittedMessages === null) {
-      expect(actionSpies.commit).toHaveBeenCalledTimes(2);
-      expect(actionSpies.commit.mock.calls[1]![0].input).toMatchObject({
+      expect(actionSpies.commit).toHaveBeenCalledTimes(_case === 'persists revoked consent when repair is unavailable' ? 3 : 2);
+      expect(actionSpies.commit.mock.calls.at(-1)![0].input).toMatchObject({
         agent_turn_v2: null,
         decision: {
           kind: 'reply', response_type: 'commercial_reply', reason_code: 'MODEL_UNAVAILABLE',
@@ -1998,8 +2020,8 @@ describe('processInboundTurn hot path', () => {
         error_code: null });
       expect(createMessage).toHaveBeenCalledTimes(1);
     } else {
-      expect(actionSpies.commit).toHaveBeenCalledTimes(2);
-      expect(actionSpies.commit.mock.calls[1]![0].input.agent_turn_v2).toMatchObject({
+      expect(actionSpies.commit).toHaveBeenCalledTimes(_case === 'persists revoked consent when repair is unavailable' ? 3 : 2);
+      expect(actionSpies.commit.mock.calls.at(-1)![0].input.agent_turn_v2).toMatchObject({
         conversation_only: true,
         proposal: {
           response: { messages: expectedCommittedMessages, call_offer: null },
@@ -2013,7 +2035,7 @@ describe('processInboundTurn hot path', () => {
     }
   });
 
-  it('removes a rejected bonus promise before committing the conversational floor', async () => {
+  it('never cuts the bonus bubble out of a rejected complete draft', async () => {
     const claimed = claimedResponse() as unknown as ClaimedTurn;
     claimed.features = {
       agent_loop_v3_mode: 'off', conversation_pipeline_v1_enabled: false,
@@ -2096,20 +2118,16 @@ describe('processInboundTurn hot path', () => {
     });
 
     expect(actionSpies.commit).toHaveBeenCalledTimes(2);
-    expect(actionSpies.commit.mock.calls[1]![0].input.agent_turn_v2).toMatchObject({
-      conversation_only: true,
-      proposal: {
-        response: { messages: [safeText], call_offer: null },
-        proposed_action: { type: 'none' },
-      },
-    });
+    expect(actionSpies.commit.mock.calls[1]![0].input.agent_turn_v2).toBeNull();
+    expect(actionSpies.commit.mock.calls[1]![0].input.decision.response)
+      .toBe('Qué dato o qué curso revisamos?');
     expect(JSON.stringify(actionSpies.commit.mock.calls[1]![0].input)).not.toContain(rejectedBonusText);
     expect(result).toMatchObject({ status: 'waiting_user', delivery_status: 'submitted_to_botpress',
       error_code: null });
     expect(createMessage).toHaveBeenCalledTimes(1);
   });
 
-  it('removes a rejected bonus promise in the precommit conversational floor', async () => {
+  it('keeps the full response boundary when precommit repair never removes a bonus promise', async () => {
     const claimed = claimedResponse() as unknown as ClaimedTurn;
     claimed.features = {
       agent_loop_v3_mode: 'off', conversation_pipeline_v1_enabled: false,
@@ -2189,12 +2207,9 @@ describe('processInboundTurn hot path', () => {
     // Authority prompt line 236: el rechazo de una acción no puede cortar la venta.
     expect(actionSpies.agentABrainDeepSeek).toHaveBeenCalledTimes(3);
     expect(actionSpies.commit).toHaveBeenCalledTimes(1);
-    const precommitFloorLogs = vi.mocked(console.info).mock.calls.map(([line]) => String(line));
-    expect(actionSpies.commit.mock.calls[0]![0].input.agent_turn_v2,
-      precommitFloorLogs.join('\n')).toMatchObject({
-      conversation_only: true,
-      proposal: { response: { messages: [safeText] }, proposed_action: { type: 'none' } },
-    });
+    expect(actionSpies.commit.mock.calls[0]![0].input.agent_turn_v2).toBeNull();
+    expect(actionSpies.commit.mock.calls[0]![0].input.decision.response)
+      .toBe('Qué dato o qué curso revisamos?');
     expect(JSON.stringify(actionSpies.commit.mock.calls[0]![0].input)).not.toContain(rejectedBonusText);
     expect(actionSpies.recovery).not.toHaveBeenCalled();
     expect(client.createMessage).toHaveBeenCalledTimes(1);
@@ -5022,19 +5037,17 @@ describe('processInboundTurn hot path', () => {
     });
 
     expect(actionSpies.plan).not.toHaveBeenCalled();
-    expect(actionSpies.agentABrainDeepSeek).not.toHaveBeenCalled();
+    expect(actionSpies.agentABrainDeepSeek).toHaveBeenCalled();
     expect(actionSpies.commit.mock.calls[0]?.[0]?.input).toMatchObject({
       conversation_pipeline_v1: null,
-      agent_turn_v2: null,
-      decision: {
-        response_type: 'call_confirmation',
-        reason_code: 'CALL_DIRECT_REQUEST',
-        business_action: { type: 'request_call_now', reason: 'direct_request' },
-      },
+      agent_turn_v2: { schema_version: 2, proposal: {
+        response: { messages: ['Recibí tu solicitud de llamada.'] },
+        proposed_action: { type: 'request_call_now', reason: 'direct_request' },
+      } },
     });
   });
 
-  it('sends a completed direct-request availability reply through backend call authorization', async () => {
+  it.each(['authored', 'missing_action', 'false_progress'] as const)('uses Agent A confirmation and backend consent for availability: %s', async (variant) => {
     const claimed = claimedResponse() as unknown as ClaimedTurn;
     claimed.features = {
       agent_loop_v3_mode: 'off',
@@ -5056,6 +5069,22 @@ describe('processInboundTurn hot path', () => {
       call_offer_count: 0, awaiting_reply: 'call_or_chat', version: 4,
     };
     actionSpies.claim.mockResolvedValue(claimed);
+    const authored = 'Dale, dejamos pedida la llamada para seguir con tu consulta.';
+    let requests = 0;
+    actionSpies.agentABrainDeepSeek.mockImplementation(async ({ context }) => {
+      requests += 1;
+      const needsRepair = requests === 1 && variant !== 'authored';
+      return { proposal: {
+        schema_version: 1,
+        move: { schema_version: 1, move: 'request_call', secondary_moves: [], vetoes: [], confidence: 1 },
+        response: { messages: [needsRepair && variant === 'false_progress' ? 'La asesora ya está llamando.' : authored], call_offer: null },
+        proposed_action: needsRepair && variant === 'missing_action' ? { type: 'none' }
+          : { type: 'request_call_now', reason: 'direct_request' },
+        used_fact_ids: [], used_memory_ids: [], memory_candidates: [], profile_updates: [], profile_requests: [],
+        repair_of: context.turn_rejection ? { rejection_id: context.turn_rejection.rejection_id, attempt: 1 } : null,
+      }, provider: 'deepseek-direct', model: 'recorded-test-provider', latency_ms: 1, attempt_count: 1 };
+    });
+
     const step = Object.assign(
       async (_name: string, run: () => Promise<unknown>) => run(),
       { sleep: vi.fn(async () => undefined) },
@@ -5069,13 +5098,14 @@ describe('processInboundTurn hot path', () => {
       signal: new AbortController().signal, workflow: { id: 'workflow-test' },
     });
 
-    expect(actionSpies.agentABrainDeepSeek).not.toHaveBeenCalled();
+    expect(actionSpies.agentABrainDeepSeek).toHaveBeenCalledTimes(variant === 'authored' ? 1 : 2);
     expect(actionSpies.commit.mock.calls[0]?.[0]?.input).toMatchObject({
       conversation_pipeline_v1: null,
       agent_turn_v2: {
         schema_version: 2,
         proposal: {
           move: { move: 'request_call' },
+          response: { messages: [authored] },
           proposed_action: { type: 'request_call_now', reason: 'direct_request' },
         },
       },

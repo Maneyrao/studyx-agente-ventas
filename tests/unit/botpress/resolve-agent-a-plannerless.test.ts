@@ -3168,7 +3168,7 @@ describe('afirmar un link no autorizado no puede terminar en silencio', () => {
  * link no autorizado.
  */
 describe('la conversación sobre candidatos no se confunde con autoridad comercial', () => {
-  it('removes an unsupported candidate detail and a rejected call effect while preserving safe prose', async () => {
+  it('retains the complete draft for backend validation instead of cutting an unsupported candidate detail', async () => {
     const current = context();
     current.turn.batch_messages = [{
       id: 'm2',
@@ -3230,6 +3230,7 @@ describe('la conversación sobre candidatos no se confunde con autoridad comerci
     expect(repair).not.toHaveBeenCalled();
     expect(result.effective.proposal.proposed_action).toEqual({ type: 'none' });
     expect(result.effective.proposal.response.messages).toEqual([
+      'Fotografía Profesional es ideal para empezar desde cero y editar imágenes.',
       'Pásame un número con código de país y coordinamos la llamada.',
     ]);
     expect(result.action_rejection).toMatchObject({ action: 'request_call_now' });
