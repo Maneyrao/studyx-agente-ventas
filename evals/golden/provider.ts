@@ -11,7 +11,8 @@ export interface GoldenProviderAttemptV1 {
   readonly call_id: string;
   readonly attempt: number;
   readonly role: GoldenProviderRoleV1;
-  readonly provider: 'nvidia_nim';
+  readonly provider: 'nvidia_nim' | 'deepseek';
+  readonly source_model?: string | null;
   readonly requested_model: string | null;
   readonly returned_model: string | null;
   readonly status: number | null;
@@ -26,10 +27,11 @@ export interface GoldenProviderAttemptV1 {
 }
 
 export interface GoldenProviderReportV1 {
-  readonly provider: 'nvidia_nim';
+  readonly provider: 'nvidia_nim' | 'deepseek';
   readonly base_url: string;
   readonly model: string;
-  readonly max_requests_per_minute: number;
+  readonly max_requests_per_minute: number | null;
+  readonly judge_model?: string;
   readonly logical_calls: number;
   readonly attempts: number;
   readonly usage_missing_attempts: number;
@@ -389,4 +391,88 @@ export function createGoldenResponsesProviderV1(
     fetch: adaptedFetch,
     report: buildReport,
   };
+}
+
+/** Evaluation transport only: production's configured model and guard stay intact. */
+export function createGoldenOfficialResponsesProviderV1(
+  config: { readonly agentModel: string; readonly judgeModel: string },
+  dependencies: GoldenProviderDependenciesV1,
+): GoldenResponsesProviderV1 {
+  if (!['deepseek-v4-flash', 'deepseek-v4-pro'].includes(config.agentModel)) {
+    throw new Error('GOLDEN_OFFICIAL_AGENT_MODEL_UNSUPPORTED');
+  }
+  if (config.judgeModel !== 'deepseek-v4-flash') throw new Error('GOLDEN_OFFICIAL_JUDGE_MODEL_UNSUPPORTED');
+  const now = dependencies.now ?? Date.now;
+  const records: GoldenProviderAttemptV1[] = [];
+  let reportTail: Promise<void> = Promise.resolve();
+  const report = (): GoldenProviderReportV1 => ({
+    provider: 'deepseek', base_url: 'https://api.deepseek.com', model: config.agentModel,
+    judge_model: config.judgeModel, max_requests_per_minute: null,
+    logical_calls: records.length, attempts: records.length,
+    usage_missing_attempts: records.filter(record => record.tokens === null).length,
+    tokens: records.some(record => record.tokens !== null) ? {
+      input: sumKnown(records, 'input'), output: sumKnown(records, 'output'),
+      total: sumKnown(records, 'total'), cached: sumKnown(records, 'cached'),
+    } : null,
+    records: structuredClone(records),
+  });
+  const publish = async () => {
+    const snapshot = report();
+    reportTail = reportTail.then(async () => { await dependencies.onReport?.(snapshot); });
+    await reportTail;
+  };
+  const adaptedFetch: typeof fetch = async (input, init) => {
+    const url = new URL(input instanceof Request ? input.url : String(input));
+    if (url.origin !== 'https://api.deepseek.com' || url.pathname !== '/responses') {
+      throw new Error('GOLDEN_OFFICIAL_ORIGIN_NOT_ALLOWLISTED');
+    }
+    const { body, signal } = await decodeRequest(input, init);
+    const role = requestRole(body);
+    if (role === 'unknown') throw new Error('GOLDEN_OFFICIAL_ROLE_UNKNOWN');
+    const actualModel = role === 'agent' ? config.agentModel
+      : role === 'judge' ? config.judgeModel : stringValue(body.model);
+    const mappedBody = role === 'post_sale' ? body : { ...body, model: actualModel };
+    const index = records.length;
+    const startedAt = now();
+    const pending: GoldenProviderAttemptV1 = {
+      call_id: `call-${String(index + 1).padStart(4, '0')}`, attempt: 1, role, provider: 'deepseek',
+      source_model: stringValue(body.model), requested_model: actualModel, returned_model: null,
+      status: null, rate_limit_wait_ms: 0, retry_wait_ms: 0, latency_ms: 0,
+      tokens: null, finish_reason: null, error_code: 'IN_FLIGHT', response_content: null, provider_response: null,
+    };
+    records.push(pending);
+    await publish();
+    try {
+      const response = await dependencies.fetchImpl(input, {
+        ...init, body: JSON.stringify(mappedBody), ...(signal ? { signal } : {}),
+      });
+      const decoded: unknown = await response.clone().json().catch(() => null);
+      const payload = decoded && typeof decoded === 'object' && !Array.isArray(decoded)
+        ? decoded as Record<string, unknown> : null;
+      const usage = payload?.usage as { input_tokens?: unknown; output_tokens?: unknown; total_tokens?: unknown;
+        input_tokens_details?: { cached_tokens?: unknown } } | undefined;
+      const output = Array.isArray(payload?.output) ? payload.output : [];
+      const outputText = output.flatMap(item => item && typeof item === 'object'
+        && Array.isArray(item.content) ? item.content : [])
+        .map(item => item && typeof item === 'object' ? stringValue(item.text) ?? '' : '').join('');
+      records[index] = {
+        ...pending, status: response.status, latency_ms: now() - startedAt,
+        returned_model: stringValue(payload?.model),
+        tokens: usage ? { input: finiteNumber(usage.input_tokens), output: finiteNumber(usage.output_tokens),
+          total: finiteNumber(usage.total_tokens), cached: finiteNumber(usage.input_tokens_details?.cached_tokens) } : null,
+        finish_reason: stringValue(payload?.status), error_code: response.ok ? null : `DEEPSEEK_HTTP_${response.status}`,
+        response_content: stringValue(payload?.output_text) ?? (outputText || null),
+        provider_response: payload,
+      };
+      await publish();
+      return response;
+    } catch (error) {
+      records[index] = { ...pending, latency_ms: now() - startedAt,
+        error_code: signal?.aborted || (error instanceof Error && ['AbortError', 'TimeoutError'].includes(error.name))
+          ? 'DEEPSEEK_ABORTED' : 'DEEPSEEK_NETWORK_ERROR' };
+      await publish();
+      throw error;
+    }
+  };
+  return { fetch: adaptedFetch, report };
 }

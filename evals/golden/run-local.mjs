@@ -3,6 +3,7 @@ import { existsSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSyn
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { parseEnv } from 'node:util';
+import { reserveGoldenRunV1 } from './run-config.mjs';
 
 const BASE_SHA = '028f272fc3a6f6dc4806d19b251564169b55e6d6';
 const POSTGRES_PORT = '55435';
@@ -60,6 +61,17 @@ const providerBaseUrl = process.env.STUDYX_GOLDEN_PROVIDER_BASE_URL
   ?? (providerName === 'nvidia_nim' ? 'https://integrate.api.nvidia.com/v1' : 'https://api.deepseek.com');
 const providerModel = process.env.STUDYX_GOLDEN_PROVIDER_MODEL
   ?? (providerName === 'nvidia_nim' ? 'deepseek-ai/deepseek-v4-flash' : 'deepseek-v4-flash');
+const judgeModel = process.env.STUDYX_GOLDEN_JUDGE_MODEL ?? 'deepseek-v4-flash';
+if (providerName === 'deepseek' && !['deepseek-v4-flash', 'deepseek-v4-pro'].includes(providerModel)) {
+  throw new Error('GOLDEN_OFFICIAL_AGENT_MODEL_UNSUPPORTED');
+}
+if (judgeModel !== 'deepseek-v4-flash') throw new Error('GOLDEN_OFFICIAL_JUDGE_MODEL_UNSUPPORTED');
+if (providerName === 'deepseek' && providerBaseUrl.replace(/\/+$/u, '') !== 'https://api.deepseek.com') {
+  throw new Error('GOLDEN_OFFICIAL_ORIGIN_NOT_ALLOWLISTED');
+}
+if (process.env.STUDYX_GOLDEN_DEEPSEEK_MODEL && process.env.STUDYX_GOLDEN_DEEPSEEK_MODEL !== 'deepseek-v4-flash') {
+  throw new Error('GOLDEN_USE_PROVIDER_MODEL_FOR_EVAL_OVERRIDE');
+}
 const resultStem = process.env.STUDYX_GOLDEN_RESULT_STEM
   ?? (providerName === 'nvidia_nim' ? `acceptance-${headSha.slice(0, 7)}-nim` : 'baseline-v9');
 if (providerName === 'deepseek' && !localSecrets.deepseek) {
@@ -68,12 +80,12 @@ if (providerName === 'deepseek' && !localSecrets.deepseek) {
 if (providerName === 'nvidia_nim' && !localSecrets.nvidia) {
   throw new Error('NVIDIA_API_KEY_MISSING: guardala sólo en .eval/.env.local');
 }
-if (providerName === 'nvidia_nim'
-  && [resultStem, `${resultStem}-observations.partial`, `${resultStem}-provider`,
-    `${resultStem}-provider.partial`, `${resultStem}-run-state`]
-    .some((stem) => existsSync(`evals/golden/results/${stem}.json`))) {
-  throw new Error(`GOLDEN_NIM_ACCEPTANCE_ALREADY_STARTED:${resultStem}`);
-}
+const runStartedAt = new Date().toISOString();
+const runStatePath = reserveGoldenRunV1('evals/golden/results', resultStem, {
+  schema_version: 1, evaluated_sha: headSha, provider: providerName, model: providerModel,
+  judge_model: judgeModel, case_selection: process.env.STUDYX_GOLDEN_CASE_IDS ?? null,
+  suite_invocations: 1, started_at: runStartedAt, updated_at: runStartedAt,
+});
 
 if (providerName === 'nvidia_nim') {
   const base = providerBaseUrl.replace(/\/+$/u, '');
@@ -94,8 +106,6 @@ if (providerName === 'nvidia_nim') {
   }
 }
 
-const runStatePath = `evals/golden/results/${resultStem}-run-state.json`;
-const runStartedAt = new Date().toISOString();
 function runState(status, extra = {}) {
   return `${JSON.stringify({
     schema_version: 1,
@@ -103,21 +113,18 @@ function runState(status, extra = {}) {
     evaluated_sha: headSha,
     provider: providerName,
     model: providerModel,
+    judge_model: judgeModel,
+    case_selection: process.env.STUDYX_GOLDEN_CASE_IDS ?? null,
+    suite_invocations: 1,
     started_at: runStartedAt,
     updated_at: new Date().toISOString(),
     ...extra,
   }, null, 2)}\n`;
 }
 function writeRunState(status, extra = {}) {
-  if (providerName !== 'nvidia_nim') return;
   const temporary = `${runStatePath}.tmp`;
   writeFileSync(temporary, runState(status, extra), { mode: 0o600 });
   renameSync(temporary, runStatePath);
-}
-if (providerName === 'nvidia_nim') {
-  writeFileSync(runStatePath, runState('started', { catalog_preflight_calls: 1 }), {
-    flag: 'wx', mode: 0o600,
-  });
 }
 
 const environment = {
@@ -133,7 +140,9 @@ const environment = {
   STUDYX_GOLDEN_LIVE: 'true',
   STUDYX_GOLDEN_EVALUATED_SHA: headSha,
   STUDYX_GOLDEN_REUSE_OBSERVATIONS: process.env.STUDYX_GOLDEN_REUSE_OBSERVATIONS ?? 'false',
-  STUDYX_GOLDEN_DEEPSEEK_MODEL: process.env.STUDYX_GOLDEN_DEEPSEEK_MODEL ?? 'deepseek-v4-flash',
+  STUDYX_GOLDEN_DEEPSEEK_MODEL: 'deepseek-v4-flash',
+  STUDYX_GOLDEN_JUDGE_MODEL: judgeModel,
+  ...(process.env.STUDYX_GOLDEN_CASE_IDS === undefined ? {} : { STUDYX_GOLDEN_CASE_IDS: process.env.STUDYX_GOLDEN_CASE_IDS }),
   STUDYX_GOLDEN_PROVIDER: providerName,
   STUDYX_GOLDEN_PROVIDER_BASE_URL: providerBaseUrl,
   STUDYX_GOLDEN_PROVIDER_MODEL: providerModel,

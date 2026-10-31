@@ -398,6 +398,34 @@ export interface SemanticTurnVerdictV1 {
     readonly explanation: string;
   }[];
   readonly evaluation_error: string | null;
+  readonly format_recovery?: {
+    readonly kind: 'trailing_closing_brace_removed';
+    readonly raw_response: string;
+  };
+}
+
+function parseJudgeEnvelope(content: string): {
+  readonly decoded: { verdict?: RawSemanticTurnVerdictV1 };
+  readonly formatRecovery?: SemanticTurnVerdictV1['format_recovery'];
+} {
+  try {
+    return { decoded: JSON.parse(content) as { verdict?: RawSemanticTurnVerdictV1 } };
+  } catch (originalError) {
+    // Recorded 06/bonus_2 responses contain one complete object plus one final
+    // redundant brace. Recover only that syntax defect; never repair a verdict.
+    const trimmed = content.trimEnd();
+    if (!trimmed.endsWith('}')) throw originalError;
+    try {
+      const decoded: unknown = JSON.parse(trimmed.slice(0, -1));
+      if (decoded === null || typeof decoded !== 'object' || Array.isArray(decoded)) throw originalError;
+      return {
+        decoded: decoded as { verdict?: RawSemanticTurnVerdictV1 },
+        formatRecovery: { kind: 'trailing_closing_brace_removed', raw_response: content },
+      };
+    } catch {
+      throw originalError;
+    }
+  }
 }
 
 function extractOutputText(payload: unknown): string | null {
@@ -666,7 +694,7 @@ async function judgeTurnSemantically(input: {
       if (!response.ok) throw new Error(`GOLDEN_JUDGE_HTTP_${response.status}`);
       const content = extractOutputText(await response.json());
       if (!content) throw new Error('GOLDEN_JUDGE_EMPTY_RESPONSE');
-      const decoded = JSON.parse(content) as { verdict?: RawSemanticTurnVerdictV1 };
+      const { decoded, formatRecovery } = parseJudgeEnvelope(content);
       const verdict = decoded.verdict;
       if (!verdict || verdict.turn_id !== input.turn.id || !Array.isArray(verdict.failures)) {
         throw new Error('GOLDEN_JUDGE_INVALID_RESPONSE');
@@ -705,7 +733,8 @@ async function judgeTurnSemantically(input: {
           explanation: failure.explanation,
         });
       }
-      return { turn_id: verdict.turn_id, approved: failures.length === 0, failures, evaluation_error: null };
+      return { turn_id: verdict.turn_id, approved: failures.length === 0, failures, evaluation_error: null,
+        ...(formatRecovery ? { format_recovery: formatRecovery } : {}) };
     } catch (error) {
       lastError = errorCode(error);
     }

@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
 
 import {
   evaluateHardRules,
@@ -8,6 +9,16 @@ import {
   type GoldenTurnObservationV1,
 } from './judge';
 import { GOLDEN_CASES } from './scenarios';
+
+const extraClosingBraceFixture = JSON.parse(readFileSync(new URL(
+  './fixtures/judge-trailing-closing-brace-06-bonus-2.json', import.meta.url,
+), 'utf8')) as {
+  previous_observation: GoldenTurnObservationV1;
+  observation: GoldenTurnObservationV1;
+  responses: Array<{ call_id: string; output_text: string; expected_envelope: {
+    verdict: { approved: false; failures: Array<{ explanation: string }> };
+  } }>;
+};
 
 function observation(overrides: Partial<GoldenTurnObservationV1> = {}): GoldenTurnObservationV1 {
   return {
@@ -21,6 +32,111 @@ function observation(overrides: Partial<GoldenTurnObservationV1> = {}): GoldenTu
     ...overrides,
   };
 }
+
+describe('golden judge recorded JSON boundary', () => {
+  const base = GOLDEN_CASES[5]!;
+  const scenario = { ...base, turns: base.turns.filter((turn) => ['bonus_1', 'bonus_2'].includes(turn.id)) };
+  const observations = [extraClosingBraceFixture.previous_observation, extraClosingBraceFixture.observation];
+  const mockRecordedResponse = (output: string) => vi.spyOn(globalThis, 'fetch').mockImplementation(async (_url, init) => {
+    const request = JSON.parse(String(init?.body)) as {
+      text: { format: { schema: { properties: { verdict: { properties: { turn_id: { enum: string[] } } } } } } };
+    };
+    const content = request.text.format.schema.properties.verdict.properties.turn_id.enum[0] === 'bonus_1'
+      ? JSON.stringify({ verdict: { turn_id: 'bonus_1', approved: true, failures: [] } }) : output;
+    return new Response(JSON.stringify({ output_text: content }), { status: 200 });
+  });
+
+  it.each(extraClosingBraceFixture.responses)('recovers only the redundant final brace from recorded response $call_id without changing its failed verdict', async (fixture) => {
+    expect(() => JSON.parse(fixture.output_text)).toThrow();
+    const fetchMock = mockRecordedResponse(fixture.output_text);
+    try {
+      const verdicts = await judgeCaseSemantically({ apiKey: 'fixture-only', model: 'deepseek-test', scenario, observations });
+      expect(verdicts[1]).toEqual({
+        turn_id: 'bonus_2', approved: false, evaluation_error: null,
+        failures: [expect.objectContaining({
+          code: 'SEMANTIC_MUST_FAILED', requirement_index: 0,
+          authority_reference: expect.stringContaining('docs/authority/prompt-agente-a-studyx-v2.md:'),
+          explanation: fixture.expected_envelope.verdict.failures[0]!.explanation,
+        })],
+        format_recovery: { kind: 'trailing_closing_brace_removed', raw_response: fixture.output_text },
+      });
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    } finally { fetchMock.mockRestore(); }
+  });
+
+  const validEnvelope = JSON.stringify(extraClosingBraceFixture.responses[0]!.expected_envelope);
+  it('keeps the same semantic failure for the strict valid counterpart without a recovery diagnostic', async () => {
+    const fetchMock = mockRecordedResponse(validEnvelope);
+    try {
+      const verdicts = await judgeCaseSemantically({ apiKey: 'fixture-only', model: 'deepseek-test', scenario, observations });
+      expect(verdicts[1]).toEqual({
+        turn_id: 'bonus_2', approved: false, evaluation_error: null,
+        failures: [expect.objectContaining({
+          code: 'SEMANTIC_MUST_FAILED', requirement_index: 0,
+          explanation: extraClosingBraceFixture.responses[0]!.expected_envelope.verdict.failures[0]!.explanation,
+        })],
+      });
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    } finally { fetchMock.mockRestore(); }
+  });
+
+  it.each([
+    ['two excess braces', `${validEnvelope}}}`],
+    ['truncated object', validEnvelope.slice(0, -1)],
+    ['concatenated objects', `${validEnvelope}${validEnvelope}`],
+    ['additional text', `${validEnvelope} explanation`],
+    ['code fence', `\`\`\`json\n${validEnvelope}\n\`\`\``],
+  ])('rejects %s without fabricating a verdict', async (_label, output) => {
+    const fetchMock = mockRecordedResponse(output);
+    try {
+      const verdicts = await judgeCaseSemantically({ apiKey: 'fixture-only', model: 'deepseek-test', scenario, observations });
+      expect(verdicts[1]).toEqual({ turn_id: 'bonus_2', approved: null, failures: [], evaluation_error: expect.any(String) });
+      expect(fetchMock).toHaveBeenCalledTimes(5);
+    } finally { fetchMock.mockRestore(); }
+  });
+
+  it('still rejects recovered JSON with incoherent approval', async () => {
+    const envelope = structuredClone(extraClosingBraceFixture.responses[0]!.expected_envelope);
+    const output = JSON.stringify({ verdict: { ...envelope.verdict, turn_id: 'bonus_2', approved: true } }) + '}';
+    const fetchMock = mockRecordedResponse(output);
+    try {
+      const verdicts = await judgeCaseSemantically({ apiKey: 'fixture-only', model: 'deepseek-test', scenario, observations });
+      expect(verdicts[1]).toEqual({ turn_id: 'bonus_2', approved: null, failures: [], evaluation_error: 'GOLDEN_JUDGE_VERDICT_INCOHERENT' });
+      expect(fetchMock).toHaveBeenCalledTimes(5);
+    } finally { fetchMock.mockRestore(); }
+  });
+
+  it.each([
+    ['authority_line_index', 999, 'GOLDEN_JUDGE_FAILURE_REFERENCE_INVALID'],
+    ['requirement_id', 'must:999', 'GOLDEN_JUDGE_FAILURE_REFERENCE_INVALID'],
+    ['evidence_source', 'invented_source', 'GOLDEN_JUDGE_FAILURE_EVIDENCE_INVALID'],
+  ])('retains %s validation after syntax recovery', async (field, value, error) => {
+    const envelope = extraClosingBraceFixture.responses[0]!.expected_envelope;
+    const output = JSON.stringify({ verdict: { ...envelope.verdict, turn_id: 'bonus_2', failures: [{
+      ...envelope.verdict.failures[0], [field]: value,
+    }] } }) + '}';
+    const fetchMock = mockRecordedResponse(output);
+    try {
+      const verdicts = await judgeCaseSemantically({ apiKey: 'fixture-only', model: 'deepseek-test', scenario, observations });
+      expect(verdicts[1]).toEqual({ turn_id: 'bonus_2', approved: null, failures: [], evaluation_error: error });
+      expect(fetchMock).toHaveBeenCalledTimes(5);
+    } finally { fetchMock.mockRestore(); }
+  });
+
+  it('retains observed-evidence validation for a recovered must_not failure', async () => {
+    const envelope = extraClosingBraceFixture.responses[0]!.expected_envelope;
+    const output = JSON.stringify({ verdict: { ...envelope.verdict, turn_id: 'bonus_2', failures: [{
+      ...envelope.verdict.failures[0], code: 'SEMANTIC_MUST_NOT_FAILED', requirement_id: 'must_not:0',
+      observed_evidence: 'This phrase is absent from the actual response.',
+    }] } }) + '}';
+    const fetchMock = mockRecordedResponse(output);
+    try {
+      const verdicts = await judgeCaseSemantically({ apiKey: 'fixture-only', model: 'deepseek-test', scenario, observations });
+      expect(verdicts[1]).toEqual({ turn_id: 'bonus_2', approved: null, failures: [], evaluation_error: 'GOLDEN_JUDGE_FAILURE_EVIDENCE_INVALID' });
+      expect(fetchMock).toHaveBeenCalledTimes(5);
+    } finally { fetchMock.mockRestore(); }
+  });
+});
 
 describe('golden hard judge', () => {
   it('passes the exact identity turn and fails a defensive administrative variant', () => {

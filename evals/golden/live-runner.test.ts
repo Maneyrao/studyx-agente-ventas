@@ -33,6 +33,7 @@ import {
 import { absoluteGoldenAcceptanceV1, compareGoldenRunsV1 } from './comparison';
 import {
   createGoldenResponsesProviderV1,
+  createGoldenOfficialResponsesProviderV1,
   type GoldenProviderReportV1,
   type GoldenResponsesProviderV1,
 } from './provider';
@@ -45,6 +46,7 @@ import {
   normalizePromotionStatusV1,
 } from './runner-support';
 import { GOLDEN_BASE_SHA, GOLDEN_CASES, type GoldenCaseV1 } from './scenarios';
+import { selectGoldenCasesV1 } from './run-config.mjs';
 
 const live = process.env.STUDYX_GOLDEN_LIVE === 'true' ? describe : describe.skip;
 const databaseUrl = process.env.TEST_DATABASE_URL ?? '';
@@ -53,6 +55,10 @@ const model = process.env.STUDYX_GOLDEN_DEEPSEEK_MODEL ?? 'deepseek-v4-flash';
 const providerName = process.env.STUDYX_GOLDEN_PROVIDER ?? 'deepseek';
 const providerBaseUrl = process.env.STUDYX_GOLDEN_PROVIDER_BASE_URL ?? 'https://api.deepseek.com';
 const providerModel = process.env.STUDYX_GOLDEN_PROVIDER_MODEL ?? model;
+const judgeModel = process.env.STUDYX_GOLDEN_JUDGE_MODEL ?? 'deepseek-v4-flash';
+const selectedCases = selectGoldenCasesV1(process.env.STUDYX_GOLDEN_CASE_IDS, GOLDEN_CASES);
+const isFullSuite = selectedCases.length === GOLDEN_CASES.length;
+const expectedTurns = selectedCases.reduce((count, scenario) => count + scenario.turns.length, 0);
 const resultsDirectory = path.resolve(process.cwd(), 'evals/golden/results');
 const reuseObservations = process.env.STUDYX_GOLDEN_REUSE_OBSERVATIONS === 'true';
 const evaluatedSha = process.env.STUDYX_GOLDEN_EVALUATED_SHA ?? '';
@@ -85,6 +91,7 @@ interface TurnResultV1 {
   readonly failures: readonly GoldenFailureV1[];
   readonly failure_layer: ReturnType<typeof inferFailureAttribution>['layer'] | null;
   readonly validator_rejections: ReturnType<typeof inferFailureAttribution>['validatorRejections'];
+  readonly judge_format_recovery?: { readonly kind: 'trailing_closing_brace_removed'; readonly raw_response: string };
   readonly model_attempts: GoldenTurnObservationV1['modelAttempts'];
   readonly preconditions: {
     readonly course_bonus: GoldenTurnObservationV1['courseBonus'];
@@ -539,15 +546,19 @@ function markdown(cases: readonly CaseResultV1[]): string {
   });
   const lines = [
     `# Agent A golden ${resultStem} — ${evaluatedSha.slice(0, 7)}`, '',
-    `- Criterio absoluto: ${absoluteGoldenAcceptanceV1(cases).approved ? 'APROBADO' : 'NO APROBADO'}; ${absoluteGoldenAcceptanceV1(cases).passed_turns}/48 turnos, mínimo 41 y críticos 07/10/11/12/15 aprobados.`,
+    isFullSuite
+      ? `- Criterio absoluto: ${absoluteGoldenAcceptanceV1(cases).approved ? 'APROBADO' : 'NO APROBADO'}; ${absoluteGoldenAcceptanceV1(cases).passed_turns}/48 turnos, mínimo 41 y críticos 07/10/11/12/15 aprobados.`
+      : `- Evaluación parcial: ${cases.flatMap(item => item.turns).filter(turn => turn.approved === true).length}/${expectedTurns} turnos aprobados en ${selectedCases.length} casos; no acredita aceptación completa de 48 turnos.`,
     `- SHA evaluado: \`${evaluatedSha}\``,
     `- Origen de la línea de base de autoridad: \`${GOLDEN_BASE_SHA}\``,
     `- Brain: \`${AGENT_A_BRAIN_PROMPT_VERSION}\``,
     `- Prompt canónico: \`${STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION}\``,
     `- Modelo interno del agente: \`${model}\``,
     `- Proveedor/modelo de evaluación: \`${providerName}\` / \`${providerModel}\``,
+    `- Modelo del juez: \`${judgeModel}\` (constante en la comparación oficial)`,
     `- Llamadas/intentos al proveedor: ${providerReport?.logical_calls ?? 'no registrado'} / ${providerReport?.attempts ?? 'no registrado'}`,
     `- Tokens: entrada ${providerReport?.tokens?.input ?? 'no informado'}, salida ${providerReport?.tokens?.output ?? 'no informado'}, total ${providerReport?.tokens?.total ?? 'no informado'}`,
+    `- Recuperaciones de formato del juez: ${cases.flatMap(item => item.turns).filter(turn => turn.judge_format_recovery).length}; originales y diagnóstico conservados en el JSON por turno.`,
     `- Casos: ${cases.filter((item) => item.approved === true).length} aprobados; ${cases.filter((item) => item.approved === false).length} fallidos; ${cases.filter((item) => item.approved === null).length} con error del evaluador`,
     `- Turnos: ${cases.flatMap((item) => item.turns).filter((turn) => turn.approved === true).length} aprobados; ${cases.flatMap((item) => item.turns).filter((turn) => turn.approved === false).length} fallidos; ${cases.flatMap((item) => item.turns).filter((turn) => turn.execution_status === 'evaluation_error').length} con error del evaluador`, '',
     '| Caso/turno | Resultado | Autoridad | Borradores originales y reparaciones | Texto entregado al transporte | Move / acción | Rechazos backend | Hipótesis de capa |',
@@ -577,7 +588,7 @@ function markdown(cases: readonly CaseResultV1[]): string {
     `- ${comparison.disclosure}`,
     `- Casos: ${comparison.summary.cases_improved} mejoraron, ${comparison.summary.cases_regressed} retrocedieron, ${comparison.summary.cases_unchanged} sin cambio.`,
     `- Turnos: ${comparison.summary.turns_improved} mejoraron, ${comparison.summary.turns_regressed} retrocedieron, ${comparison.summary.turns_unchanged} sin cambio, ${comparison.summary.turns_missing} faltantes.`, '',
-    '| Caso/turno | v8 | NIM | Cambio |',
+    '| Caso/turno | v8 | Corrida actual | Cambio |',
     '|---|---:|---:|---|');
   for (const turn of comparison.turns) {
     lines.push(`| ${escape(`${turn.case_id}/${turn.turn_id}`)} | ${escape(turn.baseline)} | ${escape(turn.candidate)} | ${turn.change} |`);
@@ -589,7 +600,8 @@ function baselineReport(cases: readonly CaseResultV1[]) {
   const providerReport: GoldenProviderReportV1 | null = goldenProvider?.report() ?? null;
   return {
     schema_version: 3,
-    absolute_acceptance: absoluteGoldenAcceptanceV1(cases),
+    absolute_acceptance: isFullSuite ? absoluteGoldenAcceptanceV1(cases) : null,
+    evaluation_scope: { case_ids: selectedCases.map(scenario => scenario.id), expected_turns: expectedTurns, full_suite: isFullSuite },
     generated_at: new Date().toISOString(),
     base_sha: evaluatedSha,
     authority_baseline_origin_sha: GOLDEN_BASE_SHA,
@@ -617,10 +629,13 @@ function baselineReport(cases: readonly CaseResultV1[]) {
     },
     production_or_vertice_used: false,
     deepseek_model: model,
+    actual_agent_model: providerModel,
+    judge_model: providerName === 'deepseek' ? judgeModel : providerModel,
     evaluation_provider: {
       name: providerName,
       base_url: providerBaseUrl,
       model: providerModel,
+      judge_model: providerName === 'deepseek' ? judgeModel : providerModel,
       report: providerReport,
     },
     evaluation_harness: {
@@ -636,8 +651,9 @@ function baselineReport(cases: readonly CaseResultV1[]) {
       not_evaluated: cases.filter((item) => item.approved === null).length,
       evaluator_errors: cases.flatMap((item) => item.turns)
         .filter((turn) => turn.execution_status === 'evaluation_error').length,
+      judge_format_recoveries: cases.flatMap(item => item.turns).filter(turn => turn.judge_format_recovery).length,
       completed: cases.length,
-      total: GOLDEN_CASES.length,
+      total: selectedCases.length,
     },
     cases,
     comparison_to_v8: compareGoldenRunsV1({
@@ -655,9 +671,10 @@ async function writeRawProgress(): Promise<void> {
     base_sha: evaluatedSha,
     authority_baseline_origin_sha: GOLDEN_BASE_SHA,
     completed_cases: pendingCases.length,
-    total_cases: GOLDEN_CASES.length,
+    total_cases: selectedCases.length,
     evaluation_provider: {
       name: providerName, base_url: providerBaseUrl, model: providerModel,
+      judge_model: providerName === 'deepseek' ? judgeModel : providerModel,
       report: goldenProvider?.report() ?? null,
     },
     cases: pendingCases,
@@ -753,6 +770,7 @@ beforeAll(async () => {
   configuration.apiBaseUrl = apiBaseUrl;
   configuration.agentAPlannerlessV2Enabled = true;
   configuration.agentAAdvisorName = 'Emma';
+  expect(model).toBe(AGENT_A_DEEPSEEK_MODEL);
   configuration.agentABrainDeepSeekModel = model;
   expect((await fetch(`${apiBaseUrl}/api/ready`, { signal: AbortSignal.timeout(4_000) })).ok).toBe(true);
   const paymentLinkResolver = createConfigPaymentLinkResolver(process.env);
@@ -774,8 +792,13 @@ beforeAll(async () => {
   )) as { readonly cases?: typeof baselineV8Cases };
   baselineV8Cases = [...(baselineV8.cases ?? [])];
   expect(baselineV8Cases).toHaveLength(GOLDEN_CASES.length);
+  baselineV8Cases = baselineV8Cases.filter(item => selectedCases.some(scenario => scenario.id === item.case_id));
   db = openLocalTestDatabase();
   nativeFetch = globalThis.fetch;
+  if (providerName === 'deepseek') {
+    goldenProvider = createGoldenOfficialResponsesProviderV1({ agentModel: providerModel, judgeModel },
+      { fetchImpl: nativeFetch, onReport: writeProviderProgress });
+  }
   if (providerName === 'nvidia_nim') {
     goldenProvider = createGoldenResponsesProviderV1({
       provider: 'nvidia_nim',
@@ -822,8 +845,8 @@ live('authority-only Agent A golden baseline through the real workflow', () => {
         }[];
       };
       expect(raw.base_sha).toBe(evaluatedSha);
-      expect(raw.completed_cases).toBe(GOLDEN_CASES.length);
-      for (const scenario of GOLDEN_CASES) {
+      expect(raw.completed_cases).toBe(selectedCases.length);
+      for (const scenario of selectedCases) {
         const saved = raw.cases?.find((candidate) => candidate.scenario?.id === scenario.id);
         expect(saved, `GOLDEN_REUSED_OBSERVATIONS_MISSING:${scenario.id}`).toBeTruthy();
         pendingCases.push({
@@ -833,10 +856,10 @@ live('authority-only Agent A golden baseline through the real workflow', () => {
           ...(saved?.executionError ? { executionError: saved.executionError } : {}),
         });
       }
-      expect(pendingCases).toHaveLength(GOLDEN_CASES.length);
+      expect(pendingCases).toHaveLength(selectedCases.length);
       return;
     }
-    for (const scenario of GOLDEN_CASES) {
+    for (const scenario of selectedCases) {
       const id = identity(scenario.id);
       const captures: WorkflowTurnEvidenceV1['adapterCaptures'][number][] = [];
       let setupEvidence: unknown;
@@ -911,18 +934,18 @@ live('authority-only Agent A golden baseline through the real workflow', () => {
       pendingCases.push({ scenario, observations, setupEvidence, ...(executionError ? { executionError } : {}) });
       await writeRawProgress();
     }
-    expect(pendingCases).toHaveLength(GOLDEN_CASES.length);
+    expect(pendingCases).toHaveLength(selectedCases.length);
   }, 1_200_000);
 
   it('judges every real turn and writes the auditable baseline table', async () => {
-    expect(pendingCases).toHaveLength(GOLDEN_CASES.length);
+    expect(pendingCases).toHaveLength(selectedCases.length);
     for (const pending of pendingCases) {
       let semantic: Awaited<ReturnType<typeof judgeCaseSemantically>> = [];
       let evaluationError = pending.executionError;
       if (!evaluationError && pending.observations.length === pending.scenario.turns.length) {
         try {
           semantic = await judgeCaseSemantically({
-            apiKey: secrets.DEEPSEEK_API_KEY!, model, scenario: pending.scenario,
+            apiKey: secrets.DEEPSEEK_API_KEY!, model: judgeModel, scenario: pending.scenario,
             observations: pending.observations,
           });
         } catch (error) {
@@ -991,6 +1014,7 @@ live('authority-only Agent A golden baseline through the real workflow', () => {
           failures,
           failure_layer: attribution?.layer ?? null,
           validator_rejections: attribution?.validatorRejections ?? [],
+          ...(semanticVerdict?.format_recovery ? { judge_format_recovery: semanticVerdict.format_recovery } : {}),
           model_attempts: observation.modelAttempts,
           preconditions: {
             course_bonus: observation.courseBonus,
@@ -1010,7 +1034,7 @@ live('authority-only Agent A golden baseline through the real workflow', () => {
       });
       await writeCompletedProgress();
     }
-    expect(completedCases).toHaveLength(GOLDEN_CASES.length);
+    expect(completedCases).toHaveLength(selectedCases.length);
     if (goldenProvider) await writeProviderCompleted(goldenProvider.report());
   }, 600_000);
 });

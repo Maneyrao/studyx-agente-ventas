@@ -68,7 +68,9 @@ export function compareGoldenRunsV1(input: CompareGoldenRunsInputV1) {
   return {
     baseline: input.baselineLabel,
     candidate: input.candidateLabel,
-    disclosure: `La comparación cambia proveedor y juez (${input.baselineProvider} → ${input.candidateProvider}); las diferencias no se atribuyen por sí solas al agente.`,
+    disclosure: input.baselineProvider === input.candidateProvider
+      ? `Ambas corridas usan el mismo proveedor (${input.baselineProvider}); compartir un alias solicitado no garantiza el mismo snapshot. Las diferencias de una muestra no se atribuyen por sí solas al agente.`
+      : `La comparación cambia proveedor (${input.baselineProvider} → ${input.candidateProvider}); las diferencias no se atribuyen por sí solas al agente.`,
     summary: {
       cases_improved: cases.filter((item) => item.change === 'improved').length,
       cases_regressed: cases.filter((item) => item.change === 'regressed').length,

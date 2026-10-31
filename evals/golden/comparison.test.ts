@@ -3,6 +3,12 @@ import { describe, expect, it } from 'vitest';
 import { absoluteGoldenAcceptanceV1, compareGoldenRunsV1 } from './comparison';
 
 describe('golden run comparison', () => {
+  it('does not claim a provider change when both runs used official DeepSeek', () => {
+    const comparison = compareGoldenRunsV1({ baselineLabel: 'v8', candidateLabel: 'focused-pro',
+      baselineProvider: 'deepseek', candidateProvider: 'deepseek', baselineCases: [], candidateCases: [] });
+    expect(comparison.disclosure).toContain('mismo proveedor');
+    expect(comparison.disclosure).not.toContain('cambia proveedor');
+  });
   it('requires 41 of 48 turns and every critical case independently of v8', () => {
     const cases = Array.from({ length: 16 }, (_, index) => ({
       case_id: `${String(index + 1).padStart(2, '0')}_synthetic`, approved: true as boolean | null,
