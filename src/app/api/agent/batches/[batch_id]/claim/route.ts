@@ -192,6 +192,12 @@ export async function POST(
             ...input,
           }, { db: sql });
         },
+        negotiationFacts: async (input) => {
+          const [{ readNegotiationFactsV1 }, { sql }] = await Promise.all([
+            import('@/features/conversation/application/read-negotiation-facts'), import('@/lib/db/orchestrator'),
+          ]);
+          return readNegotiationFactsV1({ workspace_slug: workspaceSlug, ...input }, { db: sql });
+        },
         agentLoopRollout,
       }
     )

@@ -54,6 +54,36 @@ const FactKindSchema = z.enum([
   'offering_modality', 'offering_syllabus', 'payment_plan_label', 'payment_plan_price',
 ]);
 const IdentifierSchema = z.string().trim().min(1).max(160);
+const RecordedPriceOnlyBarrierV1Schema = z.union([
+  z.object({ status: z.literal('unknown') }).strict(),
+  z.object({
+    status: z.enum(['confirmed', 'other_barriers_reported']),
+    offering_code: IdentifierSchema.nullable(),
+    source_turn_id: z.string().uuid(), source_message_id: z.string().uuid(),
+    source_quote: z.string().min(1).max(2_048), recorded_at: z.string().min(1),
+    interpretation_source: z.literal('committed_agent_observation'),
+  }).strict(),
+]);
+export const RecordedNegotiationFactsV1Schema = z.object({
+  price_objection_count: z.number().int().min(0),
+  latest_price_objection_source_turn_ids: z.array(z.string().uuid()).max(20),
+  latest_legacy_price_objection_source_message_ids: z.array(z.string().uuid()).max(20).optional(),
+  price_only_barrier: RecordedPriceOnlyBarrierV1Schema,
+}).strict();
+const AgentANegotiationContextV1Schema = z.object({
+  price_objections: z.object({ count: z.number().int().min(0).nullable(),
+    scope: z.literal('conversation_prior_recorded_sources'),
+    latest_source_turn_ids: z.array(z.string().uuid()).max(20),
+    latest_legacy_source_message_ids: z.array(z.string().uuid()).max(20),
+  }).strict(),
+  price_only_barrier: RecordedPriceOnlyBarrierV1Schema,
+  call_invitation: z.object({ status: z.enum(['not_offered', 'offered', 'accepted', 'declined']),
+    count: z.union([z.literal(0), z.literal(1), z.literal(2)]),
+    authorization: z.enum(['authorized', 'not_authorized']),
+  }).strict(),
+  delivered_bonus_offers: z.array(z.object({ code: IdentifierSchema, display_name: z.string().min(1).max(240),
+    position: z.number().int().min(1).max(3) }).strict()).max(3).nullable(),
+}).strict();
 const CustomerMessageSchema = z.string().trim().min(1).max(2_000).refine(
   (value) => !/https?:\/\//iu.test(value),
   'MODEL_RESPONSE_URL_FORBIDDEN',
@@ -132,6 +162,7 @@ export const AgentAContextV1Schema = z.object({
     instagram: z.string().trim().min(1).max(120).nullable(),
   }).strict().nullable(),
   commercial_state: z.object({
+    negotiation: AgentANegotiationContextV1Schema.optional(),
     promotion: z.object({
       promotion_code: IdentifierSchema,
       promotion_cycle_id: IdentifierSchema,

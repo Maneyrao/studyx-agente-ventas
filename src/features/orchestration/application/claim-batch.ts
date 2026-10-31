@@ -1,4 +1,5 @@
 import type { ContactProfileContextV1 } from '@/shared/conversation/contact-profile-contract';
+import type { RecordedNegotiationFactsV1 } from '@/shared/conversation/negotiation-facts';
 import { evaluateTurnPolicy, type TurnPolicy } from '../domain/turn-policy';
 import type { BusinessContextView, CatalogIndexView } from '../domain/business-context';
 import type { SalesContextState } from '@/features/sales/domain/sales-context';
@@ -72,6 +73,8 @@ import type { CourseBonusCapabilityV1 } from '@/features/promotions/application/
  */
 
 export interface ClaimBatchDependencies {
+  readonly negotiationFacts?: (input: { source_turn_id: string; contact_id: string; conversation_id: string;
+    selected_offering_code: string | null }) => Promise<RecordedNegotiationFactsV1 | null>;
   readonly store: OrchestrationStore;
   readonly embedding: QueryEmbedder;
   readonly memory: MemoryRetriever;
@@ -218,6 +221,7 @@ export interface ClaimedTurn {
   readonly contact_profile?: ContactProfileContextV1 | null;
   readonly payment_verification: PaymentVerificationV1 | null;
   readonly course_bonus_capability?: CourseBonusCapabilityV1 | null;
+  readonly negotiation_facts?: RecordedNegotiationFactsV1 | null;
   readonly contact: {
     readonly id: string;
     readonly status: 'prospecto' | 'cliente' | 'inactivo';
@@ -1234,7 +1238,7 @@ export async function claimBatch(
     });
     return null;
   }) ?? Promise.resolve(null);
-  const [callIntakeReadiness, paymentVerification, contactProfile, courseBonusCapability] = await Promise.all([
+  const [callIntakeReadiness, paymentVerification, contactProfile, courseBonusCapability, negotiationFacts] = await Promise.all([
     readCallIntakeReadiness(facts.contact.id, claim.conversation_id!),
     readPaymentVerification(facts.contact.id, {
       offering_code: conversationStateV1?.selected_offering_code ?? null,
@@ -1242,6 +1246,13 @@ export async function claimBatch(
     }),
     deps.contactProfileContext?.({ contactId: facts.contact.id, conversationId: claim.conversation_id!, batchId: claim.batch_id }) ?? null,
     courseBonusTask,
+    deps.negotiationFacts?.({ source_turn_id: facts.representative_turn_id, contact_id: facts.contact.id,
+      conversation_id: claim.conversation_id!, selected_offering_code: conversationStateV1?.selected_offering_code ?? null,
+    }).catch((error) => {
+      log('orchestration.claim.negotiation_facts_unavailable', { trace_id: input.trace_id,
+        error: error instanceof Error ? error.name : 'UNKNOWN' });
+      return null;
+    }) ?? null,
   ]);
   const contactIntake = callIntakeReadiness.intake;
   const contactIntakeMissing = missingContactIntakeFieldsV1(contactIntake);
@@ -1300,6 +1311,7 @@ export async function claimBatch(
     ...(contactProfile ? { contact_profile: contactProfile } : {}),
     payment_verification: paymentVerification,
     course_bonus_capability: courseBonusCapability,
+    negotiation_facts: negotiationFacts,
     contact: {
       id: facts.contact.id,
       status: facts.contact.status,

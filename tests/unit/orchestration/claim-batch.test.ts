@@ -26,6 +26,23 @@ import {
  */
 
 describe('default retrieval thresholds', () => {
+  it('loads conversation negotiation facts from the canonical owned turn without changing actions', async () => {
+    const recorded = { price_objection_count: 5, latest_price_objection_source_turn_ids: ['prior-turn'],
+      price_only_barrier: { status: 'unknown' } };
+    const read = vi.fn().mockResolvedValue(recorded);
+    const result = await claimBatch(input, Object.assign(buildDeps(), { negotiationFacts: read }));
+    expect(result).toMatchObject({ outcome: 'claimed', negotiation_facts: recorded });
+    expect(read).toHaveBeenCalledWith(expect.objectContaining({ source_turn_id: 'turn-1',
+      conversation_id: 'conversation-1', contact_id: 'contact-1' }));
+  });
+
+  it('keeps missing negotiation evidence unknown if its reader fails', async () => {
+    const result = await claimBatch(input, Object.assign(buildDeps(), {
+      negotiationFacts: vi.fn().mockRejectedValue(new Error('unavailable')),
+    }));
+    expect(result).toMatchObject({ outcome: 'claimed', negotiation_facts: null });
+  });
+
   it('keeps contact-scoped memory recall broader than tenant knowledge recall', () => {
     expect(DEFAULT_CONTEXT_LIMITS.memoryMinSimilarity).toBe(0.5);
     expect(DEFAULT_CONTEXT_LIMITS.knowledgeMinSimilarity).toBe(0.75);

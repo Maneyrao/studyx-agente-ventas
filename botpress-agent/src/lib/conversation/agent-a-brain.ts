@@ -667,6 +667,7 @@ function proposalJsonSchema(context: AgentAContextV1, conversationOnly = false):
     memory_candidates: {
       type: 'array',
       maxItems: 10,
+      description: 'Record your interpretation of explicit customer statements with a verbatim inbound source_quote. For a customer confirmation that price is the only barrier, use type constraint, key price_only_barrier, value confirmed; if the customer reports another barrier, use the same type/key with value other_barriers_reported. Omit this observation when unknown. These are recorded observations, not permissions or sales-step instructions.',
       items: closedObject({
         type: { type: 'string', enum: [...MEMORY_TYPES] },
         key: { type: 'string' },

@@ -1,6 +1,7 @@
 import { backendReleaseSha } from './turn-evidence.service';
 import type { ConversationChannel } from '@/lib/contracts/channel';
 import { randomUUID } from 'node:crypto';
+import { collectNegotiationObservationsV1 } from '@/features/conversation/application/read-negotiation-facts';
 import { offerDirectCourseBonusV1, acceptDirectCourseBonusV1 } from '@/features/promotions/application/direct-course-bonus-service';
 import type { CourseBonusCapabilityV1 } from '@/features/promotions/application/read-course-bonus-capability';
 import { withSerializableTransaction } from '@/lib/db/transaction';
@@ -697,6 +698,7 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
     const workspaceSlug = loadBusinessWorkspaceConfig().workspaceSlug;
     let preparedPipeline: Awaited<ReturnType<typeof prepareConversationPipelineCommitV1>> | null = null;
     let preparedAgentTurn: Awaited<ReturnType<typeof prepareAgentTurnV2>> | null = null;
+    let preparedAgentWorkspaceId: string | null = null;
     let courseBonusCapability: CourseBonusCapabilityV1 | undefined;
     // El contador de fallbacks tiene que sobrevivir a la supresión, y
     // `preparedPipeline` no: la rama de egress lo anula y con él se iría la
@@ -872,6 +874,7 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
           selected_offering_code: checkoutOfferingCode,
           source_turn_id: turn.id,
         }, { db });
+        preparedAgentWorkspaceId = workspaceId;
         preparedAgentTurn = await prepareAgentTurnV2({
           turn: {
             id: turn.id,
@@ -1565,6 +1568,18 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
               && validatedInput.turn_diagnostics.action_status === 'authorized'
               ? 'none' : validatedInput.turn_diagnostics.action_status };
 
+    const negotiationObservations = preparedAgentTurn && preparedAgentWorkspaceId && decision.kind === 'reply'
+      && decision.memory_candidates.some(candidate => candidate.type === 'constraint' && candidate.key === 'price_only_barrier')
+      ? collectNegotiationObservationsV1({ workspace_id: preparedAgentWorkspaceId, conversation_id: turn.conversation_id,
+        contact_id: turn.contact_id, source_turn_id: turn.id,
+        offering_code: preparedAgentTurn.commercial_interest_offering_code,
+        candidates: decision.memory_candidates,
+        messages: await db<Array<{ id: string; content: string }>>`
+          SELECT id, content FROM messages WHERE contact_id=${turn.contact_id}::uuid
+            AND conversation_id=${turn.conversation_id}::uuid AND direction='inbound'
+            AND (id=${turn.id}::uuid OR batch_id=${turn.batch_id}::uuid)
+          ORDER BY conversation_seq, created_at, id`,
+      }) : [];
     const inserted = await db<Array<{ id: string }>>`
       INSERT INTO agent_decisions (
         turn_id,
@@ -1585,7 +1600,8 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
         model_name,
         prompt_version,
         payload_hash,
-        diagnostics
+        diagnostics,
+        negotiation_observations
       )
       VALUES (
         ${validatedInput.turn_id}::uuid,
@@ -1606,7 +1622,8 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
         ${validatedInput.model.model},
         ${validatedInput.model.prompt_version},
         decode(${payloadHash}, 'hex'),
-        ${jsonbParam(db, actualDiagnostics)}
+        ${jsonbParam(db, actualDiagnostics)},
+        ${jsonbParam(db, negotiationObservations.length ? negotiationObservations : null)}
       )
       RETURNING id
     `;

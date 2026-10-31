@@ -193,6 +193,53 @@ function claimedTurn(): ClaimedTurn {
 }
 
 describe('buildAgentAContextV1', () => {
+  it('exposes recorded negotiation facts without converting them into bonus eligibility (P:106-120)', () => {
+    const claimed = claimedTurn();
+    const evidence = { status: 'confirmed' as const, offering_code: 'redes-informaticas',
+      source_turn_id: UUID, source_message_id: UUID, source_quote: 'El precio es lo único que me frena',
+      recorded_at: NOW, interpretation_source: 'committed_agent_observation' as const };
+    Object.assign(claimed, { negotiation_facts: { price_objection_count: 5,
+      latest_price_objection_source_turn_ids: [UUID], price_only_barrier: evidence } });
+    claimed.conversation_state_v1 = { ...claimed.conversation_state_v1!, call_offer_status: 'declined', stage: 'closed' };
+    const context = buildAgentAContextV1(claimed)!;
+    expect(context.commercial_state).toMatchObject({ negotiation: {
+      price_objections: { count: 5, scope: 'conversation_prior_recorded_sources', latest_source_turn_ids: [UUID] },
+      price_only_barrier: evidence,
+      call_invitation: { status: 'declined', authorization: 'not_authorized' },
+      delivered_bonus_offers: null,
+    } });
+    expect(context.capabilities.course_bonus).toBeUndefined();
+    expect(Object.keys((context.commercial_state as unknown as { negotiation: object }).negotiation))
+      .not.toContain('next_step');
+  });
+
+  it('preserves unknown negotiation facts instead of claiming zero objections or no customer confirmation', () => {
+    const context = buildAgentAContextV1(claimedTurn())!;
+    expect(context.commercial_state).toMatchObject({ negotiation: {
+      price_objections: { count: null, latest_source_turn_ids: [] },
+      price_only_barrier: { status: 'unknown' }, delivered_bonus_offers: null,
+    } });
+  });
+
+  it('does not reuse another course confirmation or treat offered bonuses as delivered', () => {
+    const claimed = claimedTurn();
+    Object.assign(claimed, { negotiation_facts: { price_objection_count: 3,
+      latest_price_objection_source_turn_ids: [UUID], price_only_barrier: {
+        status: 'confirmed', offering_code: 'other-course', source_turn_id: UUID, source_message_id: UUID,
+        source_quote: 'sólo el precio', recorded_at: NOW, interpretation_source: 'committed_agent_observation',
+      } } });
+    expect(buildAgentAContextV1(claimed)!.commercial_state.negotiation?.price_only_barrier).toEqual({ status: 'unknown' });
+    const offered = { code: 'curso-1', display_name: 'Curso 1', position: 1 };
+    Object.assign(claimed, { course_bonus_capability: { status: 'offer_available', enabled: true,
+      may_offer_bonus: true, may_schedule_checkin: false, may_request_review: false, may_accept_offer: false,
+      may_send_promoted_payment: false, promotion_code: null, interest_offering_code: 'redes-informaticas',
+      bonus_offerings: [offered], delivered_bonus_offerings: [],
+    } });
+    expect(buildAgentAContextV1(claimed)!.commercial_state.negotiation?.delivered_bonus_offers).toEqual([]);
+    Object.assign(claimed.course_bonus_capability!, { delivered_bonus_offerings: [offered] });
+    expect(buildAgentAContextV1(claimed)!.commercial_state.negotiation?.delivered_bonus_offers).toEqual([offered]);
+  });
+
   it('projects the exact course syllabus as an authorized fact instead of leaving it only in retrieval text', () => {
     const claimed = claimedTurn();
     claimed.context.knowledge_base = [{

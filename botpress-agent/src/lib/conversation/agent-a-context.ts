@@ -656,6 +656,14 @@ export function buildAgentAContextV1(
         ? 'confirm_availability' as const
         : 'none' as const;
 
+  const mayOfferCall = claimed.policy.may_respond
+    && !claimed.contact.blocked
+    && claimed.sales_context.active_call === null
+    && effectiveCallPreference !== 'call'
+    && effectiveCallOfferStatus !== 'accepted'
+    && !['handoff', 'closed', 'payment_link_sent'].includes(effectiveStage)
+    && !effectivePaymentReported
+    && callOfferCount < 2;
   return AgentAContextV1Schema.parse({
     schema_version: 1,
     turn: {
@@ -700,6 +708,20 @@ export function buildAgentAContextV1(
     },
     identity: agentAIdentityFromClaim(claimed, advisorName),
     commercial_state: {
+      negotiation: {
+        price_objections: {
+          count: claimed.negotiation_facts?.price_objection_count ?? null,
+          scope: 'conversation_prior_recorded_sources',
+          latest_source_turn_ids: claimed.negotiation_facts?.latest_price_objection_source_turn_ids ?? [],
+          latest_legacy_source_message_ids: claimed.negotiation_facts?.latest_legacy_price_objection_source_message_ids ?? [],
+        },
+        price_only_barrier: claimed.negotiation_facts?.price_only_barrier.status !== 'unknown'
+          && claimed.negotiation_facts?.price_only_barrier.offering_code === selectedCode
+          ? claimed.negotiation_facts.price_only_barrier : { status: 'unknown' },
+        call_invitation: { status: effectiveCallOfferStatus, count: callOfferCount,
+          authorization: mayOfferCall ? 'authorized' : 'not_authorized' },
+        delivered_bonus_offers: claimed.course_bonus_capability?.delivered_bonus_offerings ?? null,
+      },
       promotion: !startsFreshInterestCycle
         && claimed.course_bonus_capability?.promotion_code && claimed.course_bonus_capability.promotion_cycle_id
         && claimed.course_bonus_capability.offer_version && claimed.course_bonus_capability.interest_offering_code
@@ -803,14 +825,7 @@ export function buildAgentAContextV1(
     },
     capabilities: {
       may_reply: claimed.policy.may_respond,
-      may_offer_call: claimed.policy.may_respond
-        && !claimed.contact.blocked
-        && claimed.sales_context.active_call === null
-        && effectiveCallPreference !== 'call'
-        && effectiveCallOfferStatus !== 'accepted'
-        && !['handoff', 'closed', 'payment_link_sent'].includes(effectiveStage)
-        && !effectivePaymentReported
-        && callOfferCount < 2,
+      may_offer_call: mayOfferCall,
       // A direct request is sufficient in this turn. A short acceptance is
       // sufficient only after the persisted availability question, never
       // while an invitation or contact-data request is still pending.

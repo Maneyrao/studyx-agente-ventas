@@ -1,4 +1,5 @@
 import type { ConversationMoveV1 } from './conversation-pipeline';
+import type { AgentANegotiationContextV1 } from '../../../shared/conversation/negotiation-facts';
 import type { CourseBonusMaxCoursesV1, DirectCourseBonusPromotionV1 } from '../../promotions/domain/course-bonus';
 import type {
   ContactProfileContextV1,
@@ -71,6 +72,7 @@ export interface AgentAContextV1 {
     readonly instagram: string | null;
   } | null;
   readonly commercial_state: {
+    readonly negotiation?: AgentANegotiationContextV1;
     readonly promotion?: DirectCourseBonusPromotionV1 | null;
     readonly selected_offering_code: string | null;
     readonly selected_payment_plan: AgentAPaymentPlanV1 | null;
