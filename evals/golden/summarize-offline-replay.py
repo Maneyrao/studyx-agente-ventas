@@ -86,7 +86,7 @@ for row in rows:
         'traces': '; '.join(unique(c['trace_id'] for c in row['candidates'])),
     })
 with (OUT / 'por-borrador.csv').open('w', newline='') as handle:
-    writer = csv.DictWriter(handle, fieldnames=columns)
+    writer = csv.DictWriter(handle, fieldnames=columns, lineterminator='\n')
     writer.writeheader()
     writer.writerows(table)
 

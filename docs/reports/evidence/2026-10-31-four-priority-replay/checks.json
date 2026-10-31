@@ -1,0 +1,143 @@
+{
+  "generated_at": "2026-10-31T15:05:45.032660+00:00",
+  "product_sha": "1a24d763045193aa134a85021229ad5c259c8bb3",
+  "branch": "codex/studyx-bonus-staged-release",
+  "prompt_version": "studyx-agent-a-canonical-v101",
+  "brain_prompt_marker": "studyx-agent-a-brain-v145",
+  "model_calls": 0,
+  "tokens": 0,
+  "deployments": 0,
+  "gates": {
+    "unit": {
+      "passed": 4871,
+      "skipped": 17,
+      "todo": 7,
+      "files_passed": 258,
+      "files_skipped": 2,
+      "command": "npm run test:unit -- --maxWorkers=2 --reporter=dot",
+      "status": "passed"
+    },
+    "integration": {
+      "passed": 922,
+      "skipped": 1,
+      "files_passed": 93,
+      "status": "passed",
+      "scope": "Clean disposable PostgreSQL; fake providers and pre-drained fake knowledge embeddings. Final canonical-field formatting was checked again by the six post-sale integration tests."
+    },
+    "final_post_sale": {
+      "unit_passed": 38,
+      "integration_passed": 6,
+      "status": "passed"
+    },
+    "replay": {
+      "passed": 1,
+      "status": "passed",
+      "source_appearances": 427,
+      "duplicates": 59,
+      "affected_turns_by_priority": [
+        7,
+        5,
+        4,
+        3
+      ],
+      "no_product_worktree_changes": true,
+      "scope": "Recorded drafts; conditional precommit/projection and isolated post-sale assembler. No new repair, effects, commit, delivery or model acceptance."
+    },
+    "typecheck": "passed",
+    "lint": "passed",
+    "next_build": "passed",
+    "adk_offline_check": "passed"
+  },
+  "repeated_check_incident": {
+    "status": "resolved_by_full_suite_repeat",
+    "first_result": "4870 passed; workflow-registration.test.ts timed out at 5000ms with default parallelism",
+    "repeat_result": "4871 passed with maxWorkers=2, unchanged test timeouts and code"
+  },
+  "architect_review": {
+    "status": "approved_after_material_fixes",
+    "agent": "architect_four_priorities",
+    "scope": "Four implementation priorities; no real-model acceptance or deployment authorization."
+  },
+  "log_provenance": {
+    "unit_exact_sha_default_parallelism": {
+      "local_log": "four-priorities-sha-unit.log",
+      "sha256": "791eb9211e9256a2cb20366752234d8bd9196ec0f6a364b1ae65115adadc5c5c",
+      "result_lines": [
+        "Test Files  1 failed | 257 passed | 2 skipped (260)",
+        "Tests  1 failed | 4870 passed | 17 skipped | 7 todo (4895)",
+        "Start at  12:00:10",
+        "Duration  11.61s (transform 8.32s, setup 3.17s, import 17.33s, tests 46.07s, environment 23ms)"
+      ]
+    },
+    "unit_exact_sha_limited_parallelism": {
+      "local_log": "four-priorities-sha-unit-limited.log",
+      "sha256": "8016d5c0f9583ce5b26dce0fd1a705fe4a22343945b221290550f8cea0e9f044",
+      "result_lines": [
+        "Test Files  258 passed | 2 skipped (260)",
+        "Tests  4871 passed | 17 skipped | 7 todo (4895)",
+        "Start at  12:02:44",
+        "Duration  27.80s (transform 2.38s, setup 1.21s, import 6.91s, tests 28.70s, environment 11ms)"
+      ]
+    },
+    "integration_clean_cluster": {
+      "local_log": "four-priorities-gated-integration.log",
+      "sha256": "0ed9ac0d429cb9919a47ad603f38669b7e9e10a4547f26a6d92e8a77790c47cb",
+      "result_lines": [
+        "Test Files  93 passed (93)",
+        "Tests  922 passed | 1 skipped (923)",
+        "Start at  11:50:27",
+        "Duration  54.80s (transform 2.06s, setup 678ms, import 18.71s, tests 30.02s, environment 3ms)"
+      ]
+    },
+    "post_sale_final_unit": {
+      "local_log": "four-priorities-plain-fields-unit.log",
+      "sha256": "9287e8a92f8812f92db789c5cca2a5bc7e0efee63300f5a9d6f6938064b1730b",
+      "result_lines": [
+        "Test Files  1 passed (1)",
+        "Tests  38 passed (38)",
+        "Start at  11:56:41",
+        "Duration  262ms (transform 103ms, setup 15ms, import 151ms, tests 19ms, environment 0ms)"
+      ]
+    },
+    "post_sale_final_integration": {
+      "local_log": "four-priorities-plain-fields-integration.log",
+      "sha256": "b4a045e50c8b0ccca0dd62ab825fc4acc1d719d1ab22428ff56e9878acfc545a",
+      "result_lines": [
+        "Test Files  1 passed (1)",
+        "Tests  6 passed (6)",
+        "Start at  11:56:42",
+        "Duration  592ms (transform 115ms, setup 25ms, import 166ms, tests 310ms, environment 0ms)"
+      ]
+    },
+    "replay_exact_sha": {
+      "local_log": "four-priorities-sha-replay-final.log",
+      "sha256": "71cef8b8db5fd1ceaa3ecee50b6acfb99ec2c37c68da2bdc3ca091fc02a5e5f3",
+      "result_lines": [
+        "Test Files  1 passed (1)",
+        "Tests  1 passed (1)",
+        "Start at  11:57:56",
+        "Duration  4.30s (transform 385ms, setup 0ms, import 768ms, tests 3.45s, environment 0ms)"
+      ]
+    },
+    "typecheck": {
+      "local_log": "four-priorities-sha-typecheck.log",
+      "sha256": "96efe7fb66fd4d0be314274311b86918b947c19bb6f1bdf96952bc2f7304db38",
+      "result_lines": []
+    },
+    "lint": {
+      "local_log": "four-priorities-gated-lint.log",
+      "sha256": "58be5986f675e359bb75562f0fdc333a2164d337b11c4863ab9c053f09d33b10",
+      "result_lines": []
+    },
+    "next_build": {
+      "local_log": "four-priorities-gated-build.log",
+      "sha256": "f3ab4dbd6ad0de6aefa5dbb080d8bf2a0d69a411b406d9f545679984d5d59616",
+      "result_lines": []
+    },
+    "adk_offline_check": {
+      "local_log": "four-priorities-gated-adk.log",
+      "sha256": "53b0a67adc50b1d0b1066792d25e298d4d50507702a7792421cc705b2ab88bc6",
+      "result_lines": []
+    }
+  }
+}
