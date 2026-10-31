@@ -26,41 +26,57 @@ const NO_CERTIFICATION: CanonicalTruthSetV1 = { ...CANONICAL, certification: fal
 const UNKNOWN_CERTIFICATION: CanonicalTruthSetV1 = { ...CANONICAL, certification: null };
 
 it.each([
-  ['Te regalo Inglés 1 y Astrología.', false],
-  ['No te regalo Inglés 1, pero te regalo Redes.', false],
-  ['No tengo problema en regalarte Redes.', false],
-  ['No tenemos problema en regalarte Redes.', false],
-  ['Te regalo Inglés 1 para complementar tu formación.', true],
-  ['Te regalo Inglés 1, que te sirve para practicar.', true],
-  ['Te regalo Inglés 1 y Astrología para complementar tu formación.', false],
-  ['Te regalo Inglés 1 para regalarte Redes.', false],
-  ['Te regalo Inglés 1 al comprar Redes.', true],
-  ['Redes incluye Inglés 1 de regalo.', true],
-  ['No te regalo Redes. Inglés 1 te puede servir para tu objetivo.', true],
-  ['Te sumo Fotografía con Celulares para Tiendas Online sin costo extra, para que puedas resolver fotos de producto.', true],
-  ['Puedo sumarte Fotografía con Celulares para Tiendas Online sin costo extra: te sirve para producir imágenes para tiendas.', true],
-  ['A Fotografía Profesional te sumo Fotografía con Celulares para Tiendas Online, sin costo extra: te sirve para cubrir también las fotos rápidas que piden las tiendas.', true],
-  ['Ya te sumé Fotografía con Celulares para Tiendas Online sin costo extra, y eso sigue en pie: podés usarlo para fotos de producto.', true],
-  ['Ya tenés sumado Fotografía con Celulares para Tiendas Online sin costo extra, así cubrís también las fotos de producto.', true],
-  ['Te sumo Fotografía con Celulares para Tiendas Online sin costo extra, para complementar, y te regalo Astrología.', false],
-])('validates the complete gift object without gifting its paid-course condition: %s', (content, allowed) => {
-  const result=enforce(content as string,{...CANONICAL,
-    offering_names:['Inglés 1','Excel','Redes','Fotografía con Celulares para Tiendas Online'],
-    authorized_bonus_names:['Inglés 1','Fotografía con Celulares para Tiendas Online'],paid_offering_names:['Redes']});
-  expect(result.violations.some(v=>v.code==='FORBIDDEN_PROMISE')).toBe(!allowed);
-  if (allowed) expect(result).toMatchObject({content,violations:[],removed:[]});
+  ['Inglés I queda incluido.', true],
+  ['Inglés I queda bonificado.', true],
+  ['Inglés I queda incluido y Redes bonificado.', false],
+  ['Redes queda sin costo.', false],
+  ['Fotografía con Celulares para Tiendas Online queda incluido.', true],
+])('validates exact catalog identities against the structural bonus capability: %s', (content, allowed) => {
+  const result = enforce(content as string, {
+    ...CANONICAL,
+    offering_names: ['Inglés I', 'Redes', 'Fotografía con Celulares para Tiendas Online'],
+    authorized_bonus_names: ['Inglés I', 'Fotografía con Celulares para Tiendas Online'],
+  });
+  expect(result.violations.some((violation) => violation.code === 'FORBIDDEN_PROMISE')).toBe(!allowed);
+  if (allowed) expect(result).toMatchObject({ content, violations: [], removed: [] });
 });
 
-it('restricts gift assertions to delivered and provisionally authorized course names', () => {
-  const canonical = {...CANONICAL,offering_names:['Inglés 1','Excel Integral','Redes'],
-    authorized_bonus_names:['Inglés 1','Excel Integral']};
-  expect(enforce('Te regalo Inglés 1 y Excel Integral.',canonical).violations).toEqual([]);
-  expect(enforce('Te regalo Redes.',canonical).violations).toContainEqual({code:'FORBIDDEN_PROMISE',value:'promise'});
-  expect(enforce('Te regalo Redes e Inglés 1.',canonical).violations)
-    .toContainEqual({code:'FORBIDDEN_PROMISE',value:'promise'});
-  expect(enforce('Inglés 1 sigue de regalo. Te regalo Excel Integral.',
-    {...canonical,authorized_bonus_names:['Inglés 1']}).content).toBe('Inglés 1 sigue de regalo.');
-  expect(enforce('Te regalo un curso.',canonical).violations).toContainEqual({code:'FORBIDDEN_PROMISE',value:'promise'});
+it('allows a paid-course package recap but rejects the paid course as the only included course', () => {
+  const canonical = {
+    ...CANONICAL,
+    offering_names: ['Fotografía Profesional', 'Marketing Digital', 'Community Manager'],
+    authorized_bonus_names: ['Marketing Digital'],
+    paid_offering_names: ['Fotografía Profesional'],
+  };
+  expect(enforce(
+    'Fotografía Profesional y Marketing Digital están incluidos en tu paquete.',
+    canonical,
+  ).violations).toEqual([]);
+  expect(enforce('Fotografía Profesional queda incluida sin costo.', canonical).violations)
+    .toContainEqual({ code: 'FORBIDDEN_PROMISE', value: 'promise' });
+  expect(enforce('Marketing Digital incluido. Community Manager lo podés contratar aparte.', canonical).violations)
+    .toEqual([]);
+});
+
+it('does not infer course bonus effects from sales vocabulary outside the structural markers', () => {
+  const canonical = {
+    ...CANONICAL,
+    offering_names: ['Marketing Digital', 'Community Manager'],
+    authorized_bonus_names: ['Marketing Digital'],
+  };
+  expect(enforce('Te llevás también Marketing Digital.', canonical).violations).toEqual([]);
+  expect(enforce('Marketing Digital gratis.', canonical).violations).toEqual([]);
+});
+
+it('uses only canonical display names for bonus effects, never catalog aliases', () => {
+  const canonical = {
+    ...CANONICAL,
+    offering_names: ['Inglés 1', 'Inglés'],
+    canonical_offering_names: ['Inglés 1'],
+    authorized_bonus_names: ['Inglés 1'],
+  };
+  expect(enforce('Inglés 1 queda incluido.', canonical).violations).toEqual([]);
+  expect(enforce('Inglés queda incluido.', canonical).violations).toEqual([]);
 });
 
 function enforce(content: string, canonical: CanonicalTruthSetV1 = CANONICAL, urls: string[] = []) {

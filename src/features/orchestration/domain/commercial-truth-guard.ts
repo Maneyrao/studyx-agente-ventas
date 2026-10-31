@@ -35,6 +35,8 @@ export interface CanonicalTruthSetV1 {
   readonly certification: boolean | null;
   /** Nombres del catálogo activo, independientes del curso elegido. */
   readonly offering_names?: readonly string[];
+  /** Nombres display canónicos, sin aliases, para validar efectos de bonificación. */
+  readonly canonical_offering_names?: readonly string[];
   readonly area_names?: readonly string[];
   /** Logística explícita de la oferta; nunca se infiere de que sea online. */
   readonly course_logistics?: readonly CourseLogisticsFactV1[];
@@ -432,7 +434,7 @@ function sentenceViolations(
 
   const giftClaims = inspectCourseBonusClaimsV1({content:sentence,
     authorized_bonus_names:canonical.authorized_bonus_names ?? [],
-    known_offering_names:canonical.offering_names ?? [],
+    known_offering_names:canonical.canonical_offering_names ?? canonical.offering_names ?? [],
     paid_offering_names:canonical.paid_offering_names});
   if (FORBIDDEN_PROMISE.test(normalized) || offersUnauthorizedBenefit(normalized)
     || giftClaims.has_unauthorized_claim) {
@@ -542,6 +544,9 @@ export function canonicalTruthSetFromOfferingsV1(input: {
     .filter((certification): certification is boolean => typeof certification === 'boolean');
 
   return {
+    canonical_offering_names: [...new Set(input.offerings.flatMap((offering) => (
+      offering.display_name ? [offering.display_name] : []
+    )))],
     offering_names: [...new Set(input.offerings.flatMap((offering) => [
       ...(offering.display_name ? [offering.display_name] : []),
       ...(Array.isArray(offering.metadata?.aliases)

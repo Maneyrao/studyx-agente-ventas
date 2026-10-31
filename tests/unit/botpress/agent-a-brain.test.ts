@@ -104,7 +104,7 @@ describe('Agent A Brain V1', () => {
       interest_offering_code:'redes-informaticas',bonus_offerings:[
         {code:'ingles_1',display_name:'Inglés 1',position:1},{code:'excel',display_name:'Excel',position:2}],
       delivered_bonus_offerings:[{code:'ingles_1',display_name:'Inglés 1',position:1}]};
-    for(const [content,forbidden] of [['Te regalo Inglés 1.',false],['Te regalo Excel.',true]] as const) {
+    for(const [content,forbidden] of [['Inglés 1 sigue incluido.',false],['Excel queda incluido.',true]] as const) {
       const parsed=parseAgentATurnProposalV1(proposal({response:{messages:[content],call_offer:null}}),current);
       const rejection=validateAgentATurnProposalV1({proposal:parsed,context:current,planned_fact_ids:[],
         rejection_id:'00000000-0000-4000-8000-000000000001'});
@@ -120,6 +120,7 @@ describe('Agent A Brain V1', () => {
       { code: 'ingles_1', display_name: 'Inglés 1', area_code: 'language', fact_id: 'english' },
       { code: 'excel', display_name: 'Excel', area_code: 'tech', fact_id: 'excel' },
       { code: 'word', display_name: 'Word', area_code: 'tech', fact_id: 'word' },
+      { code: 'powerpoint', display_name: 'PowerPoint', area_code: 'tech', fact_id: 'powerpoint' },
     ];
     if (!selected) {
       current.catalog.selected_offering = null;
@@ -134,7 +135,7 @@ describe('Agent A Brain V1', () => {
         { code: 'excel', display_name: 'Excel', position: 2 }] };
     for (const [message, forbidden] of [
       ['Redes Informáticas incluye Inglés 1, Excel y Word bonificados.', false],
-      ['Redes Informáticas incluye Inglés 1, Excel, Word y Astrología bonificados.', true],
+      ['Redes Informáticas incluye Inglés 1, Excel, Word y PowerPoint bonificados.', true],
     ] as const) {
       const parsed = parseAgentATurnProposalV1(proposal({
         response: { messages: [message], call_offer: null }, used_fact_ids: [], used_memory_ids: [],
@@ -174,7 +175,7 @@ describe('Agent A Brain V1', () => {
       ['Perfecto, seguimos por acá. Te sumo Fotografía con Celulares para Tiendas Online sin costo extra, para que puedas resolver fotos de producto. El precio de Fotografía Profesional no cambia.', false],
       ['A Fotografía Profesional te sumo Fotografía con Celulares para Tiendas Online, sin costo extra: te sirve para cubrir también las fotos rápidas que piden las tiendas. El precio del curso principal sigue igual.', false],
       ['Ya te sumé Fotografía con Celulares para Tiendas Online sin costo extra, y eso sigue en pie: podés usarlo para fotos de producto. El precio de Fotografía Profesional no cambia.', false],
-      ['Te sumo Fotografía con Celulares para Tiendas Online sin costo extra: te sirve para producir imágenes para tiendas. Además te regalo Inglés 1.', true],
+      ['Te sumo Fotografía con Celulares para Tiendas Online sin costo extra: te sirve para producir imágenes para tiendas. Inglés 1 queda bonificado.', true],
     ] as const) {
       const parsed = parseAgentATurnProposalV1(proposal({
         move: { schema_version: 1, move: 'continue_by_chat', secondary_moves: [], vetoes: [], confidence: 1 },
@@ -199,15 +200,19 @@ describe('Agent A Brain V1', () => {
     expect(rejection?.rejections.filter(r => r.subject === 'price_objection_reframe') ?? []).toEqual([]);
   });
 
-  it('does not authorize a stale noncatalog bonus name from delivery evidence', () => {
+  it('does not let stale noncatalog delivery evidence authorize another catalog course', () => {
     const current = context();
+    current.catalog.available_offerings = [
+      { code: 'redes-informaticas', display_name: 'Redes Informáticas', area_code: 'tech', fact_id: 'paid' },
+      { code: 'marketing', display_name: 'Marketing Digital', area_code: 'business', fact_id: 'marketing' },
+    ];
     current.capabilities.course_bonus = { enabled: true, status: 'offer_available',
       may_schedule_checkin: false, may_request_review: false, may_accept_offer: true,
       may_send_promoted_payment: false, promotion_code: 'p', interest_offering_code: 'redes-informaticas',
       bonus_offerings: [{ code: 'deleted', display_name: 'Astrología', position: 1 }],
       delivered_bonus_offerings: [{ code: 'deleted', display_name: 'Astrología', position: 1 }] };
     const parsed = parseAgentATurnProposalV1(proposal({
-      response: { messages: ['Astrología va bonificada.'], call_offer: null },
+      response: { messages: ['Marketing Digital va bonificado.'], call_offer: null },
       used_fact_ids: [], used_memory_ids: [],
     }), current);
     expect(validateAgentATurnProposalV1({ proposal: parsed, context: current, planned_fact_ids: [],
@@ -227,15 +232,14 @@ describe('Agent A Brain V1', () => {
       may_send_promoted_payment:false,promotion_code:'p',interest_offering_code:'redes-informaticas',
       bonus_offerings:[{code:'ingles_1',display_name:'Inglés 1',position:1}],
       delivered_bonus_offerings:[{code:'ingles_1',display_name:'Inglés 1',position:1}]};
-    for (const content of ['Te regalo Inglés 1 y Astrología.','No te regalo Inglés 1, pero te regalo Redes.',
-      'No tengo problema en regalarte Redes.','Te regalo Inglés 1 y Astrología para complementar tu formación.']) {
+    for (const content of ['Inglés 1 incluido y Excel bonificado.','Redes queda incluida sin costo.']) {
       const parsed=parseAgentATurnProposalV1(proposal({response:{messages:[content],call_offer:null}}),current);
       expect(validateAgentATurnProposalV1({proposal:parsed,context:current,planned_fact_ids:[],
         rejection_id:'00000000-0000-4000-8000-000000000001'})?.rejections)
         .toContainEqual({code:'FACT_VALUE_MISMATCH',subject:'forbidden_promise'});
     }
-    for (const content of ['Te regalo Inglés 1 al comprar Redes.','Redes incluye Inglés 1 de regalo.',
-      'Te regalo Inglés 1 para complementar tu formación.','Te regalo Inglés 1, que te sirve para practicar.']) {
+    for (const content of ['Redes e Inglés 1 están incluidos en el paquete.','Inglés 1 queda bonificado.',
+      'Te llevás también Inglés 1.','Inglés 1 te sirve para practicar.']) {
       const parsed=parseAgentATurnProposalV1(proposal({response:{messages:[content],call_offer:null}}),current);
       const rejection=validateAgentATurnProposalV1({proposal:parsed,context:current,planned_fact_ids:[],
         rejection_id:'00000000-0000-4000-8000-000000000001'});
