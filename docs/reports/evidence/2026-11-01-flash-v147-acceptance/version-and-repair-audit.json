@@ -1,0 +1,127 @@
+{
+  "runs": [
+    {
+      "run": "focused-961c991-flash-060714-r1b-20261101",
+      "execution_sha": "961c991bcb2a6afc3ea6b0f30d56a7ec0b0f60b8",
+      "brain_version": "studyx-agent-a-brain-v147",
+      "prompt_version": "studyx-agent-a-canonical-v101",
+      "model_raw_observations": 21,
+      "observed_brain_versions": {
+        "studyx-agent-a-brain-v147": 21
+      },
+      "observed_prompt_versions": {
+        "studyx-agent-a-canonical-v101": 21
+      },
+      "frozen_prompt_source_sha256": "9fb911899d0e8f4e4615b46d76e28444f16fc91666171d917e4048c43c3e2aa9",
+      "prompt_source_matches_execution_commit": true,
+      "repair_turns": [
+        {
+          "case": "06_repeated_price_bonus_ladder",
+          "turn": "isolate",
+          "attempts": 2,
+          "subjects": [
+            "CALL_OFFER_MESSAGE_BOUNDARY_INVALID",
+            "duplicate_call_offer"
+          ]
+        },
+        {
+          "case": "14_course_change_cancels_promotion",
+          "turn": "installments",
+          "attempts": 2,
+          "subjects": [
+            "FACT_VALUE_MISMATCH",
+            "price"
+          ]
+        },
+        {
+          "case": "14_course_change_cancels_promotion",
+          "turn": "isolate",
+          "attempts": 2,
+          "subjects": [
+            "CALL_OFFER_MESSAGE_BOUNDARY_INVALID",
+            "call_offer",
+            "duplicate_call_offer"
+          ]
+        }
+      ],
+      "ladder_rejection_count": 0,
+      "forbidden_promise_rejected_turns": [],
+      "unsupported_bonus_deliveries": [
+        {
+          "case": "06_repeated_price_bonus_ladder",
+          "turn": "bonus_3",
+          "trace_id": "08ccbd1f-51cc-4365-b76a-7a815ce7c50a",
+          "subjects": [],
+          "attempts": 1,
+          "committed_effect": null
+        },
+        {
+          "case": "06_repeated_price_bonus_ladder",
+          "turn": "never_fourth",
+          "trace_id": "67d73ea2-4f04-4c5a-9955-fc9e841d399b",
+          "subjects": [],
+          "attempts": 1,
+          "committed_effect": null
+        }
+      ],
+      "repair147_note": "Fresh v147 code and per-request brain metadata verified. No forbidden_promise rejection occurred on unsupported deliveries, so the strengthened bonus repair branch was not invoked there."
+    },
+    {
+      "run": "focused-961c991-flash-060714-r2-20261101",
+      "execution_sha": "961c991bcb2a6afc3ea6b0f30d56a7ec0b0f60b8",
+      "brain_version": "studyx-agent-a-brain-v147",
+      "prompt_version": "studyx-agent-a-canonical-v101",
+      "model_raw_observations": 19,
+      "observed_brain_versions": {
+        "studyx-agent-a-brain-v147": 19
+      },
+      "observed_prompt_versions": {
+        "studyx-agent-a-canonical-v101": 19
+      },
+      "frozen_prompt_source_sha256": "9fb911899d0e8f4e4615b46d76e28444f16fc91666171d917e4048c43c3e2aa9",
+      "prompt_source_matches_execution_commit": true,
+      "repair_turns": [
+        {
+          "case": "06_repeated_price_bonus_ladder",
+          "turn": "isolate",
+          "attempts": 2,
+          "subjects": [
+            "CALL_OFFER_MESSAGE_BOUNDARY_INVALID",
+            "call_offer",
+            "duplicate_call_offer"
+          ]
+        }
+      ],
+      "ladder_rejection_count": 0,
+      "forbidden_promise_rejected_turns": [],
+      "unsupported_bonus_deliveries": [
+        {
+          "case": "06_repeated_price_bonus_ladder",
+          "turn": "bonus_3",
+          "trace_id": "8578623d-e12f-4588-9da8-e494275c7f0d",
+          "subjects": [],
+          "attempts": 1,
+          "committed_effect": null
+        },
+        {
+          "case": "06_repeated_price_bonus_ladder",
+          "turn": "never_fourth",
+          "trace_id": "47d25337-4987-4e34-ae80-dfb884b6eb10",
+          "subjects": [],
+          "attempts": 1,
+          "committed_effect": null
+        },
+        {
+          "case": "14_course_change_cancels_promotion",
+          "turn": "bonus_1",
+          "trace_id": "a100e809-2abf-4ca5-a9a1-750b13e61a22",
+          "subjects": [],
+          "attempts": 1,
+          "committed_effect": null
+        }
+      ],
+      "repair147_note": "Fresh v147 code and per-request brain metadata verified. No forbidden_promise rejection occurred on unsupported deliveries, so the strengthened bonus repair branch was not invoked there."
+    }
+  ],
+  "audit_method": "Read-only source/version/rejection audit; no APIs or model calls."
+}

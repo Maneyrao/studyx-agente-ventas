@@ -84,6 +84,28 @@ const METHOD_PRIORITY: Readonly<Record<LiteralMatchMethod, number>> = {
 const CATALOG_INTENT_PATTERN =
   /(?:\b(?:cursos|diplomados|capacitaciones|formaciones|programas|catalogo|oferta academica|academia|inscribirme|inscribime|anotarme|anotame)\b|\b(?:estudiar|aprender)\b(?!\s+para\b)|\bbusco\s+(?!(?:para|trabajo|empleo|ayuda|informacion|info|datos|detalles|algo|un?\s+opcion)\b)[\p{L}\p{N}]{3,}|\b(?:curso|diplomado|capacitacion|formacion|programa)\s+de\s+[\p{L}\p{N}]|\b(?:tienen|ofrecen|hay)\b.{0,24}\b(?:curso|diplomado|capacitacion|formacion|programa)\b)/u;
 
+const COURSE_DETAIL_REQUEST_PATTERN = /\b(?:plan de estudios?|temarios?)\b/u;
+
+// `programa` also means software in ordinary customer language, so it cannot
+// be treated as a syllabus request by itself. These labels only become course
+// detail requests when the customer actually asks to see or receive them.
+const COURSE_DETAIL_EXTENDED_REQUEST_PATTERN =
+  /\b(?:(?:cual es|quiero(?: ver)?|necesito(?: ver)?|dame|pasame|me pasas|mandame|enviame|mostrame|puedo ver|quisiera ver)\s+(?:(?:el|la)\s+)?(?:programas?|cronogramas?)|necesito informacion (?:de|del|sobre)\s+(?:(?:el|la)\s+)?(?:programas?|cronogramas?))\b/u;
+
+const COURSE_DETAIL_SUBJECT_PATTERN =
+  /\b(?:plan de estudios?|temarios?|programas?|cronogramas?)\s+(?:de|del|para|sobre)\s+(?:(?:el|la|los|las|un|una)\s+)?(?:(?:curso|diplomado|programa)\s+(?:de\s+)?)?(?!(?:clases?|curso|diplomado|programa)\b)([\p{L}\p{N}].*)$/u;
+
+const COURSE_DETAIL_FOLLOWUP_SUBJECT_PATTERN =
+  /^(?:de|del|para|sobre)\s+(?:(?:el|la|un|una)\s+)?(?:(?:curso|diplomado|programa)\s+(?:de\s+)?)?[\p{L}\p{N}]/u;
+
+function courseDetailSubject(message: string): string | null {
+  const subject = COURSE_DETAIL_SUBJECT_PATTERN.exec(message)?.[1]?.trim() ?? null;
+  if (subject === null) return null;
+  return /^(?:(?:el|la|los|las)\s+)?(?:clases?|curso|diplomado|programa)$/u.test(subject)
+    ? null
+    : subject;
+}
+
 const SELECTION_CUE_PATTERN =
   /\b(?:prefiero|elijo|elegi|selecciono|me quedo con|voy con|quiero|mejor|cambio a)\b/gu;
 
@@ -523,13 +545,17 @@ function partialSubjectMatches(
     // arbitrary words would turn "fotografía forense" into an available
     // course, or confuse "fot" with "fotovoltaica". A bare title fragment is
     // also a subject; surrounding unrelated prose is not stripped from it.
-    const cues = [...normalized.matchAll(
-      /\b(?:cursos?|diplomados?|capacitaciones|capacitacion|formaciones|formacion|programas?|estudiar|aprender|busco|quiero|me interesa|me interesan|informacion sobre)\s+(?:(?:el|la|un|una|de)\s+)*/gu,
-    )];
+    const detailSubject = courseDetailSubject(normalized);
+    const cues = detailSubject === null
+      ? [...normalized.matchAll(
+          /\b(?:cursos?|diplomados?|capacitaciones|capacitacion|formaciones|formacion|programas?|estudiar|aprender|busco|quiero|me interesa|me interesan|informacion sobre)\s+(?:(?:el|la|un|una|de)\s+)*/gu,
+        )]
+      : [];
     const cue = cues.at(-1);
-    const subject = (cue?.index === undefined
+    const subject = (detailSubject ?? (cue?.index === undefined
       ? normalized
-      : normalized.slice(cue.index + cue[0].length))
+      : normalized.slice(cue.index + cue[0].length)))
+      .replace(/^(?:(?:el|la|un|una|de|del)\s+)+/u, '')
       .replace(/\s+(?:tienen|ofrecen|hay|esta disponible|estan disponibles)$/u, '')
       .trim();
     return subject ? [subject] : [];
@@ -538,6 +564,26 @@ function partialSubjectMatches(
   return offerings.filter((offering) => subjects.some((subject) => (
     offering.normalizedName.startsWith(`${subject} `)
   )));
+}
+
+export function isCatalogDetailRequest(text: string | readonly string[]): boolean {
+  return toMessages(text).some((message) => (
+    COURSE_DETAIL_REQUEST_PATTERN.test(message)
+    || COURSE_DETAIL_EXTENDED_REQUEST_PATTERN.test(message)
+  ));
+}
+
+/** True only when a plan/temario request genuinely leaves its course implicit. */
+export function catalogDetailRequestOmitsSubject(
+  text: string | readonly string[],
+): boolean {
+  const messages = toMessages(text);
+  const detailIndex = messages.findIndex((message) => isCatalogDetailRequest(message));
+  if (detailIndex < 0) return false;
+  if (messages.some((message) => courseDetailSubject(message) !== null)) return false;
+  return !messages.slice(detailIndex + 1).some((message) => (
+    COURSE_DETAIL_FOLLOWUP_SUBJECT_PATTERN.test(message)
+  ));
 }
 
 function computerRepairMatches(
@@ -657,7 +703,10 @@ function hasCatalogIntent(messages: readonly string[]): boolean {
  */
 export function isCatalogRequestNeutral(text: string | readonly string[]): boolean {
   const messages = toMessages(text);
-  return !hasCatalogIntent(messages)
+  return (
+    !hasCatalogIntent(messages)
+    || isCatalogDetailRequest(messages) && catalogDetailRequestOmitsSubject(messages)
+  )
     && !messages.some((message) => CATALOG_REJECTION_PATTERN.test(message));
 }
 
@@ -802,6 +851,10 @@ export function resolveCatalogRequest(
     return ambiguous(request, literalMatches.map((match) => match.offering));
   }
 
+  if (isCatalogDetailRequest(messages) && catalogDetailRequestOmitsSubject(messages)) {
+    return { kind: 'no_catalog_intent' };
+  }
+
   const computerRepair = computerRepairMatches(resolutionMessages, offerings);
   if (computerRepair.length > 0) {
     if (snapshot.offerings_truncated > 0) {
@@ -817,8 +870,15 @@ export function resolveCatalogRequest(
     if (snapshot.offerings_truncated > 0) {
       return { kind: 'unavailable', reason: 'snapshot_truncated' };
     }
-    // A partial title narrows the clarification, never establishes identity,
-    // even when the current complete snapshot has just one matching course.
+    // A plan/temario request naming one unique canonical title fragment is an
+    // informational lookup, not a course-selection guess. This keeps a
+    // production catalog usable even when an approved short alias has not yet
+    // been synchronized into metadata.
+    if (partialMatches.length === 1 && isCatalogDetailRequest(messages)) {
+      return exact(partialMatches[0], 'canonical');
+    }
+    // Outside that narrow informational case, a partial title only narrows the
+    // clarification and never establishes identity.
     return ambiguous(request, partialMatches);
   }
 

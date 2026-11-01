@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { auditLog } from '@/lib/audit/logger';
+import { backendReleaseSha } from '@/lib/services/turn-evidence.service';
 import { sql } from '@/lib/db/orchestrator';
 import { jsonbParam } from '@/lib/db/json';
 import type { DbClient } from '@/lib/db/types';
@@ -197,14 +198,14 @@ export async function sendOutboundMessage(
     // constraint stops the second from creating a *second* row, but nothing
     // stops it from sending against the same one. Only one UPDATE can move the
     // row out of 'pending', so whoever loses must not contact the provider.
-    const leased = await db<Array<{ id: string }>>`
+    const leased = await db<Array<{ id: string; attempt_count: number }>>`
       UPDATE outbound_deliveries
       SET state = 'leased',
           leased_by = ${`direct:${input.idempotencyKey}`},
           lease_until = now() + interval '1 minute',
           attempt_count = attempt_count + 1
       WHERE id = ${deliveryId}::uuid AND state IN ('pending', 'failed_retryable')
-      RETURNING id
+      RETURNING id, attempt_count
     `;
 
     if (leased.length === 0) {
@@ -222,6 +223,12 @@ export async function sendOutboundMessage(
       };
     }
 
+    const sendKey = `managed-evidence:${deliveryId}:a${leased[0].attempt_count}`;
+    await auditLog({ action: 'outbound.provider.attempt', entity_type: 'outbound_delivery',
+      entity_id: deliveryId, event_key: `${sendKey}:attempt`,
+      payload: { text: input.text, authorized_egress: input.authorizedEgress,
+        channel: identity.channel, backend_sha: backendReleaseSha(), idempotency_key: input.idempotencyKey },
+    }, db);
     const providerResult = await attemptSend(channel, identity.destination, input);
     const decision = decideDeliveryOutcome(providerResult);
 
@@ -254,6 +261,11 @@ export async function sendOutboundMessage(
       errorCode: decision.reason,
       retryAfterSeconds: decision.retryAfterSeconds,
     });
+    await auditLog({ action: 'outbound.provider.result', entity_type: 'outbound_delivery',
+      entity_id: deliveryId, event_key: `${sendKey}:result`,
+      payload: { provider_result: providerResult, state: decision.state, text: input.text,
+        backend_sha: backendReleaseSha(), receipt_is_phone_delivery: false },
+    }, db);
 
     return {
       outcome: decision.outcome!,

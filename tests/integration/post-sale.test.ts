@@ -121,9 +121,9 @@ run('post-sale payment / central / Agent A pipeline', () => {
       narrative:{intro:'Ya tienes acceso a tu curso.',suggestion:'Si quieres, puedes cambiar tu contraseña.'}},deliveryDeps)).toEqual({outcome:'sent'});
 
     expect(messages).toHaveLength(1);
-    expect(messages[0]).toContain('LINK DIRECTO AL CAMPUS VIRTUAL 👇🏻\n\nhttps://mystudyx.com/campus-virtual');
-    expect(messages[0]).toContain('📌 USUARIO: ana@example.com\n\n📌 CONTRASEÑA: Escuela.123');
-    expect(messages[0]).toContain('ADMINISTRACIÓN: info@mystudyx.com');
+    expect(messages[0]).toContain('Campus: https://mystudyx.com/campus-virtual');
+    expect(messages[0]).toContain('Usuario: ana@example.com\nContraseña: Escuela.123');
+    expect(messages[0]).not.toContain('ADMINISTRACIÓN: info@mystudyx.com');
     expect(await db!`SELECT kind,status FROM post_sale_notifications WHERE payment_id=${f.paymentId} ORDER BY kind`).toEqual([
       {kind:'access_ready',status:'sent'},
       {kind:'payment_received',status:'cancelled'},
@@ -159,8 +159,8 @@ run('post-sale payment / central / Agent A pipeline', () => {
       {...deps(),sender:async(input:{text:string})=>{messages.push(input.text); return {outcome:'sent' as const,
         channel:'whatsapp' as const,providerMessageId:'sent-v2',deliveryId:null,reason:null};}})).toEqual({outcome:'sent'});
     expect(messages).toHaveLength(1);
-    expect(messages[0]).toContain('CURSO PRINCIPAL: Curso Prueba');
-    expect(messages[0]).toContain(`CURSO BONIFICADO: ${f.bonusName}`);
+    expect(messages[0]).toContain('Curso principal: Curso Prueba');
+    expect(messages[0]).toContain(`Curso bonificado: ${f.bonusName}`);
     expect(messages[0]).not.toMatch(/invoice|comprobante/iu);
   });
   it('reuses the same claim after invalid model prose and sends the safe fallback once', async () => {

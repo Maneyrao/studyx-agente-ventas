@@ -1,14 +1,10 @@
+import { COURSE_MENTION_ROLES_V1 } from '../../../../src/shared/conversation/course-mentions';
+import { messagesWithoutExactCallOfferV1 } from '../../../../src/shared/conversation/call-offer-format';
+import type { ModelObservation } from '../observability/turn-evidence';
 import { courseLogisticsInV1 } from '../../../../src/shared/conversation/course-logistics';
 import { inspectCourseBonusClaimsV1 } from '../../../../src/shared/conversation/course-bonus-claim';
 import { eligibleContactRequestFieldsV1 } from './contact-profile-request-policy';
 import { supportsChatPreferenceV1 } from './channel-preference-evidence';
-import { evaluateCallOfferTurnPolicyV1 } from './call-offer-turn-policy';
-import {
-  customerExpressesRealBudgetLimitV1,
-  evaluateSalesObjectionTurnV1,
-  responseAvoidsDisallowedPriceReframingV1,
-  responseProgressesRepeatedPriceObjectionV1,
-} from './sales-objection-turn-policy';
 import type { TurnRejectionV1 } from '../../schemas/turn-rejection'
 import {
   AgentATurnProposalV1Schema,
@@ -104,6 +100,7 @@ const DEEPSEEK_PROPOSAL_ROOT_FIELDS = new Set([
   'confidence',
   'response',
   'proposed_action',
+  'course_mentions',
   'confirmed_phone',
   'profile_updates',
   'profile_requests',
@@ -219,6 +216,7 @@ function addTokenUsage(
 }
 
 export async function generateDeepSeekAgentATurnProposalV1(input: {
+  readonly observe?: (event: ModelObservation) => void;
   readonly context: AgentAContextV1;
   readonly apiKey: string;
   readonly signal: AbortSignal;
@@ -306,11 +304,13 @@ export async function generateDeepSeekAgentATurnProposalV1(input: {
         extractResponsesTokenUsage(payload),
       );
       const content = extractResponsesContent(payload);
+      input.observe?.({ kind: 'model_raw', raw_content: content, provider: 'deepseek-direct', model, attempt: attempt, status: response.status });
       if (content === null) throw new AgentABrainError('BRAIN_DEEPSEEK_EMPTY_RESPONSE', response.status);
       let decoded: unknown;
       try {
         decoded = parseDeepSeekJsonContent(content);
       } catch {
+        input.observe?.({ kind: 'model_schema_rejected', code: 'BRAIN_DEEPSEEK_INVALID_JSON', subject: 'root', attempt });
         if (attempt === 1 && !input.conversation_only && !controller.signal.aborted) { retryDiagnostic = 'root:invalid_json'; continue; }
         throw new AgentABrainError('BRAIN_DEEPSEEK_INVALID_JSON', response.status);
       }
@@ -321,6 +321,8 @@ export async function generateDeepSeekAgentATurnProposalV1(input: {
           input.context,
         );
       } catch (error) {
+        input.observe?.({ kind: 'model_schema_rejected', code: error instanceof AgentABrainError ? error.code : 'BRAIN_INVALID_SCHEMA',
+          subject: error instanceof AgentABrainError ? error.detail : null, attempt });
         if (
           attempt === 1
           && !input.conversation_only
@@ -385,6 +387,7 @@ function extractGeminiContent(payload: unknown): string | null {
 }
 
 export async function generateGeminiAgentATurnProposalV1(input: {
+  readonly observe?: (event: ModelObservation) => void;
   readonly context: AgentAContextV1;
   readonly apiKey: string;
   readonly signal: AbortSignal;
@@ -432,6 +435,7 @@ export async function generateGeminiAgentATurnProposalV1(input: {
       throw new AgentABrainError('BRAIN_GEMINI_INVALID_RESPONSE', response.status);
     }
     const content = extractGeminiContent(payload);
+    input.observe?.({ kind: 'model_raw', raw_content: content, provider: 'google-ai-direct', model, attempt: 1, status: response.status });
     if (content === null) throw new AgentABrainError('BRAIN_GEMINI_EMPTY_RESPONSE', response.status);
     let decoded: unknown;
     try {
@@ -472,7 +476,7 @@ const COURSE_REFERENCE_MOVES = new Set([
 ]);
 const AREA_REFERENCE_MOVES = new Set(['browse_catalog', 'select_area']);
 const PAYMENT_PLAN_MOVES = new Set(['select_payment_plan', 'defer_payment', 'request_payment_link']);
-const MOVE_SEMANTICS = `Classify only the current customer message, using prior state solely to resolve short contextual replies. continue_by_chat and decline_call require an explicit channel preference or a refusal of a pending call offer; study goals and ordinary diagnostic replies are not channel choices. greeting is a current greeting or social opening. report_payment requires an explicit current-message claim that payment already happened; never use it for a greeting, a status question, a future intention, or merely because a link was sent earlier. ask_current_state is a question about what is already selected, sent, or recorded. provide_contact_details means the current message actually supplies identity details. select_course requires exactly one resolved canonical course_reference; use browse_catalog when you present several courses and ask the customer to choose. select_payment_plan records a chosen plan; request_payment_link requires an explicit request to receive or advance with the link. unknown is only for meaning that remains unresolved after applying awaiting_reply.`;
+const MOVE_SEMANTICS = `Classify only the current customer message, using prior state solely to resolve short contextual replies. continue_by_chat and decline_call require an explicit channel preference or a refusal of a pending call offer; study goals and ordinary diagnostic replies are not channel choices. greeting is a current greeting or social opening. report_payment requires an explicit current-message claim that payment already happened; never use it for a greeting, a status question, a future intention, or merely because a link was sent earlier. ask_current_state is a question about what is already selected, sent, or recorded. provide_contact_details means the current message actually supplies identity details. select_course requires exactly one resolved canonical course_reference; use browse_catalog when you present several courses and ask the customer to choose. select_payment_plan records a chosen plan; request_payment_link requires an explicit request to receive or advance with the link. Map postponement expressions such as "lo voy a pensar", "tengo que pensarlo", "no ahora" and "no me quiero inscribir todavía" to defer_payment. decline_purchase requires an explicit definitive refusal to purchase; postponement is not a definitive refusal. unknown is only for meaning that remains unresolved after applying awaiting_reply.`;
 
 function normalizedCurrentCustomerTextV1(context: AgentAContextV1): string {
   return context.turn.batch_messages
@@ -486,10 +490,8 @@ function normalizedCurrentCustomerTextV1(context: AgentAContextV1): string {
 }
 
 function naturalnessRepairDirectiveV1(context: AgentAContextV1): string {
-  const objectionRepair = evaluateSalesObjectionTurnV1(context).kind === 'repeated_price_objection'
-    ? ' The customer repeated a price objection: do not answer by merely repeating plans, amounts or class count. Either connect an authorized fact to their intended use with conditional language or ask one concrete diagnostic question. A call invitation belongs only in response.call_offer when permitted.'
-    : '';
-  return `Preserve the customer intent and the natural rhythm of the original answer. Use one or two short messages as needed, change only the rejected fact or action, and do not add unsupported claims.${objectionRepair}`;
+  void context;
+  return 'Preserve the customer intent and the natural rhythm of the original answer. Use one or two short messages as needed, change only the rejected fact or action, and do not add unsupported claims.';
 }
 
 function closedObject(properties: Record<string, unknown>) {
@@ -636,6 +638,14 @@ function proposalJsonSchema(context: AgentAContextV1, conversationOnly = false):
       },
     }),
     proposed_action: proposedAction,
+    course_mentions: {
+      type: 'array', maxItems: 50,
+      description: 'Declare the actual role of every named canonical course, including names in response.call_offer. Empty only when no course is named. Metadata never authorizes a course, gift or action; do not relabel a free benefit as an alternative or separate paid purchase.',
+      items: closedObject({
+        offering_code: { type: 'string', description: 'Exact canonical offering code from the authorized catalog.' },
+        role: { type: 'string', enum: [...COURSE_MENTION_ROLES_V1] },
+      }),
+    },
     confirmed_phone: { ...nullableString, description: "The complete phone the customer confirms from the immediately previous assistant turn; otherwise null. Never infer a country code without customer confirmation." },
     profile_updates: {
       type: 'array', maxItems: CONTACT_PROFILE_MAX_UPDATES_V1,
@@ -668,6 +678,7 @@ function proposalJsonSchema(context: AgentAContextV1, conversationOnly = false):
     memory_candidates: {
       type: 'array',
       maxItems: 10,
+      description: 'Record your interpretation of explicit customer statements with a verbatim inbound source_quote. For a customer confirmation that price is the only barrier, use type constraint, key price_only_barrier, value confirmed; if the customer reports another barrier, use the same type/key with value other_barriers_reported. Omit this observation when unknown. These are recorded observations, not permissions or sales-step instructions.',
       items: closedObject({
         type: { type: 'string', enum: [...MEMORY_TYPES] },
         key: { type: 'string' },
@@ -744,6 +755,7 @@ function extractResponsesContent(payload: unknown): string | null {
 }
 
 export async function generateOpenAIAgentATurnProposalV1(input: {
+  readonly observe?: (event: ModelObservation) => void;
   readonly context: AgentAContextV1;
   readonly apiKey: string;
   readonly signal: AbortSignal;
@@ -821,6 +833,7 @@ export async function generateOpenAIAgentATurnProposalV1(input: {
       throw new AgentABrainError('BRAIN_OPENAI_INVALID_RESPONSE', response.status);
     }
     const content = extractResponsesContent(payload);
+    input.observe?.({ kind: 'model_raw', raw_content: content, provider: 'openai-direct', model, attempt: 1, status: response.status });
     if (content === null) throw new AgentABrainError('BRAIN_OPENAI_EMPTY_RESPONSE', response.status);
     let decoded: unknown;
     try {
@@ -841,52 +854,12 @@ export async function generateOpenAIAgentATurnProposalV1(input: {
   }
 }
 
-const NEUTRAL_SPANISH_FORMS = new Map<string, string>([
-  ['querés', 'quieres'],
-  ['tenés', 'tienes'],
-  ['podés', 'puedes'],
-  ['preferís', 'prefieres'],
-  ['hacés', 'haces'],
-  ['decís', 'dices'],
-  ['elegís', 'eliges'],
-  ['seguís', 'sigues'],
-  ['buscás', 'buscas'],
-  ['obtenés', 'obtienes'],
-  ['sabés', 'sabes'],
-  ['necesitás', 'necesitas'],
-  ['estudiás', 'estudias'],
-  ['pagás', 'pagas'],
-  ['avanzás', 'avanzas'],
-  ['aprendés', 'aprendes'],
-  ['pensás', 'piensas'],
-  ['sentís', 'sientes'],
-  ['decidís', 'decides'],
-  ['contame', 'cuéntame'],
-  ['decime', 'dime'],
-  ['pasame', 'pásame'],
-  ['mandame', 'mándame'],
-  ['avisame', 'avísame'],
-  ['confirmame', 'confírmame'],
-  ['enviame', 'envíame'],
-]);
-
 /**
- * Normaliza sólo marcas inequívocas de registro rioplatense. No agrega copy,
- * no altera hechos ni decide el recorrido comercial: DeepSeek conserva la
- * autoría del mensaje y esta frontera mantiene el español neutro solicitado.
+ * docs/authority/prompt-agente-a-studyx-v2.md:13 owns the customer's register.
+ * Only :15 authorizes removing inverted opening punctuation; preserve every word.
  */
 export function normalizeCustomerFacingSpanishV1(value: string): string {
-  const withoutOpeningMarks = value.replace(/[¿¡]/gu, '');
-  return withoutOpeningMarks.replace(
-    /(^|[^\p{L}])(querés|tenés|podés|preferís|hacés|decís|elegís|seguís|buscás|obtenés|sabés|necesitás|estudiás|pagás|avanzás|aprendés|pensás|sentís|decidís|contame|decime|pasame|mandame|avisame|confirmame|enviame)(?=$|[^\p{L}])/giu,
-    (match, prefix: string, form: string) => {
-      const neutral = NEUTRAL_SPANISH_FORMS.get(form.toLocaleLowerCase('es')) ?? form;
-      const adjusted = /^\p{Lu}/u.test(form)
-        ? `${neutral.charAt(0).toLocaleUpperCase('es')}${neutral.slice(1)}`
-        : neutral;
-      return `${prefix}${adjusted}`;
-    },
-  );
+  return value.replace(/[¿¡]/gu, '');
 }
 
 function normalizeStrictProposal(value: unknown, context: AgentAContextV1): unknown {
@@ -1377,6 +1350,7 @@ function wait(delayMs: number, signal: AbortSignal): Promise<void> {
 }
 
 export async function generateAgentATurnProposalV1(input: {
+  readonly observe?: (event: ModelObservation) => void;
   readonly context: AgentAContextV1;
   readonly apiKey: string;
   readonly signal: AbortSignal;
@@ -1455,6 +1429,7 @@ export async function generateAgentATurnProposalV1(input: {
         throw new AgentABrainError('BRAIN_INVALID_RESPONSE', response.status);
       }
       const content = extractContent(payload);
+      input.observe?.({ kind: 'model_raw', raw_content: content, provider: 'groq-direct', model, attempt: attempt, status: response.status });
       if (content === null) throw new AgentABrainError('BRAIN_EMPTY_RESPONSE', response.status);
       let decoded: unknown;
       try {
@@ -1510,38 +1485,6 @@ function sameVisibleText(messages: readonly string[], previous: string): boolean
   return draft.length > 0 && draft === normalize(previous);
 }
 
-function sameVisibleFragment(value: string, previous: string): boolean {
-  const normalize = (text: string): string => text.replace(/\s+/gu, ' ').trim();
-  const fragment = normalize(value);
-  return fragment.length > 0 && normalize(previous).includes(fragment);
-}
-
-function normalizedQuestionKeys(value: string): Set<string> {
-  const questions = value.split('?').slice(0, -1).map((fragment) => {
-    const start = Math.max(
-      fragment.lastIndexOf('¿'),
-      fragment.lastIndexOf('\n'),
-      fragment.lastIndexOf('.'),
-      fragment.lastIndexOf('!'),
-    );
-    return fragment.slice(start + 1);
-  });
-  return new Set(questions.map((question) => question
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/gu, '')
-    .toLocaleLowerCase('es')
-    .replace(/[^a-z0-9]+/gu, ' ')
-    .trim())
-    .filter(Boolean));
-}
-
-function repeatsPreviousQuestion(messages: readonly string[], previous: string): boolean {
-  const previousQuestions = normalizedQuestionKeys(previous);
-  if (previousQuestions.size === 0) return false;
-  return [...normalizedQuestionKeys(messages.join('\n'))]
-    .some((question) => previousQuestions.has(question));
-}
-
 const CUSTOMER_REQUESTS_REPEAT = /\b(?:rep(?:et|[ií]t)|otra\s+vez|no\s+entend|de\s+nuevo)\w*/iu;
 const UNSUPPORTED_PREREQUISITE_ASSERTION = /(?:\bno\s+(?:necesit\w*|hace\s+falta|se\s+requiere|tienen)\b[^.!?\n]{0,80}\b(?:experiencia|conocimientos?|requisitos?)\b|\bsin\s+(?:experiencia|conocimientos?\s+previos?)\b|\b(?:pod[eé]s|puedes|empez[aá]s?|part[ií]s?)\b[^.!?\n]{0,32}\bdesde\s+cero\b|\b(?:pensad[oa]|dise[nñ]ad[oa])\w*\b[^.!?\n]{0,80}\b(?:(?:empe\w*)\s+)?(?:desde\s+(?:cero|la\s+base|lo\s+b[aá]sico)|paso\s+a\s+paso)\b|\bdesde\s+los\s+fundamentos\b)/iu;
 const REMOVABLE_UNSUPPORTED_PREREQUISITE_CLAUSE = /\s*,?\s*para\s+(?:quienes|personas?\s+que)\s+no\s+tienen\s+conocimientos?\s+previos\b/iu;
@@ -1590,51 +1533,6 @@ export function removeUnsupportedPrerequisiteAssertionsV1(message: string): stri
         ? [stripped]
         : [];
     });
-}
-
-/**
- * Quita la pregunta ya hecha, no el mensaje que la contiene.
- *
- * Descartar el mensaje entero funcionaba sólo cuando la repetición venía sola.
- * Pegada a algo útil —"Perfecto, seguimos por chat. ¿Ya tenías pensado
- * estudiar maquillaje...?"— el filtro dejaba el turno sin mensajes, la poda se
- * abortaba por lista vacía y la repetición llegaba igual al cliente.
- *
- * Se corta por oración y se descarta sólo la interrogativa que ya se hizo. Si
- * de un mensaje no queda nada, ese mensaje desaparece; si no queda ninguno, el
- * llamador decide qué hacer, como antes.
- *
- * Cuando la persona pide que se lo repitan, no se poda nada: ahí repetir es la
- * respuesta correcta.
- */
-export function removeRepeatedAgentQuestionMessagesV1(
-  messages: readonly string[],
-  previous: string,
-  currentCustomerText: string,
-): string[] {
-  if (CUSTOMER_REQUESTS_REPEAT.test(currentCustomerText)) return [...messages];
-  return messages
-    .map((message) => message
-      .split(/(?<=[.!?\n])/u)
-      .filter((sentence) => !repeatsPreviousQuestion([sentence], previous))
-      .join('')
-      .replace(/\s+/gu, ' ')
-      .trim())
-    .filter((message) => message.length > 0);
-}
-
-const REPEATED_GREETING_PREFIX = /^\s*[¡¿]*\s*(?:hola|buen\s+d[ií]a|buenos\s+d[ií]as|buenas(?:\s+tardes|\s+noches)?)\b(?:\s*,?\s*[\p{L}'’-]+(?:\s+[\p{L}'’-]+){0,2})?\s*[!.,:;—-]+\s*/iu;
-const REPEATED_IDENTITY_PREFIX = /^\s*(?:soy|me\s+presento,?\s+soy)\s+(?:(?:el|la|tu)\s+)?asistente\s+virtual(?:\s+de\s+StudyX)?\s*[!.,:;—-]*\s*/iu;
-
-/** Removes the salutation and self-introduction from a later response. */
-export function removeRepeatedAgentOpeningMessagesV1(messages: readonly string[]): string[] {
-  return messages
-    .map((message) => message
-      .replace(REPEATED_GREETING_PREFIX, '')
-      .replace(REPEATED_IDENTITY_PREFIX, '')
-      .replace(/\s+/gu, ' ')
-      .trim())
-    .filter((message) => message.length > 0);
 }
 
 export function mentionsMissingIntakeField(messages: readonly string[], missing: readonly string[]): boolean {
@@ -1833,41 +1731,9 @@ export function validateAgentATurnProposalV1(input: {
   const previousReply = lastAgentReplyV1(input.context.turn.recent_turns);
   const currentCustomerText = input.context.turn.batch_messages.map((message) => message.text).join('\n');
   const customerRequestsRepeat = CUSTOMER_REQUESTS_REPEAT.test(currentCustomerText);
-  const progressesProfileCollection = (input.proposal.profile_updates?.length ?? 0) > 0
-    && (input.proposal.profile_requests ?? []).some((request) => (
-      request.fields.length > 0
-      && request.fields.every((field) => input.context.capabilities.intake_missing.includes(field))
-    ));
   if (previousReply && !customerRequestsRepeat && sameVisibleText(input.proposal.response.messages, previousReply)) {
     rejections.push({ code: 'REPEATED_AGENT_REPLY', subject: 'previous_agent_reply' });
   }
-  if (previousReply && !customerRequestsRepeat && input.proposal.response.messages.some((message) => {
-    const withoutOpening = removeRepeatedAgentOpeningMessagesV1([message]);
-    // The helper also normalizes whitespace for delivery. A multiline answer
-    // therefore differs byte-for-byte even when no greeting was removed; only
-    // a visible-text change proves that a repeated opening was present.
-    return withoutOpening.length === 0 || !sameVisibleText(withoutOpening, message);
-  })) {
-    rejections.push({ code: 'REPEATED_AGENT_REPLY', subject: 'repeated_greeting' });
-  }
-  if (
-    previousReply
-    && !customerRequestsRepeat
-    && !progressesProfileCollection
-    && input.proposal.response.call_offer
-    && sameVisibleFragment(input.proposal.response.call_offer, previousReply)
-  ) {
-    rejections.push({ code: 'REPEATED_AGENT_REPLY', subject: 'previous_call_offer' });
-  }
-  if (
-    previousReply
-    && !customerRequestsRepeat
-    && !progressesProfileCollection
-    && repeatsPreviousQuestion(input.proposal.response.messages, previousReply)
-  ) {
-    rejections.push({ code: 'REPEATED_AGENT_REPLY', subject: 'previous_agent_question' });
-  }
-  const salesObjection = evaluateSalesObjectionTurnV1(input.context);
   const authorizedBonusOffer = input.context.capabilities.course_bonus?.status === 'offer_available'
     || input.context.capabilities.course_bonus?.status === 'accepted';
   const directBonusCapability = input.context.capabilities.course_bonus;
@@ -1894,35 +1760,11 @@ export function validateAgentATurnProposalV1(input: {
   const paidOfferingNames = paidOffering ? [paidOffering.display_name] : [];
   if (inspectCourseBonusClaimsV1({content:[...input.proposal.response.messages,
     ...(input.proposal.response.call_offer ? [input.proposal.response.call_offer] : [])].join('\n'),
-    authorized_bonus_names:authorizedBonusOfferingNames,paid_offering_names:paidOfferingNames}).has_unauthorized_claim) {
+    authorized_bonus_names:authorizedBonusOfferingNames,
+    known_offering_names:input.context.catalog.available_offerings.map(offering => offering.display_name),
+    paid_offering_names:paidOfferingNames}).has_unauthorized_claim) {
     rejections.push({code:'FACT_VALUE_MISMATCH',subject:'forbidden_promise'});
   }
-  if (
-    salesObjection.kind === 'repeated_price_objection'
-    && !responseProgressesRepeatedPriceObjectionV1({
-      ...input.proposal.response,
-      customer_expressed_real_budget_limit: customerExpressesRealBudgetLimitV1(currentCustomerText),
-      authorized_bonus_offering_names: authorizedBonusOfferingNames,
-      paid_offering_names:paidOfferingNames,
-    })
-  ) {
-    rejections.push({ code: 'REPEATED_AGENT_REPLY', subject: 'persistent_price_objection' });
-  }
-  if (
-    (salesObjection.kind === 'price_objection'
-      || salesObjection.kind === 'repeated_price_objection'
-      || salesObjection.kind === 'price_question_with_objection')
-    && !responseAvoidsDisallowedPriceReframingV1({
-      ...input.proposal.response,
-      allow_requested_payment_terms: salesObjection.kind === 'price_question_with_objection',
-      customer_expressed_real_budget_limit: customerExpressesRealBudgetLimitV1(currentCustomerText),
-      authorized_bonus_offering_names: authorizedBonusOfferingNames,
-      paid_offering_names:paidOfferingNames,
-    })
-  ) {
-    rejections.push({ code: 'FACT_VALUE_MISMATCH', subject: 'price_objection_reframe' });
-  }
-
   // V2 — cada hecho citado existe en el registro materializado del turno.
   for (const factId of input.proposal.used_fact_ids) {
     if (!planned.has(factId)) {
@@ -2193,7 +2035,12 @@ export function validateAgentATurnProposalV1(input: {
       || input.proposal.move.vetoes.includes('purchase')
     )
   );
-  const mustGuideIntake = missingIntake.length > 0 && !paymentDeferred && (
+  const promotionEffectOwnsThisTurn = input.proposal.proposed_action.type === 'offer_course_bonus'
+    || input.proposal.proposed_action.type === 'accept_promotion';
+  const mustGuideIntake = missingIntake.length > 0
+    && !paymentDeferred
+    && !promotionEffectOwnsThisTurn
+    && (
     input.context.commercial_state.awaiting_reply === 'contact_details'
     || moves.has('request_payment_link')
   );
@@ -2237,17 +2084,6 @@ export function validateAgentATurnProposalV1(input: {
   const offersACall = !unsupportedDeclaredOffer && typeof declaredCallOffer === 'string'
     && solicitsACallV1(declaredCallOffer, true)
     || !requestedCallNow && input.proposal.response.messages.some((message) => solicitsACallV1(message))
-  const callOfferPolicy = evaluateCallOfferTurnPolicyV1({
-    context: input.context,
-    response_messages: input.proposal.response.messages,
-    proposed_course_reference: input.proposal.move.course_reference,
-  });
-  if (callOfferPolicy.offer_required && !offersACall && !requestedCallNow) {
-    // The model remains the sole author. This rejection opens its one allowed
-    // rewrite; if that rewrite fails, the original useful answer still
-    // degrades through NON_BLOCKING_GUIDANCE instead of becoming a fallback.
-    rejections.push({ code: 'CALL_OFFER_REQUIRED', subject: 'call_offer' });
-  }
   if (offersACall && !callRequestSupported && (!input.context.capabilities.may_offer_call
     || input.context.commercial_state.call_offer_count >= 2)) {
     rejections.push({ code: 'CALL_BUDGET_EXHAUSTED', subject: 'call_offer' })
@@ -2264,7 +2100,7 @@ export function validateAgentATurnProposalV1(input: {
   const state = input.context.commercial_state;
   const duplicatesDeclaredCallOffer = typeof declaredCallOffer === 'string'
     && solicitsACallV1(declaredCallOffer, true)
-    && input.proposal.response.messages.some((message) => solicitsACallV1(message));
+    && messagesWithoutExactCallOfferV1(input.proposal.response).some((message) => solicitsACallV1(message));
   if (duplicatesDeclaredCallOffer) {
     // This is transport deduplication, not conversational planning: preserve
     // the dedicated invitation and remove only a second invitation authored

@@ -1,4 +1,5 @@
 import type { ContactProfileContextV1 } from '@/shared/conversation/contact-profile-contract';
+import type { RecordedNegotiationFactsV1 } from '@/shared/conversation/negotiation-facts';
 import { evaluateTurnPolicy, type TurnPolicy } from '../domain/turn-policy';
 import type { BusinessContextView, CatalogIndexView } from '../domain/business-context';
 import type { SalesContextState } from '@/features/sales/domain/sales-context';
@@ -15,6 +16,8 @@ import {
 } from '@/features/conversation/domain/call-lifecycle-reconciliation';
 import { loadConversationSessionConfig } from '@/lib/config';
 import {
+  catalogDetailRequestOmitsSubject,
+  isCatalogDetailRequest,
   isCatalogRequestNeutral,
   resolveCatalogRequest,
   type CatalogResolution,
@@ -70,6 +73,8 @@ import type { CourseBonusCapabilityV1 } from '@/features/promotions/application/
  */
 
 export interface ClaimBatchDependencies {
+  readonly negotiationFacts?: (input: { source_turn_id: string; contact_id: string; conversation_id: string;
+    selected_offering_code: string | null }) => Promise<RecordedNegotiationFactsV1 | null>;
   readonly store: OrchestrationStore;
   readonly embedding: QueryEmbedder;
   readonly memory: MemoryRetriever;
@@ -216,6 +221,7 @@ export interface ClaimedTurn {
   readonly contact_profile?: ContactProfileContextV1 | null;
   readonly payment_verification: PaymentVerificationV1 | null;
   readonly course_bonus_capability?: CourseBonusCapabilityV1 | null;
+  readonly negotiation_facts?: RecordedNegotiationFactsV1 | null;
   readonly contact: {
     readonly id: string;
     readonly status: 'prospecto' | 'cliente' | 'inactivo';
@@ -977,21 +983,44 @@ export async function claimBatch(
   }
 
   await Promise.all([businessTask, conversationStateTask, agentLoopRolloutTask]);
+  const currentMessageTexts = batchMessages
+    .filter((message) => message.message_type === 'text')
+    .map((message) => message.content);
   const catalog_resolution = resolveCatalogFromSnapshot(
-    batchMessages
-      .filter((message) => message.message_type === 'text')
-      .map((message) => message.content),
+    currentMessageTexts,
     catalog_index,
     latestAgentTurnMessages(logicalRecentTurns),
   );
+  const currentSelection = deriveCourseSelection({
+    current: catalog_resolution,
+    currentMessageTexts,
+    recentTurns: logicalRecentTurns,
+    catalogIndex: catalog_index,
+  });
+  // Assigned in the joined commercial-context task; make that async boundary
+  // explicit to TypeScript without changing the runtime ordering.
+  const loadedSalesState = persisted_sales_context as SalesContextState | null;
+  const persistedDetailOffering = loadedSalesState?.conversation_id === claim.conversation_id
+    ? loadedSalesState.selected_offering_code
+    : null;
+  const detailRequest = isCatalogDetailRequest(currentMessageTexts);
+  const detailRequestOmitsSubject = catalogDetailRequestOmitsSubject(currentMessageTexts);
+  const detailOfferingCode = catalog_resolution.kind === 'exact'
+    ? catalog_resolution.offeringCode
+    : detailRequest
+      && detailRequestOmitsSubject
+      && catalog_resolution.kind === 'no_catalog_intent'
+      && isCatalogRequestNeutral(currentMessageTexts)
+      ? currentSelection.offering_code ?? persistedDetailOffering
+      : null;
 
   // The index identifies every real offering without bringing every detailed
   // payload into the prompt. Once a course is exact, load only that detail and
   // merge it into the bounded snapshot for factual answers and protected facts.
-  if (catalog_resolution.kind === 'exact' && deps.business?.loadByCode) {
+  if (detailOfferingCode !== null && deps.business?.loadByCode) {
     counters.catalog_calls += 1;
     try {
-      const detailContext = await deps.business.loadByCode(catalog_resolution.offeringCode);
+      const detailContext = await deps.business.loadByCode(detailOfferingCode);
       const detail = detailContext?.offerings[0] ?? null;
       if (detail !== null) {
         // TypeScript cannot see the write performed by the joined async task;
@@ -1015,17 +1044,48 @@ export async function claimBatch(
       });
     }
   }
-  const currentSelection = deriveCourseSelection({
-    current: catalog_resolution,
-    currentMessageTexts: batchMessages
-      .filter((message) => message.message_type === 'text')
-      .map((message) => message.content),
-    recentTurns: logicalRecentTurns,
-    catalogIndex: catalog_index,
-  });
-  // Assigned in the joined commercial-context task; make that async boundary
-  // explicit to TypeScript without changing the runtime ordering.
-  const loadedSalesState = persisted_sales_context as SalesContextState | null;
+  if (
+    detailOfferingCode !== null
+    && detailRequest
+    && deps.knowledge.searchByOfferingCode
+  ) {
+    counters.knowledge_search_calls += 1;
+    const startedAt = monotonicNow();
+    try {
+      const canonicalKnowledge = await deps.knowledge.searchByOfferingCode({
+        offering_code: detailOfferingCode,
+        limit: limits.knowledgeResults,
+      });
+      const previouslyRetrievedUris = new Set(knowledge_base.map((item) => item.source_uri));
+      const canonicalUris = new Set(canonicalKnowledge.map((item) => item.source_uri));
+      const mergedKnowledge = [
+        ...canonicalKnowledge,
+        ...knowledge_base.filter((item) => !canonicalUris.has(item.source_uri)),
+      ];
+      const capped = capRetrievedItems(mergedKnowledge, (item) => item.content, {
+        maxItems: limits.knowledgeResults,
+        maxCharsPerItem: limits.knowledgeMaxCharsPerItem,
+        maxTotalChars: limits.knowledgeMaxTotalChars,
+      });
+      knowledge_base = capped.kept.map((entry) => ({ ...entry.item, content: entry.text }));
+      knowledge_base_dropped += capped.dropped;
+      injection_suspected_count += capped.kept.filter((entry) => (
+        entry.injection_suspected
+        && canonicalUris.has(entry.item.source_uri)
+        && !previouslyRetrievedUris.has(entry.item.source_uri)
+      )).length;
+      knowledge_base_available = true;
+    } catch (error) {
+      log('orchestration.claim.course_knowledge_unavailable', {
+        trace_id: input.trace_id,
+        batch_id: claim.batch_id,
+        offering_code: detailOfferingCode,
+        error: String(error),
+      });
+    } finally {
+      timings.knowledge_search_ms += Math.max(0, monotonicNow() - startedAt);
+    }
+  }
   // This legacy projection is contact-scoped. A fresh conversation must not
   // inherit a selection made in an older conversation on the same contact.
   const persistedState = loadedSalesState?.conversation_id === claim.conversation_id
@@ -1178,7 +1238,7 @@ export async function claimBatch(
     });
     return null;
   }) ?? Promise.resolve(null);
-  const [callIntakeReadiness, paymentVerification, contactProfile, courseBonusCapability] = await Promise.all([
+  const [callIntakeReadiness, paymentVerification, contactProfile, courseBonusCapability, negotiationFacts] = await Promise.all([
     readCallIntakeReadiness(facts.contact.id, claim.conversation_id!),
     readPaymentVerification(facts.contact.id, {
       offering_code: conversationStateV1?.selected_offering_code ?? null,
@@ -1186,6 +1246,13 @@ export async function claimBatch(
     }),
     deps.contactProfileContext?.({ contactId: facts.contact.id, conversationId: claim.conversation_id!, batchId: claim.batch_id }) ?? null,
     courseBonusTask,
+    deps.negotiationFacts?.({ source_turn_id: facts.representative_turn_id, contact_id: facts.contact.id,
+      conversation_id: claim.conversation_id!, selected_offering_code: conversationStateV1?.selected_offering_code ?? null,
+    }).catch((error) => {
+      log('orchestration.claim.negotiation_facts_unavailable', { trace_id: input.trace_id,
+        error: error instanceof Error ? error.name : 'UNKNOWN' });
+      return null;
+    }) ?? null,
   ]);
   const contactIntake = callIntakeReadiness.intake;
   const contactIntakeMissing = missingContactIntakeFieldsV1(contactIntake);
@@ -1244,6 +1311,7 @@ export async function claimBatch(
     ...(contactProfile ? { contact_profile: contactProfile } : {}),
     payment_verification: paymentVerification,
     course_bonus_capability: courseBonusCapability,
+    negotiation_facts: negotiationFacts,
     contact: {
       id: facts.contact.id,
       status: facts.contact.status,

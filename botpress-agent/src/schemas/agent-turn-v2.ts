@@ -9,6 +9,7 @@ export const AgentATurnCommitV2Schema = z.object({
   conversation_only: z.boolean().optional(),
   // Original model tool request survives when this reply cannot execute it.
   requested_action: AgentAProposedActionSchema.optional(),
+  operational_continuity: z.literal('call_consent_revoked').optional(),
 }).strict().superRefine((value, ctx) => {
   if (value.requested_action !== undefined && value.conversation_only !== true) {
     ctx.addIssue({ code: 'custom', path: ['requested_action'], message: 'REQUESTED_ACTION_REQUIRES_CONVERSATION_ONLY' });

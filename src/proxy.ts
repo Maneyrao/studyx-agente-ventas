@@ -23,6 +23,9 @@ async function hmacHex(secret: string, value: string): Promise<string> {
 }
 
 function expectedIdempotencyKey(pathname: string, body: Record<string, unknown>): string | null {
+  if (pathname === '/api/agent/evidence') {
+    return `evidence:${String(body.subject_type)}:${String(body.subject_id)}:${String(body.event_id)}`;
+  }
   if (pathname === '/api/agent/ingest') {
     if (
       typeof body.source !== 'string'

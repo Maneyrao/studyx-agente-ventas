@@ -1,0 +1,636 @@
+{
+  "stem": "/Users/tmaneyro22/Documents/AGENTE IA/studyx-agente-ventas/.worktrees/orchestrator-mvp-closure/evals/golden/results/focused-10d7b3e-flash-r1-20261101",
+  "sha": "10d7b3e5e7b5cdce3c88901cfedd3493346ecce2",
+  "scores_rejudged": false,
+  "targeted_turns": [
+    {
+      "case": "06_repeated_price_bonus_ladder",
+      "turn": "isolate",
+      "approved_unchanged": false,
+      "failure_layer_unchanged": "brain",
+      "trace_id": "e284aefa-3610-45a4-b788-d9970daa5906",
+      "ladder": {
+        "eligible": false,
+        "observed_price_objection_count": 2,
+        "required_price_objection_count": 3,
+        "call_invitation_status": "not_offered",
+        "call_offer_count": 0,
+        "may_offer_call": true,
+        "missing_steps": [
+          "recorded_price_objections",
+          "call_invitation"
+        ]
+      },
+      "drafts": [
+        {
+          "response": "Es la tercera vez que el precio te frena, así que no te voy a insistir con lo mismo. Antes de seguir, contame: además del precio, hay algo más que te haga dudar?",
+          "move": "defer_payment",
+          "proposedAction": {
+            "type": "none"
+          },
+          "turnRejection": null
+        }
+      ],
+      "delivered": "Es la tercera vez que el precio te frena, así que no te voy a insistir con lo mismo. Antes de seguir, contame: además del precio, hay algo más que te haga dudar?",
+      "durable_committed_event_id": "01a96f62-27ac-407d-8473-437db7cc38a1",
+      "durable_effect": null,
+      "persisted_promotion": {
+        "status": null,
+        "bonusCount": 0,
+        "paidCourse": null,
+        "bonusCourses": []
+      },
+      "backend_rejections": [],
+      "validator_rejections": [],
+      "judge_reasons_unchanged": [
+        {
+          "code": "MOVE_MISMATCH",
+          "detail": "Esperado unknown|ask_course_information; real defer_payment."
+        }
+      ],
+      "harness_precondition_not_reached": false,
+      "classification": [
+        "metadata_move_mismatch"
+      ],
+      "note": "Only MOVE_MISMATCH is reported. Judge score remains failed; do not invent an additional textual failure."
+    },
+    {
+      "case": "06_repeated_price_bonus_ladder",
+      "turn": "call_step",
+      "approved_unchanged": false,
+      "failure_layer_unchanged": "brain",
+      "trace_id": "d3d18456-0ec4-406d-9fbb-12bbae1d906a",
+      "ladder": {
+        "eligible": false,
+        "observed_price_objection_count": 3,
+        "required_price_objection_count": 3,
+        "call_invitation_status": "not_offered",
+        "call_offer_count": 0,
+        "may_offer_call": true,
+        "missing_steps": [
+          "call_invitation"
+        ]
+      },
+      "drafts": [
+        {
+          "response": "Perfecto, entonces vamos a resolverlo. Fotografía Profesional son 41 clases online para que armes tu servicio de fotos a tiendas y emprendedores, y el total es USD 360.\nCómo preferís pagarlo: en 12 cuotas de USD 30 al mes o en 6 de USD 60?",
+          "move": "ask_payment_options",
+          "proposedAction": {
+            "type": "none"
+          },
+          "turnRejection": null
+        }
+      ],
+      "delivered": "Perfecto, entonces vamos a resolverlo. Fotografía Profesional son 41 clases online para que armes tu servicio de fotos a tiendas y emprendedores, y el total es USD 360.\nCómo preferís pagarlo: en 12 cuotas de USD 30 al mes o en 6 de USD 60?",
+      "durable_committed_event_id": "67aa549b-ce26-430d-b689-3ef5263ef8fc",
+      "durable_effect": null,
+      "persisted_promotion": {
+        "status": null,
+        "bonusCount": 0,
+        "paidCourse": null,
+        "bonusCourses": []
+      },
+      "backend_rejections": [],
+      "validator_rejections": [],
+      "judge_reasons_unchanged": [
+        {
+          "code": "MOVE_MISMATCH",
+          "detail": "Esperado request_call|unknown|ask_course_information; real ask_payment_options."
+        },
+        {
+          "code": "SEMANTIC_MUST_FAILED",
+          "detail": "El cliente confirmó que el precio es el único freno y que avanzaría si se resuelve. Con may_offer_call=true, el escalón 4 exige responder el freno y ofrecer una llamada con motivo concreto. La respuesta no ofrece ninguna llamada; en su lugar vuelve a presentar opciones de pago."
+        }
+      ],
+      "harness_precondition_not_reached": false,
+      "classification": [
+        "commercial_text_and_move_failure"
+      ],
+      "note": "Judge explicitly reports missing call with may_offer_call=true; draft/action none was committed without repair."
+    },
+    {
+      "case": "06_repeated_price_bonus_ladder",
+      "turn": "bonus_1",
+      "approved_unchanged": false,
+      "failure_layer_unchanged": "bonificación",
+      "trace_id": "17a5a7b8-7839-4058-adc7-77d54e480f15",
+      "ladder": {
+        "eligible": false,
+        "observed_price_objection_count": 3,
+        "required_price_objection_count": 3,
+        "call_invitation_status": "not_offered",
+        "call_offer_count": 0,
+        "may_offer_call": true,
+        "missing_steps": [
+          "call_invitation"
+        ]
+      },
+      "drafts": [
+        {
+          "response": "Perfecto, seguimos por acá. Si el precio es lo único que te frena, la forma más liviana de entrar son las 12 cuotas de USD 30 al mes, con las 41 clases de Fotografía Profesional para armar tu servicio a tiendas y emprendedores.\nArrancamos con ese plan y te dejo todo listo para la inscripción?",
+          "move": "continue_by_chat",
+          "proposedAction": {
+            "type": "none"
+          },
+          "turnRejection": null
+        }
+      ],
+      "delivered": "Perfecto, seguimos por acá. Si el precio es lo único que te frena, la forma más liviana de entrar son las 12 cuotas de USD 30 al mes, con las 41 clases de Fotografía Profesional para armar tu servicio a tiendas y emprendedores.\nArrancamos con ese plan y te dejo todo listo para la inscripción?",
+      "durable_committed_event_id": "a5675c49-d43a-4ad5-ac4f-8a35e69a2e44",
+      "durable_effect": null,
+      "persisted_promotion": {
+        "status": null,
+        "bonusCount": 0,
+        "paidCourse": null,
+        "bonusCourses": []
+      },
+      "backend_rejections": [],
+      "validator_rejections": [],
+      "judge_reasons_unchanged": [
+        {
+          "code": "ACTION_MISMATCH",
+          "detail": "Esperada offer_course_bonus; real none."
+        },
+        {
+          "code": "PROMOTION_STATUS_MISMATCH",
+          "detail": "Esperado offer_available; real null."
+        },
+        {
+          "code": "PROMOTION_BONUS_COUNT_MISMATCH",
+          "detail": "Esperado 1; real 0."
+        },
+        {
+          "code": "PROMOTION_PAID_COURSE_MISMATCH",
+          "detail": "Esperado fotografia_profesional; real null."
+        },
+        {
+          "code": "BONUS_AFFINITY_MISMATCH",
+          "detail": "Bonificación real undefined; opciones afines fotografia_celulares_tiendas_online|diseno_photoshop|instagram_emprendedores|estrategias_emprender|especialista_ventas."
+        },
+        {
+          "code": "SEMANTIC_MUST_FAILED",
+          "detail": "El turno debía ofrecer exactamente un curso bonificado afín con proposed_action=offer_course_bonus, explicar por qué suma y cerrar. La respuesta no ofrece ningún curso bonificado y proposed_action es none, por lo que no se cumple el must."
+        }
+      ],
+      "harness_precondition_not_reached": false,
+      "classification": [
+        "missing_requested_bonus",
+        "upstream_missing_call_fact"
+      ],
+      "note": "Golden expects first bonus, but real context still lacks call_invitation. Action none is consistent with missing backend authorization. This is accumulated failure of prior trajectory, not a rejected backend action or evidence of a promise without effect."
+    },
+    {
+      "case": "06_repeated_price_bonus_ladder",
+      "turn": "bonus_2",
+      "approved_unchanged": false,
+      "failure_layer_unchanged": "bonificación",
+      "trace_id": "eb55b056-cb80-46e9-95eb-54962579cef3",
+      "ladder": {
+        "eligible": false,
+        "observed_price_objection_count": 3,
+        "required_price_objection_count": 3,
+        "call_invitation_status": "not_offered",
+        "call_offer_count": 0,
+        "may_offer_call": true,
+        "missing_steps": [
+          "call_invitation"
+        ]
+      },
+      "drafts": [
+        {
+          "response": "Que te sume ya dice bastante: el valor lo ves, lo que te traba es el número. Y ahí tengo margen para armarte algo mejor que solo las cuotas.\nTe propongo que lo veamos hablando un momento: te muestro cómo encaja Fotografía Profesional con lo que querés hacer y qué puedo sumarte para que el precio deje de ser el freno. Te queda bien hoy o preferís mañana?\nTe queda bien una llamada breve hoy o preferís mañana?",
+          "move": "defer_payment",
+          "proposedAction": {
+            "type": "none"
+          },
+          "turnRejection": null
+        }
+      ],
+      "delivered": "Que te sume ya dice bastante: el valor lo ves, lo que te traba es el número. Y ahí tengo margen para armarte algo mejor que solo las cuotas.\nTe propongo que lo veamos hablando un momento: te muestro cómo encaja Fotografía Profesional con lo que querés hacer y qué puedo sumarte para que el precio deje de ser el freno. Te queda bien hoy o preferís mañana?\nTe queda bien una llamada breve hoy o preferís mañana?",
+      "durable_committed_event_id": "75a6507e-131d-4915-9471-ecd27b53d823",
+      "durable_effect": null,
+      "persisted_promotion": {
+        "status": null,
+        "bonusCount": 0,
+        "paidCourse": null,
+        "bonusCourses": []
+      },
+      "backend_rejections": [],
+      "validator_rejections": [],
+      "judge_reasons_unchanged": [
+        {
+          "code": "MOVE_MISMATCH",
+          "detail": "Esperado unknown|ask_payment_options|ask_course_information; real defer_payment."
+        },
+        {
+          "code": "ACTION_MISMATCH",
+          "detail": "Esperada offer_course_bonus; real none."
+        },
+        {
+          "code": "PROMOTION_STATUS_MISMATCH",
+          "detail": "Esperado offer_available; real null."
+        },
+        {
+          "code": "PROMOTION_BONUS_COUNT_MISMATCH",
+          "detail": "Esperado 2; real 0."
+        },
+        {
+          "code": "PROMOTION_PAID_COURSE_MISMATCH",
+          "detail": "Esperado fotografia_profesional; real null."
+        },
+        {
+          "code": "BONUS_AFFINITY_MISMATCH",
+          "detail": "Bonificación real undefined; opciones afines fotografia_celulares_tiendas_online|diseno_photoshop|instagram_emprendedores|estrategias_emprender|especialista_ventas."
+        },
+        {
+          "code": "SEMANTIC_MUST_FAILED",
+          "detail": "El cliente respondió y el agente no sumó un segundo curso bonificado nuevo ni recapituló el paquete (curso pago + bonificados); en su lugar propuso una llamada."
+        }
+      ],
+      "harness_precondition_not_reached": false,
+      "classification": [
+        "missing_requested_bonus",
+        "upstream_package_state_not_built",
+        "call_offered_late"
+      ],
+      "note": "No earlier bonus exists. Golden expects second; actual draft offers a call and no bonus action. This turn creates the durable call_offer that enables the later bonus. No TURN_PRECONDITION_NOT_REACHED is reported on this turn."
+    },
+    {
+      "case": "06_repeated_price_bonus_ladder",
+      "turn": "bonus_3",
+      "approved_unchanged": false,
+      "failure_layer_unchanged": "bonificación",
+      "trace_id": "915c1f75-2d6f-4d4f-8b18-15eca0b04e68",
+      "ladder": {
+        "eligible": true,
+        "observed_price_objection_count": 4,
+        "required_price_objection_count": 3,
+        "call_invitation_status": "offered",
+        "call_offer_count": 1,
+        "may_offer_call": true,
+        "missing_steps": []
+      },
+      "drafts": [
+        {
+          "response": "Sí, y justo va con lo que querés hacer. Si te inscribís en Fotografía Profesional, te sumo Fotografía con Celulares para Tiendas Online: te sirve para cubrir también las fotos del día a día de las tiendas y emprendedores, sin que cambie el precio del curso principal.\nCon las 12 cuotas de USD 30 seguís entrando a los dos. Arrancamos así?",
+          "move": "ask_course_information",
+          "proposedAction": {
+            "type": "offer_course_bonus",
+            "interest_offering_code": "fotografia_profesional",
+            "bonus_offering_code": "fotografia_celulares_tiendas_online"
+          },
+          "turnRejection": null
+        }
+      ],
+      "delivered": "Sí, y justo va con lo que querés hacer. Si te inscribís en Fotografía Profesional, te sumo Fotografía con Celulares para Tiendas Online: te sirve para cubrir también las fotos del día a día de las tiendas y emprendedores, sin que cambie el precio del curso principal.\n\nCon las 12 cuotas de USD 30 seguís entrando a los dos. Arrancamos así?",
+      "durable_committed_event_id": "ab8285ae-ba8e-4977-aba0-ae0d226f0d0a",
+      "durable_effect": "offer_course_bonus",
+      "persisted_promotion": {
+        "status": "offer_available",
+        "bonusCount": 1,
+        "paidCourse": "fotografia_profesional",
+        "bonusCourses": [
+          "fotografia_celulares_tiendas_online"
+        ]
+      },
+      "backend_rejections": [],
+      "validator_rejections": [],
+      "judge_reasons_unchanged": [
+        {
+          "code": "PROMOTION_BONUS_COUNT_MISMATCH",
+          "detail": "Esperado 3; real 1."
+        },
+        {
+          "code": "SEMANTIC_MUST_FAILED",
+          "detail": "La respuesta ofrece un segundo curso bonificado (Fotografía con Celulares para Tiendas Online) pero no suma un tercer y último curso afín ni recapitula todo el paquete (curso principal + bonificados). El estado muestra bonusCount=1 y solo un curso bonificado, por lo que no se observa el tercer curso ni la recapitulación completa exigida."
+        }
+      ],
+      "harness_precondition_not_reached": false,
+      "classification": [
+        "authorized_effect",
+        "upstream_package_count_mismatch"
+      ],
+      "note": "Actual first bonus executes with count4 and prior offered call. Golden expects accumulated third, hence count1 vs3. Judge calls it a second in prose, but persisted state says one. Preserve the original score and quote; no independent new rejudgment."
+    },
+    {
+      "case": "14_course_change_cancels_promotion",
+      "turn": "isolate",
+      "approved_unchanged": false,
+      "failure_layer_unchanged": "brain",
+      "trace_id": "c454e11c-b562-4a22-9a73-0ed4e3197555",
+      "ladder": {
+        "eligible": false,
+        "observed_price_objection_count": 2,
+        "required_price_objection_count": 3,
+        "call_invitation_status": "offered",
+        "call_offer_count": 1,
+        "may_offer_call": true,
+        "missing_steps": [
+          "recorded_price_objections"
+        ]
+      },
+      "drafts": [
+        {
+          "response": "Entiendo, y no quiero que te metas en una cuota que después te pese. Si hoy el precio no cierra, lo dejamos ahí sin problema.\nTe queda la puerta abierta: cuando quieras retomarlo, te armo el plan de 12 cuotas de USD 30 y avanzamos con tu inscripción a Fotografía Profesional.",
+          "move": "defer_payment",
+          "proposedAction": {
+            "type": "none"
+          },
+          "turnRejection": null
+        }
+      ],
+      "delivered": "Entiendo, y no quiero que te metas en una cuota que después te pese. Si hoy el precio no cierra, lo dejamos ahí sin problema.\nTe queda la puerta abierta: cuando quieras retomarlo, te armo el plan de 12 cuotas de USD 30 y avanzamos con tu inscripción a Fotografía Profesional.",
+      "durable_committed_event_id": "5f29cf00-0f30-4ad3-896b-5cf7453839e8",
+      "durable_effect": null,
+      "persisted_promotion": {
+        "status": null,
+        "bonusCount": 0,
+        "paidCourse": null,
+        "bonusCourses": []
+      },
+      "backend_rejections": [],
+      "validator_rejections": [],
+      "judge_reasons_unchanged": [
+        {
+          "code": "MOVE_MISMATCH",
+          "detail": "Esperado unknown|ask_course_information; real defer_payment."
+        },
+        {
+          "code": "SEMANTIC_MUST_FAILED",
+          "detail": "El escalón 3 exige confirmar que el precio es el único freno y cerrar de forma condicional (que resuelto eso, avanza). La respuesta no aísla el precio como único freno ni plantea un cierre condicional; al contrario, ofrece dejar el tema sin avanzar."
+        }
+      ],
+      "harness_precondition_not_reached": false,
+      "classification": [
+        "commercial_text_and_move_failure"
+      ],
+      "note": "Judge explicitly reports deferral instead of isolation/conditional close. Prior call already offered in installments; two prior objections still prevent bonus."
+    },
+    {
+      "case": "14_course_change_cancels_promotion",
+      "turn": "call_step",
+      "approved_unchanged": false,
+      "failure_layer_unchanged": "bonificación",
+      "trace_id": "a11f2edf-90f8-4862-b7cf-d3fa09a06dbd",
+      "ladder": {
+        "eligible": true,
+        "observed_price_objection_count": 3,
+        "required_price_objection_count": 3,
+        "call_invitation_status": "offered",
+        "call_offer_count": 1,
+        "may_offer_call": true,
+        "missing_steps": []
+      },
+      "drafts": [
+        {
+          "response": "Entonces te armo algo especial: sumo a tu inscripción de Fotografía Profesional el curso de Fotografía con Celulares para Tiendas Online, sin costo extra. Te sirve para cubrir también las fotos rápidas del día a día de las marcas, y el precio del curso principal sigue igual.\nCon eso resuelto, arrancamos con las 12 cuotas de USD 30?",
+          "move": "select_payment_plan",
+          "proposedAction": {
+            "type": "offer_course_bonus",
+            "interest_offering_code": "fotografia_profesional",
+            "bonus_offering_code": "fotografia_celulares_tiendas_online"
+          },
+          "turnRejection": null
+        }
+      ],
+      "delivered": "Entonces te armo algo especial: sumo a tu inscripción de Fotografía Profesional el curso de Fotografía con Celulares para Tiendas Online, sin costo extra. Te sirve para cubrir también las fotos rápidas del día a día de las marcas, y el precio del curso principal sigue igual.\n\nCon eso resuelto, arrancamos con las 12 cuotas de USD 30?",
+      "durable_committed_event_id": "c1cb9d8b-bb7b-4457-b0c7-30abf55f4817",
+      "durable_effect": "offer_course_bonus",
+      "persisted_promotion": {
+        "status": "offer_available",
+        "bonusCount": 1,
+        "paidCourse": "fotografia_profesional",
+        "bonusCourses": [
+          "fotografia_celulares_tiendas_online"
+        ]
+      },
+      "backend_rejections": [],
+      "validator_rejections": [],
+      "judge_reasons_unchanged": [
+        {
+          "code": "MOVE_MISMATCH",
+          "detail": "Esperado request_call|unknown|ask_course_information; real select_payment_plan."
+        },
+        {
+          "code": "ACTION_MISMATCH",
+          "detail": "Esperada none; real offer_course_bonus."
+        },
+        {
+          "code": "PROMOTION_STATUS_MISMATCH",
+          "detail": "Esperado |none; real offer_available."
+        },
+        {
+          "code": "PROMOTION_BONUS_COUNT_MISMATCH",
+          "detail": "Esperado 0; real 1."
+        },
+        {
+          "code": "PROMOTION_LIMIT_EXCEEDED",
+          "detail": "Máximo 0; real 1."
+        },
+        {
+          "code": "SEMANTIC_MUST_FAILED",
+          "detail": "El cliente confirmó que el precio es el único freno y que avanzaría (escalón 3 completado). Con may_offer_call=true, el escalón 4 exige ofrecer la llamada con una razón concreta; la respuesta no ofrece ninguna llamada y en su lugar salta a la bonificación."
+        },
+        {
+          "code": "SEMANTIC_MUST_NOT_FAILED",
+          "detail": "El agente bonificó (curso extra sin costo) antes de completar el escalón de llamada, evitando la respuesta por chat del escalón 4."
+        }
+      ],
+      "harness_precondition_not_reached": false,
+      "classification": [
+        "authorized_effect",
+        "golden_requires_call_here",
+        "commercial_sequence_failure"
+      ],
+      "note": "Rule10 facts permit bonus (3 prior objections, call offered earlier in installments). Golden expects no bonus and a call in this turn; judge reports skipping this commercial rung. This is not failure of Rule10 enforcement, and prior isolation also failed. Score remains failed."
+    },
+    {
+      "case": "14_course_change_cancels_promotion",
+      "turn": "bonus_1",
+      "approved_unchanged": false,
+      "failure_layer_unchanged": "bonificación",
+      "trace_id": "c34ad3f7-dee4-4e3d-94f4-e8cce243c206",
+      "ladder": {
+        "eligible": true,
+        "observed_price_objection_count": 3,
+        "required_price_objection_count": 3,
+        "call_invitation_status": "offered",
+        "call_offer_count": 1,
+        "may_offer_call": true,
+        "missing_steps": []
+      },
+      "drafts": [
+        {
+          "response": "Perfecto, seguimos por chat. Ya tenés sumado Fotografía con Celulares para Tiendas Online junto a Fotografía Profesional, y el precio del curso principal sigue igual.\nSi el precio es lo único que te frena, lo resolvemos con las 12 cuotas de USD 30. Arrancamos con esa forma?",
+          "move": "continue_by_chat",
+          "proposedAction": {
+            "type": "none"
+          },
+          "turnRejection": null
+        }
+      ],
+      "delivered": "Perfecto, seguimos por chat. Ya tenés sumado Fotografía con Celulares para Tiendas Online junto a Fotografía Profesional, y el precio del curso principal sigue igual.\nSi el precio es lo único que te frena, lo resolvemos con las 12 cuotas de USD 30. Arrancamos con esa forma?",
+      "durable_committed_event_id": "87942d8d-a4fb-4c69-888d-f00aa1b0fe5a",
+      "durable_effect": null,
+      "persisted_promotion": {
+        "status": "offer_available",
+        "bonusCount": 1,
+        "paidCourse": "fotografia_profesional",
+        "bonusCourses": [
+          "fotografia_celulares_tiendas_online"
+        ]
+      },
+      "backend_rejections": [],
+      "validator_rejections": [],
+      "judge_reasons_unchanged": [
+        {
+          "code": "ACTION_MISMATCH",
+          "detail": "Esperada offer_course_bonus; real none."
+        },
+        {
+          "code": "SEMANTIC_MUST_FAILED",
+          "detail": "Con los escalones previos completos y objeción de precio persistente, debía ofrecerse un complemento afín mediante proposed_action=offer_course_bonus con exactamente un código; el turno no propone ninguna acción de bonificación (type=none), por lo que no se ofrece el complemento requerido."
+        }
+      ],
+      "harness_precondition_not_reached": false,
+      "classification": [
+        "existing_effect_recap",
+        "golden_action_mismatch_from_prior_trajectory"
+      ],
+      "note": "Draft says already added and action none; prior call_step really committed that exact course. Current context delivered_bonus_offers confirms it. A recap of that completed prior effect is not structural evidence of a new promise without action. Golden still expects offer_course_bonus here; preserve its failure."
+    }
+  ],
+  "executed_bonus_effects": [
+    {
+      "case": "06_repeated_price_bonus_ladder",
+      "turn": "bonus_3",
+      "trace_id": "915c1f75-2d6f-4d4f-8b18-15eca0b04e68",
+      "committed_event_id": "ab8285ae-ba8e-4977-aba0-ae0d226f0d0a",
+      "draft_action": {
+        "type": "offer_course_bonus",
+        "interest_offering_code": "fotografia_profesional",
+        "bonus_offering_code": "fotografia_celulares_tiendas_online"
+      },
+      "durable_effect": "offer_course_bonus",
+      "persisted_promotion": {
+        "status": "offer_available",
+        "bonusCount": 1,
+        "paidCourse": "fotografia_profesional",
+        "bonusCourses": [
+          "fotografia_celulares_tiendas_online"
+        ]
+      },
+      "ladder_at_generation": {
+        "eligible": true,
+        "observed_price_objection_count": 4,
+        "required_price_objection_count": 3,
+        "call_invitation_status": "offered",
+        "call_offer_count": 1,
+        "may_offer_call": true,
+        "missing_steps": []
+      },
+      "prior_price_sources": [
+        "a1fc3388-e7ca-4188-97f6-c8ef4c6eeacc",
+        "4ae29284-a4a9-43ae-8b90-61a57b263182",
+        "00c1233f-31d7-4e0b-9e80-7edff65f4b64",
+        "058bb8bd-cbbd-420a-8a52-aee7755233c9"
+      ],
+      "prior_call_proof": [
+        {
+          "case": "06_repeated_price_bonus_ladder",
+          "turn": "bonus_2",
+          "trace_id": "eb55b056-cb80-46e9-95eb-54962579cef3",
+          "source_turn_id": "a1fc3388-e7ca-4188-97f6-c8ef4c6eeacc",
+          "event_id": "75a6507e-131d-4915-9471-ecd27b53d823",
+          "response_type": "call_offer",
+          "text": "Que te sume ya dice bastante: el valor lo ves, lo que te traba es el número. Y ahí tengo margen para armarte algo mejor que solo las cuotas.\n\nTe propongo que lo veamos hablando un momento: te muestro cómo encaja Fotografía Profesional con lo que querés hacer y qué puedo sumarte para que el precio deje de ser el freno. Te queda bien hoy o preferís mañana?\n\nTe queda bien una llamada breve hoy o preferís mañana?",
+          "occurred_at": "2026-11-01T04:07:34.200Z",
+          "provider_accepted_events": 3
+        }
+      ]
+    },
+    {
+      "case": "14_course_change_cancels_promotion",
+      "turn": "call_step",
+      "trace_id": "a11f2edf-90f8-4862-b7cf-d3fa09a06dbd",
+      "committed_event_id": "c1cb9d8b-bb7b-4457-b0c7-30abf55f4817",
+      "draft_action": {
+        "type": "offer_course_bonus",
+        "interest_offering_code": "fotografia_profesional",
+        "bonus_offering_code": "fotografia_celulares_tiendas_online"
+      },
+      "durable_effect": "offer_course_bonus",
+      "persisted_promotion": {
+        "status": "offer_available",
+        "bonusCount": 1,
+        "paidCourse": "fotografia_profesional",
+        "bonusCourses": [
+          "fotografia_celulares_tiendas_online"
+        ]
+      },
+      "ladder_at_generation": {
+        "eligible": true,
+        "observed_price_objection_count": 3,
+        "required_price_objection_count": 3,
+        "call_invitation_status": "offered",
+        "call_offer_count": 1,
+        "may_offer_call": true,
+        "missing_steps": []
+      },
+      "prior_price_sources": [
+        "5d2b1858-f76a-4e4f-bb65-0aba45c87ae3",
+        "0860b50f-daae-4fe7-a802-54207ee02fdd",
+        "772de207-df34-4f6f-a77c-37efe1e8c5d7"
+      ],
+      "prior_call_proof": [
+        {
+          "case": "14_course_change_cancels_promotion",
+          "turn": "installments",
+          "trace_id": "9bc30200-6d30-4d89-96f8-9b5dac6140dc",
+          "source_turn_id": "0860b50f-daae-4fe7-a802-54207ee02fdd",
+          "event_id": "1d9f26f9-1ed7-4a04-97cb-e36586ada511",
+          "response_type": "call_offer",
+          "text": "Te entiendo, y no quiero que te apures con algo que hoy no te cierra. Si el precio sigue siendo el freno, puedo mostrarte cómo encaja el curso en lo que querés hacer con las fotos para tiendas online, y si te queda alguna duda la vemos juntos por llamada. Te sirve que lo veamos así?\n\nSi querés, te llamo y vemos con calma cómo encaja Fotografía Profesional con tu objetivo, sin compromiso.",
+          "occurred_at": "2026-11-01T04:08:37.436Z",
+          "provider_accepted_events": 2
+        }
+      ]
+    }
+  ],
+  "durable_call_proofs": [
+    {
+      "case": "06_repeated_price_bonus_ladder",
+      "turn": "bonus_2",
+      "trace_id": "eb55b056-cb80-46e9-95eb-54962579cef3",
+      "source_turn_id": "a1fc3388-e7ca-4188-97f6-c8ef4c6eeacc",
+      "event_id": "75a6507e-131d-4915-9471-ecd27b53d823",
+      "response_type": "call_offer",
+      "text": "Que te sume ya dice bastante: el valor lo ves, lo que te traba es el número. Y ahí tengo margen para armarte algo mejor que solo las cuotas.\n\nTe propongo que lo veamos hablando un momento: te muestro cómo encaja Fotografía Profesional con lo que querés hacer y qué puedo sumarte para que el precio deje de ser el freno. Te queda bien hoy o preferís mañana?\n\nTe queda bien una llamada breve hoy o preferís mañana?",
+      "occurred_at": "2026-11-01T04:07:34.200Z",
+      "provider_accepted_events": 3
+    },
+    {
+      "case": "14_course_change_cancels_promotion",
+      "turn": "installments",
+      "trace_id": "9bc30200-6d30-4d89-96f8-9b5dac6140dc",
+      "source_turn_id": "0860b50f-daae-4fe7-a802-54207ee02fdd",
+      "event_id": "1d9f26f9-1ed7-4a04-97cb-e36586ada511",
+      "response_type": "call_offer",
+      "text": "Te entiendo, y no quiero que te apures con algo que hoy no te cierra. Si el precio sigue siendo el freno, puedo mostrarte cómo encaja el curso en lo que querés hacer con las fotos para tiendas online, y si te queda alguna duda la vemos juntos por llamada. Te sirve que lo veamos así?\n\nSi querés, te llamo y vemos con calma cómo encaja Fotografía Profesional con tu objetivo, sin compromiso.",
+      "occurred_at": "2026-11-01T04:08:37.436Z",
+      "provider_accepted_events": 2
+    }
+  ],
+  "promise_without_action": {
+    "confirmed_by_judge_or_explicit_durable_signal": [],
+    "verdict": "No explicit judge/durable diagnosis establishes a new specific-course promise without an effect in these eight turns. This does not prove absence by semantic inspection. Both actual new named bonus offers have matching committed effects. 14/bonus_1 recaps the already committed course.",
+    "unverified_generic_text": "06/bonus_2 says it has margin and can add something; no classifier was used to judge that phrase as a specific bonus promise."
+  },
+  "limits": [
+    "No model/API calls; no scenario, score or source changes.",
+    "Upstream trajectory mismatch is distinguished from the explicit harness TURN_PRECONDITION_NOT_REACHED marker; none of the eight selected turns has that marker.",
+    "All prior counts are strict committed sources; the current proposed memory does not enter.",
+    "No repairs/rejections occurred in r1; repair success/failure cannot explain these results.",
+    "Local provider acceptance is test evidence, not production delivery."
+  ]
+}

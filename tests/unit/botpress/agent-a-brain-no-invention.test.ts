@@ -1,3 +1,4 @@
+// Register preservation: docs/authority/prompt-agente-a-studyx-v2.md:13; punctuation:15.
 import { describe, expect, it } from 'vitest';
 import type { AgentAContextV1 } from '../../../botpress-agent/src/schemas/agent-a-brain';
 import {
@@ -101,7 +102,7 @@ describe('preserving model copy never becomes a route for invention', () => {
     ]);
 
     expect(JSON.stringify(composition)).not.toContain('USD 50');
-    expect(composition.narrative.opening).toBe('Cuéntame cómo prefieres avanzar.');
+    expect(composition.narrative.opening).toBe('Contame cómo preferís avanzar.');
   });
 
   it('drops an invented payment method from a preserved deferral narrative', () => {

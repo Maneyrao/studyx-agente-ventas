@@ -1,3 +1,4 @@
+import { seedPriorModelNegotiation } from '../helpers/record-model-negotiation-facts';
 import { randomUUID } from 'node:crypto';
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { openLocalTestDatabase } from '../helpers/db';
@@ -32,6 +33,7 @@ async function fixture() {
       VALUES (${v.id},${c.id},'inbound','Customer',clock_timestamp() - ${prior ? 10 : 0} * interval '1 second') RETURNING id`;
     return m.id as string;
   }
+  await seedPriorModelNegotiation(db!,{workspace_id:w.id,contact_id:c.id,conversation_id:v.id});
   const prior = await inbound(true);
   await db!`INSERT INTO selected_memories(contact_id,conversation_id,source_message_id,status,memory_type,memory_key,value_normalized,source_quote,confidence,dedupe_hash)
     VALUES (${c.id},${v.id},${prior},'active','objection','price_objection','expensive','Customer',0.9,${'a'.repeat(64)})`;

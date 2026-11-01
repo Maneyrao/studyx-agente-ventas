@@ -279,7 +279,7 @@ describe('applyDecisionPolicy — provider parity', () => {
       reason_code: 'AGENT_A_VALIDATION_EXHAUSTED',
     });
     expect(decision.response).toBe(
-      'No quiero asumir cuál es el otro curso. Dime cuáles dos quieres comparar y te marco las diferencias.',
+      'Qué dos cursos comparamos?',
     );
     expect(decision.response).not.toMatch(/aviso del sistema|validar|error/iu);
   });
@@ -296,7 +296,7 @@ describe('applyDecisionPolicy — provider parity', () => {
     });
 
     expect(decision.response).toBe(
-      'No quiero darte información incorrecta. Dime qué dato o qué curso quieres confirmar y lo revisamos por aquí.',
+      'Qué dato o qué curso revisamos?',
     );
     expect(decision.response_type).toBe('commercial_reply');
   });

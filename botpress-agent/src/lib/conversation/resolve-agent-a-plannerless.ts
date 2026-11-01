@@ -1,13 +1,13 @@
+import type { ModelObservation } from '../observability/turn-evidence'
+import { isTurnEvidencePersistenceError } from '../observability/turn-evidence'
 import type { TurnRejectionV1 } from '../../schemas/turn-rejection'
 import { claimsImmediatePaymentLinkDeliveryV1 } from '../../../../src/shared/conversation/payment-link-claim'
+import { messagesWithoutExactCallOfferV1 } from '../../../../src/shared/conversation/call-offer-format'
 import { AgentATurnProposalV1Schema, type AgentAContextV1, type AgentATurnProposalV1 } from '../../schemas/agent-a-brain'
 import {
   AgentABrainError,
   claimsImmediateCallDispatchV1,
   mentionsMissingIntakeField,
-  removeUnsupportedCourseLogisticsAssertionsV1,
-  removeUnsupportedPrerequisiteAssertionsV1,
-  removeUnverifiedCandidateCourseDetailAssertionsV1,
   solicitsACallV1,
   validateAgentATurnProposalV1,
 } from './agent-a-brain'
@@ -73,7 +73,7 @@ function validatePlannerless(input: {
     rejection_id: input.rejection_id,
   })
   if (input.proposal.response.call_offer
-    && input.proposal.response.messages.some(message => solicitsACallV1(message))) {
+    && messagesWithoutExactCallOfferV1(input.proposal.response).some(message => solicitsACallV1(message))) {
     const duplicate = { code: 'CALL_OFFER_MESSAGE_BOUNDARY_INVALID' as const, subject: 'duplicate_call_offer' }
     rejection = rejection === null ? {
       schema_version: 1, rejection_id: input.rejection_id, attempt: 1,
@@ -93,6 +93,8 @@ function validatePlannerless(input: {
   // primary move records the current course or plan selection.
   const paymentActionRequested = !paymentDeferred && (action.type === 'send_payment_link'
     || moves.has('request_payment_link')
+    || (moves.has('select_payment_plan')
+      && input.context.commercial_state.awaiting_reply === 'payment_plan')
     || (moves.has('provide_contact_details')
       && input.context.commercial_state.payment_link_request?.status === 'pending'))
   if (action.type === 'none' && claimsImmediatePaymentLinkDelivery(input.proposal)) {
@@ -119,8 +121,6 @@ function validatePlannerless(input: {
   if (rejection !== null && paymentTransitionAuthorized) {
     const remaining = rejection.rejections.filter((reason) => !(
       reason.subject === 'send_payment_link'
-      // Invitation guidance cannot revoke a canonical, fully backed payment.
-      || reason.code === 'CALL_OFFER_REQUIRED'
       || (reason.code === 'PLAN_NOT_SELECTED' && reason.subject === 'payment_plan')
     ))
     rejection = remaining.length === 0 ? null : { ...rejection, rejections: remaining }
@@ -241,7 +241,9 @@ function materializeAuthorizedPaymentAction<T extends AgentAProposalEnvelopeV1>(
     input.initial.proposal.move.move,
     ...input.initial.proposal.move.secondary_moves,
   ])
-  if (!moves.has('request_payment_link')) return input.initial
+  const answersPaymentPlanCheckpoint = moves.has('select_payment_plan')
+    && input.context.commercial_state.awaiting_reply === 'payment_plan'
+  if (!moves.has('request_payment_link') && !answersPaymentPlanCheckpoint) return input.initial
   if (moves.has('defer_payment') || moves.has('decline_purchase')) return input.initial
   if (input.initial.proposal.move.vetoes.includes('payment_link')
     || input.initial.proposal.move.vetoes.includes('purchase')) return input.initial
@@ -282,18 +284,13 @@ function preparePlannerlessProposal<T extends AgentAProposalEnvelopeV1>(input: {
   const effective = input.initial
   const rejection = validate(effective)
   if (rejection === null) return { effective, rejection, originalRejection }
-  const requiresCallOfferRewrite = rejection.rejections.some(
-    (reason) => reason.code === 'CALL_OFFER_REQUIRED',
-  )
-  // An unavailable call needs the existing model repair: changing only the
-  // action would publish an acknowledgement for a call that never occurred.
-  if (!requiresCallOfferRewrite && (
+  if (
     input.semantic_rejections === 'advisory'
       && !rejection.rejections.some((reason) => requiresModelCorrection(reason, effective.proposal))
       && !claimsImmediatePaymentLinkDelivery(effective.proposal)
       && !hasUnbackedCallDispatchClaim(effective.proposal, rejection, input.context)
     || hasOnlyNonBlockingGuidance(effective.proposal, rejection, input.context)
-  )) {
+  ) {
     return { effective, rejection: null, originalRejection }
   }
   return { effective, rejection, originalRejection }
@@ -305,7 +302,6 @@ function preparePlannerlessProposal<T extends AgentAProposalEnvelopeV1>(input: {
  * model-authored reply or trigger a second paid generation.
  */
 const NON_BLOCKING_GUIDANCE_CODES = new Set([
-  'CALL_OFFER_REQUIRED',
   'CHANNEL_PREFERENCE_NOT_SUPPORTED',
   'COURSE_NOT_RESOLVED',
   'MISSING_INTAKE',
@@ -318,7 +314,6 @@ function requiresModelCorrection(
   if (reason.code === 'ACTION_NOT_AUTHORIZED'
     && reason.subject.startsWith('contact_profile.already_confirmed.')) return true
   if (reason.code === 'FACT_VALUE_MISMATCH') {
-    if (reason.subject === 'price_objection_reframe') return false
     // Candidate naming/resolution heuristics remain guidance. The backend
     // independently validates actual catalogue values before any delivery.
     return !['candidate_course_detail', 'candidate_course_names'].includes(reason.subject)
@@ -326,7 +321,7 @@ function requiresModelCorrection(
   if (reason.code === 'PLAN_NOT_SELECTED') {
     return proposal.proposed_action.type === 'none'
   }
-  return ['UNSUPPORTED_OPERATIONAL_CLAIM',
+  return ['UNSUPPORTED_OPERATIONAL_CLAIM', 'COURSE_ROLE_UNDECLARED',
     'REPEATED_AGENT_REPLY', 'CALL_OFFER_MESSAGE_BOUNDARY_INVALID'].includes(reason.code)
 }
 
@@ -338,7 +333,6 @@ function isNonBlockingGuidanceReason(
     && [
       'candidate_course_detail',
       'candidate_course_names',
-      'price_objection_reframe',
     ].includes(reason.subject)) return true
   return NON_BLOCKING_GUIDANCE_CODES.has(reason.code)
 }
@@ -373,43 +367,6 @@ function mayDegradeToBackendBoundary(
   return rejection.rejections.every(reason => reason.code === 'REPEATED_AGENT_REPLY'
     || reason.code === 'PLAN_NOT_SELECTED'
     || isNonBlockingGuidanceReason(reason))
-}
-
-/**
- * The sole repair sometimes authors the required invitation twice: once in
- * messages and once in response.call_offer. Keep the useful original answer
- * and the model-authored structured invitation, then run the complete
- * validator again. The backend never invents or rewrites customer copy.
- */
-function salvageRequiredCallOfferFromRepairV1<T extends AgentAProposalEnvelopeV1>(input: {
-  readonly initial: T
-  readonly repaired: T
-  readonly rejection: TurnRejectionV1
-  readonly context: AgentAContextV1
-  readonly authorized_fact_ids: readonly string[]
-}): T | null {
-  if (!input.rejection.rejections.some((reason) => reason.code === 'CALL_OFFER_REQUIRED')) return null
-  const callOffer = input.repaired.proposal.response.call_offer?.trim()
-  if (!callOffer) return null
-
-  const candidate = {
-    ...input.initial,
-    proposal: {
-      ...input.initial.proposal,
-      response: {
-        ...input.initial.proposal.response,
-        call_offer: callOffer,
-      },
-      repair_of: input.repaired.proposal.repair_of,
-    },
-  } as T
-  const candidateRejection = validatePlannerless({
-    proposal: candidate.proposal,
-    context: input.context,
-    rejection_id: input.rejection.rejection_id,
-    authorized_fact_ids: input.authorized_fact_ids,
-  })
-  return candidateRejection === null ? candidate : null
 }
 
 function hasOnlyNonBlockingGuidance(
@@ -517,6 +474,7 @@ export async function resolveAgentAPlannerlessProposalV2<
   readonly repair: (rejection: TurnRejectionV1) => Promise<T>
   readonly rejection_id: string
   readonly semantic_rejections?: 'blocking' | 'advisory'
+  readonly observe?: (event: ModelObservation) => void
 }): Promise<PlannerlessResolutionV2<T>> {
   const factIds = authorizedFactIds(input.context)
   const boundInitial = materializeAuthorizedPaymentAction({
@@ -531,6 +489,7 @@ export async function resolveAgentAPlannerlessProposalV2<
   const rejection = prepared.rejection
   const initial = prepared.effective
   const originalRejection = prepared.originalRejection ?? rejection
+  if (originalRejection) input.observe?.({ kind: 'proposal_rejected', rejection: originalRejection })
   if (rejection === null) {
     const advisoryActionRejection = input.semantic_rejections === 'advisory'
       ? actionRejectionV1(initial.proposal, originalRejection, input.context)
@@ -611,32 +570,12 @@ export async function resolveAgentAPlannerlessProposalV2<
           action_rejection: repairedActionRejection,
         }
       }
-      const salvagedCallOffer = salvageRequiredCallOfferFromRepairV1({
-        initial,
-        repaired: candidate,
-        rejection,
-        context: input.context,
-        authorized_fact_ids: factIds,
-      })
-      if (salvagedCallOffer !== null) {
-        return {
-          effective: salvagedCallOffer,
-          evidence: {
-            rejection_codes: rejectedCodes(),
-            repair_attempted: true, repaired: true, proposal_generation_calls: 2,
-          },
-          rejection: originalRejection,
-          action_rejection: actionRejectionV1(
-            salvagedCallOffer.proposal,
-            null,
-            input.context,
-          ),
-        }
-      }
       terminalRejection = repaired.rejection
+      input.observe?.({ kind: 'proposal_rejected', rejection: terminalRejection })
     }
   } catch (error) {
     if (!(error instanceof Error)) throw error
+    if (isTurnEvidencePersistenceError(error)) throw error
     // A transport error never opens a second rewrite or authorizes a draft.
     // Retain the last structured validation result, not any customer text.
     if (error instanceof AgentABrainError && error.code === 'BRAIN_INVALID_SCHEMA') {
@@ -668,6 +607,7 @@ export async function resolveAgentAPlannerlessProposalV2<
     }
   }
   if (mayDegradeToBackendBoundary(initial.proposal, rejection, input.context)) return degraded(true)
+  input.observe?.({ kind: 'proposal_rejected', rejection: terminalRejection })
   throw plannerlessRejectionError(terminalRejection)
 }
 
@@ -684,8 +624,8 @@ function pruneRejectedActionV1<T extends AgentAProposalEnvelopeV1>(input: {
   readonly authorized_fact_ids: readonly string[]
 }): T | null {
   if (actionRejectionV1(input.initial.proposal, input.rejection, input.context) === null) return null
-  const factPruned = pruneKnownUnsupportedFactClaimsWithoutValidationV1(input)
-  const source = factPruned ?? input.initial
+  // P:236: a failed repair never authorizes clause/sentence deletion.
+  const source = input.initial
   // Removing the structured action cannot make an authored success claim
   // true. The response itself stays byte-for-byte model-owned; when it claims
   // an effect that did not happen, the whole proposal remains rejected and is
@@ -711,57 +651,5 @@ function pruneRejectedActionV1<T extends AgentAProposalEnvelopeV1>(input: {
     : null
 }
 
-/**
- * A failed repair may still contain an independently safe message next to an
- * unsupported catalogue assertion. Remove only the known unsupported
- * assertion before dropping the rejected action; the remaining words are
- * still Agent A's own response.
- */
-function pruneKnownUnsupportedFactClaimsWithoutValidationV1<
-  T extends AgentAProposalEnvelopeV1,
->(input: {
-  readonly initial: T
-  readonly rejection: TurnRejectionV1
-  readonly context: AgentAContextV1
-  readonly authorized_fact_ids: readonly string[]
-}): T | null {
-  const subjects = new Set(input.rejection.rejections
-    .filter((reason) => reason.code === 'FACT_VALUE_MISMATCH')
-    .map((reason) => reason.subject))
-  if (!['prerequisites', 'course_logistics', 'candidate_course_detail']
-    .some((subject) => subjects.has(subject))) return null
-
-  const availableIds = new Set(input.authorized_fact_ids)
-  const citedIds = new Set(input.initial.proposal.used_fact_ids.filter((id) => availableIds.has(id)))
-  let safeMessages = [...input.initial.proposal.response.messages]
-  if (subjects.has('prerequisites')) {
-    safeMessages = safeMessages.flatMap(removeUnsupportedPrerequisiteAssertionsV1)
-  }
-  if (subjects.has('course_logistics')) {
-    const authorizedValues = input.context.catalog.selected_offering?.facts
-      .filter((fact) => citedIds.has(fact.id))
-      .map((fact) => fact.value) ?? []
-    safeMessages = safeMessages.flatMap((message) => (
-      removeUnsupportedCourseLogisticsAssertionsV1(message, authorizedValues)
-    ))
-  }
-  if (subjects.has('candidate_course_detail')) {
-    safeMessages = removeUnverifiedCandidateCourseDetailAssertionsV1(
-      safeMessages,
-      input.context,
-      citedIds,
-      input.initial.proposal.move.course_reference ?? null,
-    )
-  }
-  if (safeMessages.length === 0) return null
-
-  return {
-    ...input.initial,
-    proposal: {
-      ...input.initial.proposal,
-      response: { ...input.initial.proposal.response, messages: safeMessages },
-    },
-  } as T
-}
 
 export type PlannerlessAgentATurnProposalV2 = AgentATurnProposalV1

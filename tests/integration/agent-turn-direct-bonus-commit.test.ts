@@ -1,3 +1,5 @@
+import { seedPriorModelNegotiation } from '../helpers/record-model-negotiation-facts';
+import { deriveCourseBonusLadderV1 } from '@/shared/conversation/bonus-ladder';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { commitAgentDecision, recordDeliveryReport } from '@/lib/services/decision.service';
 import * as capability from '@/features/promotions/application/read-course-bonus-capability';
@@ -23,12 +25,13 @@ run('direct decision atomic repair', () => {
   it.each(['direct','review','review_pending'] as const)('reserves one outbound and preserves exact delivery authority in %s mode', async mode => {
     vi.stubEnv('CENTRAL_CARGA_BONUS_ENABLED','true');vi.stubEnv('COURSE_BONUS_FLOW_MODE','direct');vi.stubEnv('COURSE_BONUS_MAX_COURSES','2');
     const f = await seedConversationForAgentTurn({selected_offering_code:'entrenamiento_funcional',intake_complete:true});
+    await seedPriorModelNegotiation(sql,f);
     const [prior] = await sql`INSERT INTO messages(conversation_id,contact_id,direction,content,created_at)
       VALUES (${f.conversation_id},${f.contact_id},'inbound','Me parece caro',now()-interval '1 hour') RETURNING id`;
     await sql`INSERT INTO selected_memories(contact_id,conversation_id,source_message_id,status,memory_type,memory_key,value_normalized,source_quote,confidence,dedupe_hash)
       VALUES (${f.contact_id},${f.conversation_id},${prior.id},'active','objection','price_objection','caro','Me parece caro',1,${'b'.repeat(64)})`;
-    const proposal = {...f.proposalWithCallOfferAndFalsePrice,response:{messages:['El total es USD 360.','Te regalo Inglés 1 al comprar Entrenamiento Funcional.'],call_offer:'Si querés, puedo llamarte para asesorarte.'},
-      proposed_action:{type:'offer_course_bonus',interest_offering_code:'entrenamiento_funcional',bonus_offering_code:'ingles_1'}};
+    const proposal = {...f.proposalWithCallOfferAndFalsePrice,response:{messages:['El total es USD 360.','Entrenamiento Funcional e Inglés 1 quedan incluidos en el paquete.'],call_offer:'Si querés, puedo llamarte para asesorarte.'},
+      course_mentions:[{offering_code:'ingles_1',role:'bonus'}],proposed_action:{type:'offer_course_bonus',interest_offering_code:'entrenamiento_funcional',bonus_offering_code:'ingles_1'}};
     const input = {turn_id:f.turn_id,trace_id:f.trace_id,supports_multi_outbound:true,
       authorized_offering_code:'entrenamiento_funcional',authorized_payment_plan:null,
       agent_turn_v2:{schema_version:2 as const,proposal:proposal as never},decision:f.placeholderDecision as never,model:f.model as never};
@@ -106,12 +109,12 @@ run('direct decision atomic repair', () => {
         external_user_id:`agent-turn-fixture-user-${f.trace_id}`,phone_e164:contact.phone,trace_id:randomUUID(),identity_owner:'agent_a_v1',
         message:{type:'text',text:'Acepto',occurred_at:new Date().toISOString(),reply_to_external_message_id:null}});
       vi.stubEnv('COURSE_BONUS_FLOW_MODE','review');vi.stubEnv('CENTRAL_CARGA_BONUS_ENABLED','false');
-      const commit=(action:Record<string,unknown>,content:string)=>commitAgentDecision({...input,turn_id:later.turn_id,agent_turn_v2:{schema_version:2,
-        proposal:{...proposal,proposed_action:action,response:{messages:[content],call_offer:null}} as never}});
-      await expect(commit({type:'none'},'Te regalo Excel Integral.')).rejects.toMatchObject({subjects:expect.arrayContaining(['forbidden_promise'])});
+      const commit=(action:Record<string,unknown>,content:string,course_mentions:Array<{offering_code:string;role:'bonus'}>=[])=>commitAgentDecision({...input,turn_id:later.turn_id,agent_turn_v2:{schema_version:2,
+        proposal:{...proposal,course_mentions,proposed_action:action,response:{messages:[content],call_offer:null}} as never}});
+      await expect(commit({type:'none'},'Excel Integral queda incluido.',[{offering_code:'excel_integral',role:'bonus'}])).rejects.toMatchObject({subjects:expect.arrayContaining(['forbidden_promise'])});
       await expect(commit({type:'accept_promotion',interest_offering_code:'entrenamiento_funcional',promotion_code:delivered.promotion_code,
         promotion_cycle_id:delivered.promotion_cycle_id,offer_version:2},'Seguimos con el paquete.')).rejects.toThrow();
-      expect((await commit({type:'none'},'Inglés 1 sigue de regalo.')).status).toBe('committed');
+      expect((await commit({type:'none'},'Inglés 1 sigue incluido.',[{offering_code:'ingles_1',role:'bonus'}])).status).toBe('committed');
       expect((await sql`SELECT status,offer_version FROM promotion_offers WHERE promotion_cycle_id=${delivered.promotion_cycle_id ?? null}`)[0])
         .toMatchObject({status:'offered',offer_version:2});
       return;
@@ -121,7 +124,7 @@ run('direct decision atomic repair', () => {
     vi.stubEnv('COURSE_BONUS_MAX_COURSES','1');
     await expect(commitAgentDecision({...input,turn_id:f.second_turn_id,agent_turn_v2:{schema_version:2,
       proposal:{...proposal,proposed_action:{type:'offer_course_bonus',interest_offering_code:'entrenamiento_funcional',bonus_offering_code:'excel_integral'},
-        response:{messages:['Inglés 1 sigue de regalo. Te regalo Excel Integral.'],call_offer:null}} as never}}))
+        course_mentions:[{offering_code:'ingles_1',role:'bonus'},{offering_code:'excel_integral',role:'bonus'}],response:{messages:['Inglés 1 sigue incluido. Excel Integral queda bonificado.'],call_offer:null}} as never}}))
       .rejects.toMatchObject({subjects:['forbidden_promise','direct_bonus:bonus_limit_reached']});
     expect((await sql`SELECT count(*)::int n FROM messages WHERE in_reply_to=${f.second_turn_id}`)[0].n).toBe(0);
     expect((await sql`SELECT count(*)::int n FROM promotion_offer_bonus_offerings WHERE offered_outbound_message_id=${id}`)[0].n).toBe(1);
@@ -137,9 +140,9 @@ run('direct decision atomic repair', () => {
     const action = {type:'accept_promotion',interest_offering_code:'entrenamiento_funcional',promotion_code:delivered.promotion_code,
       promotion_cycle_id:delivered.promotion_cycle_id,offer_version:1};
     const accepted=await commitAgentDecision({...input,turn_id:f.second_turn_id,agent_turn_v2:{schema_version:2,
-      proposal:{...proposal,proposed_action:action,response:{messages:['El total es USD 360. Entrenamiento Funcional incluye Inglés 1 de regalo.'],call_offer:null}} as never}});
+      proposal:{...proposal,proposed_action:action,response:{messages:['El total es USD 360. Entrenamiento Funcional e Inglés 1 están incluidos en el paquete.'],call_offer:null}} as never}});
     expect(accepted.status).toBe('committed');
-    expect(accepted.outbounds[0].content).toBe('El total es USD 360. Entrenamiento Funcional incluye Inglés 1 de regalo.');
+    expect(accepted.outbounds[0].content).toBe('El total es USD 360. Entrenamiento Funcional e Inglés 1 están incluidos en el paquete.');
     expect((await sql`SELECT status,bonus_snapshot_sealed_at FROM promotion_offers WHERE promotion_cycle_id=${delivered.promotion_cycle_id ?? null}`)[0])
       .toMatchObject({status:'accepted',bonus_snapshot_sealed_at:expect.any(Date)});
   });
@@ -151,25 +154,28 @@ run('direct decision atomic repair', () => {
     // Simulate a capability that became stale before final transactional validation.
     vi.spyOn(capability,'readCourseBonusCapabilityV1').mockResolvedValue({
       status:'checkin_available', enabled:true, max_bonus_courses:2, may_offer_bonus:true,
+      ladder:deriveCourseBonusLadderV1({observed_price_objection_count:3,call_invitation_status:'offered',call_offer_count:1,may_offer_call:true}),
       may_schedule_checkin:false,may_request_review:false,may_accept_offer:false,
       may_send_promoted_payment:false,promotion_code:null,interest_offering_code:'entrenamiento_funcional',
       offer_version:0,bonus_offerings:[],delivered_bonus_offerings:[],
     });
     const proposal = {...f.proposalWithCallOfferAndFalsePrice,
-      response:{messages:['El total es USD 360. Te regalo Inglés 1.'],call_offer:null},
-      proposed_action:{type:'offer_course_bonus',interest_offering_code:'entrenamiento_funcional',bonus_offering_code:'ingles_1'}};
+      response:{messages:['El total es USD 360. Inglés 1 queda bonificado.'],call_offer:null},
+      course_mentions:[{offering_code:'ingles_1',role:'bonus'}],proposed_action:{type:'offer_course_bonus',interest_offering_code:'entrenamiento_funcional',bonus_offering_code:'ingles_1'}};
     const input = {turn_id:f.turn_id,trace_id:f.trace_id,supports_multi_outbound:true,
       authorized_offering_code:'entrenamiento_funcional',authorized_payment_plan:null,
       agent_turn_v2:{schema_version:2 as const,proposal:proposal as never},
       decision:f.placeholderDecision as never,model:f.model as never};
     await expect(commitAgentDecision(input)).rejects.toMatchObject({
       reason:'AGENT_TURN_V2_REJECTED:COMMERCIAL_TRUTH_VIOLATION',
-      subjects:['forbidden_promise','direct_bonus:no_price_objection'],
+      subjects:['forbidden_promise','direct_bonus:ladder_step_pending',
+        'bonus_ladder:recorded_price_objections:0:required:3','bonus_ladder:call_invitation:not_offered',
+        'bonus_ladder:missing:recorded_price_objections','bonus_ladder:missing:call_invitation'],
     });
     expect((await sql`SELECT count(*)::int n FROM agent_decisions WHERE turn_id=${f.turn_id}`)[0].n).toBe(0);
     expect((await sql`SELECT count(*)::int n FROM messages WHERE in_reply_to=${f.turn_id}`)[0].n).toBe(0);
     const repaired = await commitAgentDecision({...input,agent_turn_v2:{schema_version:2,proposal:{...proposal,
-      proposed_action:{type:'none'},response:{messages:['El total es USD 360. Podemos ver qué contenido te sirve para tu objetivo.'],call_offer:null}} as never}});
+      course_mentions:[],proposed_action:{type:'none'},response:{messages:['El total es USD 360. Podemos ver qué contenido te sirve para tu objetivo.'],call_offer:null}} as never}});
     expect(repaired.status).toBe('committed');
     expect(repaired.outbounds).toHaveLength(1);
     expect((await sql`SELECT d.state,e.state AS outbox_state FROM outbound_deliveries d

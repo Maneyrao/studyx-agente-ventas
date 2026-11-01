@@ -1,3 +1,4 @@
+import type { ModelObservation } from '../observability/turn-evidence'
 import type { Decision } from '../../schemas/contracts'
 
 /**
@@ -6,6 +7,7 @@ import type { Decision } from '../../schemas/contracts'
  * callers own prompt composition; a provider only executes it.
  */
 export type GenerateDecisionInput = {
+  observe?: (event: ModelObservation) => void
   instructions: string
   apiKey: string
   model: string

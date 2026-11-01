@@ -127,6 +127,39 @@ run('conversation_sales_context_states_v1', () => {
     });
   });
 
+  it('clears a prior payment claim only when a new sales cycle explicitly requests it', async () => {
+    const data = await fixture();
+    const store = new PostgresConversationStateStoreV1(db!);
+    const reported = await store.transition({
+      workspace_slug: 'studyx', conversation_id: data.conversationA, contact_id: data.contactId,
+      source_turn_id: data.turnsA[0], selected_offering_code: data.offeringA,
+      selected_payment_plan: 'monthly_12', stage: 'closed', call_preference: 'chat',
+      call_offer_status: 'declined', call_offer_count: 2, awaiting_reply: 'none', payment_reported: true,
+    });
+    expect(reported.payment_reported_at).not.toBeNull();
+
+    const restarted = await store.transition({
+      workspace_slug: 'studyx', conversation_id: data.conversationA, contact_id: data.contactId,
+      source_turn_id: data.turnsA[1], selected_offering_code: null,
+      selected_payment_plan: null, stage: 'exploring', call_preference: 'unknown',
+      call_offer_status: 'not_offered', call_offer_count: 0, awaiting_reply: 'none',
+      payment_reported: false, reset_payment_reported: true,
+    });
+
+    expect(restarted.payment_reported_at).toBeNull();
+    await expect(store.load('studyx', data.conversationA, data.contactId))
+      .resolves.toMatchObject({ payment_reported_at: null, stage: 'exploring', call_offer_count: 0 });
+
+    const newlyReported = await store.transition({
+      workspace_slug: 'studyx', conversation_id: data.conversationA, contact_id: data.contactId,
+      source_turn_id: data.turnsA[2], selected_offering_code: data.offeringB,
+      selected_payment_plan: 'monthly_12', stage: 'course_selected', call_preference: 'unknown',
+      call_offer_status: 'not_offered', call_offer_count: 0, awaiting_reply: 'none',
+      payment_reported: true, reset_payment_reported: true,
+    });
+    expect(newlyReported.payment_reported_at).not.toBeNull();
+  });
+
   it('replays a source turn without incrementing version or duplicating its event', async () => {
     const data = await fixture();
     const store = new PostgresConversationStateStoreV1(db!);

@@ -1,3 +1,4 @@
+import { COURSE_MENTION_ROLES_V1 } from '../../../src/shared/conversation/course-mentions';
 import { z } from '@botpress/runtime';
 import { ConversationMoveV1Schema } from './conversation-pipeline';
 import { TurnRejectionV1Schema } from './turn-rejection';
@@ -11,6 +12,17 @@ import {
   CONTACT_PROFILE_MAX_SOURCES_V1,
   CONTACT_PROFILE_MAX_PENDING_REQUESTS_V1,
 } from '../../../src/shared/conversation/contact-profile-contract';
+
+/** Zod 3 mirror of shared/conversation/bonus-ladder CourseBonusLadderV1. */
+export const CourseBonusLadderV1Schema = z.object({
+  eligible: z.boolean(),
+  observed_price_objection_count: z.number().int().nonnegative(),
+  required_price_objection_count: z.literal(3),
+  call_invitation_status: z.enum(['not_offered', 'offered', 'accepted', 'declined']),
+  call_offer_count: z.number().int().nonnegative(),
+  may_offer_call: z.boolean(),
+  missing_steps: z.array(z.enum(['recorded_price_objections', 'call_invitation'])).readonly(),
+}).strict();
 
 // Zui uses Zod 3; construct the ADK mirror locally from the portable constants.
 const ProfileFieldSchema = z.enum(CONTACT_PROFILE_FIELDS_V1);
@@ -51,9 +63,39 @@ const MemoryTypeSchema = z.enum([
 ]);
 const FactKindSchema = z.enum([
   'area_name', 'offering_name', 'offering_description', 'offering_duration',
-  'offering_modality', 'payment_plan_label', 'payment_plan_price',
+  'offering_modality', 'offering_syllabus', 'payment_plan_label', 'payment_plan_price',
 ]);
 const IdentifierSchema = z.string().trim().min(1).max(160);
+const RecordedPriceOnlyBarrierV1Schema = z.union([
+  z.object({ status: z.literal('unknown') }).strict(),
+  z.object({
+    status: z.enum(['confirmed', 'other_barriers_reported']),
+    offering_code: IdentifierSchema.nullable(),
+    source_turn_id: z.string().uuid(), source_message_id: z.string().uuid(),
+    source_quote: z.string().min(1).max(2_048), recorded_at: z.string().min(1),
+    interpretation_source: z.literal('committed_agent_observation'),
+  }).strict(),
+]);
+export const RecordedNegotiationFactsV1Schema = z.object({
+  price_objection_count: z.number().int().min(0),
+  latest_price_objection_source_turn_ids: z.array(z.string().uuid()).max(20),
+  latest_legacy_price_objection_source_message_ids: z.array(z.string().uuid()).max(20).optional(),
+  price_only_barrier: RecordedPriceOnlyBarrierV1Schema,
+}).strict();
+const AgentANegotiationContextV1Schema = z.object({
+  price_objections: z.object({ count: z.number().int().min(0).nullable(),
+    scope: z.literal('conversation_prior_recorded_sources'),
+    latest_source_turn_ids: z.array(z.string().uuid()).max(20),
+    latest_legacy_source_message_ids: z.array(z.string().uuid()).max(20),
+  }).strict(),
+  price_only_barrier: RecordedPriceOnlyBarrierV1Schema,
+  call_invitation: z.object({ status: z.enum(['not_offered', 'offered', 'accepted', 'declined']),
+    count: z.union([z.literal(0), z.literal(1), z.literal(2)]),
+    authorization: z.enum(['authorized', 'not_authorized']),
+  }).strict(),
+  delivered_bonus_offers: z.array(z.object({ code: IdentifierSchema, display_name: z.string().min(1).max(240),
+    position: z.number().int().min(1).max(3) }).strict()).max(3).nullable(),
+}).strict();
 const CustomerMessageSchema = z.string().trim().min(1).max(2_000).refine(
   (value) => !/https?:\/\//iu.test(value),
   'MODEL_RESPONSE_URL_FORBIDDEN',
@@ -132,6 +174,7 @@ export const AgentAContextV1Schema = z.object({
     instagram: z.string().trim().min(1).max(120).nullable(),
   }).strict().nullable(),
   commercial_state: z.object({
+    negotiation: AgentANegotiationContextV1Schema.optional(),
     promotion: z.object({
       promotion_code: IdentifierSchema,
       promotion_cycle_id: IdentifierSchema,
@@ -257,6 +300,7 @@ export const AgentAContextV1Schema = z.object({
     may_send_payment_link: z.boolean(),
     authorized_payment_plan: PaymentPlanSchema.nullable(),
     course_bonus: z.object({
+      ladder: CourseBonusLadderV1Schema.optional(),
       enabled: z.boolean().optional(),
       may_offer_bonus: z.boolean().optional(),
       promotion_cycle_id: z.string().uuid().nullable().optional(),
@@ -305,6 +349,10 @@ export const AgentAContextV1Schema = z.object({
       field: ProfileFieldSchema,
       reason: z.enum(['missing', 'written_whatsapp_confirmation_required']),
     }).strict()).optional(),
+    call_execution: z.object({
+      next_step: z.enum(['none', 'collect_contact_details', 'confirm_availability', 'dispatch_authorized']),
+      request_call_now_authorized: z.boolean(),
+    }).strict().optional(),
   }).strict(),
 }).strict();
 
@@ -368,6 +416,10 @@ export const AgentATurnProposalV1Schema = z.object({
     call_offer: CallOfferMessageSchema.nullable().optional(),
   }).strict(),
   proposed_action: AgentAProposedActionSchema,
+  // Legacy wire omission stays empty; roles are never inferred from prose or actions.
+  course_mentions: z.array(z.object({
+    offering_code: IdentifierSchema, role: z.enum(COURSE_MENTION_ROLES_V1),
+  }).strict()).max(50).default([]),
   confirmed_phone: z.string().regex(/^\+[1-9]\d{7,14}$/u).nullable().optional(),
   profile_updates: z.array(ContactProfileUpdateV1Schema).max(CONTACT_PROFILE_MAX_UPDATES_V1).optional(),
   profile_requests: z.array(ContactProfileRequestV1Schema).max(CONTACT_PROFILE_MAX_REQUESTS_V1).optional(),

@@ -1,3 +1,4 @@
+import { isTurnEvidencePersistenceError } from '../observability/turn-evidence'
 import type { TurnRejectionV1 } from '../../schemas/turn-rejection'
 import type { AgentAContextV1, AgentATurnProposalV1 } from '../../schemas/agent-a-brain'
 import type { ComposedNarrativeV1, TurnPlanV1 } from '../../schemas/conversation-pipeline'
@@ -103,6 +104,7 @@ export async function resolveAgentAProposalV1<T extends AgentAProposalEnvelopeV1
         repaired = true
       }
     } catch (error) {
+    if (isTurnEvidencePersistenceError(error)) throw error
       if (!(error instanceof Error)) throw error
       // N3/N1 composition below is the fail-closed result. The caller owns
       // provider-specific logging; this pure cycle owns only the evidence.

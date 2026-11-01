@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "status": "interrupted",
+  "evaluated_sha": "06ec3e5ac85825bb51cfec23df10d0c22b72298d",
+  "provider": "nvidia_nim",
+  "model": "deepseek-ai/deepseek-v4.1-flash",
+  "started_at": "2026-10-31T13:03:42.189Z",
+  "updated_at": "2026-10-31T13:05:37.278Z",
+  "error_code": "npx failed with status 130"
+}

@@ -1,0 +1,724 @@
+{
+  "source_sha": "1a24d763045193aa134a85021229ad5c259c8bb3",
+  "source_run": "acceptance-1a24d76-official-20261031",
+  "case_id": "06_repeated_price_bonus_ladder",
+  "turn_id": "bonus_2",
+  "previous_observation": {
+    "response": "Perfecto, seguimos por chat. Ya con las 12 cuotas de USD 30 tenés el plan más liviano y el curso de Fotografía con Celulares para Tiendas Online va incluido sin costo extra, así arrancás a ofrecer servicio a tiendas y emprendedores.\nPara dejar tu inscripción lista necesito tu nombre, apellido, correo y teléfono. Me los pasás?",
+    "move": "continue_by_chat",
+    "secondaryMoves": [],
+    "proposedAction": {
+      "type": "none"
+    },
+    "backendAction": null,
+    "backendRejections": [],
+    "state": {
+      "selectedCourse": "fotografia_profesional",
+      "stage": "plan_selected",
+      "awaitingReply": "contact_details",
+      "plan": "monthly_12",
+      "promotion": {
+        "status": "offer_available",
+        "bonusCount": 1,
+        "paidCourse": "fotografia_profesional",
+        "bonusCourses": [
+          "fotografia_celulares_tiendas_online"
+        ]
+      }
+    },
+    "deliveredLinks": [],
+    "authorizedFactIds": [
+      "offering:fotografia_profesional:name:v1",
+      "offering:fotografia_profesional:description:v1",
+      "offering:fotografia_profesional:duration:v1",
+      "offering:fotografia_profesional:modality:v1",
+      "payment:fotografia_profesional:monthly_12:label:v1",
+      "payment:fotografia_profesional:monthly_12:price:v1",
+      "payment:fotografia_profesional:monthly_6:label:v1",
+      "payment:fotografia_profesional:monthly_6:price:v1",
+      "payment:fotografia_profesional:one_time:label:v1",
+      "payment:fotografia_profesional:one_time:price:v1"
+    ],
+    "authorizedFacts": [
+      {
+        "id": "offering:fotografia_profesional:name:v1",
+        "kind": "offering_name",
+        "value": "Fotografía Profesional"
+      },
+      {
+        "id": "offering:fotografia_profesional:description:v1",
+        "kind": "offering_description",
+        "value": "Academia de Emprendedores. 41 clases. Este curso está apuntado a todo aquel que quiera conocer desde cero el proceso fotográfico actual, con esto nos referimos al digital."
+      },
+      {
+        "id": "offering:fotografia_profesional:duration:v1",
+        "kind": "offering_duration",
+        "value": "41 clases"
+      },
+      {
+        "id": "offering:fotografia_profesional:modality:v1",
+        "kind": "offering_modality",
+        "value": "online"
+      },
+      {
+        "id": "payment:fotografia_profesional:monthly_12:label:v1",
+        "kind": "payment_plan_label",
+        "value": "12 pagos mensuales de USD 30"
+      },
+      {
+        "id": "payment:fotografia_profesional:monthly_12:price:v1",
+        "kind": "payment_plan_price",
+        "value": "USD 360.00"
+      },
+      {
+        "id": "payment:fotografia_profesional:monthly_6:label:v1",
+        "kind": "payment_plan_label",
+        "value": "6 pagos mensuales de USD 60"
+      },
+      {
+        "id": "payment:fotografia_profesional:monthly_6:price:v1",
+        "kind": "payment_plan_price",
+        "value": "USD 360.00"
+      },
+      {
+        "id": "payment:fotografia_profesional:one_time:label:v1",
+        "kind": "payment_plan_label",
+        "value": "Pago único de USD 360"
+      },
+      {
+        "id": "payment:fotografia_profesional:one_time:price:v1",
+        "kind": "payment_plan_price",
+        "value": "USD 360.00"
+      }
+    ],
+    "usedFactIds": [
+      "offering:fotografia_profesional:name:v1",
+      "offering:fotografia_profesional:duration:v1",
+      "payment:fotografia_profesional:monthly_12:label:v1",
+      "offering:fotografia_celulares_tiendas_online:name:v1"
+    ],
+    "availableOfferings": [
+      {
+        "code": "aires_acondicionados",
+        "displayName": "Instalación de Aires Acondicionados"
+      },
+      {
+        "code": "armado_reparacion_pc",
+        "displayName": "Armado y Reparación de PC"
+      },
+      {
+        "code": "autocad_interiores",
+        "displayName": "AutoCAD orientado al Diseño de Interiores"
+      },
+      {
+        "code": "camaras_seguridad",
+        "displayName": "Instalación y Configuración de Cámaras de Seguridad"
+      },
+      {
+        "code": "coaching_liderazgo",
+        "displayName": "Coaching y Liderazgo"
+      },
+      {
+        "code": "community_manager",
+        "displayName": "Community Manager"
+      },
+      {
+        "code": "comunicacion_interna_empresas",
+        "displayName": "Comunicación Interna en Empresas"
+      },
+      {
+        "code": "decoracion_de_interiores",
+        "displayName": "Decoración de Interiores"
+      },
+      {
+        "code": "diseno_corel_draw",
+        "displayName": "Diseño Gráfico con Corel Draw"
+      },
+      {
+        "code": "diseno_illustrator",
+        "displayName": "Diseño Gráfico con Illustrator"
+      },
+      {
+        "code": "diseno_photoshop",
+        "displayName": "Diseño Gráfico con Photoshop"
+      },
+      {
+        "code": "energia_solar_fotovoltaica",
+        "displayName": "Energía Solar Fotovoltaica"
+      },
+      {
+        "code": "entrenamiento_funcional",
+        "displayName": "Entrenamiento Funcional"
+      },
+      {
+        "code": "especialista_marketing",
+        "displayName": "Especialista en Marketing"
+      },
+      {
+        "code": "especialista_ventas",
+        "displayName": "Especialista en Ventas"
+      },
+      {
+        "code": "estrategias_emprender",
+        "displayName": "Estrategias para Emprender"
+      },
+      {
+        "code": "excel_integral",
+        "displayName": "Excel Integral"
+      },
+      {
+        "code": "fotografia_celulares_tiendas_online",
+        "displayName": "Fotografía con Celulares para Tiendas Online"
+      },
+      {
+        "code": "fotografia_profesional",
+        "displayName": "Fotografía Profesional"
+      },
+      {
+        "code": "influencers_creadores_contenidos",
+        "displayName": "Influencers y Creadores de Contenidos"
+      },
+      {
+        "code": "ingles_1",
+        "displayName": "Inglés 1"
+      },
+      {
+        "code": "ingles_2",
+        "displayName": "Inglés 2"
+      },
+      {
+        "code": "ingles_3",
+        "displayName": "Inglés 3"
+      },
+      {
+        "code": "instagram_emprendedores",
+        "displayName": "Instagram para Emprendedores"
+      },
+      {
+        "code": "introduccion_catering",
+        "displayName": "Introducción al Catering"
+      },
+      {
+        "code": "introduccion_criptomonedas",
+        "displayName": "Introducción a las Criptomonedas"
+      },
+      {
+        "code": "introduccion_ecommerce",
+        "displayName": "Introducción al Ecommerce"
+      },
+      {
+        "code": "maquillaje_profesional",
+        "displayName": "Maquillaje Profesional"
+      },
+      {
+        "code": "marketing_digital",
+        "displayName": "Marketing Digital"
+      },
+      {
+        "code": "nutricion_alimentacion",
+        "displayName": "Nutrición y Alimentación Saludable"
+      },
+      {
+        "code": "oratoria",
+        "displayName": "Oratoria"
+      },
+      {
+        "code": "organizacion_baby_shower",
+        "displayName": "Organización de Baby Shower"
+      },
+      {
+        "code": "organizador_eventos_sociales",
+        "displayName": "Organizador Profesional de Eventos Sociales"
+      },
+      {
+        "code": "paisajismo_jardineria",
+        "displayName": "Paisajismo y Jardinería"
+      },
+      {
+        "code": "publicidad_redes_sociales",
+        "displayName": "Publicidad en Redes Sociales"
+      },
+      {
+        "code": "redes_informaticas",
+        "displayName": "Redes Informáticas"
+      },
+      {
+        "code": "reparacion_celulares",
+        "displayName": "Reparación de Celulares"
+      },
+      {
+        "code": "sushi_principiantes",
+        "displayName": "Sushi para Principiantes"
+      },
+      {
+        "code": "unas_gelificadas",
+        "displayName": "Uñas Gelificadas"
+      },
+      {
+        "code": "vino_cata_maridaje",
+        "displayName": "Introducción al Vino, la Cata y el Maridaje"
+      }
+    ],
+    "selectedOfferingFacts": [],
+    "modelAttempts": [
+      {
+        "attempt": 1,
+        "response": "Perfecto, seguimos por chat. Ya con las 12 cuotas de USD 30 tenés el plan más liviano y el curso de Fotografía con Celulares para Tiendas Online va incluido sin costo extra, así arrancás a ofrecer servicio a tiendas y emprendedores.\nPara dejar tu inscripción lista necesito tu nombre, apellido, correo y teléfono. Me los pasás?",
+        "move": "continue_by_chat",
+        "proposedAction": {
+          "type": "none"
+        },
+        "turnRejection": null,
+        "providerStatus": 200,
+        "providerError": null
+      }
+    ],
+    "callRequirements": [
+      "nombre",
+      "apellido",
+      "correo",
+      "telefono"
+    ],
+    "profileRequestedFields": [
+      "nombre",
+      "apellido",
+      "correo",
+      "telefono"
+    ],
+    "activeCourses": [],
+    "activeCourseNames": [],
+    "mayOfferCall": true,
+    "courseBonus": {
+      "enabled": true,
+      "maxBonusCourses": 3,
+      "mayOfferBonus": true,
+      "status": "offer_available"
+    },
+    "priceObjectionMemory": {
+      "present": true,
+      "sourceMessageIds": [
+        "975a705c-4b85-4508-a20f-3c410ac91d4f",
+        "9b264f00-d6f1-4729-aa21-d00be92d537e",
+        "e7dff55d-eea7-4ac4-93e5-db65544b38c9",
+        "f6316936-d15f-4659-ad18-db76c16a5fc0",
+        "fd70cdac-63d5-4db7-802a-aa0e0fd297ee"
+      ],
+      "priorSourceMessageIds": [
+        "9b264f00-d6f1-4729-aa21-d00be92d537e",
+        "e7dff55d-eea7-4ac4-93e5-db65544b38c9",
+        "f6316936-d15f-4659-ad18-db76c16a5fc0",
+        "fd70cdac-63d5-4db7-802a-aa0e0fd297ee"
+      ]
+    },
+    "workflow": {
+      "commitSucceeded": true,
+      "status": "waiting_user",
+      "errorCode": null,
+      "finalBackendDecisionError": null
+    }
+  },
+  "observation": {
+    "response": "Me alegra que te sume, y que el freno sea sólo el precio ya lo tenemos claro. Con las 12 cuotas de USD 30 accedés a las 41 clases de Fotografía Profesional y arrancás a formarte para ofrecer tus fotos a tiendas y emprendedores.\nPara dejar tu inscripción lista necesito tu nombre, apellido, correo y teléfono. Me los pasás?",
+    "move": "unknown",
+    "secondaryMoves": [],
+    "proposedAction": {
+      "type": "none"
+    },
+    "backendAction": null,
+    "backendRejections": [],
+    "state": {
+      "selectedCourse": "fotografia_profesional",
+      "stage": "plan_selected",
+      "awaitingReply": "contact_details",
+      "plan": "monthly_12",
+      "promotion": {
+        "status": "offer_available",
+        "bonusCount": 1,
+        "paidCourse": "fotografia_profesional",
+        "bonusCourses": [
+          "fotografia_celulares_tiendas_online"
+        ]
+      }
+    },
+    "deliveredLinks": [],
+    "authorizedFactIds": [
+      "offering:fotografia_profesional:name:v1",
+      "offering:fotografia_profesional:description:v1",
+      "offering:fotografia_profesional:duration:v1",
+      "offering:fotografia_profesional:modality:v1",
+      "payment:fotografia_profesional:monthly_12:label:v1",
+      "payment:fotografia_profesional:monthly_12:price:v1",
+      "payment:fotografia_profesional:monthly_6:label:v1",
+      "payment:fotografia_profesional:monthly_6:price:v1",
+      "payment:fotografia_profesional:one_time:label:v1",
+      "payment:fotografia_profesional:one_time:price:v1"
+    ],
+    "authorizedFacts": [
+      {
+        "id": "offering:fotografia_profesional:name:v1",
+        "kind": "offering_name",
+        "value": "Fotografía Profesional"
+      },
+      {
+        "id": "offering:fotografia_profesional:description:v1",
+        "kind": "offering_description",
+        "value": "Academia de Emprendedores. 41 clases. Este curso está apuntado a todo aquel que quiera conocer desde cero el proceso fotográfico actual, con esto nos referimos al digital."
+      },
+      {
+        "id": "offering:fotografia_profesional:duration:v1",
+        "kind": "offering_duration",
+        "value": "41 clases"
+      },
+      {
+        "id": "offering:fotografia_profesional:modality:v1",
+        "kind": "offering_modality",
+        "value": "online"
+      },
+      {
+        "id": "payment:fotografia_profesional:monthly_12:label:v1",
+        "kind": "payment_plan_label",
+        "value": "12 pagos mensuales de USD 30"
+      },
+      {
+        "id": "payment:fotografia_profesional:monthly_12:price:v1",
+        "kind": "payment_plan_price",
+        "value": "USD 360.00"
+      },
+      {
+        "id": "payment:fotografia_profesional:monthly_6:label:v1",
+        "kind": "payment_plan_label",
+        "value": "6 pagos mensuales de USD 60"
+      },
+      {
+        "id": "payment:fotografia_profesional:monthly_6:price:v1",
+        "kind": "payment_plan_price",
+        "value": "USD 360.00"
+      },
+      {
+        "id": "payment:fotografia_profesional:one_time:label:v1",
+        "kind": "payment_plan_label",
+        "value": "Pago único de USD 360"
+      },
+      {
+        "id": "payment:fotografia_profesional:one_time:price:v1",
+        "kind": "payment_plan_price",
+        "value": "USD 360.00"
+      }
+    ],
+    "usedFactIds": [
+      "offering:fotografia_profesional:duration:v1",
+      "payment:fotografia_profesional:monthly_12:label:v1"
+    ],
+    "availableOfferings": [
+      {
+        "code": "aires_acondicionados",
+        "displayName": "Instalación de Aires Acondicionados"
+      },
+      {
+        "code": "armado_reparacion_pc",
+        "displayName": "Armado y Reparación de PC"
+      },
+      {
+        "code": "autocad_interiores",
+        "displayName": "AutoCAD orientado al Diseño de Interiores"
+      },
+      {
+        "code": "camaras_seguridad",
+        "displayName": "Instalación y Configuración de Cámaras de Seguridad"
+      },
+      {
+        "code": "coaching_liderazgo",
+        "displayName": "Coaching y Liderazgo"
+      },
+      {
+        "code": "community_manager",
+        "displayName": "Community Manager"
+      },
+      {
+        "code": "comunicacion_interna_empresas",
+        "displayName": "Comunicación Interna en Empresas"
+      },
+      {
+        "code": "decoracion_de_interiores",
+        "displayName": "Decoración de Interiores"
+      },
+      {
+        "code": "diseno_corel_draw",
+        "displayName": "Diseño Gráfico con Corel Draw"
+      },
+      {
+        "code": "diseno_illustrator",
+        "displayName": "Diseño Gráfico con Illustrator"
+      },
+      {
+        "code": "diseno_photoshop",
+        "displayName": "Diseño Gráfico con Photoshop"
+      },
+      {
+        "code": "energia_solar_fotovoltaica",
+        "displayName": "Energía Solar Fotovoltaica"
+      },
+      {
+        "code": "entrenamiento_funcional",
+        "displayName": "Entrenamiento Funcional"
+      },
+      {
+        "code": "especialista_marketing",
+        "displayName": "Especialista en Marketing"
+      },
+      {
+        "code": "especialista_ventas",
+        "displayName": "Especialista en Ventas"
+      },
+      {
+        "code": "estrategias_emprender",
+        "displayName": "Estrategias para Emprender"
+      },
+      {
+        "code": "excel_integral",
+        "displayName": "Excel Integral"
+      },
+      {
+        "code": "fotografia_celulares_tiendas_online",
+        "displayName": "Fotografía con Celulares para Tiendas Online"
+      },
+      {
+        "code": "fotografia_profesional",
+        "displayName": "Fotografía Profesional"
+      },
+      {
+        "code": "influencers_creadores_contenidos",
+        "displayName": "Influencers y Creadores de Contenidos"
+      },
+      {
+        "code": "ingles_1",
+        "displayName": "Inglés 1"
+      },
+      {
+        "code": "ingles_2",
+        "displayName": "Inglés 2"
+      },
+      {
+        "code": "ingles_3",
+        "displayName": "Inglés 3"
+      },
+      {
+        "code": "instagram_emprendedores",
+        "displayName": "Instagram para Emprendedores"
+      },
+      {
+        "code": "introduccion_catering",
+        "displayName": "Introducción al Catering"
+      },
+      {
+        "code": "introduccion_criptomonedas",
+        "displayName": "Introducción a las Criptomonedas"
+      },
+      {
+        "code": "introduccion_ecommerce",
+        "displayName": "Introducción al Ecommerce"
+      },
+      {
+        "code": "maquillaje_profesional",
+        "displayName": "Maquillaje Profesional"
+      },
+      {
+        "code": "marketing_digital",
+        "displayName": "Marketing Digital"
+      },
+      {
+        "code": "nutricion_alimentacion",
+        "displayName": "Nutrición y Alimentación Saludable"
+      },
+      {
+        "code": "oratoria",
+        "displayName": "Oratoria"
+      },
+      {
+        "code": "organizacion_baby_shower",
+        "displayName": "Organización de Baby Shower"
+      },
+      {
+        "code": "organizador_eventos_sociales",
+        "displayName": "Organizador Profesional de Eventos Sociales"
+      },
+      {
+        "code": "paisajismo_jardineria",
+        "displayName": "Paisajismo y Jardinería"
+      },
+      {
+        "code": "publicidad_redes_sociales",
+        "displayName": "Publicidad en Redes Sociales"
+      },
+      {
+        "code": "redes_informaticas",
+        "displayName": "Redes Informáticas"
+      },
+      {
+        "code": "reparacion_celulares",
+        "displayName": "Reparación de Celulares"
+      },
+      {
+        "code": "sushi_principiantes",
+        "displayName": "Sushi para Principiantes"
+      },
+      {
+        "code": "unas_gelificadas",
+        "displayName": "Uñas Gelificadas"
+      },
+      {
+        "code": "vino_cata_maridaje",
+        "displayName": "Introducción al Vino, la Cata y el Maridaje"
+      }
+    ],
+    "selectedOfferingFacts": [],
+    "modelAttempts": [
+      {
+        "attempt": 1,
+        "response": "Me alegra que te sume, y que el freno sea sólo el precio ya lo tenemos claro. Con las 12 cuotas de USD 30 accedés a las 41 clases de Fotografía Profesional y arrancás a formarte para ofrecer tus fotos a tiendas y emprendedores.\nPara dejar tu inscripción lista necesito tu nombre, apellido, correo y teléfono. Me los pasás?",
+        "move": "unknown",
+        "proposedAction": {
+          "type": "none"
+        },
+        "turnRejection": null,
+        "providerStatus": 200,
+        "providerError": null
+      }
+    ],
+    "callRequirements": [
+      "nombre",
+      "apellido",
+      "correo",
+      "telefono"
+    ],
+    "profileRequestedFields": [
+      "nombre",
+      "apellido",
+      "correo",
+      "telefono"
+    ],
+    "activeCourses": [],
+    "activeCourseNames": [],
+    "mayOfferCall": true,
+    "courseBonus": {
+      "enabled": true,
+      "maxBonusCourses": 3,
+      "mayOfferBonus": true,
+      "status": "offer_available"
+    },
+    "priceObjectionMemory": {
+      "present": true,
+      "sourceMessageIds": [
+        "16e8a854-1a20-4002-9e99-c43317fb0b36",
+        "975a705c-4b85-4508-a20f-3c410ac91d4f",
+        "9b264f00-d6f1-4729-aa21-d00be92d537e",
+        "e7dff55d-eea7-4ac4-93e5-db65544b38c9",
+        "f6316936-d15f-4659-ad18-db76c16a5fc0",
+        "fd70cdac-63d5-4db7-802a-aa0e0fd297ee"
+      ],
+      "priorSourceMessageIds": [
+        "975a705c-4b85-4508-a20f-3c410ac91d4f",
+        "9b264f00-d6f1-4729-aa21-d00be92d537e",
+        "e7dff55d-eea7-4ac4-93e5-db65544b38c9",
+        "f6316936-d15f-4659-ad18-db76c16a5fc0",
+        "fd70cdac-63d5-4db7-802a-aa0e0fd297ee"
+      ]
+    },
+    "workflow": {
+      "commitSucceeded": true,
+      "status": "waiting_user",
+      "errorCode": null,
+      "finalBackendDecisionError": null
+    }
+  },
+  "responses": [
+    {
+      "call_id": "84640c70-d5ec-4e65-aec9-a5bc496f1ba8",
+      "provider_status": "completed",
+      "incomplete_details": null,
+      "output_text": "{\"verdict\":{\"turn_id\":\"bonus_2\",\"approved\":false,\"failures\":[{\"code\":\"SEMANTIC_MUST_FAILED\",\"requirement_id\":\"must:0\",\"authority_line_index\":3,\"evidence_source\":\"response\",\"observed_evidence\":\"Para dejar tu inscripción lista necesito tu nombre, apellido, correo y teléfono.\",\"explanation\":\"El cliente respondió que le suma pero sigue dudando por el precio. El agente no suma un segundo curso bonificado nuevo ni recapitula el paquete (curso pago + ambos bonificados); en su lugar pide datos de contacto.\"}]}}}",
+      "expected_envelope": {
+        "verdict": {
+          "turn_id": "bonus_2",
+          "approved": false,
+          "failures": [
+            {
+              "code": "SEMANTIC_MUST_FAILED",
+              "requirement_id": "must:0",
+              "authority_line_index": 3,
+              "evidence_source": "response",
+              "observed_evidence": "Para dejar tu inscripción lista necesito tu nombre, apellido, correo y teléfono.",
+              "explanation": "El cliente respondió que le suma pero sigue dudando por el precio. El agente no suma un segundo curso bonificado nuevo ni recapitula el paquete (curso pago + ambos bonificados); en su lugar pide datos de contacto."
+            }
+          ]
+        }
+      }
+    },
+    {
+      "call_id": "cce48164-c1b1-4f2a-b579-ea9d29da7efa",
+      "provider_status": "completed",
+      "incomplete_details": null,
+      "output_text": "{\"verdict\":{\"turn_id\":\"bonus_2\",\"approved\":false,\"failures\":[{\"code\":\"SEMANTIC_MUST_FAILED\",\"requirement_id\":\"must:0\",\"authority_line_index\":3,\"evidence_source\":\"response\",\"observed_evidence\":\"Para dejar tu inscripción lista necesito tu nombre, apellido, correo y teléfono.\",\"explanation\":\"Tras la respuesta del cliente sobre el precio, el agente no suma un segundo curso bonificado nuevo ni recapitula el paquete (curso pago + ambos bonificados); en su lugar pide datos de contacto.\"}]}}}",
+      "expected_envelope": {
+        "verdict": {
+          "turn_id": "bonus_2",
+          "approved": false,
+          "failures": [
+            {
+              "code": "SEMANTIC_MUST_FAILED",
+              "requirement_id": "must:0",
+              "authority_line_index": 3,
+              "evidence_source": "response",
+              "observed_evidence": "Para dejar tu inscripción lista necesito tu nombre, apellido, correo y teléfono.",
+              "explanation": "Tras la respuesta del cliente sobre el precio, el agente no suma un segundo curso bonificado nuevo ni recapitula el paquete (curso pago + ambos bonificados); en su lugar pide datos de contacto."
+            }
+          ]
+        }
+      }
+    },
+    {
+      "call_id": "ab0653bb-ee78-4fce-98e7-99c60fab2b94",
+      "provider_status": "completed",
+      "incomplete_details": null,
+      "output_text": "{\"verdict\":{\"turn_id\":\"bonus_2\",\"approved\":false,\"failures\":[{\"code\":\"SEMANTIC_MUST_FAILED\",\"requirement_id\":\"must:0\",\"authority_line_index\":3,\"evidence_source\":\"response\",\"observed_evidence\":\"Para dejar tu inscripción lista necesito tu nombre, apellido, correo y teléfono.\",\"explanation\":\"Tras la respuesta del cliente sobre el precio, el agente no suma un segundo curso bonificado nuevo ni recapitula el paquete (curso pago + ambos bonificados); en su lugar pide datos de contacto.\"}]}}}",
+      "expected_envelope": {
+        "verdict": {
+          "turn_id": "bonus_2",
+          "approved": false,
+          "failures": [
+            {
+              "code": "SEMANTIC_MUST_FAILED",
+              "requirement_id": "must:0",
+              "authority_line_index": 3,
+              "evidence_source": "response",
+              "observed_evidence": "Para dejar tu inscripción lista necesito tu nombre, apellido, correo y teléfono.",
+              "explanation": "Tras la respuesta del cliente sobre el precio, el agente no suma un segundo curso bonificado nuevo ni recapitula el paquete (curso pago + ambos bonificados); en su lugar pide datos de contacto."
+            }
+          ]
+        }
+      }
+    },
+    {
+      "call_id": "b80ec295-ef05-4143-a210-5bf945d24925",
+      "provider_status": "completed",
+      "incomplete_details": null,
+      "output_text": "{\"verdict\":{\"turn_id\":\"bonus_2\",\"approved\":false,\"failures\":[{\"code\":\"SEMANTIC_MUST_FAILED\",\"requirement_id\":\"must:0\",\"authority_line_index\":3,\"evidence_source\":\"response\",\"observed_evidence\":\"Para dejar tu inscripción lista necesito tu nombre, apellido, correo y teléfono.\",\"explanation\":\"Tras la respuesta del cliente sobre el precio, el agente no suma un segundo curso bonificado nuevo ni recapitula el paquete (curso pago + ambos bonificados); en su lugar pide datos de contacto.\"}]}}}",
+      "expected_envelope": {
+        "verdict": {
+          "turn_id": "bonus_2",
+          "approved": false,
+          "failures": [
+            {
+              "code": "SEMANTIC_MUST_FAILED",
+              "requirement_id": "must:0",
+              "authority_line_index": 3,
+              "evidence_source": "response",
+              "observed_evidence": "Para dejar tu inscripción lista necesito tu nombre, apellido, correo y teléfono.",
+              "explanation": "Tras la respuesta del cliente sobre el precio, el agente no suma un segundo curso bonificado nuevo ni recapitula el paquete (curso pago + ambos bonificados); en su lugar pide datos de contacto."
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

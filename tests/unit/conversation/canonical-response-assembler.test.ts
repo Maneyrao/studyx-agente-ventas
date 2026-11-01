@@ -103,6 +103,37 @@ describe('canonical response assembler V1', () => {
     expect(result.used_fact_ids).toEqual([description.id]);
   });
 
+  it('renders a cited canonical syllabus when the model requests the full temario block', () => {
+    const syllabus: CanonicalFactV1 = {
+      id: 'knowledge-source:11111111-1111-4111-8111-111111111111',
+      kind: 'offering_syllabus',
+      source: 'knowledge_base',
+      value: 'Módulo 1: fundamentos. Módulo 2: práctica aplicada.',
+      offering_code: 'fotografia-profesional',
+    };
+    const result = assembleCanonicalConversationResponseV1({
+      plan: plan({ selected_offering_code: 'fotografia-profesional' }),
+      fact_refs: [{
+        id: syllabus.id,
+        kind: syllabus.kind,
+        offering_code: syllabus.offering_code,
+      }],
+      facts: [syllabus],
+      composition: {
+        schema_version: 1,
+        narrative: {
+          opening: 'Claro, te paso el temario.',
+          explanation: null,
+          next_question: null,
+        },
+        used_fact_ids: [syllabus.id],
+      },
+    });
+
+    expect(result.content).toContain(syllabus.value);
+    expect(result.used_fact_ids).toEqual([syllabus.id]);
+  });
+
   it('completes an authorized area-choice response with its options and one brief question', () => {
     const areaFacts: CanonicalFactV1[] = [
       { id: 'area:oficios:name:v1', kind: 'area_name', source: 'business_snapshot', value: 'Academia de Oficios' },

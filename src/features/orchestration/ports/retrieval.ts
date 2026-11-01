@@ -24,6 +24,8 @@ export interface RetrievedKnowledge {
   readonly title: string;
   readonly content: string;
   readonly similarity: number;
+  /** Present only when this document was resolved by a canonical offering code. */
+  readonly offering_code?: string;
 }
 
 /**
@@ -51,5 +53,14 @@ export interface KnowledgeRetriever {
     embedding: readonly number[];
     limit: number;
     min_similarity: number;
+  }): Promise<RetrievedKnowledge[]>;
+  /**
+   * Canonical course lookup for an explicit plan/temario request. Unlike the
+   * semantic search, this cannot miss the source because of phrasing or an
+   * embedding threshold; the backend-owned offering code is the filter.
+   */
+  searchByOfferingCode?(input: {
+    offering_code: string;
+    limit: number;
   }): Promise<RetrievedKnowledge[]>;
 }

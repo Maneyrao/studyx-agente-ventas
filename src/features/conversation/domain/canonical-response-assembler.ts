@@ -42,6 +42,7 @@ function renderFact(
     case 'area_name': return `• ${fact.value}`;
     case 'offering_name': return `• ${fact.value}`;
     case 'offering_description': return fact.value;
+    case 'offering_syllabus': return fact.value;
     case 'offering_duration': return displayName
       ? renderCourseDurationValue({ displayName, duration: fact.value })
       : `Duración: ${fact.value}`;

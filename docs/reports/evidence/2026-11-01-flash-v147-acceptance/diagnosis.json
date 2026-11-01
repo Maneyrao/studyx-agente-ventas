@@ -1,0 +1,203 @@
+{
+  "execution_sha": "961c991bcb2a6afc3ea6b0f30d56a7ec0b0f60b8",
+  "brain_version": "studyx-agent-a-brain-v147",
+  "prompt_version": "studyx-agent-a-canonical-v101",
+  "scores_unchanged": true,
+  "full16_authorized_by_gate": false,
+  "cases_both_runs": {
+    "06": "FAIL",
+    "07": "PASS",
+    "14": "FAIL"
+  },
+  "causes": [
+    {
+      "run": "r1b",
+      "case": "06",
+      "cause": "Judge: omitted the call after value/installments/isolation. Then two delivered unsupported complements (bonus_3, never_fourth), with no bonus action, no prior executed bonus and package0."
+    },
+    {
+      "run": "r1b",
+      "case": "14",
+      "cause": "Judge: isolate withdrew/redirected to call instead of isolation and conditional close. One later bonus effect was legally executed by prior count/call facts; recap at bonus_1 was legitimate and cancellation on course change passed. Commercial sequence still failed; recap confidence became indeterminate under the case-wide semantic result."
+    },
+    {
+      "run": "r2",
+      "case": "06",
+      "cause": "Judge: missed the call, repeated payment plans and later did not progress. bonus_3 and never_fourth delivered new/reiterated unsupported complement with no effect; no actual accumulated package ever reached three."
+    },
+    {
+      "run": "r2",
+      "case": "14",
+      "cause": "Judge: isolation/conditional close and required call were missing. bonus_1 explicitly included an extra with actionnone/package0. No executed package existed for cancellation exposure."
+    }
+  ],
+  "unsupported_deliveries": [
+    {
+      "run": "focused-961c991-flash-060714-r1b-20261101",
+      "case": "06_repeated_price_bonus_ladder",
+      "turn": "bonus_3",
+      "trace_id": "08ccbd1f-51cc-4365-b76a-7a815ce7c50a",
+      "delivered_sha256": "66135c3737a0b8ac981429a803b30364e2daa804c6092c4fd5659db7f28cf88e",
+      "subjects": [],
+      "attempts": 1,
+      "proposal": {
+        "type": "none"
+      },
+      "effect": null,
+      "promotion": {
+        "status": null,
+        "bonusCount": 0,
+        "paidCourse": null,
+        "bonusCourses": []
+      },
+      "last_ladder": {
+        "eligible": false,
+        "observed_price_objection_count": 4,
+        "required_price_objection_count": 3,
+        "call_invitation_status": "not_offered",
+        "call_offer_count": 0,
+        "may_offer_call": true,
+        "missing_steps": [
+          "call_invitation"
+        ]
+      }
+    },
+    {
+      "run": "focused-961c991-flash-060714-r1b-20261101",
+      "case": "06_repeated_price_bonus_ladder",
+      "turn": "never_fourth",
+      "trace_id": "67d73ea2-4f04-4c5a-9955-fc9e841d399b",
+      "delivered_sha256": "d2626ffa7b60bea45956254ba839946adaa52f025cd86a08013666738f6293f8",
+      "subjects": [],
+      "attempts": 1,
+      "proposal": {
+        "type": "none"
+      },
+      "effect": null,
+      "promotion": {
+        "status": null,
+        "bonusCount": 0,
+        "paidCourse": null,
+        "bonusCourses": []
+      },
+      "last_ladder": {
+        "eligible": false,
+        "observed_price_objection_count": 5,
+        "required_price_objection_count": 3,
+        "call_invitation_status": "not_offered",
+        "call_offer_count": 0,
+        "may_offer_call": true,
+        "missing_steps": [
+          "call_invitation"
+        ]
+      }
+    },
+    {
+      "run": "focused-961c991-flash-060714-r2-20261101",
+      "case": "06_repeated_price_bonus_ladder",
+      "turn": "bonus_3",
+      "trace_id": "8578623d-e12f-4588-9da8-e494275c7f0d",
+      "delivered_sha256": "dcbee26ec779658d9b0d5dc35760f96c8689183cd9c856c69e4e3dd8c61e04aa",
+      "subjects": [],
+      "attempts": 1,
+      "proposal": {
+        "type": "none"
+      },
+      "effect": null,
+      "promotion": {
+        "status": null,
+        "bonusCount": 0,
+        "paidCourse": null,
+        "bonusCourses": []
+      },
+      "last_ladder": {
+        "eligible": false,
+        "observed_price_objection_count": 4,
+        "required_price_objection_count": 3,
+        "call_invitation_status": "not_offered",
+        "call_offer_count": 0,
+        "may_offer_call": true,
+        "missing_steps": [
+          "call_invitation"
+        ]
+      }
+    },
+    {
+      "run": "focused-961c991-flash-060714-r2-20261101",
+      "case": "06_repeated_price_bonus_ladder",
+      "turn": "never_fourth",
+      "trace_id": "47d25337-4987-4e34-ae80-dfb884b6eb10",
+      "delivered_sha256": "5289aa4dc19c741ccebadfe4581a283592306ae423322ab0afe89fa53eb40831",
+      "subjects": [],
+      "attempts": 1,
+      "proposal": {
+        "type": "none"
+      },
+      "effect": null,
+      "promotion": {
+        "status": null,
+        "bonusCount": 0,
+        "paidCourse": null,
+        "bonusCourses": []
+      },
+      "last_ladder": {
+        "eligible": false,
+        "observed_price_objection_count": 5,
+        "required_price_objection_count": 3,
+        "call_invitation_status": "not_offered",
+        "call_offer_count": 0,
+        "may_offer_call": true,
+        "missing_steps": [
+          "call_invitation"
+        ]
+      }
+    },
+    {
+      "run": "focused-961c991-flash-060714-r2-20261101",
+      "case": "14_course_change_cancels_promotion",
+      "turn": "bonus_1",
+      "trace_id": "a100e809-2abf-4ca5-a9a1-750b13e61a22",
+      "delivered_sha256": "72eb437f8fff2e74d6440f3df277ada52aa8db6b0145fc802b461f3735fe8fad",
+      "subjects": [],
+      "attempts": 1,
+      "proposal": {
+        "type": "none"
+      },
+      "effect": null,
+      "promotion": {
+        "status": null,
+        "bonusCount": 0,
+        "paidCourse": null,
+        "bonusCourses": []
+      },
+      "last_ladder": {
+        "eligible": false,
+        "observed_price_objection_count": 3,
+        "required_price_objection_count": 3,
+        "call_invitation_status": "not_offered",
+        "call_offer_count": 0,
+        "may_offer_call": true,
+        "missing_steps": [
+          "call_invitation"
+        ]
+      }
+    }
+  ],
+  "repair147_finding": "All five unsupported deliveries had one generation, no rejection and no forbidden_promise/ladder repair. The strengthened repair instruction did not activate; these observations do not measure its success on such a rejection.",
+  "postgeneration_finding": "All36 final deliveries preserve the last model draft exactly or only under whitespace/authorized opening punctuation normalization. No final gift was introduced by backend rewriting.",
+  "evaluator_limit_kept_unmodified": "R2/14/installments is also failed by the judge for «te dejo» in «te dejo todo listo». Codex bonus audit does not treat that logistics phrase as an unsupported bonus; no score was changed, and gate failure independently rests on confirmed unauthorized offers and missing negotiation steps.",
+  "costing": {
+    "requests": 77,
+    "agent_requests": 40,
+    "judge_attempts": 37,
+    "known_tokens": 1043135,
+    "known_offpeak_usd": 0.112621566,
+    "unknown_usage_attempts": 1,
+    "unknown_usage_call": "r1b call-0034, judge network error; retry succeeded",
+    "exact_total_estimated_usd": null,
+    "bootstrap_requests": 0,
+    "bootstrap_cost_usd": 0
+  },
+  "audit_method": "Codex review of delivered text against recorded effects",
+  "summary_model_calls": 0
+}

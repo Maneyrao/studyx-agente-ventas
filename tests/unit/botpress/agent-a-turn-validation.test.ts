@@ -1,8 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  removeRepeatedAgentQuestionMessagesV1,
-  validateAgentATurnProposalV1,
-} from '../../../botpress-agent/src/lib/conversation/agent-a-brain';
+import { validateAgentATurnProposalV1 } from '../../../botpress-agent/src/lib/conversation/agent-a-brain';
 import type { AgentAContextV1, AgentATurnProposalV1 } from '../../../botpress-agent/src/schemas/agent-a-brain';
 
 /**
@@ -110,6 +107,75 @@ describe('validación de la propuesta del turno', () => {
       { code: 'MISSING_INTAKE', subject: 'apellido' },
       { code: 'MISSING_INTAKE', subject: 'correo' },
     ]);
+  });
+
+  it('no convierte el intake pendiente en una décima condición para ofrecer una bonificación', () => {
+    const current = context({
+      turn: {
+        batch_messages: [{ id: 'm2', text: 'Prefiero seguir por chat. El precio sigue siendo lo único que me frena.' }],
+        recent_turns: [{ id: 'm1', direction: 'inbound', content: 'El precio es lo único que me frena.' }],
+      },
+      commercial_state: {
+        ...context().commercial_state,
+        awaiting_reply: 'contact_details',
+      },
+      catalog: {
+        ...context().catalog,
+        available_offerings: [
+          { code: 'redes-informaticas', display_name: 'Redes Informáticas', area_code: 'tecnologia', fact_id: 'paid' },
+          { code: 'excel-integral', display_name: 'Excel Integral', area_code: 'tecnologia', fact_id: 'bonus' },
+        ],
+      },
+      capabilities: {
+        ...context().capabilities,
+        intake_missing: ['nombre', 'apellido', 'correo', 'telefono'],
+        course_bonus: {
+          enabled: true,
+          max_bonus_courses: 3,
+          may_offer_bonus: true,
+          status: 'checkin_available',
+          may_schedule_checkin: false,
+          may_request_review: false,
+          may_accept_offer: false,
+          may_send_promoted_payment: false,
+          promotion_code: null,
+          interest_offering_code: 'redes-informaticas',
+          bonus_offerings: [],
+          delivered_bonus_offerings: [],
+        },
+      },
+    } as Partial<AgentAContextV1>);
+    const rejection = validateAgentATurnProposalV1({
+      proposal: proposal({
+        move: {
+          schema_version: 1,
+          move: 'continue_by_chat',
+          secondary_moves: [],
+          vetoes: [],
+          confidence: 1,
+        },
+        response: {
+          messages: [
+            'Puedo sumarte Excel Integral sin costo extra para complementar lo que vas a aplicar. El precio de Redes Informáticas no cambia. Avanzamos con las 12 cuotas de USD 30?',
+          ],
+          call_offer: null,
+        },
+        proposed_action: {
+          type: 'offer_course_bonus',
+          interest_offering_code: 'redes-informaticas',
+          bonus_offering_code: 'excel-integral',
+        },
+        used_fact_ids: [],
+      }),
+      context: current,
+      planned_fact_ids: [],
+      rejection_id: '00000000-0000-4000-8000-000000000001',
+    });
+
+    expect(rejection?.rejections ?? []).not.toContainEqual({
+      code: 'MISSING_INTAKE',
+      subject: 'nombre',
+    });
   });
 
   it('requires the model to ask for the missing phone before acknowledging a requested call', () => {
@@ -295,7 +361,7 @@ describe('validación de la propuesta del turno', () => {
     expect(rejection).toBeNull();
   });
 
-  it('rechaza usar una cuota autorizada como táctica para abaratar una objeción de precio', () => {
+  it('permite reencuadrar una objeción de precio con una cuota autorizada y valor contextual', () => {
     const paymentFactId = 'payment:redes-informaticas:monthly_12:price:v1';
     const rejection = validateAgentATurnProposalV1({
       proposal: proposal({
@@ -323,13 +389,10 @@ describe('validación de la propuesta del turno', () => {
       rejection_id: '00000000-0000-4000-8000-000000000001',
     });
 
-    expect(rejection?.rejections).toContainEqual({
-      code: 'FACT_VALUE_MISMATCH',
-      subject: 'price_objection_reframe',
-    });
+    expect(rejection).toBeNull();
   });
 
-  it('rechaza también una mensualidad autorizada presentada como más accesible', () => {
+  it('deja el reencuadre de una cuota autorizada a la interpretación comercial del agente', () => {
     const paymentFactId = 'payment:redes-informaticas:monthly_12:price:v1';
     const rejection = validateAgentATurnProposalV1({
       proposal: proposal({
@@ -357,10 +420,8 @@ describe('validación de la propuesta del turno', () => {
       rejection_id: '00000000-0000-4000-8000-000000000001',
     });
 
-    expect(rejection?.rejections).toContainEqual({
-      code: 'FACT_VALUE_MISMATCH',
-      subject: 'price_objection_reframe',
-    });
+    // Authority prompt lines 98-102: el agente puede enfocar USD 30 y “más accesible”.
+    expect(rejection).toBeNull();
   });
 
   it('permite responder la cuota exacta cuando el mismo mensaje pregunta el precio y expresa objeción', () => {
@@ -425,7 +486,7 @@ describe('validación de la propuesta del turno', () => {
     expect(rejection).toBeNull();
   });
 
-  it('rechaza recomendar la cuota como más accesible aunque el cliente haya pedido ese dato', () => {
+  it('permite recomendar el plan canónico como más accesible', () => {
     const paymentFactId = 'payment:redes-informaticas:monthly_12:price:v1';
     const rejection = validateAgentATurnProposalV1({
       proposal: proposal({
@@ -453,13 +514,10 @@ describe('validación de la propuesta del turno', () => {
       rejection_id: '00000000-0000-4000-8000-000000000001',
     });
 
-    expect(rejection?.rejections).toContainEqual({
-      code: 'FACT_VALUE_MISMATCH',
-      subject: 'price_objection_reframe',
-    });
+    expect(rejection).toBeNull();
   });
 
-  it('rechaza una comparación promocional aunque el mensaje mixto haya pedido la cuota', () => {
+  it('no interpreta la estrategia de comparación cuando el precio citado es canónico', () => {
     const paymentFactId = 'payment:redes-informaticas:monthly_12:price:v1';
     const rejection = validateAgentATurnProposalV1({
       proposal: proposal({
@@ -487,10 +545,7 @@ describe('validación de la propuesta del turno', () => {
       rejection_id: '00000000-0000-4000-8000-000000000001',
     });
 
-    expect(rejection?.rejections).toContainEqual({
-      code: 'FACT_VALUE_MISMATCH',
-      subject: 'price_objection_reframe',
-    });
+    expect(rejection).toBeNull();
   });
 
   it('acepta cerrar sin presión cuando la objeción repetida es una imposibilidad real de presupuesto', () => {
@@ -990,7 +1045,7 @@ describe('validación de la propuesta del turno', () => {
     });
   });
 
-  it('rechaza repetir literalmente la invitación de llamada anterior', () => {
+  it('no juzga una invitación repetida si la respuesta completa no es un duplicado textual', () => {
     const previousOffer = 'Si querés, podemos coordinar una llamada breve para contarte los detalles del curso.';
     const current = context({
       turn: {
@@ -1016,10 +1071,8 @@ describe('validación de la propuesta del turno', () => {
       rejection_id: '00000000-0000-4000-8000-000000000001',
     });
 
-    expect(rejection?.rejections).toContainEqual({
-      code: 'REPEATED_AGENT_REPLY',
-      subject: 'previous_call_offer',
-    });
+    expect(rejection?.rejections.map((item) => item.code) ?? [])
+      .not.toContain('REPEATED_AGENT_REPLY');
   });
 
   it.each(['¿Te llamo?', '¿Hablamos por teléfono?', '¿Quieres que te llame para explicarte el curso?', 'Ya registré tus datos. ¿Hablamos por teléfono?', 'Ya registré tus datos, ¿Hablamos por teléfono?', 'Entendido, seguimos sin llamada. ¿Quieres que te llame para explicarte el curso?'])('una tercera oferta de llamada es CALL_BUDGET_EXHAUSTED: %s', (offer) => {
@@ -1241,7 +1294,7 @@ describe('V8 respuesta repetida', () => {
     expect(rejection?.rejections.map((r) => r.code) ?? []).not.toContain('REPEATED_AGENT_REPLY');
   });
 
-  it('rechaza repetir la misma pregunta aunque el resto de la respuesta cambie', () => {
+  it('no juzga avance por repetir una pregunta dentro de una respuesta nueva', () => {
     const rejection = validateAgentATurnProposalV1({
       proposal: proposal({
         response: {
@@ -1267,10 +1320,8 @@ describe('V8 respuesta repetida', () => {
       rejection_id: '11111111-1111-4111-8111-111111111111',
     });
 
-    expect(rejection?.rejections).toContainEqual({
-      code: 'REPEATED_AGENT_REPLY',
-      subject: 'previous_agent_question',
-    });
+    expect(rejection?.rejections.map((item) => item.code) ?? [])
+      .not.toContain('REPEATED_AGENT_REPLY');
   });
 
   it('no permite afirmar que no hay requisitos cuando el catálogo no lo dice', () => {
@@ -1878,53 +1929,6 @@ describe('el guard de prerequisitos distingue pregunta de afirmación', () => {
     expect(rechazoDePrerequisitos(
       '¿Ya tenés conocimientos previos? No necesitás experiencia para arrancar.',
     )).toBe(true);
-  });
-});
-
-/**
- * La pregunta repetida se quita sola, no arrastra el mensaje entero.
- *
- * `removeRepeatedAgentQuestionMessagesV1` descartaba el mensaje completo. Si la
- * pregunta ya hecha venía pegada a algo útil —"Perfecto, seguimos por chat.
- * ¿Ya tenías pensado estudiar maquillaje...?"— quitarla dejaba el turno sin
- * mensajes, la poda se abortaba y la repetición se entregaba igual.
- *
- * Observado por el arnés de workflow en `llamada_rechazada` t2: la persona pide
- * seguir por chat y recibe de vuelta la misma pregunta de diagnóstico del turno
- * anterior, que el propio prompt prohíbe repetir.
- */
-describe('poda de la pregunta ya hecha', () => {
-  const anterior = '¿Ya tenías pensado estudiar maquillaje o recién estás empezando a averiguar?';
-
-  it('conserva la parte útil y quita sólo la pregunta repetida', () => {
-    const resultado = removeRepeatedAgentQuestionMessagesV1(
-      ['Perfecto, seguimos por chat entonces. ¿Ya tenías pensado estudiar maquillaje o recién estás empezando a averiguar?'],
-      anterior,
-      'No quiero que me llamen, prefiero por chat',
-    );
-
-    expect(resultado.join(' ')).toContain('seguimos por chat');
-    expect(resultado.join(' ')).not.toMatch(/ya ten[ií]as pensado estudiar maquillaje/iu);
-  });
-
-  it('si el cliente pide que se lo repitan, no se poda nada', () => {
-    const resultado = removeRepeatedAgentQuestionMessagesV1(
-      [`Claro. ${anterior}`],
-      anterior,
-      '¿Me lo repetís? No entendí',
-    );
-
-    expect(resultado.join(' ')).toMatch(/ya ten[ií]as pensado/iu);
-  });
-
-  it('una pregunta nueva no se toca', () => {
-    const resultado = removeRepeatedAgentQuestionMessagesV1(
-      ['¿Cuál de las tres opciones de pago te resulta más cómoda?'],
-      anterior,
-      'me interesa',
-    );
-
-    expect(resultado).toEqual(['¿Cuál de las tres opciones de pago te resulta más cómoda?']);
   });
 });
 

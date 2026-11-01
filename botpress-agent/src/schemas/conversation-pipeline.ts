@@ -96,7 +96,7 @@ export const CanonicalFactRefV1Schema = z.object({
   id: z.string().min(1),
   kind: z.enum([
     'area_name', 'offering_name', 'offering_description', 'offering_duration',
-    'offering_modality', 'payment_plan_label', 'payment_plan_price', 'payment_link',
+    'offering_modality', 'offering_syllabus', 'payment_plan_label', 'payment_plan_price', 'payment_link',
   ]),
   offering_code: z.string().min(1).optional(),
   payment_plan: PaymentPlanSchema.optional(),

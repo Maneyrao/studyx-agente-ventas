@@ -1,3 +1,4 @@
+// Register preservation: docs/authority/prompt-agente-a-studyx-v2.md:13; punctuation:15.
 import { describe, expect, it } from 'vitest';
 import type { AgentAContextV1 } from '../../../botpress-agent/src/schemas/agent-a-brain';
 import {
@@ -105,7 +106,7 @@ describe('payment narrative keeps the model as author', () => {
 
     expect(composition.narrative.opening).toBe(
       'La de menor cuota es la de 12 pagos mensuales de USD 30. '
-      + 'También tienes 6 pagos de USD 60 o un pago único de USD 360.',
+      + 'También tenés 6 pagos de USD 60 o un pago único de USD 360.',
     );
   });
 
@@ -123,7 +124,7 @@ describe('payment narrative keeps the model as author', () => {
       ['Te puedo hacer 4 cuotas de USD 50.', 'Contame qué preferís.'], [LABEL_12]);
 
     expect(JSON.stringify(composition)).not.toContain('USD 50');
-    expect(composition.narrative.opening).toBe('Cuéntame qué prefieres.');
+    expect(composition.narrative.opening).toBe('Contame qué preferís.');
   });
 
   it('still drops a canonical value the model did not cite', () => {
@@ -131,7 +132,7 @@ describe('payment narrative keeps the model as author', () => {
       ['Tenés un pago único de USD 360.', 'Decime cómo seguimos.'], [LABEL_12]);
 
     expect(JSON.stringify(composition)).not.toContain('un pago único de USD 360');
-    expect(composition.narrative.opening).toBe('Dime cómo seguimos.');
+    expect(composition.narrative.opening).toBe('Decime cómo seguimos.');
   });
 
   it('still drops a model-authored URL', () => {

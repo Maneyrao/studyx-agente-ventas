@@ -245,21 +245,21 @@ export function evaluateCallOfferTurnPolicyV1(input: {
       return { offer_required: false, offer_allowed: false, reason: 'FIRST_NAME_OR_NEED_MISSING', customer_signal: customerSignal };
     }
     if (exceptionRequest(text)) {
-      return { offer_required: true, offer_allowed: true, reason: 'FIRST_EXCEPTION_REQUEST', customer_signal: customerSignal };
+      return { offer_required: false, offer_allowed: true, reason: 'FIRST_EXCEPTION_REQUEST', customer_signal: customerSignal };
     }
     if (isPriceObjectionTextV1(text) && priorPriceObjection(context)) {
-      return { offer_required: true, offer_allowed: true, reason: 'FIRST_REPEATED_PRICE_OBJECTION', customer_signal: customerSignal };
+      return { offer_required: false, offer_allowed: true, reason: 'FIRST_REPEATED_PRICE_OBJECTION', customer_signal: customerSignal };
     }
     if (context.commercial_state.selected_offering_code !== null
       || context.catalog.selected_offering !== null) {
-      return { offer_required: true, offer_allowed: true, reason: 'FIRST_OFFER_DUE', customer_signal: customerSignal };
+      return { offer_required: false, offer_allowed: true, reason: 'FIRST_OFFER_DUE', customer_signal: customerSignal };
     }
     const strongUsefulMoment = isPriceObjectionTextV1(text)
       || severalQuestions(context, text)
       || indecision(text)
       || prepaymentFriction(text);
     if (strongUsefulMoment && hasCanonicalOrientation(input)) {
-      return { offer_required: true, offer_allowed: true, reason: 'FIRST_OFFER_DUE', customer_signal: customerSignal };
+      return { offer_required: false, offer_allowed: true, reason: 'FIRST_OFFER_DUE', customer_signal: customerSignal };
     }
     const usefulMoment = strongUsefulMoment || detailsRequest(text);
     if (

@@ -186,6 +186,7 @@ async function performAttempt(
   apiKey: string,
   body: unknown,
   signal: AbortSignal,
+  observe?: GenerateDecisionInput['observe'],
 ): Promise<Decision> {
   let response: Response
   try {
@@ -233,6 +234,7 @@ async function performAttempt(
   }
 
   const content = extractContent(payload)
+  observe?.({ kind: 'model_raw', raw_content: content, provider: 'groq-direct', status: response.status })
   if (content === null) {
     throw new StudyxHttpError('GROQ_EMPTY_RESPONSE', false, response.status)
   }
@@ -278,7 +280,7 @@ export async function generateGroqDecision(
 
   try {
     const decision = await withFullJitterRetry(
-      () => performAttempt(input.apiKey, buildRequestBody(input.instructions, model), controller.signal),
+      () => performAttempt(input.apiKey, buildRequestBody(input.instructions, model), controller.signal, input.observe),
       {
         signal: controller.signal,
         additionalRetries: 1,

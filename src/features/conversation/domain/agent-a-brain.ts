@@ -1,4 +1,7 @@
+import type { CourseMentionV1 } from '@/shared/conversation/course-mentions';
+import type { CourseBonusLadderV1 } from '../../../shared/conversation/bonus-ladder';
 import type { ConversationMoveV1 } from './conversation-pipeline';
+import type { AgentANegotiationContextV1 } from '../../../shared/conversation/negotiation-facts';
 import type { CourseBonusMaxCoursesV1, DirectCourseBonusPromotionV1 } from '../../promotions/domain/course-bonus';
 import type {
   ContactProfileContextV1,
@@ -22,6 +25,7 @@ export const AGENT_A_FACT_KINDS_V1 = [
   'offering_description',
   'offering_duration',
   'offering_modality',
+  'offering_syllabus',
   'payment_plan_label',
   'payment_plan_price',
 ] as const;
@@ -70,6 +74,7 @@ export interface AgentAContextV1 {
     readonly instagram: string | null;
   } | null;
   readonly commercial_state: {
+    readonly negotiation?: AgentANegotiationContextV1;
     readonly promotion?: DirectCourseBonusPromotionV1 | null;
     readonly selected_offering_code: string | null;
     readonly selected_payment_plan: AgentAPaymentPlanV1 | null;
@@ -135,6 +140,7 @@ export interface AgentAContextV1 {
     readonly course_bonus?: {
       readonly enabled?: boolean;
       readonly may_offer_bonus?: boolean;
+      readonly ladder?: CourseBonusLadderV1;
       readonly promotion_cycle_id?: string | null;
       readonly offer_version?: number;
       readonly accepted_at?: string | null;
@@ -161,6 +167,10 @@ export interface AgentAContextV1 {
       readonly field: 'nombre' | 'apellido' | 'correo' | 'telefono';
       readonly reason: 'missing' | 'written_whatsapp_confirmation_required';
     }>;
+    readonly call_execution?: {
+      readonly next_step: 'none' | 'collect_contact_details' | 'confirm_availability' | 'dispatch_authorized';
+      readonly request_call_now_authorized: boolean;
+    };
   };
 }
 
@@ -199,6 +209,8 @@ export type AgentAProposedActionV1 =
     };
 
 export interface AgentATurnProposalV1 {
+  /** Legacy clients may omit metadata; the backend still checks every named course. */
+  readonly course_mentions?: readonly CourseMentionV1[];
   readonly schema_version: 1;
   readonly move: ConversationMoveV1;
   readonly response: {

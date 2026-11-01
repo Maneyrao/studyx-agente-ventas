@@ -1,5 +1,8 @@
+import { courseBonusLadderRejectionSubjectsV1 } from '@/shared/conversation/bonus-ladder-rejection';
+import { backendReleaseSha } from './turn-evidence.service';
 import type { ConversationChannel } from '@/lib/contracts/channel';
 import { randomUUID } from 'node:crypto';
+import { collectNegotiationObservationsV1 } from '@/features/conversation/application/read-negotiation-facts';
 import { offerDirectCourseBonusV1, acceptDirectCourseBonusV1 } from '@/features/promotions/application/direct-course-bonus-service';
 import type { CourseBonusCapabilityV1 } from '@/features/promotions/application/read-course-bonus-capability';
 import { withSerializableTransaction } from '@/lib/db/transaction';
@@ -167,6 +170,7 @@ export interface CommitDecisionInput {
     readonly proposal: AgentATurnProposalV1;
     readonly conversation_only?: boolean;
     readonly requested_action?: AgentAProposedActionV1;
+    readonly operational_continuity?: 'call_consent_revoked';
   } | null;
   /** Additive capability negotiation: older Botpress bundles keep one outbound. */
   supports_multi_outbound?: boolean;
@@ -695,6 +699,7 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
     const workspaceSlug = loadBusinessWorkspaceConfig().workspaceSlug;
     let preparedPipeline: Awaited<ReturnType<typeof prepareConversationPipelineCommitV1>> | null = null;
     let preparedAgentTurn: Awaited<ReturnType<typeof prepareAgentTurnV2>> | null = null;
+    let preparedAgentWorkspaceId: string | null = null;
     let courseBonusCapability: CourseBonusCapabilityV1 | undefined;
     // El contador de fallbacks tiene que sobrevivir a la supresión, y
     // `preparedPipeline` no: la rama de egress lo anula y con él se iría la
@@ -826,15 +831,42 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
         const agentBusinessContext = rawBusiness ? buildBusinessContextView(rawBusiness) : null;
         const currentMoves=[agentTurnProposal.move.move,...agentTurnProposal.move.secondary_moves];
         const proposedActionType=validatedInput.agent_turn_v2.requested_action?.type ?? agentTurnProposal.proposed_action.type;
+        const proposalOfferingCode=resolveAgentTurnOfferingReferenceV2(
+          agentTurnProposal.move.course_reference,
+          agentCatalogIndex?.offerings ?? agentBusinessContext?.offerings ?? [],
+        );
         const checkoutSelectsCourse=(currentMoves.includes('select_course') || currentMoves.includes('request_call'))
           && (proposedActionType==='send_payment_link'
             || (proposedActionType==='none' && currentMoves.includes('request_payment_link')));
         // Checkout owns the canonical selection of this complete turn. Reading
         // only the previous state can hide A's supersession or veto a valid B.
         const checkoutOfferingCode=checkoutSelectsCourse
-          ? resolveAgentTurnOfferingReferenceV2(agentTurnProposal.move.course_reference,
-            agentCatalogIndex?.offerings ?? agentBusinessContext?.offerings ?? [])
+          ? proposalOfferingCode
           : pipelineStateBefore?.selected_offering_code ?? null;
+        const knowledgeOfferingCode=proposalOfferingCode ?? pipelineStateBefore?.selected_offering_code ?? null;
+        const citedKnowledgeSourceIds=agentTurnProposal.used_fact_ids
+          .flatMap((factId) => {
+            const match=factId.match(/^knowledge-source:([0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/iu);
+            return match ? [match[1]!] : [];
+          });
+        const authorizedKnowledgeFacts: Array<{
+          id:string;kind:'offering_syllabus';source:'knowledge_base';value:string;offering_code:string;
+        }>=[];
+        if(knowledgeOfferingCode!==null) {
+          for(const knowledgeId of citedKnowledgeSourceIds) {
+            const [row]=await db<Array<{id:string;content:string;offering_code:string}>>`
+              SELECT id::text, left(content,1200) AS content,
+                COALESCE(metadata->>'course_code',metadata->>'offering_code') AS offering_code
+              FROM knowledge_sources
+              WHERE workspace_id=${workspaceId}::uuid AND id=${knowledgeId}::uuid
+                AND status='active' AND source_type='offering'
+                AND COALESCE(metadata->>'course_code',metadata->>'offering_code')=${knowledgeOfferingCode}
+              LIMIT 1
+            `;
+            if(row) authorizedKnowledgeFacts.push({id:`knowledge-source:${row.id}`,kind:'offering_syllabus',
+              source:'knowledge_base',value:row.content,offering_code:row.offering_code});
+          }
+        }
         courseBonusCapability = await readCourseBonusCapabilityV1({
           workspace_slug: workspaceSlug,
           contact_id: turn.contact_id,
@@ -843,6 +875,7 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
           selected_offering_code: checkoutOfferingCode,
           source_turn_id: turn.id,
         }, { db });
+        preparedAgentWorkspaceId = workspaceId;
         preparedAgentTurn = await prepareAgentTurnV2({
           turn: {
             id: turn.id,
@@ -854,10 +887,12 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
           proposal: agentTurnProposal,
           conversation_only: validatedInput.agent_turn_v2.conversation_only,
           requested_action: validatedInput.agent_turn_v2.requested_action,
+          operational_continuity: validatedInput.agent_turn_v2.operational_continuity,
           semantic_rejections: 'advisory',
           current_customer_messages: currentMessages.map((message) => message.content),
           business_context: agentBusinessContext,
           catalog_index: agentCatalogIndex,
+          authorized_knowledge_facts: authorizedKnowledgeFacts,
           course_bonus_capability: courseBonusCapability,
         }, {
           state_store: new PostgresConversationStateStoreV1(db),
@@ -1534,6 +1569,18 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
               && validatedInput.turn_diagnostics.action_status === 'authorized'
               ? 'none' : validatedInput.turn_diagnostics.action_status };
 
+    const negotiationObservations = preparedAgentTurn && preparedAgentWorkspaceId && decision.kind === 'reply'
+      && decision.memory_candidates.some(candidate => candidate.type === 'constraint' && candidate.key === 'price_only_barrier')
+      ? collectNegotiationObservationsV1({ workspace_id: preparedAgentWorkspaceId, conversation_id: turn.conversation_id,
+        contact_id: turn.contact_id, source_turn_id: turn.id,
+        offering_code: preparedAgentTurn.commercial_interest_offering_code,
+        candidates: decision.memory_candidates,
+        messages: await db<Array<{ id: string; content: string }>>`
+          SELECT id, content FROM messages WHERE contact_id=${turn.contact_id}::uuid
+            AND conversation_id=${turn.conversation_id}::uuid AND direction='inbound'
+            AND (id=${turn.id}::uuid OR batch_id=${turn.batch_id}::uuid)
+          ORDER BY conversation_seq, created_at, id`,
+      }) : [];
     const inserted = await db<Array<{ id: string }>>`
       INSERT INTO agent_decisions (
         turn_id,
@@ -1554,7 +1601,8 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
         model_name,
         prompt_version,
         payload_hash,
-        diagnostics
+        diagnostics,
+        negotiation_observations
       )
       VALUES (
         ${validatedInput.turn_id}::uuid,
@@ -1575,7 +1623,8 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
         ${validatedInput.model.model},
         ${validatedInput.model.prompt_version},
         decode(${payloadHash}, 'hex'),
-        ${jsonbParam(db, actualDiagnostics)}
+        ${jsonbParam(db, actualDiagnostics)},
+        ${jsonbParam(db, negotiationObservations.length ? negotiationObservations : null)}
       )
       RETURNING id
     `;
@@ -1715,7 +1764,8 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
                 idempotency_key:validatedInput.supports_multi_outbound ? `outbound:${decisionId}:part:${partIndex}` : `outbound:${decisionId}`},
             });
             if (!result.ok) throw new DecisionPolicyError('AGENT_TURN_V2_REJECTED:COMMERCIAL_TRUTH_VIOLATION',
-              ['forbidden_promise',`direct_bonus:${result.reason}`]);
+              result.reason === 'ladder_step_pending' ? courseBonusLadderRejectionSubjectsV1(result.ladder)
+                : ['forbidden_promise',`direct_bonus:${result.reason}`]);
             const rows = await db<Message[]>`UPDATE messages SET metadata=${jsonbParam(db,{
               decision_id:decisionId,response_type:decision.response_type,model:validatedInput.model,
               part_index:partIndex,part_count:partTexts.length,authorized_egress:partManifest,
@@ -1885,6 +1935,7 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
           source_turn_id: turn.id,
           discussed_offering_code: preparedAgentTurn.commercial_interest_offering_code,
           records_price_objection: preparedAgentTurn.records_price_objection,
+          reset_context: preparedAgentTurn.resets_promotion_context,
         });
       }
       if (preparedAgentTurn && canonicalWorkspaceId && committedBusinessAction
@@ -2075,6 +2126,11 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
         next_state: decision.next_state,
         outbound_id: outbound?.id ?? null,
         egress_hash: outbound?.authorized_egress.content_hash ?? null,
+        authorized_saved_text: finalResponse,
+        action_rejection: preparedAgentTurn?.action_rejection ?? null,
+        operational_continuity: validatedInput.agent_turn_v2?.operational_continuity ?? null,
+        backend_sha: backendReleaseSha(),
+        model: validatedInput.model,
         call_id: callRequest?.call_id ?? null,
       },
       event_key: `decision:${decisionId}:committed`,
@@ -2442,7 +2498,7 @@ export async function recordDeliveryReport(input: DeliveryReportInput): Promise<
       action: 'outbound.delivery.reported',
       entity_type: 'message',
       entity_id: input.outbound_id,
-      payload: semanticPayload,
+      payload: { ...semanticPayload, backend_sha: backendReleaseSha() },
       event_key: `audit:${eventKey}`,
       correlation_id: input.trace_id,
     }, db);

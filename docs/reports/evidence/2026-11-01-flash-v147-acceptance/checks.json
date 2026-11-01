@@ -1,0 +1,58 @@
+{
+  "evaluated_sha": "961c991bcb2a6afc3ea6b0f30d56a7ec0b0f60b8",
+  "brain_version": "studyx-agent-a-brain-v147",
+  "canonical_prompt_version": "studyx-agent-a-canonical-v101",
+  "preflight_offline_tests": {
+    "passed": 100,
+    "skipped": 3
+  },
+  "frozen_worktree_source_and_evaluator_clean_before_after_each_run": true,
+  "harness_sha256": "fc0bc638816344d0ecc0104a91d3de07d950773ef9a68efec12a8e8e8eded0b6",
+  "logical_evaluation_runs": 2,
+  "turns_per_run": 18,
+  "deliveries_audited": 36,
+  "raw_runtime_reports_archived": 36,
+  "all_delivery_text_hashes_match_originals": true,
+  "delivery_audit_counts": {
+    "PASS": 31,
+    "FAIL": 5
+  },
+  "unsupported_deliveries": {
+    "new_offers": 3,
+    "reiterations": 2,
+    "total": 5
+  },
+  "bonus_effects": 1,
+  "legitimate_recap": 1,
+  "ladder_step_pending_rejections": 0,
+  "forbidden_promise_rejections": 0,
+  "other_repair_requests": 4,
+  "raw_agent_generations_brain147_verified": 40,
+  "gift_repair147_branch_exercised": false,
+  "source_or_expectations_changed_for_run": false,
+  "total_provider_requests": 77,
+  "known_token_total": 1043135,
+  "unknown_usage_attempts": 1,
+  "unknown_attempt_role": "judge",
+  "known_usage_estimated_usd": 0.112621566,
+  "total_cost_known": false,
+  "full_suite_gate_passed": false,
+  "full_suite_runs": 0,
+  "deployment": false,
+  "architect_review": "approved; raw metrics, 36 text hashes and effects cross-checked; contextual audit is separate from conservative judge+Codex combination",
+  "artifact_format": {
+    "csv_record_separator": "LF",
+    "36_rows_identical_after_format_normalization": true
+  },
+  "evidence_secret_scan": {
+    "files_scanned": 71,
+    "secret_values_checked": 2,
+    "gzip_decompressed_for_scan": true,
+    "matches": 0
+  },
+  "lossless_raw_markdown_archive": {
+    "path": "docs/reports/evidence/2026-11-01-flash-v147-acceptance/raw/r1/focused-961c991-flash-060714-r1b-20261101.md.gz",
+    "uncompressed_sha256": "d867814059e0aae23f676a050736366f1461607028874684768c37f5e2fea957",
+    "reason": "Verbatim generated Markdown includes trailing whitespace; archived losslessly without editing the captured report."
+  }
+}

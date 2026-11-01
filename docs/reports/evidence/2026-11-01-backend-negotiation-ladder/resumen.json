@@ -1,0 +1,282 @@
+{
+  "runs": [
+    {
+      "stem": "/Users/tmaneyro22/Documents/AGENTE IA/studyx-agente-ventas/.worktrees/orchestrator-mvp-closure/docs/reports/evidence/2026-11-01-backend-negotiation-ladder/raw/r1/focused-10d7b3e-flash-r1-20261101",
+      "sha": "10d7b3e5e7b5cdce3c88901cfedd3493346ecce2",
+      "brain": "studyx-agent-a-brain-v146",
+      "prompt": "studyx-agent-a-canonical-v101",
+      "cases": {
+        "03_single_course_recommendation": false,
+        "04_price_value_objection": true,
+        "06_repeated_price_bonus_ladder": false,
+        "07_think_it_over_not_closed": true,
+        "14_course_change_cancels_promotion": false
+      },
+      "case_summary": {
+        "03_single_course_recommendation": {
+          "reported_approved": false,
+          "all_turns_approved": false,
+          "turns": 2,
+          "passed_turns": 1,
+          "ladder_rejected_turns": 0,
+          "ladder_rejection_count": 0
+        },
+        "04_price_value_objection": {
+          "reported_approved": true,
+          "all_turns_approved": true,
+          "turns": 2,
+          "passed_turns": 2,
+          "ladder_rejected_turns": 0,
+          "ladder_rejection_count": 0
+        },
+        "06_repeated_price_bonus_ladder": {
+          "reported_approved": false,
+          "all_turns_approved": false,
+          "turns": 9,
+          "passed_turns": 3,
+          "ladder_rejected_turns": 0,
+          "ladder_rejection_count": 0
+        },
+        "07_think_it_over_not_closed": {
+          "reported_approved": true,
+          "all_turns_approved": true,
+          "turns": 2,
+          "passed_turns": 2,
+          "ladder_rejected_turns": 0,
+          "ladder_rejection_count": 0
+        },
+        "14_course_change_cancels_promotion": {
+          "reported_approved": false,
+          "all_turns_approved": false,
+          "turns": 7,
+          "passed_turns": 2,
+          "ladder_rejected_turns": 0,
+          "ladder_rejection_count": 0
+        }
+      },
+      "turn_status": {
+        "FALLIDO": 12,
+        "APROBADO": 10
+      },
+      "reported_absolute_acceptance": null,
+      "reported_evaluation_scope": {
+        "case_ids": [
+          "03_single_course_recommendation",
+          "04_price_value_objection",
+          "06_repeated_price_bonus_ladder",
+          "07_think_it_over_not_closed",
+          "14_course_change_cancels_promotion"
+        ],
+        "expected_turns": 22,
+        "full_suite": false
+      },
+      "consumption": {
+        "attempts": 43,
+        "logical_calls": 43,
+        "tokens_known": {
+          "input": 385590,
+          "output": 9092,
+          "total": 394682,
+          "cached": 190976
+        },
+        "unknown_cost_attempts": 0,
+        "estimated_usd": 0.035220228,
+        "known_usage_estimated_usd": 0.035220228,
+        "latency_ms_median": 2344,
+        "latency_ms_max": 3568
+      },
+      "consumption_by_role": {
+        "agent": {
+          "attempts": 22,
+          "logical_calls": 22,
+          "tokens_known": {
+            "input": 332166,
+            "output": 7189,
+            "total": 339355,
+            "cached": 158592
+          },
+          "unknown_cost_attempts": 0,
+          "estimated_usd": 0.030825276,
+          "known_usage_estimated_usd": 0.030825276,
+          "latency_ms_median": 2983.0,
+          "latency_ms_max": 3568
+        },
+        "judge": {
+          "attempts": 21,
+          "logical_calls": 21,
+          "tokens_known": {
+            "input": 53424,
+            "output": 1903,
+            "total": 55327,
+            "cached": 32384
+          },
+          "unknown_cost_attempts": 0,
+          "estimated_usd": 0.004394952,
+          "known_usage_estimated_usd": 0.004394952,
+          "latency_ms_median": 1269,
+          "latency_ms_max": 2103
+        }
+      },
+      "ladder_rejected_turns": 0,
+      "ladder_rejection_count": 0,
+      "postgeneration_text_status": {
+        "PRESERVED_EXACT": 17,
+        "PRESERVED_AUTHORIZED_PUNCTUATION_AND_WHITESPACE": 3,
+        "PRESERVED_WHITESPACE_ONLY": 2
+      },
+      "correlated_turns": 22,
+      "turns": 22,
+      "agent_provider_records_matched": 22,
+      "agent_provider_records_unmatched": 0,
+      "input_paths": {
+        "result": "/Users/tmaneyro22/Documents/AGENTE IA/studyx-agente-ventas/.worktrees/orchestrator-mvp-closure/docs/reports/evidence/2026-11-01-backend-negotiation-ladder/raw/r1/focused-10d7b3e-flash-r1-20261101.json",
+        "provider": "/Users/tmaneyro22/Documents/AGENTE IA/studyx-agente-ventas/.worktrees/orchestrator-mvp-closure/docs/reports/evidence/2026-11-01-backend-negotiation-ladder/raw/r1/focused-10d7b3e-flash-r1-20261101-provider.json",
+        "observations": "/Users/tmaneyro22/Documents/AGENTE IA/studyx-agente-ventas/.worktrees/orchestrator-mvp-closure/docs/reports/evidence/2026-11-01-backend-negotiation-ladder/raw/r1/focused-10d7b3e-flash-r1-20261101-observations.partial.json",
+        "durable": "/Users/tmaneyro22/Documents/AGENTE IA/studyx-agente-ventas/.worktrees/orchestrator-mvp-closure/docs/reports/evidence/2026-11-01-backend-negotiation-ladder/raw/r1/focused-10d7b3e-flash-r1-20261101-durable-evidence.json"
+      }
+    },
+    {
+      "stem": "/Users/tmaneyro22/Documents/AGENTE IA/studyx-agente-ventas/.worktrees/orchestrator-mvp-closure/docs/reports/evidence/2026-11-01-backend-negotiation-ladder/raw/r2/focused-10d7b3e-flash-r2-20261101",
+      "sha": "10d7b3e5e7b5cdce3c88901cfedd3493346ecce2",
+      "brain": "studyx-agent-a-brain-v146",
+      "prompt": "studyx-agent-a-canonical-v101",
+      "cases": {
+        "03_single_course_recommendation": false,
+        "04_price_value_objection": false,
+        "06_repeated_price_bonus_ladder": false,
+        "07_think_it_over_not_closed": true,
+        "14_course_change_cancels_promotion": false
+      },
+      "case_summary": {
+        "03_single_course_recommendation": {
+          "reported_approved": false,
+          "all_turns_approved": false,
+          "turns": 2,
+          "passed_turns": 1,
+          "ladder_rejected_turns": 0,
+          "ladder_rejection_count": 0
+        },
+        "04_price_value_objection": {
+          "reported_approved": false,
+          "all_turns_approved": false,
+          "turns": 2,
+          "passed_turns": 1,
+          "ladder_rejected_turns": 0,
+          "ladder_rejection_count": 0
+        },
+        "06_repeated_price_bonus_ladder": {
+          "reported_approved": false,
+          "all_turns_approved": false,
+          "turns": 9,
+          "passed_turns": 3,
+          "ladder_rejected_turns": 0,
+          "ladder_rejection_count": 0
+        },
+        "07_think_it_over_not_closed": {
+          "reported_approved": true,
+          "all_turns_approved": true,
+          "turns": 2,
+          "passed_turns": 2,
+          "ladder_rejected_turns": 0,
+          "ladder_rejection_count": 0
+        },
+        "14_course_change_cancels_promotion": {
+          "reported_approved": false,
+          "all_turns_approved": false,
+          "turns": 7,
+          "passed_turns": 3,
+          "ladder_rejected_turns": 0,
+          "ladder_rejection_count": 0
+        }
+      },
+      "turn_status": {
+        "FALLIDO": 12,
+        "APROBADO": 10
+      },
+      "reported_absolute_acceptance": null,
+      "reported_evaluation_scope": {
+        "case_ids": [
+          "03_single_course_recommendation",
+          "04_price_value_objection",
+          "06_repeated_price_bonus_ladder",
+          "07_think_it_over_not_closed",
+          "14_course_change_cancels_promotion"
+        ],
+        "expected_turns": 22,
+        "full_suite": false
+      },
+      "consumption": {
+        "attempts": 46,
+        "logical_calls": 46,
+        "tokens_known": {
+          "input": 447105,
+          "output": 9870,
+          "total": 456975,
+          "cached": 246144
+        },
+        "unknown_cost_attempts": 0,
+        "estimated_usd": 0.036804581999999995,
+        "known_usage_estimated_usd": 0.036804581999999995,
+        "latency_ms_median": 2519.0,
+        "latency_ms_max": 3414
+      },
+      "consumption_by_role": {
+        "agent": {
+          "attempts": 26,
+          "logical_calls": 26,
+          "tokens_known": {
+            "input": 392965,
+            "output": 8292,
+            "total": 401257,
+            "cached": 214656
+          },
+          "unknown_cost_attempts": 0,
+          "estimated_usd": 0.032365517999999996,
+          "known_usage_estimated_usd": 0.032365517999999996,
+          "latency_ms_median": 2803.5,
+          "latency_ms_max": 3414
+        },
+        "judge": {
+          "attempts": 20,
+          "logical_calls": 20,
+          "tokens_known": {
+            "input": 54140,
+            "output": 1578,
+            "total": 55718,
+            "cached": 31488
+          },
+          "unknown_cost_attempts": 0,
+          "estimated_usd": 0.004439064,
+          "known_usage_estimated_usd": 0.004439064,
+          "latency_ms_median": 1296.5,
+          "latency_ms_max": 2169
+        }
+      },
+      "ladder_rejected_turns": 0,
+      "ladder_rejection_count": 0,
+      "postgeneration_text_status": {
+        "PRESERVED_EXACT": 19,
+        "PRESERVED_AUTHORIZED_PUNCTUATION_AND_WHITESPACE": 3
+      },
+      "correlated_turns": 22,
+      "turns": 22,
+      "agent_provider_records_matched": 26,
+      "agent_provider_records_unmatched": 0,
+      "input_paths": {
+        "result": "/Users/tmaneyro22/Documents/AGENTE IA/studyx-agente-ventas/.worktrees/orchestrator-mvp-closure/docs/reports/evidence/2026-11-01-backend-negotiation-ladder/raw/r2/focused-10d7b3e-flash-r2-20261101.json",
+        "provider": "/Users/tmaneyro22/Documents/AGENTE IA/studyx-agente-ventas/.worktrees/orchestrator-mvp-closure/docs/reports/evidence/2026-11-01-backend-negotiation-ladder/raw/r2/focused-10d7b3e-flash-r2-20261101-provider.json",
+        "observations": "/Users/tmaneyro22/Documents/AGENTE IA/studyx-agente-ventas/.worktrees/orchestrator-mvp-closure/docs/reports/evidence/2026-11-01-backend-negotiation-ladder/raw/r2/focused-10d7b3e-flash-r2-20261101-observations.partial.json",
+        "durable": "/Users/tmaneyro22/Documents/AGENTE IA/studyx-agente-ventas/.worktrees/orchestrator-mvp-closure/docs/reports/evidence/2026-11-01-backend-negotiation-ladder/raw/r2/focused-10d7b3e-flash-r2-20261101-durable-evidence.json"
+      }
+    }
+  ],
+  "usd_per_million_flash_offpeak": {
+    "cache_hit": 0.003,
+    "cache_miss": 0.15,
+    "output": 0.6
+  },
+  "rate_reference": "https://api-docs.deepseek.com/quick_start/pricing/ (verified 2026-11-01; weekend offpeak)",
+  "cost_note": "Estimate, not invoice. Missing tokens or non-Flash model => unknown total cost; includes judge by role.",
+  "semantic_limits": "No regex or new semantic criteria. Promise/template/truncation flags rely only on explicit machine fields; otherwise unknown.",
+  "balance_before_path": "balance-before.json"
+}

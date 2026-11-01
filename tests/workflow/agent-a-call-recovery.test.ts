@@ -24,7 +24,7 @@ function proposal(text: string, action: AgentATurnProposalV1['proposed_action'] 
     move: { schema_version: 1, move: 'request_call', secondary_moves: [], vetoes: [], confidence: 1 },
     response: { messages: [text] }, proposed_action: action,
     profile_updates: [], profile_requests: [],
-    used_fact_ids: [], used_memory_ids: [], memory_candidates: [], repair_of: null,
+    course_mentions: [], used_fact_ids: [], used_memory_ids: [], memory_candidates: [], repair_of: null,
   };
 }
 

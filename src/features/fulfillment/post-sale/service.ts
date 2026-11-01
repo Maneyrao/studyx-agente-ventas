@@ -11,17 +11,13 @@ import {
 } from '@/features/orchestration/domain/egress-guard';
 import { runEnrollmentWorker } from '../central-carga/worker';
 import { logger } from '@/lib/observability/structured-log';
+import { auditLog } from '@/lib/audit/logger';
+import { sha256Hex } from '@/lib/idempotency/canonical-json';
+import { backendReleaseSha } from '@/lib/services/turn-evidence.service';
+import { assertsModelCredentialValueV1, assertsRequiredPasswordChangeV1, assertsUnverifiedPostSaleAccessV1 } from '@/shared/conversation/post-sale-facts';
 
 export const INITIAL_PASSWORD = 'Escuela.123';
 export const CAMPUS_URL = 'https://mystudyx.com/campus-virtual';
-const OFFICIAL_CONTACTS = [
-  'C A N A L E S  O F I C I A L E S  D E  C O N T A C T O',
-  '',
-  'WHATSAPP OFICIAL DE LA ACADEMIA: 786-916-4372 (solo WhatsApp)',
-  'NÚMERO DE ASISTENCIA AL ALUMNO: 866-217-7282 ☎️📚',
-  'ADMINISTRACIÓN: info@mystudyx.com',
-  'DEPARTAMENTO DE PROFESORES: studyxtutorias@gmail.com',
-].join('\n');
 export type NotificationKind = 'payment_received' | 'access_ready' | 'access_delayed';
 interface Source {
   id: string; payment_id: string; kind: NotificationKind; status: string; claim_token: string | null;
@@ -32,6 +28,7 @@ interface Source {
   login_email: string | null; login_url: string | null;
   bonus_offerings: Array<{ code: string; display_name: string; position: number }>;
   verified_bonus_enrollments: Array<{ offering_code: string; enrollment_status: string; position: number }>;
+  known_offering_names: string[];
 }
 export interface PostSaleConfig { enabled: boolean; environment: 'test' | 'live'; paidAfter: Date }
 export interface Deps { db?: postgres.Sql; config?: PostSaleConfig; sender?: ManagedOutboundSender; fetchImpl?: typeof fetch }
@@ -52,6 +49,7 @@ async function sources(db: postgres.Sql, config: PostSaleConfig, id?: string, pa
       COALESCE(p.registration_email, c.email) AS registration_email,
       COALESCE(p.registration_name, c.name) AS registration_name,
       e.enrollment_status, e.student_was_created, e.login_email, e.login_url,
+      ARRAY(SELECT known.display_name FROM offerings known WHERE known.workspace_id=p.workspace_id) AS known_offering_names,
       COALESCE((
         SELECT jsonb_agg(jsonb_build_object(
           'code', bonus.offering_code_snapshot,
@@ -245,7 +243,8 @@ export const NarrativeSchema = z.object({
 export type PostSaleContentErrorCode =
   | 'POST_SALE_UNAUTHORIZED_PROSE'
   | 'POST_SALE_UNEXPECTED_SUGGESTION'
-  | 'POST_SALE_CHANGE_MUST_BE_OPTIONAL';
+  | 'POST_SALE_CHANGE_MUST_BE_OPTIONAL'
+  | 'POST_SALE_ACCESS_NOT_VERIFIED';
 
 export class PostSaleContentError extends Error {
   constructor(readonly code: PostSaleContentErrorCode) {
@@ -254,49 +253,50 @@ export class PostSaleContentError extends Error {
   }
 }
 
-const OPTIONAL_PASSWORD_CHANGE = /^(?:(?:si quieres,?\s+)?(?:puedes\s+)?(?:cambiar|actualizar|modificar)\s+(?:tu|la)\s+contraseña|te\s+(?:sugiero|recomiendo)(?:\s+que)?\s+(?:cambiar|actualizar|modificar|cambies|actualices|modifiques)\s+(?:tu|la)\s+contraseña)(?:\s+(?:después de|al)\s+(?:ingresar|entrar))?[.!]?$/iu;
-
 function deterministicAccessBlocks(
   source: Pick<Source, 'kind' | 'student_was_created' | 'login_email' | 'login_url'>
     & Partial<Pick<Source, 'offering_name' | 'bonus_offerings' | 'verified_bonus_enrollments'>>,
 ): string[] {
   if (source.kind !== 'access_ready') return [];
   const credentials = source.student_was_created
-    ? `📌 USUARIO: ${source.login_email}\n\n📌 CONTRASEÑA: ${INITIAL_PASSWORD}\n\nRECUERDA LA «E» EN MAYÚSCULA`
-    : `📌 USUARIO: ${source.login_email}\n\n📌 CONTRASEÑA: la que ya utilizas`;
-  const campus = `LINK DIRECTO AL CAMPUS VIRTUAL 👇🏻\n\n${CAMPUS_URL}`;
+    ? `Usuario: ${source.login_email}\nContraseña: ${INITIAL_PASSWORD}`
+    : `Usuario: ${source.login_email}`;
+  const campus = `Campus: ${CAMPUS_URL}`;
   const bonusOfferings = source.bonus_offerings ?? [];
   const courses = bonusOfferings.length > 0 && hasCompleteBonusEvidence(source)
     ? [
-        'CURSOS HABILITADOS',
-        `📚 CURSO PRINCIPAL: ${source.offering_name}`,
-        ...bonusOfferings.map((bonus) => `🎁 CURSO BONIFICADO: ${bonus.display_name}`),
+        `Curso principal: ${source.offering_name}`,
+        ...bonusOfferings.map((bonus) => `Curso bonificado: ${bonus.display_name}`),
       ].join('\n')
     : null;
-  return [courses, campus, credentials, OFFICIAL_CONTACTS].filter((block): block is string => Boolean(block));
+  return [courses, campus, credentials].filter((block): block is string => Boolean(block));
 }
 
 export function assemblePostSaleMessage(
   source: Pick<Source, 'kind' | 'student_was_created' | 'login_email' | 'login_url'>
-    & Partial<Pick<Source, 'registration_name' | 'offering_name' | 'bonus_offerings' | 'verified_bonus_enrollments'>>,
+    & Partial<Pick<Source, 'registration_name' | 'offering_name' | 'bonus_offerings' | 'verified_bonus_enrollments' | 'known_offering_names'>>,
   narrative: z.infer<typeof NarrativeSchema>,
 ) {
   // The model authors the conversation. Credentials are bound to verified backend data, outside the model.
-  if (/https?:|www\.|@|\b(?:usuario|contraseña|password|clave)\b|(?:Studyx|Escuela)\.123/iu.test(narrative.intro)) {
+  const authored = `${narrative.intro}\n${narrative.suggestion}`;
+  if (assertsRequiredPasswordChangeV1(authored)) throw new PostSaleContentError('POST_SALE_CHANGE_MUST_BE_OPTIONAL');
+  // Credentials and URLs are immutable values supplied only by the backend
+  // (P:230). Inspect both fields; neither field may smuggle a made-up value.
+  if (/https?:|www\.|@|(?:Studyx|Escuela)\.123/iu.test(authored) || assertsModelCredentialValueV1(authored)) {
     throw new PostSaleContentError('POST_SALE_UNAUTHORIZED_PROSE');
   }
-  // Brand casing and a repeated first name/course are style concerns. They
-  // must never strand verified access. Normalize the one mechanical issue and
-  // let the transactional message through.
-  const intro = narrative.intro.replace(/\bStudyX\b/gu, 'Studyx');
+  const activatedNames = [source.offering_name ?? '',
+    ...(hasCompleteBonusEvidence(source) ? source.bonus_offerings?.map(b => b.display_name) ?? [] : [])].filter(Boolean);
+  if (assertsUnverifiedPostSaleAccessV1({ text: authored, access_ready: source.kind === 'access_ready',
+    activated_course_names: activatedNames,
+    known_course_names: source.known_offering_names ?? activatedNames })) {
+    throw new PostSaleContentError('POST_SALE_ACCESS_NOT_VERIFIED');
+  }
   if (source.kind !== 'access_ready') {
     if (narrative.suggestion) throw new PostSaleContentError('POST_SALE_UNEXPECTED_SUGGESTION');
-    return intro;
+    return narrative.intro;
   }
-  if (narrative.suggestion && !OPTIONAL_PASSWORD_CHANGE.test(narrative.suggestion.trim())) {
-    throw new PostSaleContentError('POST_SALE_CHANGE_MUST_BE_OPTIONAL');
-  }
-  return [intro, ...deterministicAccessBlocks(source), narrative.suggestion]
+  return [narrative.intro, ...deterministicAccessBlocks(source), narrative.suggestion]
     .filter(Boolean).join('\n\n');
 }
 export async function deliverNotification(id: string, input: { claim_token: string; botpress_conversation_id: string; narrative: z.infer<typeof NarrativeSchema> }, deps: Deps = {}) {
@@ -305,11 +305,18 @@ export async function deliverNotification(id: string, input: { claim_token: stri
   const db = deps.db ?? defaultDb;
   const [source] = await sources(db, config, id);
   if (!source || source.botpress_conversation_id !== input.botpress_conversation_id || !validateNotificationSource(source)) return { outcome: 'not_authorized' };
+  const evidenceKey = `post-sale-evidence:${id}:${input.claim_token}:${sha256Hex(input.narrative)}`;
+  await auditLog({ action: 'post_sale.narrative.received', entity_type: 'post_sale_notification', entity_id: id,
+    event_key: `${evidenceKey}:proposal`, payload: { narrative: input.narrative, backend_sha: backendReleaseSha() },
+  }, db);
   let text: string;
   try {
     text = assemblePostSaleMessage(source, NarrativeSchema.parse(input.narrative));
   } catch (error) {
     if (error instanceof PostSaleContentError) {
+      await auditLog({ action: 'post_sale.narrative.rejected', entity_type: 'post_sale_notification', entity_id: id,
+        event_key: `${evidenceKey}:rejection`, payload: { code: error.code, subject: 'post_sale_narrative' },
+      }, db);
       return { outcome: 'invalid_content' as const, reason: error.code };
     }
     throw error;
@@ -325,6 +332,9 @@ export async function deliverNotification(id: string, input: { claim_token: stri
     ),
   });
   if (!verifyAuthorizedEgress({ content: text, manifest: authorization }).ok) {
+    await auditLog({ action: 'post_sale.narrative.rejected', entity_type: 'post_sale_notification', entity_id: id,
+      event_key: `${evidenceKey}:egress-rejection`, payload: { code: 'POST_SALE_EGRESS_INVALID', subject: 'post_sale_narrative' },
+    }, db);
     return { outcome: 'invalid_content' as const, reason: 'POST_SALE_EGRESS_INVALID' as const };
   }
   const [locked] = await db<Array<{ id: string }>>`
@@ -332,6 +342,10 @@ export async function deliverNotification(id: string, input: { claim_token: stri
     WHERE id = ${id}::uuid AND status = 'processing' AND claim_token = ${input.claim_token}::uuid
       AND lease_until > now() RETURNING id`;
   if (!locked) return { outcome: 'claim_lost' };
+  await auditLog({ action: 'post_sale.narrative.authorized', entity_type: 'post_sale_notification', entity_id: id,
+    event_key: `${evidenceKey}:authorized`, payload: { authorized_text: text, authorized_egress: authorization,
+      backend_sha: backendReleaseSha() },
+  }, db);
   // Transition before external I/O: a crash cannot silently send the credentials twice.
   const sender = deps.sender ?? createManagedOutboundSender(db, source.botpress_conversation_id);
   let result;

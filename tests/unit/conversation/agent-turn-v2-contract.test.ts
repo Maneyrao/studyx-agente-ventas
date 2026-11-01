@@ -17,6 +17,7 @@ const proposal = {
     call_offer: 'Si te resulta más cómodo, podemos coordinar una llamada.',
   },
   proposed_action: { type: 'none' },
+  course_mentions: [],
   used_fact_ids: [],
   used_memory_ids: [],
   repair_of: null,

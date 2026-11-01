@@ -1,4 +1,4 @@
-import { ContactProfileContextV1Schema } from './agent-a-brain'
+import { ContactProfileContextV1Schema, RecordedNegotiationFactsV1Schema, CourseBonusLadderV1Schema } from './agent-a-brain'
 import { z } from '@botpress/runtime'
 import { ConversationPipelineCommitV1Schema } from './conversation-pipeline'
 import { AgentATurnCommitV2Schema } from './agent-turn-v2'
@@ -398,6 +398,7 @@ export const KnowledgeItemSchema = z.object({
   title: z.string(),
   content: z.string(),
   similarity: z.number(),
+  offering_code: z.string().min(1).max(160).optional(),
 })
 
 /**
@@ -631,7 +632,9 @@ export const ClaimedTurnSchema = z.object({
       access_sent_at: z.string().nullable(),
     }).strict().nullable().optional(),
   }).strict().nullable().optional(),
+  negotiation_facts: RecordedNegotiationFactsV1Schema.nullable().optional(),
   course_bonus_capability: z.object({
+    ladder: CourseBonusLadderV1Schema.optional(),
     enabled: z.boolean().optional(),
     may_offer_bonus: z.boolean().optional(),
     promotion_cycle_id: z.string().uuid().nullable().optional(),

@@ -102,7 +102,7 @@ async function seedTurn(identity: Identity, text: string): Promise<string> {
   return context.turn_id;
 }
 
-const CONFIRMATION = 'Perfecto. Registré la llamada; nuestra asesora intenta comunicarse ahora.';
+const CONFIRMATION = 'Recibí tu solicitud de llamada.';
 
 function callConfirmation(reason: 'direct_request' | 'accepted_offer') {
   return {
@@ -158,7 +158,7 @@ async function markAwaitingCallAvailability(turnId: string) {
       call_offer_status, call_offer_count, awaiting_reply, stage, source_turn_id
     )
     SELECT workspace.id, message.conversation_id, message.contact_id,
-           'call', 'accepted', 0, 'call_or_chat', 'exploring', message.id
+           'call', 'accepted', 0, 'call_or_chat', 'exploring', NULL::uuid
     FROM messages AS message
     JOIN workspaces AS workspace ON workspace.slug = 'studyx' AND workspace.status = 'active'
     WHERE message.id = ${turnId}::uuid
@@ -170,7 +170,7 @@ async function markAwaitingCallAvailability(turnId: string) {
   `;
 }
 
-function commitPreparedAvailabilityCall(turnId: string) {
+function commitPreparedAvailabilityCall(turnId: string, response = CONFIRMATION, revocation?: 'repair' | 'operational') {
   return commitAgentDecision({
     turn_id: turnId,
     trace_id: randomUUID(),
@@ -179,19 +179,21 @@ function commitPreparedAvailabilityCall(turnId: string) {
     conversation_pipeline_v1: null,
     agent_turn_v2: {
       schema_version: 2,
+      ...(revocation ? { conversation_only: true } : {}),
+      ...(revocation === 'operational' ? { operational_continuity: 'call_consent_revoked' } : {}),
       proposal: {
         schema_version: 1,
         move: {
-          schema_version: 1, move: 'request_call', secondary_moves: [], vetoes: [], confidence: 1,
+          schema_version: 1, move: revocation ? 'decline_call' : 'request_call', secondary_moves: [], vetoes: [], confidence: 1,
         },
-        response: { messages: [CONFIRMATION], call_offer: null },
-        proposed_action: { type: 'request_call_now', reason: 'direct_request' },
+        response: { messages: [response], call_offer: null },
+        proposed_action: revocation ? { type: 'none' } : { type: 'request_call_now', reason: 'direct_request' },
         used_fact_ids: [], used_memory_ids: [], memory_candidates: [],
         profile_updates: [], profile_requests: [], repair_of: null,
       },
     },
     supports_multi_outbound: true,
-    decision: callConfirmation('direct_request'),
+    decision: { ...callConfirmation('direct_request'), response },
     model: {
       provider: 'botpress', model: 'deterministic:direct-call-availability-v1',
       prompt_version: 'studyx-agent-a-brain-plannerless-test',
@@ -516,16 +518,64 @@ run('agent a call handoff — refusals reserve nothing', () => {
       await markAwaitingCallAvailability(representativeTurn);
 
       await expect(commitPreparedAvailabilityCall(representativeTurn)).rejects.toMatchObject({
-        code: 'DECISION_REJECTED',
         reason: expect.stringContaining('ACTION_NOT_AUTHORIZED'),
       });
+      const repaired = await commitPreparedAvailabilityCall(representativeTurn, 'Seguimos por acá.', 'repair');
+      expect(repaired).toMatchObject({ status: 'committed', call_request: null });
       expect(await sessionsByTurn(representativeTurn)).toHaveLength(0);
-      const committed = await db!<Array<{ id: string }>>`
-        SELECT id FROM agent_decisions WHERE turn_id = ${representativeTurn}::uuid
-      `;
-      expect(committed).toHaveLength(0);
+      const [persisted] = await db!`SELECT call_preference,call_offer_status
+        FROM conversation_sales_context_states_v1 WHERE conversation_id=(
+          SELECT conversation_id FROM messages WHERE id=${representativeTurn}::uuid)`;
+      expect(persisted).toMatchObject({ call_preference: 'chat', call_offer_status: 'declined' });
     },
   );
+
+  it('persists revoked consent after exhausted repair and cannot reuse it on a later bare yes', async () => {
+    const identity = newIdentity();
+    const turn = await seedTurn(identity, 'Sí, dale');
+    await seedTurn(identity, 'ahora no');
+    await markAwaitingCallAvailability(turn);
+    await expect(commitPreparedAvailabilityCall(turn)).rejects.toMatchObject({ code: 'DECISION_REJECTED' });
+    const receipt = await commitPreparedAvailabilityCall(turn, 'Seguimos por acá.', 'operational');
+    expect(receipt).toMatchObject({ status: 'committed', call_request: null });
+    expect(receipt.outbound?.content).toBe('Seguimos por acá.');
+    expect((await commitPreparedAvailabilityCall(turn, 'Seguimos por acá.', 'operational')).status).toBe('duplicate');
+    expect(await sessionsByTurn(turn)).toHaveLength(0);
+    const nextTurn = await seedTurn(identity, 'sí');
+    await expect(commitPreparedAvailabilityCall(nextTurn)).rejects.toMatchObject({ code: 'DECISION_REJECTED' });
+    expect(await sessionsByTurn(nextTurn)).toHaveLength(0);
+    const [state] = await db!`SELECT call_preference,call_offer_status,awaiting_reply FROM conversation_sales_context_states_v1
+      WHERE conversation_id=(SELECT conversation_id FROM messages WHERE id=${nextTurn}::uuid)`;
+    expect(state).toMatchObject({ call_preference: 'chat', call_offer_status: 'declined', awaiting_reply: 'none' });
+    const anotherYes = await seedTurn(identity, 'sí');
+    await expect(commitPreparedAvailabilityCall(anotherYes)).rejects.toMatchObject({ code: 'DECISION_REJECTED' });
+    expect(await sessionsByTurn(anotherYes)).toHaveLength(0);
+    const [audit] = await db!`SELECT payload FROM audit_log WHERE action='agent.decision.committed' AND payload->>'turn_id'=${turn}`;
+    expect(audit.payload.operational_continuity).toBe('call_consent_revoked');
+  });
+
+  it('rejects an outdated revocation receipt after a new availability authorization', async () => {
+    const identity = newIdentity();
+    const turn = await seedTurn(identity, 'Sí, dale');
+    await seedTurn(identity, 'ahora no');
+    await markAwaitingCallAvailability(turn);
+    await expect(commitPreparedAvailabilityCall(turn)).rejects.toMatchObject({ code: 'DECISION_REJECTED' });
+    await seedTurn(identity, 'Sí, puedo atender ahora');
+    await expect(commitPreparedAvailabilityCall(turn, 'Seguimos por acá.', 'operational'))
+      .rejects.toMatchObject({ code: 'DECISION_REJECTED' });
+    expect(await sessionsByTurn(turn)).toHaveLength(0);
+  });
+
+  it('rejects false dispatch prose after later consent was revoked', async () => {
+    const identity = newIdentity();
+    const turn = await seedTurn(identity, 'Sí, dale');
+    await seedTurn(identity, 'ahora no');
+    await markAwaitingCallAvailability(turn);
+    await expect(commitPreparedAvailabilityCall(turn,
+      'Perfecto. Registré la llamada; nuestra asesora intenta comunicarse ahora.'))
+      .rejects.toMatchObject({ code: 'DECISION_REJECTED', reason: expect.stringContaining('AGENT_TURN_V2_REJECTED') });
+    expect(await sessionsByTurn(turn)).toHaveLength(0);
+  });
 
   it('an expired offer no longer authorizes the acceptance', async () => {
     const identity = newIdentity();

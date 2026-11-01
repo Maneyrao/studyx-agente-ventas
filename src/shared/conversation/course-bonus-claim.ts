@@ -1,96 +1,121 @@
-function normalize(value: string): string {
-  return value.normalize('NFD').replace(/[\u0300-\u036f]/gu, '').toLowerCase().replace(/[^\S\n]+/gu, ' ').trim();
+type CourseBonusClaimInspection = {
+  readonly has_authorized_claim: boolean;
+  readonly has_unauthorized_claim: boolean;
+};
+
+/**
+ * Catalog identities are compared exactly after transport-only normalization.
+ * Accents and words remain significant: an alias cannot become a catalog fact.
+ */
+function normalizeCanonicalText(value: string): string {
+  return value.normalize('NFC').toLocaleLowerCase('es').replace(/\s+/gu, ' ').trim();
 }
 
-/** Consume the entire object list, not only catalog names found within it. */
-function authorizedObjects(value: string, names: readonly string[]): boolean {
-  const identities = names.map(normalize).filter(Boolean).sort((a, b) => b.length - a.length);
-  let remaining = value.trim();
-  let count = 0;
-  while (remaining) {
-    remaining = remaining.replace(/^(?:(?:el|la|un|una)\s+)?(?:curso\s+(?:de\s+)?)?/u, '');
-    const identity = identities.find(name => remaining.startsWith(name)
-      && !/^[\p{L}\p{N}_]/u.test(remaining.slice(name.length)));
-    if (!identity) return false;
-    count += 1;
-    remaining = remaining.slice(identity.length).trim();
-    if (!remaining) return count > 0;
-    const connector = remaining.match(/^(?:,\s*(?:(?:y|e)\s+)?|(?:y|e)\s+)/u);
-    if (!connector) return false;
-    remaining = remaining.slice(connector[0].length).trim();
-    if (!remaining) return false;
-  }
-  return false;
+function hasWordBoundary(value: string, index: number): boolean {
+  if (index < 0 || index >= value.length) return true;
+  return !/[\p{L}\p{N}_]/u.test(value[index]!);
 }
 
-const GIFT_MARKER = /\b(?:regal\p{L}*|gratis|sin\s+(?:costo|cargo)|bonific\p{L}*|bono\s+de\s+curso)\b/gu;
-const GIFT_DESCRIPTOR = /\s+(?:de\s+regalo|gratis|sin\s+(?:costo|cargo)(?:\s+adicional)?|bonificad[oa]s?|incluid[oa]s?)\s*$/u;
-const GIFT_PREDICATE = /\b(regalo|regalamos|regala|regalarte|bonifico|bonificamos|bonifica|incluyo|incluimos|incluye|incluyen|incluir|sumo|sumamos|sumar|agrego|agregamos|agregar|ofrezco)\s+(.+)$/u;
+type CatalogNameOccurrence = {
+  readonly name: string;
+  readonly start: number;
+  readonly end: number;
+};
 
-function giftObject(clause: string, paidNames: readonly string[]): string | null {
-  let gift = clause;
-  // The purchase condition identifies the paid course, never another gift.
-  const condition = gift.match(/\s+(?:al|por)\s+comprar\s+(.+)$/u);
-  if (condition) {
-    if (!authorizedObjects(condition[1]!, paidNames)) return null;
-    gift = gift.slice(0, condition.index).trim();
-  }
-  const predicate = gift.match(GIFT_PREDICATE);
-  if (predicate) {
-    if (/^incluye[n]?$/u.test(predicate[1]!)) {
-      const subject = gift.slice(0, predicate.index).trim();
-      if (subject && !authorizedObjects(subject, paidNames)
-        && !/^(?:(?:el|tu|este)\s+(?:paquete|curso)|(?:la|tu|esta)\s+promocion)$/u.test(subject)) return null;
+function exactCanonicalNameOccurrences(segment: string, name: string): CatalogNameOccurrence[] {
+  const occurrences: CatalogNameOccurrence[] = [];
+  let cursor = 0;
+  while (cursor <= segment.length - name.length) {
+    const index = segment.indexOf(name, cursor);
+    if (index < 0) break;
+    const before = index - 1;
+    const after = index + name.length;
+    if (hasWordBoundary(segment, before) && hasWordBoundary(segment, after)) {
+      occurrences.push({ name, start: index, end: after });
     }
-    return predicate[2]!.replace(GIFT_DESCRIPTOR, '').trim();
+    cursor = index + 1;
   }
-  if (!GIFT_DESCRIPTOR.test(gift)) return null;
-  return gift.replace(GIFT_DESCRIPTOR, '')
-    .replace(/\s+(?:sigue|queda|va|esta|seria|es|se\s+incluye|te\s+lo\s+dejo)$/u, '')
-    .replace(/^(?:queda\s+confirmad[oa]|ya\s+esta\s+confirmad[oa])\s+/u, '').trim();
+  return occurrences;
+}
+
+function mentionedCanonicalNames(segment: string, catalogNames: readonly string[]): string[] {
+  const occurrences = catalogNames
+    .flatMap((name) => exactCanonicalNameOccurrences(segment, name))
+    .sort((left, right) => (
+      (right.end - right.start) - (left.end - left.start)
+      || left.start - right.start
+    ));
+  const selected: CatalogNameOccurrence[] = [];
+  for (const occurrence of occurrences) {
+    const overlaps = selected.some((item) => (
+      occurrence.start < item.end && occurrence.end > item.start
+    ));
+    if (!overlaps) selected.push(occurrence);
+  }
+  return [...new Set(selected.map((item) => item.name))];
 }
 
 /**
- * Bounded egress authorization only: a gift object's complete asserted scope
- * must resolve to the already authorized identities. No catalog search or
- * sales interpretation can add an identity to this set.
+ * These are the three structural labels authorized by the egress contract.
+ * This is deliberately not a vocabulary of sales phrases or inferred intent.
+ */
+const BONUS_EFFECT_MARKER = /\b(?:sin\s+costo|incluid[oa]s?|bonificad[oa]s?)\b/u;
+
+/**
+ * Fact/effect validation only.
+ *
+ * A punctuation-delimited segment that labels courses as included/bonified
+ * may name only:
+ * - bonus courses already delivered in the active package; and
+ * - the single bonus course structurally authorized for the current turn.
+ *
+ * Callers provide that capability through authorized_bonus_names. Paid course
+ * names are accepted only when the same segment recaps at least one authorized
+ * bonus; a paid course by itself is never treated as a free course.
  */
 export function inspectCourseBonusClaimsV1(input: {
   readonly content: string;
   readonly authorized_bonus_names: readonly string[];
+  readonly known_offering_names?: readonly string[];
   readonly paid_offering_names?: readonly string[];
-}): { readonly has_authorized_claim: boolean; readonly has_unauthorized_claim: boolean } {
-  const clauses = normalize(input.content).split(/[.!?;\n]+|\b(?:pero|aunque|sin embargo)\b|,\s*(?=(?:no\s+)?(?:te\s+)?(?:regal|inclu|bonific|sum|agreg))|\by\s+(?=(?:no\s+)?(?:te\s+)?(?:regal|inclu|bonific|sum|agreg))/u);
-  let authorized = false;
-  let unauthorized = false;
-  for (let index = 0; index < clauses.length; index += 1) {
-    const clause = clauses[index]!;
-    const markers = [...clause.matchAll(GIFT_MARKER)];
-    const implicitGift = /\b(?:agregar|sumar|incluir)\b.*\bcurso\b.*\b(?:mismo\s+(?:precio|valor)|incluid[oa])\b/u.test(clause);
-    if (!markers.length && !implicitGift) continue;
-    // Only this clause's denied predicate is exempt. A later affirmative
-    // predicate is split above and must independently resolve its whole object.
-    const deniedPredicate = /^\s*(?:no|nunca|tampoco)\s+(?:(?:te|lo|la|le|les|se)\s+)?(?:(?:puedo|podemos)\s+)?(?:regal\p{L}*|inclu\p{L}*|bonific\p{L}*)\b/u.test(clause);
-    // A denied existence only covers the marker it negates: either the marker is
-    // inside the negated span or it qualifies that span ("promociones de cursos
-    // gratis"). "No tenemos promociones, Excel va sin costo" still asserts a gift.
-    const existence = clause.match(/^\s*(?:no|nunca|tampoco)\s+(?:tengo|tenemos|hacemos|ofrecemos|damos|hay)\s+(?:(?:ningun[oa]?|un[oa]?|mas)\s+)?(?:regalos?|bonificaciones?|promociones?|cursos?\s+(?:gratis|bonificados?))\b/u);
-    const existenceEnd = existence ? existence[0].length : -1;
-    const deniedExistence = existence !== null && markers.length === 1
-      && (markers[0]!.index! < existenceEnd || /^\s+(?:de|con)\s+[^,]*$/u.test(clause.slice(existenceEnd, markers[0]!.index!)));
-    const deniedDescriptor = /\b(?:no|nunca|tampoco)\s+(?:es|esta|va|queda)\s+(?:de\s+regalo|gratis|bonificad[oa]|sin\s+(?:costo|cargo))\b/u.test(clause);
-    if (markers.length === 1 && (deniedPredicate || deniedExistence || deniedDescriptor)) continue;
-    let asserted = clause.trim();
-    const explanation = clause.match(/\s+para\s+|,\s*que\s+/u);
-    if (explanation && explanation.index! > (markers[0]?.index ?? Infinity)) {
-      asserted = clause.slice(0, explanation.index).trim();
-      // Explanations are outside the object list, but cannot hide another
-      // affirmative gift. Process their own gift predicates independently.
-      clauses.push(clause.slice(explanation.index).replace(/^,\s*/u, '').trim());
+}): CourseBonusClaimInspection {
+  const authorizedNames = new Set(input.authorized_bonus_names.map(normalizeCanonicalText));
+  const paidNames = new Set((input.paid_offering_names ?? []).map(normalizeCanonicalText));
+  const catalogNames = [...new Set((input.known_offering_names ?? [])
+    .map(normalizeCanonicalText)
+    .filter(Boolean))]
+    .sort((left, right) => right.length - left.length);
+
+  let hasAuthorizedClaim = false;
+  let hasUnauthorizedClaim = false;
+
+  const segments = input.content
+    .split(/[.!?;\n]+/u)
+    .map(normalizeCanonicalText);
+  for (const segment of segments) {
+    if (!BONUS_EFFECT_MARKER.test(segment)) continue;
+
+    const mentionedNames = mentionedCanonicalNames(segment, catalogNames);
+    if (mentionedNames.length === 0) continue;
+
+    const authorizedMentioned = mentionedNames.filter((name) => authorizedNames.has(name));
+    const paidMentioned = mentionedNames.filter((name) => paidNames.has(name));
+    const foreignMentioned = mentionedNames.filter(
+      (name) => !authorizedNames.has(name) && !paidNames.has(name),
+    );
+
+    if (authorizedMentioned.length > 0) hasAuthorizedClaim = true;
+    if (foreignMentioned.length > 0) hasUnauthorizedClaim = true;
+
+    // A package recap may list the paid course together with delivered
+    // bonuses. The paid course alone cannot be asserted as included/free.
+    if (paidMentioned.length > 0 && authorizedMentioned.length === 0) {
+      hasUnauthorizedClaim = true;
     }
-    const object = giftObject(asserted, input.paid_offering_names ?? []);
-    if (object !== null && authorizedObjects(object, input.authorized_bonus_names)) authorized = true;
-    else unauthorized = true;
   }
-  return { has_authorized_claim: authorized, has_unauthorized_claim: unauthorized };
+
+  return {
+    has_authorized_claim: hasAuthorizedClaim,
+    has_unauthorized_claim: hasUnauthorizedClaim,
+  };
 }

@@ -91,7 +91,7 @@ function telegramFixtureProposal(input: {
     },
     proposed_action: { type: 'none' },
     profile_updates: [], profile_requests: [],
-    used_fact_ids: [...(input.factIds ?? [])],
+    course_mentions: [], used_fact_ids: [...(input.factIds ?? [])],
     used_memory_ids: [],
     memory_candidates: [],
     repair_of: null,

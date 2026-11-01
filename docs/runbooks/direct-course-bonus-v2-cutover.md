@@ -14,7 +14,7 @@ External gates are also pending: authenticated WhatsApp confirmed delivery corre
 
 ## Provenance and local verification
 
-Pin `studyx-agent-a-canonical-v99`, `studyx-agent-a-brain-v135`, canonical source SHA-256 `7ec207ffaff5a3118bdec934783326a1aa7b8bfeb13a003262a7d5bb12b27c87` (95 lines), and byte-identical backend/Botpress generated modules. Brain v135 preserves exact direct acceptance fields, uses the sales-advisor identity and actively handles decision deferrals without closing the sale. Brain v134, v133 and v132 are earlier evidence. Keep the canonical-source digest distinct from the manifest's template digest, rendered-turn prompt digest and Botpress artifact digest. They are different objects and must not be substituted for one another.
+Pin `studyx-agent-a-canonical-v100`, `studyx-agent-a-brain-v136`, canonical source SHA-256 `103810c663bfb97a2589ac3681e10480a299bbb6edd0f03c57f98da129c74711` (148 lines), and byte-identical backend/Botpress generated modules. Brain v136 preserves exact direct acceptance fields, applies the complete sales system, uses the safe installment rung and actively handles decision deferrals without closing the sale. Brain v135 and earlier are historical evidence. Keep the canonical-source digest distinct from the manifest's template digest, rendered-turn prompt digest and Botpress artifact digest. They are different objects and must not be substituted for one another.
 
 Record the brain v135 template digest from the frozen release artifact; latest migration `20261028010010_bonus_fulfillment_cases_hardening.sql`. Recheck against the frozen release artifact; these local digests do not supply missing runtime/artifact attestation.
 

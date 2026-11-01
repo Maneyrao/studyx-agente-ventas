@@ -3,6 +3,7 @@ import { dispatch, logEvent } from '../channels'
 import { evaluateWhatsAppCanarySend } from '../channels/whatsapp.channel'
 import { processInboundTurn } from '../workflows/processInboundTurn'
 import { WorkflowInputSchema } from '../schemas/contracts'
+import { evidenceAwareWorkflow } from '../lib/observability/evidence-workflow'
 
 /**
  * SINGLE Botpress Conversation handler for every channel.
@@ -71,10 +72,11 @@ export default new Conversation({
       // Save the physical envelope in the managed durable workflow before
       // depending on the canonical backend. An unavailable HTTP endpoint must
       // not delay or prevent ownership of the incoming event.
-      const workflow = await processInboundTurn.getOrCreate({
+      const workflow = await evidenceAwareWorkflow(statuses => processInboundTurn.getOrCreate({
         key: workflowKey,
+        statuses,
         input: WorkflowInputSchema.parse({ ...input, preingested: null }),
-      })
+      }))
 
       logEvent('studyx.router.workflow_started', {
         adapter,

@@ -31,6 +31,7 @@ import { claimsImmediateCallDispatchV1, claimsImmediatePaymentLinkDelivery, soli
 import type { ConversationStateStoreV1 } from '../ports/conversation-state-store';
 import type { PaymentVerificationV1 } from '@/features/payments/application/read-payment-verification';
 import type { CourseBonusCapabilityV1 } from '@/features/promotions/application/read-course-bonus-capability';
+import { claimsUnverifiedCallProgressV1 } from '@/shared/conversation/call-progress-claim';
 import {
   evaluateCallIntakeReadinessV1,
   type CallIntakeReadinessV1,
@@ -202,10 +203,13 @@ export async function prepareAgentTurnV2(input: {
   readonly conversation_only?: boolean;
   /** Original explicit request, retained only as semantic evidence by a continuation. */
   readonly requested_action?: AgentAProposedActionV1;
+  readonly operational_continuity?: 'call_consent_revoked';
   /** Production Agent A keeps semantic checks diagnostic-only. */
   readonly semantic_rejections?: 'blocking' | 'advisory';
   readonly business_context: BusinessContextView | null;
   readonly catalog_index: CatalogIndexView | null;
+  /** Canonical knowledge rows reloaded by the backend from cited fact IDs. */
+  readonly authorized_knowledge_facts?: readonly CanonicalFactV1[];
   readonly course_bonus_capability?: CourseBonusCapabilityV1;
 }, deps: {
   readonly state_store: Pick<ConversationStateStoreV1, 'load'>;
@@ -233,6 +237,8 @@ export async function prepareAgentTurnV2(input: {
   readonly discussed_offering_code: string | null;
   readonly commercial_interest_offering_code: string | null;
   readonly records_price_objection: boolean;
+  /** A terminal sale followed by generic catalog browsing starts without the old promotion focus. */
+  readonly resets_promotion_context: boolean;
   /** Explicit course switch retires open packages and prior unpaid intents. */
   readonly abandons_course_bonus_offer: boolean;
 }> {
@@ -267,6 +273,14 @@ export async function prepareAgentTurnV2(input: {
     currentCustomerMessages,
     { pendingCallReply: sessionState.awaiting_reply === 'call_or_chat' },
   );
+  if (input.operational_continuity === 'call_consent_revoked'
+    && (salesSignal.type !== 'call_decline' || input.conversation_only !== true
+      || input.proposal.move.move !== 'decline_call' || input.proposal.proposed_action.type !== 'none'
+      || input.proposal.move.secondary_moves.length > 0 || input.proposal.move.course_reference !== undefined
+      || input.proposal.move.payment_plan !== undefined || (input.proposal.profile_updates?.length ?? 0) > 0
+      || (input.proposal.profile_requests?.length ?? 0) > 0 || input.proposal.memory_candidates.length > 0)) {
+    throw new AgentTurnV2RejectedError(['ACTION_NOT_AUTHORIZED'], ['call_revocation_outdated']);
+  }
   const state = callFacts === null
     ? sessionState
     : reconcileTerminalCallStateV1(sessionState, callFacts, {
@@ -285,7 +299,18 @@ export async function prepareAgentTurnV2(input: {
     business_context: input.business_context,
     catalog_index: input.catalog_index,
   });
-  const facts = [...registry.facts.values()];
+  const canonicalOfferingCodes = new Set(
+    (input.catalog_index?.offerings ?? input.business_context?.offerings ?? []).map((offering) => offering.code),
+  );
+  const supplementalFacts = (input.authorized_knowledge_facts ?? []).filter((fact) => (
+    fact.kind === 'offering_syllabus'
+    && fact.source === 'knowledge_base'
+    && /^knowledge-source:[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(fact.id)
+    && fact.offering_code !== undefined
+    && canonicalOfferingCodes.has(fact.offering_code)
+    && !registry.facts.has(fact.id)
+  ));
+  const facts = [...registry.facts.values(), ...supplementalFacts];
   const offerings = (input.catalog_index?.offerings ?? input.business_context?.offerings ?? []).map(
     (offering) => ({
       code: offering.code,
@@ -384,6 +409,20 @@ export async function prepareAgentTurnV2(input: {
   if (!authority.ok) {
     throw new AgentTurnV2RejectedError(authority.reasons, authority.rejection_subjects);
   }
+  // P:208–212/236: a revoked consent cannot survive as a stale accepted
+  // semantic transition. The agent repairs the complete proposal, not its copy.
+  if (salesSignal.type === 'call_decline' && (
+    effectiveProposal.proposed_action.type === 'request_call_now'
+    || effectiveProposal.move.move === 'request_call'
+    || (authority.transition.call_preference === 'call' && authority.transition.call_offer_status === 'accepted')
+  )) throw new AgentTurnV2RejectedError(['ACTION_NOT_AUTHORIZED'], ['call_consent_revoked']);
+  if (state.call_offer_status === 'declined' && !currentCallAuthorization
+    && authority.transition.call_preference === 'call' && authority.transition.call_offer_status === 'accepted') {
+    throw new AgentTurnV2RejectedError(['ACTION_NOT_AUTHORIZED'], ['call_consent_missing']);
+  }
+  if (claimsUnverifiedCallProgressV1(authority.response, callFacts?.active_call?.status)) {
+    throw new AgentTurnV2RejectedError(['UNSUPPORTED_OPERATIONAL_CLAIM'], ['call_in_progress']);
+  }
   // Reject a false completion, so Agent A can rewrite it through the existing
   // repair path. Do not publish "here is the link" with a removed side effect.
   if (authority.action.type !== 'send_payment_link' && authority.action.type !== 'send_test_payment_link'
@@ -422,10 +461,14 @@ export async function prepareAgentTurnV2(input: {
     content: authority.response,
     offerings: offerings.map((offering) => ({ code: offering.code, display_name: offering.display_name })),
   });
-  const commercialInterestOfferingCode = authority.discussed_offering_code
-    ?? input.course_bonus_capability?.interest_offering_code
-    ?? state.selected_offering_code
-    ?? responseOfferingCode;
+  const resetsPromotionContext = state.stage === 'closed'
+    && [effectiveProposal.move.move, ...effectiveProposal.move.secondary_moves].includes('browse_catalog');
+  const commercialInterestOfferingCode = resetsPromotionContext
+    ? null
+    : authority.discussed_offering_code
+      ?? input.course_bonus_capability?.interest_offering_code
+      ?? state.selected_offering_code
+      ?? responseOfferingCode;
   const recordsPriceObjection = commercialInterestOfferingCode !== null && (
     authority.action.type === 'schedule_price_objection_checkin'
     || authority.action.type === 'request_promotion_review'
@@ -466,6 +509,7 @@ export async function prepareAgentTurnV2(input: {
     discussed_offering_code: authority.discussed_offering_code,
     commercial_interest_offering_code: commercialInterestOfferingCode,
     records_price_objection: recordsPriceObjection,
+    resets_promotion_context: resetsPromotionContext,
     abandons_course_bonus_offer: abandonsCourseBonusOffer,
   };
 }

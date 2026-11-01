@@ -1,0 +1,321 @@
+prioridad,version,caso,turno,borradores_originales,entrega_historica,etapa_actual_y_texto,rechazos,resultado_verificable,limite
+1,4,14_course_change_cancels_promotion,bonus_1,"Intento 1: Perfecto, seguimos por chat. Ya aislamos el freno: el precio. Y para que no sea una traba, puedo sumarte un curso extra sin costo al inscribirte en Fotografía Profesional, así la inversión te rinde más desde el primer mes.
+Por tu objetivo con tiendas online, Fotografía con Celulares para Tiendas Online es el complemento más directo: sumás recursos para fotos de producto sin cambiar el precio del curso principal. Lo dejamos en 12 cuotas de USD 30 y avanzamos?
+---
+Intento 2: Perfecto, seguimos por acá. Ya con el precio como único freno, te sumo algo concreto: junto con Fotografía Profesional te incluyo Fotografía con Celulares para Tiendas Online, que apunta justo a lo que querés hacer con emprendedores y tiendas. El precio del curso principal no cambia.
+Lo dejamos en 12 cuotas de USD 30 al mes?
+---
+Intento 3: Perfecto, seguimos por chat. Ya sé que Fotografía Profesional te cierra y que el precio es lo único que te traba, así que te sumo algo: junto con el curso, te agrego sin costo Fotografía con Celulares para Tiendas Online, que va directo con tu idea de trabajar con emprendedores y tiendas. El precio de Fotografía Profesional no cambia.
+Lo dejamos en 12 cuotas de USD 30 al mes y arrancamos?","Por tu objetivo con tiendas online, Fotografía con Celulares para Tiendas Online es el complemento más directo: sumás recursos para fotos de producto sin cambiar el precio del curso principal. Lo dejamos en 12 cuotas de USD 30 y avanzamos?","parser; todavía no autorizado: Perfecto, seguimos por chat. Ya aislamos el freno: el precio. Y para que no sea una traba, puedo sumarte un curso extra sin costo al inscribirte en Fotografía Profesional, así la inversión te rinde más desde el primer mes.
+Por tu objetivo con tiendas online, Fotografía con Celulares para Tiendas Online es el complemento más directo: sumás recursos para fotos de producto sin cambiar el precio del curso principal. Lo dejamos en 12 cuotas de USD 30 y avanzamos?
+---
+precommit condicionado: Perfecto, seguimos por acá. Ya con el precio como único freno, te sumo algo concreto: junto con Fotografía Profesional te incluyo Fotografía con Celulares para Tiendas Online, que apunta justo a lo que querés hacer con emprendedores y tiendas. El precio del curso principal no cambia.
+
+Lo dejamos en 12 cuotas de USD 30 al mes?
+---
+parser; todavía no autorizado: Perfecto, seguimos por chat. Ya sé que Fotografía Profesional te cierra y que el precio es lo único que te traba, así que te sumo algo: junto con el curso, te agrego sin costo Fotografía con Celulares para Tiendas Online, que va directo con tu idea de trabajar con emprendedores y tiendas. El precio de Fotografía Profesional no cambia.
+Lo dejamos en 12 cuotas de USD 30 al mes y arrancamos?",FACT_VALUE_MISMATCH:forbidden_promise; PLANNERLESS_PROPOSAL_REJECTED:FACT_VALUE_MISMATCH:forbidden_promise; (ninguno en las etapas ejercitadas),Sin candidatos recortados en el helper actual; revalidación de las respuestas completas.,Cada intento histórico se reproduce por separado. No se generó una reparación nueva ni se ejecutó commit/entrega.
+1,5,02_info_discovery,goal,"Intento 1: Para fotos de productos de tu tienda online te recomiendo Fotografía con Celulares para Tiendas Online: está pensado justo para eso, para que con el celular logres imágenes que vendan mejor.
+Qué tipo de productos tenés y dónde vendés hoy?
+---
+Intento 2: Para fotos de productos de tu tienda online te recomiendo Fotografía con Celulares para Tiendas Online: está pensado justo para eso, con el celular que ya tenés.
+Contame cómo estás mostrando hoy los productos, con fotos propias o con las que te pasa el proveedor?
+---
+Intento 3: Para fotos de productos de tu tienda online te recomiendo Fotografía con Celulares para Tiendas Online: está pensado justo para eso, con el celular que ya tenés.
+Con eso podrías mostrar tus productos con mejor luz y encuadre, y que la tienda se vea más profesional. Es lo que buscabas o querés algo más avanzado?","Con eso podrías mostrar tus productos con mejor luz y encuadre, y que la tienda se vea más profesional. Es lo que buscabas o quieres algo más avanzado?","preparación condicionada; todavía rechazado: Para fotos de productos de tu tienda online te recomiendo Fotografía con Celulares para Tiendas Online: está pensado justo para eso, para que con el celular logres imágenes que vendan mejor.
+
+Qué tipo de productos tenés y dónde vendés hoy?
+---
+preparación condicionada; todavía rechazado: Para fotos de productos de tu tienda online te recomiendo Fotografía con Celulares para Tiendas Online: está pensado justo para eso, con el celular que ya tenés.
+
+Contame cómo estás mostrando hoy los productos, con fotos propias o con las que te pasa el proveedor?
+---
+preparación condicionada; todavía rechazado: Para fotos de productos de tu tienda online te recomiendo Fotografía con Celulares para Tiendas Online: está pensado justo para eso, con el celular que ya tenés.
+
+Con eso podrías mostrar tus productos con mejor luz y encuadre, y que la tienda se vea más profesional. Es lo que buscabas o querés algo más avanzado?",COMMERCIAL_TRUTH_VIOLATION,Sin candidatos recortados en el helper actual; revalidación de las respuestas completas.,Cada intento histórico se reproduce por separado. No se generó una reparación nueva ni se ejecutó commit/entrega.
+1,5,14_course_change_cancels_promotion,bonus_1,"Intento 1: Perfecto, seguimos por acá. Ya aislamos el freno: el precio. Y como querés trabajar con emprendedores y tiendas online, te sumo Fotografía con Celulares para Tiendas Online sin costo extra, para que puedas resolver fotos de producto desde el celular mientras avanzás con el curso principal. El precio de Fotografía Profesional no cambia: 12 cuotas de USD 30.
+Si eso te destraba, arrancamos con la inscripción?
+---
+Intento 2: Perfecto, seguimos por acá. Ya con el precio resuelto, te sumo Fotografía con Celulares para Tiendas Online sin costo extra: te sirve para complementar la producción de imágenes que quieres ofrecer a emprendedores y tiendas. El precio de Fotografía Profesional no cambia.
+Lo arrancamos con las 12 cuotas de USD 30 o preferís las 6 de USD 60?
+---
+Intento 3: Perfecto, seguimos por acá. Ya con el precio resuelto, te sumo Fotografía con Celulares para Tiendas Online sin costo extra: te sirve para producir fotos de producto con lo que ya tenés a mano, justo para tus clientes de tiendas online. El precio de Fotografía Profesional no cambia.
+Lo arrancamos con las 12 cuotas de USD 30 o preferís otro plan?","Si eso te destraba, arrancamos con la inscripción?","precommit condicionado: Perfecto, seguimos por acá. Ya aislamos el freno: el precio. Y como querés trabajar con emprendedores y tiendas online, te sumo Fotografía con Celulares para Tiendas Online sin costo extra, para que puedas resolver fotos de producto desde el celular mientras avanzás con el curso principal. El precio de Fotografía Profesional no cambia: 12 cuotas de USD 30.
+
+Si eso te destraba, arrancamos con la inscripción?
+---
+precommit condicionado: Perfecto, seguimos por acá. Ya con el precio resuelto, te sumo Fotografía con Celulares para Tiendas Online sin costo extra: te sirve para complementar la producción de imágenes que quieres ofrecer a emprendedores y tiendas. El precio de Fotografía Profesional no cambia.
+
+Lo arrancamos con las 12 cuotas de USD 30 o preferís las 6 de USD 60?
+---
+parser; todavía no autorizado: Perfecto, seguimos por acá. Ya con el precio resuelto, te sumo Fotografía con Celulares para Tiendas Online sin costo extra: te sirve para producir fotos de producto con lo que ya tenés a mano, justo para tus clientes de tiendas online. El precio de Fotografía Profesional no cambia.
+Lo arrancamos con las 12 cuotas de USD 30 o preferís otro plan?",(ninguno en las etapas ejercitadas); FACT_VALUE_MISMATCH:forbidden_promise; PLANNERLESS_PROPOSAL_REJECTED:FACT_VALUE_MISMATCH:forbidden_promise,Sin candidatos recortados en el helper actual; revalidación de las respuestas completas.,Cada intento histórico se reproduce por separado. No se generó una reparación nueva ni se ejecutó commit/entrega.
+1,5,14_course_change_cancels_promotion,call_step,"Intento 1: Entonces vamos a resolverlo. Con Fotografía Profesional te llevas también Fotografía con Celulares para Tiendas Online, sin costo extra: te sirve para producir imágenes que vendan en las tiendas con las que quieres trabajar. El precio del curso principal no cambia, sigue en 12 cuotas de USD 30.
+---
+Intento 2: Entonces te armo algo que te ayude a destrabarlo: sumo Fotografía con Celulares para Tiendas Online al mismo precio de Fotografía Profesional, sin costo extra. Te sirve para complementar lo que quieres hacer con emprendedores y tiendas, y el total sigue siendo USD 360.
+---
+Intento 3: (error de proveedor, sin borrador)",Entonces vamos a resolverlo.,"precommit condicionado: Entonces vamos a resolverlo. Con Fotografía Profesional te llevas también Fotografía con Celulares para Tiendas Online, sin costo extra: te sirve para producir imágenes que vendan en las tiendas con las que quieres trabajar. El precio del curso principal no cambia, sigue en 12 cuotas de USD 30.
+---
+precommit condicionado: Entonces te armo algo que te ayude a destrabarlo: sumo Fotografía con Celulares para Tiendas Online al mismo precio de Fotografía Profesional, sin costo extra. Te sirve para complementar lo que quieres hacer con emprendedores y tiendas, y el total sigue siendo USD 360.
+---
+(sin texto autorizado comprobable)",(ninguno en las etapas ejercitadas),Sin candidatos recortados en el helper actual; revalidación de las respuestas completas.,Cada intento histórico se reproduce por separado. No se generó una reparación nueva ni se ejecutó commit/entrega.
+1,5,14_course_change_cancels_promotion,installments,"Intento 1: Te entiendo. Pensalo así: son USD 30 al mes, menos de lo que suele costar una sesión de fotos, y con eso aprendés a producir las imágenes que hoy le estás pagando a alguien para tus clientes de tiendas online.
+Si te sirve, te sumo también Fotografía con Celulares para Tiendas Online sin costo, para que puedas resolver fotos rápidas desde el teléfono. El precio de Fotografía Profesional sigue igual: 12 cuotas de USD 30. Arrancamos con eso?
+---
+Intento 2: Te entiendo. Si la cuota de USD 30 igual te queda pesada, puedo sumarte Fotografía con Celulares para Tiendas Online como curso bonificado, sin cambiar el precio de Fotografía Profesional.
+Con eso tendrías las dos formaciones para producir imágenes que vendan en tiendas online. Arrancamos con las 12 cuotas de USD 30?
+---
+Intento 3: Te entiendo, y no quiero que el precio te deje fuera de algo que sí querés hacer. Por eso mismo, si te sirve, puedo sumarte también el curso de Fotografía con Celulares para Tiendas Online sin costo adicional, pensado justo para lo que buscás: producir imágenes que vendan en tiendas online. El precio de Fotografía Profesional sigue igual, USD 360, y lo podés pagar en 12 cuotas de USD 30.
+Con eso incluido, arrancamos con la inscripción en el plan de 12 cuotas?","Te entiendo. Pensalo así: son USD 30 al mes, menos de lo que suele costar una sesión de fotos, y con eso aprendes a producir las imágenes que hoy le estás pagando a alguien para tus clientes de tiendas online.","precommit condicionado: Te entiendo. Pensalo así: son USD 30 al mes, menos de lo que suele costar una sesión de fotos, y con eso aprendés a producir las imágenes que hoy le estás pagando a alguien para tus clientes de tiendas online.
+
+Si te sirve, te sumo también Fotografía con Celulares para Tiendas Online sin costo, para que puedas resolver fotos rápidas desde el teléfono. El precio de Fotografía Profesional sigue igual: 12 cuotas de USD 30. Arrancamos con eso?
+---
+precommit condicionado: Te entiendo. Si la cuota de USD 30 igual te queda pesada, puedo sumarte Fotografía con Celulares para Tiendas Online como curso bonificado, sin cambiar el precio de Fotografía Profesional.
+
+Con eso tendrías las dos formaciones para producir imágenes que vendan en tiendas online. Arrancamos con las 12 cuotas de USD 30?
+---
+parser; todavía no autorizado: Te entiendo, y no quiero que el precio te deje fuera de algo que sí querés hacer. Por eso mismo, si te sirve, puedo sumarte también el curso de Fotografía con Celulares para Tiendas Online sin costo adicional, pensado justo para lo que buscás: producir imágenes que vendan en tiendas online. El precio de Fotografía Profesional sigue igual, USD 360, y lo podés pagar en 12 cuotas de USD 30.
+Con eso incluido, arrancamos con la inscripción en el plan de 12 cuotas?",(ninguno en las etapas ejercitadas); FACT_VALUE_MISMATCH:forbidden_promise; PLANNERLESS_PROPOSAL_REJECTED:FACT_VALUE_MISMATCH:forbidden_promise,Sin candidatos recortados en el helper actual; revalidación de las respuestas completas.,Cada intento histórico se reproduce por separado. No se generó una reparación nueva ni se ejecutó commit/entrega.
+1,7,06_repeated_price_bonus_ladder,isolate,"Intento 1: Te entiendo, y por eso quiero que lo veas así: no es un gasto de USD 360 de golpe, son USD 30 al mes mientras te formás. Con eso podrías armar tu portfolio y empezar a ofrecer fotos a tiendas y emprendedores, que es justo lo que querés.
+Si te armo el panorama completo por una llamada corta, con eso resuelto avanzamos con tu inscripción?
+Te parece si lo vemos en una llamada breve y te muestro cómo encaja con lo que buscás?
+---
+Intento 2: Te entiendo, y quiero que lo veas con números claros: son 12 pagos de USD 30, o sea menos de lo que cuesta una salida al mes, y mientras pagás ya estás formándote con las 41 clases.
+Si el precio fuera el único freno, arrancarías con ese plan?
+---
+Intento 3: Te entiendo, y quiero que lo veas con números claros: son 12 pagos de USD 30, o sea menos de lo que cuesta una salida a comer por mes, y mientras pagás ya estás dentro de las 41 clases armando tu portfolio para ofrecer fotos a tiendas y emprendedores.
+Si el precio es lo único que te frena, arrancamos con ese plan y te dejo todo listo. Te parece?","Te entiendo, y por eso quiero que lo veas así: no es un gasto de USD 360 de golpe, son USD 30 al mes mientras te formás. Con eso podrías armar tu portfolio y empezar a ofrecer fotos a tiendas y emprendedores, que es justo lo que quieres.
+Te parece si lo vemos en una llamada breve y te muestro cómo encaja con lo que buscas?","parser; todavía no autorizado: Te entiendo, y por eso quiero que lo veas así: no es un gasto de USD 360 de golpe, son USD 30 al mes mientras te formás. Con eso podrías armar tu portfolio y empezar a ofrecer fotos a tiendas y emprendedores, que es justo lo que querés.
+Si te armo el panorama completo por una llamada corta, con eso resuelto avanzamos con tu inscripción?
+Te parece si lo vemos en una llamada breve y te muestro cómo encaja con lo que buscás?
+---
+parser; todavía no autorizado: Te entiendo, y quiero que lo veas con números claros: son 12 pagos de USD 30, o sea menos de lo que cuesta una salida al mes, y mientras pagás ya estás formándote con las 41 clases.
+Si el precio fuera el único freno, arrancarías con ese plan?
+---
+parser; todavía no autorizado: Te entiendo, y quiero que lo veas con números claros: son 12 pagos de USD 30, o sea menos de lo que cuesta una salida a comer por mes, y mientras pagás ya estás dentro de las 41 clases armando tu portfolio para ofrecer fotos a tiendas y emprendedores.
+Si el precio es lo único que te frena, arrancamos con ese plan y te dejo todo listo. Te parece?","CALL_OFFER_MESSAGE_BOUNDARY_INVALID:call_offer; CALL_OFFER_MESSAGE_BOUNDARY_INVALID:duplicate_call_offer; PLANNERLESS_PROPOSAL_REJECTED:CALL_OFFER_MESSAGE_BOUNDARY_INVALID:call_offer,CALL_OFFER_MESSAGE_BOUNDARY_INVALID:duplicate_call_offer; FACT_VALUE_MISMATCH:price; PLANNERLESS_PROPOSAL_REJECTED:FACT_VALUE_MISMATCH:price",Sin candidatos recortados en el helper actual; revalidación de las respuestas completas.,Cada intento histórico se reproduce por separado. No se generó una reparación nueva ni se ejecutó commit/entrega.
+1,7,14_course_change_cancels_promotion,bonus_1,"Intento 1: Perfecto, seguimos por chat. Ya agotamos el reencuadre de la cuota, así que te propongo algo concreto: sumo a tu Fotografía Profesional el curso Fotografía con Celulares para Tiendas Online, sin costo extra y sin cambiar el precio del curso principal. Te sirve directo para lo que buscás, porque muchos emprendedores y tiendas publican con el celular y con esto podrías cubrir también ese servicio.
+Con eso, ¿arrancamos con las 12 cuotas de USD 30 al mes?
+---
+Intento 2: Perfecto, seguimos por acá. Ya con la cuota de USD 30 al mes el precio queda cubierto, y para que te rinda desde el primer módulo te sumo Fotografía con Celulares para Tiendas Online sin costo: son las fotos que necesitan las tiendas y emprendedores con los que querés trabajar, y el precio de Fotografía Profesional no cambia.
+Arrancamos con los 12 pagos de USD 30, o preferís los 6 de USD 60?
+---
+Intento 3: Perfecto, seguimos por chat. Ya agotamos el reencuadre de la cuota, así que te propongo algo concreto: sumo a tu Fotografía Profesional el curso de Fotografía con Celulares para Tiendas Online, sin costo extra. El precio del curso principal sigue igual, en 12 pagos de USD 30 al mes, y ese complemento te sirve justo para lo que buscas: producir imágenes para tiendas y emprendedores desde el celular.
+Con eso sobre la mesa, arrancamos con la inscripción en 12 cuotas?","Con eso, arrancamos con las 12 cuotas de USD 30 al mes?","precommit condicionado: Perfecto, seguimos por chat. Ya agotamos el reencuadre de la cuota, así que te propongo algo concreto: sumo a tu Fotografía Profesional el curso Fotografía con Celulares para Tiendas Online, sin costo extra y sin cambiar el precio del curso principal. Te sirve directo para lo que buscás, porque muchos emprendedores y tiendas publican con el celular y con esto podrías cubrir también ese servicio.
+
+Con eso, arrancamos con las 12 cuotas de USD 30 al mes?
+---
+precommit condicionado: Perfecto, seguimos por acá. Ya con la cuota de USD 30 al mes el precio queda cubierto, y para que te rinda desde el primer módulo te sumo Fotografía con Celulares para Tiendas Online sin costo: son las fotos que necesitan las tiendas y emprendedores con los que querés trabajar, y el precio de Fotografía Profesional no cambia.
+
+Arrancamos con los 12 pagos de USD 30, o preferís los 6 de USD 60?
+---
+parser; todavía no autorizado: Perfecto, seguimos por chat. Ya agotamos el reencuadre de la cuota, así que te propongo algo concreto: sumo a tu Fotografía Profesional el curso de Fotografía con Celulares para Tiendas Online, sin costo extra. El precio del curso principal sigue igual, en 12 pagos de USD 30 al mes, y ese complemento te sirve justo para lo que buscas: producir imágenes para tiendas y emprendedores desde el celular.
+Con eso sobre la mesa, arrancamos con la inscripción en 12 cuotas?",(ninguno en las etapas ejercitadas); FACT_VALUE_MISMATCH:forbidden_promise; PLANNERLESS_PROPOSAL_REJECTED:FACT_VALUE_MISMATCH:forbidden_promise,Sin candidatos recortados en el helper actual; revalidación de las respuestas completas.,Cada intento histórico se reproduce por separado. No se generó una reparación nueva ni se ejecutó commit/entrega.
+2,3,12_verified_payment_bonus_fulfillment,verified_access_event,"Intento 1: Ana, ya está habilitado tu acceso a Studyx. Te dejo abajo los datos para entrar.
+Si quieres, cambia la contraseña cuando entres.","Tu acceso ya está habilitado. Bienvenido a Studyx.
+
+CURSOS HABILITADOS
+📚 CURSO PRINCIPAL: Fotografía Profesional
+🎁 CURSO BONIFICADO: Fotografía con Celulares para Tiendas Online
+🎁 CURSO BONIFICADO: Marketing Digital
+
+LINK DIRECTO AL CAMPUS VIRTUAL 👇🏻
+
+https://mystudyx.com/campus-virtual
+
+📌 USUARIO: ana.golden@example.test
+
+📌 CONTRASEÑA: Escuela.123
+
+RECUERDA LA «E» EN MAYÚSCULA
+
+C A N A L E S  O F I C I A L E S  D E  C O N T A C T O
+
+WHATSAPP OFICIAL DE LA ACADEMIA: 786-916-4372 (solo WhatsApp)
+NÚMERO DE ASISTENCIA AL ALUMNO: 866-217-7282 ☎️📚
+ADMINISTRACIÓN: info@mystudyx.com
+DEPARTAMENTO DE PROFESORES: studyxtutorias@gmail.com
+
+Si quieres, puedes cambiar tu contraseña después de ingresar.","ensamblador postventa aislado; no acredita entrega: Ana, ya está habilitado tu acceso a Studyx. Te dejo abajo los datos para entrar.
+
+Curso principal: Fotografía Profesional
+Curso bonificado: Fotografía con Celulares para Tiendas Online
+Curso bonificado: Marketing Digital
+
+Campus: https://mystudyx.com/campus-virtual
+
+Usuario: ana.golden@example.test
+Contraseña: Escuela.123
+
+Si quieres, cambia la contraseña cuando entres.",(ninguno en las etapas ejercitadas),PASA ensamblador: conserva intro/sugerencia completas; sin rechazo de la opcionalidad.,"Narrativa reconstruida del reporte y fuente sintética documentada. No acredita fulfillment, autorización durable ni envío."
+2,4,12_verified_payment_bonus_fulfillment,verified_access_event,"Intento 1: Ana, ya está habilitado tu acceso a Studyx. Te dejo abajo tus datos para entrar. ¡Bienvenida!
+Si quieres, cambia la contraseña cuando entres para dejarla a tu gusto.","Tu acceso ya está habilitado. Bienvenido a Studyx.
+
+CURSOS HABILITADOS
+📚 CURSO PRINCIPAL: Fotografía Profesional
+🎁 CURSO BONIFICADO: Fotografía con Celulares para Tiendas Online
+🎁 CURSO BONIFICADO: Marketing Digital
+
+LINK DIRECTO AL CAMPUS VIRTUAL 👇🏻
+
+https://mystudyx.com/campus-virtual
+
+📌 USUARIO: ana.golden@example.test
+
+📌 CONTRASEÑA: Escuela.123
+
+RECUERDA LA «E» EN MAYÚSCULA
+
+C A N A L E S  O F I C I A L E S  D E  C O N T A C T O
+
+WHATSAPP OFICIAL DE LA ACADEMIA: 786-916-4372 (solo WhatsApp)
+NÚMERO DE ASISTENCIA AL ALUMNO: 866-217-7282 ☎️📚
+ADMINISTRACIÓN: info@mystudyx.com
+DEPARTAMENTO DE PROFESORES: studyxtutorias@gmail.com
+
+Si quieres, puedes cambiar tu contraseña después de ingresar.","ensamblador postventa aislado; no acredita entrega: Ana, ya está habilitado tu acceso a Studyx. Te dejo abajo tus datos para entrar. ¡Bienvenida!
+
+Curso principal: Fotografía Profesional
+Curso bonificado: Fotografía con Celulares para Tiendas Online
+Curso bonificado: Marketing Digital
+
+Campus: https://mystudyx.com/campus-virtual
+
+Usuario: ana.golden@example.test
+Contraseña: Escuela.123
+
+Si quieres, cambia la contraseña cuando entres para dejarla a tu gusto.",(ninguno en las etapas ejercitadas),PASA ensamblador: conserva intro/sugerencia completas; sin rechazo de la opcionalidad.,"Narrativa reconstruida del reporte y fuente sintética documentada. No acredita fulfillment, autorización durable ni envío."
+2,6,12_verified_payment_bonus_fulfillment,verified_access_event,"Intento 1: Listo, Ana, tu acceso ya está habilitado. Te damos la bienvenida a Studyx, qué bueno tenerte acá 🎉
+Si quieres, te sugiero cambiar la contraseña cuando entres, para que la cuenta quede solo a tu nombre.","Tu acceso ya está habilitado. Bienvenido a Studyx.
+
+CURSOS HABILITADOS
+📚 CURSO PRINCIPAL: Fotografía Profesional
+🎁 CURSO BONIFICADO: Fotografía con Celulares para Tiendas Online
+🎁 CURSO BONIFICADO: Marketing Digital
+
+LINK DIRECTO AL CAMPUS VIRTUAL 👇🏻
+
+https://mystudyx.com/campus-virtual
+
+📌 USUARIO: ana.golden@example.test
+
+📌 CONTRASEÑA: Escuela.123
+
+RECUERDA LA «E» EN MAYÚSCULA
+
+C A N A L E S  O F I C I A L E S  D E  C O N T A C T O
+
+WHATSAPP OFICIAL DE LA ACADEMIA: 786-916-4372 (solo WhatsApp)
+NÚMERO DE ASISTENCIA AL ALUMNO: 866-217-7282 ☎️📚
+ADMINISTRACIÓN: info@mystudyx.com
+DEPARTAMENTO DE PROFESORES: studyxtutorias@gmail.com
+
+Si quieres, puedes cambiar tu contraseña después de ingresar.","ensamblador postventa aislado; no acredita entrega: Listo, Ana, tu acceso ya está habilitado. Te damos la bienvenida a Studyx, qué bueno tenerte acá 🎉
+
+Curso principal: Fotografía Profesional
+Curso bonificado: Fotografía con Celulares para Tiendas Online
+Curso bonificado: Marketing Digital
+
+Campus: https://mystudyx.com/campus-virtual
+
+Usuario: ana.golden@example.test
+Contraseña: Escuela.123
+
+Si quieres, te sugiero cambiar la contraseña cuando entres, para que la cuenta quede solo a tu nombre.",(ninguno en las etapas ejercitadas),PASA ensamblador: conserva intro/sugerencia completas; sin rechazo de la opcionalidad.,"Narrativa reconstruida del reporte y fuente sintética documentada. No acredita fulfillment, autorización durable ni envío."
+2,7,12_verified_payment_bonus_fulfillment,verified_access_event,"Intento 1: Ana, ya está habilitado tu acceso a Studyx. Te dejo abajo tus datos para que entres cuando quieras.
+Si quieres, cambia la contraseña cuando ingreses por primera vez.","Tu acceso ya está habilitado. Bienvenido a Studyx.
+
+CURSOS HABILITADOS
+📚 CURSO PRINCIPAL: Fotografía Profesional
+🎁 CURSO BONIFICADO: Fotografía con Celulares para Tiendas Online
+🎁 CURSO BONIFICADO: Marketing Digital
+
+LINK DIRECTO AL CAMPUS VIRTUAL 👇🏻
+
+https://mystudyx.com/campus-virtual
+
+📌 USUARIO: ana.golden@example.test
+
+📌 CONTRASEÑA: Escuela.123
+
+RECUERDA LA «E» EN MAYÚSCULA
+
+C A N A L E S  O F I C I A L E S  D E  C O N T A C T O
+
+WHATSAPP OFICIAL DE LA ACADEMIA: 786-916-4372 (solo WhatsApp)
+NÚMERO DE ASISTENCIA AL ALUMNO: 866-217-7282 ☎️📚
+ADMINISTRACIÓN: info@mystudyx.com
+DEPARTAMENTO DE PROFESORES: studyxtutorias@gmail.com
+
+Si quieres, puedes cambiar tu contraseña después de ingresar.","ensamblador postventa aislado; no acredita entrega: Ana, ya está habilitado tu acceso a Studyx. Te dejo abajo tus datos para que entres cuando quieras.
+
+Curso principal: Fotografía Profesional
+Curso bonificado: Fotografía con Celulares para Tiendas Online
+Curso bonificado: Marketing Digital
+
+Campus: https://mystudyx.com/campus-virtual
+
+Usuario: ana.golden@example.test
+Contraseña: Escuela.123
+
+Si quieres, cambia la contraseña cuando ingreses por primera vez.",(ninguno en las etapas ejercitadas),PASA ensamblador: conserva intro/sugerencia completas; sin rechazo de la opcionalidad.,"Narrativa reconstruida del reporte y fuente sintética documentada. No acredita fulfillment, autorización durable ni envío."
+2,8,12_verified_payment_bonus_fulfillment,verified_access_event,"Intento 1: Listo, Ana, tu pago quedó confirmado y el acceso ya está habilitado. Te damos la bienvenida a Studyx, qué bueno tenerte acá 🎉
+Si quieres, cambia la contraseña cuando entres para dejar tu cuenta a tu gusto.","Tu acceso ya está habilitado. Bienvenido a Studyx.
+
+CURSOS HABILITADOS
+📚 CURSO PRINCIPAL: Fotografía Profesional
+🎁 CURSO BONIFICADO: Fotografía con Celulares para Tiendas Online
+🎁 CURSO BONIFICADO: Marketing Digital
+
+LINK DIRECTO AL CAMPUS VIRTUAL 👇🏻
+
+https://mystudyx.com/campus-virtual
+
+📌 USUARIO: ana.golden@example.test
+
+📌 CONTRASEÑA: Escuela.123
+
+RECUERDA LA «E» EN MAYÚSCULA
+
+C A N A L E S  O F I C I A L E S  D E  C O N T A C T O
+
+WHATSAPP OFICIAL DE LA ACADEMIA: 786-916-4372 (solo WhatsApp)
+NÚMERO DE ASISTENCIA AL ALUMNO: 866-217-7282 ☎️📚
+ADMINISTRACIÓN: info@mystudyx.com
+DEPARTAMENTO DE PROFESORES: studyxtutorias@gmail.com
+
+Si quieres, puedes cambiar tu contraseña después de ingresar.","ensamblador postventa aislado; no acredita entrega: Listo, Ana, tu pago quedó confirmado y el acceso ya está habilitado. Te damos la bienvenida a Studyx, qué bueno tenerte acá 🎉
+
+Curso principal: Fotografía Profesional
+Curso bonificado: Fotografía con Celulares para Tiendas Online
+Curso bonificado: Marketing Digital
+
+Campus: https://mystudyx.com/campus-virtual
+
+Usuario: ana.golden@example.test
+Contraseña: Escuela.123
+
+Si quieres, cambia la contraseña cuando entres para dejar tu cuenta a tu gusto.",(ninguno en las etapas ejercitadas),PASA ensamblador: conserva intro/sugerencia completas; sin rechazo de la opcionalidad.,"Narrativa reconstruida del reporte y fuente sintética documentada. No acredita fulfillment, autorización durable ni envío."
+3,4,10_requested_call,available,(No hubo modelo: el camino histórico usó confirmación fija.),Perfecto. Registré la llamada; nuestra asesora intenta comunicarse ahora.,Sólo contingencia operativa del helper: Recibí tu solicitud de llamada.,No ejecutados: sin propuesta generada ni commit.,PASA helper: el recibo mínimo no afirma despacho ni conexión. El flujo normal ahora solicita redacción al agente.,"La confirmación normal requiere generación nueva, no ejecutada. Consentimiento/efecto/entrega se cubren con tests locales, no con este replay puro."
+3,6,10_requested_call,available,(No hubo modelo: el camino histórico usó confirmación fija.),Perfecto. Registré la llamada; nuestra asesora intenta comunicarse ahora.,Sólo contingencia operativa del helper: Recibí tu solicitud de llamada.,No ejecutados: sin propuesta generada ni commit.,PASA helper: el recibo mínimo no afirma despacho ni conexión. El flujo normal ahora solicita redacción al agente.,"La confirmación normal requiere generación nueva, no ejecutada. Consentimiento/efecto/entrega se cubren con tests locales, no con este replay puro."
+3,7,10_requested_call,available,(No hubo modelo: el camino histórico usó confirmación fija.),Perfecto. Registré la llamada; nuestra asesora intenta comunicarse ahora.,Sólo contingencia operativa del helper: Recibí tu solicitud de llamada.,No ejecutados: sin propuesta generada ni commit.,PASA helper: el recibo mínimo no afirma despacho ni conexión. El flujo normal ahora solicita redacción al agente.,"La confirmación normal requiere generación nueva, no ejecutada. Consentimiento/efecto/entrega se cubren con tests locales, no con este replay puro."
+3,8,10_requested_call,available,(No hubo modelo: el camino histórico usó confirmación fija.),Perfecto. Registré la llamada; nuestra asesora intenta comunicarse ahora.,Sólo contingencia operativa del helper: Recibí tu solicitud de llamada.,No ejecutados: sin propuesta generada ni commit.,PASA helper: el recibo mínimo no afirma despacho ni conexión. El flujo normal ahora solicita redacción al agente.,"La confirmación normal requiere generación nueva, no ejecutada. Consentimiento/efecto/entrega se cubren con tests locales, no con este replay puro."
+4,6,04_price_value_objection,expensive,"Intento 1: (error de proveedor, sin borrador)
+---
+Intento 2: (error de proveedor, sin borrador)",No quiero suponer algo incorrecto. Dime qué necesitas o a qué curso te refieres y lo resolvemos por aquí.,"(sin texto autorizado comprobable)
+---
+Contingencia operativa actual: Qué dato o qué curso revisamos?",(ninguno en las etapas ejercitadas),PASA helper: conserva respuesta no vacía y retira la defensa interna de la contingencia histórica.,Cada intento histórico se reproduce por separado. No se generó una reparación nueva ni se ejecutó commit/entrega. La contingencia se ejecuta como helper; no se atribuye como entrega actual.
+4,8,09_definitive_no,definitive,"Intento 1: (error de proveedor, sin borrador)
+---
+Intento 2: (error de proveedor, sin borrador)",No quiero suponer algo incorrecto. Dime qué necesitas o a qué curso te refieres y lo resolvemos por aquí.,"(sin texto autorizado comprobable)
+---
+Contingencia operativa actual: Qué dato o qué curso revisamos?",(ninguno en las etapas ejercitadas),PASA helper: conserva respuesta no vacía y retira la defensa interna de la contingencia histórica.,Cada intento histórico se reproduce por separado. No se generó una reparación nueva ni se ejecutó commit/entrega. La contingencia se ejecuta como helper; no se atribuye como entrega actual.
+4,8,13_real_syllabus,duration_followup,"Intento 1: Son 41 clases online, así que vas a poder avanzar a tu ritmo sin dejar de lado tus otras cosas.
+Contame, la fotografía la querés más para dedicarte a ella o para sumarla a un emprendimiento?
+---
+Intento 2: (error de proveedor, sin borrador)",No quiero suponer algo incorrecto. Dime qué necesitas o a qué curso te refieres y lo resolvemos por aquí.,"parser; todavía no autorizado: Son 41 clases online, así que vas a poder avanzar a tu ritmo sin dejar de lado tus otras cosas.
+Contame, la fotografía la querés más para dedicarte a ella o para sumarla a un emprendimiento?
+---
+(sin texto autorizado comprobable)
+---
+Contingencia operativa actual: Qué dato o qué curso revisamos?","FACT_VALUE_MISMATCH:course_logistics; FACT_VALUE_MISMATCH:course_logistics.self_paced; PLANNERLESS_PROPOSAL_REJECTED:FACT_VALUE_MISMATCH:course_logistics,FACT_VALUE_MISMATCH:course_logistics.self_paced; (ninguno en las etapas ejercitadas)",PASA helper: conserva respuesta no vacía y retira la defensa interna de la contingencia histórica.,Cada intento histórico se reproduce por separado. No se generó una reparación nueva ni se ejecutó commit/entrega. La contingencia se ejecuta como helper; no se atribuye como entrega actual.

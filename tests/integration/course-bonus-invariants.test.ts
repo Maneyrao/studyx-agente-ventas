@@ -102,6 +102,7 @@ run('authorized course bonus database invariants', () => {
           DROP TRIGGER promotion_offers_direct_guard ON promotion_offers;
           DROP TRIGGER promotion_offer_bonus_advance_version ON promotion_offer_bonus_offerings;
           DROP TRIGGER outbound_delivery_confirm_bonus ON outbound_deliveries;
+          ALTER TABLE payments DROP CONSTRAINT payments_promotion_cycle_id_fkey;
           ALTER TABLE promotion_offers DROP COLUMN package_mode,DROP COLUMN promotion_cycle_id,DROP COLUMN offer_version,
             DROP COLUMN accepted_source_turn_id,DROP COLUMN delivery_reconciliation_required;
           ALTER TABLE promotion_offer_bonus_offerings DROP COLUMN source_turn_id,DROP COLUMN offered_at,
@@ -120,6 +121,14 @@ run('authorized course bonus database invariants', () => {
         throw rollback;
       });
     } catch(error) { if(error!==rollback) throw error; }
+    const [restoredFk]=await db!<Array<{ definition:string }>>`
+      SELECT pg_get_constraintdef(oid) AS definition
+      FROM pg_constraint
+      WHERE conrelid='payments'::regclass
+        AND conname='payments_promotion_cycle_id_fkey'`;
+    expect(restoredFk.definition).toContain(
+      'FOREIGN KEY (promotion_cycle_id) REFERENCES promotion_offers(promotion_cycle_id)',
+    );
   });
 
   it('migration cleanup preserves an accepted live package over a newer pending review', async () => {

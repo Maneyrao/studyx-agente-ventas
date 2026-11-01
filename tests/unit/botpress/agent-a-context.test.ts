@@ -10,6 +10,7 @@ import { resolveAgentAPlannerlessProposalV2 } from '../../../botpress-agent/src/
 import { authorizeAgentTurnV2 } from '@/features/conversation/domain/agent-turn-policy-v2';
 import { createDefaultConversationStateV1 } from '@/features/conversation/domain/conversation-planner';
 import type { AgentATurnProposalV1 } from '../../../botpress-agent/src/schemas/agent-a-brain';
+import { deriveCourseBonusLadderV1 } from '@/shared/conversation/bonus-ladder';
 
 const UUID = '18a823e8-27c2-4279-9956-058f45f33cd5';
 const NOW = '2026-08-28T12:00:00.000Z';
@@ -193,6 +194,157 @@ function claimedTurn(): ClaimedTurn {
 }
 
 describe('buildAgentAContextV1', () => {
+  it('exposes recorded negotiation facts without converting them into bonus eligibility (P:106-120)', () => {
+    const claimed = claimedTurn();
+    const evidence = { status: 'confirmed' as const, offering_code: 'redes-informaticas',
+      source_turn_id: UUID, source_message_id: UUID, source_quote: 'El precio es lo único que me frena',
+      recorded_at: NOW, interpretation_source: 'committed_agent_observation' as const };
+    Object.assign(claimed, { negotiation_facts: { price_objection_count: 5,
+      latest_price_objection_source_turn_ids: [UUID], price_only_barrier: evidence } });
+    claimed.conversation_state_v1 = { ...claimed.conversation_state_v1!, call_offer_status: 'declined', stage: 'closed' };
+    const context = buildAgentAContextV1(claimed)!;
+    expect(context.commercial_state).toMatchObject({ negotiation: {
+      price_objections: { count: 5, scope: 'conversation_prior_recorded_sources', latest_source_turn_ids: [UUID] },
+      price_only_barrier: evidence,
+      call_invitation: { status: 'declined', authorization: 'not_authorized' },
+      delivered_bonus_offers: null,
+    } });
+    expect(context.capabilities.course_bonus).toBeUndefined();
+    expect(Object.keys((context.commercial_state as unknown as { negotiation: object }).negotiation))
+      .not.toContain('next_step');
+  });
+
+  it('preserves unknown negotiation facts instead of claiming zero objections or no customer confirmation', () => {
+    const context = buildAgentAContextV1(claimedTurn())!;
+    expect(context.commercial_state).toMatchObject({ negotiation: {
+      price_objections: { count: null, latest_source_turn_ids: [] },
+      price_only_barrier: { status: 'unknown' }, delivered_bonus_offers: null,
+    } });
+  });
+
+  it('does not reuse another course confirmation or treat offered bonuses as delivered', () => {
+    const claimed = claimedTurn();
+    Object.assign(claimed, { negotiation_facts: { price_objection_count: 3,
+      latest_price_objection_source_turn_ids: [UUID], price_only_barrier: {
+        status: 'confirmed', offering_code: 'other-course', source_turn_id: UUID, source_message_id: UUID,
+        source_quote: 'sólo el precio', recorded_at: NOW, interpretation_source: 'committed_agent_observation',
+      } } });
+    expect(buildAgentAContextV1(claimed)!.commercial_state.negotiation?.price_only_barrier).toEqual({ status: 'unknown' });
+    const offered = { code: 'curso-1', display_name: 'Curso 1', position: 1 };
+    Object.assign(claimed, { course_bonus_capability: { status: 'offer_available', enabled: true,
+      may_offer_bonus: true, may_schedule_checkin: false, may_request_review: false, may_accept_offer: false,
+      may_send_promoted_payment: false, promotion_code: null, interest_offering_code: 'redes-informaticas',
+      bonus_offerings: [offered], delivered_bonus_offerings: [],
+    } });
+    expect(buildAgentAContextV1(claimed)!.commercial_state.negotiation?.delivered_bonus_offers).toEqual([]);
+    Object.assign(claimed.course_bonus_capability!, { delivered_bonus_offerings: [offered] });
+    expect(buildAgentAContextV1(claimed)!.commercial_state.negotiation?.delivered_bonus_offers).toEqual([offered]);
+  });
+
+  it('projects the exact course syllabus as an authorized fact instead of leaving it only in retrieval text', () => {
+    const claimed = claimedTurn();
+    claimed.context.knowledge_base = [{
+      source_uri: 'knowledge-source:11111111-1111-4111-8111-111111111111',
+      title: 'Temario — Redes Informáticas',
+      content: 'Clase 1: fundamentos de redes. Clase 2: direccionamiento IP.',
+      similarity: 1,
+      offering_code: 'redes-informaticas',
+    }];
+
+    const context = buildAgentAContextV1(claimed)!;
+
+    expect(context.catalog.selected_offering?.facts).toContainEqual({
+      id: 'knowledge-source:11111111-1111-4111-8111-111111111111',
+      kind: 'offering_syllabus',
+      value: 'Clase 1: fundamentos de redes. Clase 2: direccionamiento IP.',
+    });
+  });
+
+  it('bounds a long syllabus to the canonical fact contract', () => {
+    const claimed = claimedTurn();
+    claimed.context.knowledge_base = [{
+      source_uri: 'knowledge-source:11111111-1111-4111-8111-111111111111',
+      title: 'Temario largo — Redes Informáticas',
+      content: `Clase 1: ${'contenido '.repeat(180)}`,
+      similarity: 1,
+      offering_code: 'redes-informaticas',
+    }];
+
+    const context = buildAgentAContextV1(claimed)!;
+    const syllabus = context.catalog.selected_offering?.facts.find((fact) => fact.kind === 'offering_syllabus');
+
+    expect(syllabus?.value).toHaveLength(1_200);
+  });
+
+  it('exposes the pending availability checkpoint after accepted-call contact data is complete', () => {
+    const claimed = claimedTurn();
+    claimed.context.batch_messages[0] = {
+      ...claimed.context.batch_messages[0]!,
+      content: 'Soy Ana Pérez, ana@example.com, +5491112345678',
+    };
+    claimed.conversation_state_v1 = {
+      ...claimed.conversation_state_v1!,
+      call_preference: 'call',
+      call_offer_status: 'accepted',
+      awaiting_reply: 'call_or_chat',
+    };
+    claimed.call_intake_readiness = { status: 'ready', requirements: [] };
+    claimed.sales_context.allowed_actions = [];
+
+    const context = buildAgentAContextV1(claimed)!;
+
+    expect(context.capabilities.call_execution).toEqual({
+      next_step: 'confirm_availability',
+      request_call_now_authorized: false,
+    });
+  });
+
+  it('retires the call execution checkpoint when the customer explicitly chooses chat', () => {
+    const claimed = claimedTurn();
+    claimed.context.batch_messages[0] = {
+      ...claimed.context.batch_messages[0]!,
+      content: 'Ahora no puedo, sigamos por chat',
+    };
+    claimed.conversation_state_v1 = {
+      ...claimed.conversation_state_v1!,
+      call_preference: 'call',
+      call_offer_status: 'accepted',
+      awaiting_reply: 'call_or_chat',
+    };
+    claimed.call_intake_readiness = { status: 'ready', requirements: [] };
+    claimed.sales_context.allowed_actions = [];
+
+    const context = buildAgentAContextV1(claimed)!;
+
+    expect(context.capabilities.call_execution).toEqual({
+      next_step: 'none',
+      request_call_now_authorized: false,
+    });
+  });
+
+  it('authorizes dispatch when availability is confirmed after the checkpoint', () => {
+    const claimed = claimedTurn();
+    claimed.context.batch_messages[0] = {
+      ...claimed.context.batch_messages[0]!,
+      content: 'Sí, ahora puedo atender',
+    };
+    claimed.conversation_state_v1 = {
+      ...claimed.conversation_state_v1!,
+      call_preference: 'call',
+      call_offer_status: 'accepted',
+      awaiting_reply: 'call_or_chat',
+    };
+    claimed.call_intake_readiness = { status: 'ready', requirements: [] };
+    claimed.sales_context.allowed_actions = [];
+
+    const context = buildAgentAContextV1(claimed)!;
+
+    expect(context.capabilities.call_execution).toEqual({
+      next_step: 'dispatch_authorized',
+      request_call_now_authorized: true,
+    });
+  });
+
   it.each(['offered','accepted','attached'] as const)('projects durable %s direct identity with new-offer creation disabled', status => {
     const claimed=claimedTurn();
     claimed.course_bonus_capability={enabled:false,max_bonus_courses:2,may_offer_bonus:false,
@@ -210,6 +362,20 @@ describe('buildAgentAContextV1', () => {
     expect(projected.capabilities.course_bonus).toMatchObject({enabled:false,may_offer_bonus:false,
       may_accept_offer:status==='offered',package_status:status});
   });
+  it('preserves the backend ladder facts in the model context', () => {
+    const claimed = claimedTurn();
+    const ladder = deriveCourseBonusLadderV1({
+      observed_price_objection_count: 2, call_invitation_status: 'offered',
+      call_offer_count: 1, may_offer_call: true,
+    });
+    claimed.course_bonus_capability = {
+      status: 'not_eligible', may_schedule_checkin: false, may_request_review: false,
+      may_accept_offer: false, may_send_promoted_payment: false,
+      promotion_code: null, bonus_offerings: [], ladder,
+    };
+    expect(buildAgentAContextV1(claimed)!.capabilities.course_bonus?.ladder).toEqual(ladder);
+  });
+
   it('projects the durable direct package into commercial state without deriving it from prose', () => {
     const claimed=claimedTurn();
     claimed.course_bonus_capability={enabled:true,max_bonus_courses:2,may_offer_bonus:true,
@@ -268,7 +434,7 @@ describe('buildAgentAContextV1', () => {
     const paymentProposal: AgentATurnProposalV1 = {
       schema_version: 1, move, response: { messages: ['Perfecto, te comparto el enlace seguro.'], call_offer: null },
       proposed_action: { type: 'send_payment_link', offering_code: 'redes-informaticas', payment_plan: 'one_time' },
-      used_fact_ids: [], used_memory_ids: [], memory_candidates: [], repair_of: null,
+      course_mentions: [], used_fact_ids: [], used_memory_ids: [], memory_candidates: [], repair_of: null,
     };
     const backend = authorizeAgentTurnV2({
       proposal: paymentProposal,
@@ -2178,6 +2344,96 @@ it('keeps the exhausted call budget authoritative despite a retrieved preference
   expect(context.commercial_state).toMatchObject({ call_offer_count: 2, call_preference: 'chat' });
   expect(context.capabilities.may_offer_call).toBe(false);
   expect(context.capabilities.may_request_call_now).toBe(false);
+});
+
+it('opens a fresh call budget when a terminal sale receives an exact inquiry about another course', () => {
+  const claimed = claimedTurn();
+  claimed.conversation_state_v1 = {
+    ...claimed.conversation_state_v1!,
+    selected_offering_code: 'redes-informaticas',
+    selected_payment_plan: 'monthly_12',
+    stage: 'closed',
+    call_preference: 'chat',
+    call_offer_status: 'declined',
+    call_offer_count: 2,
+    awaiting_reply: 'none',
+    payment_reported: true,
+  };
+  claimed.catalog_resolution = {
+    kind: 'exact', offeringCode: 'curso-1', displayName: 'Curso 1', academy: 'Tecnología', match: 'canonical',
+  };
+  claimed.context.batch_messages[0] = {
+    ...claimed.context.batch_messages[0]!,
+    content: 'Ahora quiero saber si Curso 1 me sirve para trabajar',
+  };
+
+  const context = buildAgentAContextV1(claimed)!;
+
+  expect(context.commercial_state).toMatchObject({
+    selected_offering_code: null,
+    selected_payment_plan: null,
+    stage: 'exploring',
+    call_preference: 'unknown',
+    call_offer_status: 'not_offered',
+    call_offer_count: 0,
+    awaiting_reply: 'none',
+    payment_reported: false,
+  });
+  expect(context.catalog.selected_offering?.code).toBe('curso-1');
+  expect(context.capabilities.may_offer_call).toBe(true);
+});
+
+it('does not turn an included bonus-course question into a new sale after checkout', () => {
+  const claimed = claimedTurn();
+  claimed.conversation_state_v1 = {
+    ...claimed.conversation_state_v1!,
+    selected_offering_code: 'redes-informaticas',
+    selected_payment_plan: 'monthly_12',
+    stage: 'payment_link_sent',
+    call_preference: 'chat',
+    call_offer_status: 'declined',
+    call_offer_count: 2,
+    awaiting_reply: 'none',
+  };
+  claimed.course_bonus_capability = {
+    enabled: false,
+    max_bonus_courses: 2,
+    may_offer_bonus: false,
+    status: 'accepted',
+    may_schedule_checkin: false,
+    may_request_review: false,
+    may_accept_offer: false,
+    may_send_promoted_payment: true,
+    promotion_code: 'redes-con-curso-1',
+    promotion_cycle_id: UUID,
+    offer_version: 1,
+    package_status: 'attached',
+    interest_offering_code: 'redes-informaticas',
+    accepted_at: NOW,
+    bonus_offerings: [{ code: 'curso-1', display_name: 'Curso 1', position: 1, offered_at: NOW }],
+    delivered_bonus_offerings: [{ code: 'curso-1', display_name: 'Curso 1', position: 1 }],
+  };
+  claimed.catalog_resolution = {
+    kind: 'exact', offeringCode: 'curso-1', displayName: 'Curso 1', academy: 'Tecnología', match: 'canonical',
+  };
+  claimed.context.batch_messages[0] = {
+    ...claimed.context.batch_messages[0]!,
+    content: 'Qué incluye Curso 1, que venía bonificado?',
+  };
+
+  const context = buildAgentAContextV1(claimed)!;
+
+  expect(context.commercial_state).toMatchObject({
+    selected_offering_code: 'redes-informaticas',
+    selected_payment_plan: 'monthly_12',
+    stage: 'payment_link_sent',
+    call_offer_count: 2,
+    promotion: { promotion_code: 'redes-con-curso-1', status: 'accepted' },
+  });
+  expect(context.capabilities.course_bonus).toMatchObject({
+    interest_offering_code: 'redes-informaticas',
+    package_status: 'attached',
+  });
 });
 
 it('does not authorize an immediate call when contact intake was not loaded', () => {

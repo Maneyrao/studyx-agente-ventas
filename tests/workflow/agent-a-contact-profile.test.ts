@@ -53,7 +53,7 @@ function proposal(messages: string[], extra: Partial<AgentATurnProposalV1> = {})
   return { schema_version: 1,
     move: { schema_version: 1, move: 'provide_contact_details', secondary_moves: [], vetoes: [], confidence: 1 },
     response: { messages }, proposed_action: { type: 'none' }, profile_updates: [], profile_requests: [],
-    used_fact_ids: [], used_memory_ids: [], memory_candidates: [], repair_of: null, ...extra };
+    course_mentions: [], used_fact_ids: [], used_memory_ids: [], memory_candidates: [], repair_of: null, ...extra };
 }
 
 function observedUpdate(context: AgentAContextV1, field: ContactProfileFieldV1, value: string | null,

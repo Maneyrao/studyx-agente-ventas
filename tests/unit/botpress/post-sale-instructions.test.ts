@@ -14,8 +14,8 @@ const claim = {
 describe('post-sale Agent A event instructions', () => {
   it('keeps a bounded transactional fallback for model outages', () => {
     expect(fallbackPostSaleNarrative({ kind: 'access_ready', new_user: true, existing_user: false })).toEqual({
-      intro: 'Tu acceso ya está habilitado. Bienvenido a Studyx.',
-      suggestion: 'Si quieres, puedes cambiar tu contraseña después de ingresar.',
+      intro: 'Tu acceso ya está habilitado.',
+      suggestion: '',
     });
     expect(fallbackPostSaleNarrative({ kind: 'payment_received', new_user: false, existing_user: false })).toEqual({
       intro: 'Recibimos tu pago. Estoy preparando tu acceso.',

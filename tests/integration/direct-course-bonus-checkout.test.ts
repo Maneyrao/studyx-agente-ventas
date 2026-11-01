@@ -1,3 +1,4 @@
+import { seedPriorModelNegotiation } from '../helpers/record-model-negotiation-facts';
 import { randomUUID } from 'node:crypto';
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { openIndependentLocalTestDatabases, openLocalTestDatabase } from '../helpers/db';
@@ -38,6 +39,7 @@ async function fixture(count = 1, accepted = true) {
       VALUES (${v.id},${c.id},'inbound','Customer',now() - ${prior ? 10 : 0} * interval '1 second') RETURNING id`;
     return m.id as string;
   }
+  await seedPriorModelNegotiation(db!,{workspace_id:w.id,contact_id:c.id,conversation_id:v.id});
   const prior = await inbound(true);
   await db!`INSERT INTO selected_memories(contact_id,conversation_id,source_message_id,status,memory_type,memory_key,value_normalized,source_quote,confidence,dedupe_hash)
     VALUES (${c.id},${v.id},${prior},'active','objection','price_objection','expensive','Customer',0.9,${'a'.repeat(64)})`;
@@ -80,6 +82,7 @@ run('direct bonus checkout exact accepted package',()=>{
       VALUES (${f.conversation_id},${f.contact_id},'inbound','Expensive',now()-interval '1 hour') RETURNING id`;
     await db!`INSERT INTO selected_memories(contact_id,conversation_id,source_message_id,status,memory_type,memory_key,value_normalized,source_quote,confidence,dedupe_hash)
       VALUES (${f.contact_id},${f.conversation_id},${prior.id},'active','objection','price_objection','expensive','Expensive',0.9,${'a'.repeat(64)})`;
+    await seedPriorModelNegotiation(db!,f);
     const id=randomUUID();const identity={workspace_id:f.workspace_id,contact_id:f.contact_id,conversation_id:f.conversation_id,paid_offering_code:'entrenamiento_funcional'};
     const offer=await offerDirectCourseBonusV1(db!,{...identity,source_turn_id:f.turn_id,expected_offer_version:0,bonus_offering_codes:['ingles_1'],
       outbound:{id,content:'Bonus',provider:'test',integration_id:'test',channel:'whatsapp',destination:'test',idempotency_key:id}});
@@ -133,7 +136,9 @@ run('direct bonus checkout exact accepted package',()=>{
       return commitAgentDecision({turn_id:turn.turn_id,trace_id:randomUUID(),supports_multi_outbound:true,
         authorized_offering_code:code,authorized_payment_plan:null,
         agent_turn_v2:{schema_version:2,proposal:{...f.proposalWithCallOfferAndFalsePrice,
-          move:{schema_version:1,move:'request_call',secondary_moves:[],vetoes:[],confidence:1,course_reference:reference},
+          // Authority: changing the paid course cancels the prior promotion;
+          // a call request about a course must not masquerade as that change.
+          move:{schema_version:1,move:'select_course',secondary_moves:[],vetoes:[],confidence:1,course_reference:reference},
           proposed_action:{type:'none'},response:{messages:[`Seguimos con ${reference}.`],call_offer:null}} as never},
         decision:f.placeholderDecision as never,model:f.model as never});
     }

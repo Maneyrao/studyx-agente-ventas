@@ -377,6 +377,7 @@ async function performAttempt(
   url: string,
   body: unknown,
   signal: AbortSignal,
+  observe?: GenerateDecisionInput['observe'],
 ): Promise<Decision> {
   let response: Response
   try {
@@ -407,6 +408,7 @@ async function performAttempt(
   }
 
   const text = extractFirstCandidateText(payload)
+  observe?.({ kind: 'model_raw', raw_content: text, provider: 'google-ai-direct', status: response.status })
   if (text === null) {
     throw new StudyxHttpError('GEMINI_EMPTY_RESPONSE', false, response.status)
   }
@@ -461,7 +463,7 @@ export async function generateGeminiDecision(
 
   try {
     const decision = await withFullJitterRetry(
-      () => performAttempt(url, body, timeout.signal),
+      () => performAttempt(url, body, timeout.signal, input.observe),
       {
         signal: timeout.signal,
         additionalRetries: ADDITIONAL_RETRIES,

@@ -71,7 +71,138 @@ function context(memoryValue = 'busca salida laboral'): AgentAContextV1 {
   };
 }
 
+function courseBonusEffectContract(instructions: string): string {
+  return instructions
+    .split('<current_effect_contract kind="course_bonus"')[1]
+    ?.split('</current_effect_contract>')[0] ?? '';
+}
+
 describe('Agent A Brain prompt', () => {
+  it('requires model-declared course roles while keeping metadata separate from authorization',()=>{
+    const instructions=buildAgentABrainInstructionsV1(context());
+    const contract=instructions.split('<course_mentions_contract>')[1]?.split('</course_mentions_contract>')[0]??'';
+    for(const role of ['paid','bonus','paid_complement','alternative'])expect(contract).toContain(role);
+    expect(contract).toContain('offering_code');expect(contract).toContain('course_mentions');
+    expect(contract).toContain('does not authorize');
+    expect(contract).toContain('delivered_bonus_offerings');
+    expect(contract).toContain('not a delivered bonus');
+  });
+  it('repairs an undeclared course role through a truthful declaration or removal, never an inferred gift',()=>{
+    const current=context();
+    current.turn_rejection={schema_version:1,rejection_id:'00000000-0000-4000-8000-000000000001',attempt:1,
+      rejections:[{code:'COURSE_ROLE_UNDECLARED',subject:'course_mentions:undeclared:extra'}],
+      authorized_alternatives:{fact_ids:[],actions:['none'],missing_information:[]}};
+    const repair=buildAgentABrainInstructionsV1(current).split('<mandatory_repair')[1]?.split('</mandatory_repair>')[0]??'';
+    expect(repair).toContain('COURSE_ROLE_UNDECLARED');
+    expect(repair).toContain('declare the actual role');
+    expect(repair).toContain('remove the unsupported claim');
+    expect(repair).toContain('Never relabel');
+    expect(repair).toContain('not authorization');
+    expect(repair).toContain('Rebuild course_mentions for the final rewritten response');
+  });
+
+  it('keeps the no-hint bonus repair when an undeclared role also lacks an authorized effect',()=>{
+    const current=context();
+    current.turn_rejection={schema_version:1,rejection_id:'00000000-0000-4000-8000-000000000001',attempt:1,
+      rejections:[{code:'COURSE_ROLE_UNDECLARED',subject:'course_mentions:undeclared:extra'},
+        {code:'FACT_VALUE_MISMATCH',subject:'forbidden_promise'}],
+      authorized_alternatives:{fact_ids:[],actions:['none'],missing_information:[]}};
+    const repair=buildAgentABrainInstructionsV1(current).split('<mandatory_repair')[1]?.split('</mandatory_repair>')[0]??'';
+    expect(repair).toContain('declare the actual role');
+    expect(repair).toContain('generic, conditional, questioned or hinted gift');
+    expect(repair).toContain('Use proposed_action=none for bonus effects');
+    expect(repair).toContain('remove declarations of courses no longer mentioned');
+  });
+  it('maps postponement to defer_payment and reserves decline_purchase for definitive refusal', () => {
+    // Authority: docs/authority/prompt-agente-a-studyx-v2.md:81 leaves the door
+    // open for “Lo voy a pensar”; user authorized the technical move mapping.
+    const instructions = buildAgentABrainInstructionsV1(context());
+    const semantics = instructions.split('<move_semantics>')[1]?.split('</move_semantics>')[0] ?? '';
+
+    expect(semantics).toContain('move=defer_payment');
+    for (const postponement of [
+      'lo voy a pensar', 'tengo que pensarlo', 'no ahora', 'no me quiero inscribir todavía',
+    ]) expect(semantics).toContain(`"${postponement}"`);
+    expect(semantics).toContain('move=decline_purchase only for an explicit definitive refusal to purchase');
+    expect(semantics).toContain('Postponement is not a definitive refusal');
+  });
+  it('renders the accepted-call availability boundary as an execution contract', () => {
+    const current = context();
+    current.commercial_state.call_preference = 'call';
+    current.commercial_state.call_offer_status = 'accepted';
+    current.commercial_state.awaiting_reply = 'call_or_chat';
+    current.capabilities.may_request_call_now = false;
+    current.capabilities.call_execution = {
+      next_step: 'confirm_availability',
+      request_call_now_authorized: false,
+    };
+
+    const instructions = buildAgentABrainInstructionsV1(current);
+
+    expect(instructions).toContain('<current_effect_contract kind="call">');
+    expect(instructions).toContain('Keep move=request_call');
+    expect(instructions).toContain('ask once whether the customer can take the call now');
+    expect(instructions).toContain('proposed_action=none');
+    expect(instructions).toContain('Do not claim that the call was placed.');
+  });
+
+  it('maps accepted-call intake and checkout checkpoints to their durable moves', () => {
+    const current = context();
+    current.commercial_state.call_preference = 'call';
+    current.commercial_state.call_offer_status = 'accepted';
+    current.commercial_state.awaiting_reply = 'contact_details';
+    current.capabilities.call_execution = {
+      next_step: 'collect_contact_details', request_call_now_authorized: false,
+    };
+    let instructions = buildAgentABrainInstructionsV1(current);
+    expect(instructions).toContain('keep move=request_call');
+    expect(instructions).toContain('profile_updates');
+    expect(instructions).toContain('provide_contact_details as a secondary move');
+
+    current.commercial_state.call_preference = 'unknown';
+    current.commercial_state.call_offer_status = 'not_offered';
+    current.commercial_state.awaiting_reply = 'payment_confirmation';
+    current.capabilities.call_execution = undefined;
+    instructions = buildAgentABrainInstructionsV1(current);
+    expect(instructions).toContain('include ask_payment_options');
+    expect(instructions).toContain('payment_plan');
+  });
+
+  it('sends the authorized link after contact confirmation when the durable plan already exists', () => {
+    const current = context();
+    current.commercial_state.awaiting_reply = 'payment_confirmation';
+    current.commercial_state.selected_payment_plan = 'monthly_6';
+    current.capabilities.may_send_payment_link = true;
+
+    const instructions = buildAgentABrainInstructionsV1(current);
+    const checkout = instructions.split('<current_effect_contract kind="checkout">')[1]!
+      .split('</current_effect_contract>')[0]!;
+
+    expect(checkout).toContain('durable payment plan is already monthly_6');
+    expect(checkout).toContain('move=request_payment_link');
+    expect(checkout).toContain('proposed_action=send_payment_link');
+    expect(checkout).toContain('Do not ask for a payment plan again');
+    expect(checkout).not.toContain('ask how they prefer to pay');
+  });
+
+  it('does not force a call follow-up after the customer chooses to continue by chat', () => {
+    const current = context();
+    current.turn.batch_messages = [{ id: 'm3', text: 'Ahora no puedo, sigamos por chat' }];
+    current.commercial_state.call_preference = 'call';
+    current.commercial_state.call_offer_status = 'accepted';
+    current.commercial_state.awaiting_reply = 'call_or_chat';
+    current.capabilities.may_request_call_now = false;
+    current.capabilities.call_execution = {
+      next_step: 'none',
+      request_call_now_authorized: false,
+    };
+
+    const instructions = buildAgentABrainInstructionsV1(current);
+
+    expect(instructions).not.toContain('<current_effect_contract kind="call">');
+    expect(instructions).not.toContain('ask once whether the customer can take the call now');
+  });
+
   it.each(['capability','commercial_state','disabled_with_may_offer'] as const)('preserves only delivered direct gifts during review rollback using %s identity', identity => {
     const current=context();
     current.turn.batch_messages=[{id:'m3',text:'Me sigue pareciendo caro'}];
@@ -93,9 +224,9 @@ describe('Agent A Brain prompt', () => {
         {code:'FACT_VALUE_MISMATCH',subject:'direct_bonus:bonus_without_reply'}],
       authorized_alternatives:{fact_ids:[],actions:['none'],missing_information:[]}};
     const instructions=buildAgentABrainInstructionsV1(current);
-    const guidance=instructions.split('<current_commercial_guidance kind="repeated_price_objection">')[1]!.split('</current_commercial_guidance>')[0]!;
+    const guidance=courseBonusEffectContract(instructions);
     const repair=instructions.split('<mandatory_repair')[1]!.split('</mandatory_repair>')[0]!;
-    expect(guidance).toContain('No new bonus is authorized');
+    expect(guidance).toContain('offer_course_bonus is not authorized');
     for(const directive of [guidance,repair]) {
       expect(directive).toContain('delivered_bonus_offerings');
       expect(directive).toMatch(/pending/iu);
@@ -105,17 +236,19 @@ describe('Agent A Brain prompt', () => {
   });
   it('adapts discovery, trial closes and direct negotiation while preserving early calls', () => {
     const instructions = buildAgentABrainInstructionsV1(context());
-    for (const rule of ['cierre de prueba', '«me interesa» no confirma una compra',
-      'Nunca bonifiques ante la primera objeción', 'uno, luego dos y finalmente tres',
-      'Nunca un cuarto', 'No uses Ackerman', 'no te voy a insistir',
-      'Un curso exacto no es requisito', 'una pregunta principal',
-      'curso pago y todos los bonificados', 'sin decir «virtual»']) {
+    // Authority prompt lines 25-141 and 204-212 are now the literal behavior source.
+    for (const rule of ['cierre de prueba', 'Ante señal de compra',
+      'Nunca en el primer contacto, ante la primera mención de precio',
+      'un segundo y, como máximo, un tercero', 'una pregunta principal',
+      'interés expresado o el curso que compra',
+      'La llamada es una herramienta de cierre complementaria']) {
       expect(instructions).toContain(rule);
     }
   });
 
   it('guides a direct expansion without legacy review wording or hidden course names', () => {
     const current = context();
+    current.commercial_state.call_offer_count = 1;
     current.turn.batch_messages = [{ id: 'm2', text: 'Me sigue pareciendo caro' }];
     current.turn.recent_turns = [{ id: 'm1', direction: 'inbound', content: 'Es caro' }];
     current.capabilities.course_bonus = {
@@ -126,21 +259,129 @@ describe('Agent A Brain prompt', () => {
       bonus_offerings: [{ code: 'ingles_1', display_name: 'Inglés 1', position: 1 }],
       delivered_bonus_offerings: [{ code: 'ingles_1', display_name: 'Inglés 1', position: 1 }],
     };
-    const guidance = buildAgentABrainInstructionsV1(current)
-      .split('<current_commercial_guidance kind="repeated_price_objection">')[1]!.split('</current_commercial_guidance>')[0]!;
+    const guidance = courseBonusEffectContract(buildAgentABrainInstructionsV1(current));
     expect(guidance).toContain('offer_course_bonus');
-    expect(guidance).toContain('same response');
+    expect(guidance).toContain('exactly one new active bonus_offering_code');
     expect(guidance).toContain('delivered_bonus_offerings');
+    expect(guidance).toContain('does not choose when or which course');
+    expect(guidance).toContain('Agent A applies canonical_sales_behavior');
+    expect(guidance).toContain('Backend validation decides whether the effect commits');
     expect(guidance).not.toContain('request_promotion_review');
-    expect(guidance).not.toContain('Do not add any other discount, gift');
+    expect(guidance).not.toContain('the customer has replied with the same price objection');
   });
-  it('makes phase identification and brevity an Agent A responsibility', () => {
-    const instructions = buildAgentABrainInstructionsV1(context());
 
-    expect(instructions).toContain('Identify the current commercial phase from context before writing');
-    expect(instructions).toContain('stage_hypothesis only for the allowed durable milestone enum');
-    expect(instructions).toContain('Use one or two short WhatsApp messages');
-    expect(instructions).toContain('The backend does not decide sales quality');
+  it.each([
+    'Lo voy a pensar un poco',
+    'No sé si voy a tener tiempo',
+    '¿El certificado realmente sirve?',
+  ])('does not advance the bonus ladder for a non-price objection after a delivered bonus: %s', message => {
+    const current = context();
+    current.commercial_state.call_offer_count = 0;
+    current.turn.batch_messages = [{ id: 'm3', text: message }];
+    current.turn.recent_turns = [
+      { id: 'm1', direction: 'inbound', content: 'Me parece caro' },
+      { id: 'm2', direction: 'outbound', content: 'Puedo sumarte Inglés 1 sin costo extra.' },
+    ];
+    current.capabilities.course_bonus = {
+      enabled: true, max_bonus_courses: 3, may_offer_bonus: true,
+      status: 'offer_available', may_schedule_checkin: false, may_request_review: false,
+      may_accept_offer: true, may_send_promoted_payment: false,
+      promotion_code: 'p', interest_offering_code: 'redes-informaticas',
+      bonus_offerings: [{ code: 'ingles_1', display_name: 'Inglés 1', position: 1 }],
+      delivered_bonus_offerings: [{ code: 'ingles_1', display_name: 'Inglés 1', position: 1 }],
+    };
+
+    const guidance = courseBonusEffectContract(buildAgentABrainInstructionsV1(current));
+
+    expect(guidance).toContain('does not choose when or which course');
+    expect(guidance).not.toContain('source_objection');
+    expect(guidance).not.toContain('the canonical next rung is exactly one additional course bonus');
+    expect(guidance).not.toContain('complete the call rung first');
+  });
+
+  it('repairs a duplicated call invitation without turning the offer into call intake', () => {
+    const current = context();
+    current.turn.batch_messages = [{ id: 'm2', text: 'Sigue siendo caro' }];
+    current.turn_rejection = {
+      schema_version: 1,
+      rejection_id: '00000000-0000-4000-8000-000000000019',
+      attempt: 1,
+      rejections: [
+        { code: 'CALL_OFFER_MESSAGE_BOUNDARY_INVALID', subject: 'call_offer' },
+        { code: 'CALL_OFFER_MESSAGE_BOUNDARY_INVALID', subject: 'duplicate_call_offer' },
+      ],
+      authorized_alternatives: { fact_ids: [], actions: ['none'], missing_information: [] },
+    };
+
+    const repair = buildAgentABrainInstructionsV1(current)
+      .split('<mandatory_repair')[1]!
+      .split('</mandatory_repair>')[0]!;
+
+    expect(repair).toContain('Keep it only in response.call_offer');
+    expect(repair).toContain('remove the duplicate invitation from response.messages');
+    expect(repair).toContain('Do not ask for contact data until the customer accepts');
+    expect(repair).not.toContain('For an unavailable request_call_now');
+  });
+
+  it('does not choose the canonical call rung from technical bonus capability', () => {
+    const current = context();
+    current.turn.batch_messages = [{ id: 'm2', text: 'Me sigue pareciendo caro' }];
+    current.turn.recent_turns = [{ id: 'm1', direction: 'inbound', content: 'Es caro' }];
+    current.capabilities.course_bonus = {
+      enabled: true, max_bonus_courses: 3, may_offer_bonus: true,
+      status: 'offer_available', may_schedule_checkin: false, may_request_review: false,
+      may_accept_offer: false, may_send_promoted_payment: false,
+      promotion_code: null, interest_offering_code: 'redes-informaticas',
+      bonus_offerings: [], delivered_bonus_offerings: [],
+    };
+
+    const guidance = courseBonusEffectContract(buildAgentABrainInstructionsV1(current));
+
+    expect(guidance).toContain('does not choose when or which course');
+    expect(guidance).not.toContain('call rung');
+    expect(guidance).not.toContain('call step');
+    expect(guidance).not.toContain('complete the call rung first');
+    expect(guidance).not.toContain('use proposed_action=none');
+  });
+
+  it('makes checkout, accepted-call and bonus action shape an explicit final consistency check', () => {
+    const current = context();
+    current.turn.batch_messages = [{ id: 'm2', text: 'Sigue caro, si resolvemos eso avanzo' }];
+    current.turn.recent_turns = [
+      { id: 'm1', direction: 'outbound', content: 'Con este curso podés ofrecer el servicio que buscás.' },
+    ];
+    current.capabilities.course_bonus = {
+      enabled: true, max_bonus_courses: 3, may_offer_bonus: true,
+      status: 'checkin_available', may_schedule_checkin: false, may_request_review: false,
+      may_accept_offer: false, may_send_promoted_payment: false,
+      promotion_code: null, interest_offering_code: 'redes-informaticas',
+      bonus_offerings: [], delivered_bonus_offerings: [],
+    };
+
+    const instructions = buildAgentABrainInstructionsV1(current);
+    const check = instructions
+      .split('<execution_consistency_check>')[1]!
+      .split('</execution_consistency_check>')[0]!;
+
+    expect(check).toContain('primary move=request_call');
+    expect(check).toContain('summary confirmation only');
+    expect(check).toContain('payment_confirmation');
+    expect(check).toContain('payment_plan');
+    expect(check).toContain('offer_course_bonus');
+    expect(check).toContain('exactly one new active bonus_offering_code');
+    expect(check).toContain('Never construct a fourth addition');
+    expect(check).not.toContain('personalized value');
+    expect(check).not.toContain('decline_purchase');
+  });
+  it('keeps phase identification and brevity in the canonical prompt only', () => {
+    const instructions = buildAgentABrainInstructionsV1(context());
+    const technicalOnly = instructions.replace(STUDYX_AGENT_A_CANONICAL_PROMPT, '');
+
+    expect(STUDYX_AGENT_A_CANONICAL_PROMPT).toContain('Etapa:');
+    expect(STUDYX_AGENT_A_CANONICAL_PROMPT).toContain('uno o dos mensajes breves');
+    expect(technicalOnly).toContain('stage_hypothesis is diagnostic');
+    expect(technicalOnly).not.toContain('Identify the current commercial phase');
+    expect(technicalOnly).not.toContain('one or two short WhatsApp messages');
   });
 
   it('includes the canonical behavior once and preserves the complete inert context', () => {
@@ -150,11 +391,60 @@ describe('Agent A Brain prompt', () => {
     const encoded = instructions.split('<authorized_context>')[1]!.split('</authorized_context>')[0]!;
     expect(JSON.parse(encoded)).toEqual(current);
     expect(instructions).not.toContain('<current_turn_guidance>');
-    expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v99');
-    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v135');
+    expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v101');
+    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v149');
   });
 
-  it('adds turn-specific guidance for a repeated price objection without forcing a script', () => {
+  it('keeps commercial strategy exclusively in the canonical prompt', () => {
+    const current = context();
+    current.turn.batch_messages = [{ id: 'm3', text: 'Lo voy a pensar' }];
+    current.turn.recent_turns = [{ id: 'm1', direction: 'inbound', content: 'Me parece caro' }];
+    current.capabilities.course_bonus = {
+      enabled: true, max_bonus_courses: 3, may_offer_bonus: true,
+      status: 'offer_available', may_schedule_checkin: false, may_request_review: false,
+      may_accept_offer: true, may_send_promoted_payment: false,
+      promotion_code: 'p', interest_offering_code: 'redes-informaticas',
+      bonus_offerings: [{ code: 'ingles_1', display_name: 'Inglés 1', position: 1 }],
+      delivered_bonus_offerings: [{ code: 'ingles_1', display_name: 'Inglés 1', position: 1 }],
+    };
+
+    const instructions = buildAgentABrainInstructionsV1(current);
+    const technicalOnly = instructions.replace(STUDYX_AGENT_A_CANONICAL_PROMPT, '');
+
+    for (const duplicatedCommercialRule of [
+      'price is still the sole blocker',
+      'required earlier ladder steps',
+      'the call step was handled when it corresponded',
+      'personalized value',
+      'the USD 30 installment reframe',
+      'the same price objection',
+      'offer exactly one new complementary course',
+      'A temporal pause such as “tengo que pensarlo”',
+    ]) expect(technicalOnly).not.toContain(duplicatedCommercialRule);
+
+    expect(technicalOnly).toContain('Capabilities authorize effects, not wording');
+    expect(technicalOnly).toContain('offer_course_bonus');
+    expect(technicalOnly).toContain('does not choose when or which course');
+  });
+
+  it('does not override the authority price ladder with a second commercial strategy', () => {
+    // Authority prompt lines 98-112 permit “más accesible” and the USD 30 reframe.
+    const current = context();
+    current.turn.batch_messages = [{ id: 'current-1', text: 'No me alcanza, está caro' }];
+    const instructions = buildAgentABrainInstructionsV1(current);
+    const guidance = courseBonusEffectContract(instructions);
+
+    expect(STUDYX_AGENT_A_CANONICAL_PROMPT).toContain(
+      'presenta el plan de 12 cuotas como la forma más accesible',
+    );
+    expect(guidance).not.toMatch(/never[^.]*more accessible/iu);
+    expect(guidance).not.toMatch(/do not use[^.]*make the price feel lower/iu);
+    expect(guidance).not.toMatch(/present it[^.]*never as cheaper/iu);
+    expect(guidance).not.toMatch(/only USD 30/iu);
+    expect(guidance).not.toMatch(/cost-per-day|daily comparisons/iu);
+  });
+
+  it('does not add a brain-level sales strategy for a repeated price objection', () => {
     const current = context();
     current.turn.batch_messages = [
       { id: 'current-1', text: 'me sigue pareciendo caro' },
@@ -170,13 +460,92 @@ describe('Agent A Brain prompt', () => {
 
     const instructions = buildAgentABrainInstructionsV1(current);
 
-    expect(instructions).toContain('<current_commercial_guidance kind="repeated_price_objection">');
-    expect(instructions).toContain('The call lifecycle never replaces handling the objection in chat');
-    expect(instructions).toContain('Do not merely repeat the price, installment amounts or class count');
-    expect(instructions).toContain('Do not use payment plans, installment amounts, cost-per-day comparisons, discounts or bonus courses to make the price feel lower');
-    expect(instructions).toContain('Choose the wording and structure yourself');
+    expect(instructions).not.toContain('<current_commercial_guidance');
+    expect(instructions).not.toContain('<current_effect_contract');
+    expect(instructions).toContain('Canonical behavior alone guides voice and conversation');
+    expect(instructions).not.toMatch(/never call a plan cheaper or more accessible/iu);
+    expect(instructions).not.toContain('Choose the wording and structure yourself');
   });
 
+  it.each([0,2])('forbids every bonus mention while repairing ladder_step_pending with %s recorded objections', count=>{
+    const current=context();
+    current.capabilities.course_bonus={enabled:true,max_bonus_courses:3,may_offer_bonus:false,status:'not_eligible',
+      may_schedule_checkin:false,may_request_review:false,may_accept_offer:false,may_send_promoted_payment:false,
+      promotion_code:null,interest_offering_code:'redes-informaticas',bonus_offerings:[],ladder:{eligible:false,
+        observed_price_objection_count:count,required_price_objection_count:3,call_invitation_status:'not_offered',
+        call_offer_count:0,may_offer_call:true,missing_steps:['recorded_price_objections','call_invitation']}};
+    current.turn_rejection={schema_version:1,rejection_id:'r',attempt:1,
+      rejections:[{code:'FACT_VALUE_MISMATCH',subject:'direct_bonus:ladder_step_pending'}],
+      authorized_alternatives:{fact_ids:[],actions:['none'],missing_information:[]}};
+    const repair=buildAgentABrainInstructionsV1(current).split('<mandatory_repair')[1]!.split('</mandatory_repair>')[0]!;
+    expect(repair).toContain('Do not mention, suggest or imply any bonus');
+    expect(repair).toContain('including a generic, conditional, questioned or hinted gift');
+    expect(repair).toContain('Use proposed_action=none for bonus effects');
+    expect(repair).toContain('Counts alone do not prove value, installments or isolation were completed');
+    expect(repair).toContain('never invent objections or completed steps');
+    expect(repair).toContain('The identified missing step is call_invitation');
+    expect(repair).toContain('with a concrete reason under canonical_sales_behavior');
+    expect(repair).toContain('Only offer the call after history confirms the earlier steps are complete');
+    expect(repair).toContain('otherwise continue the earliest unfinished step');
+  });
+  it.each([false,true])('offers the identified pending call only with current permission=%s', mayOffer=>{
+    const current=context();current.capabilities.may_offer_call=mayOffer;
+    current.turn_rejection={schema_version:1,rejection_id:'r',attempt:1,rejections:[
+      {code:'FACT_VALUE_MISMATCH',subject:'direct_bonus:ladder_step_pending'},
+      {code:'FACT_VALUE_MISMATCH',subject:'bonus_ladder:missing:call_invitation'}],
+      authorized_alternatives:{fact_ids:[],actions:['none'],missing_information:[]}};
+    const repair=buildAgentABrainInstructionsV1(current).split('<mandatory_repair')[1]!.split('</mandatory_repair>')[0]!;
+    expect(repair.includes('The identified missing step is call_invitation')).toBe(mayOffer);
+  });
+  it.each(['subject','missing_information'] as const)('uses fresh ladder metadata from %s rather than a stale pending-call snapshot',transport=>{
+    const current=context();current.capabilities.course_bonus={enabled:true,max_bonus_courses:3,may_offer_bonus:false,
+      status:'not_eligible',may_schedule_checkin:false,may_request_review:false,may_accept_offer:false,may_send_promoted_payment:false,
+      promotion_code:null,interest_offering_code:'redes-informaticas',bonus_offerings:[],ladder:{eligible:false,
+        observed_price_objection_count:2,required_price_objection_count:3,call_invitation_status:'not_offered',
+        call_offer_count:0,may_offer_call:true,missing_steps:['call_invitation','recorded_price_objections']}};
+    const feedback=['bonus_ladder:call_invitation:offered','bonus_ladder:missing:recorded_price_objections'];
+    current.turn_rejection={schema_version:1,rejection_id:'r',attempt:1,
+      rejections:[{code:'FACT_VALUE_MISMATCH',subject:'direct_bonus:ladder_step_pending'},
+        ...(transport==='subject'?feedback.map(subject=>({code:'FACT_VALUE_MISMATCH' as const,subject})):[])],
+      authorized_alternatives:{fact_ids:[],actions:['none'],missing_information:transport==='missing_information'?feedback:[]}};
+    const repair=buildAgentABrainInstructionsV1(current).split('<mandatory_repair')[1]!.split('</mandatory_repair>')[0]!;
+    expect(repair).not.toContain('The identified missing step is call_invitation');
+  });
+  it('reads a pending call from fresh missing_information without a subject or capability snapshot',()=>{
+    const current=context();current.turn_rejection={schema_version:1,rejection_id:'r',attempt:1,
+      rejections:[{code:'FACT_VALUE_MISMATCH',subject:'direct_bonus:ladder_step_pending'}],
+      authorized_alternatives:{fact_ids:[],actions:['none'],missing_information:['bonus_ladder:missing:call_invitation']}};
+    const repair=buildAgentABrainInstructionsV1(current).split('<mandatory_repair')[1]!.split('</mandatory_repair>')[0]!;
+    expect(repair).toContain('The identified missing step is call_invitation');
+  });
+  it('does not infer a missing sales step from a rejection without identified steps',()=>{
+    const current=context();current.turn_rejection={schema_version:1,rejection_id:'r',attempt:1,
+      rejections:[{code:'FACT_VALUE_MISMATCH',subject:'forbidden_promise'}],
+      authorized_alternatives:{fact_ids:[],actions:['none'],missing_information:[]}};
+    const repair=buildAgentABrainInstructionsV1(current).split('<mandatory_repair')[1]!.split('</mandatory_repair>')[0]!;
+    expect(repair).toContain('When no pending step is identified');
+    expect(repair).toContain('verified value or installment facts');
+    expect(repair).not.toContain('The identified missing step is call_invitation');
+  });
+  it.each(['review_available','offer_available','accepted'] as const)('does not revive legacy bonus promises during %s repair',status=>{
+    const current=context();current.capabilities.course_bonus={status,may_schedule_checkin:false,
+      may_request_review:status==='review_available',may_accept_offer:status==='offer_available',may_send_promoted_payment:status==='accepted',
+      promotion_code:'legacy',interest_offering_code:'redes-informaticas',bonus_offerings:[{code:'ingles_1',display_name:'Inglés 1',position:1}]};
+    current.turn_rejection={schema_version:1,rejection_id:'r',attempt:1,rejections:[{code:'FACT_VALUE_MISMATCH',subject:'forbidden_promise'}],
+      authorized_alternatives:{fact_ids:[],actions:['none'],missing_information:[]}};
+    const repair=buildAgentABrainInstructionsV1(current).split('<mandatory_repair')[1]!.split('</mandatory_repair>')[0]!;
+    expect(repair).toContain('Do not mention, suggest or imply any bonus');
+    expect(repair).toContain('Use proposed_action=none for bonus effects');
+    expect(repair).not.toContain('You may say naturally that you will check an alternative');
+    expect(repair).not.toContain('Mention only the exact promotion_code');
+  });
+  it('does not add the bonus repair contract for an unrelated factual rejection',()=>{
+    const current=context();current.turn_rejection={schema_version:1,rejection_id:'r',attempt:1,
+      rejections:[{code:'FACT_VALUE_MISMATCH',subject:'course_logistics'}],
+      authorized_alternatives:{fact_ids:[],actions:['none'],missing_information:[]}};
+    const repair=buildAgentABrainInstructionsV1(current).split('<mandatory_repair')[1]!.split('</mandatory_repair>')[0]!;
+    expect(repair).not.toContain('Do not mention, suggest or imply any bonus');
+  });
   it('repairs a forbidden commercial promise without repeating an unavailable promotion', () => {
     const current = context();
     current.turn.batch_messages = [{ id: 'current-1', text: 'No hay una promo que me puedas ofrecer?' }];
@@ -203,8 +572,9 @@ describe('Agent A Brain prompt', () => {
       .split('</mandatory_repair>')[0]!;
 
     expect(repair).toContain('remove the unauthorized promise completely');
-    expect(repair).toContain('do not claim a discount, promotion, gift or approval');
-    expect(repair).toContain('answer the objection through contextual value');
+    expect(repair).toContain('Do not claim a discount, promotion, gift, approval, income or result');
+    expect(repair).toContain('Preserve the rest of the response only when its facts and effects remain authorized');
+    expect(repair).not.toContain('contextual value');
   });
 
   it('lets a persistent-objection repair request an authorized review without naming the gift', () => {
@@ -225,12 +595,10 @@ describe('Agent A Brain prompt', () => {
       bonus_offerings: [],
     };
 
-    const guidance = buildAgentABrainInstructionsV1(current)
-      .split('<current_commercial_guidance kind="repeated_price_objection">')[1]!
-      .split('</current_commercial_guidance>')[0]!;
+    const guidance = courseBonusEffectContract(buildAgentABrainInstructionsV1(current));
 
     expect(guidance).toContain('request_promotion_review');
-    expect(guidance).toContain('do not name or imply a specific gift yet');
+    expect(guidance).toContain('does not choose sales strategy, sequence or wording');
     expect(guidance).not.toContain('discounts or bonus courses to make the price feel lower');
   });
 
@@ -254,13 +622,11 @@ describe('Agent A Brain prompt', () => {
       bonus_offerings: [],
     };
 
-    const guidance = buildAgentABrainInstructionsV1(current)
-      .split('<current_commercial_guidance kind="price_objection">')[1]!
-      .split('</current_commercial_guidance>')[0]!;
+    const guidance = courseBonusEffectContract(buildAgentABrainInstructionsV1(current));
 
     expect(guidance).toContain('request_promotion_review');
     expect(guidance).toContain('bonus_offering_code');
-    expect(guidance).toContain('do not name or imply a specific gift yet');
+    expect(guidance).toContain('Do not claim approval before the effect commits');
     expect(guidance).not.toContain('discounts or bonus courses to make the price feel lower');
   });
 
@@ -269,16 +635,13 @@ describe('Agent A Brain prompt', () => {
     current.turn.batch_messages = [{ id: 'current-1', text: 'Me parece caro' }];
 
     const instructions = buildAgentABrainInstructionsV1(current);
-    const guidance = instructions
-      .split('<current_commercial_guidance kind="price_objection">')[1]
-      ?.split('</current_commercial_guidance>')[0];
+    const guidance = courseBonusEffectContract(instructions);
 
-    expect(guidance).toContain('perceived-value gap from a real inability to pay');
-    expect(guidance).toContain('Do not use payment plans, installment amounts, cost-per-day comparisons, discounts or bonus courses to make the price feel lower');
-    expect(guidance).toContain('state only confirmed alternatives in neutral customer-centered language');
-    expect(guidance).toContain('Truthfulness, authorization and validation rules are silent operating constraints');
-    expect(guidance).toContain('Honest uncertainty remains appropriate when a fact is genuinely absent');
-    expect(guidance).not.toContain('invented workaround');
+    expect(STUDYX_AGENT_A_CANONICAL_PROMPT).toContain('Valor percibido');
+    expect(STUDYX_AGENT_A_CANONICAL_PROMPT).toContain('Presupuesto real');
+    expect(STUDYX_AGENT_A_CANONICAL_PROMPT).toContain('presenta el plan de 12 cuotas como la forma más accesible');
+    expect(guidance).toBe('');
+    expect(instructions).not.toContain('<current_commercial_guidance');
   });
 
   it('answers an explicit installment question even when the customer also objects to price', () => {
@@ -289,19 +652,17 @@ describe('Agent A Brain prompt', () => {
     }];
 
     const instructions = buildAgentABrainInstructionsV1(current);
-    const guidance = instructions
-      .split('<current_commercial_guidance kind="price_question_with_objection">')[1]
-      ?.split('</current_commercial_guidance>')[0];
+    const guidance = courseBonusEffectContract(instructions);
 
-    expect(guidance).toContain('Answer the requested authorized price or payment terms exactly');
-    expect(guidance).toContain('Do not use that answer as a separate tactic to make the price feel lower');
+    expect(guidance).toBe('');
+    expect(instructions).not.toContain('<current_commercial_guidance');
   });
 
   it.each([
-    ['Me parece caro', 'price_objection'],
-    ['Me parece caro, cuánto sería en 12 cuotas?', 'price_question_with_objection'],
-    ['Si no me ofrecés la promo no', 'price_objection'],
-  ] as const)('uses an already authorized course bonus for %s', (message, kind) => {
+    'Me parece caro',
+    'Me parece caro, cuánto sería en 12 cuotas?',
+    'Si no me ofrecés la promo no',
+  ] as const)('uses an already authorized course bonus for %s', (message) => {
     const current = context();
     current.turn.batch_messages = [{ id: 'current-1', text: message }];
     current.capabilities.course_bonus = {
@@ -319,51 +680,40 @@ describe('Agent A Brain prompt', () => {
       }],
     };
 
-    const guidance = buildAgentABrainInstructionsV1(current)
-      .split(`<current_commercial_guidance kind="${kind}">`)[1]
-      ?.split('</current_commercial_guidance>')[0];
+    const guidance = courseBonusEffectContract(buildAgentABrainInstructionsV1(current));
 
-    expect(guidance).toContain('Use only the authorized promotion_code and bonus_offerings');
-    expect(guidance).toContain('the paid course price does not change');
+    expect(guidance).toContain('exact promotion_code, interest_offering_code and bonus_offerings');
+    expect(guidance).toContain('Do not add another course or claim another effect');
     expect(guidance).not.toContain('never add cost-per-day comparisons, discounts or bonus courses');
   });
 
   it.each([
-    ['Cuanto cuesta?', 'price_question', 'Answer the price question promptly'],
-    ['Si pago en 12 meses, el diploma tarda 12 meses?', 'payment_terms_question', 'Do not infer how payment cadence affects study, access or certification'],
-    ['Trabajo mucho, no sé si voy a tener tiempo', 'time_or_schedule_objection', 'Use only authorized duration, modality, schedule, recording, access or dedication facts'],
-    ['Estoy desde cero', 'readiness_or_requirements_objection', 'Do not claim beginner suitability or that equipment is unnecessary'],
-    ['El certificado sirve?', 'trust_objection', 'Use concrete authorized evidence'],
-    ['El banco no me deja pagar', 'payment_friction', 'Do not claim a reserved place or a loaded pre-enrollment'],
-    ['No me quiero inscribir igual ya, tengo que pensarlo', 'decision_deferral', 'Ask what remains unresolved before ending the sale'],
-    ['Hasta cuando es valida la oferta?', 'offer_timing_question', 'Never invent an expiry, start date, scarcity or urgency'],
-  ] as const)('adds scoped, fact-gated guidance for %s', (message, kind, expectedGuidance) => {
+    'Cuanto cuesta?',
+    'Si pago en 12 meses, el diploma tarda 12 meses?',
+    'Trabajo mucho, no sé si voy a tener tiempo',
+    'Estoy desde cero',
+    'El certificado sirve?',
+    'El banco no me deja pagar',
+    'No me quiero inscribir igual ya, tengo que pensarlo',
+    'Hasta cuando es valida la oferta?',
+  ] as const)('leaves commercial interpretation to the canonical prompt for %s', (message) => {
     const current = context();
     current.turn.batch_messages = [{ id: 'current-1', text: message }];
 
     const instructions = buildAgentABrainInstructionsV1(current);
-    const guidance = instructions
-      .split(`<current_commercial_guidance kind="${kind}">`)[1]
-      ?.split('</current_commercial_guidance>')[0];
-
-    expect(guidance).toContain(expectedGuidance);
-    expect(guidance).toContain('not customer-facing scripts');
-    expect(guidance).toContain('Use the customer\'s known goal, motivation or constraint');
-    expect(guidance).toContain('Never invent missing facts or completed effects');
+    expect(instructions).not.toContain('<current_commercial_guidance');
+    expect(instructions).not.toContain('<current_effect_contract');
+    expect(instructions).toContain('<canonical_sales_behavior');
   });
 
-  it('keeps unsupported payment workarounds out of the payment-friction playbook', () => {
+  it('does not create a second payment-friction playbook in the brain', () => {
     const current = context();
     current.turn.batch_messages = [{ id: 'current-1', text: 'La tarjeta no me pasa' }];
 
     const instructions = buildAgentABrainInstructionsV1(current);
-    const guidance = instructions
-      .split('<current_commercial_guidance kind="payment_friction">')[1]!
-      .split('</current_commercial_guidance>')[0]!;
-
-    expect(guidance).toContain('Offer only payment alternatives present in authorized_context');
-    expect(guidance).toContain('Apple Pay or Google Pay');
-    expect(guidance).not.toContain('Ya te dejo la preinscripción');
+    expect(instructions).not.toContain('<current_commercial_guidance');
+    expect(instructions).not.toContain('Offer only payment alternatives present in authorized_context');
+    expect(instructions).not.toContain('Apple Pay or Google Pay');
   });
 
   it('treats a live-class expectation mismatch as a high-risk trust concern without inventing logistics', () => {
@@ -374,13 +724,9 @@ describe('Agent A Brain prompt', () => {
     }];
 
     const instructions = buildAgentABrainInstructionsV1(current);
-    const guidance = instructions
-      .split('<current_commercial_guidance kind="trust_objection">')[1]!
-      .split('</current_commercial_guidance>')[0]!;
-
-    expect(guidance).toContain('expectation mismatch about live teaching or recorded video');
-    expect(guidance).toContain('offer an immediate call only when the call policy authorizes it');
-    expect(guidance).toContain('do not assert either format unless it is authorized');
+    expect(instructions).not.toContain('<current_commercial_guidance');
+    expect(instructions).not.toContain('expectation mismatch about live teaching or recorded video');
+    expect(instructions).toContain('<canonical_sales_behavior');
   });
   it('distinguishes authoritative channel intake from evidence required for new observations', () => {
     const current = context();
@@ -481,9 +827,11 @@ describe('Agent A Brain prompt', () => {
     expect(repair).toContain('Online alone does not authorize self-paced study or access from any location');
     expect(repair).toContain('Omit those logistics claims unless their exact values appear in authorized facts');
     expect(repair).toContain('Answer the customer from the remaining verified course facts');
+    expect(repair).toContain('Preserve an already resolved course reference');
+    expect(repair).toContain('do not request a course identity that catalog or recent delivered context already resolves');
   });
 
-  it('applies Lisandro voice after context and repair without changing the structured contract', () => {
+  it('does not append a second Lisandro voice policy outside the canonical prompt', () => {
     const current = context();
     current.turn_rejection = { schema_version: 1, attempt: 1,
       rejection_id: '00000000-0000-4000-8000-000000000001',
@@ -491,17 +839,12 @@ describe('Agent A Brain prompt', () => {
       authorized_alternatives: { fact_ids: [], actions: ['none'], missing_information: [] },
     };
     const instructions = buildAgentABrainInstructionsV1(current);
-    const gateStart = instructions.indexOf('<lisandro_voice_gate>');
+    const technicalOnly = instructions.replace(STUDYX_AGENT_A_CANONICAL_PROMPT, '');
 
-    expect(gateStart).toBeGreaterThan(instructions.indexOf('</authorized_context>'));
-    expect(gateStart).toBeGreaterThan(instructions.indexOf('</mandatory_repair>'));
-    const gate = instructions.slice(gateStart);
-    expect(gate).toMatch(/generic, cold, administrative, blunt or repetitive/iu);
-    expect(gate).toContain('Preserve schema, facts, effects and profile metadata');
-    expect(gate).toContain('Do not narrate internal state or validation');
-    expect(gate).toMatch(/stock availability closing/iu);
-    expect(gate).toMatch(/specific selected offering/iu);
-    expect(gate).toMatch(/unresolved customer intent/iu);
+    expect(instructions).not.toContain('<lisandro_voice_gate>');
+    expect(technicalOnly).not.toMatch(/generic, cold, administrative, blunt or repetitive/iu);
+    expect(technicalOnly).not.toMatch(/stock availability closing/iu);
+    expect(technicalOnly).toContain('Do not expose internal validation in response.messages');
   });
 
   it('prevents mechanical consecutive use of a known first name through Agent A guidance', () => {
@@ -522,13 +865,13 @@ describe('Agent A Brain prompt', () => {
     const instructions = buildAgentABrainInstructionsV1(current);
     const canonical = instructions.split('<canonical_sales_behavior')[1]!
       .split('</canonical_sales_behavior>')[0]!;
-    const gate = instructions.split('<lisandro_voice_gate>')[1]!;
+    const technicalOnly = instructions.replace(STUDYX_AGENT_A_CANONICAL_PROMPT, '');
 
-    expect(canonical).toMatch(/conocer (?:su|el) nombre no (?:implica|obliga) usarlo/iu);
-    expect(canonical).toMatch(/no (?:lo )?uses? en (?:dos )?intervenciones consecutivas/iu);
-    expect(canonical).toMatch(/confirmaciones? (?:mec[aá]nicas?|operativas?)/iu);
-    expect(gate).toMatch(/compare.*response.*recent assistant turns/iu);
-    expect(gate).toMatch(/name.*consecutive interventions/iu);
+    // Authority prompt line 44: use only the first name, never in consecutive interventions.
+    expect(canonical).toMatch(/usa s[oó]lo el primer nombre/iu);
+    expect(canonical).toMatch(/no lo uses en dos intervenciones consecutivas/iu);
+    expect(technicalOnly).not.toMatch(/name.*consecutive interventions/iu);
+    expect(instructions).not.toContain('<lisandro_voice_gate>');
   });
 
   it('exposes contact source evidence and a delivered question even after another assistant bubble', () => {

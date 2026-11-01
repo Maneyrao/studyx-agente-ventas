@@ -13,6 +13,7 @@
     "test:coverage": "vitest run --config vitest.config.mts --coverage",
     "test:integration": "vitest run --config vitest.integration.config.mts",
     "test:agent-a": "tsx scripts/run-agent-a-conversations.ts",
+    "generate:studyx-programs": "node scripts/generate-studyx-programs-seed.mjs",
     "test:db:reset-loop": "node scripts/verify-db-reset-loop.mjs",
     "test:db:lint": "supabase db lint --local --level error --fail-on error",
     "test:db:invariants": "supabase test db",

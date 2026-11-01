@@ -19,9 +19,9 @@ import type { DbClient } from '@/lib/db/types';
 const WORKSPACE_ID = '00000000-0000-0000-0000-0000000000bb';
 
 function dbMock(rows: unknown[] = []) {
-  const calls: Array<{ params: unknown[] }> = [];
-  const fn = ((_strings: TemplateStringsArray, ...params: unknown[]) => {
-    calls.push({ params });
+  const calls: Array<{ query: string; params: unknown[] }> = [];
+  const fn = ((strings: TemplateStringsArray, ...params: unknown[]) => {
+    calls.push({ query: strings.join('?'), params });
     return Promise.resolve(rows);
   }) as unknown as DbClient;
   return { fn, calls };
@@ -67,6 +67,56 @@ describe('PostgresKnowledgeRetriever workspace scoping', () => {
     });
 
     expect(calls[0].params[0]).toBe(WORKSPACE_ID);
+  });
+
+  it('loads canonical knowledge by backend-owned offering code without an embedding', async () => {
+    const row = {
+      source_uri: 'knowledge-source:00000000-0000-4000-8000-000000000001',
+      title: 'Manual StudyX — Coaching y Liderazgo',
+      content: '16 clases, 4 trabajos prácticos y 1 examen final.',
+      similarity: 1,
+    };
+    const { fn, calls } = dbMock([row]);
+    const retriever = new PostgresKnowledgeRetriever(fn, async () => WORKSPACE_ID);
+
+    await expect(retriever.searchByOfferingCode({
+      offering_code: 'coaching_liderazgo',
+      limit: 5,
+    })).resolves.toEqual([{ ...row, offering_code: 'coaching_liderazgo' }]);
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0].params).toEqual([
+      WORKSPACE_ID,
+      'coaching_liderazgo',
+      'coaching_liderazgo',
+      5,
+    ]);
+  });
+
+  it('prioritizes syllabus chunks and orders JSON page metadata numerically', async () => {
+    const { fn, calls } = dbMock([]);
+    const retriever = new PostgresKnowledgeRetriever(fn, async () => WORKSPACE_ID);
+
+    await retriever.searchByOfferingCode({
+      offering_code: 'fotografia_profesional',
+      limit: 5,
+    });
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0].query).toMatch(/content\s+~\*/u);
+    expect(calls[0].query).toContain("metadata ->> 'source_page')::integer");
+    expect(calls[0].query).toContain("metadata ->> 'source_part')::integer");
+  });
+
+  it('rejects a non-canonical offering code before querying', async () => {
+    const { fn, calls } = dbMock([]);
+    const retriever = new PostgresKnowledgeRetriever(fn, async () => WORKSPACE_ID);
+
+    await expect(retriever.searchByOfferingCode({
+      offering_code: "coaching' OR true",
+      limit: 5,
+    })).rejects.toThrow(/invalid offering_code/u);
+    expect(calls).toHaveLength(0);
   });
 });
 

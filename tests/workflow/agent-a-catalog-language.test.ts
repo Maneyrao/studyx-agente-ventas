@@ -75,6 +75,7 @@ function proposalFor(
     response: { messages: [message], call_offer: null },
     proposed_action: { type: 'none' },
     profile_updates: [], profile_requests: [],
+    course_mentions: item.expectedCodes.map(offering_code => ({ offering_code, role: 'alternative' as const })),
     used_fact_ids: offerings.map((offering) => offering.fact_id),
     used_memory_ids: [],
     memory_candidates: [],

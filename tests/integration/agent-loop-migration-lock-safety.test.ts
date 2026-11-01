@@ -1,12 +1,24 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { afterAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { openLocalTestDatabase } from '../helpers/db';
 
 const run = process.env.TEST_DATABASE_URL ? describe : describe.skip;
 const db = process.env.TEST_DATABASE_URL ? openLocalTestDatabase() : null;
-const latestAgentDecisionMigration = '20261002010001_agent_decision_diagnostics.sql';
+let originalDecisionImmutabilityFunction: string | null = null;
+const originalPreparedMemorySignatures = new Set<string>();
+beforeAll(async () => {
+  if (db) {
+    const [row] = await db<Array<{ definition: string }>>`
+      SELECT pg_get_functiondef('public.enforce_agent_decision_immutability()'::regprocedure) definition`;
+    originalDecisionImmutabilityFunction = row.definition;
+    const signatures = await db<Array<{ signature: string }>>`
+      SELECT p.oid::regprocedure::text signature FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+      WHERE n.nspname='public' AND p.proname='record_prepared_agent_memory_v1'`;
+    for (const { signature } of signatures) originalPreparedMemorySignatures.add(signature);
+  }
+});
 
 const migrations = [
   {
@@ -72,8 +84,17 @@ afterAll(async () => {
   // This suite intentionally reapplies historical migrations to prove their
   // lock/index safety. Restore the current trigger definition afterwards so
   // later integration files never observe an older decision schema.
-  if (db) applyLocalMigration(latestAgentDecisionMigration);
-  await db?.end();
+  try {
+    if (db && originalDecisionImmutabilityFunction) await db.unsafe(originalDecisionImmutabilityFunction);
+    if (db) {
+      const signatures = await db<Array<{ signature: string }>>`
+        SELECT p.oid::regprocedure::text signature FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+        WHERE n.nspname='public' AND p.proname='record_prepared_agent_memory_v1'`;
+      for (const { signature } of signatures) {
+        if (!originalPreparedMemorySignatures.has(signature)) await db.unsafe(`DROP FUNCTION ${signature}`);
+      }
+    }
+  } finally { await db?.end(); }
 });
 
 run('Agent Loop additive CHECK migrations', () => {

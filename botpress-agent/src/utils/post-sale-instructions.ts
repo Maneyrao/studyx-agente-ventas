@@ -21,10 +21,10 @@ export function fallbackPostSaleNarrative(claim: {
     return { intro: 'Recibimos tu pago. Todavía estoy terminando de preparar tu acceso.', suggestion: '' }
   }
   return {
-    intro: claim.new_user === true
-      ? 'Tu acceso ya está habilitado. Bienvenido a Studyx.'
-      : 'Tu acceso ya está habilitado.',
-    suggestion: 'Si quieres, puedes cambiar tu contraseña después de ingresar.',
+    // Outage continuity states only the verified effect. Agent A owns the
+    // welcome and optional suggestion whenever generation/repair is available.
+    intro: 'Tu acceso ya está habilitado.',
+    suggestion: '',
   }
 }
 

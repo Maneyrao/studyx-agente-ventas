@@ -1,0 +1,903 @@
+{
+  "runs": [
+    {
+      "run": "focused-25970d5-flash-060714-r1-20261101",
+      "execution_sha": "25970d5b870bb7bf3b4ad01a42a764f0f19b390d",
+      "brain_version": "studyx-agent-a-brain-v148",
+      "prompt_version": "studyx-agent-a-canonical-v101",
+      "harness_sha256": "f0b4056f680d5b41d19a400d2a08a9d30c7c99b4b2b9972f5cffc071e64de43c",
+      "requested_models": [
+        "deepseek-v4-flash"
+      ],
+      "returned_models": [
+        "deepseek-flash"
+      ],
+      "date": "2026-11-01T19:19:47.996Z",
+      "cases": [
+        {
+          "case": "06_repeated_price_bonus_ladder",
+          "approved": false,
+          "status": "FAIL",
+          "invariant_status": "FAIL",
+          "checks": [
+            {
+              "id": "never_silence",
+              "status": "PASS",
+              "evidence": [
+                "select",
+                "value",
+                "installments",
+                "isolate",
+                "call_step",
+                "bonus_1",
+                "bonus_2",
+                "bonus_3",
+                "never_fourth"
+              ],
+              "failedTurnIds": [],
+              "indeterminateTurnIds": [],
+              "authority": "docs/authority/prompt-agente-a-studyx-v2.md:236"
+            },
+            {
+              "id": "package_members",
+              "status": "PASS",
+              "evidence": [
+                "select:count=0;members=",
+                "value:count=0;members=",
+                "installments:count=0;members=",
+                "isolate:count=0;members=",
+                "call_step:count=0;members=",
+                "bonus_1:count=0;members=",
+                "bonus_2:count=0;members=",
+                "bonus_3:count=0;members=",
+                "never_fourth:count=0;members="
+              ],
+              "failedTurnIds": [],
+              "indeterminateTurnIds": [],
+              "authority": "docs/authority/prompt-agente-a-studyx-v2.md:121; docs/authority/spec-backend-bonificacion.md:64-66,103"
+            },
+            {
+              "id": "max_three",
+              "status": "NOT_EXERCISED",
+              "evidence": [
+                "maximum=0; need actual cap exercise"
+              ],
+              "failedTurnIds": [],
+              "indeterminateTurnIds": [],
+              "authority": "docs/authority/prompt-agente-a-studyx-v2.md:121; docs/authority/spec-backend-bonificacion.md:64-66,103"
+            },
+            {
+              "id": "prior_ladder",
+              "status": "NOT_EXERCISED",
+              "evidence": [
+                "No bonus effect executed."
+              ],
+              "failedTurnIds": [],
+              "indeterminateTurnIds": [],
+              "authority": "AGENTS.md:regla 10; docs/authority/prompt-agente-a-studyx-v2.md:106-129"
+            },
+            {
+              "id": "prior_sources",
+              "status": "NOT_EXERCISED",
+              "evidence": [
+                "No bonus effect executed."
+              ],
+              "failedTurnIds": [],
+              "indeterminateTurnIds": [],
+              "authority": "AGENTS.md:regla 10; docs/authority/prompt-agente-a-studyx-v2.md:106-129"
+            },
+            {
+              "id": "prior_call",
+              "status": "NOT_EXERCISED",
+              "evidence": [
+                "No bonus effect executed."
+              ],
+              "failedTurnIds": [],
+              "indeterminateTurnIds": [],
+              "authority": "AGENTS.md:regla 10; docs/authority/prompt-agente-a-studyx-v2.md:106-129"
+            },
+            {
+              "id": "one_distinct_addition",
+              "status": "NOT_EXERCISED",
+              "evidence": [
+                "No bonus effect executed."
+              ],
+              "failedTurnIds": [],
+              "indeterminateTurnIds": [],
+              "authority": "docs/authority/prompt-agente-a-studyx-v2.md:121; docs/authority/spec-backend-bonificacion.md:64-66,103"
+            },
+            {
+              "id": "active_distinct_course",
+              "status": "NOT_EXERCISED",
+              "evidence": [
+                "No bonus effect executed."
+              ],
+              "failedTurnIds": [],
+              "indeterminateTurnIds": [],
+              "authority": "docs/authority/prompt-agente-a-studyx-v2.md:122; docs/authority/spec-backend-bonificacion.md:61-63"
+            },
+            {
+              "id": "package_recap",
+              "status": "NOT_EXERCISED",
+              "evidence": [
+                "No bonus effect executed."
+              ],
+              "failedTurnIds": [],
+              "indeterminateTurnIds": [],
+              "authority": "docs/authority/prompt-agente-a-studyx-v2.md:124"
+            },
+            {
+              "id": "effect_matches_proposal",
+              "status": "NOT_EXERCISED",
+              "evidence": [
+                "No bonus effect executed."
+              ],
+              "failedTurnIds": [],
+              "indeterminateTurnIds": [],
+              "authority": "docs/authority/prompt-agente-a-studyx-v2.md:236"
+            },
+            {
+              "id": "three_additions_exercised",
+              "status": "NOT_EXERCISED",
+              "evidence": [
+                "Test exposure only, not an obligation to sell three: effects=0;max=0"
+              ],
+              "failedTurnIds": [],
+              "indeterminateTurnIds": [],
+              "authority": "docs/authority/prompt-agente-a-studyx-v2.md:121; docs/authority/spec-backend-bonificacion.md:64-66,103"
+            },
+            {
+              "id": "fourth_request_exercised",
+              "status": "NOT_EXERCISED",
+              "evidence": [
+                "Requires a real intervention after three accumulated bonuses."
+              ],
+              "failedTurnIds": [],
+              "indeterminateTurnIds": [],
+              "authority": "docs/authority/prompt-agente-a-studyx-v2.md:121; docs/authority/spec-backend-bonificacion.md:64-66,103"
+            },
+            {
+              "id": "objective_facts",
+              "status": "PASS",
+              "evidence": [
+                "Original nonpositional hard facts retained."
+              ],
+              "failedTurnIds": [],
+              "indeterminateTurnIds": [],
+              "authority": "docs/authority/prompt-agente-a-studyx-v2.md:50,87,236"
+            },
+            {
+              "id": "commercial_semantics",
+              "status": "FAIL",
+              "evidence": [
+                "Value → installments → isolation/conditional close → appropriate call → affinity, closure and no unauthorized explicit or implicit bonus. Requires semantic evidence; never inferred from text patterns."
+              ],
+              "failedTurnIds": [],
+              "indeterminateTurnIds": [],
+              "authority": "docs/authority/prompt-agente-a-studyx-v2.md:106-112,122-124,129; docs/authority/spec-backend-bonificacion.md:69-73"
+            }
+          ],
+          "turn_counts": {
+            "PASS": 5,
+            "FAIL": 4
+          },
+          "all_turns_approved": false
+        },
+        {
+          "case": "07_think_it_over_not_closed",
+          "approved": true,
+          "status": "PASS",
+          "invariant_status": null,
+          "checks": [],
+          "turn_counts": {
+            "PASS": 2
+          },
+          "all_turns_approved": true
+        },
+        {
+          "case": "14_course_change_cancels_promotion",
+          "approved": false,
+          "status": "FAIL",
+          "invariant_status": "FAIL",
+          "checks": [
+            {
+              "id": "never_silence",
+              "status": "PASS",
+              "evidence": [
+                "interest",
+                "price_1",
+                "installments",
+                "isolate",
+                "call_step",
+                "bonus_1",
+                "change"
+              ],
+              "failedTurnIds": [],
+              "indeterminateTurnIds": [],
+              "authority": "docs/authority/prompt-agente-a-studyx-v2.md:236"
+            },
+            {
+              "id": "package_members",
+              "status": "PASS",
+              "evidence": [
+                "interest:count=0;members=",
+                "price_1:count=0;members=",
+                "installments:count=0;members=",
+                "isolate:count=0;members=",
+                "call_step:count=0;members=",
+                "bonus_1:count=0;members=",
+                "change:count=0;members="
+              ],
+              "failedTurnIds": [],
+              "indeterminateTurnIds": [],
+              "authority": "docs/authority/prompt-agente-a-studyx-v2.md:121; docs/authority/spec-backend-bonificacion.md:64-66,103"
+            },
+            {
+              "id": "max_three",
+              "status": "PASS",
+              "evidence": [
+                "maximum=0; need actual cap exercise"
+              ],
+              "failedTurnIds": [],
+              "indeterminateTurnIds": [],
+              "authority": "docs/authority/prompt-agente-a-studyx-v2.md:121; docs/authority/spec-backend-bonificacion.md:64-66,103"
+            },
+            {
+              "id": "prior_ladder",
+              "status": "NOT_EXERCISED",
+              "evidence": [
+                "No bonus effect executed."
+              ],
+              "failedTurnIds": [],
+              "indeterminateTurnIds": [],
+              "authority": "AGENTS.md:regla 10; docs/authority/prompt-agente-a-studyx-v2.md:106-129"
+            },
+            {
+              "id": "prior_sources",
+              "status": "NOT_EXERCISED",
+              "evidence": [
+                "No bonus effect executed."
+              ],
+              "failedTurnIds": [],
+              "indeterminateTurnIds": [],
+              "authority": "AGENTS.md:regla 10; docs/authority/prompt-agente-a-studyx-v2.md:106-129"
+            },
+            {
+              "id": "prior_call",
+              "status": "NOT_EXERCISED",
+              "evidence": [
+                "No bonus effect executed."
+              ],
+              "failedTurnIds": [],
+              "indeterminateTurnIds": [],
+              "authority": "AGENTS.md:regla 10; docs/authority/prompt-agente-a-studyx-v2.md:106-129"
+            },
+            {
+              "id": "one_distinct_addition",
+              "status": "NOT_EXERCISED",
+              "evidence": [
+                "No bonus effect executed."
+              ],
+              "failedTurnIds": [],
+              "indeterminateTurnIds": [],
+              "authority": "docs/authority/prompt-agente-a-studyx-v2.md:121; docs/authority/spec-backend-bonificacion.md:64-66,103"
+            },
+            {
+              "id": "active_distinct_course",
+              "status": "NOT_EXERCISED",
+              "evidence": [
+                "No bonus effect executed."
+              ],
+              "failedTurnIds": [],
+              "indeterminateTurnIds": [],
+              "authority": "docs/authority/prompt-agente-a-studyx-v2.md:122; docs/authority/spec-backend-bonificacion.md:61-63"
+            },
+            {
+              "id": "package_recap",
+              "status": "NOT_EXERCISED",
+              "evidence": [
+                "No bonus effect executed."
+              ],
+              "failedTurnIds": [],
+              "indeterminateTurnIds": [],
+              "authority": "docs/authority/prompt-agente-a-studyx-v2.md:124"
+            },
+            {
+              "id": "effect_matches_proposal",
+              "status": "NOT_EXERCISED",
+              "evidence": [
+                "No bonus effect executed."
+              ],
+              "failedTurnIds": [],
+              "indeterminateTurnIds": [],
+              "authority": "docs/authority/prompt-agente-a-studyx-v2.md:236"
+            },
+            {
+              "id": "course_change_cancellation",
+              "status": "NOT_EXERCISED",
+              "evidence": [
+                "No paid-course change with a nonempty cancellable package."
+              ],
+              "failedTurnIds": [],
+              "indeterminateTurnIds": [],
+              "authority": "docs/authority/spec-backend-bonificacion.md:40"
+            },
+            {
+              "id": "objective_facts",
+              "status": "PASS",
+              "evidence": [
+                "Original nonpositional hard facts retained."
+              ],
+              "failedTurnIds": [],
+              "indeterminateTurnIds": [],
+              "authority": "docs/authority/prompt-agente-a-studyx-v2.md:50,87,236"
+            },
+            {
+              "id": "commercial_semantics",
+              "status": "FAIL",
+              "evidence": [
+                "Value → installments → isolation/conditional close → appropriate call → affinity, closure and no unauthorized explicit or implicit bonus. Requires semantic evidence; never inferred from text patterns."
+              ],
+              "failedTurnIds": [],
+              "indeterminateTurnIds": [],
+              "authority": "docs/authority/prompt-agente-a-studyx-v2.md:106-112,122-124,129; docs/authority/spec-backend-bonificacion.md:69-73"
+            }
+          ],
+          "turn_counts": {
+            "PASS": 2,
+            "FAIL": 5
+          },
+          "all_turns_approved": false
+        }
+      ],
+      "turn_counts": {
+        "PASS": 9,
+        "FAIL": 9
+      },
+      "requests": {
+        "attempts": 39,
+        "logical_calls": 39,
+        "tokens_known": {
+          "input": 541012,
+          "output": 9938,
+          "total": 550950,
+          "cached": 184704
+        },
+        "unknown_cost_attempts": 0,
+        "estimated_usd": 0.059963112,
+        "known_usage_estimated_usd": 0.059963112,
+        "latency_ms_median": 2651,
+        "latency_ms_max": 3474
+      },
+      "requests_by_role": {
+        "agent": {
+          "attempts": 21,
+          "logical_calls": 21,
+          "tokens_known": {
+            "input": 330444,
+            "output": 7429,
+            "total": 337873,
+            "cached": 170880
+          },
+          "unknown_cost_attempts": 0,
+          "estimated_usd": 0.02890464,
+          "known_usage_estimated_usd": 0.02890464,
+          "latency_ms_median": 2982,
+          "latency_ms_max": 3474
+        },
+        "judge": {
+          "attempts": 18,
+          "logical_calls": 18,
+          "tokens_known": {
+            "input": 210568,
+            "output": 2509,
+            "total": 213077,
+            "cached": 13824
+          },
+          "unknown_cost_attempts": 0,
+          "estimated_usd": 0.031058472,
+          "known_usage_estimated_usd": 0.031058472,
+          "latency_ms_median": 1760.5,
+          "latency_ms_max": 3168
+        }
+      },
+      "ladder_rejected_turns": 2,
+      "ladder_rejection_count": 3,
+      "bonus_delivery_audit_counts": {
+        "PASS": 8,
+        "INDETERMINATE": 10
+      },
+      "codex_delivery_audit_counts": {
+        "PASS": 18
+      },
+      "semantic_delivery_audit_counts": {
+        "PASS": 8,
+        "INDETERMINATE": 10
+      },
+      "unsupported_bonus_deliveries_observed": 0,
+      "provider_incidents": [],
+      "correlation_issues": [],
+      "input_hashes": {
+        "/Users/tmaneyro22/Documents/AGENTE IA/studyx-agente-ventas/.worktrees/orchestrator-mvp-closure/evals/golden/results/focused-25970d5-flash-060714-r1-20261101.json": "08ea720246fa0bf8147f31556e41c9d035d648478a4652fc815b399326411ad9",
+        "/Users/tmaneyro22/Documents/AGENTE IA/studyx-agente-ventas/.worktrees/orchestrator-mvp-closure/evals/golden/results/focused-25970d5-flash-060714-r1-20261101-provider.json": "d8ba294c2eff63fa490816e3741567a935525b602ce847db5f3c1b0b5ef4afc4",
+        "/Users/tmaneyro22/Documents/AGENTE IA/studyx-agente-ventas/.worktrees/orchestrator-mvp-closure/evals/golden/results/focused-25970d5-flash-060714-r1-20261101-durable-evidence.json": "3794dbdc792b3bb1f27aefdfc9b809ef03afabdd6c3ce5adf4c618e1a2f3ba87",
+        "/Users/tmaneyro22/Documents/AGENTE IA/studyx-agente-ventas/.worktrees/orchestrator-mvp-closure/evals/golden/results/focused-25970d5-flash-060714-r1-20261101-observations.partial.json": "028e467ae6c90a8b9f188e6fb19d453b0549c7319637031c801d7c9d2a8493b7"
+      },
+      "case_gate_pass": false,
+      "zero_unexecuted_bonus_delivery_accredited": false,
+      "postgeneration_status_counts": {
+        "PRESERVED_AUTHORIZED_PUNCTUATION_AND_WHITESPACE": 2,
+        "PRESERVED_EXACT": 15,
+        "DIFFERENCE_REQUIRES_REVIEW": 1
+      }
+    },
+    {
+      "run": "focused-25970d5-flash-060714-r2-20261101",
+      "execution_sha": "25970d5b870bb7bf3b4ad01a42a764f0f19b390d",
+      "brain_version": "studyx-agent-a-brain-v148",
+      "prompt_version": "studyx-agent-a-canonical-v101",
+      "harness_sha256": "f0b4056f680d5b41d19a400d2a08a9d30c7c99b4b2b9972f5cffc071e64de43c",
+      "requested_models": [
+        "deepseek-v4-flash"
+      ],
+      "returned_models": [
+        "deepseek-flash"
+      ],
+      "date": "2026-11-01T19:23:59.559Z",
+      "cases": [
+        {
+          "case": "06_repeated_price_bonus_ladder",
+          "approved": false,
+          "status": "FAIL",
+          "invariant_status": "FAIL",
+          "checks": [
+            {
+              "id": "never_silence",
+              "status": "PASS",
+              "evidence": [
+                "select",
+                "value",
+                "installments",
+                "isolate",
+                "call_step",
+                "bonus_1",
+                "bonus_2",
+                "bonus_3",
+                "never_fourth"
+              ],
+              "failedTurnIds": [],
+              "indeterminateTurnIds": [],
+              "authority": "docs/authority/prompt-agente-a-studyx-v2.md:236"
+            },
+            {
+              "id": "package_members",
+              "status": "PASS",
+              "evidence": [
+                "select:count=0;members=",
+                "value:count=0;members=",
+                "installments:count=0;members=",
+                "isolate:count=0;members=",
+                "call_step:count=0;members=",
+                "bonus_1:count=0;members=",
+                "bonus_2:count=0;members=",
+                "bonus_3:count=0;members=",
+                "never_fourth:count=0;members="
+              ],
+              "failedTurnIds": [],
+              "indeterminateTurnIds": [],
+              "authority": "docs/authority/prompt-agente-a-studyx-v2.md:121; docs/authority/spec-backend-bonificacion.md:64-66,103"
+            },
+            {
+              "id": "max_three",
+              "status": "NOT_EXERCISED",
+              "evidence": [
+                "maximum=0; need actual cap exercise"
+              ],
+              "failedTurnIds": [],
+              "indeterminateTurnIds": [],
+              "authority": "docs/authority/prompt-agente-a-studyx-v2.md:121; docs/authority/spec-backend-bonificacion.md:64-66,103"
+            },
+            {
+              "id": "prior_ladder",
+              "status": "NOT_EXERCISED",
+              "evidence": [
+                "No bonus effect executed."
+              ],
+              "failedTurnIds": [],
+              "indeterminateTurnIds": [],
+              "authority": "AGENTS.md:regla 10; docs/authority/prompt-agente-a-studyx-v2.md:106-129"
+            },
+            {
+              "id": "prior_sources",
+              "status": "NOT_EXERCISED",
+              "evidence": [
+                "No bonus effect executed."
+              ],
+              "failedTurnIds": [],
+              "indeterminateTurnIds": [],
+              "authority": "AGENTS.md:regla 10; docs/authority/prompt-agente-a-studyx-v2.md:106-129"
+            },
+            {
+              "id": "prior_call",
+              "status": "NOT_EXERCISED",
+              "evidence": [
+                "No bonus effect executed."
+              ],
+              "failedTurnIds": [],
+              "indeterminateTurnIds": [],
+              "authority": "AGENTS.md:regla 10; docs/authority/prompt-agente-a-studyx-v2.md:106-129"
+            },
+            {
+              "id": "one_distinct_addition",
+              "status": "NOT_EXERCISED",
+              "evidence": [
+                "No bonus effect executed."
+              ],
+              "failedTurnIds": [],
+              "indeterminateTurnIds": [],
+              "authority": "docs/authority/prompt-agente-a-studyx-v2.md:121; docs/authority/spec-backend-bonificacion.md:64-66,103"
+            },
+            {
+              "id": "active_distinct_course",
+              "status": "NOT_EXERCISED",
+              "evidence": [
+                "No bonus effect executed."
+              ],
+              "failedTurnIds": [],
+              "indeterminateTurnIds": [],
+              "authority": "docs/authority/prompt-agente-a-studyx-v2.md:122; docs/authority/spec-backend-bonificacion.md:61-63"
+            },
+            {
+              "id": "package_recap",
+              "status": "NOT_EXERCISED",
+              "evidence": [
+                "No bonus effect executed."
+              ],
+              "failedTurnIds": [],
+              "indeterminateTurnIds": [],
+              "authority": "docs/authority/prompt-agente-a-studyx-v2.md:124"
+            },
+            {
+              "id": "effect_matches_proposal",
+              "status": "NOT_EXERCISED",
+              "evidence": [
+                "No bonus effect executed."
+              ],
+              "failedTurnIds": [],
+              "indeterminateTurnIds": [],
+              "authority": "docs/authority/prompt-agente-a-studyx-v2.md:236"
+            },
+            {
+              "id": "three_additions_exercised",
+              "status": "NOT_EXERCISED",
+              "evidence": [
+                "Test exposure only, not an obligation to sell three: effects=0;max=0"
+              ],
+              "failedTurnIds": [],
+              "indeterminateTurnIds": [],
+              "authority": "docs/authority/prompt-agente-a-studyx-v2.md:121; docs/authority/spec-backend-bonificacion.md:64-66,103"
+            },
+            {
+              "id": "fourth_request_exercised",
+              "status": "NOT_EXERCISED",
+              "evidence": [
+                "Requires a real intervention after three accumulated bonuses."
+              ],
+              "failedTurnIds": [],
+              "indeterminateTurnIds": [],
+              "authority": "docs/authority/prompt-agente-a-studyx-v2.md:121; docs/authority/spec-backend-bonificacion.md:64-66,103"
+            },
+            {
+              "id": "objective_facts",
+              "status": "PASS",
+              "evidence": [
+                "Original nonpositional hard facts retained."
+              ],
+              "failedTurnIds": [],
+              "indeterminateTurnIds": [],
+              "authority": "docs/authority/prompt-agente-a-studyx-v2.md:50,87,236"
+            },
+            {
+              "id": "commercial_semantics",
+              "status": "FAIL",
+              "evidence": [
+                "Value → installments → isolation/conditional close → appropriate call → affinity, closure and no unauthorized explicit or implicit bonus. Requires semantic evidence; never inferred from text patterns."
+              ],
+              "failedTurnIds": [],
+              "indeterminateTurnIds": [],
+              "authority": "docs/authority/prompt-agente-a-studyx-v2.md:106-112,122-124,129; docs/authority/spec-backend-bonificacion.md:69-73"
+            }
+          ],
+          "turn_counts": {
+            "PASS": 6,
+            "FAIL": 3
+          },
+          "all_turns_approved": false
+        },
+        {
+          "case": "07_think_it_over_not_closed",
+          "approved": true,
+          "status": "PASS",
+          "invariant_status": null,
+          "checks": [],
+          "turn_counts": {
+            "PASS": 2
+          },
+          "all_turns_approved": true
+        },
+        {
+          "case": "14_course_change_cancels_promotion",
+          "approved": false,
+          "status": "FAIL",
+          "invariant_status": "FAIL",
+          "checks": [
+            {
+              "id": "never_silence",
+              "status": "PASS",
+              "evidence": [
+                "interest",
+                "price_1",
+                "installments",
+                "isolate",
+                "call_step",
+                "bonus_1",
+                "change"
+              ],
+              "failedTurnIds": [],
+              "indeterminateTurnIds": [],
+              "authority": "docs/authority/prompt-agente-a-studyx-v2.md:236"
+            },
+            {
+              "id": "package_members",
+              "status": "PASS",
+              "evidence": [
+                "interest:count=0;members=",
+                "price_1:count=0;members=",
+                "installments:count=0;members=",
+                "isolate:count=0;members=",
+                "call_step:count=0;members=",
+                "bonus_1:count=1;members=fotografia_celulares_tiendas_online",
+                "change:count=1;members=fotografia_celulares_tiendas_online"
+              ],
+              "failedTurnIds": [],
+              "indeterminateTurnIds": [],
+              "authority": "docs/authority/prompt-agente-a-studyx-v2.md:121; docs/authority/spec-backend-bonificacion.md:64-66,103"
+            },
+            {
+              "id": "ledger_effect_correlation",
+              "status": "PASS",
+              "evidence": [
+                "bonus_1:added=fotografia_celulares_tiendas_online;removed=;effect=offer_course_bonus"
+              ],
+              "failedTurnIds": [],
+              "indeterminateTurnIds": [],
+              "authority": "docs/authority/prompt-agente-a-studyx-v2.md:121; docs/authority/spec-backend-bonificacion.md:64-66,103"
+            },
+            {
+              "id": "prior_ladder",
+              "status": "PASS",
+              "evidence": [
+                "bonus_1:{\"eligible\":true,\"observed_price_objection_count\":3,\"required_price_objection_count\":3,\"call_invitation_status\":\"accepted\",\"call_offer_count\":1,\"may_offer_call\":false,\"missing_steps\":[]}"
+              ],
+              "failedTurnIds": [],
+              "indeterminateTurnIds": [],
+              "authority": "AGENTS.md:regla 10; docs/authority/prompt-agente-a-studyx-v2.md:106-129"
+            },
+            {
+              "id": "prior_sources",
+              "status": "PASS",
+              "evidence": [
+                "bonus_1:current=c6703e2a-2ec3-4e19-aca6-e9ca8cc8cba0;prior=0687d76f-b5c6-4203-8759-da32d3b0831a,6b651b18-6f6c-4772-b39d-4f346427678f,9cdbf204-0ff3-4452-9928-cb7c932419a6"
+              ],
+              "failedTurnIds": [],
+              "indeterminateTurnIds": [],
+              "authority": "AGENTS.md:regla 10; docs/authority/prompt-agente-a-studyx-v2.md:106-129"
+            },
+            {
+              "id": "prior_call",
+              "status": "PASS",
+              "evidence": [
+                "bonus_1:accepted;may_offer=false;count=1"
+              ],
+              "failedTurnIds": [],
+              "indeterminateTurnIds": [],
+              "authority": "AGENTS.md:regla 10; docs/authority/prompt-agente-a-studyx-v2.md:106-129"
+            },
+            {
+              "id": "one_distinct_addition",
+              "status": "PASS",
+              "evidence": [
+                "bonus_1:new=fotografia_celulares_tiendas_online;prior="
+              ],
+              "failedTurnIds": [],
+              "indeterminateTurnIds": [],
+              "authority": "docs/authority/prompt-agente-a-studyx-v2.md:121; docs/authority/spec-backend-bonificacion.md:64-66,103"
+            },
+            {
+              "id": "active_distinct_course",
+              "status": "PASS",
+              "evidence": [
+                "bonus_1:new=fotografia_celulares_tiendas_online;paid=fotografia_profesional"
+              ],
+              "failedTurnIds": [],
+              "indeterminateTurnIds": [],
+              "authority": "docs/authority/prompt-agente-a-studyx-v2.md:122; docs/authority/spec-backend-bonificacion.md:61-63"
+            },
+            {
+              "id": "package_recap",
+              "status": "INDETERMINATE",
+              "evidence": [
+                "bonus_1:semantic recap of paid=fotografia_profesional;members=fotografia_celulares_tiendas_online;canonical display-name literal matching is not a requirement"
+              ],
+              "failedTurnIds": [],
+              "indeterminateTurnIds": [
+                "bonus_1"
+              ],
+              "authority": "docs/authority/prompt-agente-a-studyx-v2.md:124"
+            },
+            {
+              "id": "effect_matches_proposal",
+              "status": "PASS",
+              "evidence": [
+                "bonus_1"
+              ],
+              "failedTurnIds": [],
+              "indeterminateTurnIds": [],
+              "authority": "docs/authority/prompt-agente-a-studyx-v2.md:236"
+            },
+            {
+              "id": "ledger_status_correlation",
+              "status": "PASS",
+              "evidence": [
+                "change:status=offer_available→cancelled;effect=null;course_changed=true"
+              ],
+              "failedTurnIds": [],
+              "indeterminateTurnIds": [],
+              "authority": "docs/authority/prompt-agente-a-studyx-v2.md:121; docs/authority/spec-backend-bonificacion.md:64-66,103"
+            },
+            {
+              "id": "course_change_cancellation",
+              "status": "PASS",
+              "evidence": [
+                "change:old=fotografia_profesional;new=marketing_digital;status=cancelled"
+              ],
+              "failedTurnIds": [],
+              "indeterminateTurnIds": [],
+              "authority": "docs/authority/spec-backend-bonificacion.md:40"
+            },
+            {
+              "id": "max_three",
+              "status": "PASS",
+              "evidence": [
+                "maximum=1; need actual cap exercise"
+              ],
+              "failedTurnIds": [],
+              "indeterminateTurnIds": [],
+              "authority": "docs/authority/prompt-agente-a-studyx-v2.md:121; docs/authority/spec-backend-bonificacion.md:64-66,103"
+            },
+            {
+              "id": "objective_facts",
+              "status": "PASS",
+              "evidence": [
+                "Original nonpositional hard facts retained."
+              ],
+              "failedTurnIds": [],
+              "indeterminateTurnIds": [],
+              "authority": "docs/authority/prompt-agente-a-studyx-v2.md:50,87,236"
+            },
+            {
+              "id": "commercial_semantics",
+              "status": "FAIL",
+              "evidence": [
+                "Value → installments → isolation/conditional close → appropriate call → affinity, closure and no unauthorized explicit or implicit bonus. Requires semantic evidence; never inferred from text patterns."
+              ],
+              "failedTurnIds": [],
+              "indeterminateTurnIds": [],
+              "authority": "docs/authority/prompt-agente-a-studyx-v2.md:106-112,122-124,129; docs/authority/spec-backend-bonificacion.md:69-73"
+            }
+          ],
+          "turn_counts": {
+            "PASS": 3,
+            "FAIL": 3,
+            "INDETERMINATE": 1
+          },
+          "all_turns_approved": false
+        }
+      ],
+      "turn_counts": {
+        "PASS": 11,
+        "FAIL": 6,
+        "INDETERMINATE": 1
+      },
+      "requests": {
+        "attempts": 37,
+        "logical_calls": 37,
+        "tokens_known": {
+          "input": 506408,
+          "output": 7873,
+          "total": 514281,
+          "cached": 169088
+        },
+        "unknown_cost_attempts": 0,
+        "estimated_usd": 0.055829064,
+        "known_usage_estimated_usd": 0.055829064,
+        "latency_ms_median": 2426,
+        "latency_ms_max": 3245
+      },
+      "requests_by_role": {
+        "agent": {
+          "attempts": 19,
+          "logical_calls": 19,
+          "tokens_known": {
+            "input": 297176,
+            "output": 6569,
+            "total": 303745,
+            "cached": 153344
+          },
+          "unknown_cost_attempts": 0,
+          "estimated_usd": 0.025976232,
+          "known_usage_estimated_usd": 0.025976232,
+          "latency_ms_median": 2699,
+          "latency_ms_max": 3245
+        },
+        "judge": {
+          "attempts": 18,
+          "logical_calls": 18,
+          "tokens_known": {
+            "input": 209232,
+            "output": 1304,
+            "total": 210536,
+            "cached": 15744
+          },
+          "unknown_cost_attempts": 0,
+          "estimated_usd": 0.029852832,
+          "known_usage_estimated_usd": 0.029852832,
+          "latency_ms_median": 1689.0,
+          "latency_ms_max": 2807
+        }
+      },
+      "ladder_rejected_turns": 0,
+      "ladder_rejection_count": 0,
+      "bonus_delivery_audit_counts": {
+        "PASS": 11,
+        "INDETERMINATE": 7
+      },
+      "codex_delivery_audit_counts": {
+        "PASS": 18
+      },
+      "semantic_delivery_audit_counts": {
+        "PASS": 11,
+        "INDETERMINATE": 7
+      },
+      "unsupported_bonus_deliveries_observed": 0,
+      "provider_incidents": [],
+      "correlation_issues": [],
+      "input_hashes": {
+        "/Users/tmaneyro22/Documents/AGENTE IA/studyx-agente-ventas/.worktrees/orchestrator-mvp-closure/evals/golden/results/focused-25970d5-flash-060714-r2-20261101.json": "f69310ba4ecac1c1328fcf1a8467c72876f61339afff6c15689b8ace01799805",
+        "/Users/tmaneyro22/Documents/AGENTE IA/studyx-agente-ventas/.worktrees/orchestrator-mvp-closure/evals/golden/results/focused-25970d5-flash-060714-r2-20261101-provider.json": "f5e4182bcb541bd6fb66e64d313b9d51502d5a9bd489b762ce5c0ad76af2d3bd",
+        "/Users/tmaneyro22/Documents/AGENTE IA/studyx-agente-ventas/.worktrees/orchestrator-mvp-closure/evals/golden/results/focused-25970d5-flash-060714-r2-20261101-durable-evidence.json": "42045fe4d89d74f501e496db90399f623c64183e7c65b3a5477992cc1d3adf3c",
+        "/Users/tmaneyro22/Documents/AGENTE IA/studyx-agente-ventas/.worktrees/orchestrator-mvp-closure/evals/golden/results/focused-25970d5-flash-060714-r2-20261101-observations.partial.json": "d60ff19f17097d3e413a374663aeff6840ca05af7637c4e3ab504a13019c64c1"
+      },
+      "case_gate_pass": false,
+      "zero_unexecuted_bonus_delivery_accredited": false,
+      "postgeneration_status_counts": {
+        "PRESERVED_EXACT": 18
+      }
+    }
+  ],
+  "reporting_branch_sha": "25970d5b870bb7bf3b4ad01a42a764f0f19b390d",
+  "observed_summary_root_head": "25970d5b870bb7bf3b4ad01a42a764f0f19b390d",
+  "model_calls_by_summary": 0,
+  "summary_script_dependencies": {
+    "summarize-rule10.py": "87a1f4f0d55a203578d62825714e773546f459b4459db550f927721a3a320410",
+    "summarize.py": "0d32df2974673c43c66f04d217fa61460bcbd79c15af980a808b29344f4de2dd"
+  },
+  "offpeak_flash_usd_per_million": {
+    "cache_hit": 0.003,
+    "cache_miss": 0.15,
+    "output": 0.6
+  },
+  "pricing_basis": "Archived Flash offpeak tariffs requested for Nov1; estimate, not invoice; no live pricing request.",
+  "ready_for_full16": false,
+  "note": "Case/invariant status controls the gate even if every turn passed. Codex contextual delivery review must match final text hash and consider prior executed bonus effects; recap does not require a fresh gift action."
+}

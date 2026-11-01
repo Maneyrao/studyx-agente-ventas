@@ -23,6 +23,8 @@ function toVectorLiteral(embedding: readonly number[]): string {
   return `[${embedding.join(',')}]`;
 }
 
+const OFFERING_CODE = /^[a-z0-9_-]{1,128}$/u;
+
 export class PostgresMemoryRetriever implements MemoryRetriever {
   constructor(private readonly db: DbClient = sql) {}
 
@@ -136,6 +138,70 @@ export class PostgresKnowledgeRetriever implements KnowledgeRetriever {
       title: row.title,
       content: row.content,
       similarity: row.similarity,
+    }));
+  }
+
+  async searchByOfferingCode(input: {
+    offering_code: string;
+    limit: number;
+  }): Promise<RetrievedKnowledge[]> {
+    if (!OFFERING_CODE.test(input.offering_code)) {
+      throw new Error('invalid offering_code');
+    }
+    const workspaceId = await this.workspaceId();
+    const rows = await this.db<Array<{
+      source_uri: string;
+      title: string;
+      content: string;
+      similarity: number;
+    }>>`
+      SELECT
+        'knowledge-source:' || id::text AS source_uri,
+        title,
+        content,
+        1.0::float8 AS similarity
+      FROM knowledge_sources
+      WHERE workspace_id = ${workspaceId}::uuid
+        AND status = 'active'
+        AND source_type = 'offering'
+        AND (
+          metadata ->> 'course_code' = ${input.offering_code}
+          OR metadata ->> 'offering_code' = ${input.offering_code}
+        )
+      ORDER BY
+        CASE
+          WHEN content ~* '(^|[[:space:][:punct:]])clase[[:space:]]+[0-9]+' THEN 0
+          WHEN content ~* '(^|[[:space:][:punct:]])temario([[:space:][:punct:]]|$)' THEN 0
+          WHEN content ~* '(^|[[:space:][:punct:]])m[oó]dulos?([[:space:][:punct:]]|$)' THEN 1
+          WHEN content ~* 'duraci[oó]n:' THEN 2
+          ELSE 3
+        END,
+        CASE
+          WHEN metadata ->> 'source' = 'official_program_pdf' THEN 0
+          WHEN metadata ->> 'canonical_source' = 'studyx_manual_1' THEN 1
+          ELSE 2
+        END,
+        CASE
+          WHEN (metadata ->> 'source_page') ~ '^[0-9]+$'
+            THEN (metadata ->> 'source_page')::integer
+          ELSE 2147483647
+        END,
+        CASE
+          WHEN (metadata ->> 'source_part') ~ '^[0-9]+$'
+            THEN (metadata ->> 'source_part')::integer
+          ELSE 2147483647
+        END,
+        title,
+        id
+      LIMIT ${Math.min(Math.max(input.limit, 1), 20)}
+    `;
+
+    return rows.map((row) => ({
+      source_uri: row.source_uri,
+      title: row.title,
+      content: row.content,
+      similarity: row.similarity,
+      offering_code: input.offering_code,
     }));
   }
 }

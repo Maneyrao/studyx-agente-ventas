@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-10-30T00:08:33Z",
+  "base_sha": "028f272fc3a6f6dc4806d19b251564169b55e6d6",
+  "execution_status": "blocked_before_execution",
+  "production_or_vertice_used": false,
+  "reason_code": "DEEPSEEK_API_KEY_MISSING",
+  "reason": "No existe una clave de DeepSeek de evaluación en el entorno ni en .eval/.env.local. Vercel Preview confirmó que la variable es Sensitive y no permite extraer su valor. La campaña se detuvo antes de iniciar PostgreSQL, crear contactos o llamar al modelo.",
+  "commands_verified": {
+    "specification_and_judge": "10 passed",
+    "live_tests": "2 skipped because STUDYX_GOLDEN_LIVE is disabled outside the isolated launcher",
+    "eslint": "passed",
+    "typescript": "passed",
+    "live_campaign": "not_started"
+  },
+  "case_results": null
+}

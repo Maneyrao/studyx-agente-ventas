@@ -1,3 +1,4 @@
+// Register preservation: docs/authority/prompt-agente-a-studyx-v2.md:13; punctuation:15.
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -670,8 +671,8 @@ describe('Agent A conversation runner', () => {
         ...proposal,
         response: {
           messages: [
-            'Te cuento lo más importante y vemos qué necesitas.',
-            'Si quieres, puedo ofrecerte una llamada para asesorarte mejor.',
+            'Te cuento lo más importante y vemos qué necesitás.',
+            'Si querés, puedo ofrecerte una llamada para asesorarte mejor.',
           ],
           call_offer: null,
         },
@@ -779,7 +780,7 @@ describe('Agent A conversation runner', () => {
       expect(commitBody.agent_turn_v2).toBeNull();
       expect(commitBody.decision).toMatchObject({
         kind: 'reply',
-        response: 'No quiero darte información incorrecta. Dime qué dato o qué curso quieres confirmar y lo revisamos por aquí.',
+        response: 'Qué dato o qué curso revisamos?',
         response_type: 'commercial_reply',
         reason_code: 'AGENT_A_VALIDATION_EXHAUSTED',
       });

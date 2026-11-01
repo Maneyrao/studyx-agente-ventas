@@ -1,4 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { AgentATurnCommitV2Schema } from '../../../botpress-agent/src/schemas/agent-turn-v2';
+import { AgentATurnProposalV1Schema } from '../../../botpress-agent/src/schemas/agent-a-brain';
+import { AgentATurnProposalV1Schema as BackendProposalSchema } from '@/features/conversation/adapters/agent-a-brain-schema';
 import type { AgentAContextV1 } from '../../../botpress-agent/src/schemas/agent-a-brain';
 import * as agentABrainModule from '../../../botpress-agent/src/lib/conversation/agent-a-brain';
 import {
@@ -93,6 +96,40 @@ afterEach(() => {
 });
 
 describe('Agent A Brain V1', () => {
+  it('preserves explicit course roles through parser and both wire schemas without inferring legacy roles',()=>{
+    const mentions=[{offering_code:'redes-informaticas',role:'paid'}];
+    const raw=proposal({course_mentions:mentions,response:{messages:['Redes Informáticas.']}});
+    expect(parseAgentATurnProposalV1(raw,context()).course_mentions).toEqual(mentions);
+    expect(AgentATurnProposalV1Schema.parse(raw).course_mentions).toEqual(mentions);
+    expect(BackendProposalSchema.parse(raw).course_mentions).toEqual(mentions);
+    expect(AgentATurnCommitV2Schema.parse({schema_version:2,proposal:raw,conversation_only:true,requested_action:{type:'none'}}).proposal.course_mentions).toEqual(mentions);
+    const legacy=proposal({response:{messages:['Redes Informáticas.']}});
+    expect(parseAgentATurnProposalV1(legacy,context()).course_mentions).toEqual([]);
+    expect(AgentATurnProposalV1Schema.parse(legacy).course_mentions).toEqual([]);
+    expect(BackendProposalSchema.parse(legacy).course_mentions).toEqual([]);
+    const unresolved=proposal({course_mentions:[{offering_code:'not-in-snapshot',role:'alternative'}]});
+    expect(parseAgentATurnProposalV1(unresolved,context()).course_mentions).toEqual([{offering_code:'not-in-snapshot',role:'alternative'}]);
+  });
+  it.each(['paid','bonus','paid_complement','alternative'])('mirrors the %s course role and rejects extra properties',role=>{
+    const raw=proposal({course_mentions:[{offering_code:'redes-informaticas',role}]});
+    expect(AgentATurnProposalV1Schema.safeParse(raw).success).toBe(true);
+    expect(BackendProposalSchema.safeParse(raw).success).toBe(true);
+    expect(AgentATurnProposalV1Schema.safeParse(proposal({course_mentions:[{offering_code:'redes-informaticas',role,free:true}]})).success).toBe(false);
+  });
+
+  it('captures provider output before register or punctuation normalization', async () => {
+    const raw = JSON.stringify(proposal({ response: {
+      messages: ['¿Tenés cámara? Contame qué buscás.'], call_offer: null,
+    } }));
+    vi.stubGlobal('fetch', async () => providerResponse(200, { output_text: raw }));
+    const observed: unknown[] = [];
+    const result = await generateDeepSeekAgentATurnProposalV1({
+      context: context(), apiKey: 'synthetic-key', signal: new AbortController().signal,
+      observe: event => observed.push(event),
+    });
+    expect(observed).toContainEqual(expect.objectContaining({ kind: 'model_raw', raw_content: raw }));
+    expect(result.proposal.response.messages).toEqual(['Tenés cámara? Contame qué buscás.']);
+  });
   it('rejects a pending gift during rollback while allowing the delivered gift', () => {
     const current=context();
     current.catalog.available_offerings=[
@@ -104,7 +141,7 @@ describe('Agent A Brain V1', () => {
       interest_offering_code:'redes-informaticas',bonus_offerings:[
         {code:'ingles_1',display_name:'Inglés 1',position:1},{code:'excel',display_name:'Excel',position:2}],
       delivered_bonus_offerings:[{code:'ingles_1',display_name:'Inglés 1',position:1}]};
-    for(const [content,forbidden] of [['Te regalo Inglés 1.',false],['Te regalo Excel.',true]] as const) {
+    for(const [content,forbidden] of [['Inglés 1 sigue incluido.',false],['Excel queda incluido.',true]] as const) {
       const parsed=parseAgentATurnProposalV1(proposal({response:{messages:[content],call_offer:null}}),current);
       const rejection=validateAgentATurnProposalV1({proposal:parsed,context:current,planned_fact_ids:[],
         rejection_id:'00000000-0000-4000-8000-000000000001'});
@@ -120,6 +157,7 @@ describe('Agent A Brain V1', () => {
       { code: 'ingles_1', display_name: 'Inglés 1', area_code: 'language', fact_id: 'english' },
       { code: 'excel', display_name: 'Excel', area_code: 'tech', fact_id: 'excel' },
       { code: 'word', display_name: 'Word', area_code: 'tech', fact_id: 'word' },
+      { code: 'powerpoint', display_name: 'PowerPoint', area_code: 'tech', fact_id: 'powerpoint' },
     ];
     if (!selected) {
       current.catalog.selected_offering = null;
@@ -134,7 +172,7 @@ describe('Agent A Brain V1', () => {
         { code: 'excel', display_name: 'Excel', position: 2 }] };
     for (const [message, forbidden] of [
       ['Redes Informáticas incluye Inglés 1, Excel y Word bonificados.', false],
-      ['Redes Informáticas incluye Inglés 1, Excel, Word y Astrología bonificados.', true],
+      ['Redes Informáticas incluye Inglés 1, Excel, Word y PowerPoint bonificados.', true],
     ] as const) {
       const parsed = parseAgentATurnProposalV1(proposal({
         response: { messages: [message], call_offer: null }, used_fact_ids: [], used_memory_ids: [],
@@ -143,6 +181,47 @@ describe('Agent A Brain V1', () => {
       const rejection = validateAgentATurnProposalV1({ proposal: parsed, context: current, planned_fact_ids: [],
         rejection_id: '00000000-0000-4000-8000-000000000001' });
       expect(rejection?.rejections.some(r => r.subject === 'forbidden_promise') ?? false).toBe(forbidden);
+    }
+  });
+
+  it('accepts the real direct-bonus copy with a course name containing para and rejects an extra gift', () => {
+    const current = context();
+    current.turn.batch_messages = [{ id: 'current', text: 'Prefiero seguir por chat. El precio sigue siendo lo único que me frena.' }];
+    current.turn.recent_turns = [{ id: 'earlier', direction: 'inbound', content: 'El precio es lo único que me frena.' }];
+    current.catalog.selected_offering = {
+      code: 'fotografia_profesional', display_name: 'Fotografía Profesional', area_code: 'diseno',
+      facts: [],
+    };
+    current.commercial_state.selected_offering_code = 'fotografia_profesional';
+    current.catalog.available_offerings = [
+      { code: 'fotografia_profesional', display_name: 'Fotografía Profesional', area_code: 'diseno', fact_id: 'paid' },
+      { code: 'fotografia_celulares_tiendas_online', display_name: 'Fotografía con Celulares para Tiendas Online', area_code: 'diseno', fact_id: 'bonus' },
+      { code: 'ingles_1', display_name: 'Inglés 1', area_code: 'cultural', fact_id: 'extra' },
+    ];
+    current.capabilities.course_bonus = {
+      enabled: true, max_bonus_courses: 3, may_offer_bonus: true,
+      status: 'checkin_available', may_schedule_checkin: false, may_request_review: false,
+      may_accept_offer: false, may_send_promoted_payment: false,
+      promotion_code: null, interest_offering_code: 'fotografia_profesional',
+      bonus_offerings: [], delivered_bonus_offerings: [],
+    };
+    const action = { type: 'offer_course_bonus' as const,
+      interest_offering_code: 'fotografia_profesional',
+      bonus_offering_code: 'fotografia_celulares_tiendas_online' };
+    for (const [message, forbidden] of [
+      ['Perfecto, seguimos por acá. Te sumo Fotografía con Celulares para Tiendas Online sin costo extra, para que puedas resolver fotos de producto. El precio de Fotografía Profesional no cambia.', false],
+      ['A Fotografía Profesional te sumo Fotografía con Celulares para Tiendas Online, sin costo extra: te sirve para cubrir también las fotos rápidas que piden las tiendas. El precio del curso principal sigue igual.', false],
+      ['Ya te sumé Fotografía con Celulares para Tiendas Online sin costo extra, y eso sigue en pie: podés usarlo para fotos de producto. El precio de Fotografía Profesional no cambia.', false],
+      ['Te sumo Fotografía con Celulares para Tiendas Online sin costo extra: te sirve para producir imágenes para tiendas. Inglés 1 queda bonificado.', true],
+    ] as const) {
+      const parsed = parseAgentATurnProposalV1(proposal({
+        move: { schema_version: 1, move: 'continue_by_chat', secondary_moves: [], vetoes: [], confidence: 1 },
+        response: { messages: [message], call_offer: null }, proposed_action: action,
+      }), current);
+      const rejection = validateAgentATurnProposalV1({ proposal: parsed, context: current,
+        planned_fact_ids: [], rejection_id: '00000000-0000-4000-8000-000000000001' });
+      expect(rejection?.rejections.some((item) => item.subject === 'forbidden_promise') ?? false)
+        .toBe(forbidden);
     }
   });
   it('accepts neutral exact terms for a real budget limit without a price-reframe rejection', () => {
@@ -158,15 +237,19 @@ describe('Agent A Brain V1', () => {
     expect(rejection?.rejections.filter(r => r.subject === 'price_objection_reframe') ?? []).toEqual([]);
   });
 
-  it('does not authorize a stale noncatalog bonus name from delivery evidence', () => {
+  it('does not let stale noncatalog delivery evidence authorize another catalog course', () => {
     const current = context();
+    current.catalog.available_offerings = [
+      { code: 'redes-informaticas', display_name: 'Redes Informáticas', area_code: 'tech', fact_id: 'paid' },
+      { code: 'marketing', display_name: 'Marketing Digital', area_code: 'business', fact_id: 'marketing' },
+    ];
     current.capabilities.course_bonus = { enabled: true, status: 'offer_available',
       may_schedule_checkin: false, may_request_review: false, may_accept_offer: true,
       may_send_promoted_payment: false, promotion_code: 'p', interest_offering_code: 'redes-informaticas',
       bonus_offerings: [{ code: 'deleted', display_name: 'Astrología', position: 1 }],
       delivered_bonus_offerings: [{ code: 'deleted', display_name: 'Astrología', position: 1 }] };
     const parsed = parseAgentATurnProposalV1(proposal({
-      response: { messages: ['Astrología va bonificada.'], call_offer: null },
+      response: { messages: ['Marketing Digital va bonificado.'], call_offer: null },
       used_fact_ids: [], used_memory_ids: [],
     }), current);
     expect(validateAgentATurnProposalV1({ proposal: parsed, context: current, planned_fact_ids: [],
@@ -186,15 +269,14 @@ describe('Agent A Brain V1', () => {
       may_send_promoted_payment:false,promotion_code:'p',interest_offering_code:'redes-informaticas',
       bonus_offerings:[{code:'ingles_1',display_name:'Inglés 1',position:1}],
       delivered_bonus_offerings:[{code:'ingles_1',display_name:'Inglés 1',position:1}]};
-    for (const content of ['Te regalo Inglés 1 y Astrología.','No te regalo Inglés 1, pero te regalo Redes.',
-      'No tengo problema en regalarte Redes.','Te regalo Inglés 1 y Astrología para complementar tu formación.']) {
+    for (const content of ['Inglés 1 incluido y Excel bonificado.','Redes queda incluida sin costo.']) {
       const parsed=parseAgentATurnProposalV1(proposal({response:{messages:[content],call_offer:null}}),current);
       expect(validateAgentATurnProposalV1({proposal:parsed,context:current,planned_fact_ids:[],
         rejection_id:'00000000-0000-4000-8000-000000000001'})?.rejections)
         .toContainEqual({code:'FACT_VALUE_MISMATCH',subject:'forbidden_promise'});
     }
-    for (const content of ['Te regalo Inglés 1 al comprar Redes.','Redes incluye Inglés 1 de regalo.',
-      'Te regalo Inglés 1 para complementar tu formación.','Te regalo Inglés 1, que te sirve para practicar.']) {
+    for (const content of ['Redes e Inglés 1 están incluidos en el paquete.','Inglés 1 queda bonificado.',
+      'Te llevás también Inglés 1.','Inglés 1 te sirve para practicar.']) {
       const parsed=parseAgentATurnProposalV1(proposal({response:{messages:[content],call_offer:null}}),current);
       const rejection=validateAgentATurnProposalV1({proposal:parsed,context:current,planned_fact_ids:[],
         rejection_id:'00000000-0000-4000-8000-000000000001'});
@@ -226,12 +308,24 @@ describe('Agent A Brain V1', () => {
     }
   });
 
-  it('normalizes only opening punctuation and unmistakable voseo in customer-facing copy', () => {
+  // docs/authority/prompt-agente-a-studyx-v2.md:13 preserves the customer's register;
+  // :15 alone authorizes removing inverted opening punctuation.
+  it('preserves voseo and tuteo while removing only inverted opening punctuation', () => {
     expect(normalizeCustomerFacingSpanishV1(
       '¡Buenísimo! ¿Querés que te llame? Si preferís, contame qué tenés en mente.',
     )).toBe(
-      'Buenísimo! Quieres que te llame? Si prefieres, cuéntame qué tienes en mente.',
+      'Buenísimo! Querés que te llame? Si preferís, contame qué tenés en mente.',
     );
+    expect(normalizeCustomerFacingSpanishV1('¿Puedes contarme qué tienes en mente?'))
+      .toBe('Puedes contarme qué tienes en mente?');
+    const parsed = parseAgentATurnProposalV1(proposal({ response: {
+      messages: ['¿Tenés cámara? Contame qué buscás.'],
+      call_offer: '¿Querés que lo conversemos por llamada?',
+    } }), context());
+    expect(parsed.response).toEqual({
+      messages: ['Tenés cámara? Contame qué buscás.'],
+      call_offer: 'Querés que lo conversemos por llamada?',
+    });
     expect(normalizeCustomerFacingSpanishV1(
       'Redes Informáticas tiene 16 clases y cuesta USD 360.',
     )).toBe('Redes Informáticas tiene 16 clases y cuesta USD 360.');
@@ -337,7 +431,7 @@ describe('Agent A Brain V1', () => {
     }), context());
     expect(result.response).toEqual({
       messages: ['Te cuento sobre Redes Informáticas.', 'Podemos ver qué temas te interesan.'],
-      call_offer: 'Si quieres, podemos coordinar una llamada.',
+      call_offer: 'Si querés, podemos coordinar una llamada.',
     });
     expect(BackendAgentATurnProposalV1Schema.safeParse(result).success).toBe(true);
   });
@@ -434,7 +528,7 @@ describe('Agent A Brain V1', () => {
     }), current);
 
     expect(parsed.response.messages).toEqual([
-      'Buenas, de qué curso quieres info?',
+      'Buenas, de qué curso querés info?',
       'Si todavía no elegiste uno, qué te interesa aprender?',
     ]);
     expect(BackendAgentATurnProposalV1Schema.safeParse(parsed).success).toBe(true);
@@ -448,7 +542,7 @@ describe('Agent A Brain V1', () => {
       },
     }), context());
 
-    expect(parsed.response.call_offer).toBe('Prefieres que te llame y te lo explique mejor?');
+    expect(parsed.response.call_offer).toBe('Preferís que te llame y te lo explique mejor?');
     expect(BackendAgentATurnProposalV1Schema.safeParse(parsed).success).toBe(true);
   });
 
@@ -722,7 +816,7 @@ describe('Agent A Brain V1', () => {
 
   it('leaves the timing of an optional call invitation to the conversational model', () => {
     expect(buildAgentABrainInstructionsV1(context())).toContain(
-      'La llamada sirve para descubrir, orientar, convencer y cerrar',
+      'ofrece la llamada cuando el cliente la pida, cuando una duda o comparación compleja se resuelva mejor hablando, o como escalón 4',
     );
   });
 
@@ -795,7 +889,8 @@ describe('Agent A Brain V1', () => {
     expect(BackendAgentATurnProposalV1Schema.safeParse(threePartTurn).success).toBe(true);
   });
 
-  it('rejects a new greeting after the agent already opened the conversation', () => {
+  it('does not treat a changed reply as an exact duplicate solely for repeating a greeting', () => {
+    // Authority: AGENTS.md lines 25-27 reserve conversational quality to Agent A.
     const current = context();
     current.customer.display_name = 'Thiago';
     current.capabilities.may_offer_call = false;
@@ -817,10 +912,7 @@ describe('Agent A Brain V1', () => {
       context: current,
       planned_fact_ids: parsed.used_fact_ids,
       rejection_id: '00000000-0000-4000-8000-000000000003',
-    })?.rejections).toContainEqual({
-      code: 'REPEATED_AGENT_REPLY',
-      subject: 'repeated_greeting',
-    });
+    })?.rejections.filter((reason) => reason.code === 'REPEATED_AGENT_REPLY') ?? []).toEqual([]);
   });
 
   it('does not force a second call reminder on a repeated course question', () => {
@@ -992,7 +1084,7 @@ describe('Agent A Brain V1', () => {
 
     expect(parsed.response.messages).toEqual([
       'Te cuento sobre el curso.',
-      'Lo buscas para trabajar o para formación personal?',
+      'Lo buscás para trabajar o para formación personal?',
     ]);
     expect(parsed.move.move).toBe('select_course');
     expect(parsed.move.course_reference).toBe('Medicina');
@@ -1596,6 +1688,17 @@ describe('Agent A Brain V1', () => {
     expect(body.response_format).toMatchObject({
       type: 'json_schema', json_schema: { name: 'studyx_agent_a_turn_proposal_v1', strict: true },
     });
+    // Authority prompt:81 + authorized technical mapping: deferral stays open.
+    expect(body.response_format.json_schema.schema.required).toContain('course_mentions');
+    expect(body.response_format.json_schema.schema.properties.course_mentions).not.toHaveProperty('default');
+    expect(body.response_format.json_schema.schema.properties.course_mentions.items.required).toEqual(['offering_code','role']);
+    expect(body.response_format.json_schema.schema.properties.course_mentions.items.properties.role.enum).toEqual(['paid','bonus','paid_complement','alternative']);
+    const moveSemantics = body.response_format.json_schema.schema.properties.move.properties.move.description;
+    for (const expression of [
+      'lo voy a pensar', 'tengo que pensarlo', 'no ahora', 'no me quiero inscribir todavía',
+    ]) expect(moveSemantics).toContain(`"${expression}"`);
+    expect(moveSemantics).toContain('to defer_payment');
+    expect(moveSemantics).toContain('decline_purchase requires an explicit definitive refusal');
   });
 
   it.each([400, 413])(
@@ -1679,7 +1782,7 @@ describe('Agent A Brain V1', () => {
       {
         output: [{
           type: 'message',
-          content: [{ type: 'output_text', text: `\`\`\`json\n${JSON.stringify(proposal())}\n\`\`\`` }],
+          content: [{ type: 'output_text', text: `\`\`\`json\n${JSON.stringify(proposal({course_mentions:[{offering_code:'redes-informaticas',role:'paid'}],response:{messages:['Redes Informáticas ofrece el contenido autorizado.']}}))}\n\`\`\`` }],
         }],
         usage: {
           input_tokens: 1_200,
@@ -1727,6 +1830,8 @@ describe('Agent A Brain V1', () => {
     // the resolver validates; original generations cannot claim a repair.
     expect(body.text.format.schema.properties.repair_of).toEqual({ type: 'null' });
     expect(body.text.format.schema.required).toContain('repair_of');
+    expect(body.text.format.schema.required).toContain('course_mentions');
+    expect(result.proposal.course_mentions).toEqual([{offering_code:'redes-informaticas',role:'paid'}]);
     expect(body.instructions).toContain('<canonical_sales_behavior');
     expect(body.input).toContain('JSON');
     expect(body.input).toContain(JSON.stringify(context().turn.batch_messages.map((message) => message.text)));
@@ -2340,7 +2445,7 @@ describe('Agent A Brain V1', () => {
     };
     const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(providerResponse(
       200,
-      responsesSuccessBody(proposal({ repair_of: repairOf })),
+      responsesSuccessBody(proposal({ repair_of: repairOf,course_mentions:[{offering_code:'redes-informaticas',role:'paid'}],response:{messages:['Redes Informáticas mantiene el precio autorizado.']} })),
     ));
     vi.stubGlobal('fetch', fetchMock);
 
@@ -2361,6 +2466,8 @@ describe('Agent A Brain V1', () => {
     const body = JSON.parse(String(fetchMock.mock.calls[0]![1]?.body));
     const wireRepair = body.text.format.schema.properties.repair_of;
     expect(body.text.format.schema.required).toContain('repair_of');
+    expect(body.text.format.schema.required).toContain('course_mentions');
+    expect(result.proposal.course_mentions).toEqual([{offering_code:'redes-informaticas',role:'paid'}]);
     expect(wireRepair).toMatchObject({
       type: 'object', additionalProperties: false,
       required: ['rejection_id', 'attempt'],
@@ -2442,7 +2549,7 @@ describe('Agent A Brain V1', () => {
     expect(result.model).toBe('gemini-2.5-flash');
     expect(result.proposal.response.messages).toEqual([
       'Te cuento sobre el curso.',
-      'Lo buscas para trabajar o para formación personal?',
+      'Lo buscás para trabajar o para formación personal?',
     ]);
     const [url, init] = fetchMock.mock.calls[0]!;
     expect(String(url)).toContain('/models/gemini-2.5-flash:generateContent');

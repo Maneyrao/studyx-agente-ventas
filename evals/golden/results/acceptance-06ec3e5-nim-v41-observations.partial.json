@@ -1,0 +1,757 @@
+{
+  "schema_version": 3,
+  "base_sha": "06ec3e5ac85825bb51cfec23df10d0c22b72298d",
+  "authority_baseline_origin_sha": "028f272fc3a6f6dc4806d19b251564169b55e6d6",
+  "completed_cases": 1,
+  "total_cases": 16,
+  "evaluation_provider": {
+    "name": "nvidia_nim",
+    "base_url": "https://integrate.api.nvidia.com/v1",
+    "model": "deepseek-ai/deepseek-v4.1-flash",
+    "report": {
+      "provider": "nvidia_nim",
+      "base_url": "https://integrate.api.nvidia.com/v1",
+      "model": "deepseek-ai/deepseek-v4.1-flash",
+      "max_requests_per_minute": 40,
+      "logical_calls": 4,
+      "attempts": 4,
+      "usage_missing_attempts": 4,
+      "tokens": null,
+      "records": [
+        {
+          "call_id": "call-0001",
+          "attempt": 1,
+          "role": "agent",
+          "provider": "nvidia_nim",
+          "requested_model": "deepseek-v4-flash",
+          "returned_model": null,
+          "status": null,
+          "rate_limit_wait_ms": 0,
+          "retry_wait_ms": 0,
+          "latency_ms": 15011,
+          "tokens": null,
+          "finish_reason": null,
+          "error_code": "NIM_ABORTED",
+          "response_content": null,
+          "provider_response": null
+        },
+        {
+          "call_id": "call-0002",
+          "attempt": 1,
+          "role": "agent",
+          "provider": "nvidia_nim",
+          "requested_model": "deepseek-v4-flash",
+          "returned_model": null,
+          "status": null,
+          "rate_limit_wait_ms": 0,
+          "retry_wait_ms": 0,
+          "latency_ms": 15017,
+          "tokens": null,
+          "finish_reason": null,
+          "error_code": "NIM_ABORTED",
+          "response_content": null,
+          "provider_response": null
+        },
+        {
+          "call_id": "call-0003",
+          "attempt": 1,
+          "role": "agent",
+          "provider": "nvidia_nim",
+          "requested_model": "deepseek-v4-flash",
+          "returned_model": null,
+          "status": null,
+          "rate_limit_wait_ms": 0,
+          "retry_wait_ms": 0,
+          "latency_ms": 15018,
+          "tokens": null,
+          "finish_reason": null,
+          "error_code": "NIM_ABORTED",
+          "response_content": null,
+          "provider_response": null
+        },
+        {
+          "call_id": "call-0004",
+          "attempt": 1,
+          "role": "agent",
+          "provider": "nvidia_nim",
+          "requested_model": "deepseek-v4-flash",
+          "returned_model": null,
+          "status": null,
+          "rate_limit_wait_ms": 0,
+          "retry_wait_ms": 0,
+          "latency_ms": 14996,
+          "tokens": null,
+          "finish_reason": null,
+          "error_code": "NIM_ABORTED",
+          "response_content": null,
+          "provider_response": null
+        }
+      ]
+    }
+  },
+  "cases": [
+    {
+      "scenario": {
+        "id": "01_first_contact_identity",
+        "title": "Primer contacto con identidad exacta y rol comercial",
+        "turns": [
+          {
+            "id": "greeting",
+            "customer": "Hola, buen día",
+            "must": [
+              "Presentarse una sola vez como “Soy Emma, asesora de Studyx” y abrir la conversación con cercanía."
+            ],
+            "mustNot": [
+              "No llamarse administrativa, no añadir Academia Internacional y no convertir el saludo en un folleto."
+            ],
+            "authority": [
+              {
+                "file": "AGENTS.md",
+                "start": 10,
+                "end": 15,
+                "contains": "Soy Emma, asesora de Studyx"
+              },
+              {
+                "file": "docs/authority/prompt-agente-a-studyx-v2.md",
+                "start": 7,
+                "end": 7,
+                "contains": "En el primer contacto"
+              }
+            ],
+            "expected": {
+              "move": [
+                "greeting"
+              ],
+              "action": [
+                "none"
+              ],
+              "state": {}
+            },
+            "hard": [
+              {
+                "type": "contains",
+                "value": "Soy Emma, asesora de Studyx"
+              },
+              {
+                "type": "not_contains",
+                "value": "administrativa"
+              },
+              {
+                "type": "not_contains",
+                "value": "Academia Internacional"
+              }
+            ]
+          },
+          {
+            "id": "continuity",
+            "customer": "Quiero conocer los cursos de fotografía.",
+            "must": [
+              "Continuar desde el interés por fotografía sin volver a presentarse."
+            ],
+            "mustNot": [
+              "No repetir “Soy Emma”, no usar administrativa y no reiniciar el saludo."
+            ],
+            "authority": [
+              {
+                "file": "docs/authority/prompt-agente-a-studyx-v2.md",
+                "start": 7,
+                "end": 7,
+                "contains": "En el primer contacto"
+              },
+              {
+                "file": "docs/authority/prompt-agente-a-studyx-v2.md",
+                "start": 23,
+                "end": 23,
+                "contains": "Responde sólo con información nueva"
+              }
+            ],
+            "expected": {
+              "move": [
+                "browse_catalog",
+                "ask_course_information"
+              ],
+              "action": [
+                "none"
+              ],
+              "state": {}
+            },
+            "hard": [
+              {
+                "type": "not_contains",
+                "value": "Soy Emma"
+              },
+              {
+                "type": "not_contains",
+                "value": "administrativa"
+              }
+            ]
+          }
+        ]
+      },
+      "observations": [
+        {
+          "response": "No quiero suponer algo incorrecto. Dime qué necesitas o a qué curso te refieres y lo resolvemos por aquí.",
+          "move": null,
+          "secondaryMoves": [],
+          "proposedAction": null,
+          "backendAction": null,
+          "backendRejections": [],
+          "state": {
+            "selectedCourse": null,
+            "stage": null,
+            "awaitingReply": null,
+            "plan": null,
+            "promotion": {
+              "status": null,
+              "bonusCount": 0,
+              "paidCourse": null,
+              "bonusCourses": []
+            }
+          },
+          "deliveredLinks": [],
+          "authorizedFactIds": [
+            "offering:aires_acondicionados:description:v1",
+            "offering:aires_acondicionados:duration:v1",
+            "offering:aires_acondicionados:modality:v1",
+            "offering:armado_reparacion_pc:description:v1",
+            "offering:armado_reparacion_pc:duration:v1",
+            "offering:armado_reparacion_pc:modality:v1",
+            "offering:autocad_interiores:description:v1",
+            "offering:autocad_interiores:duration:v1",
+            "offering:autocad_interiores:modality:v1"
+          ],
+          "authorizedFacts": [
+            {
+              "id": "offering:aires_acondicionados:description:v1",
+              "kind": "offering_description",
+              "value": "Academia de Oficios. 9 clases. El propósito del curso de instalador es el de instruir a todas las personas a que puedan emprender las tareas de instalación y puesta en marcha de equipos de Aire Acondicionado."
+            },
+            {
+              "id": "offering:aires_acondicionados:duration:v1",
+              "kind": "offering_duration",
+              "value": "9 clases"
+            },
+            {
+              "id": "offering:aires_acondicionados:modality:v1",
+              "kind": "offering_modality",
+              "value": "online"
+            },
+            {
+              "id": "offering:armado_reparacion_pc:description:v1",
+              "kind": "offering_description",
+              "value": "Academia de Oficios. 22 clases. Este curso abarca el mantenimiento de computadoras de escritorio desde cero con casos reales otorgando las herramientas necesarias para que el futuro técnico sepa cuándo reparar y cuándo reemplazar los componentes dañados como también asesorar a sus clientes con las mejores soluciones a su equipamiento."
+            },
+            {
+              "id": "offering:armado_reparacion_pc:duration:v1",
+              "kind": "offering_duration",
+              "value": "22 clases"
+            },
+            {
+              "id": "offering:armado_reparacion_pc:modality:v1",
+              "kind": "offering_modality",
+              "value": "online"
+            },
+            {
+              "id": "offering:autocad_interiores:description:v1",
+              "kind": "offering_description",
+              "value": "Academia de Diseño Informático. 11 clases. En este Curso de AutoCAD vamos a adquirir el conocimiento práctico y teórico para dominar las técnicas de dibujo en forma digital y realizar planos técnicos en dos dimensiones."
+            },
+            {
+              "id": "offering:autocad_interiores:duration:v1",
+              "kind": "offering_duration",
+              "value": "11 clases"
+            },
+            {
+              "id": "offering:autocad_interiores:modality:v1",
+              "kind": "offering_modality",
+              "value": "online"
+            }
+          ],
+          "usedFactIds": [],
+          "availableOfferings": [
+            {
+              "code": "aires_acondicionados",
+              "displayName": "Instalación de Aires Acondicionados"
+            },
+            {
+              "code": "armado_reparacion_pc",
+              "displayName": "Armado y Reparación de PC"
+            },
+            {
+              "code": "autocad_interiores",
+              "displayName": "AutoCAD orientado al Diseño de Interiores"
+            },
+            {
+              "code": "camaras_seguridad",
+              "displayName": "Instalación y Configuración de Cámaras de Seguridad"
+            },
+            {
+              "code": "coaching_liderazgo",
+              "displayName": "Coaching y Liderazgo"
+            },
+            {
+              "code": "community_manager",
+              "displayName": "Community Manager"
+            },
+            {
+              "code": "comunicacion_interna_empresas",
+              "displayName": "Comunicación Interna en Empresas"
+            },
+            {
+              "code": "decoracion_de_interiores",
+              "displayName": "Decoración de Interiores"
+            },
+            {
+              "code": "diseno_corel_draw",
+              "displayName": "Diseño Gráfico con Corel Draw"
+            },
+            {
+              "code": "diseno_illustrator",
+              "displayName": "Diseño Gráfico con Illustrator"
+            },
+            {
+              "code": "diseno_photoshop",
+              "displayName": "Diseño Gráfico con Photoshop"
+            },
+            {
+              "code": "energia_solar_fotovoltaica",
+              "displayName": "Energía Solar Fotovoltaica"
+            },
+            {
+              "code": "entrenamiento_funcional",
+              "displayName": "Entrenamiento Funcional"
+            },
+            {
+              "code": "especialista_marketing",
+              "displayName": "Especialista en Marketing"
+            },
+            {
+              "code": "especialista_ventas",
+              "displayName": "Especialista en Ventas"
+            },
+            {
+              "code": "estrategias_emprender",
+              "displayName": "Estrategias para Emprender"
+            },
+            {
+              "code": "excel_integral",
+              "displayName": "Excel Integral"
+            },
+            {
+              "code": "fotografia_celulares_tiendas_online",
+              "displayName": "Fotografía con Celulares para Tiendas Online"
+            },
+            {
+              "code": "fotografia_profesional",
+              "displayName": "Fotografía Profesional"
+            },
+            {
+              "code": "influencers_creadores_contenidos",
+              "displayName": "Influencers y Creadores de Contenidos"
+            },
+            {
+              "code": "ingles_1",
+              "displayName": "Inglés 1"
+            },
+            {
+              "code": "ingles_2",
+              "displayName": "Inglés 2"
+            },
+            {
+              "code": "ingles_3",
+              "displayName": "Inglés 3"
+            },
+            {
+              "code": "instagram_emprendedores",
+              "displayName": "Instagram para Emprendedores"
+            },
+            {
+              "code": "introduccion_catering",
+              "displayName": "Introducción al Catering"
+            },
+            {
+              "code": "introduccion_criptomonedas",
+              "displayName": "Introducción a las Criptomonedas"
+            },
+            {
+              "code": "introduccion_ecommerce",
+              "displayName": "Introducción al Ecommerce"
+            },
+            {
+              "code": "maquillaje_profesional",
+              "displayName": "Maquillaje Profesional"
+            },
+            {
+              "code": "marketing_digital",
+              "displayName": "Marketing Digital"
+            },
+            {
+              "code": "nutricion_alimentacion",
+              "displayName": "Nutrición y Alimentación Saludable"
+            },
+            {
+              "code": "oratoria",
+              "displayName": "Oratoria"
+            },
+            {
+              "code": "organizacion_baby_shower",
+              "displayName": "Organización de Baby Shower"
+            },
+            {
+              "code": "organizador_eventos_sociales",
+              "displayName": "Organizador Profesional de Eventos Sociales"
+            },
+            {
+              "code": "paisajismo_jardineria",
+              "displayName": "Paisajismo y Jardinería"
+            },
+            {
+              "code": "publicidad_redes_sociales",
+              "displayName": "Publicidad en Redes Sociales"
+            },
+            {
+              "code": "redes_informaticas",
+              "displayName": "Redes Informáticas"
+            },
+            {
+              "code": "reparacion_celulares",
+              "displayName": "Reparación de Celulares"
+            },
+            {
+              "code": "sushi_principiantes",
+              "displayName": "Sushi para Principiantes"
+            },
+            {
+              "code": "unas_gelificadas",
+              "displayName": "Uñas Gelificadas"
+            },
+            {
+              "code": "vino_cata_maridaje",
+              "displayName": "Introducción al Vino, la Cata y el Maridaje"
+            }
+          ],
+          "selectedOfferingFacts": [],
+          "modelAttempts": [
+            {
+              "attempt": 1,
+              "response": null,
+              "move": null,
+              "proposedAction": null,
+              "turnRejection": null,
+              "providerStatus": null,
+              "providerError": "This operation was aborted"
+            },
+            {
+              "attempt": 2,
+              "response": null,
+              "move": null,
+              "proposedAction": null,
+              "turnRejection": null,
+              "providerStatus": null,
+              "providerError": "This operation was aborted"
+            }
+          ],
+          "callRequirements": [
+            "nombre",
+            "apellido",
+            "correo",
+            "telefono"
+          ],
+          "profileRequestedFields": [],
+          "activeCourses": [],
+          "activeCourseNames": [],
+          "mayOfferCall": true,
+          "courseBonus": {
+            "enabled": true,
+            "maxBonusCourses": 3,
+            "mayOfferBonus": null,
+            "status": "needs_interest"
+          },
+          "priceObjectionMemory": {
+            "present": false,
+            "sourceMessageIds": [],
+            "priorSourceMessageIds": []
+          },
+          "workflow": {
+            "commitSucceeded": true,
+            "status": "waiting_user",
+            "errorCode": null,
+            "finalBackendDecisionError": null
+          }
+        },
+        {
+          "response": "No quiero suponer algo incorrecto. Dime qué necesitas o a qué curso te refieres y lo resolvemos por aquí.",
+          "move": null,
+          "secondaryMoves": [],
+          "proposedAction": null,
+          "backendAction": null,
+          "backendRejections": [],
+          "state": {
+            "selectedCourse": null,
+            "stage": null,
+            "awaitingReply": null,
+            "plan": null,
+            "promotion": {
+              "status": null,
+              "bonusCount": 0,
+              "paidCourse": null,
+              "bonusCourses": []
+            }
+          },
+          "deliveredLinks": [],
+          "authorizedFactIds": [
+            "offering:fotografia_celulares_tiendas_online:description:v1",
+            "offering:fotografia_celulares_tiendas_online:duration:v1",
+            "offering:fotografia_celulares_tiendas_online:modality:v1",
+            "offering:fotografia_profesional:description:v1",
+            "offering:fotografia_profesional:duration:v1",
+            "offering:fotografia_profesional:modality:v1"
+          ],
+          "authorizedFacts": [
+            {
+              "id": "offering:fotografia_celulares_tiendas_online:description:v1",
+              "kind": "offering_description",
+              "value": "Academia de Marketing. 20 clases. En este curso vamos a ver cómo aprovechar al máximo la cámara de nuestro celular, técnicas de iluminación, conceptos de fotografía y exposición, edición y retoque de los productos, creación de videos promocionales y cómo aplicar todo a nuestra red social preferida para el impulso de nuestro negocio."
+            },
+            {
+              "id": "offering:fotografia_celulares_tiendas_online:duration:v1",
+              "kind": "offering_duration",
+              "value": "20 clases"
+            },
+            {
+              "id": "offering:fotografia_celulares_tiendas_online:modality:v1",
+              "kind": "offering_modality",
+              "value": "online"
+            },
+            {
+              "id": "offering:fotografia_profesional:description:v1",
+              "kind": "offering_description",
+              "value": "Academia de Emprendedores. 41 clases. Este curso está apuntado a todo aquel que quiera conocer desde cero el proceso fotográfico actual, con esto nos referimos al digital."
+            },
+            {
+              "id": "offering:fotografia_profesional:duration:v1",
+              "kind": "offering_duration",
+              "value": "41 clases"
+            },
+            {
+              "id": "offering:fotografia_profesional:modality:v1",
+              "kind": "offering_modality",
+              "value": "online"
+            }
+          ],
+          "usedFactIds": [],
+          "availableOfferings": [
+            {
+              "code": "aires_acondicionados",
+              "displayName": "Instalación de Aires Acondicionados"
+            },
+            {
+              "code": "armado_reparacion_pc",
+              "displayName": "Armado y Reparación de PC"
+            },
+            {
+              "code": "autocad_interiores",
+              "displayName": "AutoCAD orientado al Diseño de Interiores"
+            },
+            {
+              "code": "camaras_seguridad",
+              "displayName": "Instalación y Configuración de Cámaras de Seguridad"
+            },
+            {
+              "code": "coaching_liderazgo",
+              "displayName": "Coaching y Liderazgo"
+            },
+            {
+              "code": "community_manager",
+              "displayName": "Community Manager"
+            },
+            {
+              "code": "comunicacion_interna_empresas",
+              "displayName": "Comunicación Interna en Empresas"
+            },
+            {
+              "code": "decoracion_de_interiores",
+              "displayName": "Decoración de Interiores"
+            },
+            {
+              "code": "diseno_corel_draw",
+              "displayName": "Diseño Gráfico con Corel Draw"
+            },
+            {
+              "code": "diseno_illustrator",
+              "displayName": "Diseño Gráfico con Illustrator"
+            },
+            {
+              "code": "diseno_photoshop",
+              "displayName": "Diseño Gráfico con Photoshop"
+            },
+            {
+              "code": "energia_solar_fotovoltaica",
+              "displayName": "Energía Solar Fotovoltaica"
+            },
+            {
+              "code": "entrenamiento_funcional",
+              "displayName": "Entrenamiento Funcional"
+            },
+            {
+              "code": "especialista_marketing",
+              "displayName": "Especialista en Marketing"
+            },
+            {
+              "code": "especialista_ventas",
+              "displayName": "Especialista en Ventas"
+            },
+            {
+              "code": "estrategias_emprender",
+              "displayName": "Estrategias para Emprender"
+            },
+            {
+              "code": "excel_integral",
+              "displayName": "Excel Integral"
+            },
+            {
+              "code": "fotografia_celulares_tiendas_online",
+              "displayName": "Fotografía con Celulares para Tiendas Online"
+            },
+            {
+              "code": "fotografia_profesional",
+              "displayName": "Fotografía Profesional"
+            },
+            {
+              "code": "influencers_creadores_contenidos",
+              "displayName": "Influencers y Creadores de Contenidos"
+            },
+            {
+              "code": "ingles_1",
+              "displayName": "Inglés 1"
+            },
+            {
+              "code": "ingles_2",
+              "displayName": "Inglés 2"
+            },
+            {
+              "code": "ingles_3",
+              "displayName": "Inglés 3"
+            },
+            {
+              "code": "instagram_emprendedores",
+              "displayName": "Instagram para Emprendedores"
+            },
+            {
+              "code": "introduccion_catering",
+              "displayName": "Introducción al Catering"
+            },
+            {
+              "code": "introduccion_criptomonedas",
+              "displayName": "Introducción a las Criptomonedas"
+            },
+            {
+              "code": "introduccion_ecommerce",
+              "displayName": "Introducción al Ecommerce"
+            },
+            {
+              "code": "maquillaje_profesional",
+              "displayName": "Maquillaje Profesional"
+            },
+            {
+              "code": "marketing_digital",
+              "displayName": "Marketing Digital"
+            },
+            {
+              "code": "nutricion_alimentacion",
+              "displayName": "Nutrición y Alimentación Saludable"
+            },
+            {
+              "code": "oratoria",
+              "displayName": "Oratoria"
+            },
+            {
+              "code": "organizacion_baby_shower",
+              "displayName": "Organización de Baby Shower"
+            },
+            {
+              "code": "organizador_eventos_sociales",
+              "displayName": "Organizador Profesional de Eventos Sociales"
+            },
+            {
+              "code": "paisajismo_jardineria",
+              "displayName": "Paisajismo y Jardinería"
+            },
+            {
+              "code": "publicidad_redes_sociales",
+              "displayName": "Publicidad en Redes Sociales"
+            },
+            {
+              "code": "redes_informaticas",
+              "displayName": "Redes Informáticas"
+            },
+            {
+              "code": "reparacion_celulares",
+              "displayName": "Reparación de Celulares"
+            },
+            {
+              "code": "sushi_principiantes",
+              "displayName": "Sushi para Principiantes"
+            },
+            {
+              "code": "unas_gelificadas",
+              "displayName": "Uñas Gelificadas"
+            },
+            {
+              "code": "vino_cata_maridaje",
+              "displayName": "Introducción al Vino, la Cata y el Maridaje"
+            }
+          ],
+          "selectedOfferingFacts": [],
+          "modelAttempts": [
+            {
+              "attempt": 1,
+              "response": null,
+              "move": null,
+              "proposedAction": null,
+              "turnRejection": null,
+              "providerStatus": null,
+              "providerError": "This operation was aborted"
+            },
+            {
+              "attempt": 2,
+              "response": null,
+              "move": null,
+              "proposedAction": null,
+              "turnRejection": null,
+              "providerStatus": null,
+              "providerError": "This operation was aborted"
+            }
+          ],
+          "callRequirements": [
+            "nombre",
+            "apellido",
+            "correo",
+            "telefono"
+          ],
+          "profileRequestedFields": [],
+          "activeCourses": [],
+          "activeCourseNames": [],
+          "mayOfferCall": true,
+          "courseBonus": {
+            "enabled": true,
+            "maxBonusCourses": 3,
+            "mayOfferBonus": null,
+            "status": "needs_interest"
+          },
+          "priceObjectionMemory": {
+            "present": false,
+            "sourceMessageIds": [],
+            "priorSourceMessageIds": []
+          },
+          "workflow": {
+            "commitSucceeded": true,
+            "status": "waiting_user",
+            "errorCode": null,
+            "finalBackendDecisionError": null
+          }
+        }
+      ]
+    }
+  ]
+}

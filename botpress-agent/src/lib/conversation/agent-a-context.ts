@@ -5,6 +5,8 @@ import {
 import type { ClaimedTurn } from '../../schemas/contracts';
 import type { ConversationMoveV1 } from '../../schemas/conversation-pipeline';
 import { classifyBatchSalesSignal } from '../../../../src/features/orchestration/domain/sales-signal';
+import { supportsChatPreferenceV1 } from './channel-preference-evidence';
+import { mayOfferCallV1 } from '../../../../src/shared/conversation/bonus-ladder';
 
 const MEMORY_TYPES = new Set([
   'study_goal', 'study_context', 'preference', 'constraint',
@@ -328,6 +330,14 @@ function selectedOfferingFacts(claimed: ClaimedTurn, offeringCode: string) {
       });
     }
   }
+  for (const item of claimed.context.knowledge_base ?? []) {
+    if (item.offering_code !== offeringCode || !item.source_uri.startsWith('knowledge-source:')) continue;
+    facts.push({
+      id: item.source_uri,
+      kind: 'offering_syllabus',
+      value: item.content.slice(0, 1_200),
+    });
+  }
   for (const option of claimed.business_context?.workspace.payment_options ?? []) {
     facts.push({
       id: `payment:${offeringCode}:${option.code}:label:v1`,
@@ -476,6 +486,22 @@ export function buildAgentAContextV1(
   const currentCode = claimed.catalog_resolution.kind === 'exact'
     ? claimed.catalog_resolution.offeringCode
     : null;
+  // A terminal checkout cannot lend its closed stage, paid-plan flags or two
+  // spent call invitations to a later exact inquiry about another course.
+  // This is an effective projection for the model; the accepted turn below
+  // persists the same boundary through the authority reducer.
+  const currentCodeBelongsToPackage = currentCode !== null
+    && (currentCode === claimed.course_bonus_capability?.interest_offering_code
+      || claimed.course_bonus_capability?.bonus_offerings.some((offering) => offering.code === currentCode) === true);
+  const startsFreshInterestCycle = currentCode !== null
+    && currentCode !== state.selected_offering_code
+    && !currentCodeBelongsToPackage
+    && state.stage === 'closed';
+  const effectiveStage = startsFreshInterestCycle ? 'exploring' as const : state.stage;
+  const effectiveCallPreference = startsFreshInterestCycle ? 'unknown' as const : state.call_preference;
+  const effectiveCallOfferStatus = startsFreshInterestCycle ? 'not_offered' as const : state.call_offer_status;
+  const effectiveAwaitingReply = startsFreshInterestCycle ? 'none' as const : state.awaiting_reply;
+  const effectivePaymentReported = startsFreshInterestCycle ? false : state.payment_reported === true;
   // Un turno vago no deja que una memoria vieja conteste por el cliente: de
   // ahí salía un curso que el mensaje actual nunca nombró. Las memorias se
   // recuperan por similitud y cruzan sesiones, así que son las únicas que
@@ -495,7 +521,7 @@ export function buildAgentAContextV1(
     && state.selected_payment_plan === null
     && state.payment_reported !== true
     && currentTurnIsUnderspecifiedV1(claimed);
-  const selectedCode = state.selected_offering_code;
+  const selectedCode = startsFreshInterestCycle ? null : state.selected_offering_code;
   const catalogFocusCode = currentCode ?? selectedCode;
   const selectedOffering = catalogFocusCode
     ? selectedOfferingFacts(claimed, catalogFocusCode)
@@ -520,7 +546,9 @@ export function buildAgentAContextV1(
           || fact.kind === 'offering_duration'
           || fact.kind === 'offering_modality'),
     }));
-  const callOfferCount = state.call_offer_count ?? (state.call_offer_status === 'not_offered' ? 0 : 1);
+  const callOfferCount = startsFreshInterestCycle
+    ? 0
+    : state.call_offer_count ?? (state.call_offer_status === 'not_offered' ? 0 : 1);
   const selectedPlan = selectedCode === null ? null : state.selected_payment_plan;
   const suppressContactMemories = wanderingTurn;
   // El scoping gobierna qué memorias se muestran, nunca qué datos faltan.
@@ -547,7 +575,7 @@ export function buildAgentAContextV1(
   const currentLogicalMessages = currentLogicalMessagesV1(claimed);
   const currentSalesSignal = classifyBatchSalesSignal(
     currentLogicalMessages.map((message) => message.content),
-    { pendingCallReply: state.awaiting_reply === 'call_or_chat' },
+    { pendingCallReply: effectiveAwaitingReply === 'call_or_chat' },
   );
   const currentCallAuthorization = currentSalesSignal.type === 'direct_call_request';
   const inputCapability = inputCapabilityV1(claimed);
@@ -579,9 +607,9 @@ export function buildAgentAContextV1(
     courseChosenThisTurn: false,
     selectedCode,
     selectedPlan,
-    stage: state.stage,
-    awaitingReply: state.awaiting_reply,
-    paymentReported: state.payment_reported === true,
+    stage: effectiveStage,
+    awaitingReply: effectiveAwaitingReply,
+    paymentReported: effectivePaymentReported,
     intakeMissing,
     maySendPaymentLink,
   });
@@ -597,12 +625,48 @@ export function buildAgentAContextV1(
         telefono: nonBlankOrNull(claimed.contact_intake.telefono),
       }
     : null;
-  const awaitingCallAvailability = state.call_preference === 'call'
-    && state.call_offer_status === 'accepted'
-    && state.awaiting_reply === 'call_or_chat';
+  const awaitingCallAvailability = effectiveCallPreference === 'call'
+    && effectiveCallOfferStatus === 'accepted'
+    && effectiveAwaitingReply === 'call_or_chat';
   const availabilityConfirmed = currentSalesSignal.type === 'direct_call_request'
     || currentSalesSignal.type === 'call_acceptance';
+  const currentTurnChoosesChat = supportsChatPreferenceV1(
+    currentLogicalMessages.map((message) => message.content).join('\n'),
+    awaitingCallAvailability,
+  );
+  const callIntentRemainsActive = currentSalesSignal.type !== 'call_decline'
+    && currentSalesSignal.type !== 'opt_out'
+    && !currentTurnChoosesChat;
+  const mayRequestCallNow = claimed.policy.may_respond
+    && hasReadableCurrentInput
+    && !claimed.contact.blocked
+    && claimed.sales_context.active_call === null
+    && (currentCallAuthorization || (
+      awaitingCallAvailability
+      && availabilityConfirmed
+    ))
+    && !['handoff', 'closed'].includes(effectiveStage)
+    && callIntakeReadiness?.status === 'ready';
+  const callExecutionNextStep = mayRequestCallNow
+    ? 'dispatch_authorized' as const
+    : callIntentRemainsActive
+      && effectiveCallPreference === 'call' && effectiveCallOfferStatus === 'accepted'
+      && requiredContactFields.call.length > 0
+      ? 'collect_contact_details' as const
+      : callIntentRemainsActive && awaitingCallAvailability
+        ? 'confirm_availability' as const
+        : 'none' as const;
 
+  const mayOfferCall = mayOfferCallV1({
+    may_respond: claimed.policy.may_respond,
+    blocked: claimed.contact.blocked,
+    active_call: claimed.sales_context.active_call,
+    call_preference: effectiveCallPreference,
+    call_offer_status: effectiveCallOfferStatus,
+    stage: effectiveStage,
+    payment_reported: effectivePaymentReported,
+    call_offer_count: callOfferCount,
+  });
   return AgentAContextV1Schema.parse({
     schema_version: 1,
     turn: {
@@ -647,7 +711,22 @@ export function buildAgentAContextV1(
     },
     identity: agentAIdentityFromClaim(claimed, advisorName),
     commercial_state: {
-      promotion: claimed.course_bonus_capability?.promotion_code && claimed.course_bonus_capability.promotion_cycle_id
+      negotiation: {
+        price_objections: {
+          count: claimed.negotiation_facts?.price_objection_count ?? null,
+          scope: 'conversation_prior_recorded_sources',
+          latest_source_turn_ids: claimed.negotiation_facts?.latest_price_objection_source_turn_ids ?? [],
+          latest_legacy_source_message_ids: claimed.negotiation_facts?.latest_legacy_price_objection_source_message_ids ?? [],
+        },
+        price_only_barrier: claimed.negotiation_facts?.price_only_barrier.status !== 'unknown'
+          && claimed.negotiation_facts?.price_only_barrier.offering_code === selectedCode
+          ? claimed.negotiation_facts.price_only_barrier : { status: 'unknown' },
+        call_invitation: { status: effectiveCallOfferStatus, count: callOfferCount,
+          authorization: mayOfferCall ? 'authorized' : 'not_authorized' },
+        delivered_bonus_offers: claimed.course_bonus_capability?.delivered_bonus_offerings ?? null,
+      },
+      promotion: !startsFreshInterestCycle
+        && claimed.course_bonus_capability?.promotion_code && claimed.course_bonus_capability.promotion_cycle_id
         && claimed.course_bonus_capability.offer_version && claimed.course_bonus_capability.interest_offering_code
         && claimed.course_bonus_capability.package_status
         && claimed.course_bonus_capability.bonus_offerings.length>0
@@ -667,19 +746,19 @@ export function buildAgentAContextV1(
         } : null,
       selected_offering_code: selectedCode,
       selected_payment_plan: selectedPlan,
-      stage: state.stage,
-      call_preference: state.call_preference,
-      call_offer_status: state.call_offer_status,
+      stage: effectiveStage,
+      call_preference: effectiveCallPreference,
+      call_offer_status: effectiveCallOfferStatus,
       call_offer_count: callOfferCount,
       active_call: claimed.sales_context.active_call,
       last_call_result: claimed.sales_context.last_call_result,
-      awaiting_reply: state.awaiting_reply,
+      awaiting_reply: effectiveAwaitingReply,
       // The customer already said they paid. The model must be able to see
       // that so it neither asks for the payment again nor claims it is
       // verified — this field is the claim, never a verification.
-      payment_reported: state.payment_reported === true,
+      payment_reported: effectivePaymentReported,
       payment_verification: claimed.payment_verification ?? null,
-      payment_link_request: state.payment_link_request === undefined
+      payment_link_request: startsFreshInterestCycle || state.payment_link_request === undefined
         ? null
         : state.payment_link_request === null
           ? null
@@ -694,7 +773,7 @@ export function buildAgentAContextV1(
     // cumplidas. Una deuda calculada encima volvía a imponer un recorrido.
     ...(obligations === null ? {} : {
       obligations: {
-        stage: state.stage,
+        stage: effectiveStage,
         owes: obligations.owes,
         not_yet: obligations.not_yet,
       },
@@ -749,31 +828,15 @@ export function buildAgentAContextV1(
     },
     capabilities: {
       may_reply: claimed.policy.may_respond,
-      may_offer_call: claimed.policy.may_respond
-        && !claimed.contact.blocked
-        && claimed.sales_context.active_call === null
-        && state.call_preference !== 'call'
-        && state.call_offer_status !== 'accepted'
-        && !['handoff', 'closed', 'payment_link_sent'].includes(state.stage)
-        && state.payment_reported !== true
-        && callOfferCount < 2,
-      may_request_call_now: claimed.policy.may_respond
-        && hasReadableCurrentInput
-        && !claimed.contact.blocked
-        && claimed.sales_context.active_call === null
-        // A direct request is sufficient in this turn. A short acceptance is
-        // sufficient only after the persisted availability question, never
-        // while an invitation or contact-data request is still pending.
-        && (currentCallAuthorization || (
-          awaitingCallAvailability
-          && availabilityConfirmed
-        ))
-        && !['handoff', 'closed'].includes(state.stage)
-        && callIntakeReadiness?.status === 'ready',
+      may_offer_call: mayOfferCall,
+      // A direct request is sufficient in this turn. A short acceptance is
+      // sufficient only after the persisted availability question, never
+      // while an invitation or contact-data request is still pending.
+      may_request_call_now: mayRequestCallNow,
       may_present_payment_options: claimed.policy.may_respond
         && (claimed.business_context?.workspace.payment_options.length ?? 0) > 0,
       may_send_payment_link: hasReadableCurrentInput && maySendPaymentLink,
-      ...(claimed.course_bonus_capability
+      ...(!startsFreshInterestCycle && claimed.course_bonus_capability
         ? { course_bonus: claimed.course_bonus_capability }
         : {}),
       intake_status: intakeStatus,
@@ -781,6 +844,10 @@ export function buildAgentAContextV1(
       intake_missing: intakeMissing,
       required_contact_fields: requiredContactFields,
       call_contact_requirements: callRequirements,
+      call_execution: {
+        next_step: callExecutionNextStep,
+        request_call_now_authorized: mayRequestCallNow,
+      },
     },
   });
 }
