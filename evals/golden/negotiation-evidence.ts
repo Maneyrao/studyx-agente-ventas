@@ -21,9 +21,9 @@ export function negotiationSemanticTurnV1(turn:GoldenTurnV1,final:boolean):Golde
       {file:'docs/authority/spec-backend-bonificacion.md',start:39,end:40,contains:'agrega'},
       {file:'docs/authority/spec-backend-bonificacion.md',start:59,end:71,contains:'bonificación'}],
     must:[
-      'Responder al freno actual con valor personalizado y un cierre útil, conservando el orden comercial de la historia entregada: valor, cuotas, aislamiento del único freno y cierre condicional, llamada cuando corresponde, y sólo después bonificación afín. Un escalón puede haberse cumplido antes; no exigir repetirlo ni asociarlo al nombre del turno.',
+      'Responder al freno actual con valor personalizado y un cierre útil, conservando el orden comercial de la historia entregada: valor, plan de 12 cuotas de USD 30 (total USD 360 sin cambios), aislamiento del único freno y cierre condicional, llamada cuando corresponde, y sólo después bonificación afín. Un escalón puede haberse cumplido antes; no exigir repetirlo ni asociarlo al nombre del turno.',
       'Si se añade un bonificado autorizado, justificar afinidad con el objetivo, conservar el precio y recapitular curso pago y todos los bonificados entregados; cerrar con naturalidad.',
-      ...(final?['La conversación completa debe acreditar valor personalizado, reencuadre con cuotas, aislamiento del precio y cierre condicional, y la llamada cuando corresponde antes de bonificar; no basta con autorizar un efecto si se omitió una etapa comercial.']:[])],
+      ...(final?['La conversación completa debe acreditar valor personalizado, reencuadre con el plan de 12 cuotas de USD 30 manteniendo el total USD 360, aislamiento del precio y cierre condicional, y la llamada cuando corresponde antes de bonificar; no basta con autorizar un efecto si se omitió una etapa comercial.']:[])],
     mustNot:[
       'No ofrecer, insinuar ni condicionar una nueva bonificación sin offer_course_bonus autorizado y materializado; formularla como pregunta o hipótesis no sustituye la acción. No confundir recordar un curso ya entregado con prometer uno nuevo.',
       'No inventar hechos, cambiar el precio, repetir cursos bonificados, prometer un cuarto, insistir con llamada rechazada ni arrastrar un paquete a otro curso pago.',
