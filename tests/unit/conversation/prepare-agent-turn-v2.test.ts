@@ -85,6 +85,21 @@ const completeIntake = async () => ({
 });
 
 describe('prepareAgentTurnV2', () => {
+  it.each(['current','history'] as const)('accepts the server-derived paid mention without persisting a purchase selection: %s',async source=>{
+    const result=await prepareAgentTurnV2({
+      turn:{id:ids.turn,workspace_id:ids.workspace,conversation_id:ids.conversation,contact_id:ids.contact},
+      workspace_slug:'studyx',business_context:business,catalog_index:index,semantic_rejections:'advisory',
+      current_customer_messages:source==='current'?['Quiero información de Redes Informáticas.']:['Cuánto dura?'],
+      course_focus_context:{batch_started_at:index.as_of,recent_turns:source==='history'
+        ? [{direction:'inbound' as const,content:'Quiero información de Redes Informáticas.',created_at:'2026-09-02T15:59:00.000Z'}]:[]},
+      proposal:proposal({move:{schema_version:1,move:'ask_course_information',secondary_moves:[],vetoes:[],confidence:1,course_reference:'redes_informaticas'},
+        response:{messages:['Redes Informáticas puede servirte.']},course_mentions:[{offering_code:'redes_informaticas',role:'paid'}]}),
+    },{state_store:store(state({selected_offering_code:null})),now:()=>Date.parse(index.as_of)});
+    expect(result.response_messages).toEqual(['Redes Informáticas puede servirte.']);
+    expect(result.transition.selected_offering_code).toBeNull();
+    expect(result.decision.business_action).toBeNull();
+    expect(result.authorized_offering_code).toBeNull();
+  });
   it('does not retain a request_call move by stripping only its effect after refusal', async () => {
     await expect(prepareAgentTurnV2({
       turn: { id: ids.turn, workspace_id: ids.workspace, conversation_id: ids.conversation, contact_id: ids.contact },

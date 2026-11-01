@@ -26,6 +26,7 @@ import {
 import { auditLog } from '@/lib/audit/logger';
 import { resolveAgentTurnOfferingReferenceV2 } from '@/features/conversation/domain/agent-turn-policy-v2';
 import {
+  config,
   loadAgentARolloutConfig,
   loadBusinessWorkspaceConfig,
   loadSheetsProjectionConfig,
@@ -876,6 +877,15 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
           source_turn_id: turn.id,
         }, { db });
         preparedAgentWorkspaceId = workspaceId;
+        // The claim presents a server-derived dialogue focus without persisting
+        // a purchase selection. Reload the same logical history under this
+        // transaction so paid mentions use the same projector, not client metadata.
+        const courseFocusContext = turn.batch_id === null ? null
+          : await new PostgresOrchestrationStore(db).loadClaimedBatchContext({
+              batch_id:turn.batch_id,recent_turns_limit:config.recentTurnsLimit,
+            });
+        const courseFocusStart = courseFocusContext?.batch_messages
+          .map(message=>message.created_at).sort()[0];
         preparedAgentTurn = await prepareAgentTurnV2({
           turn: {
             id: turn.id,
@@ -890,6 +900,10 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
           operational_continuity: validatedInput.agent_turn_v2.operational_continuity,
           semantic_rejections: 'advisory',
           current_customer_messages: currentMessages.map((message) => message.content),
+          ...(courseFocusContext && courseFocusStart ? {course_focus_context:{
+            recent_turns:courseFocusContext.logical_recent_turns ?? courseFocusContext.facts.recent_turns,
+            batch_started_at:courseFocusStart,
+          }} : {}),
           business_context: agentBusinessContext,
           catalog_index: agentCatalogIndex,
           authorized_knowledge_facts: authorizedKnowledgeFacts,

@@ -139,6 +139,8 @@ export function authorizeAgentTurnV2(input: {
   readonly payment_verified?: boolean;
   readonly paid_purchase?: { readonly offering_code: string; readonly plan_code: SalesPaymentPlan | null };
   readonly current_customer_messages?: readonly string[];
+  /** Canonical server dialogue focus, used only when validating paid mentions. */
+  readonly paid_mention_offering_code?: string | null;
   readonly course_bonus?: CourseBonusCapabilityV1;
   /** A continuation retains its semantic transition without executing effects. */
   readonly effects_allowed?: boolean;
@@ -613,6 +615,8 @@ export function authorizeAgentTurnV2(input: {
   const courseMentions = validateCourseMentionsV1({
     messages:proposal.response.messages,call_offer:proposal.response.call_offer,catalog:input.offerings,
     course_mentions:proposal.course_mentions,paid_offering_code:primaryCourse,
+    paid_mention_offering_code:!startsFreshSalesCycle && !(changesCourse && requestedOffering!==null)
+      ? input.paid_mention_offering_code : null,
     ...(action.type==='offer_course_bonus' ? {authorized_bonus_action:{
       paid_offering_code:action.interest_offering_code,bonus_offering_code:action.bonus_offering_code}} : {}),
     delivered_bonus_offering_codes:packageIsCurrent ? (input.course_bonus?.delivered_bonus_offerings ?? []).map(course=>course.code) : [],

@@ -32,6 +32,8 @@ export function validateCourseMentionsV1(input: {
   readonly catalog: readonly { readonly code: string; readonly display_name: string }[];
   readonly course_mentions?: readonly CourseMentionV1[];
   readonly paid_offering_code: string | null;
+  /** Server-derived dialogue focus; never purchase, package or bonus authority. */
+  readonly paid_mention_offering_code?: string | null;
   readonly authorized_bonus_action?: { readonly paid_offering_code: string; readonly bonus_offering_code: string };
   readonly delivered_bonus_offering_codes: readonly string[];
   readonly ladder?: CourseBonusLadderV1;
@@ -42,6 +44,9 @@ export function validateCourseMentionsV1(input: {
     if (!violations.some(v => v.subject === subject && v.code === code)) violations.push({ code, subject });
   };
   const catalogCodes = new Set(input.catalog.map(course => course.code));
+  const paidMentionCode = input.paid_offering_code
+    ?? (input.paid_mention_offering_code && catalogCodes.has(input.paid_mention_offering_code)
+      ? input.paid_mention_offering_code : null);
   const names = new Map<string, Set<string>>();
   for (const course of input.catalog) {
     const name=course.display_name;
@@ -77,11 +82,11 @@ export function validateCourseMentionsV1(input: {
         && input.delivered_bonus_offering_codes.includes(mention.offering_code);
     if (!catalogCodes.has(mention.offering_code) && !authoritativeIdentity) reject(`course_mentions:unknown:${mention.offering_code}`);
     if (!COURSE_MENTION_ROLES_V1.some(role=>role===mention.role)) reject(`course_mentions:unknown_role:${mention.offering_code}`);
-    if (mention.role==='paid' && mention.offering_code!==input.paid_offering_code) reject(`course_mentions:paid_mismatch:${mention.offering_code}`);
+    if (mention.role==='paid' && mention.offering_code!==paidMentionCode) reject(`course_mentions:paid_mismatch:${mention.offering_code}`);
     declared.set(mention.offering_code,mention);
   }
   for(const code of named) {
-    if (!declared.has(code) && code!==input.paid_offering_code) reject(`course_mentions:undeclared:${code}`);
+    if (!declared.has(code) && code!==paidMentionCode) reject(`course_mentions:undeclared:${code}`);
   }
   const effectDeclaration=input.authorized_bonus_action
     ? declared.get(input.authorized_bonus_action.bonus_offering_code) : undefined;

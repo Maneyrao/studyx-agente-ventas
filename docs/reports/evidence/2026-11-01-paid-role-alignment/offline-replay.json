@@ -1,0 +1,543 @@
+{
+  "schema_version": 1,
+  "evaluation_sha": "9d52d770eaffeccea1bb50e0df799390d16552f8",
+  "evaluation_worktree_dirty": true,
+  "model_calls": 0,
+  "persistence_calls": 0,
+  "deliveries": 0,
+  "originals_modified": false,
+  "input_sha256": {
+    "docs/reports/evidence/2026-11-01-formal-acceptance-v149/raw/acceptance-f1f0f9c-flash-full16-20261101-provider.json": "72509482a94b68be5e5b87680376d901f33073b54cc531128fc0eb821ce41c48",
+    "docs/reports/evidence/2026-11-01-formal-acceptance-v149/diagnostics.json": "5559ca4e7d80aa769607cd4dfbe90f03b1ae9071cabfc1c942180117afd404ea"
+  },
+  "summary": {
+    "recorded_turns": 4,
+    "recorded_attempts": 12,
+    "baseline_paid_mismatch": 12,
+    "replayed_paid_mismatch": 0,
+    "controlled_negative_rejections": 8
+  },
+  "disclosure": "Recorded original proposals, not newly generated responses. No authority, golden score or original attempt is altered. Production session boundaries are separately covered by projector/integration tests.",
+  "rows": [
+    {
+      "case": "05_real_budget_limit",
+      "turn": "interest",
+      "call_id": "call-0010",
+      "source_execution_sha": "f1f0f9c5d3676d324642238e43279c0c0fada2b7",
+      "original_model_content": "{\"schema_version\":1,\"move\":{\"schema_version\":1,\"move\":\"ask_course_information\",\"secondary_moves\":[],\"vetoes\":[],\"course_reference\":\"marketing_digital\",\"area_reference\":null,\"payment_plan\":null,\"confidence\":0.95},\"response\":{\"messages\":[\"Soy Emma, asesora de Studyx. Marketing Digital es justo lo que necesitas para mover tu emprendimiento: 16 clases online para armar estrategias que comuniquen bien y potencien tu negocio.\",\"El total son USD 360, y lo puedes pagar en 12 cuotas de USD 30, en 6 de USD 60 o de una sola vez. Cuál te acomoda más?\"],\"call_offer\":null},\"proposed_action\":{\"type\":\"none\"},\"course_mentions\":[{\"offering_code\":\"marketing_digital\",\"role\":\"paid\"}],\"confirmed_phone\":null,\"profile_updates\":[],\"profile_requests\":[],\"repair_of\":null,\"used_fact_ids\":[\"offering:marketing_digital:name:v1\",\"offering:marketing_digital:description:v1\",\"offering:marketing_digital:duration:v1\",\"offering:marketing_digital:modality:v1\",\"payment:marketing_digital:monthly_12:label:v1\",\"payment:marketing_digital:monthly_6:label:v1\",\"payment:marketing_digital:one_time:label:v1\"],\"used_memory_ids\":[],\"memory_candidates\":[{\"type\":\"study_goal\",\"key\":\"objetivo_emprendimiento\",\"value\":\"Usar Marketing Digital para mover su emprendimiento\",\"source_quote\":\"Me interesa Marketing Digital para mover mi emprendimiento\",\"confidence\":0.9}]}",
+      "original_model_sha256": "19bd100c435f59dff6d0e1614cf5f4fa8d25f0a40eaf0bce71845405b9cae7d9",
+      "draft": {
+        "messages": [
+          "Soy Emma, asesora de Studyx. Marketing Digital es justo lo que necesitas para mover tu emprendimiento: 16 clases online para armar estrategias que comuniquen bien y potencien tu negocio.",
+          "El total son USD 360, y lo puedes pagar en 12 cuotas de USD 30, en 6 de USD 60 o de una sola vez. Cuál te acomoda más?"
+        ],
+        "call_offer": null
+      },
+      "messages_received": [
+        {
+          "id": "0ae76570-117a-46fd-a9a3-ceb59c9e3e22",
+          "text": "Me interesa Marketing Digital para mover mi emprendimiento, cuánto cuesta?"
+        }
+      ],
+      "generation_selected_offering_code": "marketing_digital",
+      "persisted_paid_anchor_for_replay": null,
+      "server_derived_paid_mention_offering_code": "marketing_digital",
+      "original_proposed_action": {
+        "type": "none"
+      },
+      "baseline_violations": [
+        {
+          "code": "COURSE_ROLE_UNDECLARED",
+          "subject": "course_mentions:paid_mismatch:marketing_digital"
+        }
+      ],
+      "replayed_violations": [],
+      "scope": "Course-focus and role boundary only; no purchase, effect, persistence or delivery performed. Other fact/style checks are not marked passed by this replay.",
+      "history_provenance": "Already session-bounded history captured in the original model context; timestamps and catalog aliases are not fabricated."
+    },
+    {
+      "case": "05_real_budget_limit",
+      "turn": "interest",
+      "call_id": "call-0011",
+      "source_execution_sha": "f1f0f9c5d3676d324642238e43279c0c0fada2b7",
+      "original_model_content": "{\"schema_version\":1,\"move\":{\"schema_version\":1,\"move\":\"ask_course_information\",\"secondary_moves\":[],\"vetoes\":[],\"course_reference\":\"marketing_digital\",\"area_reference\":null,\"payment_plan\":null,\"confidence\":0.95},\"response\":{\"messages\":[\"Hola, soy Emma, asesora de Studyx. Marketing Digital es justo lo que necesitas para mover tu emprendimiento: son 16 clases online donde desarrollas estrategias para comunicar de forma eficaz y potenciar tu negocio.\",\"El total son USD 360, y lo puedes pagar en 12 cuotas de USD 30, en 6 de USD 60 o de una sola vez. Cuál te acomoda más?\"],\"call_offer\":null},\"proposed_action\":{\"type\":\"none\"},\"course_mentions\":[{\"offering_code\":\"marketing_digital\",\"role\":\"paid\"}],\"confirmed_phone\":null,\"profile_updates\":[],\"profile_requests\":[],\"repair_of\":{\"rejection_id\":\"5f0b3281-64aa-460a-b94e-f6413a40254f\",\"attempt\":1},\"used_fact_ids\":[\"offering:marketing_digital:name:v1\",\"offering:marketing_digital:description:v1\",\"offering:marketing_digital:duration:v1\",\"offering:marketing_digital:modality:v1\",\"payment:marketing_digital:monthly_12:label:v1\",\"payment:marketing_digital:monthly_6:label:v1\",\"payment:marketing_digital:one_time:label:v1\"],\"used_memory_ids\":[],\"memory_candidates\":[{\"type\":\"study_goal\",\"key\":\"goal\",\"value\":\"mover su emprendimiento\",\"source_quote\":\"Me interesa Marketing Digital para mover mi emprendimiento\",\"confidence\":0.9}]}",
+      "original_model_sha256": "461983616cbfa2f034815b6a611ad84257883a22132a58902906460dc4e9563b",
+      "draft": {
+        "messages": [
+          "Hola, soy Emma, asesora de Studyx. Marketing Digital es justo lo que necesitas para mover tu emprendimiento: son 16 clases online donde desarrollas estrategias para comunicar de forma eficaz y potenciar tu negocio.",
+          "El total son USD 360, y lo puedes pagar en 12 cuotas de USD 30, en 6 de USD 60 o de una sola vez. Cuál te acomoda más?"
+        ],
+        "call_offer": null
+      },
+      "messages_received": [
+        {
+          "id": "0ae76570-117a-46fd-a9a3-ceb59c9e3e22",
+          "text": "Me interesa Marketing Digital para mover mi emprendimiento, cuánto cuesta?"
+        }
+      ],
+      "generation_selected_offering_code": "marketing_digital",
+      "persisted_paid_anchor_for_replay": null,
+      "server_derived_paid_mention_offering_code": "marketing_digital",
+      "original_proposed_action": {
+        "type": "none"
+      },
+      "baseline_violations": [
+        {
+          "code": "COURSE_ROLE_UNDECLARED",
+          "subject": "course_mentions:paid_mismatch:marketing_digital"
+        }
+      ],
+      "replayed_violations": [],
+      "scope": "Course-focus and role boundary only; no purchase, effect, persistence or delivery performed. Other fact/style checks are not marked passed by this replay.",
+      "history_provenance": "Already session-bounded history captured in the original model context; timestamps and catalog aliases are not fabricated."
+    },
+    {
+      "case": "05_real_budget_limit",
+      "turn": "interest",
+      "call_id": "call-0012",
+      "source_execution_sha": "f1f0f9c5d3676d324642238e43279c0c0fada2b7",
+      "original_model_content": "{\"schema_version\":1,\"move\":{\"schema_version\":1,\"move\":\"ask_course_information\",\"secondary_moves\":[],\"vetoes\":[],\"course_reference\":\"marketing_digital\",\"area_reference\":null,\"payment_plan\":null,\"confidence\":0.95},\"response\":{\"messages\":[\"Hola, soy Emma, asesora de Studyx. Marketing Digital son 16 clases online, pensadas justamente para armar estrategias que comuniquen bien y muevan tu negocio.\",\"El total son USD 360, y lo podés pagar en 12 cuotas de USD 30, en 6 de USD 60 o de una sola vez. Cuál te queda más cómoda?\"],\"call_offer\":null},\"proposed_action\":{\"type\":\"none\"},\"course_mentions\":[{\"offering_code\":\"marketing_digital\",\"role\":\"paid\"}],\"confirmed_phone\":null,\"profile_updates\":[],\"profile_requests\":[],\"repair_of\":{\"rejection_id\":\"7a45c033-d0cc-4216-bd08-896173787253\",\"attempt\":1},\"used_fact_ids\":[\"offering:marketing_digital:name:v1\",\"offering:marketing_digital:description:v1\",\"offering:marketing_digital:duration:v1\",\"offering:marketing_digital:modality:v1\",\"payment:marketing_digital:monthly_12:label:v1\",\"payment:marketing_digital:monthly_6:label:v1\",\"payment:marketing_digital:one_time:label:v1\"],\"used_memory_ids\":[],\"memory_candidates\":[{\"type\":\"study_goal\",\"key\":\"objetivo_emprendimiento\",\"value\":\"usar Marketing Digital para mover su emprendimiento\",\"source_quote\":\"Me interesa Marketing Digital para mover mi emprendimiento\",\"confidence\":0.9}]}",
+      "original_model_sha256": "247bdc0f2e2cfb6a34a1796366ce554028e2537a28e373a40fe32ee3342e53ee",
+      "draft": {
+        "messages": [
+          "Hola, soy Emma, asesora de Studyx. Marketing Digital son 16 clases online, pensadas justamente para armar estrategias que comuniquen bien y muevan tu negocio.",
+          "El total son USD 360, y lo podés pagar en 12 cuotas de USD 30, en 6 de USD 60 o de una sola vez. Cuál te queda más cómoda?"
+        ],
+        "call_offer": null
+      },
+      "messages_received": [
+        {
+          "id": "0ae76570-117a-46fd-a9a3-ceb59c9e3e22",
+          "text": "Me interesa Marketing Digital para mover mi emprendimiento, cuánto cuesta?"
+        }
+      ],
+      "generation_selected_offering_code": "marketing_digital",
+      "persisted_paid_anchor_for_replay": null,
+      "server_derived_paid_mention_offering_code": "marketing_digital",
+      "original_proposed_action": {
+        "type": "none"
+      },
+      "baseline_violations": [
+        {
+          "code": "COURSE_ROLE_UNDECLARED",
+          "subject": "course_mentions:paid_mismatch:marketing_digital"
+        }
+      ],
+      "replayed_violations": [],
+      "scope": "Course-focus and role boundary only; no purchase, effect, persistence or delivery performed. Other fact/style checks are not marked passed by this replay.",
+      "history_provenance": "Already session-bounded history captured in the original model context; timestamps and catalog aliases are not fabricated."
+    },
+    {
+      "case": "05_real_budget_limit",
+      "turn": "budget",
+      "call_id": "call-0013",
+      "source_execution_sha": "f1f0f9c5d3676d324642238e43279c0c0fada2b7",
+      "original_model_content": "{\"schema_version\":1,\"move\":{\"schema_version\":1,\"move\":\"defer_payment\",\"secondary_moves\":[],\"vetoes\":[],\"course_reference\":null,\"area_reference\":null,\"payment_plan\":null,\"confidence\":0.72},\"response\":{\"messages\":[\"Te entiendo, a veces el presupuesto aprieta de verdad. Por eso Marketing Digital se puede pagar en 12 cuotas de USD 30 al mes, así no tenés que soltar todo junto.\",\"Con eso podrías ir armando las estrategias para mover tu emprendimiento mientras pagás cómodo. Te sirve arrancar así?\"],\"call_offer\":null},\"proposed_action\":{\"type\":\"none\"},\"course_mentions\":[{\"offering_code\":\"marketing_digital\",\"role\":\"paid\"}],\"confirmed_phone\":null,\"profile_updates\":[],\"profile_requests\":[],\"repair_of\":null,\"used_fact_ids\":[\"offering:marketing_digital:name:v1\",\"payment:marketing_digital:monthly_12:label:v1\",\"payment:marketing_digital:monthly_12:price:v1\"],\"used_memory_ids\":[],\"memory_candidates\":[{\"type\":\"objection\",\"key\":\"price_objection\",\"value\":\"no le alcanza, está muy justo ahora\",\"source_quote\":\"No me alcanza, ahora mismo estoy muy justo.\",\"confidence\":0.9},{\"type\":\"study_goal\",\"key\":\"goal\",\"value\":\"mover su emprendimiento con Marketing Digital\",\"source_quote\":\"Me interesa Marketing Digital para mover mi emprendimiento\",\"confidence\":0.85}]}",
+      "original_model_sha256": "3d41e1e12a5155b2f1119188f2d110e5478030671c65f7f01f1a64e62624c60f",
+      "draft": {
+        "messages": [
+          "Te entiendo, a veces el presupuesto aprieta de verdad. Por eso Marketing Digital se puede pagar en 12 cuotas de USD 30 al mes, así no tenés que soltar todo junto.",
+          "Con eso podrías ir armando las estrategias para mover tu emprendimiento mientras pagás cómodo. Te sirve arrancar así?"
+        ],
+        "call_offer": null
+      },
+      "messages_received": [
+        {
+          "id": "7422ca4e-7864-467e-aa5a-22eab39f7d26",
+          "text": "No me alcanza, ahora mismo estoy muy justo."
+        }
+      ],
+      "generation_selected_offering_code": "marketing_digital",
+      "persisted_paid_anchor_for_replay": null,
+      "server_derived_paid_mention_offering_code": "marketing_digital",
+      "original_proposed_action": {
+        "type": "none"
+      },
+      "baseline_violations": [
+        {
+          "code": "COURSE_ROLE_UNDECLARED",
+          "subject": "course_mentions:paid_mismatch:marketing_digital"
+        }
+      ],
+      "replayed_violations": [],
+      "scope": "Course-focus and role boundary only; no purchase, effect, persistence or delivery performed. Other fact/style checks are not marked passed by this replay.",
+      "history_provenance": "Already session-bounded history captured in the original model context; timestamps and catalog aliases are not fabricated."
+    },
+    {
+      "case": "05_real_budget_limit",
+      "turn": "budget",
+      "call_id": "call-0014",
+      "source_execution_sha": "f1f0f9c5d3676d324642238e43279c0c0fada2b7",
+      "original_model_content": "{\"schema_version\":1,\"move\":{\"schema_version\":1,\"move\":\"defer_payment\",\"secondary_moves\":[],\"vetoes\":[],\"course_reference\":null,\"area_reference\":null,\"payment_plan\":null,\"confidence\":0.78},\"response\":{\"messages\":[\"Te entiendo, y no quiero que te aprietes por esto. Marketing Digital son 16 clases online y se puede pagar en 12 cuotas de USD 30, así lo vas manejando mes a mes mientras lo aplicás a tu emprendimiento.\",\"Si hoy no es el momento, lo dejamos para cuando te acomode. Qué es lo que más te gustaría mover de tu emprendimiento con el marketing?\"],\"call_offer\":null},\"proposed_action\":{\"type\":\"none\"},\"course_mentions\":[{\"offering_code\":\"marketing_digital\",\"role\":\"paid\"}],\"confirmed_phone\":null,\"profile_updates\":[],\"profile_requests\":[],\"repair_of\":{\"rejection_id\":\"60785614-bbd8-47ea-b4ac-403880a9c18b\",\"attempt\":1},\"used_fact_ids\":[\"offering:marketing_digital:name:v1\",\"offering:marketing_digital:duration:v1\",\"offering:marketing_digital:modality:v1\",\"payment:marketing_digital:monthly_12:label:v1\"],\"used_memory_ids\":[],\"memory_candidates\":[{\"type\":\"objection\",\"key\":\"price_objection\",\"value\":\"No le alcanza ahora, está muy justo de presupuesto\",\"source_quote\":\"No me alcanza, ahora mismo estoy muy justo.\",\"confidence\":0.9}]}",
+      "original_model_sha256": "575697fb97bbcf86f97f6767f5adfd606e38d131d3306e315f5884b8687c2ca6",
+      "draft": {
+        "messages": [
+          "Te entiendo, y no quiero que te aprietes por esto. Marketing Digital son 16 clases online y se puede pagar en 12 cuotas de USD 30, así lo vas manejando mes a mes mientras lo aplicás a tu emprendimiento.",
+          "Si hoy no es el momento, lo dejamos para cuando te acomode. Qué es lo que más te gustaría mover de tu emprendimiento con el marketing?"
+        ],
+        "call_offer": null
+      },
+      "messages_received": [
+        {
+          "id": "7422ca4e-7864-467e-aa5a-22eab39f7d26",
+          "text": "No me alcanza, ahora mismo estoy muy justo."
+        }
+      ],
+      "generation_selected_offering_code": "marketing_digital",
+      "persisted_paid_anchor_for_replay": null,
+      "server_derived_paid_mention_offering_code": "marketing_digital",
+      "original_proposed_action": {
+        "type": "none"
+      },
+      "baseline_violations": [
+        {
+          "code": "COURSE_ROLE_UNDECLARED",
+          "subject": "course_mentions:paid_mismatch:marketing_digital"
+        }
+      ],
+      "replayed_violations": [],
+      "scope": "Course-focus and role boundary only; no purchase, effect, persistence or delivery performed. Other fact/style checks are not marked passed by this replay.",
+      "history_provenance": "Already session-bounded history captured in the original model context; timestamps and catalog aliases are not fabricated."
+    },
+    {
+      "case": "05_real_budget_limit",
+      "turn": "budget",
+      "call_id": "call-0015",
+      "source_execution_sha": "f1f0f9c5d3676d324642238e43279c0c0fada2b7",
+      "original_model_content": "{\"schema_version\":1,\"move\":{\"schema_version\":1,\"move\":\"defer_payment\",\"secondary_moves\":[],\"vetoes\":[],\"course_reference\":null,\"area_reference\":null,\"payment_plan\":null,\"confidence\":0.72},\"response\":{\"messages\":[\"Te entiendo, y no quiero que te aprietes por esto. Marketing Digital son 16 clases online y se puede pagar en 12 cuotas de USD 30, así vas avanzando sin soltar todo de golpe.\",\"Si hoy no es el momento, lo dejamos para cuando estés más holgado. Qué es lo que más te gustaría mover de tu emprendimiento con el marketing?\"],\"call_offer\":null},\"proposed_action\":{\"type\":\"none\"},\"course_mentions\":[{\"offering_code\":\"marketing_digital\",\"role\":\"paid\"}],\"confirmed_phone\":null,\"profile_updates\":[],\"profile_requests\":[],\"repair_of\":{\"rejection_id\":\"d11ddb98-311c-4282-974b-24082d6fd437\",\"attempt\":1},\"used_fact_ids\":[\"offering:marketing_digital:name:v1\",\"offering:marketing_digital:duration:v1\",\"offering:marketing_digital:modality:v1\",\"payment:marketing_digital:monthly_12:label:v1\"],\"used_memory_ids\":[],\"memory_candidates\":[{\"type\":\"objection\",\"key\":\"price_objection\",\"value\":\"No me alcanza, ahora mismo estoy muy justo\",\"source_quote\":\"No me alcanza, ahora mismo estoy muy justo.\",\"confidence\":0.9},{\"type\":\"constraint\",\"key\":\"budget_tight_now\",\"value\":\"Presupuesto ajustado en este momento\",\"source_quote\":\"No me alcanza, ahora mismo estoy muy justo.\",\"confidence\":0.85}]}",
+      "original_model_sha256": "9eaa2f13e560ed93d4fed7782431234ed04d1ac09ca6d9a2824a88c05c48b33e",
+      "draft": {
+        "messages": [
+          "Te entiendo, y no quiero que te aprietes por esto. Marketing Digital son 16 clases online y se puede pagar en 12 cuotas de USD 30, así vas avanzando sin soltar todo de golpe.",
+          "Si hoy no es el momento, lo dejamos para cuando estés más holgado. Qué es lo que más te gustaría mover de tu emprendimiento con el marketing?"
+        ],
+        "call_offer": null
+      },
+      "messages_received": [
+        {
+          "id": "7422ca4e-7864-467e-aa5a-22eab39f7d26",
+          "text": "No me alcanza, ahora mismo estoy muy justo."
+        }
+      ],
+      "generation_selected_offering_code": "marketing_digital",
+      "persisted_paid_anchor_for_replay": null,
+      "server_derived_paid_mention_offering_code": "marketing_digital",
+      "original_proposed_action": {
+        "type": "none"
+      },
+      "baseline_violations": [
+        {
+          "code": "COURSE_ROLE_UNDECLARED",
+          "subject": "course_mentions:paid_mismatch:marketing_digital"
+        }
+      ],
+      "replayed_violations": [],
+      "scope": "Course-focus and role boundary only; no purchase, effect, persistence or delivery performed. Other fact/style checks are not marked passed by this replay.",
+      "history_provenance": "Already session-bounded history captured in the original model context; timestamps and catalog aliases are not fabricated."
+    },
+    {
+      "case": "13_real_syllabus",
+      "turn": "syllabus",
+      "call_id": "call-0043",
+      "source_execution_sha": "f1f0f9c5d3676d324642238e43279c0c0fada2b7",
+      "original_model_content": "{\"schema_version\":1,\"move\":{\"schema_version\":1,\"move\":\"ask_course_information\",\"secondary_moves\":[],\"vetoes\":[],\"course_reference\":\"fotografia_profesional\",\"area_reference\":null,\"payment_plan\":null,\"confidence\":0.95},\"response\":{\"messages\":[\"Soy Emma, asesora de Studyx. Te comparto el temario de Fotografía Profesional, que son 41 clases online:\\nClase 1: Introducción. Tipos de cámaras digitales y visores\\nClase 2: Leer una cámara réflex o mirrorless. Valor de exposición y sensor\\nClase 3: Sensibilidad / ISO\\nClase 4: Obturador y velocidad de obturación\\nClase 5: Apertura de diafragma y profundidad de campo\\nClase 6: Distancia focal y tamaño del sensor\\nClase 7: Lentes y sus categorías\\nClase 8: Sistemas de enfoque y medición\\nClase 9: Balance de blancos\\nClase 10: Histograma y formatos RAW, JPEG y TIFF\\nClase 11: Composición. Secuencia de Fibonacci\\nClase 12: Otras formas de componer\\nClase 13: Retrato. Equipo y lentes\\nClase 14: Planos de recorte y ángulos de toma\\nClase 15: Compresión de planos\\nClase 16: Tips para retratos\\nClase 17: Flash de zapata, temperatura de la luz y modos de disparo\\nClase 18: Velocidad de sincronización de flash, remotos y radios\\nClase 19: Difusores y accesorios de flash\\nClase 20: Filtros para lentes\\nClase 21: Barrido, panning y zooming\\nClase 22: Trípodes y monopies\\nClase 23: Disparadores de cámara e intervalómetro\\nClase 24: Campañas publicitarias\\nClase 25: Segmentación de público\\nClase 26: Edición de video. Formato y resolución\\nClase 27: Lightroom\\nClase 28: Biblioteca y metadatos\\nClase 29: Paneles del módulo Revelar\\nClase 30: Ajustes básicos\\nClase 31: Quitar manchas y ojos rojos\\nClase 32: Filtros degradado y puntual\\nClase 33: Exportación y calidades\\nClase 34: Premiere. Introducción\\nClase 35: Sincronizar audio y video\\nClase 36: Música, efectos y cortes\\nClase 37: Exportar y renderizado\\nClase 38: Photoshop. Introducción\\nClase 39: Maquillaje digital\\nClase 40: Cambio de color de ojo\\nClase 41: Collage fotoproducto\\nExamen final\",\"Contame, qué te gustaría lograr con la fotografía? Es para trabajar en algo propio, para sumar a tu trabajo actual o más por gusto?\"],\"call_offer\":null},\"proposed_action\":{\"type\":\"none\"},\"course_mentions\":[{\"offering_code\":\"fotografia_profesional\",\"role\":\"paid\"}],\"confirmed_phone\":null,\"profile_updates\":[],\"profile_requests\":[],\"repair_of\":null,\"used_fact_ids\":[\"offering:fotografia_profesional:name:v1\",\"offering:fotografia_profesional:duration:v1\",\"offering:fotografia_profesional:modality:v1\",\"knowledge-source:7c728d8e-b21b-4001-8073-99322ae80a7a\",\"knowledge-source:6de68ecc-89d6-4733-8e06-d1f7ee2eb6e7\",\"knowledge-source:116d901b-b934-4a06-80b9-2fd37fa6fde5\",\"knowledge-source:730af5c4-a96c-4955-8f1c-b7e125d6aa90\",\"knowledge-source:d1da08f4-382f-4acf-9b78-ee5729cf61ba\"],\"used_memory_ids\":[],\"memory_candidates\":[]}",
+      "original_model_sha256": "b6de13a4b80d3583a79fbb7458d2b3994b21ccd27aaa7526cf6710438d7f1f2a",
+      "draft": {
+        "messages": [
+          "Soy Emma, asesora de Studyx. Te comparto el temario de Fotografía Profesional, que son 41 clases online:\nClase 1: Introducción. Tipos de cámaras digitales y visores\nClase 2: Leer una cámara réflex o mirrorless. Valor de exposición y sensor\nClase 3: Sensibilidad / ISO\nClase 4: Obturador y velocidad de obturación\nClase 5: Apertura de diafragma y profundidad de campo\nClase 6: Distancia focal y tamaño del sensor\nClase 7: Lentes y sus categorías\nClase 8: Sistemas de enfoque y medición\nClase 9: Balance de blancos\nClase 10: Histograma y formatos RAW, JPEG y TIFF\nClase 11: Composición. Secuencia de Fibonacci\nClase 12: Otras formas de componer\nClase 13: Retrato. Equipo y lentes\nClase 14: Planos de recorte y ángulos de toma\nClase 15: Compresión de planos\nClase 16: Tips para retratos\nClase 17: Flash de zapata, temperatura de la luz y modos de disparo\nClase 18: Velocidad de sincronización de flash, remotos y radios\nClase 19: Difusores y accesorios de flash\nClase 20: Filtros para lentes\nClase 21: Barrido, panning y zooming\nClase 22: Trípodes y monopies\nClase 23: Disparadores de cámara e intervalómetro\nClase 24: Campañas publicitarias\nClase 25: Segmentación de público\nClase 26: Edición de video. Formato y resolución\nClase 27: Lightroom\nClase 28: Biblioteca y metadatos\nClase 29: Paneles del módulo Revelar\nClase 30: Ajustes básicos\nClase 31: Quitar manchas y ojos rojos\nClase 32: Filtros degradado y puntual\nClase 33: Exportación y calidades\nClase 34: Premiere. Introducción\nClase 35: Sincronizar audio y video\nClase 36: Música, efectos y cortes\nClase 37: Exportar y renderizado\nClase 38: Photoshop. Introducción\nClase 39: Maquillaje digital\nClase 40: Cambio de color de ojo\nClase 41: Collage fotoproducto\nExamen final",
+          "Contame, qué te gustaría lograr con la fotografía? Es para trabajar en algo propio, para sumar a tu trabajo actual o más por gusto?"
+        ],
+        "call_offer": null
+      },
+      "messages_received": [
+        {
+          "id": "05e440ba-190f-47a6-83aa-ff4bc7384e61",
+          "text": "Pasame el temario de Fotografía Profesional."
+        }
+      ],
+      "generation_selected_offering_code": "fotografia_profesional",
+      "persisted_paid_anchor_for_replay": null,
+      "server_derived_paid_mention_offering_code": "fotografia_profesional",
+      "original_proposed_action": {
+        "type": "none"
+      },
+      "baseline_violations": [
+        {
+          "code": "COURSE_ROLE_UNDECLARED",
+          "subject": "course_mentions:paid_mismatch:fotografia_profesional"
+        }
+      ],
+      "replayed_violations": [],
+      "scope": "Course-focus and role boundary only; no purchase, effect, persistence or delivery performed. Other fact/style checks are not marked passed by this replay.",
+      "history_provenance": "Already session-bounded history captured in the original model context; timestamps and catalog aliases are not fabricated."
+    },
+    {
+      "case": "13_real_syllabus",
+      "turn": "syllabus",
+      "call_id": "call-0044",
+      "source_execution_sha": "f1f0f9c5d3676d324642238e43279c0c0fada2b7",
+      "original_model_content": "{\"schema_version\":1,\"move\":{\"schema_version\":1,\"move\":\"ask_course_information\",\"secondary_moves\":[],\"vetoes\":[],\"course_reference\":\"fotografia_profesional\",\"area_reference\":null,\"payment_plan\":null,\"confidence\":0.95},\"response\":{\"messages\":[\"Claro, te paso el temario de Fotografía Profesional. Son 41 clases online, arrancando desde cero con el proceso digital:\",\"Clase 1: Introducción, tipos de cámaras digitales y visores\\nClase 2: Leer una cámara réflex o mirrorless, valor de exposición y sensor\\nClase 3: Sensibilidad / ISO\\nClase 4: Obturador y velocidad de obturación\\nClase 5: Apertura de diafragma y profundidad de campo\\nClase 6: Distancia focal y tamaño del sensor\\nClase 7: Lentes y sus categorías\\nClase 8: Sistemas de enfoque y medición\\nClase 9: Balance de blancos\\nClase 10: Histograma, RAW, JPEG y TIFF\\nClase 11: Composición y secuencia de Fibonacci\\nClase 12: Otras formas de componer\\nClase 13: Retrato, equipo y lentes\\nClase 14: Planos de recorte y ángulos de toma\\nClase 15: Compresión de planos\\nClase 16: Tips para retratos\\nClase 17: Flash de zapata, temperatura de luz y modos de disparo\\nClase 18: Velocidad de sincronización de flash, remotos y radios\\nClase 19: Difusores y accesorios de flash\\nClase 20: Filtros para lentes\\nClase 21: Barrido, panning y zooming\\nClase 22: Trípodes y monopies\\nClase 23: Disparadores de cámara e intervalómetro\\nClase 24: Campañas publicitarias\\nClase 25: Segmentación de público\\nClase 26: Edición de video, formato y resolución\\nClase 27: Lightroom\\nClase 28: Biblioteca y metadatos\\nClase 29: Paneles del módulo Revelar\\nClase 30: Ajustes básicos\\nClase 31: Quitar manchas y ojos rojos\\nClase 32: Filtros degradado y puntual\\nClase 33: Exportación y calidades\\nClase 34: Premiere, introducción\\nClase 35: Sincronizar audio y video\\nClase 36: Música, efectos y cortes\\nClase 37: Exportar y renderizado\\nClase 38: Photoshop, introducción\\nClase 39: Maquillaje digital\\nClase 40: Cambio de color de ojo\\nClase 41: Collage fotoproducto\\nExamen final\\n¿Qué te gustaría lograr con la fotografía: mejorar tus propias imágenes, ofrecer un servicio o algo más?\"],\"call_offer\":null},\"proposed_action\":{\"type\":\"none\"},\"course_mentions\":[{\"offering_code\":\"fotografia_profesional\",\"role\":\"paid\"}],\"confirmed_phone\":null,\"profile_updates\":[],\"profile_requests\":[],\"repair_of\":{\"rejection_id\":\"45fef6b4-0e69-4d07-a417-718dba67e6f6\",\"attempt\":1},\"used_fact_ids\":[\"offering:fotografia_profesional:name:v1\",\"offering:fotografia_profesional:description:v1\",\"offering:fotografia_profesional:duration:v1\",\"offering:fotografia_profesional:modality:v1\",\"knowledge-source:7c728d8e-b21b-4001-8073-99322ae80a7a\",\"knowledge-source:6de68ecc-89d6-4733-8e06-d1f7ee2eb6e7\",\"knowledge-source:116d901b-b934-4a06-80b9-2fd37fa6fde5\",\"knowledge-source:730af5c4-a96c-4955-8f1c-b7e125d6aa90\",\"knowledge-source:d1da08f4-382f-4acf-9b78-ee5729cf61ba\"],\"used_memory_ids\":[],\"memory_candidates\":[]}",
+      "original_model_sha256": "bdd9f8fb7946637685c6fb9433e5bab6c6b8c047a61b3d25da7264b4c7010f0d",
+      "draft": {
+        "messages": [
+          "Claro, te paso el temario de Fotografía Profesional. Son 41 clases online, arrancando desde cero con el proceso digital:",
+          "Clase 1: Introducción, tipos de cámaras digitales y visores\nClase 2: Leer una cámara réflex o mirrorless, valor de exposición y sensor\nClase 3: Sensibilidad / ISO\nClase 4: Obturador y velocidad de obturación\nClase 5: Apertura de diafragma y profundidad de campo\nClase 6: Distancia focal y tamaño del sensor\nClase 7: Lentes y sus categorías\nClase 8: Sistemas de enfoque y medición\nClase 9: Balance de blancos\nClase 10: Histograma, RAW, JPEG y TIFF\nClase 11: Composición y secuencia de Fibonacci\nClase 12: Otras formas de componer\nClase 13: Retrato, equipo y lentes\nClase 14: Planos de recorte y ángulos de toma\nClase 15: Compresión de planos\nClase 16: Tips para retratos\nClase 17: Flash de zapata, temperatura de luz y modos de disparo\nClase 18: Velocidad de sincronización de flash, remotos y radios\nClase 19: Difusores y accesorios de flash\nClase 20: Filtros para lentes\nClase 21: Barrido, panning y zooming\nClase 22: Trípodes y monopies\nClase 23: Disparadores de cámara e intervalómetro\nClase 24: Campañas publicitarias\nClase 25: Segmentación de público\nClase 26: Edición de video, formato y resolución\nClase 27: Lightroom\nClase 28: Biblioteca y metadatos\nClase 29: Paneles del módulo Revelar\nClase 30: Ajustes básicos\nClase 31: Quitar manchas y ojos rojos\nClase 32: Filtros degradado y puntual\nClase 33: Exportación y calidades\nClase 34: Premiere, introducción\nClase 35: Sincronizar audio y video\nClase 36: Música, efectos y cortes\nClase 37: Exportar y renderizado\nClase 38: Photoshop, introducción\nClase 39: Maquillaje digital\nClase 40: Cambio de color de ojo\nClase 41: Collage fotoproducto\nExamen final\n¿Qué te gustaría lograr con la fotografía: mejorar tus propias imágenes, ofrecer un servicio o algo más?"
+        ],
+        "call_offer": null
+      },
+      "messages_received": [
+        {
+          "id": "05e440ba-190f-47a6-83aa-ff4bc7384e61",
+          "text": "Pasame el temario de Fotografía Profesional."
+        }
+      ],
+      "generation_selected_offering_code": "fotografia_profesional",
+      "persisted_paid_anchor_for_replay": null,
+      "server_derived_paid_mention_offering_code": "fotografia_profesional",
+      "original_proposed_action": {
+        "type": "none"
+      },
+      "baseline_violations": [
+        {
+          "code": "COURSE_ROLE_UNDECLARED",
+          "subject": "course_mentions:paid_mismatch:fotografia_profesional"
+        }
+      ],
+      "replayed_violations": [],
+      "scope": "Course-focus and role boundary only; no purchase, effect, persistence or delivery performed. Other fact/style checks are not marked passed by this replay.",
+      "history_provenance": "Already session-bounded history captured in the original model context; timestamps and catalog aliases are not fabricated."
+    },
+    {
+      "case": "13_real_syllabus",
+      "turn": "syllabus",
+      "call_id": "call-0045",
+      "source_execution_sha": "f1f0f9c5d3676d324642238e43279c0c0fada2b7",
+      "original_model_content": "{\"schema_version\":1,\"move\":{\"schema_version\":1,\"move\":\"ask_course_information\",\"secondary_moves\":[],\"vetoes\":[],\"course_reference\":\"fotografia_profesional\",\"area_reference\":null,\"payment_plan\":null,\"confidence\":0.95},\"response\":{\"messages\":[\"Claro, soy Emma, asesora de Studyx. Fotografía Profesional tiene 41 clases online, arrancando desde cero con el proceso digital: tipos de cámara, exposición, ISO, obturador, diafragma, distancia focal, lentes, enfoque, balance de blancos, histograma y composición.\",\"Después sigue retrato, flash y accesorios, filtros, trípodes y disparadores, campañas publicitarias y segmentación de público, y cierra con edición en Lightroom, Premiere y Photoshop, más el examen final. ¿Querés que te cuente cómo se cursa o para qué la querés usar?\"],\"call_offer\":null},\"proposed_action\":{\"type\":\"none\"},\"course_mentions\":[{\"offering_code\":\"fotografia_profesional\",\"role\":\"paid\"}],\"confirmed_phone\":null,\"profile_updates\":[],\"profile_requests\":[],\"repair_of\":{\"rejection_id\":\"42f0975c-ceb0-4493-af08-fa08a2c2583c\",\"attempt\":1},\"used_fact_ids\":[\"offering:fotografia_profesional:name:v1\",\"offering:fotografia_profesional:description:v1\",\"offering:fotografia_profesional:duration:v1\",\"offering:fotografia_profesional:modality:v1\",\"knowledge-source:7c728d8e-b21b-4001-8073-99322ae80a7a\",\"knowledge-source:6de68ecc-89d6-4733-8e06-d1f7ee2eb6e7\",\"knowledge-source:116d901b-b934-4a06-80b9-2fd37fa6fde5\",\"knowledge-source:730af5c4-a96c-4955-8f1c-b7e125d6aa90\",\"knowledge-source:d1da08f4-382f-4acf-9b78-ee5729cf61ba\"],\"used_memory_ids\":[],\"memory_candidates\":[]}",
+      "original_model_sha256": "71b29ba897c99f881b0b124f719931ff2797168ccf9da9152c8d1d64389faff8",
+      "draft": {
+        "messages": [
+          "Claro, soy Emma, asesora de Studyx. Fotografía Profesional tiene 41 clases online, arrancando desde cero con el proceso digital: tipos de cámara, exposición, ISO, obturador, diafragma, distancia focal, lentes, enfoque, balance de blancos, histograma y composición.",
+          "Después sigue retrato, flash y accesorios, filtros, trípodes y disparadores, campañas publicitarias y segmentación de público, y cierra con edición en Lightroom, Premiere y Photoshop, más el examen final. ¿Querés que te cuente cómo se cursa o para qué la querés usar?"
+        ],
+        "call_offer": null
+      },
+      "messages_received": [
+        {
+          "id": "05e440ba-190f-47a6-83aa-ff4bc7384e61",
+          "text": "Pasame el temario de Fotografía Profesional."
+        }
+      ],
+      "generation_selected_offering_code": "fotografia_profesional",
+      "persisted_paid_anchor_for_replay": null,
+      "server_derived_paid_mention_offering_code": "fotografia_profesional",
+      "original_proposed_action": {
+        "type": "none"
+      },
+      "baseline_violations": [
+        {
+          "code": "COURSE_ROLE_UNDECLARED",
+          "subject": "course_mentions:paid_mismatch:fotografia_profesional"
+        }
+      ],
+      "replayed_violations": [],
+      "scope": "Course-focus and role boundary only; no purchase, effect, persistence or delivery performed. Other fact/style checks are not marked passed by this replay.",
+      "history_provenance": "Already session-bounded history captured in the original model context; timestamps and catalog aliases are not fabricated."
+    },
+    {
+      "case": "13_real_syllabus",
+      "turn": "duration_followup",
+      "call_id": "call-0046",
+      "source_execution_sha": "f1f0f9c5d3676d324642238e43279c0c0fada2b7",
+      "original_model_content": "{\"schema_version\":1,\"move\":{\"schema_version\":1,\"move\":\"ask_course_information\",\"secondary_moves\":[],\"vetoes\":[],\"course_reference\":\"fotografia_profesional\",\"area_reference\":null,\"payment_plan\":null,\"confidence\":0.95},\"response\":{\"messages\":[\"Fotografía Profesional tiene 41 clases y es online, así que lo podés hacer a tu ritmo. Arranca desde cero con el proceso fotográfico digital.\"],\"call_offer\":null},\"proposed_action\":{\"type\":\"none\"},\"course_mentions\":[{\"offering_code\":\"fotografia_profesional\",\"role\":\"paid\"}],\"confirmed_phone\":null,\"profile_updates\":[],\"profile_requests\":[],\"repair_of\":null,\"used_fact_ids\":[\"offering:fotografia_profesional:name:v1\",\"offering:fotografia_profesional:duration:v1\",\"offering:fotografia_profesional:modality:v1\",\"offering:fotografia_profesional:description:v1\"],\"used_memory_ids\":[],\"memory_candidates\":[]}",
+      "original_model_sha256": "e3596a544d836d40c96aeeac733c094c5887f232c61eef264821b34596656c81",
+      "draft": {
+        "messages": [
+          "Fotografía Profesional tiene 41 clases y es online, así que lo podés hacer a tu ritmo. Arranca desde cero con el proceso fotográfico digital."
+        ],
+        "call_offer": null
+      },
+      "messages_received": [
+        {
+          "id": "2098ff0c-ebd6-4649-9197-073d42592f54",
+          "text": "Y cuánto dura ese curso?"
+        }
+      ],
+      "generation_selected_offering_code": "fotografia_profesional",
+      "persisted_paid_anchor_for_replay": null,
+      "server_derived_paid_mention_offering_code": "fotografia_profesional",
+      "original_proposed_action": {
+        "type": "none"
+      },
+      "baseline_violations": [
+        {
+          "code": "COURSE_ROLE_UNDECLARED",
+          "subject": "course_mentions:paid_mismatch:fotografia_profesional"
+        }
+      ],
+      "replayed_violations": [],
+      "scope": "Course-focus and role boundary only; no purchase, effect, persistence or delivery performed. Other fact/style checks are not marked passed by this replay.",
+      "history_provenance": "Already session-bounded history captured in the original model context; timestamps and catalog aliases are not fabricated."
+    },
+    {
+      "case": "13_real_syllabus",
+      "turn": "duration_followup",
+      "call_id": "call-0047",
+      "source_execution_sha": "f1f0f9c5d3676d324642238e43279c0c0fada2b7",
+      "original_model_content": "{\"schema_version\":1,\"move\":{\"schema_version\":1,\"move\":\"ask_course_information\",\"secondary_moves\":[],\"vetoes\":[],\"course_reference\":\"fotografia_profesional\",\"area_reference\":null,\"payment_plan\":null,\"confidence\":0.95},\"response\":{\"messages\":[\"Fotografía Profesional tiene 41 clases, y la modalidad es online. Arranca desde cero con el proceso fotográfico digital, así que no necesitás experiencia previa.\"],\"call_offer\":null},\"proposed_action\":{\"type\":\"none\"},\"course_mentions\":[{\"offering_code\":\"fotografia_profesional\",\"role\":\"paid\"}],\"confirmed_phone\":null,\"profile_updates\":[],\"profile_requests\":[],\"repair_of\":{\"rejection_id\":\"fd1e70fd-0664-4622-ae10-d2ea36cfb441\",\"attempt\":1},\"used_fact_ids\":[\"offering:fotografia_profesional:name:v1\",\"offering:fotografia_profesional:duration:v1\",\"offering:fotografia_profesional:modality:v1\",\"offering:fotografia_profesional:description:v1\"],\"used_memory_ids\":[],\"memory_candidates\":[]}",
+      "original_model_sha256": "155f5e16d49d78deeda1c5fcc92a6efacca41cd3e066649fea935e4b9dcf8634",
+      "draft": {
+        "messages": [
+          "Fotografía Profesional tiene 41 clases, y la modalidad es online. Arranca desde cero con el proceso fotográfico digital, así que no necesitás experiencia previa."
+        ],
+        "call_offer": null
+      },
+      "messages_received": [
+        {
+          "id": "2098ff0c-ebd6-4649-9197-073d42592f54",
+          "text": "Y cuánto dura ese curso?"
+        }
+      ],
+      "generation_selected_offering_code": "fotografia_profesional",
+      "persisted_paid_anchor_for_replay": null,
+      "server_derived_paid_mention_offering_code": "fotografia_profesional",
+      "original_proposed_action": {
+        "type": "none"
+      },
+      "baseline_violations": [
+        {
+          "code": "COURSE_ROLE_UNDECLARED",
+          "subject": "course_mentions:paid_mismatch:fotografia_profesional"
+        }
+      ],
+      "replayed_violations": [],
+      "scope": "Course-focus and role boundary only; no purchase, effect, persistence or delivery performed. Other fact/style checks are not marked passed by this replay.",
+      "history_provenance": "Already session-bounded history captured in the original model context; timestamps and catalog aliases are not fabricated."
+    },
+    {
+      "case": "13_real_syllabus",
+      "turn": "duration_followup",
+      "call_id": "call-0048",
+      "source_execution_sha": "f1f0f9c5d3676d324642238e43279c0c0fada2b7",
+      "original_model_content": "{\"schema_version\":1,\"move\":{\"schema_version\":1,\"move\":\"ask_course_information\",\"secondary_moves\":[],\"vetoes\":[],\"course_reference\":\"fotografia_profesional\",\"area_reference\":null,\"payment_plan\":null,\"confidence\":0.95},\"response\":{\"messages\":[\"Fotografía Profesional son 41 clases, todo online, desde cero con el proceso fotográfico digital.\",\"Contame para qué querés aprender fotografía y te digo cómo encaja en lo que buscás.\"],\"call_offer\":null},\"proposed_action\":{\"type\":\"none\"},\"course_mentions\":[{\"offering_code\":\"fotografia_profesional\",\"role\":\"paid\"}],\"confirmed_phone\":null,\"profile_updates\":[],\"profile_requests\":[],\"repair_of\":{\"rejection_id\":\"5cdcfda1-3272-47ed-8653-f46e1f6d5e30\",\"attempt\":1},\"used_fact_ids\":[\"offering:fotografia_profesional:name:v1\",\"offering:fotografia_profesional:duration:v1\",\"offering:fotografia_profesional:modality:v1\",\"offering:fotografia_profesional:description:v1\"],\"used_memory_ids\":[],\"memory_candidates\":[]}",
+      "original_model_sha256": "88002a3e0dc8f2fa894df11414af070331cb7ad0e8dc8d7875796df548268a54",
+      "draft": {
+        "messages": [
+          "Fotografía Profesional son 41 clases, todo online, desde cero con el proceso fotográfico digital.",
+          "Contame para qué querés aprender fotografía y te digo cómo encaja en lo que buscás."
+        ],
+        "call_offer": null
+      },
+      "messages_received": [
+        {
+          "id": "2098ff0c-ebd6-4649-9197-073d42592f54",
+          "text": "Y cuánto dura ese curso?"
+        }
+      ],
+      "generation_selected_offering_code": "fotografia_profesional",
+      "persisted_paid_anchor_for_replay": null,
+      "server_derived_paid_mention_offering_code": "fotografia_profesional",
+      "original_proposed_action": {
+        "type": "none"
+      },
+      "baseline_violations": [
+        {
+          "code": "COURSE_ROLE_UNDECLARED",
+          "subject": "course_mentions:paid_mismatch:fotografia_profesional"
+        }
+      ],
+      "replayed_violations": [],
+      "scope": "Course-focus and role boundary only; no purchase, effect, persistence or delivery performed. Other fact/style checks are not marked passed by this replay.",
+      "history_provenance": "Already session-bounded history captured in the original model context; timestamps and catalog aliases are not fabricated."
+    }
+  ],
+  "controlled_negatives": [
+    {
+      "case": "05_real_budget_limit",
+      "turn": "interest",
+      "kind": "controlled_wrong_paid",
+      "violations": [
+        {
+          "code": "COURSE_ROLE_UNDECLARED",
+          "subject": "course_mentions:paid_mismatch:excel_integral"
+        }
+      ]
+    },
+    {
+      "case": "05_real_budget_limit",
+      "turn": "interest",
+      "kind": "controlled_bonus_without_effect",
+      "violations": [
+        {
+          "code": "FACT_VALUE_MISMATCH",
+          "subject": "forbidden_promise"
+        }
+      ]
+    },
+    {
+      "case": "05_real_budget_limit",
+      "turn": "budget",
+      "kind": "controlled_wrong_paid",
+      "violations": [
+        {
+          "code": "COURSE_ROLE_UNDECLARED",
+          "subject": "course_mentions:paid_mismatch:excel_integral"
+        }
+      ]
+    },
+    {
+      "case": "05_real_budget_limit",
+      "turn": "budget",
+      "kind": "controlled_bonus_without_effect",
+      "violations": [
+        {
+          "code": "FACT_VALUE_MISMATCH",
+          "subject": "forbidden_promise"
+        }
+      ]
+    },
+    {
+      "case": "13_real_syllabus",
+      "turn": "syllabus",
+      "kind": "controlled_wrong_paid",
+      "violations": [
+        {
+          "code": "COURSE_ROLE_UNDECLARED",
+          "subject": "course_mentions:paid_mismatch:excel_integral"
+        }
+      ]
+    },
+    {
+      "case": "13_real_syllabus",
+      "turn": "syllabus",
+      "kind": "controlled_bonus_without_effect",
+      "violations": [
+        {
+          "code": "FACT_VALUE_MISMATCH",
+          "subject": "forbidden_promise"
+        }
+      ]
+    },
+    {
+      "case": "13_real_syllabus",
+      "turn": "duration_followup",
+      "kind": "controlled_wrong_paid",
+      "violations": [
+        {
+          "code": "COURSE_ROLE_UNDECLARED",
+          "subject": "course_mentions:paid_mismatch:excel_integral"
+        }
+      ]
+    },
+    {
+      "case": "13_real_syllabus",
+      "turn": "duration_followup",
+      "kind": "controlled_bonus_without_effect",
+      "violations": [
+        {
+          "code": "FACT_VALUE_MISMATCH",
+          "subject": "forbidden_promise"
+        }
+      ]
+    }
+  ]
+}

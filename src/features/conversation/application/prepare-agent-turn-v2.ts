@@ -5,7 +5,8 @@ import {
   materializeCanonicalCatalogFacts,
   singleCanonicalOfferingReferenceV1,
 } from '@/features/orchestration/domain/canonical-offering-egress';
-import type { OrchestrationStore } from '@/features/orchestration/ports/orchestration-store';
+import type { OrchestrationStore, RecentTurn } from '@/features/orchestration/ports/orchestration-store';
+import { activeSessionRecentTurnsV1, deriveConversationCourseFocusV1 } from '@/features/orchestration/domain/course-focus';
 import { classifyBatchSalesSignal } from '@/features/orchestration/domain/sales-signal';
 import { loadConversationSessionConfig } from '@/lib/config';
 import type { AgentAProposedActionV1, AgentATurnProposalV1 } from '../domain/agent-a-brain';
@@ -198,6 +199,11 @@ export async function prepareAgentTurnV2(input: {
   };
   readonly workspace_slug: string;
   readonly current_customer_messages?: readonly string[];
+  /** Internal server snapshot, never accepted from the model/wire proposal. */
+  readonly course_focus_context?: {
+    readonly recent_turns: readonly RecentTurn[];
+    readonly batch_started_at: string;
+  };
   readonly proposal: AgentATurnProposalV1;
   /** Retain semantic state while a model continuation cannot execute effects. */
   readonly conversation_only?: boolean;
@@ -318,6 +324,20 @@ export async function prepareAgentTurnV2(input: {
       aliases: offering.aliases,
     }),
   );
+  const mentionFocus = deriveConversationCourseFocusV1({
+    currentMessageTexts:currentCustomerMessages,
+    recentTurns:activeSessionRecentTurnsV1(input.course_focus_context?.recent_turns ?? [],
+      [{created_at:input.course_focus_context?.batch_started_at ?? new Date(nowMs).toISOString()}],
+      loadConversationSessionConfig().sessionIdleMs),
+    catalogIndex:input.catalog_index ?? (input.business_context ? {
+      as_of:input.business_context.as_of,
+      offerings_total:offerings.length+input.business_context.offerings_truncated,
+      offerings:input.business_context.offerings.map(offering=>({
+        code:offering.code,display_name:offering.display_name,aliases:offering.aliases,academy:offering.academy,
+      })),
+      injection_suspected_count:input.business_context.injection_suspected_count,
+    } : null),
+  });
   const noActiveCall = callFacts?.active_call == null;
   const currentCallAuthorization = salesSignal.type === 'direct_call_request';
   const authorize = (proposal: AgentATurnProposalV1, effectsAllowed = input.conversation_only !== true,
@@ -338,6 +358,7 @@ export async function prepareAgentTurnV2(input: {
       && (state.selected_payment_plan === null
         || paymentVerification.plan_code === state.selected_payment_plan),
     current_customer_messages: input.current_customer_messages,
+    paid_mention_offering_code:mentionFocus.offering_code,
     course_bonus: input.course_bonus_capability,
     semantic_rejections: semanticRejections,
     action_rejections: 'structured',

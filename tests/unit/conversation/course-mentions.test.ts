@@ -5,6 +5,20 @@ import { validateCourseMentionsV1 } from '@/shared/conversation/course-mentions'
 const catalog=[{code:'paid',display_name:'Fotografía Profesional'},{code:'short',display_name:'Community Manager'},{code:'long',display_name:'Community Manager Avanzado'}];
 const base={messages:['Fotografía Profesional'],catalog,paid_offering_code:'paid',delivered_bonus_offering_codes:[]};
 describe('canonical course roles (authority prompt:123,129; bonus spec:59-71)',()=>{
+  it('uses a current canonical conversational focus only for paid mentions when durable purchase is absent',()=>{
+    expect(validateCourseMentionsV1({...base,paid_offering_code:null,paid_mention_offering_code:'short',
+      messages:['Community Manager'],course_mentions:[{offering_code:'short',role:'paid'}]}).violations).toEqual([]);
+  });
+  it('never lets conversational paid identity replace durable identity, create bonus authority or authorize inactive codes',()=>{
+    const contextual={...base,paid_offering_code:null,paid_mention_offering_code:'paid'};
+    expect(validateCourseMentionsV1({...base,paid_mention_offering_code:'short',messages:['Community Manager'],
+      course_mentions:[{offering_code:'short',role:'paid'}]}).violations).toMatchObject([{subject:'course_mentions:paid_mismatch:short'}]);
+    expect(validateCourseMentionsV1({...contextual,messages:['Community Manager'],course_mentions:[{offering_code:'short',role:'bonus'}]}).violations)
+      .toMatchObject([{subject:'forbidden_promise'}]);
+    expect(validateCourseMentionsV1({...contextual,messages:['Community Manager'],course_mentions:[{offering_code:'short',role:'bonus'}],
+      authorized_bonus_action:{paid_offering_code:'paid',bonus_offering_code:'short'}}).violations).toMatchObject([{subject:'forbidden_promise'}]);
+    expect(validateCourseMentionsV1({...contextual,catalog:[],course_mentions:[{offering_code:'paid',role:'paid'}]}).violations.length).toBeGreaterThan(0);
+  });
   it('allows legacy primary only and never infers a role for another exact named course',()=>{
     expect(validateCourseMentionsV1(base).violations).toEqual([]);
     expect(validateCourseMentionsV1({...base,messages:['Community Manager']})).toMatchObject({violations:[{code:'COURSE_ROLE_UNDECLARED'}]});

@@ -33,6 +33,71 @@ function observation(overrides: Partial<GoldenTurnObservationV1> = {}): GoldenTu
   };
 }
 
+describe('judge failure kind follows the referenced requirement', () => {
+  const evidenceRoot='../../docs/reports/evidence/2026-11-01-formal-acceptance-v149/raw/';
+  const stem='acceptance-f1f0f9c-flash-full16-20261101';
+  const provider=JSON.parse(readFileSync(new URL(`${evidenceRoot}${stem}-provider.json`,import.meta.url),'utf8')) as {
+    report:{records:Array<{call_id:string;response_content:string}>};
+  };
+  const recorded=JSON.parse(readFileSync(new URL(`${evidenceRoot}${stem}-observations.partial.json`,import.meta.url),'utf8')) as {
+    cases:Array<{scenario:{id:string};observations:GoldenTurnObservationV1[]}>;
+  };
+  const base=GOLDEN_CASES.find(scenario=>scenario.id==='13_real_syllabus')!;
+  const scenario={...base,turns:base.turns.filter(turn=>turn.id==='duration_followup')};
+  const current=recorded.cases.find(item=>item.scenario.id===base.id)!.observations[1]!;
+  const calls=['call-0099','call-0100','call-0101','call-0102'];
+  const outputs=calls.map(call_id=>({call_id,raw:provider.report.records.find(call=>call.call_id===call_id)!.response_content}));
+
+  const evaluate=async(raw:string,actual=current)=>{
+    const mock=vi.spyOn(globalThis,'fetch').mockImplementation(async()=>new Response(JSON.stringify({output_text:raw})));
+    try{
+      const result=await judgeCaseSemantically({apiKey:'offline-recorded-only',model:'test',scenario,observations:[actual]});
+      return {verdict:result[0],requestCount:mock.mock.calls.length};
+    }finally{mock.mockRestore();}
+  };
+
+  it.each(outputs)('resolves the recorded must_not/code mismatch from $call_id without retry or indeterminate',async({raw})=>{
+    const result=await evaluate(raw);
+    expect(result.verdict).toMatchObject({turn_id:'duration_followup',approved:false,evaluation_error:null,
+      failures:[{code:'SEMANTIC_MUST_FAILED',requirement_index:0},{code:'SEMANTIC_MUST_NOT_FAILED',requirement_index:0}]});
+    expect(result.requestCount).toBe(1);
+  });
+
+  const decoded=()=>JSON.parse(outputs[0]!.raw) as {verdict:{turn_id:string;approved:boolean;failures:Array<{
+    code:string;requirement_id:string;authority_line_index:number;evidence_source:string;observed_evidence:string;explanation:string;
+  }>}};
+
+  it('uses must semantics when a must ID is paired with the opposite code and legitimately absent evidence',async()=>{
+    const envelope=decoded();
+    envelope.verdict.failures=[{...envelope.verdict.failures[0]!,code:'SEMANTIC_MUST_NOT_FAILED',observed_evidence:''}];
+    const result=await evaluate(JSON.stringify(envelope));
+    expect(result.verdict).toMatchObject({approved:false,evaluation_error:null,
+      failures:[{code:'SEMANTIC_MUST_FAILED',requirement_index:0}]});
+    expect(result.requestCount).toBe(1);
+  });
+
+  it.each(['must_not:999','must_not:00','unknown:0'])('keeps an unknown or noncanonical requirement ID invalid: %s',async requirement_id=>{
+    const envelope=decoded();
+    envelope.verdict.failures=[{...envelope.verdict.failures[1]!,requirement_id}];
+    const result=await evaluate(JSON.stringify(envelope));
+    expect(result.verdict).toMatchObject({approved:null,evaluation_error:'GOLDEN_JUDGE_FAILURE_REFERENCE_INVALID',failures:[]});
+  });
+
+  it('still requires positive evidence for must_not after normalizing a misleading must code',async()=>{
+    const envelope=decoded();
+    envelope.verdict.failures=[{...envelope.verdict.failures[1]!,observed_evidence:''}];
+    const result=await evaluate(JSON.stringify(envelope));
+    expect(result.verdict).toMatchObject({approved:null,evaluation_error:'GOLDEN_JUDGE_FAILURE_EVIDENCE_INVALID',failures:[]});
+  });
+
+  it('still rejects a fabricated quotation after normalizing the failure kind',async()=>{
+    const envelope=decoded();
+    envelope.verdict.failures=[{...envelope.verdict.failures[1]!,observed_evidence:'Este texto nunca fue entregado.'}];
+    const result=await evaluate(JSON.stringify(envelope));
+    expect(result.verdict).toMatchObject({approved:null,evaluation_error:'GOLDEN_JUDGE_FAILURE_EVIDENCE_INVALID',failures:[]});
+  });
+});
+
 describe('golden judge recorded JSON boundary', () => {
   const base = GOLDEN_CASES[5]!;
   const scenario = { ...base, evaluationMode:undefined, turns: base.turns.filter((turn) => ['bonus_1', 'bonus_2'].includes(turn.id)) };

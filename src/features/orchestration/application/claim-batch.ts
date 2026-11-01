@@ -1,3 +1,4 @@
+import { resolveCatalogFromSnapshot, latestAgentTurnMessages, deriveCourseSelection, activeSessionRecentTurns } from '../domain/course-focus';
 import type { ContactProfileContextV1 } from '@/shared/conversation/contact-profile-contract';
 import type { RecordedNegotiationFactsV1 } from '@/shared/conversation/negotiation-facts';
 import { evaluateTurnPolicy, type TurnPolicy } from '../domain/turn-policy';
@@ -19,7 +20,6 @@ import {
   catalogDetailRequestOmitsSubject,
   isCatalogDetailRequest,
   isCatalogRequestNeutral,
-  resolveCatalogRequest,
   type CatalogResolution,
 } from '../domain/catalog-resolution';
 import { capRetrievedItems } from '../domain/retrieved-context';
@@ -512,39 +512,6 @@ function buildSalesContext(input: {
   };
 }
 
-function resolveCatalogFromSnapshot(
-  messageTexts: readonly string[],
-  catalogIndex: CatalogIndexView | null,
-  contextualMessages: readonly string[] = [],
-): CatalogResolution {
-  return resolveCatalogRequest(
-    messageTexts,
-    catalogIndex === null
-      ? null
-      : {
-          offerings: catalogIndex.offerings,
-          offerings_truncated: Math.max(0, catalogIndex.offerings_total - catalogIndex.offerings.length),
-        },
-    { contextualMessages },
-  );
-}
-
-function latestAgentTurnMessages(recentTurns: readonly RecentTurn[]): string[] {
-  const latest = recentTurns.findLast((turn) => turn.direction === 'outbound');
-  return latest ? [latest.content] : [];
-}
-
-function previousAgentTurnMessages(
-  recentTurns: readonly RecentTurn[],
-  beforeIndex: number,
-): string[] {
-  for (let index = beforeIndex - 1; index >= 0; index -= 1) {
-    const turn = recentTurns[index]!;
-    if (turn.direction === 'outbound') return [turn.content];
-  }
-  return [];
-}
-
 /** Transitional mirror for old in-process doubles/older producer revisions. */
 function indexFromBusinessContext(context: BusinessContextView): CatalogIndexView {
   return {
@@ -558,81 +525,6 @@ function indexFromBusinessContext(context: BusinessContextView): CatalogIndexVie
     })),
     injection_suspected_count: context.injection_suspected_count,
   };
-}
-
-/**
- * Course state is derived, never guessed or persisted in a second state
- * machine. The current batch wins. Only when it contains no catalog intent do
- * we walk recent inbound turns backwards; an ambiguous, missing or unavailable
- * newer request deliberately clears an older course instead of reviving it.
- */
-function deriveCourseSelection(input: {
-  current: CatalogResolution;
-  currentMessageTexts: readonly string[];
-  recentTurns: readonly RecentTurn[];
-  catalogIndex: CatalogIndexView | null;
-}): Pick<ClaimedSalesContext, 'course_of_interest' | 'offering_code'> {
-  if (input.current.kind === 'exact') {
-    return {
-      course_of_interest: input.current.displayName,
-      offering_code: input.current.offeringCode,
-    };
-  }
-  if (
-    input.current.kind !== 'no_catalog_intent'
-    || !isCatalogRequestNeutral(input.currentMessageTexts)
-    || input.catalogIndex === null
-  ) {
-    return { course_of_interest: null, offering_code: null };
-  }
-
-  for (let index = input.recentTurns.length - 1; index >= 0; index -= 1) {
-    const turn = input.recentTurns[index]!;
-    if (turn.direction !== 'inbound') continue;
-    const historical = resolveCatalogFromSnapshot(
-      [turn.content],
-      input.catalogIndex,
-      previousAgentTurnMessages(input.recentTurns, index),
-    );
-    if (historical.kind === 'no_catalog_intent') {
-      if (isCatalogRequestNeutral(turn.content)) continue;
-      return { course_of_interest: null, offering_code: null };
-    }
-    if (historical.kind === 'exact') {
-      return {
-        course_of_interest: historical.displayName,
-        offering_code: historical.offeringCode,
-      };
-    }
-    return { course_of_interest: null, offering_code: null };
-  }
-  return { course_of_interest: null, offering_code: null };
-}
-
-/**
- * Recent turns are short-term dialogue, not durable memory. Keep only the
- * contiguous suffix that belongs to the current session; summaries, selected
- * memories and commercial state remain available through their own fields.
- */
-function activeSessionRecentTurns(
-  recentTurns: readonly RecentTurn[],
-  batchMessages: readonly BatchMessage[],
-  sessionIdleMs: number,
-): RecentTurn[] {
-  const batchStartMs = Math.min(...batchMessages.map((message) => Date.parse(message.created_at)));
-  if (!Number.isFinite(batchStartMs)) return [...recentTurns];
-
-  const active: RecentTurn[] = [];
-  let nextMessageMs = batchStartMs;
-  for (let index = recentTurns.length - 1; index >= 0; index -= 1) {
-    const turn = recentTurns[index]!;
-    const turnMs = Date.parse(turn.created_at);
-    if (!Number.isFinite(turnMs) || turnMs > nextMessageMs) continue;
-    if (nextMessageMs - turnMs > sessionIdleMs) break;
-    active.unshift(turn);
-    nextMessageMs = turnMs;
-  }
-  return active;
 }
 
 export async function claimBatch(

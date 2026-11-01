@@ -657,7 +657,7 @@ async function judgeTurnSemantically(input: {
     turn_id: t.turnId, ladder: t.ladder, action: t.action, promotion: t.promotion,
   }));
   const payload = {
-    evaluator_version: 'studyx-golden-semantic-delivered-v3',
+    evaluator_version: 'studyx-golden-semantic-delivered-v4',
     turn_id: input.turn.id,
     authority_scope: { bonus_tone: {
       authority_line: 129, applies_to: 'bonus_or_personal_exception', ordinary_link_delivery_is_bonus: false,
@@ -742,12 +742,18 @@ async function judgeTurnSemantically(input: {
       }
       const failures: SemanticTurnVerdictV1['failures'][number][] = [];
       for (const failure of verdict.failures as RawSemanticTurnVerdictV1['failures']) {
-        const expectedPrefix = failure.code === 'SEMANTIC_MUST_FAILED' ? 'must:' : 'must_not:';
-        const requirementIndex = Number(failure.requirement_id?.slice(expectedPrefix.length));
-        const requirements = failure.code === 'SEMANTIC_MUST_FAILED' ? input.turn.must : input.turn.mustNot;
-        if (typeof failure.requirement_id !== 'string'
-          || !failure.requirement_id.startsWith(expectedPrefix)
-          || !Number.isInteger(requirementIndex)
+        // The request owns a requirement's kind. A redundant model code cannot
+        // turn a known must_not ID into must or invalidate a grounded verdict.
+        const referencedRequirement = payload.requirements.find(item => item.id === failure.requirement_id);
+        if (!referencedRequirement
+          || !['SEMANTIC_MUST_FAILED', 'SEMANTIC_MUST_NOT_FAILED'].includes(failure.code)) {
+          throw new Error('GOLDEN_JUDGE_FAILURE_REFERENCE_INVALID');
+        }
+        const normalizedFailure = { ...failure, code: referencedRequirement.kind === 'must'
+          ? 'SEMANTIC_MUST_FAILED' as const : 'SEMANTIC_MUST_NOT_FAILED' as const };
+        const requirementIndex = Number(referencedRequirement.id.slice(referencedRequirement.kind.length + 1));
+        const requirements = referencedRequirement.kind === 'must' ? input.turn.must : input.turn.mustNot;
+        if (!Number.isInteger(requirementIndex)
           || requirementIndex < 0 || requirementIndex >= requirements.length
           || !Number.isInteger(failure.authority_line_index)
           || failure.authority_line_index < 0 || failure.authority_line_index >= citations.length) {
@@ -757,17 +763,17 @@ async function judgeTurnSemantically(input: {
         if (typeof evidence !== 'string'
           || typeof failure.observed_evidence !== 'string'
           || (failure.observed_evidence.length > 0 && !evidence.includes(failure.observed_evidence))
-          || (failure.code === 'SEMANTIC_MUST_NOT_FAILED'
+          || (normalizedFailure.code === 'SEMANTIC_MUST_NOT_FAILED'
             && !failure.observed_evidence)) {
           throw new Error('GOLDEN_JUDGE_FAILURE_EVIDENCE_INVALID');
         }
         const requirement = requirements[requirementIndex]!;
         if (semanticFailureContradictedByObjectiveEvidence({
-          failure, requirement, turn: input.turn, observation: input.observation,
+          failure: normalizedFailure, requirement, turn: input.turn, observation: input.observation,
           previousObservation: input.previousObservation,
         })) continue;
         failures.push({
-          code: failure.code,
+          code: normalizedFailure.code,
           requirement_index: requirementIndex,
           authority_reference: citations[failure.authority_line_index]!,
           explanation: failure.explanation,

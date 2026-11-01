@@ -135,6 +135,7 @@ function authorize(input: {
   actionRejections?: 'blocking' | 'structured';
   paymentVerified?: boolean;
   courseBonus?: Parameters<typeof authorizeAgentTurnV2>[0]['course_bonus'];
+  paidMention?: string | null;
 }) {
   return authorizeAgentTurnV2({
     proposal: input.proposal,
@@ -147,6 +148,7 @@ function authorize(input: {
     action_rejections: input.actionRejections,
     payment_verified: input.paymentVerified,
     course_bonus: input.courseBonus,
+    paid_mention_offering_code:input.paidMention,
     call_policy: {
       may_offer_call: input.mayOfferCall ?? true,
       may_request_call_now: input.mayRequestCall ?? true,
@@ -155,6 +157,33 @@ function authorize(input: {
 }
 
 describe('plannerless Agent A authority', () => {
+  it('uses conversational paid identity for prose only, keeping purchase state and effects unchanged',()=>{
+    const result=authorize({state:state({selected_offering_code:null}),paidMention:'redes_informaticas',
+      proposal:proposal({response:{messages:['Redes Informáticas puede servirte.']},
+        course_mentions:[{offering_code:'redes_informaticas',role:'paid'}]})});
+    expect(result).toMatchObject({ok:true,action:{type:'none'},transition:{selected_offering_code:null,selected_payment_plan:null}});
+  });
+  it('does not let conversational focus replace a fresher durable paid selection',()=>{
+    const result=authorize({state:state({selected_offering_code:'excel_integral'}),paidMention:'redes_informaticas',
+      proposal:proposal({response:{messages:['Redes Informáticas puede servirte.']},
+        course_mentions:[{offering_code:'redes_informaticas',role:'paid'}]})});
+    expect(result).toMatchObject({ok:false,reasons:['COURSE_ROLE_UNDECLARED'],rejection_subjects:['course_mentions:paid_mismatch:redes_informaticas']});
+  });
+  it.each(['offered','cancelled'] as const)('never turns contextual paid identity into bonus/package authority: %s',packageStatus=>{
+    const result=authorize({state:state({selected_offering_code:null}),paidMention:'redes_informaticas',
+      courseBonus:{status:'offer_available',package_status:packageStatus,interest_offering_code:'redes_informaticas',
+        may_request_review:false,may_schedule_checkin:false,may_accept_offer:false,may_send_promoted_payment:false,
+        promotion_code:null,bonus_offerings:[{code:'excel_integral',display_name:'Excel Integral',position:1}],delivered_bonus_offerings:[]},
+      proposal:proposal({response:{messages:['Redes Informáticas incluye Excel Integral.']},
+        course_mentions:[{offering_code:'redes_informaticas',role:'paid'},{offering_code:'excel_integral',role:'bonus'}]})});
+    expect(result).toMatchObject({ok:false,reasons:['COMMERCIAL_TRUTH_VIOLATION'],rejection_subjects:['forbidden_promise']});
+  });
+  it('gives a validated course change precedence over the earlier conversational focus',()=>{
+    const result=authorize({state:state({selected_offering_code:'redes_informaticas'}),paidMention:'redes_informaticas',
+      proposal:proposal({move:{schema_version:1,move:'select_course',course_reference:'excel_integral',secondary_moves:[],vetoes:[],confidence:1},
+        response:{messages:['Excel Integral puede servirte.']},course_mentions:[{offering_code:'excel_integral',role:'paid'}]})});
+    expect(result).toMatchObject({ok:true,transition:{selected_offering_code:'excel_integral'}});
+  });
   it('uses the paid identity of a validated bonus effect without inventing a purchase selection',()=>{
     const result=authorize({state:state(),courseBonus:{enabled:true,max_bonus_courses:3,may_offer_bonus:true,status:'checkin_available',
       may_schedule_checkin:false,may_request_review:false,may_accept_offer:false,may_send_promoted_payment:false,promotion_code:null,
