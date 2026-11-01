@@ -10,6 +10,7 @@ import { recordDeliveryReport } from '@/lib/services/decision.service';
 import Stripe from 'stripe';
 import { processStripeWebhook } from '@/features/payments/application/process-stripe-webhook';
 import { runEnrollmentWorker } from '@/features/fulfillment/central-carga/worker';
+import { postSaleAccessTestConfig } from '../helpers/post-sale-config';
 import { claimNotification, deliverNotification, dispatchNotifications } from '@/features/fulfillment/post-sale/service';
 import { loadLatestPaymentVerificationV1 } from '@/features/payments/application/read-payment-verification';
 import { contactFixtureUpdatesV1 } from './contact-profile-fixture';
@@ -287,7 +288,7 @@ run.each(['complete','partial'] as const)('carries interest-only discovery, 1→
     const [notice]=await db!`SELECT id,status FROM post_sale_notifications WHERE payment_id=${payment.id} AND kind=${kind}`;
     expect(notice).toMatchObject({status:'pending'});
     const dispatchedEvents:unknown[]=[];
-    const deps={db:db!,config:{enabled:true,environment:'test' as const,paidAfter:new Date('2026-01-01')},
+    const deps={db:db!,config:{accessTemplate:postSaleAccessTestConfig,enabled:true,environment:'test' as const,paidAfter:new Date('2026-01-01')},
       fetchImpl:(async (_url:unknown,init?:RequestInit)=>{
         dispatchedEvents.push(JSON.parse(String(init?.body)));
         return new Response(JSON.stringify({event:{id:`post-sale-event-${key}`}}),{status:201});
@@ -321,14 +322,18 @@ run.each(['complete','partial'] as const)('carries interest-only discovery, 1→
     expect(await db!`SELECT pending_codes FROM bonus_fulfillment_cases WHERE payment_id=${payment.id}`)
       .toEqual([{pending_codes:['ingles_2']}]);
     const delayed=await sendPersistedPostSale('access_delayed');
-    expect(delayed).not.toMatch(/CONTRASEÑA|USUARIO|CURSOS HABILITADOS|campus-virtual|acceso (?:completo|habilitado)|factura|invoice/iu);
+    // Owner's 2026-11-01 exception: partial access lists verified courses only.
+    expect(delayed).toContain('CURSOS HABILITADOS');
+    expect(delayed).toContain('El equipo está terminando de habilitar Inglés 2; te avisamos por acá.');
+    expect(delayed).not.toContain('🎁 CURSO BONIFICADO: Inglés 2');
+    expect(delayed).not.toMatch(/factura|invoice/iu);
     expect(await db!`SELECT id FROM bonus_fulfillment_cases WHERE payment_id=${payment.id}`).toHaveLength(1);
     return;
   }
   const verified=await db!<Array<{offering_code:string;enrollment_status:string;position:number}>>`
     SELECT offering_code,enrollment_status,position FROM central_bonus_enrollment_items WHERE payment_id=${payment.id} ORDER BY position`;
   // Authority: prompt-agente-a-studyx-v2.md:228-230; spec-backend-bonificacion.md:89-90.
-  // Post-sale copy reflects the actual enrollments without prescribing prose.
+  // Owner-authorized template reflects only actual enrollments.
   expect(verified).toEqual([
     { offering_code: 'ingles_1', enrollment_status: 'active', position: 1 },
     { offering_code: 'excel_integral', enrollment_status: 'active', position: 2 },

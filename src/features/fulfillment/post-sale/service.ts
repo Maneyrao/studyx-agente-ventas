@@ -16,8 +16,7 @@ import { sha256Hex } from '@/lib/idempotency/canonical-json';
 import { backendReleaseSha } from '@/lib/services/turn-evidence.service';
 import { assertsModelCredentialValueV1, assertsRequiredPasswordChangeV1, assertsUnverifiedPostSaleAccessV1 } from '@/shared/conversation/post-sale-facts';
 
-export const INITIAL_PASSWORD = 'Escuela.123';
-export const CAMPUS_URL = 'https://mystudyx.com/campus-virtual';
+import { loadAccessTemplateConfig, renderAccessTemplate, type AccessTemplateConfig } from './access-template';
 export type NotificationKind = 'payment_received' | 'access_ready' | 'access_delayed';
 interface Source {
   id: string; payment_id: string; kind: NotificationKind; status: string; claim_token: string | null;
@@ -30,7 +29,7 @@ interface Source {
   verified_bonus_enrollments: Array<{ offering_code: string; enrollment_status: string; position: number }>;
   known_offering_names: string[];
 }
-export interface PostSaleConfig { enabled: boolean; environment: 'test' | 'live'; paidAfter: Date }
+export interface PostSaleConfig { enabled: boolean; environment: 'test' | 'live'; paidAfter: Date; accessTemplate?: AccessTemplateConfig }
 export interface Deps { db?: postgres.Sql; config?: PostSaleConfig; sender?: ManagedOutboundSender; fetchImpl?: typeof fetch }
 export function loadPostSaleConfig(): PostSaleConfig {
   const enabled = process.env.POST_SALE_ENABLED === 'true';
@@ -39,7 +38,7 @@ export function loadPostSaleConfig(): PostSaleConfig {
   if (enabled && (!['test', 'live'].includes(environment ?? '') || !cutoff || !Number.isFinite(Date.parse(cutoff)))) {
     throw new Error('POST_SALE_CONFIG_INVALID');
   }
-  return { enabled, environment: environment === 'test' ? 'test' : 'live', paidAfter: new Date(cutoff ?? '2100-01-01') };
+  return { enabled, environment: environment === 'test' ? 'test' : 'live', paidAfter: new Date(cutoff ?? '2100-01-01'), accessTemplate: enabled ? loadAccessTemplateConfig() : undefined };
 }
 async function sources(db: postgres.Sql, config: PostSaleConfig, id?: string, paymentId?: string) {
   return db<Source[]>`
@@ -153,18 +152,34 @@ function hasCompleteBonusEvidence(source: BonusEvidence): boolean {
   });
 }
 
+function hasVerifiedAccess(source: Pick<Source, 'enrollment_status'> & BonusEvidence): boolean {
+  return ['active', 'already_enrolled'].includes(source.enrollment_status ?? '')
+    || (source.bonus_offerings ?? []).some(bonus => (source.verified_bonus_enrollments ?? []).some(item =>
+      item.offering_code === bonus.code && item.position === bonus.position
+      && ['active', 'already_enrolled'].includes(item.enrollment_status)));
+}
+
+function usesAccessTemplate(source: Pick<Source, 'kind' | 'enrollment_status'> & BonusEvidence): boolean {
+  return source.kind === 'access_ready' || (source.kind === 'access_delayed' && hasVerifiedAccess(source));
+}
+
+function accessConfig(config: PostSaleConfig): AccessTemplateConfig {
+  return config.accessTemplate ?? loadAccessTemplateConfig();
+}
+
 export function validateNotificationSource(
   source: Pick<Source, 'kind' | 'enrollment_status' | 'login_email' | 'registration_email'> & BonusEvidence,
 ): boolean {
-  if (source.kind !== 'access_ready') return true;
-  return ['active', 'already_enrolled'].includes(source.enrollment_status ?? '')
+  if (!usesAccessTemplate(source)) return true;
+  return (source.kind !== 'access_ready' || ['active', 'already_enrolled'].includes(source.enrollment_status ?? ''))
     && !!source.login_email
     && source.login_email.trim().toLowerCase() === source.registration_email?.trim().toLowerCase()
-    && hasCompleteBonusEvidence(source);
+    && (source.kind !== 'access_ready' || hasCompleteBonusEvidence(source));
 }
 export async function dispatchNotifications(paymentId?: string, deps: Deps = {}) {
   const config = deps.config ?? loadPostSaleConfig();
   if (!config.enabled) return { dispatched: 0 };
+  accessConfig(config);
   const db = deps.db ?? defaultDb;
   const managed = loadBotpressManagedMessagingConfig();
   if (!managed) throw new Error('POST_SALE_BOTPRESS_UNCONFIGURED');
@@ -216,6 +231,7 @@ export async function dispatchNotifications(paymentId?: string, deps: Deps = {})
 export async function claimNotification(id: string, botpressConversationId: string, deps: Deps = {}) {
   const config = deps.config ?? loadPostSaleConfig();
   if (!config.enabled) return { claimed: false as const };
+  accessConfig(config);
   const db = deps.db ?? defaultDb;
   await supersedePostSalePredecessors(db, { notificationId: id });
   const [source] = await sources(db, config, id);
@@ -226,10 +242,11 @@ export async function claimNotification(id: string, botpressConversationId: stri
       lease_until = now() + interval '120 seconds'
     WHERE id = ${id}::uuid AND status = 'dispatched' AND lease_until > now() RETURNING id`;
   if (!claimed) return { claimed: false as const };
-  const history = await db<Array<{ direction: string; content: string }>>`
+  const history = usesAccessTemplate(source) ? [] : await db<Array<{ direction: string; content: string }>>`
     SELECT direction, content FROM messages WHERE conversation_id = ${source.conversation_id}::uuid
     ORDER BY created_at DESC LIMIT 6`;
   return { claimed: true as const, claim_token: token, kind: source.kind,
+    delivery_mode: usesAccessTemplate(source) ? 'access_template' as const : 'agent_narrative' as const,
     academy_name: source.academy_name, offering_name: source.offering_name,
     customer_first_name: source.registration_name?.split(' ')[0] ?? '',
     existing_user: source.student_was_created === false, new_user: source.student_was_created === true,
@@ -253,65 +270,45 @@ export class PostSaleContentError extends Error {
   }
 }
 
-function deterministicAccessBlocks(
-  source: Pick<Source, 'kind' | 'student_was_created' | 'login_email' | 'login_url'>
-    & Partial<Pick<Source, 'offering_name' | 'bonus_offerings' | 'verified_bonus_enrollments'>>,
-): string[] {
-  if (source.kind !== 'access_ready') return [];
-  const credentials = source.student_was_created
-    ? `Usuario: ${source.login_email}\nContraseña: ${INITIAL_PASSWORD}`
-    : `Usuario: ${source.login_email}`;
-  const campus = `Campus: ${CAMPUS_URL}`;
-  const bonusOfferings = source.bonus_offerings ?? [];
-  const courses = bonusOfferings.length > 0 && hasCompleteBonusEvidence(source)
-    ? [
-        `Curso principal: ${source.offering_name}`,
-        ...bonusOfferings.map((bonus) => `Curso bonificado: ${bonus.display_name}`),
-      ].join('\n')
-    : null;
-  return [courses, campus, credentials].filter((block): block is string => Boolean(block));
-}
-
 export function assemblePostSaleMessage(
   source: Pick<Source, 'kind' | 'student_was_created' | 'login_email' | 'login_url'>
-    & Partial<Pick<Source, 'registration_name' | 'offering_name' | 'bonus_offerings' | 'verified_bonus_enrollments' | 'known_offering_names'>>,
-  narrative: z.infer<typeof NarrativeSchema>,
+    & Partial<Pick<Source, 'enrollment_status' | 'registration_name' | 'offering_name' | 'bonus_offerings' | 'verified_bonus_enrollments' | 'known_offering_names'>>,
+  narrative?: z.infer<typeof NarrativeSchema>,
+  templateConfig?: AccessTemplateConfig,
 ) {
-  // The model authors the conversation. Credentials are bound to verified backend data, outside the model.
-  const authored = `${narrative.intro}\n${narrative.suggestion}`;
-  if (assertsRequiredPasswordChangeV1(authored)) throw new PostSaleContentError('POST_SALE_CHANGE_MUST_BE_OPTIONAL');
-  // Credentials and URLs are immutable values supplied only by the backend
-  // (P:230). Inspect both fields; neither field may smuggle a made-up value.
-  if (/https?:|www\.|@|(?:Studyx|Escuela)\.123/iu.test(authored) || assertsModelCredentialValueV1(authored)) {
+  if (usesAccessTemplate({ ...source, enrollment_status: source.enrollment_status ?? null })) {
+    return renderAccessTemplate({ ...source, enrollment_status: source.enrollment_status ?? null,
+      offering_name: source.offering_name ?? '' }, templateConfig ?? loadAccessTemplateConfig());
+  }
+  const authored = NarrativeSchema.parse(narrative);
+  const prose = `${authored.intro}\n${authored.suggestion}`;
+  if (assertsRequiredPasswordChangeV1(prose)) throw new PostSaleContentError('POST_SALE_CHANGE_MUST_BE_OPTIONAL');
+  if (/https?:|www\.|@|(?:Studyx|Escuela)\.123/iu.test(prose) || assertsModelCredentialValueV1(prose)) {
     throw new PostSaleContentError('POST_SALE_UNAUTHORIZED_PROSE');
   }
-  const activatedNames = [source.offering_name ?? '',
-    ...(hasCompleteBonusEvidence(source) ? source.bonus_offerings?.map(b => b.display_name) ?? [] : [])].filter(Boolean);
-  if (assertsUnverifiedPostSaleAccessV1({ text: authored, access_ready: source.kind === 'access_ready',
-    activated_course_names: activatedNames,
-    known_course_names: source.known_offering_names ?? activatedNames })) {
+  if (assertsUnverifiedPostSaleAccessV1({ text: prose, access_ready: false,
+    activated_course_names: [], known_course_names: source.known_offering_names ?? [] })) {
     throw new PostSaleContentError('POST_SALE_ACCESS_NOT_VERIFIED');
   }
-  if (source.kind !== 'access_ready') {
-    if (narrative.suggestion) throw new PostSaleContentError('POST_SALE_UNEXPECTED_SUGGESTION');
-    return narrative.intro;
-  }
-  return [narrative.intro, ...deterministicAccessBlocks(source), narrative.suggestion]
-    .filter(Boolean).join('\n\n');
+  if (authored.suggestion) throw new PostSaleContentError('POST_SALE_UNEXPECTED_SUGGESTION');
+  return authored.intro;
 }
-export async function deliverNotification(id: string, input: { claim_token: string; botpress_conversation_id: string; narrative: z.infer<typeof NarrativeSchema> }, deps: Deps = {}) {
+export async function deliverNotification(id: string, input: { claim_token: string; botpress_conversation_id: string; narrative?: z.infer<typeof NarrativeSchema> }, deps: Deps = {}) {
   const config = deps.config ?? loadPostSaleConfig();
   if (!config.enabled) return { outcome: 'disabled' };
+  const templateConfig = accessConfig(config);
   const db = deps.db ?? defaultDb;
   const [source] = await sources(db, config, id);
   if (!source || source.botpress_conversation_id !== input.botpress_conversation_id || !validateNotificationSource(source)) return { outcome: 'not_authorized' };
-  const evidenceKey = `post-sale-evidence:${id}:${input.claim_token}:${sha256Hex(input.narrative)}`;
-  await auditLog({ action: 'post_sale.narrative.received', entity_type: 'post_sale_notification', entity_id: id,
-    event_key: `${evidenceKey}:proposal`, payload: { narrative: input.narrative, backend_sha: backendReleaseSha() },
+  const deterministic = usesAccessTemplate(source);
+  const narrative = deterministic ? undefined : input.narrative;
+  const evidenceKey = `post-sale-evidence:${id}:${input.claim_token}:${sha256Hex(narrative ?? { template: 'access_v1' })}`;
+  if (!deterministic) await auditLog({ action: 'post_sale.narrative.received', entity_type: 'post_sale_notification', entity_id: id,
+    event_key: `${evidenceKey}:proposal`, payload: { narrative, backend_sha: backendReleaseSha() },
   }, db);
   let text: string;
   try {
-    text = assemblePostSaleMessage(source, NarrativeSchema.parse(input.narrative));
+    text = assemblePostSaleMessage(source, narrative, templateConfig);
   } catch (error) {
     if (error instanceof PostSaleContentError) {
       await auditLog({ action: 'post_sale.narrative.rejected', entity_type: 'post_sale_notification', entity_id: id,
@@ -323,13 +320,10 @@ export async function deliverNotification(id: string, input: { claim_token: stri
   }
   const authorization = buildAuthorizedEgress({
     content: text,
-    authorized_urls: [CAMPUS_URL, ...(source.login_url ? [source.login_url] : [])],
-    // Only backend-owned blocks receive fact authorization. Model-authored
-    // prose remains subject to the commercial guard, so a fabricated price,
-    // modality or certification in `narrative` still fails closed.
-    protected_facts: protectedFactsInContentV1(
-      deterministicAccessBlocks(source).join('\n\n'),
-    ),
+    authorized_urls: deterministic ? [templateConfig.campusUrl] : [],
+    // Owner-authorized deterministic content carries its full fact manifest.
+    // Model prose on payment/delay events retains all normal egress controls.
+    protected_facts: deterministic ? protectedFactsInContentV1(text) : [],
   });
   if (!verifyAuthorizedEgress({ content: text, manifest: authorization }).ok) {
     await auditLog({ action: 'post_sale.narrative.rejected', entity_type: 'post_sale_notification', entity_id: id,
@@ -343,8 +337,11 @@ export async function deliverNotification(id: string, input: { claim_token: stri
       AND lease_until > now() RETURNING id`;
   if (!locked) return { outcome: 'claim_lost' };
   await auditLog({ action: 'post_sale.narrative.authorized', entity_type: 'post_sale_notification', entity_id: id,
-    event_key: `${evidenceKey}:authorized`, payload: { authorized_text: text, authorized_egress: authorization,
-      backend_sha: backendReleaseSha() },
+    event_key: `${evidenceKey}:authorized`, payload: { authorized_text: deterministic && source.student_was_created
+        ? text.split(templateConfig.initialPassword).join('[REDACTED]') : text,
+      authorized_content_hash: authorization.content_hash,
+      ...(deterministic ? { template_version: 'access_v1', delivery_mode: 'access_template' }
+        : { authorized_egress: authorization }), backend_sha: backendReleaseSha() },
   }, db);
   // Transition before external I/O: a crash cannot silently send the credentials twice.
   const sender = deps.sender ?? createManagedOutboundSender(db, source.botpress_conversation_id);
@@ -352,7 +349,8 @@ export async function deliverNotification(id: string, input: { claim_token: stri
   try {
     result = await sender({ workspaceId: source.workspace_id, contactId: source.contact_id,
       conversationId: source.conversation_id, text, authorizedEgress: authorization,
-      idempotencyKey: `post-sale:${source.payment_id}:${source.kind}`, purpose: 'transactional' });
+      idempotencyKey: `post-sale:${source.payment_id}:${source.kind}`, purpose: 'transactional',
+      ...(deterministic && source.student_was_created ? { auditRedactions: [templateConfig.initialPassword] } : {}) });
   } catch {
     return { outcome: 'ambiguous' };
   }

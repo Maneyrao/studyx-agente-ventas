@@ -14,6 +14,13 @@
 - Tono: copiar tú/vos del cliente.
 - Certificado: usar el texto del prompt como dato autorizado.
 
+## Excepción de postventa autorizada por el dueño (2026-11-01)
+- Excepción explícita a `docs/authority/prompt-agente-a-studyx-v2.md:230`: el mensaje de acceso se arma con la plantilla predeterminada del dueño, en un solo mensaje, sin generación, reparación ni fallback del modelo. El agradecimiento posterior sigue a cargo del Agente A.
+- Listar sólo cursos `active`/`already_enrolled` verificados por fulfillment/Central; bonificados por identidad exacta del snapshot de pago. Ante activación parcial, listar sólo activos, avisar qué curso falta antes de los canales y conservar el caso humano de spec §6. Reservar `access_ready` para el paquete completo; el parcial terminal usa `access_delayed`.
+- Aclaración posterior del dueño: «la contraseña por default siempre es la misma». Se autoriza esa contraseña inicial vigente desde configuración obligatoria exclusivamente para un alumno que Central confirmó haber creado (`student_was_created=true`); no afirmar que la API devuelve un campo de contraseña que no existe. Usuario siempre del resultado real de Central, identidad contrastada con el pago. Cuenta existente: usuario y contraseña de siempre, sin clave nueva ni sugerencia final. Recordatorio de E sólo si la clave configurada comienza con E mayúscula.
+- Campus y contactos oficiales vienen de configuración validada antes de modificar notificaciones. Ninguna contraseña de ejemplo o fallback en código de negocio. No copiar la credencial a auditorías ni al claim/contexto/journal del evento inicial de acceso; conservar la entrega exacta al cliente. El historial posterior de mensajes conserva esa entrega: esta excepción no cambia las proyecciones generales de memoria/resumen.
+- La autorización de egreso cubre la plantilla completa y sus datos verificados; no rechazar la bienvenida a Studyx por el detector genérico de cursos. Se mantienen integridad de contenido, URLs y controles de otros mensajes.
+
 ## Adaptaciones técnicas permitidas (no cambian comportamiento)
 - Traducir la spec al contrato real AgentATurnProposalV1 (no existe move "negotiate"; proposed_action es un objeto).
 - accept_promotion lleva la identidad completa del contexto (promotion_code, interest_offering_code, promotion_cycle_id, offer_version).

@@ -42,7 +42,10 @@ export const SendOutboundMessageInputSchema = z.object({
   purpose: z.enum(['conversational', 'transactional', 'support', 'consent_confirmation']),
 });
 
-export type SendOutboundMessageInput = z.infer<typeof SendOutboundMessageInputSchema>;
+export type SendOutboundMessageInput = z.infer<typeof SendOutboundMessageInputSchema> & {
+  /** Trusted internal callers only; redact evidence, never the delivered content or ledger. */
+  auditRedactions?: readonly string[];
+};
 
 export interface SendOutboundMessageResult {
   outcome: SendOutcome;
@@ -68,6 +71,19 @@ export async function sendOutboundMessage(
   deps: SendOutboundMessageDeps,
 ): Promise<SendOutboundMessageResult> {
   const input = SendOutboundMessageInputSchema.parse(rawInput);
+  // This internal option deliberately stays outside the public input schema.
+  // Parsing strips it from the provider-facing input; only audit copies use it.
+  const auditRedactions = rawInput.auditRedactions?.filter(value => value.length > 0) ?? [];
+  const redactAuditValue = (value: unknown): unknown => {
+    if (typeof value === 'string') return auditRedactions.reduce((text, secret) => text.split(secret).join('[REDACTED]'), value);
+    if (Array.isArray(value)) return value.map(redactAuditValue);
+    if (value && typeof value === 'object') return Object.fromEntries(
+      Object.entries(value).map(([key, item]) => [key, redactAuditValue(item)]),
+    );
+    return value;
+  };
+  const auditEvidence = (payload: Record<string, unknown>): Record<string, unknown> =>
+    auditRedactions.length > 0 ? redactAuditValue(payload) as Record<string, unknown> : payload;
   const db = deps.db ?? sql;
   const now = deps.now ?? (() => new Date());
 
@@ -226,8 +242,13 @@ export async function sendOutboundMessage(
     const sendKey = `managed-evidence:${deliveryId}:a${leased[0].attempt_count}`;
     await auditLog({ action: 'outbound.provider.attempt', entity_type: 'outbound_delivery',
       entity_id: deliveryId, event_key: `${sendKey}:attempt`,
-      payload: { text: input.text, authorized_egress: input.authorizedEgress,
-        channel: identity.channel, backend_sha: backendReleaseSha(), idempotency_key: input.idempotencyKey },
+      payload: auditEvidence({ text: input.text,
+        // Protected fragments can contain or normalize a credential. Preserve
+        // only the exact content digest in evidence for secret-bearing sends.
+        authorized_egress: auditRedactions.length > 0
+          ? { content_hash: (input.authorizedEgress as { content_hash?: string }).content_hash }
+          : input.authorizedEgress,
+        channel: identity.channel, backend_sha: backendReleaseSha(), idempotency_key: input.idempotencyKey }),
     }, db);
     const providerResult = await attemptSend(channel, identity.destination, input);
     const decision = decideDeliveryOutcome(providerResult);
@@ -263,8 +284,8 @@ export async function sendOutboundMessage(
     });
     await auditLog({ action: 'outbound.provider.result', entity_type: 'outbound_delivery',
       entity_id: deliveryId, event_key: `${sendKey}:result`,
-      payload: { provider_result: providerResult, state: decision.state, text: input.text,
-        backend_sha: backendReleaseSha(), receipt_is_phone_delivery: false },
+      payload: auditEvidence({ provider_result: providerResult, state: decision.state, text: input.text,
+        backend_sha: backendReleaseSha(), receipt_is_phone_delivery: false }),
     }, db);
 
     return {

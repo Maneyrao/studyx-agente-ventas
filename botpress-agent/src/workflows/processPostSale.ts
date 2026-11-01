@@ -5,7 +5,7 @@ import { requestStudyxJson } from '../utils/http'
 import { AGENT_A_DEEPSEEK_MODEL } from '../config/agent-a-model'
 import { STUDYX_AGENT_A_CANONICAL_PROMPT } from '../prompts/studyx-agent-a-canonical.generated'
 import { resolveCanonicalPromptIdentityV1 } from '../prompts/agent-a-identity'
-import { buildPostSaleInstructions, fallbackPostSaleNarrative, PostSaleClaimSchema } from '../utils/post-sale-instructions'
+import { buildPostSaleInstructions, fallbackPostSaleNarrative, PostSaleClaimSchema, usesPostSaleAccessTemplate } from '../utils/post-sale-instructions'
 
 const Narrative = z.object({
   intro: z.string().min(1).max(500),
@@ -42,8 +42,7 @@ export const processPostSale = new Workflow({
     const conversationId = input.conversation_id
     const traceId = state.trace_id ?? crypto.randomUUID()
     state.trace_id = traceId
-    const requireEvidenceReview = () => {
-      const evidence_location = 'cached generate-post-sale step output.events and output.narrative'
+    const requireEvidenceReview = (evidence_location = 'cached generate-post-sale step output.events and output.narrative') => {
       state.evidence_review = { workflow_id: workflow.id, notification_id: id,
         reason: 'TURN_EVIDENCE_UNAVAILABLE', evidence_location }
       workflow.tags = { ...workflow.tags, studyxEvidenceReview: 'true' }
@@ -52,6 +51,43 @@ export const processPostSale = new Workflow({
     const claimed = await step('claim-post-sale', () => requestStudyxJson({ path: `/api/agent/post-sale/${id}/claim`,
       body: { botpress_conversation_id: conversationId }, traceId, idempotencyKey: `post-sale-claim:${id}`, responseSchema: PostSaleClaimSchema }), { maxAttempts: 1 })
     if (!claimed.claimed) return { outcome: 'not_claimed' }
+    if (usesPostSaleAccessTemplate(claimed)) {
+      // Credentials and exact template stay entirely in the backend. The
+      // workflow caches only its delivery receipt, never model prose or secrets.
+      let delivery: z.infer<typeof Delivery>
+      try {
+        delivery = await step('deliver-post-sale-template', () => requestStudyxJson({
+          path: `/api/agent/post-sale/${id}/deliver`,
+          body: { claim_token: claimed.claim_token, botpress_conversation_id: conversationId },
+          traceId, idempotencyKey: `post-sale-deliver:${id}:${claimed.claim_token}`, responseSchema: Delivery,
+        }), { maxAttempts: 1 })
+      } catch {
+        await requestStudyxJson({ path: `/api/agent/post-sale/${id}/release`,
+          body: { claim_token: claimed.claim_token }, traceId,
+          idempotencyKey: `post-sale-release:${id}:${claimed.claim_token}`,
+          responseSchema: z.object({ outcome: z.string() }),
+        })
+        return { outcome: 'released' }
+      }
+      const receipt = await step('evidence-event-post-sale-template-receipt', async () => ({
+        event_id: crypto.randomUUID(), kind: 'post_sale_template_receipt',
+        data: { delivery_mode: 'access_template', receipt: delivery },
+      }), { maxAttempts: 1 })
+      try {
+        await persistTurnEvidence({ subject_type: 'post_sale', subject_id: id, trace_id: traceId }, receipt)
+      } catch {
+        return requireEvidenceReview('cached deliver-post-sale-template output and evidence-event-post-sale-template-receipt')
+      }
+      if (delivery.outcome === 'invalid_content') {
+        await requestStudyxJson({ path: `/api/agent/post-sale/${id}/release`,
+          body: { claim_token: claimed.claim_token }, traceId,
+          idempotencyKey: `post-sale-release:${id}:${claimed.claim_token}`,
+          responseSchema: z.object({ outcome: z.string() }),
+        })
+        return { outcome: 'released' }
+      }
+      return { outcome: delivery.outcome }
+    }
     // Model output and failures are cached by the durable runtime BEFORE any
     // diagnostic HTTP write. Replaying persistence cannot regenerate prose.
     const generateNarrative = async (rejectionCode?: string, rejectedNarrative?: z.infer<typeof Narrative>) => {

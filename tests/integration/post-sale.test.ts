@@ -7,7 +7,8 @@ import { loadLatestPaymentVerificationV1 } from '@/features/payments/application
 const run = process.env.TEST_DATABASE_URL ? describe : describe.skip;
 const db = process.env.TEST_DATABASE_URL ? openLocalTestDatabase() : null;
 afterAll(async () => db?.end());
-const config = { enabled: true, environment: 'test' as const, paidAfter: new Date('2026-10-09T00:00:00Z') };
+import { postSaleAccessTestConfig } from '../helpers/post-sale-config';
+const config = { accessTemplate: postSaleAccessTestConfig, enabled: true, environment: 'test' as const, paidAfter: new Date('2026-10-09T00:00:00Z') };
 async function fixture(environment = 'test', options: { bonus?: boolean } = {}) {
   const suffix = randomUUID();
   const [w] = await db!`INSERT INTO workspaces(slug,display_name) VALUES (${suffix}, 'StudyX') RETURNING id`;
@@ -76,7 +77,33 @@ run('post-sale payment / central / Agent A pipeline', () => {
       outcome:'sent' as const,channel:'whatsapp' as const,providerMessageId:'delay-sent',deliveryId:null,reason:null,
     };}})).toEqual({outcome:'sent'});
     expect(messages).toHaveLength(1);
-    expect(messages[0]).not.toMatch(/CONTRASEÑA|USUARIO|CURSOS HABILITADOS|campus-virtual/);
+    expect(messages[0]).toContain('CURSOS HABILITADOS\n📚 CURSO PRINCIPAL: Curso Prueba');
+    expect(messages[0]).not.toContain('🎁 CURSO BONIFICADO:');
+    expect(messages[0]).toContain(`El equipo está terminando de habilitar ${f.bonusName}; te avisamos por acá.`);
+    expect(messages[0]).toContain('📌 Ingresá con tu usuario y contraseña de siempre: ana@example.com');
+    expect(await db!`SELECT payment_id FROM bonus_fulfillment_cases WHERE payment_id=${f.paymentId}`).toHaveLength(1);
+    // Recovery reserves a distinct final notice; the partial cannot consume it.
+    await db!`INSERT INTO central_bonus_enrollment_items(central_enrollment_id,payment_id,offering_code,enrollment_status,position)
+      SELECT id,payment_id,${f.bonusCode},'active',1 FROM central_enrollments WHERE payment_id=${f.paymentId}`;
+    const [ready] = await db!`SELECT id FROM post_sale_notifications WHERE payment_id=${f.paymentId} AND kind='access_ready'`;
+    expect(ready).toBeDefined();
+    expect(await dispatchNotifications(f.paymentId,deps())).toEqual({dispatched:1});
+    const recovered = await claimNotification(ready.id,f.botpressId,deps());
+    if (!recovered.claimed) throw new Error('recovery claim');
+    expect(recovered).toMatchObject({delivery_mode:'access_template',history:[]});
+    const recoveryInput={claim_token:recovered.claim_token,botpress_conversation_id:f.botpressId};
+    const sender=async(input:{text:string})=>{messages.push(input.text); return {
+      outcome:'sent' as const,channel:'whatsapp' as const,providerMessageId:'recovered-sent',deliveryId:null,reason:null,
+    };};
+    const results=await Promise.all([deliverNotification(ready.id,recoveryInput,{...deps(),sender}),
+      deliverNotification(ready.id,recoveryInput,{...deps(),sender})]);
+    expect(results.filter(r=>r.outcome==='sent')).toHaveLength(1);
+    expect(messages).toHaveLength(2);
+    expect(messages[1]).toContain(`🎁 CURSO BONIFICADO: ${f.bonusName}`);
+    expect(messages[1]).not.toContain('El equipo está terminando');
+    expect(await dispatchNotifications(f.paymentId,deps())).toEqual({dispatched:0});
+    expect(await db!`SELECT id FROM bonus_fulfillment_cases WHERE payment_id=${f.paymentId}`).toHaveLength(1);
+
   });
   it('does not dispatch another environment; concurrent events have one claimant and one send', async () => {
     process.env.BOTPRESS_MANAGED_EGRESS_TOKEN='synthetic'; process.env.BOTPRESS_MANAGED_EGRESS_BOT_ID='bot-test';
@@ -101,8 +128,10 @@ run('post-sale payment / central / Agent A pipeline', () => {
     process.env.BOTPRESS_MANAGED_EGRESS_TOKEN='synthetic'; process.env.BOTPRESS_MANAGED_EGRESS_BOT_ID='bot-test';
     const f=await fixture();
     const messages:string[]=[];
-    const deliveryDeps={...deps(),sender:async(input:{text:string})=>{
+    const auditRedactions:Array<readonly string[]|undefined>=[];
+    const deliveryDeps={...deps(),sender:async(input:{text:string;auditRedactions?:readonly string[]})=>{
       messages.push(input.text);
+      auditRedactions.push(input.auditRedactions);
       return {outcome:'sent' as const,channel:'whatsapp' as const,providerMessageId:`sent-${messages.length}`,deliveryId:null,reason:null};
     }};
     const centralFetch=(async (_url:unknown,init?:RequestInit)=>{
@@ -118,12 +147,17 @@ run('post-sale payment / central / Agent A pipeline', () => {
     expect(await dispatchNotifications(f.paymentId,deps())).toEqual({dispatched:1});
     const claim=await claimNotification(ready.id,f.botpressId,deps()); if(!claim.claimed) throw new Error('ready claim');
     expect(await deliverNotification(ready.id,{claim_token:claim.claim_token,botpress_conversation_id:f.botpressId,
-      narrative:{intro:'Ya tienes acceso a tu curso.',suggestion:'Si quieres, puedes cambiar tu contraseña.'}},deliveryDeps)).toEqual({outcome:'sent'});
+      },deliveryDeps)).toEqual({outcome:'sent'});
 
     expect(messages).toHaveLength(1);
-    expect(messages[0]).toContain('Campus: https://mystudyx.com/campus-virtual');
-    expect(messages[0]).toContain('Usuario: ana@example.com\nContraseña: Escuela.123');
-    expect(messages[0]).not.toContain('ADMINISTRACIÓN: info@mystudyx.com');
+    expect(messages[0]).toContain(postSaleAccessTestConfig.campusUrl);
+    expect(messages[0]).toContain('📌 USUARIO: ana@example.com\n\n📌 CONTRASEÑA: Efixture.123');
+    expect(messages[0]).toContain('ADMINISTRACIÓN: admin@example.test');
+    expect(auditRedactions).toEqual([[postSaleAccessTestConfig.initialPassword]]);
+    const audits=await db!`SELECT payload FROM audit_log WHERE entity_id=${ready.id}::uuid`;
+    expect(JSON.stringify(audits)).not.toContain(postSaleAccessTestConfig.initialPassword);
+    expect(JSON.stringify(audits)).toContain('[REDACTED]');
+
     expect(await db!`SELECT kind,status FROM post_sale_notifications WHERE payment_id=${f.paymentId} ORDER BY kind`).toEqual([
       {kind:'access_ready',status:'sent'},
       {kind:'payment_received',status:'cancelled'},
@@ -155,12 +189,12 @@ run('post-sale payment / central / Agent A pipeline', () => {
     expect(await dispatchNotifications(f.paymentId,deps())).toEqual({dispatched:1});
     const claim=await claimNotification(ready.id,f.botpressId,deps()); if(!claim.claimed) throw new Error('ready claim');
     expect(await deliverNotification(ready.id,{claim_token:claim.claim_token,botpress_conversation_id:f.botpressId,
-      narrative:{intro:'Tu acceso ya está habilitado.',suggestion:''}},
+      },
       {...deps(),sender:async(input:{text:string})=>{messages.push(input.text); return {outcome:'sent' as const,
         channel:'whatsapp' as const,providerMessageId:'sent-v2',deliveryId:null,reason:null};}})).toEqual({outcome:'sent'});
     expect(messages).toHaveLength(1);
-    expect(messages[0]).toContain('Curso principal: Curso Prueba');
-    expect(messages[0]).toContain(`Curso bonificado: ${f.bonusName}`);
+    expect(messages[0]).toContain('📚 CURSO PRINCIPAL: Curso Prueba');
+    expect(messages[0]).toContain(`🎁 CURSO BONIFICADO: ${f.bonusName}`);
     expect(messages[0]).not.toMatch(/invoice|comprobante/iu);
   });
   it('reuses the same claim after invalid model prose and sends the safe fallback once', async () => {

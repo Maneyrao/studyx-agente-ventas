@@ -14,16 +14,11 @@ import { configuration, secrets } from '../../tests/helpers/botpress-workflow-ru
 import { openLocalTestDatabase } from '../../tests/helpers/db';
 import { AGENT_A_BRAIN_PROMPT_VERSION } from '../../botpress-agent/src/prompts/agent-a-brain-v1';
 import {
-  STUDYX_AGENT_A_CANONICAL_PROMPT,
   STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION,
 } from '../../botpress-agent/src/prompts/studyx-agent-a-canonical.generated';
 import { AGENT_A_DEEPSEEK_MODEL } from '../../botpress-agent/src/config/agent-a-model';
-import { resolveCanonicalPromptIdentityV1 } from '../../botpress-agent/src/prompts/agent-a-identity';
 import { createConfigPaymentLinkResolver } from '../../src/features/payments/adapters/config-payment-link.resolver';
-import {
-  buildPostSaleInstructions,
-  fallbackPostSaleNarrative,
-} from '../../botpress-agent/src/utils/post-sale-instructions';
+import { postSaleAccessTestConfig } from '../../tests/helpers/post-sale-config';
 
 import {
   evaluateHardRules,
@@ -125,7 +120,7 @@ interface PendingCaseV1 {
 interface FulfilledSetupV1 {
   readonly evidence: Record<string, unknown>;
   readonly accessMessage: string;
-  readonly modelAttempt: GoldenTurnObservationV1['modelAttempts'][number];
+  readonly modelAttempts: GoldenTurnObservationV1['modelAttempts'];
   readonly backendRejections: readonly unknown[];
 }
 
@@ -444,45 +439,12 @@ async function prepareFulfilledBonusPackage(input: {
   })) as typeof fetch;
   const notificationDeps = {
     db,
-    config: { enabled: true, environment: 'test' as const, paidAfter: new Date('2026-01-01') },
+    config: { enabled: true, environment: 'test' as const, paidAfter: new Date('2026-01-01'), accessTemplate: postSaleAccessTestConfig },
     fetchImpl: eventFetch,
   };
   await postSaleFns.dispatchNotifications(payment.id, notificationDeps);
   const claim = await postSaleFns.claimNotification(notice.id, input.externalConversationId, notificationDeps);
   if (!claim.claimed) throw new Error('GOLDEN_FULFILLED_SETUP_CLAIM_FAILED');
-  const resolvedIdentity = resolveCanonicalPromptIdentityV1(STUDYX_AGENT_A_CANONICAL_PROMPT, {
-    advisor_name: 'Emma', academy_name: claim.academy_name, website: null, instagram: null,
-  });
-  if (resolvedIdentity.unresolved.length > 0) throw new Error('GOLDEN_POST_SALE_IDENTITY_UNRESOLVED');
-  const providerResponse = await fetch('https://api.deepseek.com/responses', {
-    method: 'POST',
-    signal: AbortSignal.timeout(10_000),
-    headers: { authorization: `Bearer ${secrets.DEEPSEEK_API_KEY}`, 'content-type': 'application/json' },
-    body: JSON.stringify({
-      model: AGENT_A_DEEPSEEK_MODEL,
-      instructions: buildPostSaleInstructions(resolvedIdentity.prompt, claim),
-      input: JSON.stringify(claim),
-      reasoning: { effort: 'none' }, temperature: 0.3, stream: false, max_output_tokens: 350,
-      text: { format: { type: 'json_schema', name: 'studyx_post_sale', schema: {
-        type: 'object', additionalProperties: false, required: ['intro', 'suggestion'], properties: {
-          intro: { type: 'string', minLength: 1, maxLength: 500 },
-          suggestion: { type: 'string', maxLength: 180 },
-        },
-      } } },
-    }),
-  });
-  const providerPayload = await providerResponse.json() as {
-    output_text?: string;
-    output?: Array<{ content?: Array<{ type?: string; text?: string }> }>;
-  };
-  const providerText = typeof providerPayload.output_text === 'string' ? providerPayload.output_text
-    : providerPayload.output?.flatMap((item) => item.content ?? [])
-      .filter((item) => item.type === 'output_text' && typeof item.text === 'string')
-      .map((item) => item.text).join('') ?? '';
-  if (!providerResponse.ok || !providerText) {
-    throw new Error(`GOLDEN_POST_SALE_MODEL_FAILED:${providerResponse.status}`);
-  }
-  const narrative = JSON.parse(providerText) as { intro: string; suggestion: string };
   const accessMessages: string[] = [];
   const deliveryDeps = {
     ...notificationDeps,
@@ -493,19 +455,10 @@ async function prepareFulfilledBonusPackage(input: {
     },
   };
   const backendRejections: unknown[] = [];
-  let delivery = await postSaleFns.deliverNotification(notice.id, {
+  const delivery = await postSaleFns.deliverNotification(notice.id, {
     claim_token: claim.claim_token,
     botpress_conversation_id: input.externalConversationId,
-    narrative,
   }, deliveryDeps);
-  if (delivery.outcome === 'invalid_content') {
-    backendRejections.push({ subject: 'post_sale_narrative', reason: delivery.reason ?? 'invalid_content' });
-    delivery = await postSaleFns.deliverNotification(notice.id, {
-      claim_token: claim.claim_token,
-      botpress_conversation_id: input.externalConversationId,
-      narrative: fallbackPostSaleNarrative(claim),
-    }, deliveryDeps);
-  }
   if (delivery.outcome !== 'sent' || !accessMessages[0]) {
     throw new Error(`GOLDEN_POST_SALE_DELIVERY_FAILED:${delivery.outcome}`);
   }
@@ -528,18 +481,10 @@ async function prepareFulfilledBonusPackage(input: {
       bonus_courses: bonuses.map((bonus) => bonus.code),
       worker,
       access_message: accessMessages[0],
-      narrative_delivery: delivery,
+      template_delivery: delivery,
     },
     accessMessage: accessMessages[0],
-    modelAttempt: {
-      attempt: 1,
-      response: [narrative.intro, narrative.suggestion].filter(Boolean).join('\n'),
-      move: null,
-      proposedAction: null,
-      turnRejection: null,
-      providerStatus: providerResponse.status,
-      providerError: null,
-    },
+    modelAttempts: [],
     backendRejections,
   };
 }
@@ -908,7 +853,7 @@ live('authority-only Agent A golden baseline through the real workflow', () => {
             usedFactIds: [],
             availableOfferings: activeCourseEvidence.names,
             selectedOfferingFacts: [],
-            modelAttempts: [fulfilled.modelAttempt],
+            modelAttempts: fulfilled.modelAttempts,
             callRequirements: [],
             profileRequestedFields: [],
             activeCourses: activeCourseEvidence.codes,
