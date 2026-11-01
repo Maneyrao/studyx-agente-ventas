@@ -1,0 +1,53 @@
+{
+  "schema_version": 1,
+  "execution_sha": "10d7b3e5e7b5cdce3c88901cfedd3493346ecce2",
+  "evaluation_sha": "961c991bcb2a6afc3ea6b0f30d56a7ec0b0f60b8",
+  "generated_at": "2026-11-01T13:46:31.295589+00:00",
+  "files": [
+    {
+      "path": "docs/reports/2026-11-01-negotiation-invariants-replay.md",
+      "sha256": "8b73e72ae932e4dfc1c5e3a77d2a1034de6657c3d7a73152eeb5a47fa7d83e42",
+      "bytes": 8313
+    },
+    {
+      "path": "docs/reports/evidence/2026-11-01-negotiation-invariants-replay/checks.json",
+      "sha256": "7741a0ead5f3fbab0cf60476d9df6d169b37e4dfcaf7ecc19a3b9f6e5d85ed70",
+      "bytes": 3246
+    },
+    {
+      "path": "docs/reports/evidence/2026-11-01-negotiation-invariants-replay/historical-failures.csv",
+      "sha256": "a528a208acd306c4700e895e43b7d3496375296131336a93f46614760bc5323c",
+      "bytes": 40559
+    },
+    {
+      "path": "docs/reports/evidence/2026-11-01-negotiation-invariants-replay/invariants.csv",
+      "sha256": "a18a7b8ba536794455d4fdaa2f5eded17d9862f5d2a60d55f9352d967a8e43ad",
+      "bytes": 14366
+    },
+    {
+      "path": "docs/reports/evidence/2026-11-01-negotiation-invariants-replay/invariants.md",
+      "sha256": "ba5a9d16653f0007a092377ac298ffee2875687200c9db643886025be08f48d1",
+      "bytes": 9091
+    },
+    {
+      "path": "docs/reports/evidence/2026-11-01-negotiation-invariants-replay/network-guard.mjs",
+      "sha256": "fc2090d5cab8bec53025249b31bbb486af6af4e7e454100d75e51a3a3f8ea303",
+      "bytes": 354
+    },
+    {
+      "path": "docs/reports/evidence/2026-11-01-negotiation-invariants-replay/network-proof.json",
+      "sha256": "63cc8873ec74b71c466fd3d69c5d03de9bfe6760425a227d6132bef457cad156",
+      "bytes": 60
+    },
+    {
+      "path": "docs/reports/evidence/2026-11-01-negotiation-invariants-replay/replay.json",
+      "sha256": "6fc2ddd4422acaf4748ae0efa9c7eb9b053bef0c1830ad2b2318f3c9702a40b5",
+      "bytes": 537649
+    },
+    {
+      "path": "docs/reports/evidence/2026-11-01-negotiation-invariants-replay/replay.md",
+      "sha256": "35938f8cdb988bbbac84e12821cc4bb53cf48a9ff6f1829f07517d19bfe72668",
+      "bytes": 1127
+    }
+  ]
+}

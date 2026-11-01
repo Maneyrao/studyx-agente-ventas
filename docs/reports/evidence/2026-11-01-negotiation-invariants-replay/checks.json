@@ -1,0 +1,90 @@
+{
+  "schema_version": 1,
+  "original_execution_sha": "10d7b3e5e7b5cdce3c88901cfedd3493346ecce2",
+  "canonical_prompt_version": "studyx-agent-a-canonical-v101",
+  "candidate_brain_version": "studyx-agent-a-brain-v147",
+  "unit": {
+    "passed": 4902,
+    "skipped": 17,
+    "todo": 7,
+    "files_passed": 261,
+    "files_skipped": 2,
+    "log": "invariant-unit.log"
+  },
+  "integration": {
+    "passed": 945,
+    "skipped": 1,
+    "files_passed": 94,
+    "log": "invariant-integration.log",
+    "database": "fresh disposable PostgreSQL17 localhost55434, all migrations + seed, offline fake embedding fixture"
+  },
+  "eval_offline": {
+    "passed": 100,
+    "skipped": 3,
+    "files_passed": 10,
+    "files_skipped": 2,
+    "log": "invariant-evals-final.log"
+  },
+  "source_integrity": {
+    "unchanged_other_cases": 14,
+    "unchanged_customer_turns": 48,
+    "total_cases": 16,
+    "baseline": "57942c9",
+    "log": "invariant-scenario-integrity.log"
+  },
+  "original_evidence": {
+    "manifest_file_count_verified": 73,
+    "modified": false
+  },
+  "typecheck": {
+    "passed": true
+  },
+  "lint": {
+    "passed": true
+  },
+  "build": {
+    "passed": true
+  },
+  "adk": {
+    "passed": true
+  },
+  "product_changes": "Repair instruction and annex version only; no backend sales classifier/gate or model setting added.",
+  "authority_documents_edited": false,
+  "deployment": false,
+  "new_deepseek_or_nim_calls": 0,
+  "architect": {
+    "status": "approved; no material findings open",
+    "repair": "approved",
+    "regressions": [
+      "fresh rejection metadata outranks stale snapshot",
+      "do not infer commercial steps from objection count",
+      "canonical order before proactive call",
+      "semantic recap supports natural wording",
+      "ledger mutation even without declared action",
+      "history authorized facts and used citations",
+      "literal evidence validation for history sources",
+      "original semantic skip does not skip recorded facts",
+      "request/raw trace correlation by identity and order",
+      "unknown/unexercised coverage cannot pass acceptance"
+    ],
+    "evidence_review": "Approved after correcting provenance of the two positional USD30 checks; results and original hashes cross-checked."
+  },
+  "candidate_source_sha": "961c991bcb2a6afc3ea6b0f30d56a7ec0b0f60b8",
+  "replay": {
+    "fetch_disabled": true,
+    "blocked_fetch_attempts": 0,
+    "execution_sha": "10d7b3e5e7b5cdce3c88901cfedd3493346ecce2",
+    "evaluation_sha": "961c991bcb2a6afc3ea6b0f30d56a7ec0b0f60b8",
+    "evaluation_worktree_dirty": false,
+    "original_files_unchanged": 73,
+    "full_suite_gate": false,
+    "measures_v147_repair": false
+  },
+  "resolved_test_fixture_incident": "Final evaluator gate exposed an uncorrelated initial bonus in a semantic-only fixture. The fixture was corrected to an empty package; expected semantic result was unchanged and the explicit ghost-package regression remains failing as intended.",
+  "provenance_correction": "The two historical USD30 literal checks are explicitly positional text replaced by trajectory semantics, INDETERMINATE; not claimed as rerun objective facts.",
+  "evidence_secret_scan": {
+    "files_scanned": 9,
+    "secret_values_checked": 2,
+    "matches": 0
+  }
+}
