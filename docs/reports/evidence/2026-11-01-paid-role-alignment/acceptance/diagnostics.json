@@ -1,0 +1,197 @@
+{
+  "scope": "Reporting only. Original artifacts and judgments unchanged; no source changes/model/API/DB calls.",
+  "run": "acceptance-9482954-flash-full16-20261101",
+  "sha": "94829544b571b947739acbeecfc931c96d3a28ef",
+  "turn_counts": {
+    "PASS": 35,
+    "FAIL": 13
+  },
+  "formal_acceptance": {
+    "required_turns": 48,
+    "observed_turns": 48,
+    "required_cases": 16,
+    "observed_cases": 16,
+    "coverage_complete": true,
+    "minimum_approved_turns": 41,
+    "approved_turns": 35,
+    "approved_turn_threshold_met": false,
+    "critical_cases": {
+      "07": true,
+      "10": true,
+      "11": true,
+      "12": false,
+      "15": true
+    },
+    "critical_cases_complete": false,
+    "zero_unsupported_bonus_observed": true,
+    "zero_bonus_method": "All 48 final texts independently reviewed against current/prior actual effects with matching final-text hashes; joint judge cross-check is reported separately.",
+    "case_06_14_individual_gate": false,
+    "source_correlation_clean": true,
+    "passed": false,
+    "status": "FAIL"
+  },
+  "paid_targets": [
+    {
+      "case": "05_real_budget_limit",
+      "turn": "interest",
+      "status": "PASS",
+      "paid_mismatch": false,
+      "subjects": [],
+      "failures": []
+    },
+    {
+      "case": "05_real_budget_limit",
+      "turn": "budget",
+      "status": "PASS",
+      "paid_mismatch": false,
+      "subjects": [],
+      "failures": []
+    },
+    {
+      "case": "13_real_syllabus",
+      "turn": "syllabus",
+      "status": "FAIL",
+      "paid_mismatch": false,
+      "subjects": [],
+      "failures": [
+        {
+          "code": "SEMANTIC_MUST_FAILED",
+          "detail": "El temario autorizado incluye Clase 42: Examen Final, y las clases 34-41 son Premiere, sincronizar audio/video, música-efectos-cortes, exportar/renderizado, Photoshop intro, maquillaje digital, cambio de color de ojo y collage fotoproducto. La respuesta omite la Clase 42 y comprime/omite contenidos reales (p. ej. Clase 40 cambio de color de ojo), por lo que no entrega el temario real completo recibido como dato autorizado.",
+          "authorityReference": "AGENTS.md:22 | - Temarios y texto del certificado llegan al modelo como datos autorizados (fact_id)."
+        }
+      ]
+    },
+    {
+      "case": "13_real_syllabus",
+      "turn": "duration_followup",
+      "status": "PASS",
+      "paid_mismatch": false,
+      "subjects": [
+        "FACT_VALUE_MISMATCH",
+        "course_logistics",
+        "course_logistics.self_paced"
+      ],
+      "failures": []
+    }
+  ],
+  "all_backend_guard_rejections": [
+    {
+      "case": "02_info_discovery",
+      "turn": "goal",
+      "subjects": [
+        "COURSE_ROLE_UNDECLARED",
+        "course_mentions:paid_mismatch:fotografia_celulares_tiendas_online",
+        "DECISION_REJECTED"
+      ]
+    },
+    {
+      "case": "06_repeated_price_bonus_ladder",
+      "turn": "installments",
+      "subjects": [
+        "FACT_VALUE_MISMATCH",
+        "price"
+      ]
+    },
+    {
+      "case": "12_verified_payment_bonus_fulfillment",
+      "turn": "verified_access_event",
+      "subjects": [
+        "post_sale_narrative",
+        "POST_SALE_EGRESS_INVALID"
+      ]
+    },
+    {
+      "case": "13_real_syllabus",
+      "turn": "duration_followup",
+      "subjects": [
+        "FACT_VALUE_MISMATCH",
+        "course_logistics",
+        "course_logistics.self_paced"
+      ]
+    },
+    {
+      "case": "14_course_change_cancels_promotion",
+      "turn": "change",
+      "subjects": [
+        "MISSING_INTAKE",
+        "nombre"
+      ]
+    }
+  ],
+  "paid_mismatch_scope_note": "Zero among the four repaired targets. One separate 02/goal rejection remains for role=paid without selection; repair changes role to alternative. Do not report globally zero.",
+  "delivery_comparison": {
+    "exact_final_draft": 46,
+    "payment_link_append": {
+      "case": "11_purchase_to_payment_link",
+      "turn": "plan_and_link",
+      "classification": "AUTHORIZED_FACTUAL_LINK_APPEND",
+      "draft": "Perfecto, Ana, quedan 12 cuotas de USD 30. Te dejo el enlace para completar el pago.\nApenas se confirme, te aviso por acá y coordinamos tu acceso.",
+      "delivered": "Perfecto, Ana, quedan 12 cuotas de USD 30. Te dejo el enlace para completar el pago.\n\nApenas se confirme, te aviso por acá y coordinamos tu acceso.\n\n12 pagos mensuales de USD 30: https://buy.stripe.com/test_studyx_golden_12m?client_reference_id=92daf8e3-5a21-4c87-8ad8-e9c2bdefca52",
+      "note": "Narrative retained; blank-line separation and backend-owned Stripe plan label/URL appended."
+    },
+    "post_sale": {
+      "case": "12_verified_payment_bonus_fulfillment",
+      "turn": "verified_access_event",
+      "classification": "REJECTED_MODEL_NARRATIVE_THEN_HARNESS_FACTUAL_FALLBACK",
+      "original_narrative": {
+        "intro": "Listo, tu pago ya está confirmado y el acceso quedó habilitado. Te damos la bienvenida a Studyx, cualquier cosa que necesites me escribís por acá 😊",
+        "suggestion": "Si querés, podés cambiar la contraseña cuando entres, para que quede con una que recuerdes fácil."
+      },
+      "delivered": "Tu acceso ya está habilitado.\n\nCurso principal: Fotografía Profesional\nCurso bonificado: Fotografía con Celulares para Tiendas Online\nCurso bonificado: Marketing Digital\n\nCampus: https://mystudyx.com/campus-virtual\n\nUsuario: ana.golden@example.test\nContraseña: Escuela.123",
+      "durable_event_ids": [
+        "300785ee-2c4d-4a0f-80fe-885fa8a05694",
+        "4325afd3-89d6-4281-807e-d2b17684ac73",
+        "a4255acb-1146-4d88-ace9-14aac03f49fc",
+        "6f584777-2704-4276-9dfa-f42efe78090f"
+      ],
+      "rejection": "POST_SALE_EGRESS_INVALID",
+      "proven_origin": "evals/golden/live-runner.test.ts:501-507 invokes fallbackPostSaleNarrative after invalid_content; botpress-agent/src/utils/post-sale-instructions.ts:26 supplies factual intro.",
+      "cause_evidence": "Existing OFFERING_PATTERN at src/features/orchestration/domain/egress-guard.ts:106 matches “damos la bienvenida a studyx, cualquier cosa que necesites me escribís por acá 😊” as an offering. Offline evaluation of that exact existing regex reproduces the match; manifest only authorizes modality facts from access blocks.",
+      "cause_limit": "Durable rejection stores generic code only, not verifyAuthorizedEgress reason/details. This is a reproduced guard false positive, not a newly recorded detailed reason. No proof of silent style normalization; rejected narrative was replaced by an explicit harness fallback.",
+      "authority_tension": "Authority line230 requires warm welcome for new accounts and permits optional password-change suggestion; fallback loses these model-written parts. No criteria/results changed."
+    }
+  },
+  "critical12": {
+    "case": "12_verified_payment_bonus_fulfillment",
+    "turn": "customer_acknowledgement",
+    "delivered": "Qué bueno, Ana. Entonces ya podés entrar y ver el contenido de tu formación.\nContame, ya pudiste abrir las clases o querés que revisemos juntas algún paso del acceso?",
+    "failures": [
+      {
+        "code": "SEMANTIC_MUST_FAILED",
+        "detail": "La respuesta no celebra el curso concreto (fotografia_profesional) ni responde desde el vínculo; solo hace una referencia genérica a 'tu formación' y pregunta por el acceso, sin nombrar el curso concreto.",
+        "authorityReference": "docs/authority/prompt-agente-a-studyx-v2.md:230 | Confirma pago verificado y preparación del acceso espontáneamente. Sólo el alta confirmada habilita acceso. Si `commercial_state.payment_verification.fulfillment.enrollment_status` es `active` o `already_enrolled` y `access_message_status=sent`, confirma que el acceso está activo y que el mensaje con las credenciales ya fue enviado; no hables en futuro. Redactas toda la parte conversacional; el backend añade sólo la lista Usuario/Contraseña, el correo registrado y el enlace de acceso. Para cuentas nuevas, da una bienvenida cálida a Studyx; para una cuenta existente, celebra que siga siendo parte. Sugiere cambiar la contraseña, sin exigirlo. Ante un agradecimiento después del alta, celebra el curso concreto, sin volver a vender en ese momento."
+      }
+    ],
+    "note": "Failure belongs to delivered generic acknowledgement, not rejected earlier post-sale narrative. Kept unchanged."
+  },
+  "provider_accounting": {
+    "total_requests": 101,
+    "turn_model_requests": 51,
+    "successful_judge_requests_with_output_identity": 48,
+    "controlled_setup_requests": 1,
+    "uncorrelated_judge_errors": 1,
+    "sum": 101,
+    "all_records_accounted": true,
+    "network_incident": {
+      "call_id": "call-0067",
+      "error": "DEEPSEEK_NETWORK_ERROR",
+      "latency_ms": 14743,
+      "tokens": null,
+      "confirmed_case": null,
+      "confirmed_turn": null,
+      "ordering_hint_only": "Between call-0066 isolate and call-0068 call_step; old mapper inferred 06/call_step using next response.",
+      "correlation_limit": "No request echo, schema, response, case/turn ID or explicit retry relationship in record. Preserve as run-level judge incident; do not claim confirmed per-turn attribution.",
+      "old_mapper_file": "summarize.py:136-138",
+      "old_summary_claim_limit": "all_requests_accounted is true as bookkeeping; all_requests_attributed_to_known_scope/source_correlation_clean must not be read as proof of exact turn identity for call-0067.",
+      "current_mapping": "Run-level global_judge_incidents only; excluded from per-turn judge_attempts, retained in role usage/cost."
+    },
+    "reporting_mapper_corrected": true
+  },
+  "judge_contract": {
+    "evaluator_version": "studyx-golden-semantic-delivered-v4",
+    "wire_schema_name": "studyx_golden_semantic_turn_judge_v3",
+    "raw_wrong_kind_records": [],
+    "wrong_kind_normalization_exercised_this_run": false,
+    "note": "No raw code/kind mismatch appears in this run. v4 normalization is proven by source/unit regression tests, not exercised live here. API echo exposes output schema v3; no input payload/evaluator version echo in provider artifact."
+  }
+}

@@ -1,0 +1,888 @@
+{
+  "source_sha_by_runner": "94829544b571b947739acbeecfc931c96d3a28ef",
+  "brain": "v149",
+  "logical_evaluator_version_by_source": "v4",
+  "compatible_judge_schema": "v3",
+  "agent_requests_verified": 51,
+  "successful_judge_schema_echoes_verified": 48,
+  "judge_incident_without_response": [
+    "call-0067"
+  ],
+  "live_wrong_kind_pairs": [],
+  "live_kind_normalization_branch_exercised": false,
+  "existing_single_trailing_brace_recoveries": [
+    "call-0065",
+    "call-0070"
+  ],
+  "normalization_regression_coverage": "Four original wrong-kind responses replayed in judge.test.ts remain FAIL without indeterminate or extra requests.",
+  "limitations": [
+    "Local durable backend_sha is null; exact source is proven by runner, checkout, results and run state.",
+    "API echoes judge schema and instructions, not the input JSON or internal evaluator version."
+  ],
+  "agent_proof": [
+    {
+      "call_id": "call-0001",
+      "event_id": "62525622-e8cf-4b73-8310-2f64450b56fd",
+      "trace_id": "58583b9b-419b-4ded-9a85-f12918c78b62",
+      "brain_version": "studyx-agent-a-brain-v149",
+      "course_mentions": [],
+      "backend_sha_durable": null
+    },
+    {
+      "call_id": "call-0002",
+      "event_id": "5c808925-8aa0-4a02-aa87-04c4b560e213",
+      "trace_id": "0db1f69f-2ef3-4d5d-adb6-13c82a4fc17e",
+      "brain_version": "studyx-agent-a-brain-v149",
+      "course_mentions": [
+        {
+          "offering_code": "fotografia_profesional",
+          "role": "alternative"
+        },
+        {
+          "offering_code": "fotografia_celulares_tiendas_online",
+          "role": "alternative"
+        }
+      ],
+      "backend_sha_durable": null
+    },
+    {
+      "call_id": "call-0003",
+      "event_id": "7d5ef90e-67fe-48bd-994c-f89eec8b3136",
+      "trace_id": "bdd8605e-42c8-49c2-88e8-4a9b320a713d",
+      "brain_version": "studyx-agent-a-brain-v149",
+      "course_mentions": [],
+      "backend_sha_durable": null
+    },
+    {
+      "call_id": "call-0004",
+      "event_id": "db3c4744-4a81-4a8c-ae04-5e78e7093680",
+      "trace_id": "b98ce2bc-c9fb-4c60-b26a-c15ac00ae284",
+      "brain_version": "studyx-agent-a-brain-v149",
+      "course_mentions": [
+        {
+          "offering_code": "fotografia_celulares_tiendas_online",
+          "role": "paid"
+        }
+      ],
+      "backend_sha_durable": null
+    },
+    {
+      "call_id": "call-0005",
+      "event_id": "0bbfce50-cfdc-45cd-b5e7-6bd7c430540e",
+      "trace_id": "b98ce2bc-c9fb-4c60-b26a-c15ac00ae284",
+      "brain_version": "studyx-agent-a-brain-v149",
+      "course_mentions": [
+        {
+          "offering_code": "fotografia_celulares_tiendas_online",
+          "role": "alternative"
+        }
+      ],
+      "backend_sha_durable": null
+    },
+    {
+      "call_id": "call-0006",
+      "event_id": "ef6e30b2-05fe-4623-896e-091e3bafff51",
+      "trace_id": "7aca9d8f-5afe-467b-b314-7f2c13cb6ad5",
+      "brain_version": "studyx-agent-a-brain-v149",
+      "course_mentions": [
+        {
+          "offering_code": "fotografia_profesional",
+          "role": "paid"
+        }
+      ],
+      "backend_sha_durable": null
+    },
+    {
+      "call_id": "call-0007",
+      "event_id": "bf25b8fe-64b6-4b15-ba9c-7a19a17d6bfe",
+      "trace_id": "c28c940e-6ab6-4e31-a9e6-a8d26755f5b2",
+      "brain_version": "studyx-agent-a-brain-v149",
+      "course_mentions": [
+        {
+          "offering_code": "fotografia_profesional",
+          "role": "paid"
+        }
+      ],
+      "backend_sha_durable": null
+    },
+    {
+      "call_id": "call-0008",
+      "event_id": "a618aae3-c94b-459b-aa73-d11e18da2c6a",
+      "trace_id": "381676e3-145d-4d2f-b0bf-a99288d99be8",
+      "brain_version": "studyx-agent-a-brain-v149",
+      "course_mentions": [
+        {
+          "offering_code": "fotografia_profesional",
+          "role": "paid"
+        }
+      ],
+      "backend_sha_durable": null
+    },
+    {
+      "call_id": "call-0009",
+      "event_id": "aec2c8f4-540e-48a4-b9eb-a67959cf11c6",
+      "trace_id": "60983071-10e0-4f45-92d7-536737e739e8",
+      "brain_version": "studyx-agent-a-brain-v149",
+      "course_mentions": [
+        {
+          "offering_code": "fotografia_profesional",
+          "role": "paid"
+        }
+      ],
+      "backend_sha_durable": null
+    },
+    {
+      "call_id": "call-0010",
+      "event_id": "6bca1065-7695-4d0f-a026-7f0260baa559",
+      "trace_id": "ad425903-e9c4-4097-a3c4-c33fdacb463c",
+      "brain_version": "studyx-agent-a-brain-v149",
+      "course_mentions": [
+        {
+          "offering_code": "marketing_digital",
+          "role": "paid"
+        }
+      ],
+      "backend_sha_durable": null
+    },
+    {
+      "call_id": "call-0011",
+      "event_id": "5aa84da5-0a49-41e5-97e9-6407c827069f",
+      "trace_id": "8af6c089-e0a5-4132-a592-eccc440f8585",
+      "brain_version": "studyx-agent-a-brain-v149",
+      "course_mentions": [
+        {
+          "offering_code": "marketing_digital",
+          "role": "paid"
+        }
+      ],
+      "backend_sha_durable": null
+    },
+    {
+      "call_id": "call-0012",
+      "event_id": "f33ad683-51a5-4b6c-8627-f2b546d326cf",
+      "trace_id": "423605b2-14f8-4b31-9e5a-d19e6d18d033",
+      "brain_version": "studyx-agent-a-brain-v149",
+      "course_mentions": [
+        {
+          "offering_code": "fotografia_profesional",
+          "role": "paid"
+        }
+      ],
+      "backend_sha_durable": null
+    },
+    {
+      "call_id": "call-0013",
+      "event_id": "ace1e83f-9375-41ac-8267-4e4d87b08597",
+      "trace_id": "8c035a5b-efdd-4689-b138-5dc1610e6ab7",
+      "brain_version": "studyx-agent-a-brain-v149",
+      "course_mentions": [
+        {
+          "offering_code": "fotografia_profesional",
+          "role": "paid"
+        }
+      ],
+      "backend_sha_durable": null
+    },
+    {
+      "call_id": "call-0014",
+      "event_id": "1419d6ef-b32b-4f19-86c7-fb27468a0522",
+      "trace_id": "674a2bbd-1207-4118-8701-2df4df46334b",
+      "brain_version": "studyx-agent-a-brain-v149",
+      "course_mentions": [
+        {
+          "offering_code": "fotografia_profesional",
+          "role": "paid"
+        }
+      ],
+      "backend_sha_durable": null
+    },
+    {
+      "call_id": "call-0015",
+      "event_id": "09817837-20ed-4894-b053-6cc87dfbfb2e",
+      "trace_id": "674a2bbd-1207-4118-8701-2df4df46334b",
+      "brain_version": "studyx-agent-a-brain-v149",
+      "course_mentions": [
+        {
+          "offering_code": "fotografia_profesional",
+          "role": "paid"
+        }
+      ],
+      "backend_sha_durable": null
+    },
+    {
+      "call_id": "call-0016",
+      "event_id": "1fd87803-65e4-4beb-a97e-47a32fd0178f",
+      "trace_id": "d1dd6a00-01d6-43b8-bbba-24928a1336de",
+      "brain_version": "studyx-agent-a-brain-v149",
+      "course_mentions": [
+        {
+          "offering_code": "fotografia_profesional",
+          "role": "paid"
+        }
+      ],
+      "backend_sha_durable": null
+    },
+    {
+      "call_id": "call-0017",
+      "event_id": "61690feb-f6f5-4522-ac5c-122446a28dc8",
+      "trace_id": "6bebf54a-5e57-4a40-b1bd-828d85c35bb1",
+      "brain_version": "studyx-agent-a-brain-v149",
+      "course_mentions": [
+        {
+          "offering_code": "fotografia_profesional",
+          "role": "paid"
+        }
+      ],
+      "backend_sha_durable": null
+    },
+    {
+      "call_id": "call-0018",
+      "event_id": "4a3790a3-193d-48d0-9916-7cdf8b5ce883",
+      "trace_id": "c21b3140-a847-44bf-b926-b00fd8086508",
+      "brain_version": "studyx-agent-a-brain-v149",
+      "course_mentions": [
+        {
+          "offering_code": "fotografia_profesional",
+          "role": "paid"
+        }
+      ],
+      "backend_sha_durable": null
+    },
+    {
+      "call_id": "call-0019",
+      "event_id": "2ba023fe-1f8b-49f3-9d5b-e5eda646623a",
+      "trace_id": "a8328707-a690-47c3-85d9-fde8d2020865",
+      "brain_version": "studyx-agent-a-brain-v149",
+      "course_mentions": [],
+      "backend_sha_durable": null
+    },
+    {
+      "call_id": "call-0020",
+      "event_id": "873c428b-1eef-4aad-8580-be97c36fadd3",
+      "trace_id": "f3ea6a61-2100-4513-b16e-ff899f95538c",
+      "brain_version": "studyx-agent-a-brain-v149",
+      "course_mentions": [
+        {
+          "offering_code": "fotografia_profesional",
+          "role": "paid"
+        }
+      ],
+      "backend_sha_durable": null
+    },
+    {
+      "call_id": "call-0021",
+      "event_id": "06c56173-5b28-4af0-b7ca-bb7abff700ee",
+      "trace_id": "19be617b-8abc-4c07-a27f-e230a25bd4c9",
+      "brain_version": "studyx-agent-a-brain-v149",
+      "course_mentions": [
+        {
+          "offering_code": "fotografia_profesional",
+          "role": "paid"
+        }
+      ],
+      "backend_sha_durable": null
+    },
+    {
+      "call_id": "call-0022",
+      "event_id": "fe95cb33-578d-43fc-aa4a-ae1ec97b11d2",
+      "trace_id": "d8588c37-1140-42c4-895b-edf4006bf4a6",
+      "brain_version": "studyx-agent-a-brain-v149",
+      "course_mentions": [
+        {
+          "offering_code": "fotografia_profesional",
+          "role": "paid"
+        }
+      ],
+      "backend_sha_durable": null
+    },
+    {
+      "call_id": "call-0023",
+      "event_id": "25f15a7b-cffd-4f72-9612-7350c14dc9f3",
+      "trace_id": "b856cda0-79ce-43d2-8e58-0bb1bb4b873b",
+      "brain_version": "studyx-agent-a-brain-v149",
+      "course_mentions": [],
+      "backend_sha_durable": null
+    },
+    {
+      "call_id": "call-0024",
+      "event_id": "dcebea05-33a2-42b1-9e6b-28646e3e4b28",
+      "trace_id": "b53bf222-62ec-40bd-a2a8-9578b1dd8c86",
+      "brain_version": "studyx-agent-a-brain-v149",
+      "course_mentions": [
+        {
+          "offering_code": "marketing_digital",
+          "role": "paid"
+        }
+      ],
+      "backend_sha_durable": null
+    },
+    {
+      "call_id": "call-0025",
+      "event_id": "573b318e-c43a-4ca5-a844-386586484bb6",
+      "trace_id": "9f7726f7-0521-4cde-b2e9-1d4211f19d0d",
+      "brain_version": "studyx-agent-a-brain-v149",
+      "course_mentions": [
+        {
+          "offering_code": "marketing_digital",
+          "role": "paid"
+        }
+      ],
+      "backend_sha_durable": null
+    },
+    {
+      "call_id": "call-0026",
+      "event_id": "a3f597df-b28a-48f7-b22c-1d455d30199c",
+      "trace_id": "953ef5bf-b216-4440-9454-9be405a597cf",
+      "brain_version": "studyx-agent-a-brain-v149",
+      "course_mentions": [
+        {
+          "offering_code": "fotografia_profesional",
+          "role": "paid"
+        }
+      ],
+      "backend_sha_durable": null
+    },
+    {
+      "call_id": "call-0027",
+      "event_id": "432e3f02-5bcb-442b-9c7d-bcaf5893d71a",
+      "trace_id": "a1efe1c1-834e-401a-a18a-23c74b8e581b",
+      "brain_version": "studyx-agent-a-brain-v149",
+      "course_mentions": [
+        {
+          "offering_code": "fotografia_profesional",
+          "role": "paid"
+        }
+      ],
+      "backend_sha_durable": null
+    },
+    {
+      "call_id": "call-0028",
+      "event_id": "0ee1193c-176a-484f-b1f7-9347a17f0e37",
+      "trace_id": "41370d00-1145-4307-9cbd-6b502629a094",
+      "brain_version": "studyx-agent-a-brain-v149",
+      "course_mentions": [
+        {
+          "offering_code": "fotografia_profesional",
+          "role": "paid"
+        }
+      ],
+      "backend_sha_durable": null
+    },
+    {
+      "call_id": "call-0029",
+      "event_id": "906e71f1-5395-49a6-80f6-40fd4befa990",
+      "trace_id": "8b07cdfa-f0fd-40c7-9039-894ddf17dc30",
+      "brain_version": "studyx-agent-a-brain-v149",
+      "course_mentions": [],
+      "backend_sha_durable": null
+    },
+    {
+      "call_id": "call-0030",
+      "event_id": "67ce0da3-0c4b-4ee6-91d7-85a501070b7c",
+      "trace_id": "81a806af-2b7d-4e94-832b-37cfe970a701",
+      "brain_version": "studyx-agent-a-brain-v149",
+      "course_mentions": [],
+      "backend_sha_durable": null
+    },
+    {
+      "call_id": "call-0031",
+      "event_id": "614c969f-2dd2-43d1-bdbc-87828f3a73c9",
+      "trace_id": "b352a550-d2b7-44b0-88c0-a5a3cd937c75",
+      "brain_version": "studyx-agent-a-brain-v149",
+      "course_mentions": [],
+      "backend_sha_durable": null
+    },
+    {
+      "call_id": "call-0032",
+      "event_id": "c98d2161-6157-4579-b152-04c6e7ba1b24",
+      "trace_id": "3d85f33e-fe56-43db-b531-52ffbce5187e",
+      "brain_version": "studyx-agent-a-brain-v149",
+      "course_mentions": [
+        {
+          "offering_code": "fotografia_profesional",
+          "role": "paid"
+        }
+      ],
+      "backend_sha_durable": null
+    },
+    {
+      "call_id": "call-0033",
+      "event_id": "668db261-cfb8-459c-b263-8754b80e812b",
+      "trace_id": "0900a8af-96cd-4141-a958-048e28ea73e1",
+      "brain_version": "studyx-agent-a-brain-v149",
+      "course_mentions": [
+        {
+          "offering_code": "fotografia_profesional",
+          "role": "paid"
+        }
+      ],
+      "backend_sha_durable": null
+    },
+    {
+      "call_id": "call-0034",
+      "event_id": "a345dd8a-db75-4e07-aec3-a9d6a22de317",
+      "trace_id": "1a0afd3e-4a55-414d-89cd-a550a7a975e3",
+      "brain_version": "studyx-agent-a-brain-v149",
+      "course_mentions": [
+        {
+          "offering_code": "fotografia_profesional",
+          "role": "paid"
+        }
+      ],
+      "backend_sha_durable": null
+    },
+    {
+      "call_id": "call-0035",
+      "event_id": "93a47c4c-f8d6-4c81-8071-70cf11def14f",
+      "trace_id": "a46ace12-75d8-4a6d-9294-3b1627bce591",
+      "brain_version": "studyx-agent-a-brain-v149",
+      "course_mentions": [
+        {
+          "offering_code": "fotografia_profesional",
+          "role": "paid"
+        }
+      ],
+      "backend_sha_durable": null
+    },
+    {
+      "call_id": "call-0036",
+      "event_id": "14cb3fac-b969-4966-8a54-f20d728b67c4",
+      "trace_id": "7ce675f7-dcd4-41a7-b4e5-d696efeffa8f",
+      "brain_version": "studyx-agent-a-brain-v149",
+      "course_mentions": [],
+      "backend_sha_durable": null
+    },
+    {
+      "call_id": "call-0038",
+      "event_id": "d12a9d36-10da-4a2a-9a15-ff797586c7fe",
+      "trace_id": "c38c5c11-266c-4a83-8625-55cb611f149d",
+      "brain_version": "studyx-agent-a-brain-v149",
+      "course_mentions": [],
+      "backend_sha_durable": null
+    },
+    {
+      "call_id": "call-0039",
+      "event_id": "7b32e353-ce98-44f8-8c2d-60516bb6cf5a",
+      "trace_id": "eaea060e-add8-49c7-8a30-ca38d3979ed2",
+      "brain_version": "studyx-agent-a-brain-v149",
+      "course_mentions": [
+        {
+          "offering_code": "fotografia_profesional",
+          "role": "paid"
+        }
+      ],
+      "backend_sha_durable": null
+    },
+    {
+      "call_id": "call-0040",
+      "event_id": "1d05e639-22f6-42b1-824d-b2b8581ec168",
+      "trace_id": "be06ec0e-c006-4cdb-8a47-4d9b702a3696",
+      "brain_version": "studyx-agent-a-brain-v149",
+      "course_mentions": [
+        {
+          "offering_code": "fotografia_profesional",
+          "role": "paid"
+        }
+      ],
+      "backend_sha_durable": null
+    },
+    {
+      "call_id": "call-0041",
+      "event_id": "2704faa7-d2df-439a-98d9-1bc466fa01fb",
+      "trace_id": "be06ec0e-c006-4cdb-8a47-4d9b702a3696",
+      "brain_version": "studyx-agent-a-brain-v149",
+      "course_mentions": [
+        {
+          "offering_code": "fotografia_profesional",
+          "role": "paid"
+        }
+      ],
+      "backend_sha_durable": null
+    },
+    {
+      "call_id": "call-0042",
+      "event_id": "e66244eb-da89-49dc-9e04-6b3be16ebf07",
+      "trace_id": "cfe005af-3638-4986-b7e8-0961c1e5266e",
+      "brain_version": "studyx-agent-a-brain-v149",
+      "course_mentions": [
+        {
+          "offering_code": "fotografia_profesional",
+          "role": "paid"
+        }
+      ],
+      "backend_sha_durable": null
+    },
+    {
+      "call_id": "call-0043",
+      "event_id": "5ef7a547-83d4-4d9a-b103-c664af1ef7c4",
+      "trace_id": "96ee29d6-bb74-4e9d-8912-47955ecd85f6",
+      "brain_version": "studyx-agent-a-brain-v149",
+      "course_mentions": [
+        {
+          "offering_code": "fotografia_profesional",
+          "role": "paid"
+        }
+      ],
+      "backend_sha_durable": null
+    },
+    {
+      "call_id": "call-0044",
+      "event_id": "0675628b-a6bb-4fd4-bc8f-9accf2410d97",
+      "trace_id": "a15a7dec-8319-4d57-b126-f8f78980e4f1",
+      "brain_version": "studyx-agent-a-brain-v149",
+      "course_mentions": [
+        {
+          "offering_code": "fotografia_profesional",
+          "role": "paid"
+        }
+      ],
+      "backend_sha_durable": null
+    },
+    {
+      "call_id": "call-0045",
+      "event_id": "34f1befa-172d-45de-93f2-c7a28c0a6958",
+      "trace_id": "dcd76f79-9f73-4baf-9170-12afea9397b4",
+      "brain_version": "studyx-agent-a-brain-v149",
+      "course_mentions": [
+        {
+          "offering_code": "fotografia_profesional",
+          "role": "paid"
+        }
+      ],
+      "backend_sha_durable": null
+    },
+    {
+      "call_id": "call-0046",
+      "event_id": "e90cd351-cce0-4f8c-8bef-6f3d40f7b3cf",
+      "trace_id": "e6e64c72-f858-4249-a0ab-0a94463c4aff",
+      "brain_version": "studyx-agent-a-brain-v149",
+      "course_mentions": [
+        {
+          "offering_code": "fotografia_profesional",
+          "role": "paid"
+        }
+      ],
+      "backend_sha_durable": null
+    },
+    {
+      "call_id": "call-0047",
+      "event_id": "7738e30c-ba5c-49e1-9aab-c28f28738ef6",
+      "trace_id": "da0699b4-37bb-4ba8-86f4-313f4df5caf0",
+      "brain_version": "studyx-agent-a-brain-v149",
+      "course_mentions": [
+        {
+          "offering_code": "fotografia_profesional",
+          "role": "paid"
+        }
+      ],
+      "backend_sha_durable": null
+    },
+    {
+      "call_id": "call-0048",
+      "event_id": "7afddda4-4a5e-4938-b606-11bfe01bb272",
+      "trace_id": "e79f4ca4-8832-4182-973c-d4fc6ee8a490",
+      "brain_version": "studyx-agent-a-brain-v149",
+      "course_mentions": [
+        {
+          "offering_code": "marketing_digital",
+          "role": "paid"
+        }
+      ],
+      "backend_sha_durable": null
+    },
+    {
+      "call_id": "call-0049",
+      "event_id": "c27dcdf2-4676-4195-81b3-7187d7f36885",
+      "trace_id": "99147dd7-04bc-47d9-9a66-3069117bae73",
+      "brain_version": "studyx-agent-a-brain-v149",
+      "course_mentions": [
+        {
+          "offering_code": "fotografia_profesional",
+          "role": "paid"
+        }
+      ],
+      "backend_sha_durable": null
+    },
+    {
+      "call_id": "call-0050",
+      "event_id": "2d8f059d-b9e5-42fe-b724-f5036fc2c3af",
+      "trace_id": "402eb41a-36e2-470a-9408-7c85f843b0dd",
+      "brain_version": "studyx-agent-a-brain-v149",
+      "course_mentions": [
+        {
+          "offering_code": "fotografia_profesional",
+          "role": "paid"
+        }
+      ],
+      "backend_sha_durable": null
+    },
+    {
+      "call_id": "call-0051",
+      "event_id": "17428799-4e6c-42fe-a287-91d99321d9a1",
+      "trace_id": "211e349d-dd9a-4a84-8966-994f251cbc70",
+      "brain_version": "studyx-agent-a-brain-v149",
+      "course_mentions": [
+        {
+          "offering_code": "marketing_digital",
+          "role": "paid"
+        }
+      ],
+      "backend_sha_durable": null
+    },
+    {
+      "call_id": "call-0052",
+      "event_id": "1dbcf947-63f8-48f0-8dfb-cd183ba1e8f1",
+      "trace_id": "64aee6ed-d20b-4d51-870a-5ff4fd873cf8",
+      "brain_version": "studyx-agent-a-brain-v149",
+      "course_mentions": [
+        {
+          "offering_code": "marketing_digital",
+          "role": "paid"
+        }
+      ],
+      "backend_sha_durable": null
+    }
+  ],
+  "judge_proof": [
+    {
+      "call_id": "call-0053",
+      "schema_name": "studyx_golden_semantic_turn_judge_v3",
+      "input_json_echoed": false
+    },
+    {
+      "call_id": "call-0054",
+      "schema_name": "studyx_golden_semantic_turn_judge_v3",
+      "input_json_echoed": false
+    },
+    {
+      "call_id": "call-0055",
+      "schema_name": "studyx_golden_semantic_turn_judge_v3",
+      "input_json_echoed": false
+    },
+    {
+      "call_id": "call-0056",
+      "schema_name": "studyx_golden_semantic_turn_judge_v3",
+      "input_json_echoed": false
+    },
+    {
+      "call_id": "call-0057",
+      "schema_name": "studyx_golden_semantic_turn_judge_v3",
+      "input_json_echoed": false
+    },
+    {
+      "call_id": "call-0058",
+      "schema_name": "studyx_golden_semantic_turn_judge_v3",
+      "input_json_echoed": false
+    },
+    {
+      "call_id": "call-0059",
+      "schema_name": "studyx_golden_semantic_turn_judge_v3",
+      "input_json_echoed": false
+    },
+    {
+      "call_id": "call-0060",
+      "schema_name": "studyx_golden_semantic_turn_judge_v3",
+      "input_json_echoed": false
+    },
+    {
+      "call_id": "call-0061",
+      "schema_name": "studyx_golden_semantic_turn_judge_v3",
+      "input_json_echoed": false
+    },
+    {
+      "call_id": "call-0062",
+      "schema_name": "studyx_golden_semantic_turn_judge_v3",
+      "input_json_echoed": false
+    },
+    {
+      "call_id": "call-0063",
+      "schema_name": "studyx_golden_semantic_turn_judge_v3",
+      "input_json_echoed": false
+    },
+    {
+      "call_id": "call-0064",
+      "schema_name": "studyx_golden_semantic_turn_judge_v3",
+      "input_json_echoed": false
+    },
+    {
+      "call_id": "call-0065",
+      "schema_name": "studyx_golden_semantic_turn_judge_v3",
+      "input_json_echoed": false
+    },
+    {
+      "call_id": "call-0066",
+      "schema_name": "studyx_golden_semantic_turn_judge_v3",
+      "input_json_echoed": false
+    },
+    {
+      "call_id": "call-0068",
+      "schema_name": "studyx_golden_semantic_turn_judge_v3",
+      "input_json_echoed": false
+    },
+    {
+      "call_id": "call-0069",
+      "schema_name": "studyx_golden_semantic_turn_judge_v3",
+      "input_json_echoed": false
+    },
+    {
+      "call_id": "call-0070",
+      "schema_name": "studyx_golden_semantic_turn_judge_v3",
+      "input_json_echoed": false
+    },
+    {
+      "call_id": "call-0071",
+      "schema_name": "studyx_golden_semantic_turn_judge_v3",
+      "input_json_echoed": false
+    },
+    {
+      "call_id": "call-0072",
+      "schema_name": "studyx_golden_semantic_turn_judge_v3",
+      "input_json_echoed": false
+    },
+    {
+      "call_id": "call-0073",
+      "schema_name": "studyx_golden_semantic_turn_judge_v3",
+      "input_json_echoed": false
+    },
+    {
+      "call_id": "call-0074",
+      "schema_name": "studyx_golden_semantic_turn_judge_v3",
+      "input_json_echoed": false
+    },
+    {
+      "call_id": "call-0075",
+      "schema_name": "studyx_golden_semantic_turn_judge_v3",
+      "input_json_echoed": false
+    },
+    {
+      "call_id": "call-0076",
+      "schema_name": "studyx_golden_semantic_turn_judge_v3",
+      "input_json_echoed": false
+    },
+    {
+      "call_id": "call-0077",
+      "schema_name": "studyx_golden_semantic_turn_judge_v3",
+      "input_json_echoed": false
+    },
+    {
+      "call_id": "call-0078",
+      "schema_name": "studyx_golden_semantic_turn_judge_v3",
+      "input_json_echoed": false
+    },
+    {
+      "call_id": "call-0079",
+      "schema_name": "studyx_golden_semantic_turn_judge_v3",
+      "input_json_echoed": false
+    },
+    {
+      "call_id": "call-0080",
+      "schema_name": "studyx_golden_semantic_turn_judge_v3",
+      "input_json_echoed": false
+    },
+    {
+      "call_id": "call-0081",
+      "schema_name": "studyx_golden_semantic_turn_judge_v3",
+      "input_json_echoed": false
+    },
+    {
+      "call_id": "call-0082",
+      "schema_name": "studyx_golden_semantic_turn_judge_v3",
+      "input_json_echoed": false
+    },
+    {
+      "call_id": "call-0083",
+      "schema_name": "studyx_golden_semantic_turn_judge_v3",
+      "input_json_echoed": false
+    },
+    {
+      "call_id": "call-0084",
+      "schema_name": "studyx_golden_semantic_turn_judge_v3",
+      "input_json_echoed": false
+    },
+    {
+      "call_id": "call-0085",
+      "schema_name": "studyx_golden_semantic_turn_judge_v3",
+      "input_json_echoed": false
+    },
+    {
+      "call_id": "call-0086",
+      "schema_name": "studyx_golden_semantic_turn_judge_v3",
+      "input_json_echoed": false
+    },
+    {
+      "call_id": "call-0087",
+      "schema_name": "studyx_golden_semantic_turn_judge_v3",
+      "input_json_echoed": false
+    },
+    {
+      "call_id": "call-0088",
+      "schema_name": "studyx_golden_semantic_turn_judge_v3",
+      "input_json_echoed": false
+    },
+    {
+      "call_id": "call-0089",
+      "schema_name": "studyx_golden_semantic_turn_judge_v3",
+      "input_json_echoed": false
+    },
+    {
+      "call_id": "call-0090",
+      "schema_name": "studyx_golden_semantic_turn_judge_v3",
+      "input_json_echoed": false
+    },
+    {
+      "call_id": "call-0091",
+      "schema_name": "studyx_golden_semantic_turn_judge_v3",
+      "input_json_echoed": false
+    },
+    {
+      "call_id": "call-0092",
+      "schema_name": "studyx_golden_semantic_turn_judge_v3",
+      "input_json_echoed": false
+    },
+    {
+      "call_id": "call-0093",
+      "schema_name": "studyx_golden_semantic_turn_judge_v3",
+      "input_json_echoed": false
+    },
+    {
+      "call_id": "call-0094",
+      "schema_name": "studyx_golden_semantic_turn_judge_v3",
+      "input_json_echoed": false
+    },
+    {
+      "call_id": "call-0095",
+      "schema_name": "studyx_golden_semantic_turn_judge_v3",
+      "input_json_echoed": false
+    },
+    {
+      "call_id": "call-0096",
+      "schema_name": "studyx_golden_semantic_turn_judge_v3",
+      "input_json_echoed": false
+    },
+    {
+      "call_id": "call-0097",
+      "schema_name": "studyx_golden_semantic_turn_judge_v3",
+      "input_json_echoed": false
+    },
+    {
+      "call_id": "call-0098",
+      "schema_name": "studyx_golden_semantic_turn_judge_v3",
+      "input_json_echoed": false
+    },
+    {
+      "call_id": "call-0099",
+      "schema_name": "studyx_golden_semantic_turn_judge_v3",
+      "input_json_echoed": false
+    },
+    {
+      "call_id": "call-0100",
+      "schema_name": "studyx_golden_semantic_turn_judge_v3",
+      "input_json_echoed": false
+    },
+    {
+      "call_id": "call-0101",
+      "schema_name": "studyx_golden_semantic_turn_judge_v3",
+      "input_json_echoed": false
+    }
+  ]
+}

@@ -2,7 +2,7 @@
 
 Recorded original proposals, not newly generated responses. No authority, golden score or original attempt is altered. Production session boundaries are separately covered by projector/integration tests.
 
-SHA evaluación: 9d52d770eaffeccea1bb50e0df799390d16552f8. Modelo/DB/entrega: 0.
+SHA evaluación: 94829544b571b947739acbeecfc931c96d3a28ef. Modelo/DB/entrega: 0.
 
 | Caso/turno | Intento | Selección recibida | Foco reconstruido | Antes | Ahora | Borrador original |
 |---|---|---|---|---|---|---|

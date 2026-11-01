@@ -29,3 +29,5 @@ Las cuatro respuestas históricas 0099–0102 se convierten en **FAIL válido**,
 Pasaron **4.964 unitarias, 960 de integración y 115 del evaluador offline**, además de tipos, lint, build Next y chequeo ADK. El arquitecto aprobó el código y el alcance del replay; resultados y logs están en [checks.json](evidence/2026-11-01-paid-role-alignment/checks.json). Se repite la integración completa desde una base fresca tras el último ajuste del límite de historial; una assertion antigua de orden por conversation_seq nulo se reemplaza por comprobar IDs/contenido en el orden del plan autorizado, conservando contador y recibos idempotentes.
 
 Tras commit y push se ejecutará una sola aceptación Flash de las 16 golden: ≥41/48, críticos 07/10/11/12/15 completos y cero bonificaciones sin respaldo observadas. 06 y 14 se informan y sus turnos integran el total, sin gate individual. No se despliega.
+
+La [única aceptación posterior](2026-11-01-paid-role-alignment-acceptance.md) sobre 9482954 entregó los cuatro turnos sin paid_mismatch, pero obtuvo 35/48 y falló el crítico 12. No aprobó el criterio formal ni se desplegó.

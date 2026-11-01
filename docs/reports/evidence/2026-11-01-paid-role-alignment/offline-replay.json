@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "evaluation_sha": "9d52d770eaffeccea1bb50e0df799390d16552f8",
-  "evaluation_worktree_dirty": true,
+  "evaluation_sha": "94829544b571b947739acbeecfc931c96d3a28ef",
+  "evaluation_worktree_dirty": false,
   "model_calls": 0,
   "persistence_calls": 0,
   "deliveries": 0,

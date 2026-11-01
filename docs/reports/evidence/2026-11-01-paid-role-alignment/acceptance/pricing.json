@@ -1,0 +1,14 @@
+{
+  "verified_at_utc": "2026-11-01T21:02:24.955392+00:00",
+  "source": "https://api-docs.deepseek.com/quick_start/pricing/",
+  "requested_model": "deepseek-v4-flash",
+  "legacy_alias_served_by": "DeepSeek-V4.1-Flash-1017",
+  "rates_usd_per_million_tokens": {
+    "cache_hit": 0.003,
+    "cache_miss": 0.15,
+    "output": 0.6
+  },
+  "time_window": "Sunday offpeak",
+  "estimate_not_invoice": true,
+  "balance_not_used_as_cost": true
+}
