@@ -1,0 +1,16 @@
+{
+  "checked_at": "2026-11-01T19:11:31.556Z",
+  "status": 200,
+  "latency_ms": 776,
+  "balance": {
+    "is_available": true,
+    "balance_infos": [
+      {
+        "currency": "USD",
+        "total_balance": "4.55",
+        "granted_balance": "0.00",
+        "topped_up_balance": "4.55"
+      }
+    ]
+  }
+}

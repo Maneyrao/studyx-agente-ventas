@@ -22,4 +22,4 @@ El arquitecto aprobó el código tras corregir la preservación de identidades h
 
 ## Alcance de la garantía
 
-La detección estructural cubre nombres canónicos exactos y roles declarados. Los alias, insinuaciones sin nombre exacto y roles falsos `alternative`/`paid_complement` requieren evaluación semántica; este contrato no demuestra por sí solo su ausencia. La aceptación con Flash se informa por separado una vez comprometido y subido el código. No se desplegó.
+La detección estructural cubre nombres canónicos exactos y roles declarados. Los alias, insinuaciones sin nombre exacto y roles falsos `alternative`/`paid_complement` requieren evaluación semántica; este contrato no demuestra por sí solo su ausencia. Las dos corridas reales sobre 25970d5 están en el [informe de aceptación](2026-11-01-course-mentions-acceptance.md): 06 y 14 fallan en ambas; no se habilita la suite de 16. No se desplegó.

@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "evaluation_sha": "eca0344046905ec58f9704dc33757cddcb315bf6",
-  "evaluation_worktree_dirty": true,
+  "evaluation_sha": "25970d5b870bb7bf3b4ad01a42a764f0f19b390d",
+  "evaluation_worktree_dirty": false,
   "evaluator_source_sha256": {
     "evals/golden/replay-course-mentions.ts": "3855ae195f5e0c2e9fecd5626e528de770736c1128339f7b0f882879b332ba96",
     "src/shared/conversation/course-mentions.ts": "a244faec1e9fa0d1516b8edd3bd533149e461d5f5f2885fb1619899f8815c7f0",

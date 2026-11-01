@@ -2,7 +2,7 @@
 
 Offline shadow evaluation of recorded text and documented facts using the current pure helper. Role sidecars are explicit review annotations, never fabricated historical model fields. Does not measure v148 model behavior or change original acceptance scores.
 
-Execution SHA: 961c991bcb2a6afc3ea6b0f30d56a7ec0b0f60b8. Evaluation SHA: eca0344046905ec58f9704dc33757cddcb315bf6. Dirty evaluator: true. Source and input hashes are in JSON.
+Execution SHA: 961c991bcb2a6afc3ea6b0f30d56a7ec0b0f60b8. Evaluation SHA: 25970d5b870bb7bf3b4ad01a42a764f0f19b390d. Dirty evaluator: false. Source and input hashes are in JSON.
 
 Assertions: 17/17. Model calls0, database calls0, deliveries0.
 

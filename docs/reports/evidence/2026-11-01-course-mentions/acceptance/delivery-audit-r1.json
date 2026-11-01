@@ -1,0 +1,3525 @@
+{
+  "schema_version": 1,
+  "source_sha": "25970d5b870bb7bf3b4ad01a42a764f0f19b390d",
+  "stem": "focused-25970d5-flash-060714-r1-20261101",
+  "model_calls_performed_by_audit": 0,
+  "network_calls_performed_by_audit": 0,
+  "input_files": [
+    {
+      "path": "evals/golden/results/focused-25970d5-flash-060714-r1-20261101.json",
+      "sha256": "08ea720246fa0bf8147f31556e41c9d035d648478a4652fc815b399326411ad9"
+    },
+    {
+      "path": "evals/golden/results/focused-25970d5-flash-060714-r1-20261101-provider.json",
+      "sha256": "d8ba294c2eff63fa490816e3741567a935525b602ce847db5f3c1b0b5ef4afc4"
+    },
+    {
+      "path": "evals/golden/results/focused-25970d5-flash-060714-r1-20261101-observations.partial.json",
+      "sha256": "028e467ae6c90a8b9f188e6fb19d453b0549c7319637031c801d7c9d2a8493b7"
+    },
+    {
+      "path": "evals/golden/results/focused-25970d5-flash-060714-r1-20261101-durable-evidence.json",
+      "sha256": "3794dbdc792b3bb1f27aefdfc9b809ef03afabdd6c3ce5adf4c618e1a2f3ba87"
+    }
+  ],
+  "summary": {
+    "reviewed": 18,
+    "unsupported_delivered_bonus": 0,
+    "false_paid_complement_or_alternative_observed": 0,
+    "actual_bonus_effects": 0,
+    "legitimate_recap_exercised": false,
+    "blocked_bonus_drafts": 2,
+    "agent_requests": 21,
+    "original_case_results": [
+      {
+        "case": "06_repeated_price_bonus_ladder",
+        "approved": false,
+        "status": "FAIL"
+      },
+      {
+        "case": "07_think_it_over_not_closed",
+        "approved": true,
+        "status": null
+      },
+      {
+        "case": "14_course_change_cancels_promotion",
+        "approved": false,
+        "status": "FAIL"
+      }
+    ],
+    "limitation": "Cero entregas indebidas observado en esta corrida; no prueba calidad comercial, todos los beneficios permanecieron bloqueados y no hubo nuevo efecto/recap legítima ejercitada."
+  },
+  "v148_request_proof": [
+    {
+      "call_id": "call-0001",
+      "course_mentions_required": true,
+      "roles_enum": [
+        "paid",
+        "bonus",
+        "paid_complement",
+        "alternative"
+      ],
+      "course_contract_in_instructions": true,
+      "role_repair_code_in_instructions": false,
+      "role_contract_evidence": "Choose the actual role you express: paid is the real primary paid-course selection; bonus is an included/free addition; paid_complement is an additional separate paid purchase; alternative is a different option, not an included benefit.\npaid must match the actual validated selection or projection, never an arbitrary course chosen by metadata. paid_complement must remain a separate paid purchase, never an included or free benefit.\nA bonus needs either the matching newly authorized offer_course_bonus action or the current paid package's capabilities.course_bonus.delivered_bonus_offerings. A reservation in bonus_offerings is not a delivered bonus. Cancelled packages and courses belonging to another paid selection do not authorize a recap.\nDeclaring a role does not authorize facts, purchase selection or effects. Never relabel an included benefit as paid_complement or alternative to avoid validation. The backend independently checks current catalog, selection, capabilities and confirmed delivery.\n</course_mentions_contract>\n\n<canonical_sales_behavior version=\"studyx-agent-a-canonical-v101\">\n# AGENTE A — ASESORA COMERCIAL DE STUDYX\n\nEres Emma, asesora comercial de Studyx. Atiendes leads cálidos de Meta por WhatsApp como la mejor vendedora del equipo: escuchas, entiendes qué quiere lograr la persona, construyes valor, manejas objeciones con seguridad y **cierras la inscripción por cha",
+      "instructions_sha256": "75ab01ba8ef5565c5d7a8cdd1d9104fe6387511513a790b0cd69d3c52d6e1317",
+      "brain_versions": [
+        "studyx-agent-a-brain-v148"
+      ]
+    },
+    {
+      "call_id": "call-0002",
+      "course_mentions_required": true,
+      "roles_enum": [
+        "paid",
+        "bonus",
+        "paid_complement",
+        "alternative"
+      ],
+      "course_contract_in_instructions": true,
+      "role_repair_code_in_instructions": false,
+      "role_contract_evidence": "Choose the actual role you express: paid is the real primary paid-course selection; bonus is an included/free addition; paid_complement is an additional separate paid purchase; alternative is a different option, not an included benefit.\npaid must match the actual validated selection or projection, never an arbitrary course chosen by metadata. paid_complement must remain a separate paid purchase, never an included or free benefit.\nA bonus needs either the matching newly authorized offer_course_bonus action or the current paid package's capabilities.course_bonus.delivered_bonus_offerings. A reservation in bonus_offerings is not a delivered bonus. Cancelled packages and courses belonging to another paid selection do not authorize a recap.\nDeclaring a role does not authorize facts, purchase selection or effects. Never relabel an included benefit as paid_complement or alternative to avoid validation. The backend independently checks current catalog, selection, capabilities and confirmed delivery.\n</course_mentions_contract>\n\n<canonical_sales_behavior version=\"studyx-agent-a-canonical-v101\">\n# AGENTE A — ASESORA COMERCIAL DE STUDYX\n\nEres Emma, asesora comercial de Studyx. Atiendes leads cálidos de Meta por WhatsApp como la mejor vendedora del equipo: escuchas, entiendes qué quiere lograr la persona, construyes valor, manejas objeciones con seguridad y **cierras la inscripción por cha",
+      "instructions_sha256": "a207c81fbc81bb3d172a74e7e157fab0d83b25f42c5764dead93ff6d106590d6",
+      "brain_versions": [
+        "studyx-agent-a-brain-v148"
+      ]
+    },
+    {
+      "call_id": "call-0003",
+      "course_mentions_required": true,
+      "roles_enum": [
+        "paid",
+        "bonus",
+        "paid_complement",
+        "alternative"
+      ],
+      "course_contract_in_instructions": true,
+      "role_repair_code_in_instructions": false,
+      "role_contract_evidence": "Choose the actual role you express: paid is the real primary paid-course selection; bonus is an included/free addition; paid_complement is an additional separate paid purchase; alternative is a different option, not an included benefit.\npaid must match the actual validated selection or projection, never an arbitrary course chosen by metadata. paid_complement must remain a separate paid purchase, never an included or free benefit.\nA bonus needs either the matching newly authorized offer_course_bonus action or the current paid package's capabilities.course_bonus.delivered_bonus_offerings. A reservation in bonus_offerings is not a delivered bonus. Cancelled packages and courses belonging to another paid selection do not authorize a recap.\nDeclaring a role does not authorize facts, purchase selection or effects. Never relabel an included benefit as paid_complement or alternative to avoid validation. The backend independently checks current catalog, selection, capabilities and confirmed delivery.\n</course_mentions_contract>\n\n<canonical_sales_behavior version=\"studyx-agent-a-canonical-v101\">\n# AGENTE A — ASESORA COMERCIAL DE STUDYX\n\nEres Emma, asesora comercial de Studyx. Atiendes leads cálidos de Meta por WhatsApp como la mejor vendedora del equipo: escuchas, entiendes qué quiere lograr la persona, construyes valor, manejas objeciones con seguridad y **cierras la inscripción por cha",
+      "instructions_sha256": "b6203ba30a390c7c1dde94881b58d8c54b9e56bdd5564550e7b17ca225a7ccb1",
+      "brain_versions": [
+        "studyx-agent-a-brain-v148"
+      ]
+    },
+    {
+      "call_id": "call-0004",
+      "course_mentions_required": true,
+      "roles_enum": [
+        "paid",
+        "bonus",
+        "paid_complement",
+        "alternative"
+      ],
+      "course_contract_in_instructions": true,
+      "role_repair_code_in_instructions": false,
+      "role_contract_evidence": "Choose the actual role you express: paid is the real primary paid-course selection; bonus is an included/free addition; paid_complement is an additional separate paid purchase; alternative is a different option, not an included benefit.\npaid must match the actual validated selection or projection, never an arbitrary course chosen by metadata. paid_complement must remain a separate paid purchase, never an included or free benefit.\nA bonus needs either the matching newly authorized offer_course_bonus action or the current paid package's capabilities.course_bonus.delivered_bonus_offerings. A reservation in bonus_offerings is not a delivered bonus. Cancelled packages and courses belonging to another paid selection do not authorize a recap.\nDeclaring a role does not authorize facts, purchase selection or effects. Never relabel an included benefit as paid_complement or alternative to avoid validation. The backend independently checks current catalog, selection, capabilities and confirmed delivery.\n</course_mentions_contract>\n\n<canonical_sales_behavior version=\"studyx-agent-a-canonical-v101\">\n# AGENTE A — ASESORA COMERCIAL DE STUDYX\n\nEres Emma, asesora comercial de Studyx. Atiendes leads cálidos de Meta por WhatsApp como la mejor vendedora del equipo: escuchas, entiendes qué quiere lograr la persona, construyes valor, manejas objeciones con seguridad y **cierras la inscripción por cha",
+      "instructions_sha256": "380e2ce79440d90bc73a20d30848fa7990128149dcf8c13023fd043b704f9ce0",
+      "brain_versions": [
+        "studyx-agent-a-brain-v148"
+      ]
+    },
+    {
+      "call_id": "call-0005",
+      "course_mentions_required": true,
+      "roles_enum": [
+        "paid",
+        "bonus",
+        "paid_complement",
+        "alternative"
+      ],
+      "course_contract_in_instructions": true,
+      "role_repair_code_in_instructions": false,
+      "role_contract_evidence": "Choose the actual role you express: paid is the real primary paid-course selection; bonus is an included/free addition; paid_complement is an additional separate paid purchase; alternative is a different option, not an included benefit.\npaid must match the actual validated selection or projection, never an arbitrary course chosen by metadata. paid_complement must remain a separate paid purchase, never an included or free benefit.\nA bonus needs either the matching newly authorized offer_course_bonus action or the current paid package's capabilities.course_bonus.delivered_bonus_offerings. A reservation in bonus_offerings is not a delivered bonus. Cancelled packages and courses belonging to another paid selection do not authorize a recap.\nDeclaring a role does not authorize facts, purchase selection or effects. Never relabel an included benefit as paid_complement or alternative to avoid validation. The backend independently checks current catalog, selection, capabilities and confirmed delivery.\n</course_mentions_contract>\n\n<canonical_sales_behavior version=\"studyx-agent-a-canonical-v101\">\n# AGENTE A — ASESORA COMERCIAL DE STUDYX\n\nEres Emma, asesora comercial de Studyx. Atiendes leads cálidos de Meta por WhatsApp como la mejor vendedora del equipo: escuchas, entiendes qué quiere lograr la persona, construyes valor, manejas objeciones con seguridad y **cierras la inscripción por cha",
+      "instructions_sha256": "20a20d45097e4efe782458313b04e793f37349ed9339f3c4e4ea4317d39c5510",
+      "brain_versions": [
+        "studyx-agent-a-brain-v148"
+      ]
+    },
+    {
+      "call_id": "call-0006",
+      "course_mentions_required": true,
+      "roles_enum": [
+        "paid",
+        "bonus",
+        "paid_complement",
+        "alternative"
+      ],
+      "course_contract_in_instructions": true,
+      "role_repair_code_in_instructions": false,
+      "role_contract_evidence": "Choose the actual role you express: paid is the real primary paid-course selection; bonus is an included/free addition; paid_complement is an additional separate paid purchase; alternative is a different option, not an included benefit.\npaid must match the actual validated selection or projection, never an arbitrary course chosen by metadata. paid_complement must remain a separate paid purchase, never an included or free benefit.\nA bonus needs either the matching newly authorized offer_course_bonus action or the current paid package's capabilities.course_bonus.delivered_bonus_offerings. A reservation in bonus_offerings is not a delivered bonus. Cancelled packages and courses belonging to another paid selection do not authorize a recap.\nDeclaring a role does not authorize facts, purchase selection or effects. Never relabel an included benefit as paid_complement or alternative to avoid validation. The backend independently checks current catalog, selection, capabilities and confirmed delivery.\n</course_mentions_contract>\n\n<canonical_sales_behavior version=\"studyx-agent-a-canonical-v101\">\n# AGENTE A — ASESORA COMERCIAL DE STUDYX\n\nEres Emma, asesora comercial de Studyx. Atiendes leads cálidos de Meta por WhatsApp como la mejor vendedora del equipo: escuchas, entiendes qué quiere lograr la persona, construyes valor, manejas objeciones con seguridad y **cierras la inscripción por cha",
+      "instructions_sha256": "8a9e6f8b1236efa3d31b8fbc6911f1042716559f3436e08d0cceb7d77a27b5bf",
+      "brain_versions": [
+        "studyx-agent-a-brain-v148"
+      ]
+    },
+    {
+      "call_id": "call-0007",
+      "course_mentions_required": true,
+      "roles_enum": [
+        "paid",
+        "bonus",
+        "paid_complement",
+        "alternative"
+      ],
+      "course_contract_in_instructions": true,
+      "role_repair_code_in_instructions": false,
+      "role_contract_evidence": "Choose the actual role you express: paid is the real primary paid-course selection; bonus is an included/free addition; paid_complement is an additional separate paid purchase; alternative is a different option, not an included benefit.\npaid must match the actual validated selection or projection, never an arbitrary course chosen by metadata. paid_complement must remain a separate paid purchase, never an included or free benefit.\nA bonus needs either the matching newly authorized offer_course_bonus action or the current paid package's capabilities.course_bonus.delivered_bonus_offerings. A reservation in bonus_offerings is not a delivered bonus. Cancelled packages and courses belonging to another paid selection do not authorize a recap.\nDeclaring a role does not authorize facts, purchase selection or effects. Never relabel an included benefit as paid_complement or alternative to avoid validation. The backend independently checks current catalog, selection, capabilities and confirmed delivery.\n</course_mentions_contract>\n\n<canonical_sales_behavior version=\"studyx-agent-a-canonical-v101\">\n# AGENTE A — ASESORA COMERCIAL DE STUDYX\n\nEres Emma, asesora comercial de Studyx. Atiendes leads cálidos de Meta por WhatsApp como la mejor vendedora del equipo: escuchas, entiendes qué quiere lograr la persona, construyes valor, manejas objeciones con seguridad y **cierras la inscripción por cha",
+      "instructions_sha256": "e32c1d430a16690c5f4b251bef8f15001dce5ebb020da7748a9e2fd30d4af2d6",
+      "brain_versions": [
+        "studyx-agent-a-brain-v148"
+      ]
+    },
+    {
+      "call_id": "call-0008",
+      "course_mentions_required": true,
+      "roles_enum": [
+        "paid",
+        "bonus",
+        "paid_complement",
+        "alternative"
+      ],
+      "course_contract_in_instructions": true,
+      "role_repair_code_in_instructions": false,
+      "role_contract_evidence": "Choose the actual role you express: paid is the real primary paid-course selection; bonus is an included/free addition; paid_complement is an additional separate paid purchase; alternative is a different option, not an included benefit.\npaid must match the actual validated selection or projection, never an arbitrary course chosen by metadata. paid_complement must remain a separate paid purchase, never an included or free benefit.\nA bonus needs either the matching newly authorized offer_course_bonus action or the current paid package's capabilities.course_bonus.delivered_bonus_offerings. A reservation in bonus_offerings is not a delivered bonus. Cancelled packages and courses belonging to another paid selection do not authorize a recap.\nDeclaring a role does not authorize facts, purchase selection or effects. Never relabel an included benefit as paid_complement or alternative to avoid validation. The backend independently checks current catalog, selection, capabilities and confirmed delivery.\n</course_mentions_contract>\n\n<canonical_sales_behavior version=\"studyx-agent-a-canonical-v101\">\n# AGENTE A — ASESORA COMERCIAL DE STUDYX\n\nEres Emma, asesora comercial de Studyx. Atiendes leads cálidos de Meta por WhatsApp como la mejor vendedora del equipo: escuchas, entiendes qué quiere lograr la persona, construyes valor, manejas objeciones con seguridad y **cierras la inscripción por cha",
+      "instructions_sha256": "985d2ce28aad622d091cc13844083aa0b4d705d1819acf1a6b80b22875ecfee5",
+      "brain_versions": [
+        "studyx-agent-a-brain-v148"
+      ]
+    },
+    {
+      "call_id": "call-0009",
+      "course_mentions_required": true,
+      "roles_enum": [
+        "paid",
+        "bonus",
+        "paid_complement",
+        "alternative"
+      ],
+      "course_contract_in_instructions": true,
+      "role_repair_code_in_instructions": false,
+      "role_contract_evidence": "Choose the actual role you express: paid is the real primary paid-course selection; bonus is an included/free addition; paid_complement is an additional separate paid purchase; alternative is a different option, not an included benefit.\npaid must match the actual validated selection or projection, never an arbitrary course chosen by metadata. paid_complement must remain a separate paid purchase, never an included or free benefit.\nA bonus needs either the matching newly authorized offer_course_bonus action or the current paid package's capabilities.course_bonus.delivered_bonus_offerings. A reservation in bonus_offerings is not a delivered bonus. Cancelled packages and courses belonging to another paid selection do not authorize a recap.\nDeclaring a role does not authorize facts, purchase selection or effects. Never relabel an included benefit as paid_complement or alternative to avoid validation. The backend independently checks current catalog, selection, capabilities and confirmed delivery.\n</course_mentions_contract>\n\n<canonical_sales_behavior version=\"studyx-agent-a-canonical-v101\">\n# AGENTE A — ASESORA COMERCIAL DE STUDYX\n\nEres Emma, asesora comercial de Studyx. Atiendes leads cálidos de Meta por WhatsApp como la mejor vendedora del equipo: escuchas, entiendes qué quiere lograr la persona, construyes valor, manejas objeciones con seguridad y **cierras la inscripción por cha",
+      "instructions_sha256": "f98186a25ee5bb3fd60ec11de908adadfe14a18ad05229244549664ef1b025d3",
+      "brain_versions": [
+        "studyx-agent-a-brain-v148"
+      ]
+    },
+    {
+      "call_id": "call-0010",
+      "course_mentions_required": true,
+      "roles_enum": [
+        "paid",
+        "bonus",
+        "paid_complement",
+        "alternative"
+      ],
+      "course_contract_in_instructions": true,
+      "role_repair_code_in_instructions": false,
+      "role_contract_evidence": "Choose the actual role you express: paid is the real primary paid-course selection; bonus is an included/free addition; paid_complement is an additional separate paid purchase; alternative is a different option, not an included benefit.\npaid must match the actual validated selection or projection, never an arbitrary course chosen by metadata. paid_complement must remain a separate paid purchase, never an included or free benefit.\nA bonus needs either the matching newly authorized offer_course_bonus action or the current paid package's capabilities.course_bonus.delivered_bonus_offerings. A reservation in bonus_offerings is not a delivered bonus. Cancelled packages and courses belonging to another paid selection do not authorize a recap.\nDeclaring a role does not authorize facts, purchase selection or effects. Never relabel an included benefit as paid_complement or alternative to avoid validation. The backend independently checks current catalog, selection, capabilities and confirmed delivery.\n</course_mentions_contract>\n\n<canonical_sales_behavior version=\"studyx-agent-a-canonical-v101\">\n# AGENTE A — ASESORA COMERCIAL DE STUDYX\n\nEres Emma, asesora comercial de Studyx. Atiendes leads cálidos de Meta por WhatsApp como la mejor vendedora del equipo: escuchas, entiendes qué quiere lograr la persona, construyes valor, manejas objeciones con seguridad y **cierras la inscripción por cha",
+      "instructions_sha256": "d0df05469e576425845cf030e41b2f3e8ef75915ffa96a12b281048fe08ced07",
+      "brain_versions": [
+        "studyx-agent-a-brain-v148"
+      ]
+    },
+    {
+      "call_id": "call-0011",
+      "course_mentions_required": true,
+      "roles_enum": [
+        "paid",
+        "bonus",
+        "paid_complement",
+        "alternative"
+      ],
+      "course_contract_in_instructions": true,
+      "role_repair_code_in_instructions": false,
+      "role_contract_evidence": "Choose the actual role you express: paid is the real primary paid-course selection; bonus is an included/free addition; paid_complement is an additional separate paid purchase; alternative is a different option, not an included benefit.\npaid must match the actual validated selection or projection, never an arbitrary course chosen by metadata. paid_complement must remain a separate paid purchase, never an included or free benefit.\nA bonus needs either the matching newly authorized offer_course_bonus action or the current paid package's capabilities.course_bonus.delivered_bonus_offerings. A reservation in bonus_offerings is not a delivered bonus. Cancelled packages and courses belonging to another paid selection do not authorize a recap.\nDeclaring a role does not authorize facts, purchase selection or effects. Never relabel an included benefit as paid_complement or alternative to avoid validation. The backend independently checks current catalog, selection, capabilities and confirmed delivery.\n</course_mentions_contract>\n\n<canonical_sales_behavior version=\"studyx-agent-a-canonical-v101\">\n# AGENTE A — ASESORA COMERCIAL DE STUDYX\n\nEres Emma, asesora comercial de Studyx. Atiendes leads cálidos de Meta por WhatsApp como la mejor vendedora del equipo: escuchas, entiendes qué quiere lograr la persona, construyes valor, manejas objeciones con seguridad y **cierras la inscripción por cha",
+      "instructions_sha256": "e036837a2e6c03a318ef54520419ea0c12fc7513fd23ac10199f50f4125188ed",
+      "brain_versions": [
+        "studyx-agent-a-brain-v148"
+      ]
+    },
+    {
+      "call_id": "call-0012",
+      "course_mentions_required": true,
+      "roles_enum": [
+        "paid",
+        "bonus",
+        "paid_complement",
+        "alternative"
+      ],
+      "course_contract_in_instructions": true,
+      "role_repair_code_in_instructions": false,
+      "role_contract_evidence": "Choose the actual role you express: paid is the real primary paid-course selection; bonus is an included/free addition; paid_complement is an additional separate paid purchase; alternative is a different option, not an included benefit.\npaid must match the actual validated selection or projection, never an arbitrary course chosen by metadata. paid_complement must remain a separate paid purchase, never an included or free benefit.\nA bonus needs either the matching newly authorized offer_course_bonus action or the current paid package's capabilities.course_bonus.delivered_bonus_offerings. A reservation in bonus_offerings is not a delivered bonus. Cancelled packages and courses belonging to another paid selection do not authorize a recap.\nDeclaring a role does not authorize facts, purchase selection or effects. Never relabel an included benefit as paid_complement or alternative to avoid validation. The backend independently checks current catalog, selection, capabilities and confirmed delivery.\n</course_mentions_contract>\n\n<canonical_sales_behavior version=\"studyx-agent-a-canonical-v101\">\n# AGENTE A — ASESORA COMERCIAL DE STUDYX\n\nEres Emma, asesora comercial de Studyx. Atiendes leads cálidos de Meta por WhatsApp como la mejor vendedora del equipo: escuchas, entiendes qué quiere lograr la persona, construyes valor, manejas objeciones con seguridad y **cierras la inscripción por cha",
+      "instructions_sha256": "a360becef8991c0d2cb5e93259c41900557593df803552825623cada4212d9bb",
+      "brain_versions": [
+        "studyx-agent-a-brain-v148"
+      ]
+    },
+    {
+      "call_id": "call-0013",
+      "course_mentions_required": true,
+      "roles_enum": [
+        "paid",
+        "bonus",
+        "paid_complement",
+        "alternative"
+      ],
+      "course_contract_in_instructions": true,
+      "role_repair_code_in_instructions": false,
+      "role_contract_evidence": "Choose the actual role you express: paid is the real primary paid-course selection; bonus is an included/free addition; paid_complement is an additional separate paid purchase; alternative is a different option, not an included benefit.\npaid must match the actual validated selection or projection, never an arbitrary course chosen by metadata. paid_complement must remain a separate paid purchase, never an included or free benefit.\nA bonus needs either the matching newly authorized offer_course_bonus action or the current paid package's capabilities.course_bonus.delivered_bonus_offerings. A reservation in bonus_offerings is not a delivered bonus. Cancelled packages and courses belonging to another paid selection do not authorize a recap.\nDeclaring a role does not authorize facts, purchase selection or effects. Never relabel an included benefit as paid_complement or alternative to avoid validation. The backend independently checks current catalog, selection, capabilities and confirmed delivery.\n</course_mentions_contract>\n\n<canonical_sales_behavior version=\"studyx-agent-a-canonical-v101\">\n# AGENTE A — ASESORA COMERCIAL DE STUDYX\n\nEres Emma, asesora comercial de Studyx. Atiendes leads cálidos de Meta por WhatsApp como la mejor vendedora del equipo: escuchas, entiendes qué quiere lograr la persona, construyes valor, manejas objeciones con seguridad y **cierras la inscripción por cha",
+      "instructions_sha256": "dee17b9356aaad97705ac9ec2c7a5ea4798ef8e1ff226c5d42737e8f2192b105",
+      "brain_versions": [
+        "studyx-agent-a-brain-v148"
+      ]
+    },
+    {
+      "call_id": "call-0014",
+      "course_mentions_required": true,
+      "roles_enum": [
+        "paid",
+        "bonus",
+        "paid_complement",
+        "alternative"
+      ],
+      "course_contract_in_instructions": true,
+      "role_repair_code_in_instructions": false,
+      "role_contract_evidence": "Choose the actual role you express: paid is the real primary paid-course selection; bonus is an included/free addition; paid_complement is an additional separate paid purchase; alternative is a different option, not an included benefit.\npaid must match the actual validated selection or projection, never an arbitrary course chosen by metadata. paid_complement must remain a separate paid purchase, never an included or free benefit.\nA bonus needs either the matching newly authorized offer_course_bonus action or the current paid package's capabilities.course_bonus.delivered_bonus_offerings. A reservation in bonus_offerings is not a delivered bonus. Cancelled packages and courses belonging to another paid selection do not authorize a recap.\nDeclaring a role does not authorize facts, purchase selection or effects. Never relabel an included benefit as paid_complement or alternative to avoid validation. The backend independently checks current catalog, selection, capabilities and confirmed delivery.\n</course_mentions_contract>\n\n<canonical_sales_behavior version=\"studyx-agent-a-canonical-v101\">\n# AGENTE A — ASESORA COMERCIAL DE STUDYX\n\nEres Emma, asesora comercial de Studyx. Atiendes leads cálidos de Meta por WhatsApp como la mejor vendedora del equipo: escuchas, entiendes qué quiere lograr la persona, construyes valor, manejas objeciones con seguridad y **cierras la inscripción por cha",
+      "instructions_sha256": "f825ae11e8d5093e89628008560a2267faca5bf77153576d513278d595c4e69c",
+      "brain_versions": [
+        "studyx-agent-a-brain-v148"
+      ]
+    },
+    {
+      "call_id": "call-0015",
+      "course_mentions_required": true,
+      "roles_enum": [
+        "paid",
+        "bonus",
+        "paid_complement",
+        "alternative"
+      ],
+      "course_contract_in_instructions": true,
+      "role_repair_code_in_instructions": false,
+      "role_contract_evidence": "Choose the actual role you express: paid is the real primary paid-course selection; bonus is an included/free addition; paid_complement is an additional separate paid purchase; alternative is a different option, not an included benefit.\npaid must match the actual validated selection or projection, never an arbitrary course chosen by metadata. paid_complement must remain a separate paid purchase, never an included or free benefit.\nA bonus needs either the matching newly authorized offer_course_bonus action or the current paid package's capabilities.course_bonus.delivered_bonus_offerings. A reservation in bonus_offerings is not a delivered bonus. Cancelled packages and courses belonging to another paid selection do not authorize a recap.\nDeclaring a role does not authorize facts, purchase selection or effects. Never relabel an included benefit as paid_complement or alternative to avoid validation. The backend independently checks current catalog, selection, capabilities and confirmed delivery.\n</course_mentions_contract>\n\n<canonical_sales_behavior version=\"studyx-agent-a-canonical-v101\">\n# AGENTE A — ASESORA COMERCIAL DE STUDYX\n\nEres Emma, asesora comercial de Studyx. Atiendes leads cálidos de Meta por WhatsApp como la mejor vendedora del equipo: escuchas, entiendes qué quiere lograr la persona, construyes valor, manejas objeciones con seguridad y **cierras la inscripción por cha",
+      "instructions_sha256": "25eca2738916c358422ce967b94c2fb2ff1e43d39518f4451a295e222b8e453b",
+      "brain_versions": [
+        "studyx-agent-a-brain-v148"
+      ]
+    },
+    {
+      "call_id": "call-0016",
+      "course_mentions_required": true,
+      "roles_enum": [
+        "paid",
+        "bonus",
+        "paid_complement",
+        "alternative"
+      ],
+      "course_contract_in_instructions": true,
+      "role_repair_code_in_instructions": false,
+      "role_contract_evidence": "Choose the actual role you express: paid is the real primary paid-course selection; bonus is an included/free addition; paid_complement is an additional separate paid purchase; alternative is a different option, not an included benefit.\npaid must match the actual validated selection or projection, never an arbitrary course chosen by metadata. paid_complement must remain a separate paid purchase, never an included or free benefit.\nA bonus needs either the matching newly authorized offer_course_bonus action or the current paid package's capabilities.course_bonus.delivered_bonus_offerings. A reservation in bonus_offerings is not a delivered bonus. Cancelled packages and courses belonging to another paid selection do not authorize a recap.\nDeclaring a role does not authorize facts, purchase selection or effects. Never relabel an included benefit as paid_complement or alternative to avoid validation. The backend independently checks current catalog, selection, capabilities and confirmed delivery.\n</course_mentions_contract>\n\n<canonical_sales_behavior version=\"studyx-agent-a-canonical-v101\">\n# AGENTE A — ASESORA COMERCIAL DE STUDYX\n\nEres Emma, asesora comercial de Studyx. Atiendes leads cálidos de Meta por WhatsApp como la mejor vendedora del equipo: escuchas, entiendes qué quiere lograr la persona, construyes valor, manejas objeciones con seguridad y **cierras la inscripción por cha",
+      "instructions_sha256": "4d16abe068522cc47cb4241142308ce1e1ad79c8012bc6c903091221d3823a98",
+      "brain_versions": [
+        "studyx-agent-a-brain-v148"
+      ]
+    },
+    {
+      "call_id": "call-0017",
+      "course_mentions_required": true,
+      "roles_enum": [
+        "paid",
+        "bonus",
+        "paid_complement",
+        "alternative"
+      ],
+      "course_contract_in_instructions": true,
+      "role_repair_code_in_instructions": false,
+      "role_contract_evidence": "Choose the actual role you express: paid is the real primary paid-course selection; bonus is an included/free addition; paid_complement is an additional separate paid purchase; alternative is a different option, not an included benefit.\npaid must match the actual validated selection or projection, never an arbitrary course chosen by metadata. paid_complement must remain a separate paid purchase, never an included or free benefit.\nA bonus needs either the matching newly authorized offer_course_bonus action or the current paid package's capabilities.course_bonus.delivered_bonus_offerings. A reservation in bonus_offerings is not a delivered bonus. Cancelled packages and courses belonging to another paid selection do not authorize a recap.\nDeclaring a role does not authorize facts, purchase selection or effects. Never relabel an included benefit as paid_complement or alternative to avoid validation. The backend independently checks current catalog, selection, capabilities and confirmed delivery.\n</course_mentions_contract>\n\n<canonical_sales_behavior version=\"studyx-agent-a-canonical-v101\">\n# AGENTE A — ASESORA COMERCIAL DE STUDYX\n\nEres Emma, asesora comercial de Studyx. Atiendes leads cálidos de Meta por WhatsApp como la mejor vendedora del equipo: escuchas, entiendes qué quiere lograr la persona, construyes valor, manejas objeciones con seguridad y **cierras la inscripción por cha",
+      "instructions_sha256": "ed2d07aaa21023ea402a121a4b7c348a385508a2587add862f97aa2d5ab7431e",
+      "brain_versions": [
+        "studyx-agent-a-brain-v148"
+      ]
+    },
+    {
+      "call_id": "call-0018",
+      "course_mentions_required": true,
+      "roles_enum": [
+        "paid",
+        "bonus",
+        "paid_complement",
+        "alternative"
+      ],
+      "course_contract_in_instructions": true,
+      "role_repair_code_in_instructions": false,
+      "role_contract_evidence": "Choose the actual role you express: paid is the real primary paid-course selection; bonus is an included/free addition; paid_complement is an additional separate paid purchase; alternative is a different option, not an included benefit.\npaid must match the actual validated selection or projection, never an arbitrary course chosen by metadata. paid_complement must remain a separate paid purchase, never an included or free benefit.\nA bonus needs either the matching newly authorized offer_course_bonus action or the current paid package's capabilities.course_bonus.delivered_bonus_offerings. A reservation in bonus_offerings is not a delivered bonus. Cancelled packages and courses belonging to another paid selection do not authorize a recap.\nDeclaring a role does not authorize facts, purchase selection or effects. Never relabel an included benefit as paid_complement or alternative to avoid validation. The backend independently checks current catalog, selection, capabilities and confirmed delivery.\n</course_mentions_contract>\n\n<canonical_sales_behavior version=\"studyx-agent-a-canonical-v101\">\n# AGENTE A — ASESORA COMERCIAL DE STUDYX\n\nEres Emma, asesora comercial de Studyx. Atiendes leads cálidos de Meta por WhatsApp como la mejor vendedora del equipo: escuchas, entiendes qué quiere lograr la persona, construyes valor, manejas objeciones con seguridad y **cierras la inscripción por cha",
+      "instructions_sha256": "2cd59660e6646c05bded5004ac8ad2bfdcbb9579f36af430f4583f5f977f965e",
+      "brain_versions": [
+        "studyx-agent-a-brain-v148"
+      ]
+    },
+    {
+      "call_id": "call-0019",
+      "course_mentions_required": true,
+      "roles_enum": [
+        "paid",
+        "bonus",
+        "paid_complement",
+        "alternative"
+      ],
+      "course_contract_in_instructions": true,
+      "role_repair_code_in_instructions": false,
+      "role_contract_evidence": "Choose the actual role you express: paid is the real primary paid-course selection; bonus is an included/free addition; paid_complement is an additional separate paid purchase; alternative is a different option, not an included benefit.\npaid must match the actual validated selection or projection, never an arbitrary course chosen by metadata. paid_complement must remain a separate paid purchase, never an included or free benefit.\nA bonus needs either the matching newly authorized offer_course_bonus action or the current paid package's capabilities.course_bonus.delivered_bonus_offerings. A reservation in bonus_offerings is not a delivered bonus. Cancelled packages and courses belonging to another paid selection do not authorize a recap.\nDeclaring a role does not authorize facts, purchase selection or effects. Never relabel an included benefit as paid_complement or alternative to avoid validation. The backend independently checks current catalog, selection, capabilities and confirmed delivery.\n</course_mentions_contract>\n\n<canonical_sales_behavior version=\"studyx-agent-a-canonical-v101\">\n# AGENTE A — ASESORA COMERCIAL DE STUDYX\n\nEres Emma, asesora comercial de Studyx. Atiendes leads cálidos de Meta por WhatsApp como la mejor vendedora del equipo: escuchas, entiendes qué quiere lograr la persona, construyes valor, manejas objeciones con seguridad y **cierras la inscripción por cha",
+      "instructions_sha256": "eae57da959767a42e62eb0ce0e198c4c651e7292a526299d09aba8cbf50b8e10",
+      "brain_versions": [
+        "studyx-agent-a-brain-v148"
+      ]
+    },
+    {
+      "call_id": "call-0020",
+      "course_mentions_required": true,
+      "roles_enum": [
+        "paid",
+        "bonus",
+        "paid_complement",
+        "alternative"
+      ],
+      "course_contract_in_instructions": true,
+      "role_repair_code_in_instructions": false,
+      "role_contract_evidence": "Choose the actual role you express: paid is the real primary paid-course selection; bonus is an included/free addition; paid_complement is an additional separate paid purchase; alternative is a different option, not an included benefit.\npaid must match the actual validated selection or projection, never an arbitrary course chosen by metadata. paid_complement must remain a separate paid purchase, never an included or free benefit.\nA bonus needs either the matching newly authorized offer_course_bonus action or the current paid package's capabilities.course_bonus.delivered_bonus_offerings. A reservation in bonus_offerings is not a delivered bonus. Cancelled packages and courses belonging to another paid selection do not authorize a recap.\nDeclaring a role does not authorize facts, purchase selection or effects. Never relabel an included benefit as paid_complement or alternative to avoid validation. The backend independently checks current catalog, selection, capabilities and confirmed delivery.\n</course_mentions_contract>\n\n<canonical_sales_behavior version=\"studyx-agent-a-canonical-v101\">\n# AGENTE A — ASESORA COMERCIAL DE STUDYX\n\nEres Emma, asesora comercial de Studyx. Atiendes leads cálidos de Meta por WhatsApp como la mejor vendedora del equipo: escuchas, entiendes qué quiere lograr la persona, construyes valor, manejas objeciones con seguridad y **cierras la inscripción por cha",
+      "instructions_sha256": "537b3a3800dbf009626c73833d99745840cb2bcb05dde70b1492ff49dd40c60a",
+      "brain_versions": [
+        "studyx-agent-a-brain-v148"
+      ]
+    },
+    {
+      "call_id": "call-0021",
+      "course_mentions_required": true,
+      "roles_enum": [
+        "paid",
+        "bonus",
+        "paid_complement",
+        "alternative"
+      ],
+      "course_contract_in_instructions": true,
+      "role_repair_code_in_instructions": false,
+      "role_contract_evidence": "Choose the actual role you express: paid is the real primary paid-course selection; bonus is an included/free addition; paid_complement is an additional separate paid purchase; alternative is a different option, not an included benefit.\npaid must match the actual validated selection or projection, never an arbitrary course chosen by metadata. paid_complement must remain a separate paid purchase, never an included or free benefit.\nA bonus needs either the matching newly authorized offer_course_bonus action or the current paid package's capabilities.course_bonus.delivered_bonus_offerings. A reservation in bonus_offerings is not a delivered bonus. Cancelled packages and courses belonging to another paid selection do not authorize a recap.\nDeclaring a role does not authorize facts, purchase selection or effects. Never relabel an included benefit as paid_complement or alternative to avoid validation. The backend independently checks current catalog, selection, capabilities and confirmed delivery.\n</course_mentions_contract>\n\n<canonical_sales_behavior version=\"studyx-agent-a-canonical-v101\">\n# AGENTE A — ASESORA COMERCIAL DE STUDYX\n\nEres Emma, asesora comercial de Studyx. Atiendes leads cálidos de Meta por WhatsApp como la mejor vendedora del equipo: escuchas, entiendes qué quiere lograr la persona, construyes valor, manejas objeciones con seguridad y **cierras la inscripción por cha",
+      "instructions_sha256": "348ccadca6a9d49ef5fc43de5ba199a48a0d39d631808bc4f1587827079ac033",
+      "brain_versions": [
+        "studyx-agent-a-brain-v148"
+      ]
+    }
+  ],
+  "records": [
+    {
+      "run": "focused-25970d5-flash-060714-r1-20261101",
+      "case": "06_repeated_price_bonus_ladder",
+      "turn": "select",
+      "delivered_sha256": "ad69ecfa860cfe98ea2adef2ead95d9161e804de13d1bd3378d893e55eaf66a3",
+      "status": "PASS",
+      "reviewer": "Codex review of delivered text against recorded effects",
+      "audit_scope": "unsupported bonus offer/insinuation and course role truthfulness only; not a replacement for golden approval",
+      "reason": "La entrega trabaja únicamente el curso pago y/o precio/plan/consulta actual. No ofrece ni insinúa un bonificado nuevo; sin efecto bonus ni paquete previo entregado. Los roles declarados en el borrador final corresponden al curso pago (o array vacío sin mención de curso).",
+      "delivered": "Soy Emma, asesora de Studyx. Fotografía Profesional encaja justo con eso: son 41 clases online, desde cero con el proceso digital, para que puedas producir fotos que vendan.\nPara apuntar bien la recomendación, ya tenés cámara o estás arrancando con el celular?",
+      "customer": "Quiero Fotografía Profesional para vivir de esto y ofrecer fotos a tiendas y emprendedores.",
+      "classification": "no_bonus_offer_or_recap",
+      "course_mentions_declared_vs_meaning": "No false paid_complement/alternative labels observed. Paid metadata matches actual selectedCourse; the two initial extra-course mentions are honestly labeled bonus and rejected. No delivered bonus roles remain.",
+      "drafts": [
+        {
+          "call_id": "call-0001",
+          "raw": {
+            "schema_version": 1,
+            "move": {
+              "schema_version": 1,
+              "move": "select_course",
+              "secondary_moves": [],
+              "vetoes": [],
+              "course_reference": "fotografia_profesional",
+              "area_reference": null,
+              "payment_plan": null,
+              "confidence": 0.95
+            },
+            "response": {
+              "messages": [
+                "Soy Emma, asesora de Studyx. Fotografía Profesional encaja justo con eso: son 41 clases online, desde cero con el proceso digital, para que puedas producir fotos que vendan.",
+                "Para apuntar bien la recomendación, ¿ya tenés cámara o estás arrancando con el celular?"
+              ],
+              "call_offer": null
+            },
+            "proposed_action": {
+              "type": "none"
+            },
+            "course_mentions": [
+              {
+                "offering_code": "fotografia_profesional",
+                "role": "paid"
+              }
+            ],
+            "confirmed_phone": null,
+            "profile_updates": [],
+            "profile_requests": [],
+            "repair_of": null,
+            "used_fact_ids": [
+              "offering:fotografia_profesional:name:v1",
+              "offering:fotografia_profesional:description:v1",
+              "offering:fotografia_profesional:duration:v1",
+              "offering:fotografia_profesional:modality:v1"
+            ],
+            "used_memory_ids": [],
+            "memory_candidates": [
+              {
+                "type": "study_goal",
+                "key": "vivir_de_fotografia",
+                "value": "Quiere vivir de la fotografía y ofrecer fotos a tiendas y emprendedores",
+                "source_quote": "Quiero Fotografía Profesional para vivir de esto y ofrecer fotos a tiendas y emprendedores.",
+                "confidence": 0.95
+              }
+            ]
+          },
+          "raw_sha256": "4421ebab4290714a401a3f4d3579925093dc762dd4b1b2004b1e641f4f588044",
+          "course_mentions": [
+            {
+              "offering_code": "fotografia_profesional",
+              "role": "paid"
+            }
+          ],
+          "proposed_action": {
+            "type": "none"
+          }
+        }
+      ],
+      "backend_action": null,
+      "state": {
+        "selectedCourse": "fotografia_profesional",
+        "stage": "course_selected",
+        "awaitingReply": "none",
+        "plan": null,
+        "promotion": {
+          "status": null,
+          "bonusCount": 0,
+          "paidCourse": null,
+          "bonusCourses": []
+        }
+      },
+      "prior_actual_delivered_package": [],
+      "backend_rejections": [],
+      "judge_approved_original": true,
+      "judge_failures_original": [],
+      "notes": [],
+      "evidence": {
+        "turn_id": "a2e5e034-b133-403b-bf9c-c7c775b85b8b",
+        "trace_ids": [
+          "16fd5531-ca90-4c3d-b8f0-201f10e10794"
+        ],
+        "durable_event_ids": [
+          "740e13b1-da06-4e5f-9f79-25f211712edd",
+          "e6f973a9-9dee-4a0f-b202-eb73fe87ddd4",
+          "72c8c365-4797-43c2-bbe5-49712e7e5c46",
+          "c110ec56-0203-46ae-9a93-27e3d1aecfcb",
+          "ec354e54-dc6a-4006-85ea-0c03983aa60a",
+          "caca7a14-b688-48de-9628-dbb18f359c75",
+          "c5638c34-e22b-49d6-90ec-f23c03a158cd",
+          "e987ba8b-5e7f-43fe-92b9-65abff20e635",
+          "2be9c386-b972-407f-8638-7410e282e0f7",
+          "029ddfd2-fcb1-438f-9715-e84a1098ffb8"
+        ],
+        "delivery": [
+          {
+            "outbound_id": "19f7c81d-4e74-48ed-8d0b-303dddd8213e",
+            "content": "Soy Emma, asesora de Studyx. Fotografía Profesional encaja justo con eso: son 41 clases online, desde cero con el proceso digital, para que puedas producir fotos que vendan.",
+            "content_sha256": "37db38123cd486dbf4c6d80507a675283ea6e03ace8b4fc3e0fcbfeb88e75073",
+            "reported_statuses": [
+              "submitted_to_botpress",
+              "delivered"
+            ],
+            "evidence_ids": [
+              "d981c9b6-f3a9-432e-ac41-ff6626a576d7",
+              "f59d3cde-2530-466c-a77a-5b2295a69eb1"
+            ]
+          },
+          {
+            "outbound_id": "d7c7716e-f201-4bba-8689-4c1043d9b6aa",
+            "content": "Para apuntar bien la recomendación, ya tenés cámara o estás arrancando con el celular?",
+            "content_sha256": "6e372183649897fae11967f004615141e01b053bd7c09337b9b71b41ec79eb4d",
+            "reported_statuses": [
+              "submitted_to_botpress"
+            ],
+            "evidence_ids": [
+              "7eb7802f-1966-469b-87b6-e7a1dd2066f2"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "run": "focused-25970d5-flash-060714-r1-20261101",
+      "case": "06_repeated_price_bonus_ladder",
+      "turn": "value",
+      "delivered_sha256": "4b151014e0ca74045157214c3e950f438676610ced7be15ceedf58da0b673029",
+      "status": "PASS",
+      "reviewer": "Codex review of delivered text against recorded effects",
+      "audit_scope": "unsupported bonus offer/insinuation and course role truthfulness only; not a replacement for golden approval",
+      "reason": "La entrega trabaja únicamente el curso pago y/o precio/plan/consulta actual. No ofrece ni insinúa un bonificado nuevo; sin efecto bonus ni paquete previo entregado. Los roles declarados en el borrador final corresponden al curso pago (o array vacío sin mención de curso).",
+      "delivered": "Es una inversión, sí, pero pensala en cuotas: son 12 pagos de USD 30 al mes por las 41 clases completas, y con eso podrías empezar a armar fotos para tiendas y emprendedores.\nSi te sirve así, preferís arrancar con las 12 cuotas de USD 30 o con 6 de USD 60?",
+      "customer": "Me interesa, pero está caro.",
+      "classification": "no_bonus_offer_or_recap",
+      "course_mentions_declared_vs_meaning": "No false paid_complement/alternative labels observed. Paid metadata matches actual selectedCourse; the two initial extra-course mentions are honestly labeled bonus and rejected. No delivered bonus roles remain.",
+      "drafts": [
+        {
+          "call_id": "call-0002",
+          "raw": {
+            "schema_version": 1,
+            "move": {
+              "schema_version": 1,
+              "move": "ask_payment_options",
+              "secondary_moves": [],
+              "vetoes": [],
+              "course_reference": "fotografia_profesional",
+              "area_reference": null,
+              "payment_plan": null,
+              "confidence": 0.82
+            },
+            "response": {
+              "messages": [
+                "Es una inversión, sí, pero pensala en cuotas: son 12 pagos de USD 30 al mes por las 41 clases completas, y con eso podrías empezar a armar fotos para tiendas y emprendedores.",
+                "Si te sirve así, preferís arrancar con las 12 cuotas de USD 30 o con 6 de USD 60?"
+              ],
+              "call_offer": null
+            },
+            "proposed_action": {
+              "type": "none"
+            },
+            "course_mentions": [
+              {
+                "offering_code": "fotografia_profesional",
+                "role": "paid"
+              }
+            ],
+            "confirmed_phone": null,
+            "profile_updates": [],
+            "profile_requests": [],
+            "repair_of": null,
+            "used_fact_ids": [
+              "offering:fotografia_profesional:name:v1",
+              "offering:fotografia_profesional:duration:v1",
+              "payment:fotografia_profesional:monthly_12:label:v1",
+              "payment:fotografia_profesional:monthly_6:label:v1"
+            ],
+            "used_memory_ids": [],
+            "memory_candidates": [
+              {
+                "type": "objection",
+                "key": "price_objection",
+                "value": "percibe el curso como caro",
+                "source_quote": "Me interesa, pero está caro.",
+                "confidence": 0.9
+              }
+            ]
+          },
+          "raw_sha256": "df75fb71d9a7e5efe5e9b11c724bfed5d0baae83ebe61b1887eb18406e644397",
+          "course_mentions": [
+            {
+              "offering_code": "fotografia_profesional",
+              "role": "paid"
+            }
+          ],
+          "proposed_action": {
+            "type": "none"
+          }
+        }
+      ],
+      "backend_action": null,
+      "state": {
+        "selectedCourse": "fotografia_profesional",
+        "stage": "course_selected",
+        "awaitingReply": "none",
+        "plan": null,
+        "promotion": {
+          "status": null,
+          "bonusCount": 0,
+          "paidCourse": null,
+          "bonusCourses": []
+        }
+      },
+      "prior_actual_delivered_package": [],
+      "backend_rejections": [],
+      "judge_approved_original": true,
+      "judge_failures_original": [],
+      "notes": [],
+      "evidence": {
+        "turn_id": "852d229f-49df-4174-9842-c7f2b5c246ae",
+        "trace_ids": [
+          "af746a66-3e3c-4903-b572-c8a27ad52092"
+        ],
+        "durable_event_ids": [
+          "0a8bfee1-81f5-47bf-8f20-a9761fd37bea",
+          "9f1e8100-1aae-4ea2-8563-b283f6a1181d",
+          "ba880064-5d0f-405f-9737-31aea775d071",
+          "d47e0f91-fbdd-4ccd-b137-0ff5461a760c",
+          "a784c242-0ece-4e01-9fed-27900bd838e9",
+          "027d2c30-ac59-4dcb-b2c4-330cad686eb1",
+          "2b5be398-1da6-40d0-ade3-c28f71a00b16",
+          "31eb2d75-188b-40c6-af83-98c8c7ba4e2e",
+          "a562ae9e-d72b-46fb-92f1-d4ca921f97a2",
+          "37beeea5-9ab6-47a7-8f65-281d75a52918"
+        ],
+        "delivery": [
+          {
+            "outbound_id": "513a47c4-4729-4720-98ac-872fe8b5256d",
+            "content": "Es una inversión, sí, pero pensala en cuotas: son 12 pagos de USD 30 al mes por las 41 clases completas, y con eso podrías empezar a armar fotos para tiendas y emprendedores.",
+            "content_sha256": "7450ac5f37a58fd8319143e9ab485ff05aabc5a3374b311a277698d5d58914fd",
+            "reported_statuses": [
+              "submitted_to_botpress",
+              "delivered"
+            ],
+            "evidence_ids": [
+              "a92f90ed-3a8b-4dd8-8b79-5aebad2675ff",
+              "e6c50807-bcb3-429c-9122-be48cf79472a"
+            ]
+          },
+          {
+            "outbound_id": "c0554445-dfdc-406d-b7fe-820748162d4d",
+            "content": "Si te sirve así, preferís arrancar con las 12 cuotas de USD 30 o con 6 de USD 60?",
+            "content_sha256": "3e6388416c7cb61744c9862cf4b931cdd989d98bb5e0fe85c7de91e533f8ae61",
+            "reported_statuses": [
+              "submitted_to_botpress"
+            ],
+            "evidence_ids": [
+              "f1ba68f1-2957-4783-9915-5fe6cb157439"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "run": "focused-25970d5-flash-060714-r1-20261101",
+      "case": "06_repeated_price_bonus_ladder",
+      "turn": "installments",
+      "delivered_sha256": "b925320cf598cb45533a4040b80eb28ebe2fc2dc17511d46823c52540cc8c415",
+      "status": "PASS",
+      "reviewer": "Codex review of delivered text against recorded effects",
+      "audit_scope": "unsupported bonus offer/insinuation and course role truthfulness only; not a replacement for golden approval",
+      "reason": "La entrega trabaja únicamente el curso pago y/o precio/plan/consulta actual. No ofrece ni insinúa un bonificado nuevo; sin efecto bonus ni paquete previo entregado. Los roles declarados en el borrador final corresponden al curso pago (o array vacío sin mención de curso).",
+      "delivered": "Te entiendo, y que lo veas útil es justo lo que hace que valga la pena resolver el cómo pagarlo. Con las 12 cuotas de USD 30 al mes podrías empezar a producir fotos para tiendas y emprendedores desde el primer mes.\nAparte del precio, hay algo más que te haga dudar?",
+      "customer": "Lo veo útil, pero el precio me sigue frenando.",
+      "classification": "no_bonus_offer_or_recap",
+      "course_mentions_declared_vs_meaning": "No false paid_complement/alternative labels observed. Paid metadata matches actual selectedCourse; the two initial extra-course mentions are honestly labeled bonus and rejected. No delivered bonus roles remain.",
+      "drafts": [
+        {
+          "call_id": "call-0003",
+          "raw": {
+            "schema_version": 1,
+            "move": {
+              "schema_version": 1,
+              "move": "defer_payment",
+              "secondary_moves": [],
+              "vetoes": [],
+              "course_reference": null,
+              "area_reference": null,
+              "payment_plan": null,
+              "confidence": 0.55
+            },
+            "response": {
+              "messages": [
+                "Te entiendo, y que lo veas útil es justo lo que hace que valga la pena resolver el cómo pagarlo. Con las 12 cuotas de USD 30 al mes podrías empezar a producir fotos para tiendas y emprendedores desde el primer mes.",
+                "Aparte del precio, hay algo más que te haga dudar?"
+              ],
+              "call_offer": null
+            },
+            "proposed_action": {
+              "type": "none"
+            },
+            "course_mentions": [
+              {
+                "offering_code": "fotografia_profesional",
+                "role": "paid"
+              }
+            ],
+            "confirmed_phone": null,
+            "profile_updates": [],
+            "profile_requests": [],
+            "repair_of": null,
+            "used_fact_ids": [
+              "offering:fotografia_profesional:name:v1",
+              "offering:fotografia_profesional:duration:v1",
+              "payment:fotografia_profesional:monthly_12:label:v1"
+            ],
+            "used_memory_ids": [],
+            "memory_candidates": [
+              {
+                "type": "objection",
+                "key": "price_objection",
+                "value": "El precio le sigue frenando aunque ve el curso útil",
+                "source_quote": "Lo veo útil, pero el precio me sigue frenando.",
+                "confidence": 0.95
+              }
+            ]
+          },
+          "raw_sha256": "d9dd1d9f3227ae8bb585cf9cb48439ff55599df9a6bd9923f0cd66c6fb3c5bba",
+          "course_mentions": [
+            {
+              "offering_code": "fotografia_profesional",
+              "role": "paid"
+            }
+          ],
+          "proposed_action": {
+            "type": "none"
+          }
+        }
+      ],
+      "backend_action": null,
+      "state": {
+        "selectedCourse": "fotografia_profesional",
+        "stage": "course_selected",
+        "awaitingReply": "none",
+        "plan": null,
+        "promotion": {
+          "status": null,
+          "bonusCount": 0,
+          "paidCourse": null,
+          "bonusCourses": []
+        }
+      },
+      "prior_actual_delivered_package": [],
+      "backend_rejections": [],
+      "judge_approved_original": true,
+      "judge_failures_original": [],
+      "notes": [],
+      "evidence": {
+        "turn_id": "259e5a6f-1724-4339-b3a0-ad46c70b7c9d",
+        "trace_ids": [
+          "297f007a-bb2b-4c49-af30-539d8b8927c4"
+        ],
+        "durable_event_ids": [
+          "deb5d8af-7cbb-4c85-bb73-3f2ce743543c",
+          "2a70c86a-d8aa-48fa-920f-aaadf31a5c4a",
+          "c7324446-06fd-47a1-be3d-1e2b7ff3674e",
+          "71e610bc-4ce9-42df-8dcb-aef1bc2ac1a3",
+          "f84c14bd-f10d-4e42-93c1-e299b1f669f3",
+          "4c892c18-b0b8-47c9-9ee2-140244dabf19",
+          "1f91a20d-248c-4f07-b55e-9bd5f8731fb5",
+          "49bb60ce-9403-4544-a5e3-85423003e0c3",
+          "8d1cfd15-aa86-4b3a-9e3b-71ca14b09068",
+          "534c0786-6415-4efa-86cd-2335d3b6fd59"
+        ],
+        "delivery": [
+          {
+            "outbound_id": "2b6f6d87-83ed-46a6-8e22-f5d64ba5ed8d",
+            "content": "Te entiendo, y que lo veas útil es justo lo que hace que valga la pena resolver el cómo pagarlo. Con las 12 cuotas de USD 30 al mes podrías empezar a producir fotos para tiendas y emprendedores desde el primer mes.",
+            "content_sha256": "43474259f4d7fc6c1c14d64568ce2a745c6d28dc7301baf984309bcdbe52523c",
+            "reported_statuses": [
+              "submitted_to_botpress",
+              "delivered"
+            ],
+            "evidence_ids": [
+              "50cdba76-10ab-4c4f-a10d-98a4ae110f1a",
+              "a5c3d27c-1835-4751-9c7f-675a73329225"
+            ]
+          },
+          {
+            "outbound_id": "48ae93e3-722c-4bed-bdfc-d355b90870e6",
+            "content": "Aparte del precio, hay algo más que te haga dudar?",
+            "content_sha256": "9be363f7908aa624a9b9916bd6ffa551343e4ae10464a9d0be90b8898993e6cd",
+            "reported_statuses": [
+              "submitted_to_botpress"
+            ],
+            "evidence_ids": [
+              "32ad0cc2-8cb2-4e03-88a5-8fa8012b50d8"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "run": "focused-25970d5-flash-060714-r1-20261101",
+      "case": "06_repeated_price_bonus_ladder",
+      "turn": "isolate",
+      "delivered_sha256": "d9ca319477c51a1dc748c0bba4d90046901c648d9bba3bee55b1a1f67d563e00",
+      "status": "PASS",
+      "reviewer": "Codex review of delivered text against recorded effects",
+      "audit_scope": "unsupported bonus offer/insinuation and course role truthfulness only; not a replacement for golden approval",
+      "reason": "La entrega trabaja únicamente el curso pago y/o precio/plan/consulta actual. No ofrece ni insinúa un bonificado nuevo; sin efecto bonus ni paquete previo entregado. Los roles declarados en el borrador final corresponden al curso pago (o array vacío sin mención de curso).",
+      "delivered": "Te entiendo, y no te lo voy a maquillar: son USD 360 en total, repartidos en 12 cuotas de USD 30. Lo que sí cambia es lo que podés hacer con eso: armar fotos para tiendas y emprendedores y empezar a cobrar por ese servicio.\nSi el precio fuera el único freno, arrancaríamos con las 12 cuotas de USD 30?",
+      "customer": "Aun así me parece caro.",
+      "classification": "no_bonus_offer_or_recap",
+      "course_mentions_declared_vs_meaning": "No false paid_complement/alternative labels observed. Paid metadata matches actual selectedCourse; the two initial extra-course mentions are honestly labeled bonus and rejected. No delivered bonus roles remain.",
+      "drafts": [
+        {
+          "call_id": "call-0004",
+          "raw": {
+            "schema_version": 1,
+            "move": {
+              "schema_version": 1,
+              "move": "continue_by_chat",
+              "secondary_moves": [],
+              "vetoes": [],
+              "course_reference": null,
+              "area_reference": null,
+              "payment_plan": null,
+              "confidence": 0.72
+            },
+            "response": {
+              "messages": [
+                "Te entiendo, y no te lo voy a maquillar: son USD 360 en total, repartidos en 12 cuotas de USD 30. Lo que sí cambia es lo que podés hacer con eso: armar fotos para tiendas y emprendedores y empezar a cobrar por ese servicio.",
+                "Si el precio fuera el único freno, ¿arrancaríamos con las 12 cuotas de USD 30?"
+              ],
+              "call_offer": null
+            },
+            "proposed_action": {
+              "type": "none"
+            },
+            "course_mentions": [
+              {
+                "offering_code": "fotografia_profesional",
+                "role": "paid"
+              }
+            ],
+            "confirmed_phone": null,
+            "profile_updates": [],
+            "profile_requests": [],
+            "repair_of": null,
+            "used_fact_ids": [
+              "offering:fotografia_profesional:name:v1",
+              "offering:fotografia_profesional:description:v1",
+              "payment:fotografia_profesional:monthly_12:label:v1",
+              "payment:fotografia_profesional:monthly_12:price:v1"
+            ],
+            "used_memory_ids": [],
+            "memory_candidates": [
+              {
+                "type": "objection",
+                "key": "price_objection",
+                "value": "persistente: el precio le sigue frenando aun con las cuotas",
+                "source_quote": "Aun así me parece caro.",
+                "confidence": 0.9
+              }
+            ]
+          },
+          "raw_sha256": "d86c8a3eea8cd80e102c683f593c35916549c6e7c41669148c16898bae750ef7",
+          "course_mentions": [
+            {
+              "offering_code": "fotografia_profesional",
+              "role": "paid"
+            }
+          ],
+          "proposed_action": {
+            "type": "none"
+          }
+        }
+      ],
+      "backend_action": null,
+      "state": {
+        "selectedCourse": "fotografia_profesional",
+        "stage": "course_selected",
+        "awaitingReply": "none",
+        "plan": null,
+        "promotion": {
+          "status": null,
+          "bonusCount": 0,
+          "paidCourse": null,
+          "bonusCourses": []
+        }
+      },
+      "prior_actual_delivered_package": [],
+      "backend_rejections": [],
+      "judge_approved_original": true,
+      "judge_failures_original": [],
+      "notes": [],
+      "evidence": {
+        "turn_id": "c3af6ca4-6112-41db-9144-dc904594e71d",
+        "trace_ids": [
+          "2114fe1e-e0d0-4968-93b0-8e2c301b9415"
+        ],
+        "durable_event_ids": [
+          "1e14ae58-af73-4559-9b43-74c2f537d7e1",
+          "29d6f924-9e22-4523-816e-7cb1897df794",
+          "c083bdd6-b5d1-4e4e-aaf9-75cf4f59e23a",
+          "e8daae03-274d-4e45-af1b-c105958b61cc",
+          "5dcb5966-4676-429b-b370-5a26a8c61630",
+          "d51ff537-255a-4e33-8ff1-e96964211a83",
+          "f642d803-924e-4fb6-9be8-cff4cd1a8c08",
+          "c043e327-3f4a-40cd-92ae-d98afc973a90",
+          "18cf1242-d400-496c-b1c8-8ab6fa90c4dd",
+          "b8e13cfe-a3bc-46ba-afb3-656bff8c7311"
+        ],
+        "delivery": [
+          {
+            "outbound_id": "5480e9c6-b962-4e92-964a-77a2dbc69e68",
+            "content": "Te entiendo, y no te lo voy a maquillar: son USD 360 en total, repartidos en 12 cuotas de USD 30. Lo que sí cambia es lo que podés hacer con eso: armar fotos para tiendas y emprendedores y empezar a cobrar por ese servicio.",
+            "content_sha256": "93cd78caf74d02e1b2f913fddc99db74eba5e120e6c0acf650817907c6599223",
+            "reported_statuses": [
+              "submitted_to_botpress",
+              "delivered"
+            ],
+            "evidence_ids": [
+              "5afd98ac-1e1d-4b23-b0a8-034144425094",
+              "0e114952-8f95-4a37-be6c-59f3b80faf78"
+            ]
+          },
+          {
+            "outbound_id": "7f28f003-880d-4a6d-802f-caad3e7a4f5f",
+            "content": "Si el precio fuera el único freno, arrancaríamos con las 12 cuotas de USD 30?",
+            "content_sha256": "1ef59ebfb47012a60621c7ec0bc65a78a89ea738935b66465b8be289c09254f6",
+            "reported_statuses": [
+              "submitted_to_botpress"
+            ],
+            "evidence_ids": [
+              "83c64f5d-472d-4288-ad15-856631a97c73"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "run": "focused-25970d5-flash-060714-r1-20261101",
+      "case": "06_repeated_price_bonus_ladder",
+      "turn": "call_step",
+      "delivered_sha256": "3efe4810c3148c9bbe8f766d5fc2a28f4a318d7ef365ea5fca5b974c9f8977be",
+      "status": "PASS",
+      "reviewer": "Codex review of delivered text against recorded effects",
+      "audit_scope": "unsupported bonus offer/insinuation and course role truthfulness only; not a replacement for golden approval",
+      "reason": "La entrega trabaja únicamente el curso pago y/o precio/plan/consulta actual. No ofrece ni insinúa un bonificado nuevo; sin efecto bonus ni paquete previo entregado. Los roles declarados en el borrador final corresponden al curso pago (o array vacío sin mención de curso).",
+      "delivered": "Perfecto, entonces vamos a resolverlo. Con las 12 cuotas de USD 30 al mes arrancás con las 41 clases y podés ir armando tus primeras fotos para tiendas y emprendedores desde el primer mes.\nPreferís avanzar con las 12 cuotas de USD 30 o con las 6 de USD 60?",
+      "customer": "Sí, el precio es el único freno. Si resolvemos eso, avanzo.",
+      "classification": "no_bonus_offer_or_recap",
+      "course_mentions_declared_vs_meaning": "No false paid_complement/alternative labels observed. Paid metadata matches actual selectedCourse; the two initial extra-course mentions are honestly labeled bonus and rejected. No delivered bonus roles remain.",
+      "drafts": [
+        {
+          "call_id": "call-0005",
+          "raw": {
+            "schema_version": 1,
+            "move": {
+              "schema_version": 1,
+              "move": "ask_payment_options",
+              "secondary_moves": [],
+              "vetoes": [],
+              "course_reference": "fotografia_profesional",
+              "area_reference": null,
+              "payment_plan": null,
+              "confidence": 0.86
+            },
+            "response": {
+              "messages": [
+                "Perfecto, entonces vamos a resolverlo. Con las 12 cuotas de USD 30 al mes arrancás con las 41 clases y podés ir armando tus primeras fotos para tiendas y emprendedores desde el primer mes.",
+                "Preferís avanzar con las 12 cuotas de USD 30 o con las 6 de USD 60?"
+              ],
+              "call_offer": null
+            },
+            "proposed_action": {
+              "type": "none"
+            },
+            "course_mentions": [
+              {
+                "offering_code": "fotografia_profesional",
+                "role": "paid"
+              }
+            ],
+            "confirmed_phone": null,
+            "profile_updates": [],
+            "profile_requests": [],
+            "repair_of": null,
+            "used_fact_ids": [
+              "offering:fotografia_profesional:name:v1",
+              "offering:fotografia_profesional:duration:v1",
+              "payment:fotografia_profesional:monthly_12:label:v1",
+              "payment:fotografia_profesional:monthly_6:label:v1"
+            ],
+            "used_memory_ids": [],
+            "memory_candidates": [
+              {
+                "type": "constraint",
+                "key": "price_only_barrier",
+                "value": "confirmed",
+                "source_quote": "Sí, el precio es el único freno. Si resolvemos eso, avanzo.",
+                "confidence": 0.95
+              }
+            ]
+          },
+          "raw_sha256": "3243e4d3cf0ba1db3963d7ce15fe2199b3f167aa95f13258731869f5159a3575",
+          "course_mentions": [
+            {
+              "offering_code": "fotografia_profesional",
+              "role": "paid"
+            }
+          ],
+          "proposed_action": {
+            "type": "none"
+          }
+        }
+      ],
+      "backend_action": null,
+      "state": {
+        "selectedCourse": "fotografia_profesional",
+        "stage": "course_selected",
+        "awaitingReply": "none",
+        "plan": null,
+        "promotion": {
+          "status": null,
+          "bonusCount": 0,
+          "paidCourse": null,
+          "bonusCourses": []
+        }
+      },
+      "prior_actual_delivered_package": [],
+      "backend_rejections": [],
+      "judge_approved_original": false,
+      "judge_failures_original": [
+        {
+          "code": "SEMANTIC_MUST_FAILED",
+          "detail": "El cliente ya confirmó que el precio es el único freno y que avanzaría si se resuelve; el escalón de aislamiento y cierre condicional está cumplido y corresponde la invitación a llamada (may_offer_call=true). La respuesta vuelve a preguntar por planes de cuotas en lugar de ofrecer la llamada con una razón concreta, incumpliendo el orden comercial exigido.",
+          "authorityReference": "docs/authority/prompt-agente-a-studyx-v2.md:111 | 4. **Llamada:** si corresponde y `may_offer_call`, ofrécela con una razón concreta (por ejemplo, ver juntos cómo encaja el curso con su objetivo)."
+        },
+        {
+          "code": "SEMANTIC_MUST_NOT_FAILED",
+          "detail": "Cuando corresponde avanzar al siguiente escalón (llamada), la respuesta repite el mismo plan de cuotas en vez de progresar, incurriendo en la conducta prohibida de repetir el mismo plan cuando toca avanzar.",
+          "authorityReference": "docs/authority/prompt-agente-a-studyx-v2.md:110 | 3. **Aislar y cerrar condicional:** confirma que el precio es el único freno y que, resuelto eso, avanza."
+        }
+      ],
+      "notes": [],
+      "evidence": {
+        "turn_id": "51c27eaa-550a-401a-abb6-8453b44eff45",
+        "trace_ids": [
+          "1c8ebe7f-0815-44c2-910a-4366521dd9d7"
+        ],
+        "durable_event_ids": [
+          "7da6d8c0-9912-4ec3-ae50-106c1439457f",
+          "5ebcff4b-882d-41fa-9aac-95a41c25f81c",
+          "3e2ce302-b1c4-47ec-86d1-005b36639c8c",
+          "5d4a1ad7-8301-46f9-8317-53579ea38c22",
+          "7d3bc1ea-2802-4e02-aa6e-6e16181b9bce",
+          "5afde4ec-80a8-452f-9329-7dfec91a8834",
+          "4f90973a-8d0c-4fed-9c57-123d05727cd7",
+          "c437ae6a-b24f-4288-b000-78df093b1933",
+          "aeb4c664-c097-45f3-8e66-6597537cf357",
+          "57bbb41e-4006-4372-a027-5083375b1415"
+        ],
+        "delivery": [
+          {
+            "outbound_id": "0a62f9f5-625b-4e57-a8fa-95629ddbe6f5",
+            "content": "Perfecto, entonces vamos a resolverlo. Con las 12 cuotas de USD 30 al mes arrancás con las 41 clases y podés ir armando tus primeras fotos para tiendas y emprendedores desde el primer mes.",
+            "content_sha256": "c4f4af5f0030c8aca7eede2fe0d652c2d4287878ed619df48d63da5157927120",
+            "reported_statuses": [
+              "submitted_to_botpress",
+              "delivered"
+            ],
+            "evidence_ids": [
+              "d446c151-955a-4019-9925-775d34fdd74a",
+              "f3daa0e8-194f-4816-805a-e421c9f01113"
+            ]
+          },
+          {
+            "outbound_id": "6936b40c-c422-4ab6-8dcb-ea4ad57a249d",
+            "content": "Preferís avanzar con las 12 cuotas de USD 30 o con las 6 de USD 60?",
+            "content_sha256": "6013beb2b5d53e72c712f70afc050278e1680829cb585f65bf751cb3b083b549",
+            "reported_statuses": [
+              "submitted_to_botpress"
+            ],
+            "evidence_ids": [
+              "569e092d-eff3-4d99-bb9a-878966f0dcc3"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "run": "focused-25970d5-flash-060714-r1-20261101",
+      "case": "06_repeated_price_bonus_ladder",
+      "turn": "bonus_1",
+      "delivered_sha256": "9eaf1cbf3028ea598ade0b9bd98dda25907f614bb6e3b47278720eb8639650ac",
+      "status": "PASS",
+      "reviewer": "Codex review of delivered text against recorded effects",
+      "audit_scope": "unsupported bonus offer/insinuation and course role truthfulness only; not a replacement for golden approval",
+      "reason": "La entrega trabaja únicamente el curso pago y/o precio/plan/consulta actual. No ofrece ni insinúa un bonificado nuevo; sin efecto bonus ni paquete previo entregado. Los roles declarados en el borrador final corresponden al curso pago (o array vacío sin mención de curso).",
+      "delivered": "Perfecto, seguimos por chat. El precio es lo único que te frena y ya lo tenemos claro: 12 cuotas de USD 30 al mes por las 41 clases de Fotografía Profesional.\nSi te parece, arrancamos con ese plan y te paso a pedir los datos para dejarte la inscripción lista. Lo hacemos así?",
+      "customer": "Prefiero seguir por chat. El precio sigue siendo lo único que me frena.",
+      "classification": "no_bonus_offer_or_recap",
+      "course_mentions_declared_vs_meaning": "No false paid_complement/alternative labels observed. Paid metadata matches actual selectedCourse; the two initial extra-course mentions are honestly labeled bonus and rejected. No delivered bonus roles remain.",
+      "drafts": [
+        {
+          "call_id": "call-0006",
+          "raw": {
+            "schema_version": 1,
+            "move": {
+              "schema_version": 1,
+              "move": "continue_by_chat",
+              "secondary_moves": [],
+              "vetoes": [
+                "call"
+              ],
+              "course_reference": null,
+              "area_reference": null,
+              "payment_plan": null,
+              "confidence": 0.9
+            },
+            "response": {
+              "messages": [
+                "Perfecto, seguimos por chat. El precio es lo único que te frena y ya lo tenemos claro: 12 cuotas de USD 30 al mes por las 41 clases de Fotografía Profesional.",
+                "Si te parece, arrancamos con ese plan y te paso a pedir los datos para dejarte la inscripción lista. Lo hacemos así?"
+              ],
+              "call_offer": null
+            },
+            "proposed_action": {
+              "type": "none"
+            },
+            "course_mentions": [
+              {
+                "offering_code": "fotografia_profesional",
+                "role": "paid"
+              }
+            ],
+            "confirmed_phone": null,
+            "profile_updates": [],
+            "profile_requests": [],
+            "repair_of": null,
+            "used_fact_ids": [
+              "offering:fotografia_profesional:name:v1",
+              "offering:fotografia_profesional:duration:v1",
+              "payment:fotografia_profesional:monthly_12:label:v1"
+            ],
+            "used_memory_ids": [],
+            "memory_candidates": [
+              {
+                "type": "objection",
+                "key": "price_objection",
+                "value": "persistente",
+                "source_quote": "El precio sigue siendo lo único que me frena.",
+                "confidence": 0.95
+              },
+              {
+                "type": "preference",
+                "key": "channel_preference",
+                "value": "chat",
+                "source_quote": "Prefiero seguir por chat.",
+                "confidence": 0.95
+              }
+            ]
+          },
+          "raw_sha256": "cd84c787ab279afc73631d0f625c644a4100c0d525691895cee3e5536c7fd3ce",
+          "course_mentions": [
+            {
+              "offering_code": "fotografia_profesional",
+              "role": "paid"
+            }
+          ],
+          "proposed_action": {
+            "type": "none"
+          }
+        }
+      ],
+      "backend_action": null,
+      "state": {
+        "selectedCourse": "fotografia_profesional",
+        "stage": "course_selected",
+        "awaitingReply": "none",
+        "plan": null,
+        "promotion": {
+          "status": null,
+          "bonusCount": 0,
+          "paidCourse": null,
+          "bonusCourses": []
+        }
+      },
+      "prior_actual_delivered_package": [],
+      "backend_rejections": [],
+      "judge_approved_original": true,
+      "judge_failures_original": [],
+      "notes": [],
+      "evidence": {
+        "turn_id": "68fb885d-892a-412d-a626-58f794ea3be8",
+        "trace_ids": [
+          "18c38e59-31a1-4aa5-907f-ae82e9338d5e"
+        ],
+        "durable_event_ids": [
+          "9f39d5a1-29d6-4587-be6e-06764de1d525",
+          "ecdecb2a-d2a3-4381-8c88-1ad3e42f9ec1",
+          "857ff5ba-7c82-4a92-9273-5c11905d1f12",
+          "3438b1f9-c23f-4fab-b967-509de529ae7a",
+          "d44e4e12-1013-4107-89d3-4ffd8a8ec9e5",
+          "fb051445-a483-4d8e-a94a-c9d361ac5937",
+          "73f3c318-d3b9-44c8-a356-d518d684a163",
+          "857a0ecc-da2e-46a2-a67c-4d0f1f749529",
+          "e795d56b-30a3-4e0f-b745-a46e9b295742",
+          "a2560926-9b64-48ce-9b61-3810d1ed16f7"
+        ],
+        "delivery": [
+          {
+            "outbound_id": "4bfd50b3-7b6b-47e4-86a9-ee2450bdd71b",
+            "content": "Perfecto, seguimos por chat. El precio es lo único que te frena y ya lo tenemos claro: 12 cuotas de USD 30 al mes por las 41 clases de Fotografía Profesional.",
+            "content_sha256": "1f98ee59f733611a0f776eac9b6c50dd548fbe1ffc56ed3f9f038a38d272d5d9",
+            "reported_statuses": [
+              "submitted_to_botpress",
+              "delivered"
+            ],
+            "evidence_ids": [
+              "aadf968b-4120-4fdb-b931-fe77721e7044",
+              "25a36959-9b43-4787-a203-7255c82c5b85"
+            ]
+          },
+          {
+            "outbound_id": "e101d3f5-15f7-435c-8802-797be1472cf0",
+            "content": "Si te parece, arrancamos con ese plan y te paso a pedir los datos para dejarte la inscripción lista. Lo hacemos así?",
+            "content_sha256": "65771597b1de13f621fef2f9645d14a2896c253b8789a17233d156bc190725d4",
+            "reported_statuses": [
+              "submitted_to_botpress"
+            ],
+            "evidence_ids": [
+              "74f7b566-7948-496a-8d5b-857104a45f23"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "run": "focused-25970d5-flash-060714-r1-20261101",
+      "case": "06_repeated_price_bonus_ladder",
+      "turn": "bonus_2",
+      "delivered_sha256": "31e9699abfce58634572c033f438c30f6fbc0d4dbee49ec083642b06bd4d3a7a",
+      "status": "PASS",
+      "reviewer": "Codex review of delivered text against recorded effects",
+      "audit_scope": "unsupported bonus offer/insinuation and course role truthfulness only; not a replacement for golden approval",
+      "reason": "La entrega trabaja únicamente el curso pago y/o precio/plan/consulta actual. No ofrece ni insinúa un bonificado nuevo; sin efecto bonus ni paquete previo entregado. Los roles declarados en el borrador final corresponden al curso pago (o array vacío sin mención de curso).",
+      "delivered": "Que te sume ya es mucho, y la duda con el precio es real. Por eso mismo no te pido que decidas hoy: te dejo claro que son 12 cuotas de USD 30 y que podés empezar a armar fotos para tiendas y emprendedores desde el primer mes.\nCuando quieras retomarlo, escribime y seguimos justo desde acá. Te parece si te dejo el plan de 12 cuotas anotado para cuando lo decidas?",
+      "customer": "Me suma, pero sigo dudando por el mismo precio.",
+      "classification": "no_bonus_offer_or_recap",
+      "course_mentions_declared_vs_meaning": "No false paid_complement/alternative labels observed. Paid metadata matches actual selectedCourse; the two initial extra-course mentions are honestly labeled bonus and rejected. No delivered bonus roles remain.",
+      "drafts": [
+        {
+          "call_id": "call-0007",
+          "raw": {
+            "schema_version": 1,
+            "move": {
+              "schema_version": 1,
+              "move": "defer_payment",
+              "secondary_moves": [],
+              "vetoes": [],
+              "course_reference": "fotografia_profesional",
+              "area_reference": null,
+              "payment_plan": null,
+              "confidence": 0.62
+            },
+            "response": {
+              "messages": [
+                "Que te sume ya es mucho, y la duda con el precio es real. Por eso mismo no te pido que decidas hoy: te dejo claro que son 12 cuotas de USD 30 y que podés empezar a armar fotos para tiendas y emprendedores desde el primer mes.",
+                "Cuando quieras retomarlo, escribime y seguimos justo desde acá. Te parece si te dejo el plan de 12 cuotas anotado para cuando lo decidas?"
+              ],
+              "call_offer": null
+            },
+            "proposed_action": {
+              "type": "none"
+            },
+            "course_mentions": [
+              {
+                "offering_code": "fotografia_profesional",
+                "role": "paid"
+              }
+            ],
+            "confirmed_phone": null,
+            "profile_updates": [],
+            "profile_requests": [],
+            "repair_of": null,
+            "used_fact_ids": [
+              "offering:fotografia_profesional:name:v1",
+              "payment:fotografia_profesional:monthly_12:label:v1",
+              "payment:fotografia_profesional:monthly_12:price:v1"
+            ],
+            "used_memory_ids": [],
+            "memory_candidates": [
+              {
+                "type": "objection",
+                "key": "price_objection",
+                "value": "persistent",
+                "source_quote": "Me suma, pero sigo dudando por el mismo precio.",
+                "confidence": 0.9
+              }
+            ]
+          },
+          "raw_sha256": "af193ae5903f597e60b9cc3e80e97d62d8e09d58efdc64b33c9a107c45fa6415",
+          "course_mentions": [
+            {
+              "offering_code": "fotografia_profesional",
+              "role": "paid"
+            }
+          ],
+          "proposed_action": {
+            "type": "none"
+          }
+        }
+      ],
+      "backend_action": null,
+      "state": {
+        "selectedCourse": "fotografia_profesional",
+        "stage": "course_selected",
+        "awaitingReply": "none",
+        "plan": null,
+        "promotion": {
+          "status": null,
+          "bonusCount": 0,
+          "paidCourse": null,
+          "bonusCourses": []
+        }
+      },
+      "prior_actual_delivered_package": [],
+      "backend_rejections": [],
+      "judge_approved_original": false,
+      "judge_failures_original": [
+        {
+          "code": "SEMANTIC_MUST_FAILED",
+          "detail": "La historia ya cumplió valor, cuotas y aislamiento (el cliente confirmó que el precio es el único freno), y may_offer_call=true con la invitación a llamada pendiente. El turno debía avanzar al escalón de llamada con una razón concreta; en su lugar el agente difiere el cierre y no ofrece la llamada, rompiendo el orden comercial.",
+          "authorityReference": "docs/authority/prompt-agente-a-studyx-v2.md:111 | 4. **Llamada:** si corresponde y `may_offer_call`, ofrécela con una razón concreta (por ejemplo, ver juntos cómo encaja el curso con su objetivo)."
+        },
+        {
+          "code": "SEMANTIC_MUST_NOT_FAILED",
+          "detail": "Repite el mismo argumento de valor y el mismo plan de 12 cuotas cuando correspondía avanzar al siguiente escalón (la llamada), usando además el aplazamiento para no cerrar.",
+          "authorityReference": "docs/authority/prompt-agente-a-studyx-v2.md:206 | La llamada es una herramienta de cierre complementaria, no el lugar donde se vende. Tu objetivo es cerrar por chat; ofrece la llamada cuando el cliente la pida, cuando una duda o comparación compleja se resuelva mejor hablando, o como escalón 4 de la negociación. Necesita una razón concreta y no reemplaza la respuesta por WhatsApp: responde y luego invita. Hazla breve y adaptada al motivo real; no la repitas como plantilla. Máximo dos invitaciones; la segunda necesita un motivo nuevo."
+        }
+      ],
+      "notes": [],
+      "evidence": {
+        "turn_id": "d4069e02-a86b-413b-b882-414e9ca40a60",
+        "trace_ids": [
+          "549116b1-f269-4c7a-9633-022713b00877"
+        ],
+        "durable_event_ids": [
+          "da43c9f3-0202-4f7e-9641-110010870f50",
+          "6a4a3d6f-ce58-4c69-827d-5fcf02a83df3",
+          "4be53a00-4a8f-4dfe-94b6-726bb1df8e3b",
+          "bc77543c-daa0-4880-8723-78d38b112ad2",
+          "dbd09987-a246-450f-a2ce-659416a3cf27",
+          "0932d5c9-a86e-4071-a312-c66c59e36413",
+          "ef80dcd9-1249-4292-b445-e1e92eefca8b",
+          "e2b81622-3d82-4069-8b25-bdd4a6a7ae64",
+          "c37a23f4-d552-4825-993d-b95b97beca7b",
+          "617b7584-34f2-4c21-8d63-c13fc10785fd"
+        ],
+        "delivery": [
+          {
+            "outbound_id": "d722a95d-69ea-48a3-a37d-86fbd7584ab1",
+            "content": "Que te sume ya es mucho, y la duda con el precio es real. Por eso mismo no te pido que decidas hoy: te dejo claro que son 12 cuotas de USD 30 y que podés empezar a armar fotos para tiendas y emprendedores desde el primer mes.",
+            "content_sha256": "f91edb31e9a34d3d427e5b6ef5012a4d7ab6841d2e002648407cf37761477cb7",
+            "reported_statuses": [
+              "submitted_to_botpress",
+              "delivered"
+            ],
+            "evidence_ids": [
+              "c248976d-c4b0-4a07-8cc3-c759b68fe5e9",
+              "21537843-dafb-40a2-b49d-7eb22e55fbe3"
+            ]
+          },
+          {
+            "outbound_id": "8cbf5df7-5fbe-47ba-8dfd-51b6535c01fa",
+            "content": "Cuando quieras retomarlo, escribime y seguimos justo desde acá. Te parece si te dejo el plan de 12 cuotas anotado para cuando lo decidas?",
+            "content_sha256": "56798950b683173f1587c07af69a9a1c88d65b71aa1ebc4c1db94a14ce446f7b",
+            "reported_statuses": [
+              "submitted_to_botpress"
+            ],
+            "evidence_ids": [
+              "b02e3b1d-b617-4682-96e9-7178d1ec884d"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "run": "focused-25970d5-flash-060714-r1-20261101",
+      "case": "06_repeated_price_bonus_ladder",
+      "turn": "bonus_3",
+      "delivered_sha256": "279dd0a76c91572c31c12bdfcad0c38c60c32183538d8bc87427742780363996",
+      "status": "PASS",
+      "reviewer": "Codex review of delivered text against recorded effects",
+      "audit_scope": "unsupported bonus offer/insinuation and course role truthfulness only; not a replacement for golden approval",
+      "reason": "El primer borrador ofrece Fotografía con Celulares para Tiendas Online manteniendo el precio y declara role=bonus con action=none. El backend rechaza forbidden_promise/direct_bonus:ladder_step_pending por llamada faltante. La reparación elimina todo bono; la entrega efectiva es la contingencia completa «Qué dato o qué curso revisamos?», sin promesa ni curso extra.",
+      "delivered": "Qué dato o qué curso revisamos?",
+      "customer": "Todavía me cuesta decidir por el precio. Hay algo más que pueda sumar valor?",
+      "classification": "blocked_new_bonus_then_safe_fallback",
+      "course_mentions_declared_vs_meaning": "No false paid_complement/alternative labels observed. Paid metadata matches actual selectedCourse; the two initial extra-course mentions are honestly labeled bonus and rejected. No delivered bonus roles remain.",
+      "drafts": [
+        {
+          "call_id": "call-0008",
+          "raw": {
+            "schema_version": 1,
+            "move": {
+              "schema_version": 1,
+              "move": "defer_payment",
+              "secondary_moves": [],
+              "vetoes": [],
+              "course_reference": null,
+              "area_reference": null,
+              "payment_plan": null,
+              "confidence": 0.72
+            },
+            "response": {
+              "messages": [
+                "Sí, hay algo que suma y va justo con lo que querés: Fotografía con Celulares para Tiendas Online. Te sirve para resolver fotos de producto con el celular, sin equipo, y ofrecer ese servicio a tiendas y emprendedores desde el primer mes. El precio de Fotografía Profesional no cambia: sigue en 12 cuotas de USD 30.",
+                "Si te parece, arrancamos con ese plan y te pido los datos para dejar la inscripción lista. Lo hacemos así?"
+              ],
+              "call_offer": null
+            },
+            "proposed_action": {
+              "type": "none"
+            },
+            "course_mentions": [
+              {
+                "offering_code": "fotografia_profesional",
+                "role": "paid"
+              },
+              {
+                "offering_code": "fotografia_celulares_tiendas_online",
+                "role": "bonus"
+              }
+            ],
+            "confirmed_phone": null,
+            "profile_updates": [],
+            "profile_requests": [],
+            "repair_of": null,
+            "used_fact_ids": [
+              "offering:fotografia_profesional:name:v1",
+              "offering:fotografia_profesional:duration:v1",
+              "payment:fotografia_profesional:monthly_12:label:v1",
+              "offering:fotografia_celulares_tiendas_online:name:v1"
+            ],
+            "used_memory_ids": [],
+            "memory_candidates": [
+              {
+                "type": "objection",
+                "key": "price_objection",
+                "value": "persistente",
+                "source_quote": "Todavía me cuesta decidir por el precio.",
+                "confidence": 0.95
+              }
+            ]
+          },
+          "raw_sha256": "18ffeabb79c398df8bce01ad2e8e41d1903dc535a47afa90d658e9b898675b43",
+          "course_mentions": [
+            {
+              "offering_code": "fotografia_profesional",
+              "role": "paid"
+            },
+            {
+              "offering_code": "fotografia_celulares_tiendas_online",
+              "role": "bonus"
+            }
+          ],
+          "proposed_action": {
+            "type": "none"
+          }
+        },
+        {
+          "call_id": "call-0009",
+          "raw": {
+            "schema_version": 1,
+            "move": {
+              "schema_version": 1,
+              "move": "continue_by_chat",
+              "secondary_moves": [],
+              "vetoes": [],
+              "course_reference": "fotografia_profesional",
+              "area_reference": null,
+              "payment_plan": null,
+              "confidence": 0.72
+            },
+            "response": {
+              "messages": [
+                "Lo que más suma valor es lo que podés hacer con las 41 clases: armar fotos para tiendas y emprendedores y ofrecer ese servicio desde el primer mes, con las 12 cuotas de USD 30 como la forma más liviana de entrar.",
+                "Si querés, lo vemos juntos en una llamada corta y te llevás clarísimo cómo encaja con lo que buscás. Te sirve?"
+              ],
+              "call_offer": "Si querés, lo vemos juntos en una llamada corta y te llevás clarísimo cómo encaja con lo que buscás. Te sirve?"
+            },
+            "proposed_action": {
+              "type": "none"
+            },
+            "course_mentions": [
+              {
+                "offering_code": "fotografia_profesional",
+                "role": "paid"
+              }
+            ],
+            "confirmed_phone": null,
+            "profile_updates": [],
+            "profile_requests": [],
+            "repair_of": {
+              "rejection_id": "c1e81326-5406-443f-8698-95de030436ed",
+              "attempt": 1
+            },
+            "used_fact_ids": [
+              "offering:fotografia_profesional:name:v1",
+              "offering:fotografia_profesional:duration:v1",
+              "payment:fotografia_profesional:monthly_12:label:v1"
+            ],
+            "used_memory_ids": [],
+            "memory_candidates": [
+              {
+                "type": "objection",
+                "key": "price_objection",
+                "value": "persistent",
+                "source_quote": "Todavía me cuesta decidir por el precio.",
+                "confidence": 0.9
+              }
+            ]
+          },
+          "raw_sha256": "cc79792c3feb53cf54af21c8df3a1c76be739a892cca5387e36d79de49207f8e",
+          "course_mentions": [
+            {
+              "offering_code": "fotografia_profesional",
+              "role": "paid"
+            }
+          ],
+          "proposed_action": {
+            "type": "none"
+          }
+        }
+      ],
+      "backend_action": null,
+      "state": {
+        "selectedCourse": "fotografia_profesional",
+        "stage": "course_selected",
+        "awaitingReply": "none",
+        "plan": null,
+        "promotion": {
+          "status": null,
+          "bonusCount": 0,
+          "paidCourse": null,
+          "bonusCourses": []
+        }
+      },
+      "prior_actual_delivered_package": [],
+      "backend_rejections": [
+        {
+          "schema_version": 1,
+          "rejection_id": "c1e81326-5406-443f-8698-95de030436ed",
+          "attempt": 1,
+          "rejections": [
+            {
+              "code": "FACT_VALUE_MISMATCH",
+              "subject": "forbidden_promise"
+            },
+            {
+              "code": "FACT_VALUE_MISMATCH",
+              "subject": "direct_bonus:ladder_step_pending"
+            },
+            {
+              "code": "FACT_VALUE_MISMATCH",
+              "subject": "bonus_ladder:recorded_price_objections:5:required:3"
+            },
+            {
+              "code": "FACT_VALUE_MISMATCH",
+              "subject": "bonus_ladder:call_invitation:not_offered"
+            },
+            {
+              "code": "FACT_VALUE_MISMATCH",
+              "subject": "bonus_ladder:missing:call_invitation"
+            }
+          ],
+          "authorized_alternatives": {
+            "fact_ids": [
+              "offering:fotografia_profesional:name:v1",
+              "offering:fotografia_profesional:description:v1",
+              "offering:fotografia_profesional:duration:v1",
+              "offering:fotografia_profesional:modality:v1",
+              "payment:fotografia_profesional:monthly_12:label:v1",
+              "payment:fotografia_profesional:monthly_12:price:v1",
+              "payment:fotografia_profesional:monthly_6:label:v1",
+              "payment:fotografia_profesional:monthly_6:price:v1",
+              "payment:fotografia_profesional:one_time:label:v1",
+              "payment:fotografia_profesional:one_time:price:v1",
+              "offering:aires_acondicionados:name:v1",
+              "offering:armado_reparacion_pc:name:v1",
+              "offering:autocad_interiores:name:v1",
+              "offering:camaras_seguridad:name:v1",
+              "offering:coaching_liderazgo:name:v1",
+              "offering:community_manager:name:v1",
+              "offering:comunicacion_interna_empresas:name:v1",
+              "offering:decoracion_de_interiores:name:v1",
+              "offering:diseno_corel_draw:name:v1",
+              "offering:diseno_illustrator:name:v1",
+              "offering:diseno_photoshop:name:v1",
+              "offering:energia_solar_fotovoltaica:name:v1",
+              "offering:entrenamiento_funcional:name:v1",
+              "offering:especialista_marketing:name:v1",
+              "offering:especialista_ventas:name:v1",
+              "offering:estrategias_emprender:name:v1",
+              "offering:excel_integral:name:v1",
+              "offering:fotografia_celulares_tiendas_online:name:v1",
+              "offering:influencers_creadores_contenidos:name:v1",
+              "offering:ingles_1:name:v1",
+              "offering:ingles_2:name:v1",
+              "offering:ingles_3:name:v1",
+              "offering:instagram_emprendedores:name:v1",
+              "offering:introduccion_catering:name:v1",
+              "offering:introduccion_criptomonedas:name:v1",
+              "offering:introduccion_ecommerce:name:v1",
+              "offering:maquillaje_profesional:name:v1",
+              "offering:marketing_digital:name:v1",
+              "offering:nutricion_alimentacion:name:v1",
+              "offering:oratoria:name:v1",
+              "offering:organizacion_baby_shower:name:v1",
+              "offering:organizador_eventos_sociales:name:v1",
+              "offering:paisajismo_jardineria:name:v1",
+              "offering:publicidad_redes_sociales:name:v1",
+              "offering:redes_informaticas:name:v1",
+              "offering:reparacion_celulares:name:v1",
+              "offering:sushi_principiantes:name:v1",
+              "offering:unas_gelificadas:name:v1",
+              "offering:vino_cata_maridaje:name:v1",
+              "area:academia-de-oficios:name:v1",
+              "area:academia-de-diseno-informatico:name:v1",
+              "area:academia-de-negocios:name:v1",
+              "area:academia-de-marketing:name:v1",
+              "area:academia-de-emprendedores:name:v1",
+              "area:academia-de-salud-y-bienestar:name:v1",
+              "area:academia-cultural:name:v1",
+              "area:academia-gastronomica:name:v1",
+              "area:academia-de-moda-y-belleza:name:v1",
+              "payment-test:stripe_verification_050:label:v1"
+            ],
+            "actions": [
+              "none",
+              "send_test_payment_link"
+            ],
+            "missing_information": [
+              "nombre",
+              "apellido",
+              "correo",
+              "telefono",
+              "bonus_ladder:recorded_price_objections:5:required:3",
+              "bonus_ladder:call_invitation:not_offered",
+              "bonus_ladder:missing:call_invitation"
+            ]
+          }
+        }
+      ],
+      "judge_approved_original": false,
+      "judge_failures_original": [
+        {
+          "code": "SEMANTIC_MUST_FAILED",
+          "detail": "La respuesta no aporta valor personalizado ni cierre útil; solo pregunta qué revisar, sin conectar el curso con el objetivo ni cerrar.",
+          "authorityReference": "docs/authority/prompt-agente-a-studyx-v2.md:108 | 1. **Valor:** conecta el curso con su objetivo y su motivación."
+        },
+        {
+          "code": "SEMANTIC_MUST_FAILED",
+          "detail": "No se añadió bonificado autorizado; no aplica justificación, pero tampoco se conservó el orden comercial requerido.",
+          "authorityReference": "docs/authority/prompt-agente-a-studyx-v2.md:123 | - **Ofrecer:** cuando decides que es el momento, usa `proposed_action=offer_course_bonus` con exactamente un código en `bonus_offering_code` y, en el mismo turno, presenta el curso en tu respuesta: nómbralo, explica en una frase por qué le suma a su objetivo, aclara que el precio del curso principal no cambia y cierra en el mismo mensaje (por ejemplo, con alternativa de plan). Si el backend lo rechaza con `turn_rejection`, quita toda mención a la bonificación y sigue vendiendo con valor y cuotas."
+        },
+        {
+          "code": "SEMANTIC_MUST_NOT_FAILED",
+          "detail": "La respuesta no avanza al siguiente escalón (llamada) ni conserva valor, cuotas, aislamiento y cierre condicional; solo pregunta de forma vacía.",
+          "authorityReference": "docs/authority/prompt-agente-a-studyx-v2.md:106 | Sube un escalón por vez, sólo si el anterior no alcanzó y el cliente sigue mostrando interés. Nunca saltes escalones ni anuncies lo que viene."
+        },
+        {
+          "code": "SEMANTIC_MUST_NOT_FAILED",
+          "detail": "Al preguntar 'qué curso revisamos' reabre la selección de curso en lugar de trabajar el freno de precio y avanzar al escalón de llamada.",
+          "authorityReference": "docs/authority/prompt-agente-a-studyx-v2.md:106 | Sube un escalón por vez, sólo si el anterior no alcanzó y el cliente sigue mostrando interés. Nunca saltes escalones ni anuncies lo que viene."
+        }
+      ],
+      "notes": [
+        "El último borrador no coincide con la entrega: reparación ofrece llamada en messages y call_offer; la causa exacta del fallback requiere la resolución local del runner; no atribuirla sólo a esa duplicación ni afirmar preservación literal."
+      ],
+      "evidence": {
+        "turn_id": "79079f2a-26a3-4320-9469-e3ba51d31a64",
+        "trace_ids": [
+          "604bd5c0-dd93-4cec-bc73-de90821d8f0a"
+        ],
+        "durable_event_ids": [
+          "39475cea-27ca-4b4a-9945-9bf65e2f02dd",
+          "b7ec0400-d408-4b9f-bc49-5bd326505d75",
+          "ceb718ee-3f3d-4d0d-8051-5558bd41d58f",
+          "0da818d7-e5cf-4fba-8f4a-695bba1a7a77",
+          "6a2d99c8-c854-454a-b15a-68e381715b13",
+          "6c9fb002-a6ac-40a2-95bf-ba9621edac93",
+          "edffe703-9b61-48a3-bf99-41b1945d1dc5",
+          "14ba62fe-489b-4108-a7a8-e03f26d54a4c",
+          "a5a65d1a-4cf7-48e1-879f-81d3cc8e6675",
+          "6b286863-3831-45bd-a7f8-fccd6fc2cfcb",
+          "146f5861-7a4c-497a-9680-0c77046ca986",
+          "0fbe6145-b6b9-4850-82a1-a19bfde53291",
+          "4af00386-4579-4b63-b58b-f5dcc7dd9abb",
+          "17609922-7b6c-4f56-ba36-c16d30c9e1bc",
+          "79e1789a-8a52-41af-a3cf-0e64b469c0f8"
+        ],
+        "delivery": [
+          {
+            "outbound_id": "ed51f519-152f-4db4-a638-fbaca3f41c84",
+            "content": "Qué dato o qué curso revisamos?",
+            "content_sha256": "279dd0a76c91572c31c12bdfcad0c38c60c32183538d8bc87427742780363996",
+            "reported_statuses": [
+              "submitted_to_botpress",
+              "delivered"
+            ],
+            "evidence_ids": [
+              "8774df8e-904b-42f5-8965-79ef386ef314",
+              "b9fa82be-364c-4b04-98c6-cfdb8a2ebc53"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "run": "focused-25970d5-flash-060714-r1-20261101",
+      "case": "06_repeated_price_bonus_ladder",
+      "turn": "never_fourth",
+      "delivered_sha256": "f7306fc1b354b94fcbeffd599bcc8e835349aefd1daddbc1304aa4300f376897",
+      "status": "PASS",
+      "reviewer": "Codex review of delivered text against recorded effects",
+      "audit_scope": "unsupported bonus offer/insinuation and course role truthfulness only; not a replacement for golden approval",
+      "reason": "Ante «Y otro curso más también?», la entrega mantiene Fotografía Profesional y explicita que otra formación se vería «aparte, con su propio plan». Es una eventual compra separada, sin curso extra concreto ni promesa gratuita; no requiere un efecto bonus.",
+      "delivered": "Por ahora vamos con Fotografía Profesional, que es lo que te sirve para armar fotos para tiendas y emprendedores. Si más adelante querés sumar otra formación, lo vemos aparte, con su propio plan.\nLo que te frena hoy es el precio, y ahí sí puedo moverme: con las 12 cuotas de USD 30 arrancás sin soltar todo junto. Si eso queda resuelto, avanzamos con tu inscripción?",
+      "customer": "Y otro curso más también?",
+      "classification": "no_bonus_offer_or_recap",
+      "course_mentions_declared_vs_meaning": "No false paid_complement/alternative labels observed. Paid metadata matches actual selectedCourse; the two initial extra-course mentions are honestly labeled bonus and rejected. No delivered bonus roles remain.",
+      "drafts": [
+        {
+          "call_id": "call-0010",
+          "raw": {
+            "schema_version": 1,
+            "move": {
+              "schema_version": 1,
+              "move": "ask_course_information",
+              "secondary_moves": [],
+              "vetoes": [],
+              "course_reference": null,
+              "area_reference": null,
+              "payment_plan": null,
+              "confidence": 0.62
+            },
+            "response": {
+              "messages": [
+                "Por ahora vamos con Fotografía Profesional, que es lo que te sirve para armar fotos para tiendas y emprendedores. Si más adelante querés sumar otra formación, lo vemos aparte, con su propio plan.",
+                "Lo que te frena hoy es el precio, y ahí sí puedo moverme: con las 12 cuotas de USD 30 arrancás sin soltar todo junto. Si eso queda resuelto, avanzamos con tu inscripción?"
+              ],
+              "call_offer": null
+            },
+            "proposed_action": {
+              "type": "none"
+            },
+            "course_mentions": [
+              {
+                "offering_code": "fotografia_profesional",
+                "role": "paid"
+              }
+            ],
+            "confirmed_phone": null,
+            "profile_updates": [],
+            "profile_requests": [],
+            "repair_of": null,
+            "used_fact_ids": [
+              "offering:fotografia_profesional:name:v1",
+              "offering:fotografia_profesional:duration:v1",
+              "payment:fotografia_profesional:monthly_12:label:v1",
+              "payment:fotografia_profesional:monthly_12:price:v1"
+            ],
+            "used_memory_ids": [],
+            "memory_candidates": []
+          },
+          "raw_sha256": "6ab4a3aafe4724dd53b4eff0f75d7a9db9a597e517ccab15e8ed7464d7c9d3d9",
+          "course_mentions": [
+            {
+              "offering_code": "fotografia_profesional",
+              "role": "paid"
+            }
+          ],
+          "proposed_action": {
+            "type": "none"
+          }
+        }
+      ],
+      "backend_action": null,
+      "state": {
+        "selectedCourse": "fotografia_profesional",
+        "stage": "course_selected",
+        "awaitingReply": "none",
+        "plan": null,
+        "promotion": {
+          "status": null,
+          "bonusCount": 0,
+          "paidCourse": null,
+          "bonusCourses": []
+        }
+      },
+      "prior_actual_delivered_package": [],
+      "backend_rejections": [],
+      "judge_approved_original": false,
+      "judge_failures_original": [
+        {
+          "code": "SEMANTIC_MUST_FAILED",
+          "detail": "La conversación completa nunca acredita la invitación a llamada (escalón 4) antes de bonificar; el ledger muestra call_invitation_status=not_offered en todos los turnos, incluido never_fourth.",
+          "authorityReference": "docs/authority/prompt-agente-a-studyx-v2.md:111 | 4. **Llamada:** si corresponde y `may_offer_call`, ofrécela con una razón concreta (por ejemplo, ver juntos cómo encaja el curso con su objetivo)."
+        },
+        {
+          "code": "SEMANTIC_MUST_FAILED",
+          "detail": "El cierre condicional se ofrece pero se omite la llamada cuando corresponde (may_offer_call=true y objeción de precio persistente), rompiendo el orden comercial exigido.",
+          "authorityReference": "docs/authority/prompt-agente-a-studyx-v2.md:111 | 4. **Llamada:** si corresponde y `may_offer_call`, ofrécela con una razón concreta (por ejemplo, ver juntos cómo encaja el curso con su objetivo)."
+        }
+      ],
+      "notes": [],
+      "evidence": {
+        "turn_id": "805aff70-fee4-4806-8310-edcee8b9d372",
+        "trace_ids": [
+          "8b539d8b-cc9a-44fe-a3bc-0240d90b3e57"
+        ],
+        "durable_event_ids": [
+          "96edd6c0-1b29-44fb-9f95-ba828d53741d",
+          "7c5175a1-d7d1-483e-9766-104a1dd34ea2",
+          "1f4c90d0-7bad-44d6-a2e6-a247da0486fd",
+          "9299bcce-ba0f-4e8a-a796-2e18a86d67af",
+          "5480a048-25b7-42c6-815f-85973a855150",
+          "b70898c0-9271-4983-b10a-28a07fa3b9c1",
+          "3e88f223-6c07-429a-a99e-ceeddf0bc9e0",
+          "c77c55a2-bfb0-478d-b279-e6270274622c",
+          "bf355fef-72e3-4ea3-adb5-77282ebeba00",
+          "6c770247-c97c-490a-98ca-49c4d6130584"
+        ],
+        "delivery": [
+          {
+            "outbound_id": "2ce5b648-84ec-46e2-8f49-a04629d495c4",
+            "content": "Por ahora vamos con Fotografía Profesional, que es lo que te sirve para armar fotos para tiendas y emprendedores. Si más adelante querés sumar otra formación, lo vemos aparte, con su propio plan.",
+            "content_sha256": "dc39f41a4376983dd79a456775d75f96f5b08726090c1f4385a9e405051926f8",
+            "reported_statuses": [
+              "submitted_to_botpress",
+              "delivered"
+            ],
+            "evidence_ids": [
+              "2bedebc8-ea34-4f0f-bf2c-74afd1996f77",
+              "05124678-9773-4d0a-a74d-cb31420adbe2"
+            ]
+          },
+          {
+            "outbound_id": "7d237eed-20a6-4beb-aff6-d8148ee30e2d",
+            "content": "Lo que te frena hoy es el precio, y ahí sí puedo moverme: con las 12 cuotas de USD 30 arrancás sin soltar todo junto. Si eso queda resuelto, avanzamos con tu inscripción?",
+            "content_sha256": "da4a6195b9a1f246385a9317efe98c2b92fcfe7bc007d9b7e45a5e38f3751fbd",
+            "reported_statuses": [
+              "submitted_to_botpress"
+            ],
+            "evidence_ids": [
+              "76093bbc-6477-4c66-8c6b-9010d34679ec"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "run": "focused-25970d5-flash-060714-r1-20261101",
+      "case": "07_think_it_over_not_closed",
+      "turn": "plans",
+      "delivered_sha256": "bf1f2430403d11c5a9fcb595f9a7a5d879318c3d94101ade84659b07e1833828",
+      "status": "PASS",
+      "reviewer": "Codex review of delivered text against recorded effects",
+      "audit_scope": "unsupported bonus offer/insinuation and course role truthfulness only; not a replacement for golden approval",
+      "reason": "La entrega trabaja únicamente el curso pago y/o precio/plan/consulta actual. No ofrece ni insinúa un bonificado nuevo; sin efecto bonus ni paquete previo entregado. Los roles declarados en el borrador final corresponden al curso pago (o array vacío sin mención de curso).",
+      "delivered": "Soy Emma, asesora de Studyx. Fotografía Profesional es online, 41 clases, y arranca desde cero con el proceso fotográfico digital.\nLos planes son estos, todos por USD 360 en total:\n12 cuotas de USD 30\n6 cuotas de USD 60\nun pago de USD 360\nCuál te acomoda más?",
+      "customer": "Me interesa Fotografía Profesional. Qué planes de pago tienen?",
+      "classification": "no_bonus_offer_or_recap",
+      "course_mentions_declared_vs_meaning": "No false paid_complement/alternative labels observed. Paid metadata matches actual selectedCourse; the two initial extra-course mentions are honestly labeled bonus and rejected. No delivered bonus roles remain.",
+      "drafts": [
+        {
+          "call_id": "call-0011",
+          "raw": {
+            "schema_version": 1,
+            "move": {
+              "schema_version": 1,
+              "move": "ask_payment_options",
+              "secondary_moves": [
+                "select_course"
+              ],
+              "vetoes": [],
+              "course_reference": "fotografia_profesional",
+              "area_reference": null,
+              "payment_plan": null,
+              "confidence": 0.95
+            },
+            "response": {
+              "messages": [
+                "Soy Emma, asesora de Studyx. Fotografía Profesional es online, 41 clases, y arranca desde cero con el proceso fotográfico digital.",
+                "Los planes son estos, todos por USD 360 en total:\n12 cuotas de USD 30\n6 cuotas de USD 60\nun pago de USD 360\nCuál te acomoda más?"
+              ],
+              "call_offer": null
+            },
+            "proposed_action": {
+              "type": "none"
+            },
+            "course_mentions": [
+              {
+                "offering_code": "fotografia_profesional",
+                "role": "paid"
+              }
+            ],
+            "confirmed_phone": null,
+            "profile_updates": [],
+            "profile_requests": [],
+            "repair_of": null,
+            "used_fact_ids": [
+              "offering:fotografia_profesional:name:v1",
+              "offering:fotografia_profesional:description:v1",
+              "offering:fotografia_profesional:duration:v1",
+              "offering:fotografia_profesional:modality:v1",
+              "payment:fotografia_profesional:monthly_12:label:v1",
+              "payment:fotografia_profesional:monthly_6:label:v1",
+              "payment:fotografia_profesional:one_time:label:v1"
+            ],
+            "used_memory_ids": [],
+            "memory_candidates": []
+          },
+          "raw_sha256": "76fcf1e25e544418c014c8d5758b11e677de59eadb276b982ef379cb54ae486c",
+          "course_mentions": [
+            {
+              "offering_code": "fotografia_profesional",
+              "role": "paid"
+            }
+          ],
+          "proposed_action": {
+            "type": "none"
+          }
+        }
+      ],
+      "backend_action": null,
+      "state": {
+        "selectedCourse": "fotografia_profesional",
+        "stage": "course_selected",
+        "awaitingReply": "none",
+        "plan": null,
+        "promotion": {
+          "status": null,
+          "bonusCount": 0,
+          "paidCourse": null,
+          "bonusCourses": []
+        }
+      },
+      "prior_actual_delivered_package": [],
+      "backend_rejections": [],
+      "judge_approved_original": true,
+      "judge_failures_original": [],
+      "notes": [],
+      "evidence": {
+        "turn_id": "af082725-052e-4a96-bab6-53e48d493450",
+        "trace_ids": [
+          "477795db-c835-4674-8a8f-39ee7e87734b"
+        ],
+        "durable_event_ids": [
+          "22103960-deeb-404d-bc82-6119248ac4b1",
+          "d9a60703-5989-4042-964c-b68f717deb03",
+          "db3d28d5-e583-4590-9a46-740f48836e3e",
+          "07b47a0f-bfe3-4590-94d4-cd435cada0bd",
+          "8d8b611a-e50a-4b16-9dab-f15c4005629f",
+          "84bb2bb7-4fb6-4a57-9217-2b0943b4fa81",
+          "3e45b4eb-54dd-48ad-9170-82d7eeab7ea7",
+          "7be5856b-c315-4302-901f-e5228b6d1878",
+          "5bfe2f93-2c00-47ef-8f80-638be7086f74",
+          "bc280284-94e1-4a87-8153-08d1ab3292b2"
+        ],
+        "delivery": [
+          {
+            "outbound_id": "0018d0f1-2244-4f34-95c0-81d2513893dc",
+            "content": "Soy Emma, asesora de Studyx. Fotografía Profesional es online, 41 clases, y arranca desde cero con el proceso fotográfico digital.",
+            "content_sha256": "170e6ce413756334515e7907ada919584469501d05150f7574747c69dca68e3a",
+            "reported_statuses": [
+              "submitted_to_botpress",
+              "delivered"
+            ],
+            "evidence_ids": [
+              "9985957d-a9be-45fd-a5d8-05101de4f73d",
+              "93b4d9ab-c319-415c-bdd8-9996ab34af2d"
+            ]
+          },
+          {
+            "outbound_id": "ceac55e4-a6a3-4c5f-ae62-de707ad4a8ad",
+            "content": "Los planes son estos, todos por USD 360 en total:\n12 cuotas de USD 30\n6 cuotas de USD 60\nun pago de USD 360\nCuál te acomoda más?",
+            "content_sha256": "e27cadbf1952be28dbb4a40af27a9853c39f7b62892d0bfbf4d06e4e5d7df6e1",
+            "reported_statuses": [
+              "submitted_to_botpress"
+            ],
+            "evidence_ids": [
+              "ab2d45a5-57c1-4345-aae9-74300dca013c"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "run": "focused-25970d5-flash-060714-r1-20261101",
+      "case": "07_think_it_over_not_closed",
+      "turn": "think",
+      "delivered_sha256": "71ebf9ffe2b16e29f77313724f285f3b5e67219ab8be5e0b6261ca7afd754872",
+      "status": "PASS",
+      "reviewer": "Codex review of delivered text against recorded effects",
+      "audit_scope": "unsupported bonus offer/insinuation and course role truthfulness only; not a replacement for golden approval",
+      "reason": "La entrega trabaja únicamente el curso pago y/o precio/plan/consulta actual. No ofrece ni insinúa un bonificado nuevo; sin efecto bonus ni paquete previo entregado. Los roles declarados en el borrador final corresponden al curso pago (o array vacío sin mención de curso).",
+      "delivered": "Claro, tomate tu tiempo. Sólo te pregunto algo para no dejarte con la duda dando vueltas: qué es lo que querés definir antes de decidir?",
+      "customer": "No me quiero inscribir igual ya, tengo que pensarlo.",
+      "classification": "no_bonus_offer_or_recap",
+      "course_mentions_declared_vs_meaning": "No false paid_complement/alternative labels observed. Paid metadata matches actual selectedCourse; the two initial extra-course mentions are honestly labeled bonus and rejected. No delivered bonus roles remain.",
+      "drafts": [
+        {
+          "call_id": "call-0012",
+          "raw": {
+            "schema_version": 1,
+            "move": {
+              "schema_version": 1,
+              "move": "defer_payment",
+              "secondary_moves": [],
+              "vetoes": [],
+              "course_reference": null,
+              "area_reference": null,
+              "payment_plan": null,
+              "confidence": 0.9
+            },
+            "response": {
+              "messages": [
+                "Claro, tomate tu tiempo. Sólo te pregunto algo para no dejarte con la duda dando vueltas: qué es lo que querés definir antes de decidir?"
+              ],
+              "call_offer": null
+            },
+            "proposed_action": {
+              "type": "none"
+            },
+            "course_mentions": [],
+            "confirmed_phone": null,
+            "profile_updates": [],
+            "profile_requests": [],
+            "repair_of": null,
+            "used_fact_ids": [],
+            "used_memory_ids": [],
+            "memory_candidates": [
+              {
+                "type": "constraint",
+                "key": "decision_postponed",
+                "value": "quiere pensarlo antes de inscribirse",
+                "source_quote": "No me quiero inscribir igual ya, tengo que pensarlo.",
+                "confidence": 0.9
+              }
+            ]
+          },
+          "raw_sha256": "c562af0daa22d9254aebaa03a09adae72568b2e4ec48f75dc0da15ebe15f9f0b",
+          "course_mentions": [],
+          "proposed_action": {
+            "type": "none"
+          }
+        }
+      ],
+      "backend_action": null,
+      "state": {
+        "selectedCourse": "fotografia_profesional",
+        "stage": "course_selected",
+        "awaitingReply": "none",
+        "plan": null,
+        "promotion": {
+          "status": null,
+          "bonusCount": 0,
+          "paidCourse": null,
+          "bonusCourses": []
+        }
+      },
+      "prior_actual_delivered_package": [],
+      "backend_rejections": [],
+      "judge_approved_original": true,
+      "judge_failures_original": [],
+      "notes": [],
+      "evidence": {
+        "turn_id": "b0e6b762-28f2-4e0a-90d5-b53bf1edd9e9",
+        "trace_ids": [
+          "96476742-79c7-4ab5-a83d-16910959ee63"
+        ],
+        "durable_event_ids": [
+          "029e0b41-b289-433c-96bd-5aae1e354544",
+          "283b6aff-01e3-4ffd-9fc0-c82b42f05ced",
+          "b4898d65-a238-47c7-a088-547af8b91850",
+          "bfbe0d16-a0ac-4aa7-b99f-cac5e51a5f9e",
+          "49a1a77a-e9be-404e-a8a5-80cd6a298e37",
+          "68bab337-8dee-440d-911b-f24ab76da2da",
+          "02b7de62-927f-4bbc-b32b-6e466d9c5749",
+          "678f3ed0-3d0e-42b2-8d3d-940dcde8b2c5"
+        ],
+        "delivery": [
+          {
+            "outbound_id": "cd8d018a-b860-4ba3-881b-c6b5ff8e1a84",
+            "content": "Claro, tomate tu tiempo. Sólo te pregunto algo para no dejarte con la duda dando vueltas: qué es lo que querés definir antes de decidir?",
+            "content_sha256": "71ebf9ffe2b16e29f77313724f285f3b5e67219ab8be5e0b6261ca7afd754872",
+            "reported_statuses": [
+              "submitted_to_botpress",
+              "delivered"
+            ],
+            "evidence_ids": [
+              "4b04a1bc-a599-44a7-acf3-27ba1eea4d69",
+              "ac4b7c72-20fa-4a36-aee8-3de0fa195442"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "run": "focused-25970d5-flash-060714-r1-20261101",
+      "case": "14_course_change_cancels_promotion",
+      "turn": "interest",
+      "delivered_sha256": "37346f2c72492f61e52326c9008950527a2e64e2f9293ed0011fda846def8346",
+      "status": "PASS",
+      "reviewer": "Codex review of delivered text against recorded effects",
+      "audit_scope": "unsupported bonus offer/insinuation and course role truthfulness only; not a replacement for golden approval",
+      "reason": "La entrega trabaja únicamente el curso pago y/o precio/plan/consulta actual. No ofrece ni insinúa un bonificado nuevo; sin efecto bonus ni paquete previo entregado. Los roles declarados en el borrador final corresponden al curso pago (o array vacío sin mención de curso).",
+      "delivered": "Hola, soy Emma, asesora de Studyx. Fotografía Profesional encaja muy bien con eso: son 41 clases online que arrancan desde cero con el proceso fotográfico digital, así podrías trabajar imágenes de productos y marcas de emprendedores.\nContame, ya tenés cámara o estás empezando de cero con el equipo?",
+      "customer": "Quiero Fotografía Profesional para trabajar con emprendedores y tiendas online.",
+      "classification": "no_bonus_offer_or_recap",
+      "course_mentions_declared_vs_meaning": "No false paid_complement/alternative labels observed. Paid metadata matches actual selectedCourse; the two initial extra-course mentions are honestly labeled bonus and rejected. No delivered bonus roles remain.",
+      "drafts": [
+        {
+          "call_id": "call-0013",
+          "raw": {
+            "schema_version": 1,
+            "move": {
+              "schema_version": 1,
+              "move": "select_course",
+              "secondary_moves": [],
+              "vetoes": [],
+              "course_reference": "fotografia_profesional",
+              "area_reference": null,
+              "payment_plan": null,
+              "confidence": 0.95
+            },
+            "response": {
+              "messages": [
+                "Hola, soy Emma, asesora de Studyx. Fotografía Profesional encaja muy bien con eso: son 41 clases online que arrancan desde cero con el proceso fotográfico digital, así podrías trabajar imágenes de productos y marcas de emprendedores.",
+                "Contame, ya tenés cámara o estás empezando de cero con el equipo?"
+              ],
+              "call_offer": null
+            },
+            "proposed_action": {
+              "type": "none"
+            },
+            "course_mentions": [
+              {
+                "offering_code": "fotografia_profesional",
+                "role": "paid"
+              }
+            ],
+            "confirmed_phone": null,
+            "profile_updates": [],
+            "profile_requests": [],
+            "repair_of": null,
+            "used_fact_ids": [
+              "offering:fotografia_profesional:name:v1",
+              "offering:fotografia_profesional:description:v1",
+              "offering:fotografia_profesional:duration:v1",
+              "offering:fotografia_profesional:modality:v1"
+            ],
+            "used_memory_ids": [],
+            "memory_candidates": [
+              {
+                "type": "study_goal",
+                "key": "work_with_entrepreneurs_online_stores",
+                "value": "Trabajar en fotografía con emprendedores y tiendas online",
+                "source_quote": "Quiero Fotografía Profesional para trabajar con emprendedores y tiendas online.",
+                "confidence": 0.95
+              }
+            ]
+          },
+          "raw_sha256": "a3e34cca1b8d153adc45ecb6bcfb2f4a4dfafca3266c9a171a1c99c2d400022e",
+          "course_mentions": [
+            {
+              "offering_code": "fotografia_profesional",
+              "role": "paid"
+            }
+          ],
+          "proposed_action": {
+            "type": "none"
+          }
+        }
+      ],
+      "backend_action": null,
+      "state": {
+        "selectedCourse": "fotografia_profesional",
+        "stage": "course_selected",
+        "awaitingReply": "none",
+        "plan": null,
+        "promotion": {
+          "status": null,
+          "bonusCount": 0,
+          "paidCourse": null,
+          "bonusCourses": []
+        }
+      },
+      "prior_actual_delivered_package": [],
+      "backend_rejections": [],
+      "judge_approved_original": true,
+      "judge_failures_original": [],
+      "notes": [],
+      "evidence": {
+        "turn_id": "780d198a-f698-4c80-ac48-2923d1adc8c9",
+        "trace_ids": [
+          "8715a072-3e3e-401f-a184-5f768770d451"
+        ],
+        "durable_event_ids": [
+          "12d7514b-7162-4919-9886-922a3387df26",
+          "e7337271-b9be-48b0-9cc4-5b849d8e81dc",
+          "042fc6b0-1c1b-49ff-9e01-1e49d7806c3c",
+          "ff01147c-669a-42a6-818d-a8b88be539f3",
+          "5e080b5c-6d59-485d-822a-09611fc15a68",
+          "540f4153-fa4a-45f9-860b-803d6b568cfd",
+          "8c8e2e77-d1d9-4beb-8159-1498448e1fad",
+          "ab223511-9d09-4c81-aa2a-fe7188d525ae",
+          "39d36098-03bb-4073-8a65-80536709b355",
+          "b9f13c62-7b25-42c9-8253-ee2fcda00376"
+        ],
+        "delivery": [
+          {
+            "outbound_id": "5d4420c1-7d87-4aa5-9d91-ff920292f78d",
+            "content": "Hola, soy Emma, asesora de Studyx. Fotografía Profesional encaja muy bien con eso: son 41 clases online que arrancan desde cero con el proceso fotográfico digital, así podrías trabajar imágenes de productos y marcas de emprendedores.",
+            "content_sha256": "261a3696a2d5b748308a072714a46b7af243475d612632b31fc1279c2025a62b",
+            "reported_statuses": [
+              "submitted_to_botpress",
+              "delivered"
+            ],
+            "evidence_ids": [
+              "36e37851-22fc-42dd-8e21-d1d3e37bb3bf",
+              "9ddf411a-5499-44db-9b91-6b2b5e23ad90"
+            ]
+          },
+          {
+            "outbound_id": "c9c89d7f-44f0-4357-8287-66c74093bc0a",
+            "content": "Contame, ya tenés cámara o estás empezando de cero con el equipo?",
+            "content_sha256": "063d2f3a374832728e60389cc5241da4e98c113091dee20ceefab4d048b05301",
+            "reported_statuses": [
+              "submitted_to_botpress"
+            ],
+            "evidence_ids": [
+              "e6e673ad-57f4-4138-973b-258847f97a33"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "run": "focused-25970d5-flash-060714-r1-20261101",
+      "case": "14_course_change_cancels_promotion",
+      "turn": "price_1",
+      "delivered_sha256": "ff72d3a91a258d8befc1cfd856d2f6714bc3ed72eb7afe9514c574afac1424d6",
+      "status": "PASS",
+      "reviewer": "Codex review of delivered text against recorded effects",
+      "audit_scope": "unsupported bonus offer/insinuation and course role truthfulness only; not a replacement for golden approval",
+      "reason": "La entrega trabaja únicamente el curso pago y/o precio/plan/consulta actual. No ofrece ni insinúa un bonificado nuevo; sin efecto bonus ni paquete previo entregado. Los roles declarados en el borrador final corresponden al curso pago (o array vacío sin mención de curso).",
+      "delivered": "Entiendo, y es bueno saberlo: si el precio es lo único que te frena, entonces el curso sí te sirve para lo que querés. La formación completa son USD 360, y podés pagarla en 12 cuotas de USD 30 por mes, que es la forma más accesible de entrar.\nSi te sirve así, arrancamos con las 12 cuotas o preferís otro de los planes?",
+      "customer": "El precio es lo único que me frena.",
+      "classification": "no_bonus_offer_or_recap",
+      "course_mentions_declared_vs_meaning": "No false paid_complement/alternative labels observed. Paid metadata matches actual selectedCourse; the two initial extra-course mentions are honestly labeled bonus and rejected. No delivered bonus roles remain.",
+      "drafts": [
+        {
+          "call_id": "call-0014",
+          "raw": {
+            "schema_version": 1,
+            "move": {
+              "schema_version": 1,
+              "move": "ask_payment_options",
+              "secondary_moves": [],
+              "vetoes": [],
+              "course_reference": "fotografia_profesional",
+              "area_reference": null,
+              "payment_plan": null,
+              "confidence": 0.72
+            },
+            "response": {
+              "messages": [
+                "Entiendo, y es bueno saberlo: si el precio es lo único que te frena, entonces el curso sí te sirve para lo que querés. La formación completa son USD 360, y podés pagarla en 12 cuotas de USD 30 por mes, que es la forma más accesible de entrar.",
+                "Si te sirve así, arrancamos con las 12 cuotas o preferís otro de los planes?"
+              ],
+              "call_offer": null
+            },
+            "proposed_action": {
+              "type": "none"
+            },
+            "course_mentions": [
+              {
+                "offering_code": "fotografia_profesional",
+                "role": "paid"
+              }
+            ],
+            "confirmed_phone": null,
+            "profile_updates": [],
+            "profile_requests": [],
+            "repair_of": null,
+            "used_fact_ids": [
+              "offering:fotografia_profesional:name:v1",
+              "payment:fotografia_profesional:monthly_12:label:v1",
+              "payment:fotografia_profesional:monthly_12:price:v1",
+              "payment:fotografia_profesional:monthly_6:label:v1",
+              "payment:fotografia_profesional:one_time:label:v1"
+            ],
+            "used_memory_ids": [],
+            "memory_candidates": [
+              {
+                "type": "objection",
+                "key": "price_objection",
+                "value": "El precio es lo único que me frena",
+                "source_quote": "El precio es lo único que me frena.",
+                "confidence": 0.95
+              },
+              {
+                "type": "constraint",
+                "key": "price_only_barrier",
+                "value": "confirmed",
+                "source_quote": "El precio es lo único que me frena.",
+                "confidence": 0.9
+              }
+            ]
+          },
+          "raw_sha256": "4022072bc2aa684a3f31b064722fbe25298918b059560ac6d5ea2b7f40d627eb",
+          "course_mentions": [
+            {
+              "offering_code": "fotografia_profesional",
+              "role": "paid"
+            }
+          ],
+          "proposed_action": {
+            "type": "none"
+          }
+        }
+      ],
+      "backend_action": null,
+      "state": {
+        "selectedCourse": "fotografia_profesional",
+        "stage": "course_selected",
+        "awaitingReply": "none",
+        "plan": null,
+        "promotion": {
+          "status": null,
+          "bonusCount": 0,
+          "paidCourse": null,
+          "bonusCourses": []
+        }
+      },
+      "prior_actual_delivered_package": [],
+      "backend_rejections": [],
+      "judge_approved_original": true,
+      "judge_failures_original": [],
+      "notes": [],
+      "evidence": {
+        "turn_id": "6404901c-7e73-43b9-bd31-a2dcb19f3ac5",
+        "trace_ids": [
+          "39c52cbe-afce-402f-a35f-4636034db7ba"
+        ],
+        "durable_event_ids": [
+          "f81de70b-55c9-425c-972f-4cf2391ce880",
+          "492d4a5b-1213-4ad4-a412-18958d090944",
+          "41460304-da15-4bd4-95e2-0d60d0826545",
+          "f83a08dc-d565-4260-b5bc-0c3e5ba0e528",
+          "9d25cdc1-4b03-47c6-b76b-ce77367da1a2",
+          "85be11ed-0777-4d9b-87b1-ee2f65aab2ac",
+          "3ceb2128-1f46-41a9-b1f4-29bdfa4f4be4",
+          "a511632f-d00e-4bc6-87fb-03b52f6fc1d8",
+          "cd5f00b3-4f8c-4b86-a031-440f1fe88a30",
+          "763b7b46-b5ae-4cb2-94b4-602df9e46aca"
+        ],
+        "delivery": [
+          {
+            "outbound_id": "6efe52b9-86de-4116-91b1-02d81ed76ca7",
+            "content": "Entiendo, y es bueno saberlo: si el precio es lo único que te frena, entonces el curso sí te sirve para lo que querés. La formación completa son USD 360, y podés pagarla en 12 cuotas de USD 30 por mes, que es la forma más accesible de entrar.",
+            "content_sha256": "413e70cab7f2c04b3739727c756bc5536acc516dcdc3feef536abb21661819a1",
+            "reported_statuses": [
+              "submitted_to_botpress",
+              "delivered"
+            ],
+            "evidence_ids": [
+              "452b8d31-c4f3-4474-9616-2913c5fa7e74",
+              "76f68d19-dd2b-42e6-9172-becc3efb7751"
+            ]
+          },
+          {
+            "outbound_id": "4ee8cf1e-25ee-4c96-a163-c2eab0e55ebb",
+            "content": "Si te sirve así, arrancamos con las 12 cuotas o preferís otro de los planes?",
+            "content_sha256": "292b68838febabb626464d6e656d45834ce9f42c32345ea94c4fb01205c2d41f",
+            "reported_statuses": [
+              "submitted_to_botpress"
+            ],
+            "evidence_ids": [
+              "1eba8de3-dc98-4a73-8485-2774626ed47b"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "run": "focused-25970d5-flash-060714-r1-20261101",
+      "case": "14_course_change_cancels_promotion",
+      "turn": "installments",
+      "delivered_sha256": "9e94b2644144c4ec8d87fde7577e30f0195628d0197e83c7276ded3aa7b34eb7",
+      "status": "PASS",
+      "reviewer": "Codex review of delivered text against recorded effects",
+      "audit_scope": "unsupported bonus offer/insinuation and course role truthfulness only; not a replacement for golden approval",
+      "reason": "La entrega trabaja únicamente el curso pago y/o precio/plan/consulta actual. No ofrece ni insinúa un bonificado nuevo; sin efecto bonus ni paquete previo entregado. Los roles declarados en el borrador final corresponden al curso pago (o array vacío sin mención de curso).",
+      "delivered": "Te entiendo, y no quiero que el precio te deje afuera de algo que sí querés hacer. Pensalo así: con las 12 cuotas son USD 30 por mes, y con lo que aprendas en Fotografía Profesional podrías empezar a ofrecer fotos de productos a emprendedores y tiendas online, que es justo lo que buscás.\nSi te acomoda esa cuota, te dejo el enlace para arrancar hoy mismo?",
+      "customer": "Sigue siendo caro para mí.",
+      "classification": "no_bonus_offer_or_recap",
+      "course_mentions_declared_vs_meaning": "No false paid_complement/alternative labels observed. Paid metadata matches actual selectedCourse; the two initial extra-course mentions are honestly labeled bonus and rejected. No delivered bonus roles remain.",
+      "drafts": [
+        {
+          "call_id": "call-0015",
+          "raw": {
+            "schema_version": 1,
+            "move": {
+              "schema_version": 1,
+              "move": "defer_payment",
+              "secondary_moves": [],
+              "vetoes": [],
+              "course_reference": "fotografia_profesional",
+              "area_reference": null,
+              "payment_plan": null,
+              "confidence": 0.55
+            },
+            "response": {
+              "messages": [
+                "Te entiendo, y no quiero que te inscribas apurada si el número no te cierra. Lo que sí te digo: con las 12 cuotas son USD 30 al mes, y eso es lo que te separa de empezar a armar tu servicio de fotografía para tiendas y emprendedores.",
+                "Si querés, lo vemos juntos en una llamada corta y te muestro cómo encaja con lo que querés hacer. Te sirve?"
+              ],
+              "call_offer": "Te propongo una llamada breve para verlo con calma y sacarte la duda del precio. Te viene bien?"
+            },
+            "proposed_action": {
+              "type": "none"
+            },
+            "course_mentions": [
+              {
+                "offering_code": "fotografia_profesional",
+                "role": "paid"
+              }
+            ],
+            "confirmed_phone": null,
+            "profile_updates": [],
+            "profile_requests": [],
+            "repair_of": null,
+            "used_fact_ids": [
+              "offering:fotografia_profesional:name:v1",
+              "offering:fotografia_profesional:description:v1",
+              "payment:fotografia_profesional:monthly_12:label:v1",
+              "payment:fotografia_profesional:monthly_12:price:v1"
+            ],
+            "used_memory_ids": [],
+            "memory_candidates": [
+              {
+                "type": "objection",
+                "key": "price_objection",
+                "value": "persistent",
+                "source_quote": "Sigue siendo caro para mí.",
+                "confidence": 0.9
+              }
+            ]
+          },
+          "raw_sha256": "82eb5f56d671b126d5c9c722f29e411f2d3a84713f3e6716f7ba32c628843c2d",
+          "course_mentions": [
+            {
+              "offering_code": "fotografia_profesional",
+              "role": "paid"
+            }
+          ],
+          "proposed_action": {
+            "type": "none"
+          }
+        },
+        {
+          "call_id": "call-0016",
+          "raw": {
+            "schema_version": 1,
+            "move": {
+              "schema_version": 1,
+              "move": "continue_by_chat",
+              "secondary_moves": [],
+              "vetoes": [],
+              "course_reference": null,
+              "area_reference": null,
+              "payment_plan": null,
+              "confidence": 0.86
+            },
+            "response": {
+              "messages": [
+                "Te entiendo, y no quiero que el precio te deje afuera de algo que sí querés hacer. Pensalo así: con las 12 cuotas son USD 30 por mes, y con lo que aprendas en Fotografía Profesional podrías empezar a ofrecer fotos de productos a emprendedores y tiendas online, que es justo lo que buscás.",
+                "Si te acomoda esa cuota, te dejo el enlace para arrancar hoy mismo?"
+              ],
+              "call_offer": null
+            },
+            "proposed_action": {
+              "type": "none"
+            },
+            "course_mentions": [
+              {
+                "offering_code": "fotografia_profesional",
+                "role": "paid"
+              }
+            ],
+            "confirmed_phone": null,
+            "profile_updates": [],
+            "profile_requests": [],
+            "repair_of": {
+              "rejection_id": "a9a46c7e-71f3-4d07-9c1c-9d7a72f2b0ef",
+              "attempt": 1
+            },
+            "used_fact_ids": [
+              "offering:fotografia_profesional:name:v1",
+              "offering:fotografia_profesional:description:v1",
+              "payment:fotografia_profesional:monthly_12:label:v1",
+              "payment:fotografia_profesional:monthly_12:price:v1"
+            ],
+            "used_memory_ids": [],
+            "memory_candidates": [
+              {
+                "type": "objection",
+                "key": "price_objection",
+                "value": "persistent",
+                "source_quote": "Sigue siendo caro para mí.",
+                "confidence": 0.95
+              }
+            ]
+          },
+          "raw_sha256": "8075133d35fcad648fd8756b558eb258dacc74a37f3c3946d927f97d42b3cd0a",
+          "course_mentions": [
+            {
+              "offering_code": "fotografia_profesional",
+              "role": "paid"
+            }
+          ],
+          "proposed_action": {
+            "type": "none"
+          }
+        }
+      ],
+      "backend_action": null,
+      "state": {
+        "selectedCourse": "fotografia_profesional",
+        "stage": "course_selected",
+        "awaitingReply": "none",
+        "plan": null,
+        "promotion": {
+          "status": null,
+          "bonusCount": 0,
+          "paidCourse": null,
+          "bonusCourses": []
+        }
+      },
+      "prior_actual_delivered_package": [],
+      "backend_rejections": [
+        {
+          "schema_version": 1,
+          "rejection_id": "a9a46c7e-71f3-4d07-9c1c-9d7a72f2b0ef",
+          "attempt": 1,
+          "rejections": [
+            {
+              "code": "CALL_OFFER_MESSAGE_BOUNDARY_INVALID",
+              "subject": "call_offer"
+            },
+            {
+              "code": "CALL_OFFER_MESSAGE_BOUNDARY_INVALID",
+              "subject": "duplicate_call_offer"
+            }
+          ],
+          "authorized_alternatives": {
+            "fact_ids": [
+              "offering:fotografia_profesional:name:v1",
+              "offering:fotografia_profesional:description:v1",
+              "offering:fotografia_profesional:duration:v1",
+              "offering:fotografia_profesional:modality:v1",
+              "payment:fotografia_profesional:monthly_12:label:v1",
+              "payment:fotografia_profesional:monthly_12:price:v1",
+              "payment:fotografia_profesional:monthly_6:label:v1",
+              "payment:fotografia_profesional:monthly_6:price:v1",
+              "payment:fotografia_profesional:one_time:label:v1",
+              "payment:fotografia_profesional:one_time:price:v1",
+              "offering:aires_acondicionados:name:v1",
+              "offering:armado_reparacion_pc:name:v1",
+              "offering:autocad_interiores:name:v1",
+              "offering:camaras_seguridad:name:v1",
+              "offering:coaching_liderazgo:name:v1",
+              "offering:community_manager:name:v1",
+              "offering:comunicacion_interna_empresas:name:v1",
+              "offering:decoracion_de_interiores:name:v1",
+              "offering:diseno_corel_draw:name:v1",
+              "offering:diseno_illustrator:name:v1",
+              "offering:diseno_photoshop:name:v1",
+              "offering:energia_solar_fotovoltaica:name:v1",
+              "offering:entrenamiento_funcional:name:v1",
+              "offering:especialista_marketing:name:v1",
+              "offering:especialista_ventas:name:v1",
+              "offering:estrategias_emprender:name:v1",
+              "offering:excel_integral:name:v1",
+              "offering:fotografia_celulares_tiendas_online:name:v1",
+              "offering:fotografia_profesional:name:v1",
+              "offering:influencers_creadores_contenidos:name:v1",
+              "offering:ingles_1:name:v1",
+              "offering:ingles_2:name:v1",
+              "offering:ingles_3:name:v1",
+              "offering:instagram_emprendedores:name:v1",
+              "offering:introduccion_catering:name:v1",
+              "offering:introduccion_criptomonedas:name:v1",
+              "offering:introduccion_ecommerce:name:v1",
+              "offering:maquillaje_profesional:name:v1",
+              "offering:marketing_digital:name:v1",
+              "offering:nutricion_alimentacion:name:v1",
+              "offering:oratoria:name:v1",
+              "offering:organizacion_baby_shower:name:v1",
+              "offering:organizador_eventos_sociales:name:v1",
+              "offering:paisajismo_jardineria:name:v1",
+              "offering:publicidad_redes_sociales:name:v1",
+              "offering:redes_informaticas:name:v1",
+              "offering:reparacion_celulares:name:v1",
+              "offering:sushi_principiantes:name:v1",
+              "offering:unas_gelificadas:name:v1",
+              "offering:vino_cata_maridaje:name:v1",
+              "area:academia-de-oficios:name:v1",
+              "area:academia-de-diseno-informatico:name:v1",
+              "area:academia-de-negocios:name:v1",
+              "area:academia-de-marketing:name:v1",
+              "area:academia-de-emprendedores:name:v1",
+              "area:academia-de-salud-y-bienestar:name:v1",
+              "area:academia-cultural:name:v1",
+              "area:academia-gastronomica:name:v1",
+              "area:academia-de-moda-y-belleza:name:v1",
+              "payment:fotografia_profesional:monthly_12:label:v1",
+              "payment:fotografia_profesional:monthly_6:label:v1",
+              "payment:fotografia_profesional:one_time:label:v1",
+              "payment-test:stripe_verification_050:label:v1"
+            ],
+            "actions": [
+              "none",
+              "send_test_payment_link"
+            ],
+            "missing_information": [
+              "nombre",
+              "apellido",
+              "correo",
+              "telefono"
+            ]
+          }
+        }
+      ],
+      "judge_approved_original": false,
+      "judge_failures_original": [
+        {
+          "code": "SEMANTIC_MUST_FAILED",
+          "detail": "El turno no aísla el precio como único freno ni cierra condicionalmente según el orden comercial exigido; además usa 'te dejo', expresión prohibida, y no cumple el cierre condicional requerido.",
+          "authorityReference": "docs/authority/prompt-agente-a-studyx-v2.md:110 | 3. **Aislar y cerrar condicional:** confirma que el precio es el único freno y que, resuelto eso, avanza."
+        },
+        {
+          "code": "SEMANTIC_MUST_NOT_FAILED",
+          "detail": "Usa la expresión 'te dejo', prohibida por la autoridad.",
+          "authorityReference": "docs/authority/prompt-agente-a-studyx-v2.md:129 | Sin desesperación: el tono al ofrecer la bonificación es de quien arma algo especial para esa persona, no de quien rebaja para no perder la venta. No uses expresiones como «te lo dejo», «te regalo», «última oportunidad» o «hago una excepción». No prometas elevar una excepción sin una acción autorizada. Si `turn_rejection` marca `forbidden_promise`, elimina esa promesa y continúa la venta con valor verificado."
+        }
+      ],
+      "notes": [
+        "El juez conserva FAIL y afirma que «te dejo» es prohibido. En el texto exacto «te dejo el enlace para arrancar hoy mismo?» se refiere a inscripción/pago, no a un regalo o excepción. Este motivo aislado no demuestra insinuación bonus; existen otros fallos comerciales de la historia que no se recalifican."
+      ],
+      "evidence": {
+        "turn_id": "a23accb2-1099-4dbb-83e3-a35bfe997ef1",
+        "trace_ids": [
+          "6b41109e-490b-43a7-8b37-9a4b52d9a2ed"
+        ],
+        "durable_event_ids": [
+          "867c3be0-2f25-4540-bc76-34742cc7b2c8",
+          "76ea8973-fda2-41a6-aed3-487d53e89df6",
+          "0415185a-b01d-4f88-9930-097e2ee6aed1",
+          "0690dbf7-be3f-431e-a102-8869b9f7827b",
+          "1e71d5a8-e06c-4a86-a1f6-41ea3a0ad587",
+          "f3b12faa-c37d-479d-8eb1-a346d55923e6",
+          "1e40858a-488a-4dc7-badb-b16233239559",
+          "223f9b9e-9174-426c-ad48-42cd07ceb841",
+          "d6a43750-b2bc-4b5a-85c0-e25adb591dfc",
+          "8e500ee3-3cfc-4026-97ac-67f9a9b13f71",
+          "979ead62-d663-4551-9ac7-70ea14893d9f",
+          "3f31586e-0c7f-4bfa-b0e3-cb338d864550",
+          "692af4f2-fe61-472f-8f15-fa17d6ddf9a0"
+        ],
+        "delivery": [
+          {
+            "outbound_id": "19cc5e00-9ed6-436d-87df-50f9b87830a0",
+            "content": "Te entiendo, y no quiero que el precio te deje afuera de algo que sí querés hacer. Pensalo así: con las 12 cuotas son USD 30 por mes, y con lo que aprendas en Fotografía Profesional podrías empezar a ofrecer fotos de productos a emprendedores y tiendas online, que es justo lo que buscás.",
+            "content_sha256": "aa1142016db2f810f7b03f41bc461924ed6f139b8df3123fb9284ce2a4389fef",
+            "reported_statuses": [
+              "submitted_to_botpress",
+              "delivered"
+            ],
+            "evidence_ids": [
+              "4c60eacb-60af-467b-b748-87733e36d9fd",
+              "6d1b29ec-35d6-4110-8151-606e636cbc58"
+            ]
+          },
+          {
+            "outbound_id": "a0251b74-930c-4a56-8c7a-4916366f5915",
+            "content": "Si te acomoda esa cuota, te dejo el enlace para arrancar hoy mismo?",
+            "content_sha256": "ff07c6359c36a750c2a0e88208df75eb72ae0ffee3da81d86b3d69525f933306",
+            "reported_statuses": [
+              "submitted_to_botpress"
+            ],
+            "evidence_ids": [
+              "cb458eab-0d54-4b5f-abb4-1cad34fd3e84"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "run": "focused-25970d5-flash-060714-r1-20261101",
+      "case": "14_course_change_cancels_promotion",
+      "turn": "isolate",
+      "delivered_sha256": "b2554694e4048588c9a4bfcb1eb849ca5c039e27bc971c241cc2e1271c08d0f8",
+      "status": "PASS",
+      "reviewer": "Codex review of delivered text against recorded effects",
+      "audit_scope": "unsupported bonus offer/insinuation and course role truthfulness only; not a replacement for golden approval",
+      "reason": "La entrega trabaja únicamente el curso pago y/o precio/plan/consulta actual. No ofrece ni insinúa un bonificado nuevo; sin efecto bonus ni paquete previo entregado. Los roles declarados en el borrador final corresponden al curso pago (o array vacío sin mención de curso).",
+      "delivered": "Te entiendo, y no es un detalle menor. Antes de seguir con el precio, contame algo: ya tenés cámara o estarías arrancando de cero con el equipo?",
+      "customer": "Aun en cuotas me frena el precio.",
+      "classification": "no_bonus_offer_or_recap",
+      "course_mentions_declared_vs_meaning": "No false paid_complement/alternative labels observed. Paid metadata matches actual selectedCourse; the two initial extra-course mentions are honestly labeled bonus and rejected. No delivered bonus roles remain.",
+      "drafts": [
+        {
+          "call_id": "call-0017",
+          "raw": {
+            "schema_version": 1,
+            "move": {
+              "schema_version": 1,
+              "move": "defer_payment",
+              "secondary_moves": [],
+              "vetoes": [],
+              "course_reference": null,
+              "area_reference": null,
+              "payment_plan": null,
+              "confidence": 0.55
+            },
+            "response": {
+              "messages": [
+                "Te entiendo, y no es un detalle menor. Antes de seguir con el precio, contame algo: ya tenés cámara o estarías arrancando de cero con el equipo?"
+              ],
+              "call_offer": null
+            },
+            "proposed_action": {
+              "type": "none"
+            },
+            "course_mentions": [
+              {
+                "offering_code": "fotografia_profesional",
+                "role": "paid"
+              }
+            ],
+            "confirmed_phone": null,
+            "profile_updates": [],
+            "profile_requests": [],
+            "repair_of": null,
+            "used_fact_ids": [
+              "offering:fotografia_profesional:name:v1"
+            ],
+            "used_memory_ids": [],
+            "memory_candidates": [
+              {
+                "type": "objection",
+                "key": "price_objection",
+                "value": "El precio sigue frenando incluso con el plan de 12 cuotas",
+                "source_quote": "Aun en cuotas me frena el precio.",
+                "confidence": 0.9
+              }
+            ]
+          },
+          "raw_sha256": "7f41353067d94031dde06cac64afdd622dfb2972d4ada9d4d15c3452d1a0ee1d",
+          "course_mentions": [
+            {
+              "offering_code": "fotografia_profesional",
+              "role": "paid"
+            }
+          ],
+          "proposed_action": {
+            "type": "none"
+          }
+        }
+      ],
+      "backend_action": null,
+      "state": {
+        "selectedCourse": "fotografia_profesional",
+        "stage": "course_selected",
+        "awaitingReply": "none",
+        "plan": null,
+        "promotion": {
+          "status": null,
+          "bonusCount": 0,
+          "paidCourse": null,
+          "bonusCourses": []
+        }
+      },
+      "prior_actual_delivered_package": [],
+      "backend_rejections": [],
+      "judge_approved_original": false,
+      "judge_failures_original": [
+        {
+          "code": "SEMANTIC_MUST_FAILED",
+          "detail": "El cliente reitera que el precio le frena incluso en cuotas. La respuesta no reencuadra con valor personalizado ni con el plan de 12 cuotas, no aísla el freno ni cierra condicionalmente; en su lugar desvía a una pregunta de equipo, incumpliendo el orden comercial exigido (valor, cuotas, aislamiento y cierre).",
+          "authorityReference": "docs/authority/prompt-agente-a-studyx-v2.md:110 | 3. **Aislar y cerrar condicional:** confirma que el precio es el único freno y que, resuelto eso, avanza."
+        },
+        {
+          "code": "SEMANTIC_MUST_NOT_FAILED",
+          "detail": "Ante una objeción de precio persistente que requería avanzar al siguiente escalón (aislar y cerrar condicional), la respuesta evita responder por chat sobre el precio y no conserva valor, cuotas, aislamiento ni cierre condicional en orden.",
+          "authorityReference": "docs/authority/prompt-agente-a-studyx-v2.md:110 | 3. **Aislar y cerrar condicional:** confirma que el precio es el único freno y que, resuelto eso, avanza."
+        }
+      ],
+      "notes": [],
+      "evidence": {
+        "turn_id": "56d079e7-ba59-4feb-8568-316bc0429234",
+        "trace_ids": [
+          "2e50a095-2177-458b-a27d-adb6d9edbed6"
+        ],
+        "durable_event_ids": [
+          "e0d97092-574a-47d2-8736-49a81c1e64f2",
+          "4027f303-1f27-4c7e-ba1e-cd5382d2bb64",
+          "e59a293d-3a75-41fd-85fa-fa9e568f4d81",
+          "30a037c1-bf44-441c-ab57-1e4c7499ef7c",
+          "361e38df-4c41-4b00-84df-a25832014965",
+          "7cda28d6-eacd-417c-88eb-480a3a0ce56e",
+          "e5b1118e-2775-4fd8-b3d9-ed56e09c9695",
+          "148bd796-e20d-4a24-b3b0-b4015ea222f3"
+        ],
+        "delivery": [
+          {
+            "outbound_id": "93274264-e014-4850-b1d4-eb62f0757ecf",
+            "content": "Te entiendo, y no es un detalle menor. Antes de seguir con el precio, contame algo: ya tenés cámara o estarías arrancando de cero con el equipo?",
+            "content_sha256": "b2554694e4048588c9a4bfcb1eb849ca5c039e27bc971c241cc2e1271c08d0f8",
+            "reported_statuses": [
+              "submitted_to_botpress",
+              "delivered"
+            ],
+            "evidence_ids": [
+              "fa0da06c-fda2-4d37-94c6-41efe44d4354",
+              "5c2efb72-c7b8-4af0-b402-3ed783c92fbb"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "run": "focused-25970d5-flash-060714-r1-20261101",
+      "case": "14_course_change_cancels_promotion",
+      "turn": "call_step",
+      "delivered_sha256": "82f54ed86d48ff4c856604a80cbaae02bf614276094b74189a0dde993a3e1e27",
+      "status": "PASS",
+      "reviewer": "Codex review of delivered text against recorded effects",
+      "audit_scope": "unsupported bonus offer/insinuation and course role truthfulness only; not a replacement for golden approval",
+      "reason": "La entrega trabaja únicamente el curso pago y/o precio/plan/consulta actual. No ofrece ni insinúa un bonificado nuevo; sin efecto bonus ni paquete previo entregado. Los roles declarados en el borrador final corresponden al curso pago (o array vacío sin mención de curso).",
+      "delivered": "Perfecto, entonces vamos a resolverlo. Antes de pasarte el enlace, contame cómo preferís pagar: en 12 cuotas de USD 30, en 6 de USD 60 o un pago único de USD 360.",
+      "customer": "Sí, es el único freno. Si lo resolvemos, avanzo.",
+      "classification": "no_bonus_offer_or_recap",
+      "course_mentions_declared_vs_meaning": "No false paid_complement/alternative labels observed. Paid metadata matches actual selectedCourse; the two initial extra-course mentions are honestly labeled bonus and rejected. No delivered bonus roles remain.",
+      "drafts": [
+        {
+          "call_id": "call-0018",
+          "raw": {
+            "schema_version": 1,
+            "move": {
+              "schema_version": 1,
+              "move": "ask_payment_options",
+              "secondary_moves": [],
+              "vetoes": [],
+              "course_reference": "fotografia_profesional",
+              "area_reference": null,
+              "payment_plan": null,
+              "confidence": 0.72
+            },
+            "response": {
+              "messages": [
+                "Perfecto, entonces vamos a resolverlo. Antes de pasarte el enlace, contame cómo preferís pagar: en 12 cuotas de USD 30, en 6 de USD 60 o un pago único de USD 360."
+              ],
+              "call_offer": null
+            },
+            "proposed_action": {
+              "type": "none"
+            },
+            "course_mentions": [
+              {
+                "offering_code": "fotografia_profesional",
+                "role": "paid"
+              }
+            ],
+            "confirmed_phone": null,
+            "profile_updates": [],
+            "profile_requests": [],
+            "repair_of": null,
+            "used_fact_ids": [
+              "offering:fotografia_profesional:name:v1",
+              "payment:fotografia_profesional:monthly_12:label:v1",
+              "payment:fotografia_profesional:monthly_6:label:v1",
+              "payment:fotografia_profesional:one_time:label:v1"
+            ],
+            "used_memory_ids": [],
+            "memory_candidates": [
+              {
+                "type": "constraint",
+                "key": "price_only_barrier",
+                "value": "confirmed",
+                "source_quote": "Sí, es el único freno. Si lo resolvemos, avanzo.",
+                "confidence": 0.95
+              }
+            ]
+          },
+          "raw_sha256": "3a2d3a178fef66182e675e5f767051519db274703a1742b290e66be336f117e4",
+          "course_mentions": [
+            {
+              "offering_code": "fotografia_profesional",
+              "role": "paid"
+            }
+          ],
+          "proposed_action": {
+            "type": "none"
+          }
+        }
+      ],
+      "backend_action": null,
+      "state": {
+        "selectedCourse": "fotografia_profesional",
+        "stage": "course_selected",
+        "awaitingReply": "none",
+        "plan": null,
+        "promotion": {
+          "status": null,
+          "bonusCount": 0,
+          "paidCourse": null,
+          "bonusCourses": []
+        }
+      },
+      "prior_actual_delivered_package": [],
+      "backend_rejections": [],
+      "judge_approved_original": false,
+      "judge_failures_original": [
+        {
+          "code": "SEMANTIC_MUST_FAILED",
+          "detail": "El cliente ya confirmó que el precio es el único freno y que avanzaría si se resuelve; el escalón 3 (aislar y cierre condicional) ya está cumplido y el siguiente escalón es la llamada (may_offer_call=true). En lugar de ofrecer la llamada, el agente reabre la elección de planes, repitiendo un escalón ya trabajado y omitiendo el cierre/llamada que corresponde.",
+          "authorityReference": "docs/authority/prompt-agente-a-studyx-v2.md:111 | 4. **Llamada:** si corresponde y `may_offer_call`, ofrécela con una razón concreta (por ejemplo, ver juntos cómo encaja el curso con su objetivo)."
+        }
+      ],
+      "notes": [],
+      "evidence": {
+        "turn_id": "697aa8e4-d6a3-47ec-8c7a-344df1de42d8",
+        "trace_ids": [
+          "f065b66b-87bf-4b2e-a1fd-9ce042694c68"
+        ],
+        "durable_event_ids": [
+          "bf5d41b0-3fe2-4d46-b104-96a014bbb5b2",
+          "5cf732d5-cdd8-42b7-a500-00065eec6070",
+          "1281a571-836a-47ad-8aff-34ef47ccd3b8",
+          "49886267-3c82-41fb-b44f-48c58adbbd06",
+          "b4031d2e-96ff-4cbc-81e2-facaba082a60",
+          "f5f9e303-ae7c-446a-a066-213710fd6ce1",
+          "86c98ba9-9d27-4e01-b06a-7cfa474520ac",
+          "b928f782-768a-4196-95bd-34f89ad3d6b6"
+        ],
+        "delivery": [
+          {
+            "outbound_id": "047cab76-7f98-47b8-9d43-d41415a57eaa",
+            "content": "Perfecto, entonces vamos a resolverlo. Antes de pasarte el enlace, contame cómo preferís pagar: en 12 cuotas de USD 30, en 6 de USD 60 o un pago único de USD 360.",
+            "content_sha256": "82f54ed86d48ff4c856604a80cbaae02bf614276094b74189a0dde993a3e1e27",
+            "reported_statuses": [
+              "submitted_to_botpress",
+              "delivered"
+            ],
+            "evidence_ids": [
+              "e6150a91-75fa-4622-afed-7ca455ae00f8",
+              "21dbd43e-034e-498d-8fbe-bf3dc447a069"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "run": "focused-25970d5-flash-060714-r1-20261101",
+      "case": "14_course_change_cancels_promotion",
+      "turn": "bonus_1",
+      "delivered_sha256": "ad59983abcce70c439fa662bbfa7b099b1e38ea6c218f68c6a5654ddc100c58a",
+      "status": "PASS",
+      "reviewer": "Codex review of delivered text against recorded effects",
+      "audit_scope": "unsupported bonus offer/insinuation and course role truthfulness only; not a replacement for golden approval",
+      "reason": "El borrador inicial dice «puedo sumarte también Fotografía con Celulares para Tiendas Online» sin cambiar precio, declara role=bonus pero action=none. Rechazo fresh forbidden_promise/direct_bonus:ladder_step_pending, falta llamada. La reparación entregada nombra sólo el curso pago y sus planes, sin insinuación residual.",
+      "delivered": "Perfecto, seguimos por chat. Ya sabemos que Fotografía Profesional es lo que querés y que el precio es lo único que te frena, así que no le demos más vueltas: con las 12 cuotas son USD 30 por mes, y con lo que aprendas podrías empezar a ofrecer fotos de productos a emprendedores y tiendas online.\nArrancamos con las 12 cuotas de USD 30 o preferís las 6 de USD 60?",
+      "customer": "Prefiero seguir por chat. El precio sigue siendo lo único que me frena.",
+      "classification": "blocked_new_bonus_then_safe_repair",
+      "course_mentions_declared_vs_meaning": "No false paid_complement/alternative labels observed. Paid metadata matches actual selectedCourse; the two initial extra-course mentions are honestly labeled bonus and rejected. No delivered bonus roles remain.",
+      "drafts": [
+        {
+          "call_id": "call-0019",
+          "raw": {
+            "schema_version": 1,
+            "move": {
+              "schema_version": 1,
+              "move": "continue_by_chat",
+              "secondary_moves": [],
+              "vetoes": [
+                "call"
+              ],
+              "course_reference": null,
+              "area_reference": null,
+              "payment_plan": null,
+              "confidence": 0.9
+            },
+            "response": {
+              "messages": [
+                "Perfecto, seguimos por chat. Ya sabemos que Fotografía Profesional es lo que querés y que el precio es el único freno, así que no te voy a dar vueltas con eso.",
+                "Para que el desembolso inicial no te frene, puedo sumarte también Fotografía con Celulares para Tiendas Online, que va directo a tu objetivo de trabajar con emprendedores y tiendas. El precio de Fotografía Profesional no cambia. Arrancamos con las 12 cuotas de USD 30?"
+              ],
+              "call_offer": null
+            },
+            "proposed_action": {
+              "type": "none"
+            },
+            "course_mentions": [
+              {
+                "offering_code": "fotografia_profesional",
+                "role": "paid"
+              },
+              {
+                "offering_code": "fotografia_celulares_tiendas_online",
+                "role": "bonus"
+              }
+            ],
+            "confirmed_phone": null,
+            "profile_updates": [],
+            "profile_requests": [],
+            "repair_of": null,
+            "used_fact_ids": [
+              "offering:fotografia_profesional:name:v1",
+              "offering:fotografia_profesional:description:v1",
+              "payment:fotografia_profesional:monthly_12:label:v1",
+              "offering:fotografia_celulares_tiendas_online:name:v1"
+            ],
+            "used_memory_ids": [],
+            "memory_candidates": [
+              {
+                "type": "objection",
+                "key": "price_objection",
+                "value": "persistent",
+                "source_quote": "El precio sigue siendo lo único que me frena.",
+                "confidence": 0.95
+              },
+              {
+                "type": "constraint",
+                "key": "price_only_barrier",
+                "value": "confirmed",
+                "source_quote": "El precio sigue siendo lo único que me frena.",
+                "confidence": 0.95
+              },
+              {
+                "type": "contact_preference",
+                "key": "channel",
+                "value": "chat",
+                "source_quote": "Prefiero seguir por chat.",
+                "confidence": 0.95
+              }
+            ]
+          },
+          "raw_sha256": "2549dd27ebcfe955375be66045792587b4b73fe06f88f6dabe1aa8f67e075047",
+          "course_mentions": [
+            {
+              "offering_code": "fotografia_profesional",
+              "role": "paid"
+            },
+            {
+              "offering_code": "fotografia_celulares_tiendas_online",
+              "role": "bonus"
+            }
+          ],
+          "proposed_action": {
+            "type": "none"
+          }
+        },
+        {
+          "call_id": "call-0020",
+          "raw": {
+            "schema_version": 1,
+            "move": {
+              "schema_version": 1,
+              "move": "continue_by_chat",
+              "secondary_moves": [],
+              "vetoes": [
+                "call"
+              ],
+              "course_reference": null,
+              "area_reference": null,
+              "payment_plan": null,
+              "confidence": 0.9
+            },
+            "response": {
+              "messages": [
+                "Perfecto, seguimos por chat. Ya sabemos que Fotografía Profesional es lo que querés y que el precio es lo único que te frena, así que no le demos más vueltas: con las 12 cuotas son USD 30 por mes, y con lo que aprendas podrías empezar a ofrecer fotos de productos a emprendedores y tiendas online.",
+                "Arrancamos con las 12 cuotas de USD 30 o preferís las 6 de USD 60?"
+              ],
+              "call_offer": null
+            },
+            "proposed_action": {
+              "type": "none"
+            },
+            "course_mentions": [
+              {
+                "offering_code": "fotografia_profesional",
+                "role": "paid"
+              }
+            ],
+            "confirmed_phone": null,
+            "profile_updates": [],
+            "profile_requests": [],
+            "repair_of": {
+              "rejection_id": "fc2ad78d-7647-44e7-9da7-a7b7468198f0",
+              "attempt": 1
+            },
+            "used_fact_ids": [
+              "offering:fotografia_profesional:name:v1",
+              "offering:fotografia_profesional:description:v1",
+              "payment:fotografia_profesional:monthly_12:label:v1",
+              "payment:fotografia_profesional:monthly_6:label:v1"
+            ],
+            "used_memory_ids": [],
+            "memory_candidates": [
+              {
+                "type": "objection",
+                "key": "price_objection",
+                "value": "persistente, incluso en cuotas",
+                "source_quote": "El precio sigue siendo lo único que me frena.",
+                "confidence": 0.95
+              },
+              {
+                "type": "contact_preference",
+                "key": "channel",
+                "value": "chat",
+                "source_quote": "Prefiero seguir por chat.",
+                "confidence": 0.95
+              }
+            ]
+          },
+          "raw_sha256": "106c4e26a18dfd74ba816c7a14e417a5777de14aa1302fca9561c2a8ce56d320",
+          "course_mentions": [
+            {
+              "offering_code": "fotografia_profesional",
+              "role": "paid"
+            }
+          ],
+          "proposed_action": {
+            "type": "none"
+          }
+        }
+      ],
+      "backend_action": null,
+      "state": {
+        "selectedCourse": "fotografia_profesional",
+        "stage": "course_selected",
+        "awaitingReply": "none",
+        "plan": null,
+        "promotion": {
+          "status": null,
+          "bonusCount": 0,
+          "paidCourse": null,
+          "bonusCourses": []
+        }
+      },
+      "prior_actual_delivered_package": [],
+      "backend_rejections": [
+        {
+          "schema_version": 1,
+          "rejection_id": "fc2ad78d-7647-44e7-9da7-a7b7468198f0",
+          "attempt": 1,
+          "rejections": [
+            {
+              "code": "FACT_VALUE_MISMATCH",
+              "subject": "forbidden_promise"
+            },
+            {
+              "code": "FACT_VALUE_MISMATCH",
+              "subject": "direct_bonus:ladder_step_pending"
+            },
+            {
+              "code": "FACT_VALUE_MISMATCH",
+              "subject": "bonus_ladder:recorded_price_objections:3:required:3"
+            },
+            {
+              "code": "FACT_VALUE_MISMATCH",
+              "subject": "bonus_ladder:call_invitation:not_offered"
+            },
+            {
+              "code": "FACT_VALUE_MISMATCH",
+              "subject": "bonus_ladder:missing:call_invitation"
+            }
+          ],
+          "authorized_alternatives": {
+            "fact_ids": [
+              "offering:fotografia_profesional:name:v1",
+              "offering:fotografia_profesional:description:v1",
+              "offering:fotografia_profesional:duration:v1",
+              "offering:fotografia_profesional:modality:v1",
+              "payment:fotografia_profesional:monthly_12:label:v1",
+              "payment:fotografia_profesional:monthly_12:price:v1",
+              "payment:fotografia_profesional:monthly_6:label:v1",
+              "payment:fotografia_profesional:monthly_6:price:v1",
+              "payment:fotografia_profesional:one_time:label:v1",
+              "payment:fotografia_profesional:one_time:price:v1",
+              "offering:aires_acondicionados:name:v1",
+              "offering:armado_reparacion_pc:name:v1",
+              "offering:autocad_interiores:name:v1",
+              "offering:camaras_seguridad:name:v1",
+              "offering:coaching_liderazgo:name:v1",
+              "offering:community_manager:name:v1",
+              "offering:comunicacion_interna_empresas:name:v1",
+              "offering:decoracion_de_interiores:name:v1",
+              "offering:diseno_corel_draw:name:v1",
+              "offering:diseno_illustrator:name:v1",
+              "offering:diseno_photoshop:name:v1",
+              "offering:energia_solar_fotovoltaica:name:v1",
+              "offering:entrenamiento_funcional:name:v1",
+              "offering:especialista_marketing:name:v1",
+              "offering:especialista_ventas:name:v1",
+              "offering:estrategias_emprender:name:v1",
+              "offering:excel_integral:name:v1",
+              "offering:fotografia_celulares_tiendas_online:name:v1",
+              "offering:influencers_creadores_contenidos:name:v1",
+              "offering:ingles_1:name:v1",
+              "offering:ingles_2:name:v1",
+              "offering:ingles_3:name:v1",
+              "offering:instagram_emprendedores:name:v1",
+              "offering:introduccion_catering:name:v1",
+              "offering:introduccion_criptomonedas:name:v1",
+              "offering:introduccion_ecommerce:name:v1",
+              "offering:maquillaje_profesional:name:v1",
+              "offering:marketing_digital:name:v1",
+              "offering:nutricion_alimentacion:name:v1",
+              "offering:oratoria:name:v1",
+              "offering:organizacion_baby_shower:name:v1",
+              "offering:organizador_eventos_sociales:name:v1",
+              "offering:paisajismo_jardineria:name:v1",
+              "offering:publicidad_redes_sociales:name:v1",
+              "offering:redes_informaticas:name:v1",
+              "offering:reparacion_celulares:name:v1",
+              "offering:sushi_principiantes:name:v1",
+              "offering:unas_gelificadas:name:v1",
+              "offering:vino_cata_maridaje:name:v1",
+              "area:academia-de-oficios:name:v1",
+              "area:academia-de-diseno-informatico:name:v1",
+              "area:academia-de-negocios:name:v1",
+              "area:academia-de-marketing:name:v1",
+              "area:academia-de-emprendedores:name:v1",
+              "area:academia-de-salud-y-bienestar:name:v1",
+              "area:academia-cultural:name:v1",
+              "area:academia-gastronomica:name:v1",
+              "area:academia-de-moda-y-belleza:name:v1",
+              "payment-test:stripe_verification_050:label:v1"
+            ],
+            "actions": [
+              "none",
+              "send_test_payment_link"
+            ],
+            "missing_information": [
+              "nombre",
+              "apellido",
+              "correo",
+              "telefono",
+              "bonus_ladder:recorded_price_objections:3:required:3",
+              "bonus_ladder:call_invitation:not_offered",
+              "bonus_ladder:missing:call_invitation"
+            ]
+          }
+        }
+      ],
+      "judge_approved_original": false,
+      "judge_failures_original": [
+        {
+          "code": "SEMANTIC_MUST_FAILED",
+          "detail": "La historia ya cumplió valor, cuotas y aislamiento; faltaba la invitación a la llamada (escalón 4) antes de cualquier bonificación. La respuesta repite el plan de cuotas y no ofrece la llamada, incumpliendo el orden comercial exigido.",
+          "authorityReference": "docs/authority/prompt-agente-a-studyx-v2.md:111 | 4. **Llamada:** si corresponde y `may_offer_call`, ofrécela con una razón concreta (por ejemplo, ver juntos cómo encaja el curso con su objetivo)."
+        },
+        {
+          "code": "SEMANTIC_MUST_NOT_FAILED",
+          "detail": "Cuando correspondía avanzar al siguiente escalón (llamada), la respuesta vuelve a repetir el mismo plan de cuotas en lugar de progresar, lo que la regla prohíbe.",
+          "authorityReference": "docs/authority/prompt-agente-a-studyx-v2.md:109 | 2. **Cuotas:** reencuadra con el plan de 12 cuotas de USD 30."
+        }
+      ],
+      "notes": [],
+      "evidence": {
+        "turn_id": "67aaef42-6035-4719-ba59-4629bd7d1ea8",
+        "trace_ids": [
+          "d1681faf-18a3-4dab-98a5-08c5f86b50f5"
+        ],
+        "durable_event_ids": [
+          "5a5cf825-0828-4a4d-b469-c96d398e258d",
+          "c4a26f95-204a-4505-98fa-c4ad1414b78c",
+          "b99d66d3-ca1b-4a09-909f-2244ab1c06ce",
+          "f68a1654-26b6-450b-b9a0-b17ec22a7a98",
+          "c3723340-1052-4be5-b6d6-affb6e78142d",
+          "48c3544e-feca-437c-a3bd-4cbd9d56f421",
+          "8f423a0b-4a28-433b-8461-391417bd180d",
+          "464dfc6e-1265-4012-a8aa-cdfe86096df7",
+          "ac417613-5a9b-43a8-a906-34714a9f4531",
+          "53069691-39a9-4ad1-94f3-0ed860b7efcf",
+          "01b01927-1c7e-4a38-98c0-982891236c81",
+          "fbab45e1-57ed-440d-b941-b2d66e23efd5",
+          "9d16b01e-f1cc-4862-a8b7-11342637f5aa",
+          "d532ca7b-ec37-4e8e-9c13-844a6dfedde7",
+          "f44c8bae-85a0-472a-bc47-2570e174f7f0"
+        ],
+        "delivery": [
+          {
+            "outbound_id": "557a2a61-b4ad-474a-98b8-2cfca60705ab",
+            "content": "Perfecto, seguimos por chat. Ya sabemos que Fotografía Profesional es lo que querés y que el precio es lo único que te frena, así que no le demos más vueltas: con las 12 cuotas son USD 30 por mes, y con lo que aprendas podrías empezar a ofrecer fotos de productos a emprendedores y tiendas online.",
+            "content_sha256": "bd8ad5421d141d70d55055c1e3a0d37b1236262054281b0ed57573621b2e0db4",
+            "reported_statuses": [
+              "submitted_to_botpress",
+              "delivered"
+            ],
+            "evidence_ids": [
+              "32af5402-427c-4224-a87a-933a984f49f2",
+              "aaa41828-cc07-46ca-8c55-4bbafa6d77a6"
+            ]
+          },
+          {
+            "outbound_id": "55d784f0-8a32-4289-90f2-25a53a09c428",
+            "content": "Arrancamos con las 12 cuotas de USD 30 o preferís las 6 de USD 60?",
+            "content_sha256": "c96c859f45b5eacfdee0e03cb6b6a3ad585c02bd206476c7606a277e34577703",
+            "reported_statuses": [
+              "submitted_to_botpress"
+            ],
+            "evidence_ids": [
+              "113c084c-870e-4c46-9daf-bdb9a35ea254"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "run": "focused-25970d5-flash-060714-r1-20261101",
+      "case": "14_course_change_cancels_promotion",
+      "turn": "change",
+      "delivered_sha256": "a4671ff307dbea31186b35cd206e0dc0d911050697e72215b62c608c79638774",
+      "status": "PASS",
+      "reviewer": "Codex review of delivered text against recorded effects",
+      "audit_scope": "unsupported bonus offer/insinuation and course role truthfulness only; not a replacement for golden approval",
+      "reason": "El cliente cambia explícitamente el curso pago a Marketing Digital y la entrega declara paid=marketing_digital. No arrastra ni promete bono anterior; la historia no llegó a crear ningún paquete, por lo que cancelación de paquete no fue ejercitada.",
+      "delivered": "Perfecto, Marketing Digital entonces: 16 clases online para armar estrategias que comuniquen bien y potencien un negocio.\nEl precio sigue igual que antes, USD 360, y lo podés pagar en 12 cuotas de USD 30. Arrancamos con esas 12 cuotas o preferís las 6 de USD 60?",
+      "customer": "Cambio de idea: quiero que Marketing Digital sea el curso que pago.",
+      "classification": "no_bonus_offer_or_recap",
+      "course_mentions_declared_vs_meaning": "No false paid_complement/alternative labels observed. Paid metadata matches actual selectedCourse; the two initial extra-course mentions are honestly labeled bonus and rejected. No delivered bonus roles remain.",
+      "drafts": [
+        {
+          "call_id": "call-0021",
+          "raw": {
+            "schema_version": 1,
+            "move": {
+              "schema_version": 1,
+              "move": "select_course",
+              "secondary_moves": [],
+              "vetoes": [],
+              "course_reference": "marketing_digital",
+              "area_reference": null,
+              "payment_plan": null,
+              "confidence": 0.97
+            },
+            "response": {
+              "messages": [
+                "Perfecto, Marketing Digital entonces: 16 clases online para armar estrategias que comuniquen bien y potencien un negocio.",
+                "El precio sigue igual que antes, USD 360, y lo podés pagar en 12 cuotas de USD 30. Arrancamos con esas 12 cuotas o preferís las 6 de USD 60?"
+              ],
+              "call_offer": null
+            },
+            "proposed_action": {
+              "type": "none"
+            },
+            "course_mentions": [
+              {
+                "offering_code": "marketing_digital",
+                "role": "paid"
+              }
+            ],
+            "confirmed_phone": null,
+            "profile_updates": [],
+            "profile_requests": [],
+            "repair_of": null,
+            "used_fact_ids": [
+              "offering:marketing_digital:name:v1",
+              "offering:marketing_digital:description:v1",
+              "offering:marketing_digital:duration:v1",
+              "offering:marketing_digital:modality:v1",
+              "payment:marketing_digital:monthly_12:label:v1",
+              "payment:marketing_digital:monthly_6:label:v1",
+              "payment:marketing_digital:monthly_12:price:v1"
+            ],
+            "used_memory_ids": [],
+            "memory_candidates": [
+              {
+                "type": "preference",
+                "key": "paid_course_choice",
+                "value": "Marketing Digital",
+                "source_quote": "Cambio de idea: quiero que Marketing Digital sea el curso que pago.",
+                "confidence": 0.95
+              }
+            ]
+          },
+          "raw_sha256": "fb677ed8b618349d13a7e2bb821f0cbada9471ec99f6de2704e740c654cb0abe",
+          "course_mentions": [
+            {
+              "offering_code": "marketing_digital",
+              "role": "paid"
+            }
+          ],
+          "proposed_action": {
+            "type": "none"
+          }
+        }
+      ],
+      "backend_action": null,
+      "state": {
+        "selectedCourse": "marketing_digital",
+        "stage": "course_selected",
+        "awaitingReply": "none",
+        "plan": null,
+        "promotion": {
+          "status": null,
+          "bonusCount": 0,
+          "paidCourse": null,
+          "bonusCourses": []
+        }
+      },
+      "prior_actual_delivered_package": [],
+      "backend_rejections": [],
+      "judge_approved_original": false,
+      "judge_failures_original": [
+        {
+          "code": "SEMANTIC_MUST_FAILED",
+          "detail": "La conversación completa nunca acreditó la invitación a llamada (escalón 4) pese a que may_offer_call=true y a que se acumularon 4 objeciones de precio; el ledger muestra call_invitation_status=not_offered en todos los turnos, incluido el actual.",
+          "authorityReference": "docs/authority/prompt-agente-a-studyx-v2.md:111 | 4. **Llamada:** si corresponde y `may_offer_call`, ofrécela con una razón concreta (por ejemplo, ver juntos cómo encaja el curso con su objetivo)."
+        },
+        {
+          "code": "SEMANTIC_MUST_FAILED",
+          "detail": "El turno actual responde al cambio de curso repitiendo precio y cuotas, pero omite la llamada cuando corresponde (escalón 4 pendiente) y no conserva el orden comercial completo de la historia entregada.",
+          "authorityReference": "docs/authority/prompt-agente-a-studyx-v2.md:111 | 4. **Llamada:** si corresponde y `may_offer_call`, ofrécela con una razón concreta (por ejemplo, ver juntos cómo encaja el curso con su objetivo)."
+        }
+      ],
+      "notes": [],
+      "evidence": {
+        "turn_id": "f97989a2-fd57-4a05-b248-8144c0db7fae",
+        "trace_ids": [
+          "75b91b8a-18f5-44d5-9f0b-4f82af861c02"
+        ],
+        "durable_event_ids": [
+          "3e752562-0971-4f44-b809-432e779c999c",
+          "12b265e8-ef54-4e13-a409-80c3407f9494",
+          "05317265-675a-41fb-9891-fa038be6c7f4",
+          "a7de4d47-97e5-4aeb-b8e4-42f38d08ff9e",
+          "8f9f8c75-c982-42a1-b8f0-b98e4fbf864b",
+          "efb0d31c-a3f0-4a2f-9798-5c7afe36a7b9",
+          "891dfbf9-df0d-419d-a097-f9d5c1a397dd",
+          "f435aa0d-eef0-4807-bf9e-fbe7816f7d5f",
+          "d6041d92-bb66-4900-88d7-9cb77849dc1d",
+          "6829a2dd-9dd4-465b-89cb-7976989fe596"
+        ],
+        "delivery": [
+          {
+            "outbound_id": "362aed81-5582-41a0-8637-4e62cb883774",
+            "content": "Perfecto, Marketing Digital entonces: 16 clases online para armar estrategias que comuniquen bien y potencien un negocio.",
+            "content_sha256": "bda5c1825133d31f3ec212a93adf503e09786d55f54899cb3b71bdfeb17829e2",
+            "reported_statuses": [
+              "submitted_to_botpress",
+              "delivered"
+            ],
+            "evidence_ids": [
+              "6308c068-d38b-44e5-8b6a-778c653eb036",
+              "a035278c-e22f-4425-a1d5-8fb75948bd23"
+            ]
+          },
+          {
+            "outbound_id": "910e0d09-c665-4144-9381-e6750afc913a",
+            "content": "El precio sigue igual que antes, USD 360, y lo podés pagar en 12 cuotas de USD 30. Arrancamos con esas 12 cuotas o preferís las 6 de USD 60?",
+            "content_sha256": "370fa1a2a9745e560a0fec6b6e4db457e0697c8d248f0e9de2a1e8f24f2101af",
+            "reported_statuses": [
+              "submitted_to_botpress"
+            ],
+            "evidence_ids": [
+              "b2e8e97e-0e3b-491a-b56b-c042767b35b3"
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}
