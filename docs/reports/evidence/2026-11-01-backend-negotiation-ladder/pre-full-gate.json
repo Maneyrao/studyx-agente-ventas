@@ -24,5 +24,7 @@
   "absolute_acceptance_evaluated": false,
   "only_formal_critical_present_in_focused_scope": "07",
   "case_07_passed_both": true,
-  "full_suite_not_run_reason": "06 and 14 did not pass completely in both focused runs"
+  "full_suite_not_run_reason": "06 and 14 did not pass completely in both focused runs",
+  "user_confirmed_after_runs": true,
+  "user_confirmed_prerequisite": "06, 07 y 14 completos en ambas corridas"
 }

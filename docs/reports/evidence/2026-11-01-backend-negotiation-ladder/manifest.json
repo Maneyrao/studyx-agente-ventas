@@ -1,12 +1,12 @@
 {
   "schema_version": 1,
   "evaluated_sha": "10d7b3e5e7b5cdce3c88901cfedd3493346ecce2",
-  "generated_at": "2026-11-01T04:19:44.103075+00:00",
+  "generated_at": "2026-11-01T12:43:01.151799+00:00",
   "files": [
     {
       "path": "docs/reports/2026-11-01-backend-negotiation-ladder.md",
-      "sha256": "8c6170ff3bfdab5808b1a4d1389a6fd960dcb396eb24cfff9425ecdb0c781006",
-      "bytes": 8337
+      "sha256": "cd66ba8e721f4c6dcb3d4a0291fed5eb50012478b6819a9c1386b24ce8883afd",
+      "bytes": 8389
     },
     {
       "path": "docs/reports/evidence/2026-11-01-backend-negotiation-ladder/balance-after.json",
@@ -40,8 +40,8 @@
     },
     {
       "path": "docs/reports/evidence/2026-11-01-backend-negotiation-ladder/pre-full-gate.json",
-      "sha256": "b489c9bf7617f1005ece94b91e7c08ff0830bbad9e00bd3a5203d0698a2bdfd4",
-      "bytes": 752
+      "sha256": "3303d71b8d42d4232715834fbd40e0079053bb4901e48e1308447c20d53b52fa",
+      "bytes": 865
     },
     {
       "path": "docs/reports/evidence/2026-11-01-backend-negotiation-ladder/r1-diagnosis.json",

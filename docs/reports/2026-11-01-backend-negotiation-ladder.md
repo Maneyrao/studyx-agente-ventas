@@ -23,7 +23,7 @@ Si falta un requisito, `ladder_step_pending` transporta conteo observado/requeri
 
 Sólo 07 pasa completo en ambas. El mismo total esconde seis cambios de resultado por turno entre repeticiones; no demuestra estabilidad. La referencia anterior sobre estos 22 turnos era 8/22 con Flash y 10/22 con Pro (`8950424`); no es una comparación causal aislada porque ahora cambian la regla y el anexo técnico.
 
-No se corrieron las 16: 06 y 14 no cumplieron el requisito operativo previo de que 06/07/14 pasaran completos en ambas muestras, interpretación anunciada antes de la segunda corrida. Ese filtro no redefine los críticos formales: la aceptación completa sigue exigiendo **41/48 y 07/10/11/12/15 completos**. En el subconjunto sólo está 07, que sí pasa. **No se evaluó el criterio absoluto ni se informa un resultado de aceptación completa.** Ver `pre-full-gate.json`.
+No se corrieron las 16: 06 y 14 no cumplieron el requisito operativo previo de que 06/07/14 pasaran completos en ambas muestras, criterio anunciado antes de la segunda corrida y posteriormente confirmado explícitamente por el usuario. Ese filtro no redefine los críticos formales: la aceptación completa sigue exigiendo **41/48 y 07/10/11/12/15 completos**. En el subconjunto sólo está 07, que sí pasa. **No se evaluó el criterio absoluto ni se informa un resultado de aceptación completa.** Ver `pre-full-gate.json`.
 
 ## Qué funcionó y qué sigue fallando
 
