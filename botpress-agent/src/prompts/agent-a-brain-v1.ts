@@ -5,7 +5,7 @@ import {
 } from './studyx-agent-a-canonical.generated';
 import { resolveCanonicalPromptIdentityV1 } from './agent-a-identity';
 
-export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v148' as const;
+export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v149' as const;
 
 /**
  * Runtime contract only. The sales behavior lives in the canonical prompt so
@@ -118,7 +118,7 @@ Preserve an already resolved course reference. Use only authorized duration, syl
     ? ladderFeedback.includes('bonus_ladder:missing:call_invitation')
     : context.capabilities.course_bonus?.ladder?.missing_steps.includes('call_invitation') === true;
   const callStepRepair = pendingCall && context.capabilities.may_offer_call
-    ? 'The identified missing step is call_invitation and it is currently authorized. Only offer the call after history confirms the earlier steps are complete; otherwise continue the earliest unfinished step under canonical_sales_behavior without inferring it from the objection count. Missing call evidence and insufficient objection count do not instruct an immediate invitation. When the call is the next step, offer it with a concrete reason under canonical_sales_behavior, in response.call_offer. This invitation does not mean a call was placed.'
+    ? 'The identified missing step is call_invitation and it is currently authorized. Only offer the call after history confirms the earlier steps are complete; otherwise continue the earliest unfinished step under canonical_sales_behavior without inferring it from the objection count. Missing call evidence and insufficient objection count do not instruct an immediate invitation. When the call is the next step, offer it with a concrete reason under canonical_sales_behavior, in response.call_offer only. Never repeat the invitation in response.messages; those messages contain only the rest of your reply. This invitation does not mean a call was placed.'
     : '';
   const forbiddenPromiseRepair = repairsBonusPromise ? `
 For ladder_step_pending or forbidden_promise, remove the unauthorized promise completely.

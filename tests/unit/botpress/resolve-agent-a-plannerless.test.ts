@@ -79,6 +79,26 @@ function generated(value: AgentATurnProposalV1) {
 }
 
 describe('resolveAgentAPlannerlessProposalV2', () => {
+  it.each([true,false])('exact call transport preserves the raw proposal without repair or contingency (only=%s)',async only=>{
+    const current=context();
+    current.turn.batch_messages=[{id:'price',text:'El precio es lo único que me frena.'}];
+    const invitation='Si querés, podemos verlo en una llamada corta. Te sirve?';
+    const raw=proposal({response:{messages:only?[invitation]:['Podemos ver cómo encaja con tu objetivo.',invitation],call_offer:invitation}});
+    const result=await resolveAgentAPlannerlessProposalV2({initial:generated(raw),context:current,repair_enabled:true,
+      rejection_id:'00000000-0000-4000-8000-000000000131',
+      repair:async()=>{throw Error('An exact transport copy must not consume model repair');}});
+    expect(result.effective.proposal).toEqual(raw);
+    expect(result.evidence.rejection_codes).toEqual([]);
+    expect(result.evidence.repair_attempted).toBe(false);
+  });
+  it('keeps a nonidentical second invitation as a format rejection',async()=>{
+    const invitation='Si querés, podemos verlo en una llamada corta. Te sirve?';
+    await expect(resolveAgentAPlannerlessProposalV2({
+      initial:generated(proposal({response:{messages:[`Además, ${invitation}`],call_offer:invitation}})),
+      context:context(),repair_enabled:false,rejection_id:'00000000-0000-4000-8000-000000000132',
+      repair:async()=>{throw Error('Repair is disabled');},
+    })).rejects.toThrow('CALL_OFFER_MESSAGE_BOUNDARY_INVALID');
+  });
   it('repairs undeclared course roles even when semantic guidance is advisory', async () => {
     const rejectionId='00000000-0000-4000-8000-000000000091';
     const initial=generated(proposal({course_mentions:[]}));

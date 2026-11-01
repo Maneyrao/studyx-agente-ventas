@@ -1,0 +1,58 @@
+{
+  "schema_version": 1,
+  "base_sha": "e545ba2ee65641ddaa24d0905bfa5a08cfc8879e",
+  "brain_version": "studyx-agent-a-brain-v149",
+  "canonical_prompt_version": "studyx-agent-a-canonical-v101",
+  "semantic_evaluator_version": "studyx-golden-semantic-delivered-v3",
+  "unit": {
+    "passed": 4949,
+    "skipped": 17,
+    "todo": 7
+  },
+  "integration": {
+    "passed": 957,
+    "skipped": 1,
+    "database": "fresh disposable PostgreSQL17 localhost55434; full migrations+seed+offline knowledge fixture"
+  },
+  "evaluator_offline": {
+    "passed": 104,
+    "skipped": 3
+  },
+  "call_delivery_integration": {
+    "passed": 3,
+    "checks": [
+      "only invitation visible",
+      "duplicate first/last",
+      "raw proposal unchanged",
+      "saved and signed outbounds exact",
+      "call count1 with duplicate delivery receipts"
+    ]
+  },
+  "typecheck": true,
+  "lint": true,
+  "next_build": true,
+  "adk_check": true,
+  "adk_packaging": "Known preexisting missing interface dependencies, unchanged; no deploy requested.",
+  "architect": "approved; no material findings pending",
+  "authority_documents_modified": false,
+  "scenario_requirements_modified": false,
+  "production_model_modified": false,
+  "new_semantic_regex_or_phrase_overrides": false,
+  "model_calls_during_implementation": 0,
+  "deployment": false,
+  "formal_acceptance": {
+    "runs_authorized": 1,
+    "turns": 48,
+    "minimum_approved": 41,
+    "critical_cases": [
+      "07",
+      "10",
+      "11",
+      "12",
+      "15"
+    ],
+    "zero_unsupported_bonus_required": true,
+    "06_and_14_individual_case_gate": false,
+    "their_turns_still_count": true
+  }
+}

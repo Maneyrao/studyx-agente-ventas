@@ -2,6 +2,7 @@ import type { ModelObservation } from '../observability/turn-evidence'
 import { isTurnEvidencePersistenceError } from '../observability/turn-evidence'
 import type { TurnRejectionV1 } from '../../schemas/turn-rejection'
 import { claimsImmediatePaymentLinkDeliveryV1 } from '../../../../src/shared/conversation/payment-link-claim'
+import { messagesWithoutExactCallOfferV1 } from '../../../../src/shared/conversation/call-offer-format'
 import { AgentATurnProposalV1Schema, type AgentAContextV1, type AgentATurnProposalV1 } from '../../schemas/agent-a-brain'
 import {
   AgentABrainError,
@@ -72,7 +73,7 @@ function validatePlannerless(input: {
     rejection_id: input.rejection_id,
   })
   if (input.proposal.response.call_offer
-    && input.proposal.response.messages.some(message => solicitsACallV1(message))) {
+    && messagesWithoutExactCallOfferV1(input.proposal.response).some(message => solicitsACallV1(message))) {
     const duplicate = { code: 'CALL_OFFER_MESSAGE_BOUNDARY_INVALID' as const, subject: 'duplicate_call_offer' }
     rejection = rejection === null ? {
       schema_version: 1, rejection_id: input.rejection_id, attempt: 1,

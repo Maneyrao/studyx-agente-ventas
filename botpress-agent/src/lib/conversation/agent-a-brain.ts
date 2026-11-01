@@ -1,4 +1,5 @@
 import { COURSE_MENTION_ROLES_V1 } from '../../../../src/shared/conversation/course-mentions';
+import { messagesWithoutExactCallOfferV1 } from '../../../../src/shared/conversation/call-offer-format';
 import type { ModelObservation } from '../observability/turn-evidence';
 import { courseLogisticsInV1 } from '../../../../src/shared/conversation/course-logistics';
 import { inspectCourseBonusClaimsV1 } from '../../../../src/shared/conversation/course-bonus-claim';
@@ -2099,7 +2100,7 @@ export function validateAgentATurnProposalV1(input: {
   const state = input.context.commercial_state;
   const duplicatesDeclaredCallOffer = typeof declaredCallOffer === 'string'
     && solicitsACallV1(declaredCallOffer, true)
-    && input.proposal.response.messages.some((message) => solicitsACallV1(message));
+    && messagesWithoutExactCallOfferV1(input.proposal.response).some((message) => solicitsACallV1(message));
   if (duplicatesDeclaredCallOffer) {
     // This is transport deduplication, not conversational planning: preserve
     // the dedicated invitation and remove only a second invitation authored

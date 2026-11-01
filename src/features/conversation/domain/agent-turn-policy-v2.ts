@@ -1,4 +1,5 @@
 import { validateCourseMentionsV1 } from '@/shared/conversation/course-mentions';
+import { messagesWithoutExactCallOfferV1 } from '@/shared/conversation/call-offer-format';
 import { courseBonusLadderRejectionSubjectsV1 } from '@/shared/conversation/bonus-ladder-rejection';
 import { supportsChatPreferenceV1 } from './channel-preference-evidence';
 import type { AgentAProposedActionV1, AgentATurnProposalV1 } from './agent-a-brain';
@@ -314,7 +315,7 @@ export function authorizeAgentTurnV2(input: {
     else reasons.push('FACT_NOT_AUTHORIZED');
   }
 
-  const authoredMessages = [...proposal.response.messages];
+  const authoredMessages = [...messagesWithoutExactCallOfferV1(proposal.response)];
   const currentText = (input.current_customer_messages ?? []).join('\n');
   const resumesAcceptedCall = effectiveCallPreference === 'call'
     && effectiveCallOfferStatus === 'accepted';

@@ -4,6 +4,7 @@ import type { CanonicalFactV1, ConversationStateV1 } from '@/features/conversati
 import { createDefaultConversationStateV1 } from '@/features/conversation/domain/conversation-planner';
 import { deriveCourseBonusLadderV1 } from '@/shared/conversation/bonus-ladder';
 import { authorizeAgentTurnV2 } from '@/features/conversation/domain/agent-turn-policy-v2';
+import { contactProfileRequestsForPartsV1 } from '@/features/orchestration/domain/physical-outbound-texts';
 
 const identity = {
   workspace_id: '11111111-1111-4111-8111-111111111111',
@@ -78,6 +79,50 @@ function proposal(overrides: Partial<AgentATurnProposalV1> = {}): AgentATurnProp
 const completeIntake = {
   nombre: 'Matía', apellido: 'Damonte', correo: 'matia@example.com', telefono: '+5491112345678',
 };
+
+describe('exact call transport deduplication authorized on 2026-11-01', () => {
+  const invitation='Si querés, podemos verlo en una llamada corta. Te sirve?';
+  it.each([[invitation], [invitation, 'El curso tiene 16 clases.'], ['El curso tiene 16 clases.', invitation]])(
+    'delivers the dedicated invitation once, without changing the raw proposal: %j', (...messages: string[]) => {
+      const raw=proposal({response:{messages,call_offer:invitation}});
+      const before=structuredClone(raw);
+      const result=authorize({proposal:raw,customerText:'El precio es lo único que me frena.'});
+      expect(result).toMatchObject({ok:true,action:{type:'none'},
+        transition:{call_offer_count:1,call_offer_status:'offered'}});
+      if(!result.ok) throw Error('Expected authorized call invitation');
+      expect(result.response_messages).toEqual(messages.length===1
+        ? [invitation] : ['El curso tiene 16 clases.',invitation]);
+      expect(raw).toEqual(before);
+    },
+  );
+  it('preserves a nonidentical invitation instead of trimming or matching its meaning',()=>{
+    const variant=`Primero vemos el objetivo. ${invitation}`;
+    const result=authorize({proposal:proposal({response:{messages:[variant],call_offer:invitation}})});
+    if(!result.ok) throw Error('Expected unchanged authored response');
+    expect(result.response_messages).toEqual([variant,invitation]);
+  });
+  it('keeps profile metadata on a raw second bubble shifted by the removed first copy',()=>{
+    const raw=proposal({response:{messages:[invitation,'Cómo te llamás?'],call_offer:invitation},
+      profile_requests:[{message_index:1,fields:['nombre'],purpose:'identity',mode:'collect'}]});
+    const result=authorize({proposal:raw});
+    if(!result.ok) throw Error('Expected authorized call invitation');
+    expect(result.response_messages).toEqual(['Cómo te llamás?',invitation]);
+    expect(contactProfileRequestsForPartsV1({authored_messages:raw.response.messages,
+      part_texts:result.response_messages,requests:raw.profile_requests!}))
+      .toEqual([[{fields:['nombre'],purpose:'identity',mode:'collect'}],[]]);
+  });
+  it('attaches metadata once when the dedicated invitation is the entire visible reply',()=>{
+    const asksPhone='Para llamarte y verlo juntos, me confirmás tu teléfono?';
+    const raw=proposal({response:{messages:[asksPhone],call_offer:asksPhone},
+      profile_requests:[{message_index:0,fields:['telefono'],purpose:'call',mode:'collect'}]});
+    const result=authorize({proposal:raw});
+    if(!result.ok) throw Error('Expected authorized call invitation');
+    expect(result.response_messages).toEqual([asksPhone]);
+    expect(contactProfileRequestsForPartsV1({authored_messages:raw.response.messages,
+      part_texts:result.response_messages,requests:raw.profile_requests!}))
+      .toEqual([[{fields:['telefono'],purpose:'call',mode:'collect'}]]);
+  });
+});
 
 function authorize(input: {
   proposal: AgentATurnProposalV1;

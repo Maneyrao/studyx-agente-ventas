@@ -933,3 +933,135 @@ describe('negotiation historical evidence boundary',()=>{
     }finally{mock.mockRestore();}
   });
 });
+
+describe('semantic judge delivered-outcome boundary', () => {
+  const scenario = {
+    ...GOLDEN_CASES[13]!, evaluationMode: undefined,
+    turns: [{ ...GOLDEN_CASES[13]!.turns[0]!, id: 'delivered', priorPromotion: undefined,
+      must: ['Responder mediante un turno autorizado y entregado.'],
+      mustNot: ['No ofrecer una bonificación sin acción autorizada ni presentarla como excepción personal.'],
+      authority: [{ file: 'docs/authority/prompt-agente-a-studyx-v2.md' as const,
+        start: 129, end: 129, contains: 'Sin desesperación' }],
+    }],
+  };
+
+  it('excludes repaired rejections and rejected model declarations from normative evidence', async () => {
+    let payload: Record<string, unknown> = {};
+    let sources: readonly string[] = [];
+    const mock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (_url, init) => {
+      const request = JSON.parse(String(init?.body)); payload = JSON.parse(request.input);
+      sources = request.text.format.schema.properties.verdict.properties.failures.items.properties.evidence_source.enum;
+      return new Response(JSON.stringify({ output_text: JSON.stringify({ verdict: {
+        turn_id: 'delivered', approved: true, failures: [],
+      } }) }));
+    });
+    try {
+      const result = await judgeCaseSemantically({ apiKey: 'offline', model: 'test',
+        scenario: { ...scenario, evaluationMode: 'negotiation_invariants' },
+        observations: [observation({ response: 'Podemos verlo juntos en una llamada corta. Te sirve?',
+          move: 'REJECTED_ONLY_MOVE', proposedAction: { type: 'offer_course_bonus', bonus_offering_code: 'REJECTED_ONLY_COURSE' },
+          backendAction: 'none', backendRejections: [{ code: 'CALL_OFFER_MESSAGE_BOUNDARY_INVALID', subject: 'REJECTED_ONLY_REJECTION' }],
+          workflow: { commitSucceeded: true, status: 'waiting_user', errorCode: null, finalBackendDecisionError: null },
+          negotiationFacts: { ladder: { eligible: false, observed_price_objection_count: 3,
+            required_price_objection_count: 3, call_invitation_status: 'not_offered',
+            call_offer_count: 0, may_offer_call: true, missing_steps: ['call_invitation'] } },
+          modelAttempts: [{ attempt: 1, response: 'REJECTED_ONLY_TEXT', move: 'request_call', proposedAction: null,
+            turnRejection: null, providerStatus: 200, providerError: null }],
+        })] });
+      expect(result[0]).toMatchObject({ approved: true, evaluation_error: null });
+      expect(JSON.stringify(payload)).not.toContain('REJECTED_ONLY');
+      expect(payload).toMatchObject({ actual: { response: 'Podemos verlo juntos en una llamada corta. Te sirve?',
+        backend_action: 'none', delivery_result: { commitSucceeded: true, finalBackendDecisionError: null },
+        preconditions: { negotiation_ladder_before_turn: { call_invitation_status: 'not_offered', call_offer_count: 0 } } },
+      delivered_history: [expect.objectContaining({ response: 'Podemos verlo juntos en una llamada corta. Te sirve?',
+        ladder: expect.objectContaining({ call_invitation_status: 'not_offered', call_offer_count: 0 }) })] });
+      expect(sources).not.toContain('backend_rejections');
+      expect(sources).not.toContain('proposed_action');
+      expect(sources).not.toContain('move');
+    } finally { mock.mockRestore(); }
+  });
+
+  it('retains a final unresolved commit failure as outcome evidence', async () => {
+    let payload: Record<string, unknown> = {};
+    const mock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (_url, init) => {
+      payload = JSON.parse(JSON.parse(String(init?.body)).input);
+      return new Response(JSON.stringify({ output_text: JSON.stringify({ verdict: {
+        turn_id: 'delivered', approved: false, failures: [{ code: 'SEMANTIC_MUST_FAILED',
+          requirement_id: 'must:0', authority_line_index: 0, evidence_source: 'delivery_result',
+          observed_evidence: 'FINAL_COMMIT_FORBIDDEN', explanation: 'El commit final no fue autorizado.' }],
+      } }) }));
+    });
+    try {
+      const verdict = await judgeCaseSemantically({ apiKey: 'offline', model: 'test', scenario,
+        observations: [observation({ response: 'Quiero ayudarte a continuar.',
+          backendRejections: [{ subject: 'REJECTED_ONLY_HISTORY' }],
+          workflow: { commitSucceeded: false, status: 'retry_pending', errorCode: 'DECISION_REJECTED',
+            finalBackendDecisionError: 'FINAL_COMMIT_FORBIDDEN' },
+        })] });
+      expect(verdict[0]).toMatchObject({ approved: false, evaluation_error: null,
+        failures: [expect.objectContaining({ code: 'SEMANTIC_MUST_FAILED' })] });
+      expect(payload).toMatchObject({ actual: { delivery_result: {
+        commitSucceeded: false, finalBackendDecisionError: 'FINAL_COMMIT_FORBIDDEN' } } });
+      expect(JSON.stringify(payload)).not.toContain('REJECTED_ONLY_HISTORY');
+    } finally { mock.mockRestore(); }
+  });
+
+  it('does not accept a failure sourced only from a rejected attempt', async () => {
+    const mock = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => new Response(JSON.stringify({ output_text: JSON.stringify({ verdict: {
+      turn_id: 'delivered', approved: false, failures: [{ code: 'SEMANTIC_MUST_NOT_FAILED',
+        requirement_id: 'must_not:0', authority_line_index: 0, evidence_source: 'backend_rejections',
+        observed_evidence: 'forbidden_promise', explanation: 'El primer intento falló.' }],
+    } }) })));
+    try {
+      const result = await judgeCaseSemantically({ apiKey: 'offline', model: 'test', scenario,
+        observations: [observation({ response: 'Seguimos con el curso principal.',
+          backendRejections: [{ subject: 'forbidden_promise' }],
+          workflow: { commitSucceeded: true, status: 'waiting_user', errorCode: null, finalBackendDecisionError: null },
+        })] });
+      expect(result[0]).toMatchObject({ approved: null, evaluation_error: 'GOLDEN_JUDGE_FAILURE_EVIDENCE_INVALID' });
+    } finally { mock.mockRestore(); }
+  });
+
+  it('rejects a must failure that quotes a rejected draft as if it were delivered', async () => {
+    const rejectedDraft = 'No ofrezco la llamada pendiente.';
+    const mock = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => new Response(JSON.stringify({ output_text: JSON.stringify({ verdict: {
+      turn_id: 'delivered', approved: false, failures: [{ code: 'SEMANTIC_MUST_FAILED',
+        requirement_id: 'must:0', authority_line_index: 0, evidence_source: 'response',
+        observed_evidence: rejectedDraft, explanation: 'El borrador rechazado no ofreció llamada.' }],
+    } }) })));
+    try {
+      const result = await judgeCaseSemantically({ apiKey: 'offline', model: 'test', scenario,
+        observations: [observation({ response: 'Podemos verlo juntos por teléfono. Te sirve?',
+          modelAttempts: [{ attempt: 1, response: rejectedDraft, move: 'request_call', proposedAction: null,
+            turnRejection: null, providerStatus: 200, providerError: null }],
+          workflow: { commitSucceeded: true, status: 'waiting_user', errorCode: null, finalBackendDecisionError: null },
+        })] });
+      expect(result[0]).toMatchObject({ approved: null, evaluation_error: 'GOLDEN_JUDGE_FAILURE_EVIDENCE_INVALID' });
+    } finally { mock.mockRestore(); }
+  });
+
+  it.each([false, true])('scopes bonus wording to the referent while preserving unsupported gift failures (gift=%s)', async (gift) => {
+    const response = gift ? 'Te incluyo Inglés 1 gratis. Te dejo el enlace para inscribirte.'
+      : 'Te dejo el enlace para completar tu inscripción.';
+    let payload: Record<string, unknown> = {};
+    const mock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (_url, init) => {
+      payload = JSON.parse(JSON.parse(String(init?.body)).input);
+      return new Response(JSON.stringify({ output_text: JSON.stringify({ verdict: {
+        turn_id: 'delivered', approved: !gift, failures: gift ? [{ code: 'SEMANTIC_MUST_NOT_FAILED',
+          requirement_id: 'must_not:0', authority_line_index: 0, evidence_source: 'response',
+          observed_evidence: 'Te incluyo Inglés 1 gratis', explanation: 'Incluye un curso sin acción ni paquete autorizado.' }] : [],
+      } }) }));
+    });
+    try {
+      const result = await judgeCaseSemantically({ apiKey: 'offline', model: 'test', scenario,
+        observations: [observation({ response, backendAction: gift ? 'none' : 'send_payment_link',
+          workflow: { commitSucceeded: true, status: 'waiting_user', errorCode: null, finalBackendDecisionError: null },
+        })] });
+      expect(result[0]).toMatchObject({ approved: !gift, evaluation_error: null });
+      expect(payload).toMatchObject({ authority_scope: { bonus_tone: {
+        authority_line: 129, applies_to: 'bonus_or_personal_exception', ordinary_link_delivery_is_bonus: false,
+      } } });
+      if (gift) expect(result[0]?.failures).toHaveLength(1);
+    } finally { mock.mockRestore(); }
+  });
+});

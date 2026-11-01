@@ -510,8 +510,8 @@ interface RawSemanticTurnVerdictV1 {
     readonly code: 'SEMANTIC_MUST_FAILED' | 'SEMANTIC_MUST_NOT_FAILED';
     readonly requirement_id: string;
     readonly authority_line_index: number;
-    readonly evidence_source: 'response' | 'move' | 'proposed_action' | 'backend_action'
-      | 'state' | 'backend_rejections' | 'preconditions' | 'delivered_history' | 'negotiation_ledger';
+    readonly evidence_source: 'response' | 'backend_action' | 'delivery_result'
+      | 'state' | 'preconditions' | 'delivered_history' | 'negotiation_ledger';
     readonly observed_evidence: string;
     readonly explanation: string;
   }[];
@@ -635,11 +635,35 @@ async function judgeTurnSemantically(input: {
     may_offer_call: input.observation.mayOfferCall ?? null,
     course_bonus: input.observation.courseBonus ?? null,
     price_objection_memory: input.observation.priceObjectionMemory ?? null,
-    workflow: input.observation.workflow ?? null,
+    negotiation_ladder_before_turn: input.observation.negotiationFacts?.ladder ?? null,
   };
+  // Only final receipt fields are normative. Attempt-wide rejections and the
+  // last model proposal remain in the audit, including after a useful repair.
+  const deliveryResult = input.observation.workflow ? {
+    commitSucceeded: input.observation.workflow.commitSucceeded,
+    status: input.observation.workflow.status,
+    errorCode: input.observation.workflow.errorCode,
+    finalBackendDecisionError: input.observation.workflow.finalBackendDecisionError,
+  } : null;
+  const deliveredHistory = input.negotiationHistory?.map(turn => ({
+    turnId: turn.turnId, customer: turn.customer, response: turn.response,
+    maxBonusChallenge: turn.maxBonusChallenge, currentTurnId: turn.currentTurnId,
+    priorPriceSourceIds: turn.priorPriceSourceIds, ladder: turn.ladder,
+    action: turn.action, selectedCourse: turn.selectedCourse, promotion: turn.promotion,
+    offerings: turn.offerings, authorizedFacts: turn.authorizedFacts,
+    usedFactIds: turn.usedFactIds, selectedOfferingFacts: turn.selectedOfferingFacts,
+  }));
+  const negotiationLedger = deliveredHistory?.map(t => ({
+    turn_id: t.turnId, ladder: t.ladder, action: t.action, promotion: t.promotion,
+  }));
   const payload = {
+    evaluator_version: 'studyx-golden-semantic-delivered-v3',
     turn_id: input.turn.id,
-    ...(input.negotiationHistory?{evaluation_mode:'negotiation_invariants',delivered_history:input.negotiationHistory,negotiation_ledger:input.negotiationHistory.map(t=>({turn_id:t.turnId,ladder:t.ladder,action:t.action,promotion:t.promotion})),semantic_scope:'Judge delivered history and the current reply; stage names and move labels do not impose a fixed turn. Earlier completed steps count. Explicit or implicit unauthorized bonus offers fail, including questions and hypotheses.'}:{}),
+    authority_scope: { bonus_tone: {
+      authority_line: 129, applies_to: 'bonus_or_personal_exception', ordinary_link_delivery_is_bonus: false,
+    } },
+    ...(deliveredHistory ? { evaluation_mode:'negotiation_invariants', delivered_history:deliveredHistory,
+      negotiation_ledger:negotiationLedger, semantic_scope:'Judge delivered history and the current reply; stage names and move labels do not impose a fixed turn. Earlier completed steps count. Explicit or implicit unauthorized bonus offers fail, including questions and hypotheses. In each ledger entry ladder is the evidence before that turn; promotion and action are its committed outcome. A call offered in that same turn never becomes prior authorization for its bonus.' } : {}),
     customer: input.turn.customer,
     requirements: [
       ...input.turn.must.map((text, index) => ({ id: `must:${index}`, kind: 'must', text })),
@@ -648,10 +672,8 @@ async function judgeTurnSemantically(input: {
     authority_lines: citations.map((text, index) => ({ index, text })),
     actual: {
       response: input.observation.response,
-      move: input.observation.move,
-      proposed_action: input.observation.proposedAction,
       backend_action: input.observation.backendAction,
-      backend_rejections: input.observation.backendRejections,
+      delivery_result: deliveryResult,
       state: input.observation.state,
       preconditions,
       authorized_facts: input.observation.authorizedFacts,
@@ -665,13 +687,12 @@ async function judgeTurnSemantically(input: {
     ...input.turn.mustNot.map((_, index) => `must_not:${index}`),
   ];
   const evidenceSources = {
-    ...(input.negotiationHistory?{delivered_history:JSON.stringify(input.negotiationHistory),negotiation_ledger:JSON.stringify(input.negotiationHistory.map(t=>({turn_id:t.turnId,ladder:t.ladder,action:t.action,promotion:t.promotion})))}:{}),
+    ...(deliveredHistory ? { delivered_history:JSON.stringify(deliveredHistory),
+      negotiation_ledger:JSON.stringify(negotiationLedger) } : {}),
     response: input.observation.response,
-    move: JSON.stringify({ move: input.observation.move, secondary_moves: input.observation.secondaryMoves }),
-    proposed_action: JSON.stringify(input.observation.proposedAction),
     backend_action: JSON.stringify(input.observation.backendAction),
+    delivery_result: JSON.stringify(deliveryResult),
     state: JSON.stringify(input.observation.state),
-    backend_rejections: JSON.stringify(input.observation.backendRejections),
     preconditions: JSON.stringify(preconditions),
   } as const;
   let lastError = 'GOLDEN_JUDGE_INVALID_RESPONSE';
@@ -682,10 +703,10 @@ async function judgeTurnSemantically(input: {
         headers: { authorization: `Bearer ${input.apiKey}`, 'content-type': 'application/json' },
         body: JSON.stringify({
           model: input.model,
-          instructions: 'Sos un juez estricto de comportamiento conversacional. Evalúa únicamente la respuesta real, la acción efectiva del backend, el estado y las precondiciones suministradas. No premies intención ni inventes hechos. Juzga cada requisito de forma independiente: nunca traslades el incumplimiento de un requisito a otro. Un requisito must falla si no se observa. Un must_not falla ÚNICAMENTE cuando la conducta prohibida sí ocurre; la ausencia de respuesta o de evidencia nunca viola un must_not. Después de recomendar exactamente un curso, preguntar por equipo o por una preferencia entre contenidos de ese mismo curso (por ejemplo, cámara o edición) no equivale a abrir un menú de cursos. Un nombre completo como "Ana Pérez" satisface nombre y apellido; no se exige mostrarlos en campos separados. En preconditions.price_objection_memory, present=true prueba que la objeción del turno actual o de la conversación quedó registrada; priorSourceMessageIds prueba exclusivamente que ya existía en un turno anterior. may_offer_call gobierna una oferta proactiva, no invalida una llamada que el cliente pidió y confirmó; backend_action=request_call_now con workflow.commitSucceeded=true prueba que el despacho fue autorizado. Si backend_action=send_payment_link y una URL visible coincide exactamente con actual.delivered_links, esa URL fue añadida por el backend y no fue escrita ni inventada por el agente. Para cada fallo elegí el requirement_id exacto, el authority_line_index y evidence_source. En observed_evidence copia literalmente el fragmento de esa fuente que prueba el fallo; para un must ausente puede quedar vacío, pero para un must_not debe ser un fragmento no vacío presente en la fuente. El runner expande la línea de autoridad; no redactes ni alteres citas. No juzgues reglas no incluidas.',
+          instructions: 'Sos un juez estricto de comportamiento conversacional. Evalúa únicamente la respuesta entregada, la acción efectiva del backend, el estado y las precondiciones suministradas. actual.delivery_result es el resultado final: un intento rechazado que luego se reparó no invalida la entrega final. Los borradores, moves y acciones propuestas no son efectos ni evidencia de entrega. No premies intención ni inventes hechos. Juzga cada requisito de forma independiente: nunca traslades el incumplimiento de un requisito a otro. Un requisito must falla si no se observa. Un must_not falla ÚNICAMENTE cuando la conducta prohibida sí ocurre; la ausencia de respuesta o de evidencia nunca viola un must_not. La prohibición de expresiones de la línea 129 está en la sección de bonificación y se interpreta por el objeto y el sentido: ofrecer un bonificado o una excepción personal. Compartir o dejar un enlace de inscripción no constituye por sí mismo regalar un curso. Esto no exime una bonificación explícita o implícita sin efecto, aunque la misma respuesta también comparta un enlace. Después de recomendar exactamente un curso, preguntar por equipo o por una preferencia entre contenidos de ese mismo curso (por ejemplo, cámara o edición) no equivale a abrir un menú de cursos. Un nombre completo como "Ana Pérez" satisface nombre y apellido; no se exige mostrarlos en campos separados. En preconditions.price_objection_memory, present=true prueba que la objeción del turno actual o de la conversación quedó registrada; priorSourceMessageIds prueba exclusivamente que ya existía en un turno anterior. preconditions.negotiation_ladder_before_turn y cada ladder del historial describen hechos previos a ese turno; action y promotion describen su resultado. Una llamada ofrecida en el turno actual no autoriza retroactivamente una bonificación del mismo turno. may_offer_call gobierna una oferta proactiva, no invalida una llamada que el cliente pidió y confirmó; backend_action=request_call_now con actual.delivery_result.commitSucceeded=true prueba que el despacho fue autorizado. Si backend_action=send_payment_link y una URL visible coincide exactamente con actual.delivered_links, esa URL fue añadida por el backend y no fue escrita ni inventada por el agente. Para cada fallo elegí el requirement_id exacto, el authority_line_index y evidence_source. En observed_evidence copia literalmente el fragmento de esa fuente que prueba el fallo; para un must ausente puede quedar vacío, pero para un must_not debe ser un fragmento no vacío presente en la fuente. El runner expande la línea de autoridad; no redactes ni alteres citas. No juzgues reglas no incluidas.',
           input: JSON.stringify(payload),
           reasoning: { effort: 'none' }, temperature: 0, stream: false, max_output_tokens: 1200,
-          text: { format: { type: 'json_schema', name: 'studyx_golden_semantic_turn_judge_v2', schema: {
+          text: { format: { type: 'json_schema', name: 'studyx_golden_semantic_turn_judge_v3', schema: {
             type: 'object', additionalProperties: false, required: ['verdict'], properties: {
               verdict: { type: 'object', additionalProperties: false,
                 required: ['turn_id', 'approved', 'failures'], properties: {
@@ -734,9 +755,10 @@ async function judgeTurnSemantically(input: {
         }
         const evidence = evidenceSources[failure.evidence_source];
         if (typeof evidence !== 'string'
-          || (['delivered_history','negotiation_ledger'].includes(failure.evidence_source)&&failure.observed_evidence.length>0&&!evidence.includes(failure.observed_evidence))
+          || typeof failure.observed_evidence !== 'string'
+          || (failure.observed_evidence.length > 0 && !evidence.includes(failure.observed_evidence))
           || (failure.code === 'SEMANTIC_MUST_NOT_FAILED'
-            && (!failure.observed_evidence || !evidence.includes(failure.observed_evidence)))) {
+            && !failure.observed_evidence)) {
           throw new Error('GOLDEN_JUDGE_FAILURE_EVIDENCE_INVALID');
         }
         const requirement = requirements[requirementIndex]!;
