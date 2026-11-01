@@ -1,0 +1,53 @@
+{
+  "evaluated_sha": "961c991bcb2a6afc3ea6b0f30d56a7ec0b0f60b8",
+  "worktree": "/Users/tmaneyro22/Documents/AGENTE IA/tmp/acceptance-961c991-official",
+  "preflight_source_and_evaluator_diff_empty": true,
+  "baseline_v8_sha256": "d16a4d047a9f847d0e8a46660ff366352742adee67df1cc3bb25e01efcf51c69",
+  "offline_tests": {
+    "passed": 100,
+    "skipped": 3
+  },
+  "selected_case_codes": [
+    "06",
+    "07",
+    "14"
+  ],
+  "turns_per_run": 18,
+  "required_runs": 2,
+  "provider": "deepseek",
+  "agent_model": "deepseek-v4-flash",
+  "judge_model": "deepseek-v4-flash",
+  "reuse_observations": false,
+  "canonical_prompt": "studyx-agent-a-canonical-v101",
+  "brain": "studyx-agent-a-brain-v147",
+  "source_or_criteria_modified": false,
+  "failed_local_bootstrap": {
+    "stem": "focused-961c991-flash-060714-r1-20261101",
+    "reason": "Turbopack rejects node_modules symlink outside the filesystem root",
+    "provider_records": 0,
+    "inference_cost": 0,
+    "resolution": "APFS clone dependency directories inside disposable worktree; clear owned .next; unchanged source."
+  },
+  "runs": [
+    "focused-961c991-flash-060714-r1b-20261101",
+    "focused-961c991-flash-060714-r2-20261101"
+  ],
+  "gate": {
+    "all_three_cases_pass_both": true,
+    "zero_unauthorized_explicit_or_implicit_bonus_offers_delivered": true,
+    "unknown_or_unexercised_does_not_pass": true
+  },
+  "conditional_full_acceptance": {
+    "runs_if_gate_passes": 1,
+    "minimum_passed_turns": 41,
+    "total_turns": 48,
+    "critical_cases": [
+      "07",
+      "10",
+      "11",
+      "12",
+      "15"
+    ]
+  },
+  "deployment": false
+}

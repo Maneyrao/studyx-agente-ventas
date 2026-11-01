@@ -1,0 +1,13 @@
+{
+  "checked_at": "2026-11-01T17:58:40.168Z",
+  "status": 200,
+  "is_available": true,
+  "balance_infos": [
+    {
+      "currency": "USD",
+      "total_balance": "4.61",
+      "granted_balance": "0.00",
+      "topped_up_balance": "4.61"
+    }
+  ]
+}
