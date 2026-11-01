@@ -23,8 +23,15 @@
 
 ## Responsabilidades
 - El Agente A interpreta, elige la estrategia y redacta.
-- El backend valida SÓLO hechos y efectos: cursos y planes existentes, precio, links, datos de contacto, consentimiento de llamada, pago verificado, las 9 reglas de la spec, idempotencia y alta.
+- El backend valida SÓLO hechos y efectos: cursos y planes existentes, precio, links, datos de contacto, consentimiento de llamada, pago verificado, las 9 reglas de la spec, la regla 10 autorizada abajo, idempotencia y alta.
 - Prohibido agregar regex o validadores que decidan si una respuesta "vende", "avanza", "cierra bien" o "aplaza".
+
+## Bonificación — regla 10 autorizada (2026-11-01)
+- Autoridad: docs/authority/prompt-agente-a-studyx-v2.md:106-120 y decisión explícita del usuario del 2026-11-01: la escalera también se protege en el backend con hechos registrados.
+- `offer_course_bonus` sólo se autoriza con al menos 3 objeciones de precio registradas en turnos anteriores de la conversación por el modelo (`memory_candidates` de tipo `objection`, clave `price_objection`, de decisiones finales comprometidas). Nunca inferirlas con regex, acciones comerciales ni borradores rechazados. Deduplicar el mismo turno.
+- Además, la invitación a llamada debe estar ofrecida o rechazada, o no estar autorizada (`may_offer_call=false` o tope de 2 invitaciones alcanzado). Una invitación incluida en el borrador actual no cuenta como un hecho anterior.
+- Si falta un requisito, rechazar con `ladder_step_pending` e informar al modelo el conteo observado/requerido y los requisitos pendientes, sin texto prescrito. Revalidar dentro de la transacción antes del efecto.
+- Esta regla no agrega condiciones comerciales distintas, no invalida replays exactos ni la aceptación/alta de bonificaciones previamente entregadas, ni reemplaza las garantías de las otras 9 reglas.
 
 ## No romper
 Llamadas y traspaso al Agente B, recolección de datos, link de pago y prueba de USD 0,50, verificación de pago,

@@ -62,7 +62,8 @@ describe('Agent A brain held-out rubric', () => {
     // activo, así que el held-out quedaba clavado contra un prompt retirado.
     //
     // Lo que sí importa es que no apunte a un prompt viejo por descuido, y
-    // eso se verifica contra el activo.
+    // eso se verifica contra el activo. v146 incorpora el mapping técnico de
+    // postergación conforme a docs/authority/prompt-agente-a-studyx-v2.md:81.
     expect(suite.prompt_version).toBe(AGENT_A_BRAIN_PROMPT_VERSION);
     expect(suite.cases).toHaveLength(20);
     expect(validateSuiteCaseInvariants(suite)).toEqual([]);

@@ -1,3 +1,5 @@
+import { seedPriorModelNegotiation } from '../helpers/record-model-negotiation-facts';
+import { deriveCourseBonusLadderV1 } from '@/shared/conversation/bonus-ladder';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { commitAgentDecision, recordDeliveryReport } from '@/lib/services/decision.service';
 import * as capability from '@/features/promotions/application/read-course-bonus-capability';
@@ -23,6 +25,7 @@ run('direct decision atomic repair', () => {
   it.each(['direct','review','review_pending'] as const)('reserves one outbound and preserves exact delivery authority in %s mode', async mode => {
     vi.stubEnv('CENTRAL_CARGA_BONUS_ENABLED','true');vi.stubEnv('COURSE_BONUS_FLOW_MODE','direct');vi.stubEnv('COURSE_BONUS_MAX_COURSES','2');
     const f = await seedConversationForAgentTurn({selected_offering_code:'entrenamiento_funcional',intake_complete:true});
+    await seedPriorModelNegotiation(sql,f);
     const [prior] = await sql`INSERT INTO messages(conversation_id,contact_id,direction,content,created_at)
       VALUES (${f.conversation_id},${f.contact_id},'inbound','Me parece caro',now()-interval '1 hour') RETURNING id`;
     await sql`INSERT INTO selected_memories(contact_id,conversation_id,source_message_id,status,memory_type,memory_key,value_normalized,source_quote,confidence,dedupe_hash)
@@ -151,6 +154,7 @@ run('direct decision atomic repair', () => {
     // Simulate a capability that became stale before final transactional validation.
     vi.spyOn(capability,'readCourseBonusCapabilityV1').mockResolvedValue({
       status:'checkin_available', enabled:true, max_bonus_courses:2, may_offer_bonus:true,
+      ladder:deriveCourseBonusLadderV1({observed_price_objection_count:3,call_invitation_status:'offered',call_offer_count:1,may_offer_call:true}),
       may_schedule_checkin:false,may_request_review:false,may_accept_offer:false,
       may_send_promoted_payment:false,promotion_code:null,interest_offering_code:'entrenamiento_funcional',
       offer_version:0,bonus_offerings:[],delivered_bonus_offerings:[],
@@ -164,7 +168,9 @@ run('direct decision atomic repair', () => {
       decision:f.placeholderDecision as never,model:f.model as never};
     await expect(commitAgentDecision(input)).rejects.toMatchObject({
       reason:'AGENT_TURN_V2_REJECTED:COMMERCIAL_TRUTH_VIOLATION',
-      subjects:['forbidden_promise','direct_bonus:no_price_objection'],
+      subjects:['forbidden_promise','direct_bonus:ladder_step_pending',
+        'bonus_ladder:recorded_price_objections:0:required:3','bonus_ladder:call_invitation:not_offered',
+        'bonus_ladder:missing:recorded_price_objections','bonus_ladder:missing:call_invitation'],
     });
     expect((await sql`SELECT count(*)::int n FROM agent_decisions WHERE turn_id=${f.turn_id}`)[0].n).toBe(0);
     expect((await sql`SELECT count(*)::int n FROM messages WHERE in_reply_to=${f.turn_id}`)[0].n).toBe(0);

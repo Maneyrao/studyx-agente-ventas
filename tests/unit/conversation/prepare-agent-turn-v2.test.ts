@@ -1,3 +1,4 @@
+import { deriveCourseBonusLadderV1 } from '@/shared/conversation/bonus-ladder';
 import { describe, expect, it } from 'vitest';
 import type { AgentATurnProposalV1 } from '@/features/conversation/domain/agent-a-brain';
 import type { ConversationStateV1 } from '@/features/conversation/domain/conversation-pipeline';
@@ -153,6 +154,7 @@ describe('prepareAgentTurnV2', () => {
       catalog_index:{...index,offerings:[...index.offerings,{code:'excel_integral',display_name:'Excel Integral',aliases:[],academy:'Tecnología'}]},
       proposal:proposal({proposed_action:action,response:{messages:['Te regalo Excel Integral.']}}),
       course_bonus_capability:{status:'checkin_available',enabled:true,max_bonus_courses:2,may_offer_bonus:true,
+        ladder:deriveCourseBonusLadderV1({observed_price_objection_count:3,call_invitation_status:'offered',call_offer_count:1,may_offer_call:true}),
         may_schedule_checkin:false,may_request_review:false,may_accept_offer:false,may_send_promoted_payment:false,
         promotion_code:null,interest_offering_code:'redes_informaticas',bonus_offerings:[]},
     },{state_store:store(state({selected_offering_code:'redes_informaticas'})),contact_intake:completeIntake});

@@ -116,7 +116,7 @@ describe('committed negotiation facts (P:106-120; observational, no new bonus co
     expect(otherCourse?.price_only_barrier).toEqual({ status: 'unknown' });
     await recordedMemory(legacy);
     const withLegacy = await readNegotiationFactsV1(scope, { db });
-    expect(withLegacy?.price_objection_count).toBe(6);
+    expect(withLegacy?.price_objection_count).toBe(5);
     expect(withLegacy?.latest_legacy_price_objection_source_message_ids).toEqual([legacy.turn_id]);
     const [existingCounter] = await db<Array<{ price_objection_count: number }>>`
       SELECT price_objection_count FROM conversation_promotion_context_v1

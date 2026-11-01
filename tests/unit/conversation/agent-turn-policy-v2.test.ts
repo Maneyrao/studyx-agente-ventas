@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { AgentATurnProposalV1 } from '@/features/conversation/domain/agent-a-brain';
 import type { CanonicalFactV1, ConversationStateV1 } from '@/features/conversation/domain/conversation-pipeline';
 import { createDefaultConversationStateV1 } from '@/features/conversation/domain/conversation-planner';
+import { deriveCourseBonusLadderV1 } from '@/shared/conversation/bonus-ladder';
 import { authorizeAgentTurnV2 } from '@/features/conversation/domain/agent-turn-policy-v2';
 
 const identity = {
@@ -404,6 +405,7 @@ describe('plannerless Agent A authority', () => {
     const p = proposal({ proposed_action: { type: 'offer_course_bonus',
       interest_offering_code: 'redes_informaticas', bonus_offering_code: 'excel_integral' } });
     const cap = { status: 'checkin_available', enabled: true, max_bonus_courses: 2,
+      ladder: deriveCourseBonusLadderV1({observed_price_objection_count:3,call_invitation_status:'offered',call_offer_count:1,may_offer_call:true}),
       may_offer_bonus: true, may_schedule_checkin: false, may_request_review: false,
       may_accept_offer: false, may_send_promoted_payment: false, promotion_code: null,
       interest_offering_code: 'redes_informaticas', bonus_offerings: [] } as const;
@@ -413,6 +415,23 @@ describe('plannerless Agent A authority', () => {
       courseBonus:{...cap,may_offer_bonus:false}, actionRejections:'structured' }))
       .toMatchObject({ok:false, reasons:['COMMERCIAL_TRUTH_VIOLATION'],
         rejection_subjects:['forbidden_promise','direct_bonus:bonus_disabled']});
+  });
+  it.each([
+    {count:2,status:'offered' as const,missing:'recorded_price_objections'},
+    {count:3,status:'not_offered' as const,missing:'call_invitation'},
+  ])('rejects a claimed gift when rule 10 still lacks $missing', ({count,status,missing}) => {
+    const ladder=deriveCourseBonusLadderV1({observed_price_objection_count:count,
+      call_invitation_status:status,call_offer_count:status==='offered'?1:0,may_offer_call:true});
+    const result=authorize({state:state({selected_offering_code:'redes_informaticas'}),
+      proposal:proposal({proposed_action:{type:'offer_course_bonus',interest_offering_code:'redes_informaticas',bonus_offering_code:'excel_integral'}}),
+      courseBonus:{status:'checkin_available',enabled:true,max_bonus_courses:2,may_offer_bonus:false,ladder,
+        may_schedule_checkin:false,may_request_review:false,may_accept_offer:false,may_send_promoted_payment:false,
+        promotion_code:null,interest_offering_code:'redes_informaticas',bonus_offerings:[]}});
+    expect(result).toMatchObject({ok:false,reasons:['COMMERCIAL_TRUTH_VIOLATION']});
+    expect(result).toHaveProperty('rejection_subjects',expect.arrayContaining([
+      'direct_bonus:ladder_step_pending',`bonus_ladder:missing:${missing}`,
+      `bonus_ladder:recorded_price_objections:${count}:required:3`,
+    ]));
   });
   it('replaces a stale course before handing an exact current course to the call', () => {
     const result = authorizeAgentTurnV2({

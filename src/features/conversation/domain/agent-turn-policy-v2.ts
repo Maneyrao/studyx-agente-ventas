@@ -1,3 +1,4 @@
+import { courseBonusLadderRejectionSubjectsV1 } from '@/shared/conversation/bonus-ladder-rejection';
 import { supportsChatPreferenceV1 } from './channel-preference-evidence';
 import type { AgentAProposedActionV1, AgentATurnProposalV1 } from './agent-a-brain';
 import type { CourseBonusCapabilityV1 } from '@/features/promotions/application/read-course-bonus-capability';
@@ -548,14 +549,18 @@ export function authorizeAgentTurnV2(input: {
   if (proposal.proposed_action.type === 'offer_course_bonus') {
     const proposed = proposal.proposed_action;
     const cap = input.course_bonus;
-    const reason = cap?.enabled !== true || cap.may_offer_bonus !== true ? 'bonus_disabled'
+    const reason = cap?.enabled !== true ? 'bonus_disabled'
+      : cap.ladder?.eligible !== true ? 'ladder_step_pending'
+      : cap.may_offer_bonus !== true ? 'bonus_disabled'
       : proposed.interest_offering_code !== capabilityInterestOffering || !promotionMatchesCurrentInterest
         || !input.offerings.some(o => o.code === proposed.bonus_offering_code) ? 'invalid_offering'
       : proposed.bonus_offering_code === capabilityInterestOffering ? 'same_as_paid_course'
       : cap.bonus_offerings.some(o => o.code === proposed.bonus_offering_code) ? 'duplicate_bonus'
       : cap.bonus_offerings.length >= (cap.max_bonus_courses ?? 0) ? 'bonus_limit_reached' : null;
     if (reason) return {ok:false,reasons:['COMMERCIAL_TRUTH_VIOLATION'],
-      rejection_subjects:['forbidden_promise',`direct_bonus:${reason}`]};
+      rejection_subjects:reason === 'ladder_step_pending'
+        ? courseBonusLadderRejectionSubjectsV1(cap?.ladder)
+        : ['forbidden_promise',`direct_bonus:${reason}`]};
     action = proposed;
   }
   if (

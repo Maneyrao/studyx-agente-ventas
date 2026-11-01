@@ -78,6 +78,19 @@ function courseBonusEffectContract(instructions: string): string {
 }
 
 describe('Agent A Brain prompt', () => {
+  it('maps postponement to defer_payment and reserves decline_purchase for definitive refusal', () => {
+    // Authority: docs/authority/prompt-agente-a-studyx-v2.md:81 leaves the door
+    // open for “Lo voy a pensar”; user authorized the technical move mapping.
+    const instructions = buildAgentABrainInstructionsV1(context());
+    const semantics = instructions.split('<move_semantics>')[1]?.split('</move_semantics>')[0] ?? '';
+
+    expect(semantics).toContain('move=defer_payment');
+    for (const postponement of [
+      'lo voy a pensar', 'tengo que pensarlo', 'no ahora', 'no me quiero inscribir todavía',
+    ]) expect(semantics).toContain(`"${postponement}"`);
+    expect(semantics).toContain('move=decline_purchase only for an explicit definitive refusal to purchase');
+    expect(semantics).toContain('Postponement is not a definitive refusal');
+  });
   it('renders the accepted-call availability boundary as an execution contract', () => {
     const current = context();
     current.commercial_state.call_preference = 'call';
@@ -344,7 +357,7 @@ describe('Agent A Brain prompt', () => {
     expect(JSON.parse(encoded)).toEqual(current);
     expect(instructions).not.toContain('<current_turn_guidance>');
     expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v101');
-    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v145');
+    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v146');
   });
 
   it('keeps commercial strategy exclusively in the canonical prompt', () => {

@@ -67,7 +67,8 @@ describe('release manifest for the agent loop', () => {
     expect(first).toMatchObject({
       botpress_artifact_sha: 'f'.repeat(64),
       prompt_sha256: '1'.repeat(64),
-      prompt_version: 'studyx-agent-a-brain-v145',
+      // Authority prompt:81: v146 maps postponement to defer_payment.
+      prompt_version: 'studyx-agent-a-brain-v146',
       provider: 'deepseek-direct',
       model: 'deepseek-v4-flash',
     });

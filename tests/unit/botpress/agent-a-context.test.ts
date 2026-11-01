@@ -10,6 +10,7 @@ import { resolveAgentAPlannerlessProposalV2 } from '../../../botpress-agent/src/
 import { authorizeAgentTurnV2 } from '@/features/conversation/domain/agent-turn-policy-v2';
 import { createDefaultConversationStateV1 } from '@/features/conversation/domain/conversation-planner';
 import type { AgentATurnProposalV1 } from '../../../botpress-agent/src/schemas/agent-a-brain';
+import { deriveCourseBonusLadderV1 } from '@/shared/conversation/bonus-ladder';
 
 const UUID = '18a823e8-27c2-4279-9956-058f45f33cd5';
 const NOW = '2026-08-28T12:00:00.000Z';
@@ -361,6 +362,20 @@ describe('buildAgentAContextV1', () => {
     expect(projected.capabilities.course_bonus).toMatchObject({enabled:false,may_offer_bonus:false,
       may_accept_offer:status==='offered',package_status:status});
   });
+  it('preserves the backend ladder facts in the model context', () => {
+    const claimed = claimedTurn();
+    const ladder = deriveCourseBonusLadderV1({
+      observed_price_objection_count: 2, call_invitation_status: 'offered',
+      call_offer_count: 1, may_offer_call: true,
+    });
+    claimed.course_bonus_capability = {
+      status: 'not_eligible', may_schedule_checkin: false, may_request_review: false,
+      may_accept_offer: false, may_send_promoted_payment: false,
+      promotion_code: null, bonus_offerings: [], ladder,
+    };
+    expect(buildAgentAContextV1(claimed)!.capabilities.course_bonus?.ladder).toEqual(ladder);
+  });
+
   it('projects the durable direct package into commercial state without deriving it from prose', () => {
     const claimed=claimedTurn();
     claimed.course_bonus_capability={enabled:true,max_bonus_courses:2,may_offer_bonus:true,

@@ -1664,6 +1664,13 @@ describe('Agent A Brain V1', () => {
     expect(body.response_format).toMatchObject({
       type: 'json_schema', json_schema: { name: 'studyx_agent_a_turn_proposal_v1', strict: true },
     });
+    // Authority prompt:81 + authorized technical mapping: deferral stays open.
+    const moveSemantics = body.response_format.json_schema.schema.properties.move.properties.move.description;
+    for (const expression of [
+      'lo voy a pensar', 'tengo que pensarlo', 'no ahora', 'no me quiero inscribir todavía',
+    ]) expect(moveSemantics).toContain(`"${expression}"`);
+    expect(moveSemantics).toContain('to defer_payment');
+    expect(moveSemantics).toContain('decline_purchase requires an explicit definitive refusal');
   });
 
   it.each([400, 413])(

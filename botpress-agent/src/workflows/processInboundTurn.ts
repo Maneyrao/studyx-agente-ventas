@@ -493,6 +493,7 @@ function backendCommitTurnRejectionV1(input: {
   }
   if ((input.context.catalog.test_payment_options?.length ?? 0) > 0) actions.push('send_test_payment_link')
   if (input.context.capabilities.may_request_call_now) actions.push('request_call_now')
+  const ladderPending = detailedSubjects.includes('direct_bonus:ladder_step_pending')
   const rejectedActions = new Set(mapped.flatMap((reason) => (
     reason.code === 'ACTION_NOT_AUTHORIZED' ? [reason.subject] : []
   )))
@@ -507,8 +508,10 @@ function backendCommitTurnRejectionV1(input: {
       // The durable backend receipt outranks the claim snapshot. Never feed
       // the exact rejected effect back as authorized merely because an older
       // local capability still allowed it.
-      actions: actions.filter((action) => !rejectedActions.has(action)),
-      missing_information: [...missingInformation],
+      actions: actions.filter((action) => !rejectedActions.has(action)
+        && !(ladderPending && action === 'offer_course_bonus')),
+      missing_information: [...new Set([...missingInformation,
+        ...detailedSubjects.filter(subject => subject.startsWith('bonus_ladder:'))])],
     },
   }
 }

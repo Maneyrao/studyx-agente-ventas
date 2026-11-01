@@ -1,3 +1,4 @@
+import type { CourseBonusLadderV1 } from '../../../shared/conversation/bonus-ladder';
 import type { ConversationMoveV1 } from './conversation-pipeline';
 import type { AgentANegotiationContextV1 } from '../../../shared/conversation/negotiation-facts';
 import type { CourseBonusMaxCoursesV1, DirectCourseBonusPromotionV1 } from '../../promotions/domain/course-bonus';
@@ -138,6 +139,7 @@ export interface AgentAContextV1 {
     readonly course_bonus?: {
       readonly enabled?: boolean;
       readonly may_offer_bonus?: boolean;
+      readonly ladder?: CourseBonusLadderV1;
       readonly promotion_cycle_id?: string | null;
       readonly offer_version?: number;
       readonly accepted_at?: string | null;

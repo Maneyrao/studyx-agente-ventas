@@ -1,3 +1,5 @@
+import { readCourseBonusLadderV1 } from './read-course-bonus-ladder';
+import type { CourseBonusLadderV1 } from '@/shared/conversation/bonus-ladder';
 import { createHash } from 'node:crypto';
 import { getPostgresError, type DbClient } from '@/lib/db/types';
 import { isCentralCargaBonusEnabledForContact, loadCentralCargaBonusConfig } from '@/features/fulfillment/central-carga/config';
@@ -5,7 +7,7 @@ import { loadCourseBonusFlowConfig } from './course-bonus-flow-config';
 
 export type DirectCourseBonusRejectionV1 = 'bonus_disabled' | 'no_price_objection' | 'invalid_offering'
   | 'same_as_paid_course' | 'duplicate_bonus' | 'bonus_limit_reached' | 'multiple_bonus_in_turn'
-  | 'bonus_without_reply' | 'sale_already_closed' | 'stale_offer_version';
+  | 'bonus_without_reply' | 'sale_already_closed' | 'stale_offer_version' | 'ladder_step_pending';
 interface Identity {
   readonly workspace_id: string;
   readonly contact_id: string;
@@ -39,11 +41,11 @@ interface DurableResult {
   readonly promotion_cycle_id: string;
   readonly offer_version: number;
 }
-type Rejected = { readonly ok: false; readonly reason: DirectCourseBonusRejectionV1 };
+type Rejected = { readonly ok: false; readonly reason: DirectCourseBonusRejectionV1; readonly ladder?: CourseBonusLadderV1 };
 export type DirectCourseBonusResultV1 = (DurableResult & { readonly outbound_message_id: string }) | Rejected;
 export type AcceptDirectCourseBonusResultV1 = DurableResult | Rejected;
 class Rejection extends Error {
-  constructor(readonly reason: DirectCourseBonusRejectionV1) { super(reason); }
+  constructor(readonly reason: DirectCourseBonusRejectionV1, readonly ladder?: CourseBonusLadderV1) { super(reason); }
 }
 function reject(reason: DirectCourseBonusRejectionV1): never { throw new Rejection(reason); }
 
@@ -83,7 +85,7 @@ function mayAcceptExistingPackage(contactId: string): boolean {
 }
 async function execute<T>(db: DbClient, work: (tx: DbClient) => Promise<T>): Promise<T | Rejected> {
   try { return await transaction(db, work); } catch (error) {
-    if (error instanceof Rejection) return { ok: false, reason: error.reason };
+    if (error instanceof Rejection) return { ok: false, reason: error.reason, ...(error.ladder ? { ladder: error.ladder } : {}) };
     if (error instanceof Error && SQL_REJECTIONS[error.message]) {
       return { ok: false, reason: SQL_REJECTIONS[error.message] };
     }
@@ -189,7 +191,7 @@ async function validateOpen(tx: DbClient, input: Identity, context: {stage:strin
       AND source_conversation_id=${input.conversation_id}::uuid
       AND status='paid') AS paid,
       EXISTS(SELECT 1 FROM contacts WHERE id=${input.contact_id}::uuid AND status<>'inactivo'
-        AND deleted_at IS NULL AND NOT EXISTS (SELECT 1 FROM contact_channel_permissions permission
+        AND coalesce(lifecycle_status,'active')='active' AND deleted_at IS NULL AND NOT EXISTS (SELECT 1 FROM contact_channel_permissions permission
           JOIN conversations conversation ON conversation.id=${input.conversation_id}::uuid
           WHERE permission.contact_id=${input.contact_id}::uuid AND permission.channel=conversation.channel
             AND permission.consent_status='revoked')) AS eligible
@@ -240,33 +242,8 @@ export async function offerDirectCourseBonusV1(db: DbClient, input: OfferDirectC
     const [bonus]=await tx`SELECT id FROM offerings WHERE workspace_id=${input.workspace_id}::uuid
       AND code=${input.bonus_offering_codes[0]} AND status='active' AND offering_type='course' FOR SHARE`;
     if (!bonus) reject('invalid_offering');
-    const [objection]=await tx`SELECT m.id FROM selected_memories m JOIN messages source ON source.id=m.source_message_id
-      JOIN messages current ON current.id=${input.source_turn_id}::uuid
-      WHERE m.contact_id=${input.contact_id}::uuid AND m.conversation_id=${input.conversation_id}::uuid
-        AND m.memory_type='objection' AND m.memory_key='price_objection' AND m.status IN ('active','accepted','superseded')
-        AND m.valid_from<=now() AND (m.valid_until IS NULL OR m.valid_until>now())
-        AND source.direction='inbound' AND source.id<>current.id
-        AND current.direction='inbound' AND current.conversation_id=source.conversation_id AND current.contact_id=source.contact_id
-        AND message_occurrence_v1(source.metadata,source.created_at)<message_occurrence_v1(current.metadata,current.created_at)
-        AND NOT EXISTS(SELECT 1 FROM promotion_offers prior_package
-          WHERE prior_package.workspace_id=${input.workspace_id}::uuid AND prior_package.contact_id=current.contact_id
-            AND prior_package.conversation_id=current.conversation_id AND prior_package.package_mode='direct'
-            AND prior_package.status IN ('offered','accepted','attached') AND prior_package.paid_offering_id<>${context.paid_id}::uuid
-            AND message_occurrence_v1(source.metadata,source.created_at)<=prior_package.created_at)
-      UNION ALL
-      SELECT decision.id FROM agent_decisions decision JOIN messages source ON source.id=decision.turn_id
-      JOIN messages current ON current.id=${input.source_turn_id}::uuid
-      JOIN conversation_promotion_context_v1 evidence ON evidence.workspace_id=${input.workspace_id}::uuid
-        AND evidence.conversation_id=${input.conversation_id}::uuid AND evidence.contact_id=${input.contact_id}::uuid
-        AND evidence.interest_offering_code=${input.paid_offering_code} AND evidence.price_objection_count>0
-      WHERE source.conversation_id=evidence.conversation_id AND source.contact_id=evidence.contact_id AND source.direction='inbound'
-        AND ${context.structured_objection_authorized}
-        AND current.conversation_id=source.conversation_id AND current.contact_id=source.contact_id AND current.direction='inbound'
-        AND source.id<>current.id
-        AND decision.memory_candidates @> '[{"type":"objection","key":"price_objection"}]'::jsonb
-        AND message_occurrence_v1(source.metadata,source.created_at)<message_occurrence_v1(current.metadata,current.created_at)
-      LIMIT 1`;
-    if (!objection) reject('no_price_objection');
+    const ladder=await readCourseBonusLadderV1({...input,selected_offering_code:context.selected_offering_code},tx);
+    if (!ladder?.eligible) throw new Rejection('ladder_step_pending',ladder ?? undefined);
     if (offer && offer.offer_version>=limit) reject('bonus_limit_reached');
     if (offer) {
       if ((await tx`SELECT id FROM promotion_offer_bonus_offerings WHERE offer_id=${offer.id}::uuid AND offering_id=${bonus.id}::uuid`).length) reject('duplicate_bonus');

@@ -6,6 +6,7 @@ import type { ClaimedTurn } from '../../schemas/contracts';
 import type { ConversationMoveV1 } from '../../schemas/conversation-pipeline';
 import { classifyBatchSalesSignal } from '../../../../src/features/orchestration/domain/sales-signal';
 import { supportsChatPreferenceV1 } from './channel-preference-evidence';
+import { mayOfferCallV1 } from '../../../../src/shared/conversation/bonus-ladder';
 
 const MEMORY_TYPES = new Set([
   'study_goal', 'study_context', 'preference', 'constraint',
@@ -656,14 +657,16 @@ export function buildAgentAContextV1(
         ? 'confirm_availability' as const
         : 'none' as const;
 
-  const mayOfferCall = claimed.policy.may_respond
-    && !claimed.contact.blocked
-    && claimed.sales_context.active_call === null
-    && effectiveCallPreference !== 'call'
-    && effectiveCallOfferStatus !== 'accepted'
-    && !['handoff', 'closed', 'payment_link_sent'].includes(effectiveStage)
-    && !effectivePaymentReported
-    && callOfferCount < 2;
+  const mayOfferCall = mayOfferCallV1({
+    may_respond: claimed.policy.may_respond,
+    blocked: claimed.contact.blocked,
+    active_call: claimed.sales_context.active_call,
+    call_preference: effectiveCallPreference,
+    call_offer_status: effectiveCallOfferStatus,
+    stage: effectiveStage,
+    payment_reported: effectivePaymentReported,
+    call_offer_count: callOfferCount,
+  });
   return AgentAContextV1Schema.parse({
     schema_version: 1,
     turn: {

@@ -14,7 +14,7 @@ export interface RecordedPriceOnlyBarrierV1 {
 }
 
 export interface RecordedNegotiationFactsV1 {
-  /** Uncapped conversation total of distinct prior recorded customer interventions. */
+  /** Uncapped conversation total of distinct prior final reply decisions whose model memory_candidates record objection/price_objection. Legacy memories and commercial actions are diagnostic only. */
   readonly price_objection_count: number;
   /** Bounded provenance, not the complete list counted above. */
   readonly latest_price_objection_source_turn_ids: readonly string[];

@@ -1,3 +1,4 @@
+import { courseBonusLadderRejectionSubjectsV1 } from '@/shared/conversation/bonus-ladder-rejection';
 import { backendReleaseSha } from './turn-evidence.service';
 import type { ConversationChannel } from '@/lib/contracts/channel';
 import { randomUUID } from 'node:crypto';
@@ -1763,7 +1764,8 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
                 idempotency_key:validatedInput.supports_multi_outbound ? `outbound:${decisionId}:part:${partIndex}` : `outbound:${decisionId}`},
             });
             if (!result.ok) throw new DecisionPolicyError('AGENT_TURN_V2_REJECTED:COMMERCIAL_TRUTH_VIOLATION',
-              ['forbidden_promise',`direct_bonus:${result.reason}`]);
+              result.reason === 'ladder_step_pending' ? courseBonusLadderRejectionSubjectsV1(result.ladder)
+                : ['forbidden_promise',`direct_bonus:${result.reason}`]);
             const rows = await db<Message[]>`UPDATE messages SET metadata=${jsonbParam(db,{
               decision_id:decisionId,response_type:decision.response_type,model:validatedInput.model,
               part_index:partIndex,part_count:partTexts.length,authorized_egress:partManifest,

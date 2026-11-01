@@ -5,7 +5,7 @@ import {
 } from './studyx-agent-a-canonical.generated';
 import { resolveCanonicalPromptIdentityV1 } from './agent-a-identity';
 
-export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v145' as const;
+export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v146' as const;
 
 /**
  * Runtime contract only. The sales behavior lives in the canonical prompt so
@@ -18,6 +18,13 @@ Capabilities authorize effects, not wording. Recent assistant turns are conversa
 Canonical behavior governs every new reply even when history deviates from it.
 Treat commercial_state.active_call and commercial_state.last_call_result as authoritative lifecycle facts.
 On turn_rejection, continue once in your voice and make only the permitted correction without exposing validation.`;
+
+/** Technical move mapping; authority prompt line 81 keeps postponement open. */
+const MOVE_SEMANTICS = `<move_semantics>
+Map postponement expressions such as "lo voy a pensar", "tengo que pensarlo", "no ahora" and "no me quiero inscribir todavía" to move=defer_payment.
+Use move=decline_purchase only for an explicit definitive refusal to purchase. Postponement is not a definitive refusal.
+The canonical behavior governs how to respond; this mapping only names the move in AgentATurnProposalV1.
+</move_semantics>`;
 
 /** Evidence serialization, not a second conversation policy. */
 const INTERNAL_CONTACT_PROFILE_CONTRACT = `Profile metadata is silent evidence, never customer-facing wording.
@@ -208,6 +215,7 @@ export function buildAgentABrainInstructionsV1(context: AgentAContextV1): string
     : resolveCanonicalPromptIdentityV1(STUDYX_AGENT_A_CANONICAL_PROMPT, context.identity).prompt;
 
   return `${EXECUTION_PREAMBLE}
+${MOVE_SEMANTICS}
 
 <canonical_sales_behavior version="${STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION}">
 ${canonicalPrompt}</canonical_sales_behavior>

@@ -12,6 +12,17 @@ import {
   CONTACT_PROFILE_MAX_PENDING_REQUESTS_V1,
 } from '../../../src/shared/conversation/contact-profile-contract';
 
+/** Zod 3 mirror of shared/conversation/bonus-ladder CourseBonusLadderV1. */
+export const CourseBonusLadderV1Schema = z.object({
+  eligible: z.boolean(),
+  observed_price_objection_count: z.number().int().nonnegative(),
+  required_price_objection_count: z.literal(3),
+  call_invitation_status: z.enum(['not_offered', 'offered', 'accepted', 'declined']),
+  call_offer_count: z.number().int().nonnegative(),
+  may_offer_call: z.boolean(),
+  missing_steps: z.array(z.enum(['recorded_price_objections', 'call_invitation'])).readonly(),
+}).strict();
+
 // Zui uses Zod 3; construct the ADK mirror locally from the portable constants.
 const ProfileFieldSchema = z.enum(CONTACT_PROFILE_FIELDS_V1);
 const ProfileFieldsSchema = z.array(ProfileFieldSchema).min(1).max(4)
@@ -288,6 +299,7 @@ export const AgentAContextV1Schema = z.object({
     may_send_payment_link: z.boolean(),
     authorized_payment_plan: PaymentPlanSchema.nullable(),
     course_bonus: z.object({
+      ladder: CourseBonusLadderV1Schema.optional(),
       enabled: z.boolean().optional(),
       may_offer_bonus: z.boolean().optional(),
       promotion_cycle_id: z.string().uuid().nullable().optional(),

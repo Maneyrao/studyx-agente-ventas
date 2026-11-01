@@ -1,3 +1,5 @@
+import { readCourseBonusLadderV1 } from './read-course-bonus-ladder';
+import type { CourseBonusLadderV1 } from '@/shared/conversation/bonus-ladder';
 import type { DbClient } from '@/lib/db/types';
 import { loadCourseBonusFlowConfig } from './course-bonus-flow-config';
 import type { CourseBonusMaxCoursesV1 } from '../domain/course-bonus';
@@ -17,6 +19,7 @@ export type CourseBonusCapabilityStatus =
   | 'accepted';
 
 export interface CourseBonusCapabilityV1 {
+  readonly ladder?: CourseBonusLadderV1;
   readonly enabled?: boolean;
   readonly max_bonus_courses?: CourseBonusMaxCoursesV1;
   readonly may_offer_bonus?: boolean;
@@ -353,6 +356,7 @@ export function deriveDirectCourseBonusCapabilityV1(input: {
   readonly interest_offering_code: string;
   readonly max_bonus_courses: CourseBonusMaxCoursesV1;
   readonly prior_price_objection: boolean;
+  readonly ladder?: CourseBonusLadderV1;
   readonly package: {
     readonly promotion_code: string;
     readonly promotion_cycle_id: string;
@@ -376,7 +380,8 @@ export function deriveDirectCourseBonusCapabilityV1(input: {
   return {
     ...hidden(accepted ? 'accepted' : offer ? 'offer_available' : 'checkin_available'),
     enabled: true, max_bonus_courses: input.max_bonus_courses,
-    may_offer_bonus: open && ready && input.prior_price_objection
+    ...(input.ladder ? {ladder:input.ladder} : {}),
+    may_offer_bonus: open && ready && (input.ladder?.eligible ?? false)
       && (offer?.courses.length ?? 0) < input.max_bonus_courses,
     may_accept_offer: offer?.status === 'offered' && ready && !expired,
     may_send_promoted_payment: accepted && offer?.payment_superseded !== true,
@@ -439,31 +444,7 @@ async function readDirectCapability(input: {
       COALESCE(b.courses,'[]'::jsonb) courses,COALESCE(b.delivered_courses,'[]'::jsonb) delivered_courses,
       COALESCE(b.delivered,false) delivered,
       COALESCE(b.latest_delivery < message_occurrence_v1(current.metadata,current.created_at),false) later_reply,
-      EXISTS(SELECT 1 FROM selected_memories m JOIN messages source ON source.id=m.source_message_id
-        WHERE m.contact_id=${input.contact_id}::uuid AND m.conversation_id=${input.conversation_id}::uuid
-          AND m.memory_type='objection' AND m.memory_key='price_objection' AND m.status IN ('active','accepted','superseded')
-          AND m.valid_from<=now() AND (m.valid_until IS NULL OR m.valid_until>now())
-          AND source.direction='inbound' AND source.id<>current.id
-          AND source.conversation_id=current.conversation_id AND source.contact_id=current.contact_id
-          AND message_occurrence_v1(source.metadata,source.created_at)<message_occurrence_v1(current.metadata,current.created_at)
-          AND NOT EXISTS(SELECT 1 FROM promotion_offers prior_package
-            WHERE prior_package.workspace_id=w.id AND prior_package.contact_id=current.contact_id
-              AND prior_package.conversation_id=current.conversation_id AND prior_package.package_mode='direct'
-              AND prior_package.status IN ('offered','accepted','attached') AND prior_package.paid_offering_id<>paid.id
-              AND message_occurrence_v1(source.metadata,source.created_at)<=prior_package.created_at)
-      ) OR EXISTS(SELECT 1 FROM agent_decisions decision JOIN messages source ON source.id=decision.turn_id
-        JOIN conversation_promotion_context_v1 evidence ON evidence.workspace_id=w.id
-          AND evidence.conversation_id=current.conversation_id AND evidence.contact_id=current.contact_id
-          AND evidence.interest_offering_code=paid.code AND evidence.price_objection_count>0
-        JOIN messages evidence_source ON evidence_source.id=evidence.source_turn_id
-          AND evidence_source.conversation_id=evidence.conversation_id AND evidence_source.contact_id=evidence.contact_id
-          AND evidence_source.direction='inbound' AND evidence_source.id<>current.id
-          AND message_occurrence_v1(evidence_source.metadata,evidence_source.created_at)<message_occurrence_v1(current.metadata,current.created_at)
-        WHERE source.conversation_id=current.conversation_id AND source.contact_id=current.contact_id
-          AND source.direction='inbound' AND source.id<>current.id
-          AND decision.memory_candidates @> '[{"type":"objection","key":"price_objection"}]'::jsonb
-          AND message_occurrence_v1(source.metadata,source.created_at)<message_occurrence_v1(current.metadata,current.created_at)
-      ) prior_price_objection
+      false prior_price_objection
     FROM workspaces w JOIN offerings paid ON paid.workspace_id=w.id AND paid.code=${input.selected_offering_code}
       AND paid.status='active' AND paid.offering_type='course'
     JOIN workspace_contacts wc ON wc.workspace_id=w.id AND wc.contact_id=${input.contact_id}::uuid
@@ -487,7 +468,9 @@ async function readDirectCapability(input: {
     WHERE w.slug=${input.workspace_slug} AND w.status='active'
   `;
   if (!row) return {...hidden('unavailable'),enabled:false,max_bonus_courses:max};
+  const ladder=await readCourseBonusLadderV1(input,db);
   return deriveDirectCourseBonusCapabilityV1({interest_offering_code:input.selected_offering_code!,
+    ...(ladder ? {ladder} : {}),
     max_bonus_courses:max,prior_price_objection:row.prior_price_objection,
     package:row.promotion_code ? {...row,promotion_code:row.promotion_code} : null});
 }

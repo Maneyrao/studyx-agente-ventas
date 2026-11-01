@@ -1358,6 +1358,7 @@ describe('processInboundTurn hot path', () => {
     ['COMMERCIAL_TRUTH_VIOLATION', 'forbidden_promise', 'FACT_VALUE_MISMATCH', 'direct_bonus:bonus_limit_reached'],
     ['COMMERCIAL_TRUTH_VIOLATION', 'forbidden_promise', 'FACT_VALUE_MISMATCH', 'direct_bonus:stale_offer_version'],
     ['COMMERCIAL_TRUTH_VIOLATION', 'forbidden_promise', 'FACT_VALUE_MISMATCH', 'direct_bonus:bonus_without_reply'],
+    ['COMMERCIAL_TRUTH_VIOLATION', 'bonus_ladder:missing:call_invitation', 'FACT_VALUE_MISMATCH', 'direct_bonus:ladder_step_pending'],
   ])('returns the exact backend %s to Agent A and commits only its repaired response', async (backendCode, subject, rejectionCode, directReason) => {
     const claimed = claimedResponse() as unknown as ClaimedTurn;
     claimed.features = {
@@ -1475,6 +1476,10 @@ describe('processInboundTurn hot path', () => {
           subject,
         },...(directReason ? [{code:'FACT_VALUE_MISMATCH',subject:directReason}] : [])],
       });
+    if (directReason === 'direct_bonus:ladder_step_pending') {
+      expect(actionSpies.agentABrainDeepSeek.mock.calls[1]?.[0]?.context.turn_rejection)
+        .toMatchObject({authorized_alternatives:{missing_information:expect.arrayContaining([subject])}});
+    }
     expect(actionSpies.commit.mock.calls[1]?.[0]?.input).toMatchObject({
       agent_turn_v2: {
         proposal: {

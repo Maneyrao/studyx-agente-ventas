@@ -36,7 +36,7 @@ export async function readNegotiationFactsV1(input: {
 }, deps: { db: DbClient }): Promise<RecordedNegotiationFactsV1 | null> {
   const [row] = await deps.db<Array<RecordedNegotiationFactsV1>>`
     WITH scope AS (
-      SELECT w.id workspace_id, current.id, current.conversation_id, current.contact_id, current.conversation_seq
+      SELECT w.id workspace_id, current.id, current.conversation_id, current.contact_id, current.conversation_seq, current.metadata, current.created_at
       FROM workspaces w JOIN workspace_contacts membership ON membership.workspace_id=w.id
       JOIN messages current ON current.contact_id=membership.contact_id
       JOIN conversation_sales_context_states_v1 state ON state.workspace_id=w.id
@@ -50,13 +50,20 @@ export async function readNegotiationFactsV1(input: {
       SELECT source.*, decision.id decision_id, decision.memory_candidates, decision.business_action, decision.negotiation_observations
       FROM scope JOIN messages source ON source.conversation_id=scope.conversation_id
         AND source.contact_id=scope.contact_id AND source.direction='inbound'
-        AND source.conversation_seq<scope.conversation_seq
+        AND (message_occurrence_v1(source.metadata,source.created_at),coalesce(source.conversation_seq,0))
+          < (message_occurrence_v1(scope.metadata,scope.created_at),coalesce(scope.conversation_seq,0))
+          AND (source.conversation_seq IS NULL OR scope.conversation_seq IS NULL OR source.conversation_seq<scope.conversation_seq)
       LEFT JOIN agent_decisions decision ON decision.turn_id=source.id AND decision.decision_kind='reply'
     ), recorded_decisions AS (
       SELECT prior.id, prior.decision_id, prior.batch_id, prior.conversation_seq FROM prior
       WHERE prior.decision_id IS NOT NULL AND (
-        prior.memory_candidates @> '[{"type":"objection","key":"price_objection"}]'::jsonb
-        OR prior.business_action->>'type' IN ('schedule_price_objection_checkin','request_promotion_review')
+        EXISTS(SELECT 1 FROM jsonb_array_elements(prior.memory_candidates) candidate
+          JOIN messages evidence ON evidence.contact_id=prior.contact_id AND evidence.conversation_id=prior.conversation_id
+            AND evidence.direction='inbound' AND (evidence.id=prior.id OR
+              (evidence.batch_id=prior.batch_id AND prior.batch_id IS NOT NULL))
+          WHERE candidate->>'type'='objection' AND candidate->>'key'='price_objection'
+            AND length(trim(candidate->>'source_quote'))>0
+            AND position((candidate->>'source_quote') in evidence.content)>0)
       )
     ), recorded_memories AS (
       SELECT coalesce(linked.id, exact_source.id,
@@ -71,14 +78,14 @@ export async function readNegotiationFactsV1(input: {
           AND memory.memory_type='objection' AND memory.memory_key='price_objection'
           AND memory.status IN ('active','accepted','superseded')
     ), distinct_sources AS (
-      SELECT id FROM recorded_decisions UNION SELECT id FROM recorded_memories
+      SELECT DISTINCT id FROM recorded_decisions
     )
     SELECT (SELECT count(*)::int FROM distinct_sources) price_objection_count,
       ARRAY(SELECT distinct_sources.id::text FROM distinct_sources JOIN messages source ON source.id=distinct_sources.id
         ORDER BY source.conversation_seq DESC LIMIT 20) latest_price_objection_source_turn_ids,
-      ARRAY(SELECT distinct_sources.id::text FROM distinct_sources JOIN messages source ON source.id=distinct_sources.id
-        WHERE NOT EXISTS (SELECT 1 FROM recorded_decisions recorded WHERE recorded.id=distinct_sources.id)
-        ORDER BY source.conversation_seq DESC LIMIT 20) latest_legacy_price_objection_source_message_ids,
+      ARRAY(SELECT recorded_memories.id::text FROM recorded_memories JOIN messages source ON source.id=recorded_memories.id
+        WHERE NOT EXISTS (SELECT 1 FROM recorded_decisions recorded WHERE recorded.id=recorded_memories.id)
+        GROUP BY recorded_memories.id,source.conversation_seq ORDER BY source.conversation_seq DESC LIMIT 20) latest_legacy_price_objection_source_message_ids,
       coalesce((SELECT jsonb_build_object(
         'status', observation->>'status', 'offering_code', observation->'offering_code',
         'source_turn_id', prior.id, 'source_message_id', message.id,

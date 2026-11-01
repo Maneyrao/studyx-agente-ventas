@@ -1,3 +1,4 @@
+import { deriveCourseBonusLadderV1 } from '@/shared/conversation/bonus-ladder';
 import { describe, expect, it, vi } from 'vitest';
 import {
   derivePromotionContextRepairPlanV1,
@@ -42,7 +43,7 @@ describe('direct capability', () => {
       prior_price_objection: false, package: null };
     expect(deriveDirectCourseBonusCapabilityV1(input)).toMatchObject({ enabled: true,
       max_bonus_courses: 2, may_offer_bonus: false, may_request_review: false, offer_version: 0 });
-    expect(deriveDirectCourseBonusCapabilityV1({ ...input, prior_price_objection: true }))
+    expect(deriveDirectCourseBonusCapabilityV1({ ...input, prior_price_objection: true,ladder:deriveCourseBonusLadderV1({observed_price_objection_count:3,call_invitation_status:'offered',call_offer_count:1,may_offer_call:true}) }))
       .toMatchObject({ may_offer_bonus: true });
     expect(deriveDirectCourseBonusCapabilityV1({ ...input, prior_price_objection: true,
       package: { promotion_code: 'p', promotion_cycle_id: 'cycle', offer_version: 1,
