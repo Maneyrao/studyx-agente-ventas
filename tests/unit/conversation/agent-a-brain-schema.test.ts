@@ -151,3 +151,16 @@ describe('AgentATurnProposalV1Schema', () => {
     }
   });
 });
+
+// Backward compatibility never fabricates commercial roles.
+describe('backend course_mentions wire contract',()=>{
+  it('defaults omitted metadata to an empty array',()=>{
+    expect(AgentATurnProposalV1Schema.parse(proposal()).course_mentions).toEqual([]);
+  });
+  it('retains declared roles and rejects unknown roles or declaration keys',()=>{
+    expect(AgentATurnProposalV1Schema.parse(proposal({course_mentions:[{offering_code:'ingles_1',role:'paid_complement'}]})).course_mentions)
+      .toEqual([{offering_code:'ingles_1',role:'paid_complement'}]);
+    for(const declaration of [{offering_code:'ingles_1',role:'free'}, {offering_code:'ingles_1',role:'bonus',effect:true}])
+      expect(AgentATurnProposalV1Schema.safeParse(proposal({course_mentions:[declaration]})).success).toBe(false);
+  });
+});

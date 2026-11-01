@@ -1,3 +1,4 @@
+import { validateCourseMentionsV1 } from '@/shared/conversation/course-mentions';
 import { courseBonusLadderRejectionSubjectsV1 } from '@/shared/conversation/bonus-ladder-rejection';
 import { supportsChatPreferenceV1 } from './channel-preference-evidence';
 import type { AgentAProposedActionV1, AgentATurnProposalV1 } from './agent-a-brain';
@@ -52,6 +53,7 @@ export type AgentTurnRejectionReasonV2 =
   | 'CALL_OFFER_NOT_AUTHORIZED'
   | 'CALL_OFFER_MESSAGE_BOUNDARY_INVALID'
   | 'CALL_OFFER_REQUIRED'
+  | 'COURSE_ROLE_UNDECLARED'
   | 'COURSE_NOT_RESOLVED'
   | 'CHANNEL_PREFERENCE_NOT_SUPPORTED';
 
@@ -593,6 +595,34 @@ export function authorizeAgentTurnV2(input: {
   // the validated selection/consent below, but do not turn this continuation
   // into dispatch, checkout, or a consumed pending request.
   if (input.effects_allowed === false) action = { type: 'none' };
+
+  // Mandatory identity/effect boundary, including advisory and conversation-only turns.
+  // A declaration never creates a purchase selection or authorizes a bonus.
+  const hasDeliveredPackage = ['offered','accepted','attached'].includes(input.course_bonus?.package_status ?? '')
+    && (input.course_bonus?.delivered_bonus_offerings?.length ?? 0)>0;
+  const retainsDurableIdentity = !startsFreshSalesCycle && !(changesCourse && requestedOffering!==null);
+  // Catalog deactivation stops new sales, not the identity of an existing
+  // selection or delivered obligation. A validated switch/reset still wins.
+  const primaryCourse = selectedOffering
+    ?? (retainsDurableIdentity ? state.selected_offering_code : null)
+    ?? (action.type==='offer_course_bonus' ? action.interest_offering_code : null)
+    ?? (retainsDurableIdentity && hasDeliveredPackage ? capabilityInterestOffering : null);
+  const packageIsCurrent = input.course_bonus?.interest_offering_code===primaryCourse
+    && ['offered','accepted','attached'].includes(input.course_bonus.package_status ?? '');
+  const courseMentions = validateCourseMentionsV1({
+    messages:proposal.response.messages,call_offer:proposal.response.call_offer,catalog:input.offerings,
+    course_mentions:proposal.course_mentions,paid_offering_code:primaryCourse,
+    ...(action.type==='offer_course_bonus' ? {authorized_bonus_action:{
+      paid_offering_code:action.interest_offering_code,bonus_offering_code:action.bonus_offering_code}} : {}),
+    delivered_bonus_offering_codes:packageIsCurrent ? (input.course_bonus?.delivered_bonus_offerings ?? []).map(course=>course.code) : [],
+    ladder:input.course_bonus?.ladder,
+  });
+  if (courseMentions.violations.length>0) return {
+    ok:false,
+    reasons:unique(courseMentions.violations.map(violation=>violation.code==='COURSE_ROLE_UNDECLARED'
+      ? 'COURSE_ROLE_UNDECLARED' as const : 'COMMERCIAL_TRUTH_VIOLATION' as const)),
+    rejection_subjects:unique(courseMentions.violations.map(violation=>violation.subject)),
+  };
 
   const rejectedActionOnly = proposal.proposed_action.type !== 'none'
     && reasons.length > 0

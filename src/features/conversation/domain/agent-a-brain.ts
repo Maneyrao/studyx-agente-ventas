@@ -1,3 +1,4 @@
+import type { CourseMentionV1 } from '@/shared/conversation/course-mentions';
 import type { CourseBonusLadderV1 } from '../../../shared/conversation/bonus-ladder';
 import type { ConversationMoveV1 } from './conversation-pipeline';
 import type { AgentANegotiationContextV1 } from '../../../shared/conversation/negotiation-facts';
@@ -208,6 +209,8 @@ export type AgentAProposedActionV1 =
     };
 
 export interface AgentATurnProposalV1 {
+  /** Legacy clients may omit metadata; the backend still checks every named course. */
+  readonly course_mentions?: readonly CourseMentionV1[];
   readonly schema_version: 1;
   readonly move: ConversationMoveV1;
   readonly response: {

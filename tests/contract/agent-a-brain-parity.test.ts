@@ -78,6 +78,7 @@ const validProposal = {
   },
   response: { messages: ['Perfecto, seguimos por chat.', 'Te cuento cómo funciona el curso.'] },
   proposed_action: { type: 'none' },
+  course_mentions: [],
   used_fact_ids: ['offering:redes-informaticas:name'],
   used_memory_ids: ['memory-1'],
   memory_candidates: [],

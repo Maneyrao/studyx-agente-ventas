@@ -1,4 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { AgentATurnCommitV2Schema } from '../../../botpress-agent/src/schemas/agent-turn-v2';
+import { AgentATurnProposalV1Schema } from '../../../botpress-agent/src/schemas/agent-a-brain';
+import { AgentATurnProposalV1Schema as BackendProposalSchema } from '@/features/conversation/adapters/agent-a-brain-schema';
 import type { AgentAContextV1 } from '../../../botpress-agent/src/schemas/agent-a-brain';
 import * as agentABrainModule from '../../../botpress-agent/src/lib/conversation/agent-a-brain';
 import {
@@ -93,6 +96,27 @@ afterEach(() => {
 });
 
 describe('Agent A Brain V1', () => {
+  it('preserves explicit course roles through parser and both wire schemas without inferring legacy roles',()=>{
+    const mentions=[{offering_code:'redes-informaticas',role:'paid'}];
+    const raw=proposal({course_mentions:mentions,response:{messages:['Redes Informáticas.']}});
+    expect(parseAgentATurnProposalV1(raw,context()).course_mentions).toEqual(mentions);
+    expect(AgentATurnProposalV1Schema.parse(raw).course_mentions).toEqual(mentions);
+    expect(BackendProposalSchema.parse(raw).course_mentions).toEqual(mentions);
+    expect(AgentATurnCommitV2Schema.parse({schema_version:2,proposal:raw,conversation_only:true,requested_action:{type:'none'}}).proposal.course_mentions).toEqual(mentions);
+    const legacy=proposal({response:{messages:['Redes Informáticas.']}});
+    expect(parseAgentATurnProposalV1(legacy,context()).course_mentions).toEqual([]);
+    expect(AgentATurnProposalV1Schema.parse(legacy).course_mentions).toEqual([]);
+    expect(BackendProposalSchema.parse(legacy).course_mentions).toEqual([]);
+    const unresolved=proposal({course_mentions:[{offering_code:'not-in-snapshot',role:'alternative'}]});
+    expect(parseAgentATurnProposalV1(unresolved,context()).course_mentions).toEqual([{offering_code:'not-in-snapshot',role:'alternative'}]);
+  });
+  it.each(['paid','bonus','paid_complement','alternative'])('mirrors the %s course role and rejects extra properties',role=>{
+    const raw=proposal({course_mentions:[{offering_code:'redes-informaticas',role}]});
+    expect(AgentATurnProposalV1Schema.safeParse(raw).success).toBe(true);
+    expect(BackendProposalSchema.safeParse(raw).success).toBe(true);
+    expect(AgentATurnProposalV1Schema.safeParse(proposal({course_mentions:[{offering_code:'redes-informaticas',role,free:true}]})).success).toBe(false);
+  });
+
   it('captures provider output before register or punctuation normalization', async () => {
     const raw = JSON.stringify(proposal({ response: {
       messages: ['¿Tenés cámara? Contame qué buscás.'], call_offer: null,
@@ -1665,6 +1689,10 @@ describe('Agent A Brain V1', () => {
       type: 'json_schema', json_schema: { name: 'studyx_agent_a_turn_proposal_v1', strict: true },
     });
     // Authority prompt:81 + authorized technical mapping: deferral stays open.
+    expect(body.response_format.json_schema.schema.required).toContain('course_mentions');
+    expect(body.response_format.json_schema.schema.properties.course_mentions).not.toHaveProperty('default');
+    expect(body.response_format.json_schema.schema.properties.course_mentions.items.required).toEqual(['offering_code','role']);
+    expect(body.response_format.json_schema.schema.properties.course_mentions.items.properties.role.enum).toEqual(['paid','bonus','paid_complement','alternative']);
     const moveSemantics = body.response_format.json_schema.schema.properties.move.properties.move.description;
     for (const expression of [
       'lo voy a pensar', 'tengo que pensarlo', 'no ahora', 'no me quiero inscribir todavía',
@@ -1754,7 +1782,7 @@ describe('Agent A Brain V1', () => {
       {
         output: [{
           type: 'message',
-          content: [{ type: 'output_text', text: `\`\`\`json\n${JSON.stringify(proposal())}\n\`\`\`` }],
+          content: [{ type: 'output_text', text: `\`\`\`json\n${JSON.stringify(proposal({course_mentions:[{offering_code:'redes-informaticas',role:'paid'}],response:{messages:['Redes Informáticas ofrece el contenido autorizado.']}}))}\n\`\`\`` }],
         }],
         usage: {
           input_tokens: 1_200,
@@ -1802,6 +1830,8 @@ describe('Agent A Brain V1', () => {
     // the resolver validates; original generations cannot claim a repair.
     expect(body.text.format.schema.properties.repair_of).toEqual({ type: 'null' });
     expect(body.text.format.schema.required).toContain('repair_of');
+    expect(body.text.format.schema.required).toContain('course_mentions');
+    expect(result.proposal.course_mentions).toEqual([{offering_code:'redes-informaticas',role:'paid'}]);
     expect(body.instructions).toContain('<canonical_sales_behavior');
     expect(body.input).toContain('JSON');
     expect(body.input).toContain(JSON.stringify(context().turn.batch_messages.map((message) => message.text)));
@@ -2415,7 +2445,7 @@ describe('Agent A Brain V1', () => {
     };
     const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(providerResponse(
       200,
-      responsesSuccessBody(proposal({ repair_of: repairOf })),
+      responsesSuccessBody(proposal({ repair_of: repairOf,course_mentions:[{offering_code:'redes-informaticas',role:'paid'}],response:{messages:['Redes Informáticas mantiene el precio autorizado.']} })),
     ));
     vi.stubGlobal('fetch', fetchMock);
 
@@ -2436,6 +2466,8 @@ describe('Agent A Brain V1', () => {
     const body = JSON.parse(String(fetchMock.mock.calls[0]![1]?.body));
     const wireRepair = body.text.format.schema.properties.repair_of;
     expect(body.text.format.schema.required).toContain('repair_of');
+    expect(body.text.format.schema.required).toContain('course_mentions');
+    expect(result.proposal.course_mentions).toEqual([{offering_code:'redes-informaticas',role:'paid'}]);
     expect(wireRepair).toMatchObject({
       type: 'object', additionalProperties: false,
       required: ['rejection_id', 'attempt'],

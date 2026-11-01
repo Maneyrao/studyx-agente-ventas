@@ -1,3 +1,5 @@
+import { TurnRejectionV1Schema as BackendRejectionSchema } from '@/features/conversation/adapters/turn-rejection-schema';
+import { TurnRejectionV1Schema as BotpressRejectionSchema } from '../../../botpress-agent/src/schemas/turn-rejection';
 import { describe, expect, it } from 'vitest';
 import {
   TURN_REJECTION_CODES_V1,
@@ -21,6 +23,7 @@ describe('TurnRejectionV1', () => {
       'CALL_OFFER_REQUIRED',
       'CHANNEL_PREFERENCE_NOT_SUPPORTED',
       'COURSE_NOT_RESOLVED',
+      'COURSE_ROLE_UNDECLARED',
       'FACT_NOT_AUTHORIZED',
       'FACT_VALUE_MISMATCH',
       'MISSING_INTAKE',
@@ -30,6 +33,17 @@ describe('TurnRejectionV1', () => {
       'REPEATED_AGENT_REPLY',
       'UNSUPPORTED_OPERATIONAL_CLAIM',
     ]);
+  });
+
+  it('transports a literal undeclared-course refusal through both wire schemas', () => {
+    const refusal={schema_version:1,rejection_id:'11111111-1111-4111-8111-111111111111',attempt:1,
+      rejections:[{code:'COURSE_ROLE_UNDECLARED',subject:'course_mentions:undeclared:ingles_1'}],
+      authorized_alternatives:{fact_ids:[],actions:[],missing_information:['course_mentions']}};
+    for(const schema of [BackendRejectionSchema,BotpressRejectionSchema]) {
+      const result=schema.safeParse(refusal);
+      expect(result.success).toBe(true);
+      if(result.success)expect(result.data.rejections).toEqual(refusal.rejections);
+    }
   });
 
   it('attempt es siempre 1: no hay segundo reintento', () => {

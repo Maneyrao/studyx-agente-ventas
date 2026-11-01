@@ -213,7 +213,7 @@ run('atomic direct bonus service', () => {
     const question=await commitAgentDecision({turn_id:f.second_turn_id,trace_id:f.trace_id,supports_multi_outbound:true,
       agent_turn_v2:{schema_version:2,proposal:{...f.proposalWithCallOfferAndFalsePrice,
         move:{schema_version:1,move:mode==='call'?'request_call':'ask_course_information',secondary_moves:[],vetoes:[],confidence:1,course_reference:'ingles_1'},
-        response:{messages:['Podemos revisar el contenido de Inglés 1.'],call_offer:null},proposed_action:{type:'none'},memory_candidates:[]} as never},
+        course_mentions:[{offering_code:'ingles_1',role:'bonus'}],response:{messages:['Podemos revisar el contenido de Inglés 1.'],call_offer:null},proposed_action:{type:'none'},memory_candidates:[]} as never},
       decision:f.placeholderDecision as never,model:f.model as never});
     expect(question.status).toBe('committed');
     expect((await db!`SELECT status FROM promotion_offers WHERE id=${offer.offer_id}`)[0].status).toBe('offered');
@@ -258,7 +258,7 @@ run('atomic direct bonus service', () => {
     const accepted=await commitAgentDecision({turn_id:later.id,trace_id:randomUUID(),supports_multi_outbound:true,
       agent_turn_v2:{schema_version:2,proposal:{...f.proposalWithCallOfferAndFalsePrice,
         move:{schema_version:1,move:'select_course',secondary_moves:[],vetoes:[],confidence:1,course_reference:'ingles_1'},
-        response:{messages:['Entrenamiento Funcional incluye Inglés 1 de regalo.'],call_offer:null},
+        course_mentions:[{offering_code:'ingles_1',role:'bonus'}],response:{messages:['Entrenamiento Funcional incluye Inglés 1 de regalo.'],call_offer:null},
         proposed_action:{type:'accept_promotion',promotion_code:offer.promotion_code,promotion_cycle_id:offer.promotion_cycle_id,
           interest_offering_code:'entrenamiento_funcional',offer_version:1},memory_candidates:[]} as never},
       decision:f.placeholderDecision as never,model:f.model as never});

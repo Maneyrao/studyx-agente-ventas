@@ -1353,6 +1353,7 @@ describe('processInboundTurn hot path', () => {
 
   it.each([
     ['UNSUPPORTED_STATE_ASSERTION', 'state:payment_verified:v1', 'UNSUPPORTED_OPERATIONAL_CLAIM', null],
+    ['COURSE_ROLE_UNDECLARED', 'course_mentions:undeclared:ingles_1', 'COURSE_ROLE_UNDECLARED', null],
     ['COMMERCIAL_TRUTH_VIOLATION', 'payment_plan_not_canonical', 'FACT_VALUE_MISMATCH', null],
     ['COMMERCIAL_TRUTH_VIOLATION', 'forbidden_promise', 'FACT_VALUE_MISMATCH', 'direct_bonus:no_price_objection'],
     ['COMMERCIAL_TRUTH_VIOLATION', 'forbidden_promise', 'FACT_VALUE_MISMATCH', 'direct_bonus:bonus_limit_reached'],

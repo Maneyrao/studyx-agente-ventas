@@ -22,7 +22,7 @@ function proposal(message: string, extra: Partial<AgentATurnProposalV1> = {}): A
     schema_version: 1,
     move: { schema_version: 1, move: 'ask_payment_options', secondary_moves: [], vetoes: [], confidence: 1 },
     response: { messages: [message] }, proposed_action: { type: 'none' },
-    profile_updates: [], profile_requests: [], used_fact_ids: [],
+    profile_updates: [], profile_requests: [], course_mentions: [], used_fact_ids: [],
     used_memory_ids: [], memory_candidates: [], repair_of: null, ...extra,
   };
 }

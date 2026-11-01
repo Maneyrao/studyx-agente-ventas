@@ -20,6 +20,8 @@
 - Ante el rechazo de una bonificación (`ladder_step_pending` o `forbidden_promise`), la reparación no menciona ni sugiere bonificaciones, tampoco genéricas, condicionales o en preguntas. Se conservan en el estado los cursos ya entregados; no se borran ni se vuelven a ofrecer. Se realiza el escalón pendiente identificado por hechos, sin inventar pasos completos ni deducirlos sólo del contador (prompt :106-123 y :129; spec :71).
 - La price_objection que habilita la bonificación debe estar registrada en un turno anterior.
 - Temarios y texto del certificado llegan al modelo como datos autorizados (fact_id).
+- El contrato técnico `course_mentions` declara cada curso nombrado con su rol real (`paid`, `bonus`, `paid_complement` o `alternative`). El backend detecta nombres canónicos exactos del catálogo y rechaza cursos distintos del pago vigente sin declaración con `COURSE_ROLE_UNDECLARED`. No infiere roles de frases ni cambia la redacción. La compatibilidad con propuestas antiguas usa una lista vacía, sin omitir la validación.
+- Declarar `bonus` no autoriza un regalo: exige `offer_course_bonus` autorizado en el mismo turno por las 9 reglas y la regla 10, o pertenecer al paquete vigente ya entregado. Las reservas pendientes y los paquetes cancelados/expirados no cuentan. Se conservan recapitulaciones y complementos pagos legítimos (prompt :122-124 y :131-133; spec :36-38 y :59-73; decisión explícita del usuario del 2026-11-01).
 
 ## Responsabilidades
 - El Agente A interpreta, elige la estrategia y redacta.

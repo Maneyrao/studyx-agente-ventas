@@ -74,6 +74,7 @@ function proposal(overrides: Partial<AgentATurnProposalV1> = {}): AgentATurnProp
     move: { schema_version: 1, move: 'unknown', secondary_moves: [], vetoes: [], confidence: 0.96 },
     response: { messages: ['Contame qué querés aprender y te ayudo a encontrar una opción.'] },
     proposed_action: { type: 'none' },
+    course_mentions: [],
     used_fact_ids: [], used_memory_ids: [], memory_candidates: [], repair_of: null,
     ...overrides,
   };
@@ -152,7 +153,7 @@ describe('prepareAgentTurnV2', () => {
       turn:{id:ids.turn,workspace_id:ids.workspace,conversation_id:ids.conversation,contact_id:ids.contact},
       workspace_slug:'studyx',business_context:business,
       catalog_index:{...index,offerings:[...index.offerings,{code:'excel_integral',display_name:'Excel Integral',aliases:[],academy:'Tecnología'}]},
-      proposal:proposal({proposed_action:action,response:{messages:['Te regalo Excel Integral.']}}),
+      proposal:proposal({proposed_action:action,course_mentions:[{offering_code:'excel_integral',role:'bonus'}],response:{messages:['Te regalo Excel Integral.']}}),
       course_bonus_capability:{status:'checkin_available',enabled:true,max_bonus_courses:2,may_offer_bonus:true,
         ladder:deriveCourseBonusLadderV1({observed_price_objection_count:3,call_invitation_status:'offered',call_offer_count:1,may_offer_call:true}),
         may_schedule_checkin:false,may_request_review:false,may_accept_offer:false,may_send_promoted_payment:false,
@@ -697,6 +698,7 @@ describe('prepareAgentTurnV2', () => {
           course_reference: 'redes', confidence: 0.98,
         },
         response: { messages: ['Redes Informáticas tiene 16 clases y se cursa online.'] },
+        course_mentions: [{ offering_code: 'redes_informaticas', role: 'alternative' }],
         used_fact_ids: [
           'offering:redes_informaticas:name:v1',
           'offering:redes_informaticas:duration:v1',
@@ -882,6 +884,7 @@ describe('prepareAgentTurnV2', () => {
       proposal: proposal({
         move: { schema_version: 1, move: 'browse_catalog', secondary_moves: [], vetoes: [], confidence: 0.9 },
         response: { messages: ['Inglés 1 tiene 12 clases y trabaja lectura; Inglés 2 ayuda a entablar una conversación.'] },
+        course_mentions: [{ offering_code: 'ingles_1', role: 'alternative' }, { offering_code: 'ingles_2', role: 'alternative' }],
         used_fact_ids: [
           'offering:ingles_1:name:v1',
           'offering:ingles_1:description:v1',
@@ -1501,6 +1504,7 @@ describe('prepareAgentTurnV2', () => {
           confidence: 1,
         },
         response: { messages: ['Redes Informáticas puede servirte para empezar por una base concreta.'] },
+        course_mentions: [{ offering_code: 'redes_informaticas', role: 'alternative' }],
         memory_candidates: [{
           type: 'objection',
           key: 'price_objection',
@@ -1547,11 +1551,14 @@ describe('prepareAgentTurnV2', () => {
           may_accept_offer: status === 'offer_available',
           may_send_promoted_payment: status === 'accepted',
           promotion_code: 'ingles_1_mas_ingles_2',
+          package_status: status === 'offer_available' ? 'offered' : 'accepted',
+          delivered_bonus_offerings: [{ code: 'ingles_2', display_name: 'Inglés 2', position: 1 }],
           interest_offering_code: 'ingles_1',
           bonus_offerings: [{ code: 'ingles_2', display_name: 'Inglés 2', position: 1 }],
         },
         proposal: proposal({
           response: { messages: ['Inglés 2 puede complementar tu formación.'] },
+        course_mentions: [{ offering_code: 'ingles_2', role: 'bonus' }],
         }),
       }, { state_store: store(state()), now: () => Date.parse(index.as_of) });
 
@@ -1649,6 +1656,7 @@ describe('prepareAgentTurnV2', () => {
           schema_version: 1, move: 'browse_catalog', secondary_moves: [], vetoes: [], confidence: 1,
         },
         response: { messages: ['Podemos ver Redes Informáticas o Excel Integral según lo que quieras lograr.'] },
+        course_mentions: [{ offering_code: 'redes_informaticas', role: 'alternative' }, { offering_code: 'excel_integral', role: 'alternative' }],
       }),
     }, {
       state_store: store(state({
@@ -1690,6 +1698,7 @@ describe('prepareAgentTurnV2', () => {
       current_customer_messages: ['Sigue fuera de mi presupuesto'],
       proposal: proposal({
         response: { messages: [response] },
+        course_mentions: [{ offering_code: 'redes_informaticas', role: 'alternative' }],
         memory_candidates: [{
           type: 'objection', key: 'price_objection', value: 'El precio sigue fuera de su presupuesto',
           source_quote: 'Sigue fuera de mi presupuesto', confidence: 1,

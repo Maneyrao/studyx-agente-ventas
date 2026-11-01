@@ -38,7 +38,7 @@ const proposal: AgentATurnProposalV1 = {
     call_offer: 'Si te sirve, lo vemos en una llamada breve.',
   },
   proposed_action: { type: 'none' },
-  used_fact_ids: ['offering:marketing_digital:name:v1'],
+  course_mentions: [], used_fact_ids: ['offering:marketing_digital:name:v1'],
   used_memory_ids: [],
   memory_candidates: [],
   repair_of: null,

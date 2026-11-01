@@ -1,3 +1,4 @@
+import { COURSE_MENTION_ROLES_V1 } from '../../../../src/shared/conversation/course-mentions';
 import type { ModelObservation } from '../observability/turn-evidence';
 import { courseLogisticsInV1 } from '../../../../src/shared/conversation/course-logistics';
 import { inspectCourseBonusClaimsV1 } from '../../../../src/shared/conversation/course-bonus-claim';
@@ -98,6 +99,7 @@ const DEEPSEEK_PROPOSAL_ROOT_FIELDS = new Set([
   'confidence',
   'response',
   'proposed_action',
+  'course_mentions',
   'confirmed_phone',
   'profile_updates',
   'profile_requests',
@@ -635,6 +637,14 @@ function proposalJsonSchema(context: AgentAContextV1, conversationOnly = false):
       },
     }),
     proposed_action: proposedAction,
+    course_mentions: {
+      type: 'array', maxItems: 50,
+      description: 'Declare the actual role of every named canonical course, including names in response.call_offer. Empty only when no course is named. Metadata never authorizes a course, gift or action; do not relabel a free benefit as an alternative or separate paid purchase.',
+      items: closedObject({
+        offering_code: { type: 'string', description: 'Exact canonical offering code from the authorized catalog.' },
+        role: { type: 'string', enum: [...COURSE_MENTION_ROLES_V1] },
+      }),
+    },
     confirmed_phone: { ...nullableString, description: "The complete phone the customer confirms from the immediately previous assistant turn; otherwise null. Never infer a country code without customer confirmation." },
     profile_updates: {
       type: 'array', maxItems: CONTACT_PROFILE_MAX_UPDATES_V1,

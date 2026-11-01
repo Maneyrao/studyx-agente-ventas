@@ -32,7 +32,7 @@ function proposal(
     response: { messages: [text], call_offer: null },
     proposed_action: action,
     profile_updates: [], profile_requests: [],
-    used_fact_ids: [], used_memory_ids: [], memory_candidates: [], repair_of: null,
+    course_mentions: [], used_fact_ids: [], used_memory_ids: [], memory_candidates: [], repair_of: null,
   };
 }
 

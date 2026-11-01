@@ -320,7 +320,7 @@ function requiresModelCorrection(
   if (reason.code === 'PLAN_NOT_SELECTED') {
     return proposal.proposed_action.type === 'none'
   }
-  return ['UNSUPPORTED_OPERATIONAL_CLAIM',
+  return ['UNSUPPORTED_OPERATIONAL_CLAIM', 'COURSE_ROLE_UNDECLARED',
     'REPEATED_AGENT_REPLY', 'CALL_OFFER_MESSAGE_BOUNDARY_INVALID'].includes(reason.code)
 }
 

@@ -21,6 +21,7 @@ export const TurnRejectionCodeSchema = z.enum([
   'UNSUPPORTED_OPERATIONAL_CLAIM',
   'PLAN_NOT_SELECTED',
   'COURSE_NOT_RESOLVED',
+  'COURSE_ROLE_UNDECLARED',
   'REPEATED_AGENT_REPLY',
 ])
 

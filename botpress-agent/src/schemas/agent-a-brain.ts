@@ -1,3 +1,4 @@
+import { COURSE_MENTION_ROLES_V1 } from '../../../src/shared/conversation/course-mentions';
 import { z } from '@botpress/runtime';
 import { ConversationMoveV1Schema } from './conversation-pipeline';
 import { TurnRejectionV1Schema } from './turn-rejection';
@@ -415,6 +416,10 @@ export const AgentATurnProposalV1Schema = z.object({
     call_offer: CallOfferMessageSchema.nullable().optional(),
   }).strict(),
   proposed_action: AgentAProposedActionSchema,
+  // Legacy wire omission stays empty; roles are never inferred from prose or actions.
+  course_mentions: z.array(z.object({
+    offering_code: IdentifierSchema, role: z.enum(COURSE_MENTION_ROLES_V1),
+  }).strict()).max(50).default([]),
   confirmed_phone: z.string().regex(/^\+[1-9]\d{7,14}$/u).nullable().optional(),
   profile_updates: z.array(ContactProfileUpdateV1Schema).max(CONTACT_PROFILE_MAX_UPDATES_V1).optional(),
   profile_requests: z.array(ContactProfileRequestV1Schema).max(CONTACT_PROFILE_MAX_REQUESTS_V1).optional(),

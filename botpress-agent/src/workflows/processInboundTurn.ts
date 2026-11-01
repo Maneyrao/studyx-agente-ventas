@@ -464,6 +464,11 @@ function backendCommitTurnRejectionV1(input: {
         case 'CALL_OFFER_MESSAGE_BOUNDARY_INVALID': push('CALL_OFFER_MESSAGE_BOUNDARY_INVALID', 'call_offer'); break
         case 'CALL_OFFER_REQUIRED': push('CALL_OFFER_REQUIRED', 'call_offer'); break
         case 'COURSE_NOT_RESOLVED': push('COURSE_NOT_RESOLVED', 'course_reference'); break
+        case 'COURSE_ROLE_UNDECLARED': {
+          if (detailedSubjects.length === 0) push('COURSE_ROLE_UNDECLARED', 'course_mentions')
+          else detailedSubjects.forEach(subject => push('COURSE_ROLE_UNDECLARED', subject))
+          break
+        }
         case 'CHANNEL_PREFERENCE_NOT_SUPPORTED': push('CHANNEL_PREFERENCE_NOT_SUPPORTED', 'channel_preference'); break
       }
     }
@@ -2048,6 +2053,7 @@ export const processInboundTurn = new Workflow({
           move: { schema_version: 1, move: 'request_call', secondary_moves: [], vetoes: [], confidence: 1 },
           response: { messages: ['Recibí tu solicitud de llamada.'], call_offer: null },
           proposed_action: { type: 'request_call_now', reason: 'direct_request' },
+          course_mentions: [],
           used_fact_ids: [], used_memory_ids: [], memory_candidates: [],
           profile_updates: [], profile_requests: [], repair_of: null,
         },
@@ -2758,7 +2764,7 @@ export const processInboundTurn = new Workflow({
                 schema_version: 1,
                 move: { schema_version: 1, move: 'decline_call', secondary_moves: [], vetoes: [], confidence: 1 },
                 response: { messages: ['Seguimos por acá.'], call_offer: null },
-                proposed_action: { type: 'none' }, used_fact_ids: [], used_memory_ids: [], memory_candidates: [],
+                proposed_action: { type: 'none' }, course_mentions: [], used_fact_ids: [], used_memory_ids: [], memory_candidates: [],
                 profile_updates: [], profile_requests: [], repair_of: null,
               },
             }

@@ -1,3 +1,4 @@
+import { seedPriorModelNegotiation } from '../helpers/record-model-negotiation-facts';
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, expect, it, vi } from 'vitest';
 import type { AgentAContextV1, AgentATurnProposalV1 } from '../../botpress-agent/src/schemas/agent-a-brain';
@@ -63,8 +64,17 @@ function proposal(text: string, action: AgentATurnProposalV1['proposed_action'] 
   fields: Partial<AgentATurnProposalV1> = {}): AgentATurnProposalV1 {
   return {schema_version:1,move:{schema_version:1,move:'ask_course_information',secondary_moves:[],vetoes:[],
     course_reference:'entrenamiento_funcional',confidence:1},response:{messages:[text],call_offer:null},
-    proposed_action:action,profile_updates:[],profile_requests:[],used_fact_ids:[],used_memory_ids:[],
+    proposed_action:action,profile_updates:[],profile_requests:[],course_mentions: [], used_fact_ids:[],used_memory_ids:[],
     memory_candidates:[],repair_of:null,...fields};
+}
+
+async function seedRemainingPriorNegotiation(turnId: string) {
+  const [identity] = await db!<Array<{ workspace_id: string; contact_id: string; conversation_id: string }>>`
+    SELECT s.workspace_id, s.contact_id, s.conversation_id FROM conversation_sales_context_states_v1 s
+    JOIN messages m ON m.conversation_id=s.conversation_id AND m.contact_id=s.contact_id WHERE m.id=${turnId}::uuid`;
+  expect(identity).toBeTruthy();
+  // The scenario already committed one model-owned objection in its prior turn.
+  await seedPriorModelNegotiation(db!, identity, 2);
 }
 
 function scenario() {
@@ -119,16 +129,17 @@ run('answers direct price and real inability, offers an early call, honors decli
 run('repairs pending delivery acceptance, rejects a pre-confirmation reply, and cancels on course change',async()=>{
   const s=scenario();
   await s.send('Me interesa Entrenamiento Funcional.',proposal('¿Qué te gustaría aprender para tus rutinas?'));
-  await s.send('Me parece caro Entrenamiento Funcional.',proposal('¿Qué necesitás evaluar del contenido?',{type:'none'},
+  const objection = await s.send('Me parece caro Entrenamiento Funcional.',proposal('¿Qué necesitás evaluar del contenido?',{type:'none'},
     {memory_candidates:[{type:'objection',key:'price_objection',value:'precio alto',source_quote:'Me parece caro',confidence:1}]}));
+  await seedRemainingPriorNegotiation(objection.turnId!);
   const offered=await s.send('El monto sigue frenándome',proposal('Te regalo Inglés 1 al comprar Entrenamiento Funcional.',
-    {type:'offer_course_bonus',interest_offering_code:'entrenamiento_funcional',bonus_offering_code:'ingles_1'}));
+    {type:'offer_course_bonus',interest_offering_code:'entrenamiento_funcional',bonus_offering_code:'ingles_1'},{course_mentions:[{offering_code:'ingles_1',role:'bonus'}]}));
   const [offer]=await db!`SELECT o.*,p.promotion_code FROM promotion_offers o JOIN promotions p ON p.id=o.promotion_id WHERE o.conversation_id=${offered.conversation_id}`;
   const early=await s.send('Sí, acepto',context=>context.turn_rejection
     ? proposal('Estoy verificando el paquete para poder avanzar. ¿Querés repasar el contenido mientras tanto?')
     : proposal('Entrenamiento Funcional incluye Inglés 1 de regalo.',{type:'accept_promotion',interest_offering_code:'entrenamiento_funcional',
       promotion_code:offer.promotion_code,promotion_cycle_id:offer.promotion_cycle_id,offer_version:1},
-      {move:{schema_version:1,move:'unknown',secondary_moves:[],vetoes:[],confidence:1}}));
+      {course_mentions:[{offering_code:'ingles_1',role:'bonus'}],move:{schema_version:1,move:'unknown',secondary_moves:[],vetoes:[],confidence:1}}));
   expect(early.authorizedMessages.join(' ')).toContain('verificando');
   expect((await db!`SELECT status FROM promotion_offers WHERE id=${offer.id}`)[0].status).toBe('offered');
   await recordDeliveryReport({outbound_id:offered.outboundId!,trace_id:offered.traceId,status:'delivered',
@@ -168,9 +179,10 @@ run.each(['complete','partial'] as const)('carries interest-only discovery, 1→
     {memory_candidates:[{type:'objection',key:'price_objection',value:'precio alto',source_quote:'Me parece caro',confidence:1}]}));
   expect(await db!`SELECT id FROM promotion_offers WHERE conversation_id=(SELECT conversation_id FROM messages WHERE id=${first.turnId}::uuid)`)
     .toHaveLength(0);
+  await seedRemainingPriorNegotiation(first.turnId!);
   await projectAgentAMemories({limit:100},{db:db!});
   const result = await send('El monto me sigue frenando',proposal('Te regalo Inglés 1 al comprar Entrenamiento Funcional.',
-    {type:'offer_course_bonus',interest_offering_code:'entrenamiento_funcional',bonus_offering_code:'ingles_1'}));
+    {type:'offer_course_bonus',interest_offering_code:'entrenamiento_funcional',bonus_offering_code:'ingles_1'},{course_mentions:[{offering_code:'ingles_1',role:'bonus'}]}));
   expect(result.authorizedMessages.join(' ')).toContain('Inglés 1');
   expect((await db!`SELECT selected_offering_code FROM conversation_sales_context_states_v1
     WHERE conversation_id=(SELECT conversation_id FROM messages WHERE id=${result.turnId}::uuid)`)[0])
@@ -190,15 +202,15 @@ run.each(['complete','partial'] as const)('carries interest-only discovery, 1→
   }
   await confirm(result);
   const second=await send('Sigo dudando por el monto',proposal('Te regalo Inglés 1 y Excel Integral al comprar Entrenamiento Funcional.',
-    {type:'offer_course_bonus',interest_offering_code:'entrenamiento_funcional',bonus_offering_code:'excel_integral'}));
+    {type:'offer_course_bonus',interest_offering_code:'entrenamiento_funcional',bonus_offering_code:'excel_integral'},{course_mentions:[{offering_code:'ingles_1',role:'bonus'},{offering_code:'excel_integral',role:'bonus'}]}));
   await confirm(second);
   const third=await send('¿Podés sumar otra formación?',proposal('Te regalo Inglés 1, Excel Integral e Inglés 2 al comprar Entrenamiento Funcional.',
-    {type:'offer_course_bonus',interest_offering_code:'entrenamiento_funcional',bonus_offering_code:'ingles_2'}));
+    {type:'offer_course_bonus',interest_offering_code:'entrenamiento_funcional',bonus_offering_code:'ingles_2'},{course_mentions:[{offering_code:'ingles_1',role:'bonus'},{offering_code:'excel_integral',role:'bonus'},{offering_code:'ingles_2',role:'bonus'}]}));
   await confirm(third);
   const fourth=await send('¿Y Redes también?',context=>context.turn_rejection
-    ? proposal('El paquete incluye Inglés 1, Excel Integral e Inglés 2 de regalo. ¿Te sirve para avanzar con tu objetivo?')
+    ? proposal('El paquete incluye Inglés 1, Excel Integral e Inglés 2 de regalo. ¿Te sirve para avanzar con tu objetivo?',{type:'none'},{course_mentions:[{offering_code:'ingles_1',role:'bonus'},{offering_code:'excel_integral',role:'bonus'},{offering_code:'ingles_2',role:'bonus'}]})
     : proposal('Te regalo Redes Informáticas al comprar Entrenamiento Funcional.',
-      {type:'offer_course_bonus',interest_offering_code:'entrenamiento_funcional',bonus_offering_code:'redes_informaticas'}));
+      {type:'offer_course_bonus',interest_offering_code:'entrenamiento_funcional',bonus_offering_code:'redes_informaticas'},{course_mentions:[{offering_code:'redes_informaticas',role:'bonus'}]}));
   expect(fourth.authorizedMessages.join(' ')).not.toContain('Redes Informáticas');
   expect(fourth.authorizedMessages.join(' ')).toContain('Te sirve');
   const [offer]=await db!`SELECT o.*,p.promotion_code FROM promotion_offers o JOIN promotions p ON p.id=o.promotion_id
@@ -211,7 +223,7 @@ run.each(['complete','partial'] as const)('carries interest-only discovery, 1→
   await send('Sí, acepto ese paquete',()=>proposal('Entrenamiento Funcional incluye Inglés 1, Excel Integral e Inglés 2 de regalo.',
     {type:'accept_promotion',interest_offering_code:'entrenamiento_funcional',promotion_code:offer.promotion_code,
       promotion_cycle_id:offer.promotion_cycle_id,offer_version:3},
-    {move:{schema_version:1,move:'unknown',secondary_moves:[],vetoes:[],confidence:1}}));
+    {course_mentions:[{offering_code:'ingles_1',role:'bonus'},{offering_code:'excel_integral',role:'bonus'},{offering_code:'ingles_2',role:'bonus'}],move:{schema_version:1,move:'unknown',secondary_moves:[],vetoes:[],confidence:1}}));
   expect((await db!`SELECT status,offer_version,bonus_snapshot_sealed_at FROM promotion_offers WHERE id=${offer.id}`)[0])
     .toMatchObject({status:'accepted',offer_version:3,bonus_snapshot_sealed_at:expect.any(Date)});
   const move=(kind:AgentATurnProposalV1['move']['move'],extra:Partial<AgentATurnProposalV1['move']>={})=>
@@ -315,12 +327,16 @@ run.each(['complete','partial'] as const)('carries interest-only discovery, 1→
   }
   const verified=await db!<Array<{offering_code:string;enrollment_status:string;position:number}>>`
     SELECT offering_code,enrollment_status,position FROM central_bonus_enrollment_items WHERE payment_id=${payment.id} ORDER BY position`;
-  expect(verified).toHaveLength(3);
+  // Authority: prompt-agente-a-studyx-v2.md:228-230; spec-backend-bonificacion.md:89-90.
+  // Post-sale copy reflects the actual enrollments without prescribing prose.
+  expect(verified).toEqual([
+    { offering_code: 'ingles_1', enrollment_status: 'active', position: 1 },
+    { offering_code: 'excel_integral', enrollment_status: 'active', position: 2 },
+    { offering_code: 'ingles_2', enrollment_status: 'active', position: 3 },
+  ]);
   expect(await loadLatestPaymentVerificationV1({workspace_slug:'studyx',contact_id:offer.contact_id},db!))
     .toMatchObject({status:'paid',fulfillment:{enrollment_status:'active'}});
   const message=await sendPersistedPostSale('access_ready');
   for(const name of ['Entrenamiento Funcional','Inglés 1','Excel Integral','Inglés 2']) expect(message).toContain(name);
   expect(message).not.toMatch(/invoice|factura|comprobante/iu);
-  expect(message).toContain('CURSO PRINCIPAL: Entrenamiento Funcional');
-  expect(message.match(/CURSO BONIFICADO:/gu)).toHaveLength(3);
 },180_000);

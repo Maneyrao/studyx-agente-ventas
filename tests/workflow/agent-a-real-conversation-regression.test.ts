@@ -109,7 +109,7 @@ function proposal(move: AgentATurnProposalV1['move']['move'], text: string,
     move: { schema_version: 1, move, secondary_moves: [], vetoes: [], confidence: 1 },
     response: { messages: [text] }, proposed_action: { type: 'none' },
     profile_updates: [], profile_requests: [],
-    used_fact_ids: [], used_memory_ids: [], memory_candidates: [], repair_of: null, ...extra };
+    course_mentions: [], used_fact_ids: [], used_memory_ids: [], memory_candidates: [], repair_of: null, ...extra };
 }
 function conversation() {
   const id = { conversationId: `real-regression-${randomUUID()}`, userId: randomUUID(),

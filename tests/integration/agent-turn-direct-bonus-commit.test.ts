@@ -31,7 +31,7 @@ run('direct decision atomic repair', () => {
     await sql`INSERT INTO selected_memories(contact_id,conversation_id,source_message_id,status,memory_type,memory_key,value_normalized,source_quote,confidence,dedupe_hash)
       VALUES (${f.contact_id},${f.conversation_id},${prior.id},'active','objection','price_objection','caro','Me parece caro',1,${'b'.repeat(64)})`;
     const proposal = {...f.proposalWithCallOfferAndFalsePrice,response:{messages:['El total es USD 360.','Entrenamiento Funcional e Inglés 1 quedan incluidos en el paquete.'],call_offer:'Si querés, puedo llamarte para asesorarte.'},
-      proposed_action:{type:'offer_course_bonus',interest_offering_code:'entrenamiento_funcional',bonus_offering_code:'ingles_1'}};
+      course_mentions:[{offering_code:'ingles_1',role:'bonus'}],proposed_action:{type:'offer_course_bonus',interest_offering_code:'entrenamiento_funcional',bonus_offering_code:'ingles_1'}};
     const input = {turn_id:f.turn_id,trace_id:f.trace_id,supports_multi_outbound:true,
       authorized_offering_code:'entrenamiento_funcional',authorized_payment_plan:null,
       agent_turn_v2:{schema_version:2 as const,proposal:proposal as never},decision:f.placeholderDecision as never,model:f.model as never};
@@ -109,12 +109,12 @@ run('direct decision atomic repair', () => {
         external_user_id:`agent-turn-fixture-user-${f.trace_id}`,phone_e164:contact.phone,trace_id:randomUUID(),identity_owner:'agent_a_v1',
         message:{type:'text',text:'Acepto',occurred_at:new Date().toISOString(),reply_to_external_message_id:null}});
       vi.stubEnv('COURSE_BONUS_FLOW_MODE','review');vi.stubEnv('CENTRAL_CARGA_BONUS_ENABLED','false');
-      const commit=(action:Record<string,unknown>,content:string)=>commitAgentDecision({...input,turn_id:later.turn_id,agent_turn_v2:{schema_version:2,
-        proposal:{...proposal,proposed_action:action,response:{messages:[content],call_offer:null}} as never}});
-      await expect(commit({type:'none'},'Excel Integral queda incluido.')).rejects.toMatchObject({subjects:expect.arrayContaining(['forbidden_promise'])});
+      const commit=(action:Record<string,unknown>,content:string,course_mentions:Array<{offering_code:string;role:'bonus'}>=[])=>commitAgentDecision({...input,turn_id:later.turn_id,agent_turn_v2:{schema_version:2,
+        proposal:{...proposal,course_mentions,proposed_action:action,response:{messages:[content],call_offer:null}} as never}});
+      await expect(commit({type:'none'},'Excel Integral queda incluido.',[{offering_code:'excel_integral',role:'bonus'}])).rejects.toMatchObject({subjects:expect.arrayContaining(['forbidden_promise'])});
       await expect(commit({type:'accept_promotion',interest_offering_code:'entrenamiento_funcional',promotion_code:delivered.promotion_code,
         promotion_cycle_id:delivered.promotion_cycle_id,offer_version:2},'Seguimos con el paquete.')).rejects.toThrow();
-      expect((await commit({type:'none'},'Inglés 1 sigue incluido.')).status).toBe('committed');
+      expect((await commit({type:'none'},'Inglés 1 sigue incluido.',[{offering_code:'ingles_1',role:'bonus'}])).status).toBe('committed');
       expect((await sql`SELECT status,offer_version FROM promotion_offers WHERE promotion_cycle_id=${delivered.promotion_cycle_id ?? null}`)[0])
         .toMatchObject({status:'offered',offer_version:2});
       return;
@@ -124,7 +124,7 @@ run('direct decision atomic repair', () => {
     vi.stubEnv('COURSE_BONUS_MAX_COURSES','1');
     await expect(commitAgentDecision({...input,turn_id:f.second_turn_id,agent_turn_v2:{schema_version:2,
       proposal:{...proposal,proposed_action:{type:'offer_course_bonus',interest_offering_code:'entrenamiento_funcional',bonus_offering_code:'excel_integral'},
-        response:{messages:['Inglés 1 sigue incluido. Excel Integral queda bonificado.'],call_offer:null}} as never}}))
+        course_mentions:[{offering_code:'ingles_1',role:'bonus'},{offering_code:'excel_integral',role:'bonus'}],response:{messages:['Inglés 1 sigue incluido. Excel Integral queda bonificado.'],call_offer:null}} as never}}))
       .rejects.toMatchObject({subjects:['forbidden_promise','direct_bonus:bonus_limit_reached']});
     expect((await sql`SELECT count(*)::int n FROM messages WHERE in_reply_to=${f.second_turn_id}`)[0].n).toBe(0);
     expect((await sql`SELECT count(*)::int n FROM promotion_offer_bonus_offerings WHERE offered_outbound_message_id=${id}`)[0].n).toBe(1);
@@ -161,7 +161,7 @@ run('direct decision atomic repair', () => {
     });
     const proposal = {...f.proposalWithCallOfferAndFalsePrice,
       response:{messages:['El total es USD 360. Inglés 1 queda bonificado.'],call_offer:null},
-      proposed_action:{type:'offer_course_bonus',interest_offering_code:'entrenamiento_funcional',bonus_offering_code:'ingles_1'}};
+      course_mentions:[{offering_code:'ingles_1',role:'bonus'}],proposed_action:{type:'offer_course_bonus',interest_offering_code:'entrenamiento_funcional',bonus_offering_code:'ingles_1'}};
     const input = {turn_id:f.turn_id,trace_id:f.trace_id,supports_multi_outbound:true,
       authorized_offering_code:'entrenamiento_funcional',authorized_payment_plan:null,
       agent_turn_v2:{schema_version:2 as const,proposal:proposal as never},
@@ -175,7 +175,7 @@ run('direct decision atomic repair', () => {
     expect((await sql`SELECT count(*)::int n FROM agent_decisions WHERE turn_id=${f.turn_id}`)[0].n).toBe(0);
     expect((await sql`SELECT count(*)::int n FROM messages WHERE in_reply_to=${f.turn_id}`)[0].n).toBe(0);
     const repaired = await commitAgentDecision({...input,agent_turn_v2:{schema_version:2,proposal:{...proposal,
-      proposed_action:{type:'none'},response:{messages:['El total es USD 360. Podemos ver qué contenido te sirve para tu objetivo.'],call_offer:null}} as never}});
+      course_mentions:[],proposed_action:{type:'none'},response:{messages:['El total es USD 360. Podemos ver qué contenido te sirve para tu objetivo.'],call_offer:null}} as never}});
     expect(repaired.status).toBe('committed');
     expect(repaired.outbounds).toHaveLength(1);
     expect((await sql`SELECT d.state,e.state AS outbox_state FROM outbound_deliveries d

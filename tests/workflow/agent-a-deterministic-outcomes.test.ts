@@ -70,7 +70,7 @@ function proposal(
     response: { messages: [message] }, proposed_action: action,
     profile_updates: [], profile_requests: requestedFields.length
       ? [{ message_index: 0, fields: requestedFields, purpose: 'payment', mode: 'collect' }] : [],
-    used_fact_ids: [], used_memory_ids: [], memory_candidates: [], repair_of: null,
+    course_mentions: [], used_fact_ids: [], used_memory_ids: [], memory_candidates: [], repair_of: null,
   };
 }
 

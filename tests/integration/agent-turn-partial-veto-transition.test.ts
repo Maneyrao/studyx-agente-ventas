@@ -319,6 +319,7 @@ run('commercial-truth boundary', () => {
               schema_version: 1, move: 'ask_course_information', secondary_moves: [],
               vetoes: [], confidence: 1,
             },
+            course_mentions: [{ offering_code: 'ingles_1', role: 'alternative' }],
             response: {
               messages: ['Inglés 1 te da una base concreta para empezar.'],
               call_offer: null,

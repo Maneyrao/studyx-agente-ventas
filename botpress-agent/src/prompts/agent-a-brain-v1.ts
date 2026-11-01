@@ -5,7 +5,7 @@ import {
 } from './studyx-agent-a-canonical.generated';
 import { resolveCanonicalPromptIdentityV1 } from './agent-a-identity';
 
-export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v147' as const;
+export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v148' as const;
 
 /**
  * Runtime contract only. The sales behavior lives in the canonical prompt so
@@ -25,6 +25,15 @@ Map postponement expressions such as "lo voy a pensar", "tengo que pensarlo", "n
 Use move=decline_purchase only for an explicit definitive refusal to purchase. Postponement is not a definitive refusal.
 The canonical behavior governs how to respond; this mapping only names the move in AgentATurnProposalV1.
 </move_semantics>`;
+
+/** Technical declaration of model-interpreted meaning; authority prompt:123,129,236. */
+const COURSE_MENTIONS_CONTRACT = `<course_mentions_contract>
+Always return course_mentions as an array of {offering_code, role}. Declare every canonical course named in response.messages or response.call_offer, once per offering_code. Use [] only when none is named. Do not invent catalog identities.
+Choose the actual role you express: paid is the real primary paid-course selection; bonus is an included/free addition; paid_complement is an additional separate paid purchase; alternative is a different option, not an included benefit.
+paid must match the actual validated selection or projection, never an arbitrary course chosen by metadata. paid_complement must remain a separate paid purchase, never an included or free benefit.
+A bonus needs either the matching newly authorized offer_course_bonus action or the current paid package's capabilities.course_bonus.delivered_bonus_offerings. A reservation in bonus_offerings is not a delivered bonus. Cancelled packages and courses belonging to another paid selection do not authorize a recap.
+Declaring a role does not authorize facts, purchase selection or effects. Never relabel an included benefit as paid_complement or alternative to avoid validation. The backend independently checks current catalog, selection, capabilities and confirmed delivery.
+</course_mentions_contract>`;
 
 /** Evidence serialization, not a second conversation policy. */
 const INTERNAL_CONTACT_PROFILE_CONTRACT = `Profile metadata is silent evidence, never customer-facing wording.
@@ -60,6 +69,9 @@ export function hasDirectBonusContextV1(context: AgentAContextV1): boolean {
 function mandatoryRepairDirectiveV1(context: AgentAContextV1): string {
   const rejection = context.turn_rejection;
   if (!rejection) return '';
+  const repairsUndeclaredCourse = rejection.rejections.some(reason => reason.code === 'COURSE_ROLE_UNDECLARED');
+  const undeclaredCourseRepair = repairsUndeclaredCourse
+    ? 'For COURSE_ROLE_UNDECLARED, declare the actual role of the named course in course_mentions or remove the unsupported claim. Rebuild declarations against the final response. Never relabel a bonus as paid, paid_complement or alternative to pass validation; a declaration is not authorization. Do not expose the role validator to the customer.' : '';
   const repairsCallOfferBoundary = rejection.rejections.some(reason => (
     reason.code === 'CALL_OFFER_MESSAGE_BOUNDARY_INVALID'
   ));
@@ -95,6 +107,8 @@ Preserve an already resolved course reference. Use only authorized duration, syl
       || reason.subject === 'direct_bonus:ladder_step_pending'
       || reason.subject === 'ladder_step_pending'
   ));
+  const courseDeclarationRepair = repairsBonusPromise || repairsUndeclaredCourse
+    ? 'Rebuild course_mentions for the final rewritten response; remove declarations of courses no longer mentioned, without inventing authorization.' : '';
   // Fresh transactional feedback supersedes the pre-generation snapshot.
   const ladderFeedback = [
     ...rejection.rejections.map(reason => reason.subject),
@@ -119,6 +133,8 @@ Do not claim a discount, promotion, gift, approval, income or result. Preserve t
 Use repair_of with this rejection_id and attempt 1. This is the only rewrite.
 Correct only the facts or effects identified in turn_rejection, preserving the customer's intent.
 ${callRepair}
+${undeclaredCourseRepair}
+${courseDeclarationRepair}
 ${offeringRepair}
 ${courseLogisticsRepair}
 ${forbiddenPromiseRepair}
@@ -224,6 +240,7 @@ export function buildAgentABrainInstructionsV1(context: AgentAContextV1): string
 
   return `${EXECUTION_PREAMBLE}
 ${MOVE_SEMANTICS}
+${COURSE_MENTIONS_CONTRACT}
 
 <canonical_sales_behavior version="${STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION}">
 ${canonicalPrompt}</canonical_sales_behavior>

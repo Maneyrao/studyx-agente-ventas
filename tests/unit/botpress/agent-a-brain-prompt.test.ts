@@ -78,6 +78,41 @@ function courseBonusEffectContract(instructions: string): string {
 }
 
 describe('Agent A Brain prompt', () => {
+  it('requires model-declared course roles while keeping metadata separate from authorization',()=>{
+    const instructions=buildAgentABrainInstructionsV1(context());
+    const contract=instructions.split('<course_mentions_contract>')[1]?.split('</course_mentions_contract>')[0]??'';
+    for(const role of ['paid','bonus','paid_complement','alternative'])expect(contract).toContain(role);
+    expect(contract).toContain('offering_code');expect(contract).toContain('course_mentions');
+    expect(contract).toContain('does not authorize');
+    expect(contract).toContain('delivered_bonus_offerings');
+    expect(contract).toContain('not a delivered bonus');
+  });
+  it('repairs an undeclared course role through a truthful declaration or removal, never an inferred gift',()=>{
+    const current=context();
+    current.turn_rejection={schema_version:1,rejection_id:'00000000-0000-4000-8000-000000000001',attempt:1,
+      rejections:[{code:'COURSE_ROLE_UNDECLARED',subject:'course_mentions:undeclared:extra'}],
+      authorized_alternatives:{fact_ids:[],actions:['none'],missing_information:[]}};
+    const repair=buildAgentABrainInstructionsV1(current).split('<mandatory_repair')[1]?.split('</mandatory_repair>')[0]??'';
+    expect(repair).toContain('COURSE_ROLE_UNDECLARED');
+    expect(repair).toContain('declare the actual role');
+    expect(repair).toContain('remove the unsupported claim');
+    expect(repair).toContain('Never relabel');
+    expect(repair).toContain('not authorization');
+    expect(repair).toContain('Rebuild course_mentions for the final rewritten response');
+  });
+
+  it('keeps the no-hint bonus repair when an undeclared role also lacks an authorized effect',()=>{
+    const current=context();
+    current.turn_rejection={schema_version:1,rejection_id:'00000000-0000-4000-8000-000000000001',attempt:1,
+      rejections:[{code:'COURSE_ROLE_UNDECLARED',subject:'course_mentions:undeclared:extra'},
+        {code:'FACT_VALUE_MISMATCH',subject:'forbidden_promise'}],
+      authorized_alternatives:{fact_ids:[],actions:['none'],missing_information:[]}};
+    const repair=buildAgentABrainInstructionsV1(current).split('<mandatory_repair')[1]?.split('</mandatory_repair>')[0]??'';
+    expect(repair).toContain('declare the actual role');
+    expect(repair).toContain('generic, conditional, questioned or hinted gift');
+    expect(repair).toContain('Use proposed_action=none for bonus effects');
+    expect(repair).toContain('remove declarations of courses no longer mentioned');
+  });
   it('maps postponement to defer_payment and reserves decline_purchase for definitive refusal', () => {
     // Authority: docs/authority/prompt-agente-a-studyx-v2.md:81 leaves the door
     // open for “Lo voy a pensar”; user authorized the technical move mapping.
@@ -357,7 +392,7 @@ describe('Agent A Brain prompt', () => {
     expect(JSON.parse(encoded)).toEqual(current);
     expect(instructions).not.toContain('<current_turn_guidance>');
     expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v101');
-    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v147');
+    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v148');
   });
 
   it('keeps commercial strategy exclusively in the canonical prompt', () => {

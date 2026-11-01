@@ -18,7 +18,7 @@ function reply(text: string) {
   return { proposal: { schema_version: 1 as const,
     move: { schema_version: 1 as const, move: 'unknown' as const, secondary_moves: [], vetoes: [], confidence: 1 },
     response: { messages: [text], call_offer: null }, proposed_action: { type: 'none' as const },
-    used_fact_ids: [], used_memory_ids: [], memory_candidates: [], repair_of: null },
+    course_mentions: [], used_fact_ids: [], used_memory_ids: [], memory_candidates: [], repair_of: null },
     provider: 'deepseek-direct' as const, model: 'deepseek-v4-flash', latency_ms: 1, attempt_count: 1 as const };
 }
 

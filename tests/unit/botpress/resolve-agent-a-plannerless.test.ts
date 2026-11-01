@@ -1,3 +1,4 @@
+import * as brainValidation from '../../../botpress-agent/src/lib/conversation/agent-a-brain';
 import { describe, expect, it, vi } from 'vitest';
 import { resolveAgentAPlannerlessProposalV2 } from '../../../botpress-agent/src/lib/conversation/resolve-agent-a-plannerless';
 import { AgentABrainError, parseAgentATurnProposalV1 } from '../../../botpress-agent/src/lib/conversation/agent-a-brain';
@@ -78,6 +79,25 @@ function generated(value: AgentATurnProposalV1) {
 }
 
 describe('resolveAgentAPlannerlessProposalV2', () => {
+  it('repairs undeclared course roles even when semantic guidance is advisory', async () => {
+    const rejectionId='00000000-0000-4000-8000-000000000091';
+    const initial=generated(proposal({course_mentions:[]}));
+    const validator=vi.spyOn(brainValidation,'validateAgentATurnProposalV1')
+      .mockImplementation(({proposal: value}) => value.response.messages[0] === initial.proposal.response.messages[0]
+        ? {schema_version:1,rejection_id:rejectionId,attempt:1,
+          rejections:[{code:'COURSE_ROLE_UNDECLARED',subject:'course_mentions:undeclared:ingles_1'}],
+          authorized_alternatives:{fact_ids:[],actions:[],missing_information:['course_mentions']}}
+        : null);
+    try {
+      const repaired=generated(proposal({course_mentions:[],response:{messages:['La formación tiene 38 clases verificadas.'],call_offer:null},
+        repair_of:{rejection_id:rejectionId,attempt:1}}));
+      const result=await resolveAgentAPlannerlessProposalV2({initial,context:context(),repair_enabled:true,
+        semantic_rejections:'advisory',rejection_id:rejectionId,repair:async()=>repaired});
+      expect(result.effective.proposal.response.messages).toEqual(['La formación tiene 38 clases verificadas.']);
+      expect(result.evidence).toMatchObject({repair_attempted:true,repaired:true,proposal_generation_calls:2});
+    } finally { validator.mockRestore(); }
+  });
+
   it.each([
     'Me parece caro, hay que pagar todo junto para empezar?',
     'No me alcanza el presupuesto',

@@ -1,0 +1,71 @@
+{
+  "schema_version": 1,
+  "updated_at": "2026-11-01T19:10:54.166168+00:00",
+  "unit": {
+    "passed": 4940,
+    "skipped": 17,
+    "todo": 7
+  },
+  "integration": {
+    "passed": 954,
+    "skipped": 1,
+    "database": "fresh disposable PostgreSQL17 127.0.0.1:55434; full migrations+seed+offline knowledge fixture"
+  },
+  "evaluator_offline": {
+    "passed": 98,
+    "skipped": 3,
+    "note": "Golden live-suite excluded; this count does not include model acceptance."
+  },
+  "typecheck": true,
+  "lint": true,
+  "next_build": {
+    "passed": true,
+    "database": "local55434; original build attempt used invalid preexisting DATABASE_URL placeholder; rerun local succeeded"
+  },
+  "adk_check": {
+    "valid": true,
+    "errors": [],
+    "warnings": []
+  },
+  "adk_build": {
+    "passed": false,
+    "preexisting": true,
+    "note": "Current fails unknown installed interfaces; frozen 961c991 also fails missing interface modules. No dependency/configuration changes in this task. No deploy authorized."
+  },
+  "authority_documents_edited": false,
+  "production_model_changed": false,
+  "new_semantic_regex": false,
+  "architect_code_review": "approved after preserving current historical inactive identities without reset/switch resurrection",
+  "paid_model_calls_so_far": 0,
+  "deployment": false,
+  "resolved_fixture_incidents": [
+    {
+      "kind": "legacy_missing_course_role_metadata",
+      "result": "8 failures in 3 integration files before explicit factual declarations; full suite after correction 954 passed. Negative effect criteria unchanged."
+    },
+    {
+      "kind": "post_sale_fixed_uppercase_prose",
+      "result": "Offline complete fulfillment correctly delivered all four courses but failed uppercase prose assertion. Replaced with exact ordered active bonus rows; retains verified paid primary, all canonical names and no invoice claims. Authority prompt:228-230, spec:89-90. Architect approved. Affected scenario rerun passed; other 3 passed unchanged."
+    }
+  ],
+  "offline_workflow": {
+    "passed_cases": 4,
+    "original_run": {
+      "passed": 3,
+      "failed": 1
+    },
+    "affected_complete_fulfillment_rerun": {
+      "passed": 1,
+      "skipped_unaffected": 3
+    },
+    "external_model_calls": 0,
+    "database": "disposable 127.0.0.1:55433; signed localhost HTTP backend3218; scripted provider boundary only",
+    "scope": "direct-bonus negotiation, duplicate inbound, delivery repair, cancellation, checkout, payment verification, principal+3bonus fulfillment and partial fulfillment"
+  },
+  "architect_replay_review": "approved; independent 17/17 replay, original input hashes unchanged",
+  "evidence_secret_scan": {
+    "staged_files_before_final_workflow_update": 61,
+    "secret_values_checked": 2,
+    "matches": 0
+  }
+}

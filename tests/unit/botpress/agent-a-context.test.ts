@@ -434,7 +434,7 @@ describe('buildAgentAContextV1', () => {
     const paymentProposal: AgentATurnProposalV1 = {
       schema_version: 1, move, response: { messages: ['Perfecto, te comparto el enlace seguro.'], call_offer: null },
       proposed_action: { type: 'send_payment_link', offering_code: 'redes-informaticas', payment_plan: 'one_time' },
-      used_fact_ids: [], used_memory_ids: [], memory_candidates: [], repair_of: null,
+      course_mentions: [], used_fact_ids: [], used_memory_ids: [], memory_candidates: [], repair_of: null,
     };
     const backend = authorizeAgentTurnV2({
       proposal: paymentProposal,
