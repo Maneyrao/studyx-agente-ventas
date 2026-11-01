@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "evaluated_sha": "10d7b3e5e7b5cdce3c88901cfedd3493346ecce2",
-  "generated_at": "2026-11-01T04:19:01.568066+00:00",
+  "generated_at": "2026-11-01T04:19:44.103075+00:00",
   "files": [
     {
       "path": "docs/reports/2026-11-01-backend-negotiation-ladder.md",
@@ -25,13 +25,13 @@
     },
     {
       "path": "docs/reports/evidence/2026-11-01-backend-negotiation-ladder/checks.json",
-      "sha256": "3b878851873d2ad4efc04f36cffbbfde461201fb2415c938c6ce4829b1da87a7",
-      "bytes": 2626
+      "sha256": "30171b3636e6b3fe90f20287c5cd17cd9a52ce1316cf380046f113c2c66d0c58",
+      "bytes": 2762
     },
     {
       "path": "docs/reports/evidence/2026-11-01-backend-negotiation-ladder/por-turno.csv",
-      "sha256": "8c33d31a873545a904ebb694574047a6f922890a2951ecf6820b91f3f65fcddf",
-      "bytes": 189727
+      "sha256": "788d39a0ad50c4b0af0db33d072db4eba0940d3c81ae4695ab9ab280232903a0",
+      "bytes": 189682
     },
     {
       "path": "docs/reports/evidence/2026-11-01-backend-negotiation-ladder/por-turno.md",
@@ -365,8 +365,8 @@
     },
     {
       "path": "docs/reports/evidence/2026-11-01-backend-negotiation-ladder/summarize.py",
-      "sha256": "bbc845c487db289d47753358bb4071d175d80defeb82099d35b6e86307a1bf36",
-      "bytes": 15899
+      "sha256": "7bb67f223f7b1c671e52ced4fbdc3f8bfc85f4c08bb124a8b302aa873786315f",
+      "bytes": 15919
     }
   ]
 }

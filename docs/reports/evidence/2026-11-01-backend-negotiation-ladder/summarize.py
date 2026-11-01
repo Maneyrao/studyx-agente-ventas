@@ -190,7 +190,7 @@ def main():
         rows,run=load(stem);all_rows.extend(rows);runs.append(run)
     output=Path(args.outputdir);output.mkdir(parents=True,exist_ok=True)
     with (output/'por-turno.csv').open('w',newline='') as f:
-        writer=csv.DictWriter(f,fieldnames=list(all_rows[0]));writer.writeheader();writer.writerows(all_rows)
+        writer=csv.DictWriter(f,fieldnames=list(all_rows[0]),lineterminator='\n');writer.writeheader();writer.writerows(all_rows)
     cols=['run','case','turn','status','layer','drafts','delivered','rejection_subjects','agent_latency_ms','postgeneration_text_status','promise_without_action','template_or_truncation']
     def esc(v):return str(v).replace('&','&amp;').replace('<','&lt;').replace('|','\\|').replace('\n','<br>')
     lines=['# Evidencia por turno','', 'Estados y capas copiados de la evaluación parcial; no se recalifica. Costos estimados con tarifas archivadas Flash offpeak. Ausencia de indicador estructural no demuestra ausencia de promesas, plantillas o recortes. Comparar borrador y entrega no atribuye por sí solo la causa.','', '| '+' | '.join(cols)+' |','|'+'|'.join(['---']*len(cols))+'|']
