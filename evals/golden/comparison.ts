@@ -8,8 +8,9 @@ export function absoluteGoldenAcceptanceV1(cases: readonly ComparableCaseV1[]) {
   const critical = required.map(code => ({ code,
     approved: cases.some(item => item.case_id.startsWith(`${code}_`) && item.approved === true),
   }));
-  return { approved: cases.length === 16 && turns.length === 48 && passed >= 41 && critical.every(item => item.approved),
-    passed_turns: passed, expected_turns: 48, minimum_passed_turns: 41, critical_cases: critical };
+  const unknownInvariantCases=cases.filter(item=>item.negotiation_evaluation&&['INDETERMINATE','NOT_EXERCISED'].includes(item.negotiation_evaluation.status)).map(item=>item.case_id);
+  return { approved: unknownInvariantCases.length===0 && cases.length === 16 && turns.length === 48 && passed >= 41 && critical.every(item => item.approved),
+    passed_turns: passed, expected_turns: 48, minimum_passed_turns: 41, critical_cases: critical, unknown_invariant_cases:unknownInvariantCases };
 }
 
 interface ComparableTurnV1 {
@@ -18,6 +19,7 @@ interface ComparableTurnV1 {
 }
 
 interface ComparableCaseV1 {
+  readonly negotiation_evaluation?: {readonly status:string};
   readonly case_id: string;
   readonly approved: ApprovalV1;
   readonly turns: readonly ComparableTurnV1[];

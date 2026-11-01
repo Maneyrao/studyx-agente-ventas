@@ -357,7 +357,7 @@ describe('Agent A Brain prompt', () => {
     expect(JSON.parse(encoded)).toEqual(current);
     expect(instructions).not.toContain('<current_turn_guidance>');
     expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v101');
-    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v146');
+    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v147');
   });
 
   it('keeps commercial strategy exclusively in the canonical prompt', () => {
@@ -432,6 +432,85 @@ describe('Agent A Brain prompt', () => {
     expect(instructions).not.toContain('Choose the wording and structure yourself');
   });
 
+  it.each([0,2])('forbids every bonus mention while repairing ladder_step_pending with %s recorded objections', count=>{
+    const current=context();
+    current.capabilities.course_bonus={enabled:true,max_bonus_courses:3,may_offer_bonus:false,status:'not_eligible',
+      may_schedule_checkin:false,may_request_review:false,may_accept_offer:false,may_send_promoted_payment:false,
+      promotion_code:null,interest_offering_code:'redes-informaticas',bonus_offerings:[],ladder:{eligible:false,
+        observed_price_objection_count:count,required_price_objection_count:3,call_invitation_status:'not_offered',
+        call_offer_count:0,may_offer_call:true,missing_steps:['recorded_price_objections','call_invitation']}};
+    current.turn_rejection={schema_version:1,rejection_id:'r',attempt:1,
+      rejections:[{code:'FACT_VALUE_MISMATCH',subject:'direct_bonus:ladder_step_pending'}],
+      authorized_alternatives:{fact_ids:[],actions:['none'],missing_information:[]}};
+    const repair=buildAgentABrainInstructionsV1(current).split('<mandatory_repair')[1]!.split('</mandatory_repair>')[0]!;
+    expect(repair).toContain('Do not mention, suggest or imply any bonus');
+    expect(repair).toContain('including a generic, conditional, questioned or hinted gift');
+    expect(repair).toContain('Use proposed_action=none for bonus effects');
+    expect(repair).toContain('Counts alone do not prove value, installments or isolation were completed');
+    expect(repair).toContain('never invent objections or completed steps');
+    expect(repair).toContain('The identified missing step is call_invitation');
+    expect(repair).toContain('with a concrete reason under canonical_sales_behavior');
+    expect(repair).toContain('Only offer the call after history confirms the earlier steps are complete');
+    expect(repair).toContain('otherwise continue the earliest unfinished step');
+  });
+  it.each([false,true])('offers the identified pending call only with current permission=%s', mayOffer=>{
+    const current=context();current.capabilities.may_offer_call=mayOffer;
+    current.turn_rejection={schema_version:1,rejection_id:'r',attempt:1,rejections:[
+      {code:'FACT_VALUE_MISMATCH',subject:'direct_bonus:ladder_step_pending'},
+      {code:'FACT_VALUE_MISMATCH',subject:'bonus_ladder:missing:call_invitation'}],
+      authorized_alternatives:{fact_ids:[],actions:['none'],missing_information:[]}};
+    const repair=buildAgentABrainInstructionsV1(current).split('<mandatory_repair')[1]!.split('</mandatory_repair>')[0]!;
+    expect(repair.includes('The identified missing step is call_invitation')).toBe(mayOffer);
+  });
+  it.each(['subject','missing_information'] as const)('uses fresh ladder metadata from %s rather than a stale pending-call snapshot',transport=>{
+    const current=context();current.capabilities.course_bonus={enabled:true,max_bonus_courses:3,may_offer_bonus:false,
+      status:'not_eligible',may_schedule_checkin:false,may_request_review:false,may_accept_offer:false,may_send_promoted_payment:false,
+      promotion_code:null,interest_offering_code:'redes-informaticas',bonus_offerings:[],ladder:{eligible:false,
+        observed_price_objection_count:2,required_price_objection_count:3,call_invitation_status:'not_offered',
+        call_offer_count:0,may_offer_call:true,missing_steps:['call_invitation','recorded_price_objections']}};
+    const feedback=['bonus_ladder:call_invitation:offered','bonus_ladder:missing:recorded_price_objections'];
+    current.turn_rejection={schema_version:1,rejection_id:'r',attempt:1,
+      rejections:[{code:'FACT_VALUE_MISMATCH',subject:'direct_bonus:ladder_step_pending'},
+        ...(transport==='subject'?feedback.map(subject=>({code:'FACT_VALUE_MISMATCH' as const,subject})):[])],
+      authorized_alternatives:{fact_ids:[],actions:['none'],missing_information:transport==='missing_information'?feedback:[]}};
+    const repair=buildAgentABrainInstructionsV1(current).split('<mandatory_repair')[1]!.split('</mandatory_repair>')[0]!;
+    expect(repair).not.toContain('The identified missing step is call_invitation');
+  });
+  it('reads a pending call from fresh missing_information without a subject or capability snapshot',()=>{
+    const current=context();current.turn_rejection={schema_version:1,rejection_id:'r',attempt:1,
+      rejections:[{code:'FACT_VALUE_MISMATCH',subject:'direct_bonus:ladder_step_pending'}],
+      authorized_alternatives:{fact_ids:[],actions:['none'],missing_information:['bonus_ladder:missing:call_invitation']}};
+    const repair=buildAgentABrainInstructionsV1(current).split('<mandatory_repair')[1]!.split('</mandatory_repair>')[0]!;
+    expect(repair).toContain('The identified missing step is call_invitation');
+  });
+  it('does not infer a missing sales step from a rejection without identified steps',()=>{
+    const current=context();current.turn_rejection={schema_version:1,rejection_id:'r',attempt:1,
+      rejections:[{code:'FACT_VALUE_MISMATCH',subject:'forbidden_promise'}],
+      authorized_alternatives:{fact_ids:[],actions:['none'],missing_information:[]}};
+    const repair=buildAgentABrainInstructionsV1(current).split('<mandatory_repair')[1]!.split('</mandatory_repair>')[0]!;
+    expect(repair).toContain('When no pending step is identified');
+    expect(repair).toContain('verified value or installment facts');
+    expect(repair).not.toContain('The identified missing step is call_invitation');
+  });
+  it.each(['review_available','offer_available','accepted'] as const)('does not revive legacy bonus promises during %s repair',status=>{
+    const current=context();current.capabilities.course_bonus={status,may_schedule_checkin:false,
+      may_request_review:status==='review_available',may_accept_offer:status==='offer_available',may_send_promoted_payment:status==='accepted',
+      promotion_code:'legacy',interest_offering_code:'redes-informaticas',bonus_offerings:[{code:'ingles_1',display_name:'Inglés 1',position:1}]};
+    current.turn_rejection={schema_version:1,rejection_id:'r',attempt:1,rejections:[{code:'FACT_VALUE_MISMATCH',subject:'forbidden_promise'}],
+      authorized_alternatives:{fact_ids:[],actions:['none'],missing_information:[]}};
+    const repair=buildAgentABrainInstructionsV1(current).split('<mandatory_repair')[1]!.split('</mandatory_repair>')[0]!;
+    expect(repair).toContain('Do not mention, suggest or imply any bonus');
+    expect(repair).toContain('Use proposed_action=none for bonus effects');
+    expect(repair).not.toContain('You may say naturally that you will check an alternative');
+    expect(repair).not.toContain('Mention only the exact promotion_code');
+  });
+  it('does not add the bonus repair contract for an unrelated factual rejection',()=>{
+    const current=context();current.turn_rejection={schema_version:1,rejection_id:'r',attempt:1,
+      rejections:[{code:'FACT_VALUE_MISMATCH',subject:'course_logistics'}],
+      authorized_alternatives:{fact_ids:[],actions:['none'],missing_information:[]}};
+    const repair=buildAgentABrainInstructionsV1(current).split('<mandatory_repair')[1]!.split('</mandatory_repair>')[0]!;
+    expect(repair).not.toContain('Do not mention, suggest or imply any bonus');
+  });
   it('repairs a forbidden commercial promise without repeating an unavailable promotion', () => {
     const current = context();
     current.turn.batch_messages = [{ id: 'current-1', text: 'No hay una promo que me puedas ofrecer?' }];
@@ -458,7 +537,7 @@ describe('Agent A Brain prompt', () => {
       .split('</mandatory_repair>')[0]!;
 
     expect(repair).toContain('remove the unauthorized promise completely');
-    expect(repair).toContain('do not claim a discount, promotion, gift, approval, income or result');
+    expect(repair).toContain('Do not claim a discount, promotion, gift, approval, income or result');
     expect(repair).toContain('Preserve the rest of the response only when its facts and effects remain authorized');
     expect(repair).not.toContain('contextual value');
   });

@@ -17,7 +17,7 @@
 ## Adaptaciones técnicas permitidas (no cambian comportamiento)
 - Traducir la spec al contrato real AgentATurnProposalV1 (no existe move "negotiate"; proposed_action es un objeto).
 - accept_promotion lleva la identidad completa del contexto (promotion_code, interest_offering_code, promotion_cycle_id, offer_version).
-- Ante el rechazo de una bonificación se quita sólo el curso nuevo; se conservan los ya entregados.
+- Ante el rechazo de una bonificación (`ladder_step_pending` o `forbidden_promise`), la reparación no menciona ni sugiere bonificaciones, tampoco genéricas, condicionales o en preguntas. Se conservan en el estado los cursos ya entregados; no se borran ni se vuelven a ofrecer. Se realiza el escalón pendiente identificado por hechos, sin inventar pasos completos ni deducirlos sólo del contador (prompt :106-123 y :129; spec :71).
 - La price_objection que habilita la bonificación debe estar registrada en un turno anterior.
 - Temarios y texto del certificado llegan al modelo como datos autorizados (fact_id).
 

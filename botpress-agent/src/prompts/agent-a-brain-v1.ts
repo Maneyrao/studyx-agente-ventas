@@ -5,7 +5,7 @@ import {
 } from './studyx-agent-a-canonical.generated';
 import { resolveCanonicalPromptIdentityV1 } from './agent-a-identity';
 
-export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v146' as const;
+export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v147' as const;
 
 /**
  * Runtime contract only. The sales behavior lives in the canonical prompt so
@@ -87,25 +87,33 @@ Online alone does not authorize self-paced study or access from any location.
 Omit those logistics claims unless their exact values appear in authorized facts.
 Answer the customer from the remaining verified course facts; do not replace the rejected detail with another inferred logistical promise.
 Preserve an already resolved course reference. Use only authorized duration, syllabus or modality facts for that course; do not request a course identity that catalog or recent delivered context already resolves.` : '';
-  const repairsForbiddenPromise = rejection.rejections.some(reason => (
-    reason.code === 'FACT_VALUE_MISMATCH' && reason.subject === 'forbidden_promise'
+  // Technical repair boundary: authority prompt:123,129 and bonus spec:71.
+  // Existing obligations stay in durable state, but this rejected rewrite must
+  // not advertise any bonus, including a delivered one, or anticipate a gift.
+  const repairsBonusPromise = rejection.rejections.some(reason => (
+    reason.subject === 'forbidden_promise'
+      || reason.subject === 'direct_bonus:ladder_step_pending'
+      || reason.subject === 'ladder_step_pending'
   ));
-  const courseBonus = context.capabilities.course_bonus;
-  const selectedBonusDirective = courseBonus?.bonus_selection_mode === 'any_active_course'
-    ? ' If using this action, put exactly one active code from catalog.available_offerings in proposed_action.bonus_offering_code; it must differ from the paid course. Do not claim that course was approved before the review returns an offer.'
+  // Fresh transactional feedback supersedes the pre-generation snapshot.
+  const ladderFeedback = [
+    ...rejection.rejections.map(reason => reason.subject),
+    ...rejection.authorized_alternatives.missing_information,
+  ].filter(subject => subject.startsWith('bonus_ladder:'));
+  const pendingCall = ladderFeedback.length > 0
+    ? ladderFeedback.includes('bonus_ladder:missing:call_invitation')
+    : context.capabilities.course_bonus?.ladder?.missing_steps.includes('call_invitation') === true;
+  const callStepRepair = pendingCall && context.capabilities.may_offer_call
+    ? 'The identified missing step is call_invitation and it is currently authorized. Only offer the call after history confirms the earlier steps are complete; otherwise continue the earliest unfinished step under canonical_sales_behavior without inferring it from the objection count. Missing call evidence and insufficient objection count do not instruct an immediate invitation. When the call is the next step, offer it with a concrete reason under canonical_sales_behavior, in response.call_offer. This invitation does not mean a call was placed.'
     : '';
-  const forbiddenPromiseRepair = repairsForbiddenPromise ? hasDirectBonusContextV1(context)
-    ? `
-For forbidden_promise, remove only the unauthorized addition identified by direct_bonus. Preserve otherwise authorized content and the previously delivered courses in capabilities.course_bonus.delivered_bonus_offerings. Do not repeat the rejected new bonus or claim its effect succeeded. A pending undelivered course is not a confirmed effect.`
-    : courseBonus?.may_request_review
-    ? `
-For forbidden_promise, remove the unauthorized promise completely. You may say naturally that you will check an alternative only if you use proposed_action=request_promotion_review in this rewrite.${selectedBonusDirective} Do not name or imply a specific gift yet, and do not claim approval, a discount, income or results.`
-    : courseBonus?.status === 'offer_available' || courseBonus?.status === 'accepted'
-      ? `
-For forbidden_promise, remove the unauthorized promise completely. Mention only the exact promotion_code and bonus_offerings exposed by capabilities.course_bonus; do not add a discount, another gift, approval, income or results.`
-      : `
-For forbidden_promise, remove the unauthorized promise completely. No promotion effect is authorized: do not claim a discount, promotion, gift, approval, income or result. Preserve the rest of the response only when its facts and effects remain authorized.`
-    : '';
+  const forbiddenPromiseRepair = repairsBonusPromise ? `
+For ladder_step_pending or forbidden_promise, remove the unauthorized promise completely.
+Do not mention, suggest or imply any bonus in this rewrite, including a generic, conditional, questioned or hinted gift; do not anticipate a gift or invent a quantity. This repair boundary takes precedence over the course_bonus effect contract, including previously delivered bonuses.
+Use proposed_action=none for bonus effects; do not offer, accept or request review of a bonus in this rewrite. Keep delivered_bonus_offerings and existing obligations in durable state without mentioning them; never delete them. Pending additions remain pending and unconfirmed.
+Continue naturally with the paid course and the factually identified pending step. Counts alone do not prove value, installments or isolation were completed: reread history and follow canonical_sales_behavior in order; never invent objections or completed steps.
+${callStepRepair}
+When no pending step is identified, use only verified value or installment facts and a natural closing question; do not invent which step is missing.
+Do not claim a discount, promotion, gift, approval, income or result. Preserve the rest of the response only when its facts and effects remain authorized.` : '';
   return `
 <mandatory_repair attempt="1" rejection_id="${rejection.rejection_id}">
 Use repair_of with this rejection_id and attempt 1. This is the only rewrite.

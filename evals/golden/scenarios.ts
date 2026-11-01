@@ -52,6 +52,7 @@ export type HardRuleV1 =
   | { readonly type: 'selected_course_equals'; readonly value: string };
 
 export interface GoldenTurnV1 {
+  readonly negotiationProbe?: 'fourth_bonus_request' | 'paid_course_change';
   readonly id: string;
   readonly customer: string;
   readonly must: readonly string[];
@@ -68,6 +69,7 @@ export interface GoldenTurnV1 {
 }
 
 export interface GoldenCaseV1 {
+  readonly evaluationMode?: 'negotiation_invariants';
   readonly id: string;
   readonly title: string;
   readonly setup?: 'none' | 'fulfilled_bonus_package';
@@ -219,6 +221,7 @@ export const GOLDEN_CASES: readonly GoldenCaseV1[] = [
   },
   {
     id: '06_repeated_price_bonus_ladder',
+    evaluationMode: 'negotiation_invariants',
     title: 'Escalera completa de precio y máximo tres bonificaciones afines',
     turns: [
       {
@@ -289,7 +292,7 @@ export const GOLDEN_CASES: readonly GoldenCaseV1[] = [
         hard: [{ type: 'action_bonus_in', values: ['fotografia_celulares_tiendas_online', 'diseno_photoshop', 'instagram_emprendedores', 'estrategias_emprender', 'especialista_ventas'] }, { type: 'response_mentions_all_promotions' }],
       },
       {
-        id: 'never_fourth', customer: 'Y otro curso más también?',
+        id: 'never_fourth', negotiationProbe:'fourth_bonus_request', customer: 'Y otro curso más también?',
         must: ['Mantener el paquete acumulado de tres y cerrar o dejar la puerta abierta con calidez.'],
         mustNot: ['Nunca ofrecer ni prometer un cuarto curso bonificado.'],
         authority: [ref(PROMPT, 121, 127, 'Máximo de cursos bonificados'), ref(BONUS, 64, 67, 'bonus_limit_reached')],
@@ -494,6 +497,7 @@ export const GOLDEN_CASES: readonly GoldenCaseV1[] = [
   },
   {
     id: '14_course_change_cancels_promotion',
+    evaluationMode: 'negotiation_invariants',
     title: 'Cambiar curso pago cancela la promoción y reinicia el paquete',
     turns: [
       {
@@ -544,7 +548,7 @@ export const GOLDEN_CASES: readonly GoldenCaseV1[] = [
         hard: [{ type: 'course_bonus_preconditions' }],
       },
       {
-        id: 'change', customer: 'Cambio de idea: quiero que Marketing Digital sea el curso que pago.',
+        id: 'change', negotiationProbe:'paid_course_change', customer: 'Cambio de idea: quiero que Marketing Digital sea el curso que pago.',
         must: ['Cambiar el curso pago a Marketing Digital y empezar cualquier promoción desde cero.'],
         mustNot: ['No arrastrar bonificados de Fotografía Profesional ni mantener vigente la promoción anterior.'],
         authority: [ref(BONUS, 39, 40, 'promoción anterior pasa a `cancelled`'), ref(PROMPT, 228, 228, 'Si cambia de curso, suelta el anterior')],

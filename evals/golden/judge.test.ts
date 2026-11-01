@@ -35,7 +35,7 @@ function observation(overrides: Partial<GoldenTurnObservationV1> = {}): GoldenTu
 
 describe('golden judge recorded JSON boundary', () => {
   const base = GOLDEN_CASES[5]!;
-  const scenario = { ...base, turns: base.turns.filter((turn) => ['bonus_1', 'bonus_2'].includes(turn.id)) };
+  const scenario = { ...base, evaluationMode:undefined, turns: base.turns.filter((turn) => ['bonus_1', 'bonus_2'].includes(turn.id)) };
   const observations = [extraClosingBraceFixture.previous_observation, extraClosingBraceFixture.observation];
   const mockRecordedResponse = (output: string) => vi.spyOn(globalThis, 'fetch').mockImplementation(async (_url, init) => {
     const request = JSON.parse(String(init?.body)) as {
@@ -334,7 +334,7 @@ describe('golden hard judge', () => {
 
   it('marks only the affected turn as evaluator error when the judge cannot cite a real authority line', async () => {
     const base = GOLDEN_CASES[0]!;
-    const scenario = { ...base, turns: [base.turns[0]!] };
+    const scenario = { ...base, evaluationMode:undefined, turns: [base.turns[0]!] };
     const invalidVerdict = {
       verdict: {
         turn_id: 'greeting', approved: false,
@@ -365,7 +365,7 @@ describe('golden hard judge', () => {
 
   it('accepts a semantic failure only with a real line number and its exact authority text', async () => {
     const base = GOLDEN_CASES[0]!;
-    const scenario = { ...base, turns: [base.turns[0]!] };
+    const scenario = { ...base, evaluationMode:undefined, turns: [base.turns[0]!] };
     const authorityReference = 'AGENTS.md:11 | - Identidad: "Soy Emma, asesora de Studyx". Emma es fijo (AGENT_A_ADVISOR_NAME=Emma). Nunca "administrativa".';
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
       output_text: JSON.stringify({ verdict: {
@@ -395,7 +395,7 @@ describe('golden hard judge', () => {
 
   it('rejects a must-not accusation unless it cites concrete evidence present in the selected source', async () => {
     const base = GOLDEN_CASES[0]!;
-    const scenario = { ...base, turns: [base.turns[0]!] };
+    const scenario = { ...base, evaluationMode:undefined, turns: [base.turns[0]!] };
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => new Response(JSON.stringify({
       output_text: JSON.stringify({ verdict: {
         turn_id: 'greeting', approved: false,
@@ -425,7 +425,7 @@ describe('golden hard judge', () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch');
 
     await expect(judgeCaseSemantically({
-      apiKey: 'test', model: 'deepseek-test', scenario: { ...base, turns: [turn] },
+      apiKey: 'test', model: 'deepseek-test', scenario: { ...base, evaluationMode:undefined, turns: [turn] },
       observations: [observation({ response: '' })],
     })).resolves.toEqual([{
       turn_id: 'request', approved: true, failures: [], evaluation_error: null,
@@ -436,7 +436,7 @@ describe('golden hard judge', () => {
 
   it('recovers from transient judge transport failures without misclassifying the turn', async () => {
     const base = GOLDEN_CASES[0]!;
-    const scenario = { ...base, turns: [base.turns[0]!] };
+    const scenario = { ...base, evaluationMode:undefined, turns: [base.turns[0]!] };
     const fetchMock = vi.spyOn(globalThis, 'fetch')
       .mockRejectedValueOnce(new TypeError('fetch failed'))
       .mockResolvedValue(new Response(JSON.stringify({
@@ -458,7 +458,7 @@ describe('golden hard judge', () => {
   it('gives the semantic judge the effective backend action and recorded preconditions', async () => {
     const base = GOLDEN_CASES[9]!;
     const turn = base.turns.find((candidate) => candidate.id === 'available')!;
-    const scenario = { ...base, turns: [turn] };
+    const scenario = { ...base, evaluationMode:undefined, turns: [turn] };
     let judgeInput: Record<string, unknown> | null = null;
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (_url, init) => {
       const request = JSON.parse(String(init?.body)) as { input: string };
@@ -489,7 +489,7 @@ describe('golden hard judge', () => {
   it('does not let may_offer_call invalidate a requested call that the backend actually authorized', async () => {
     const base = GOLDEN_CASES[9]!;
     const turn = base.turns.find((candidate) => candidate.id === 'available')!;
-    const scenario = { ...base, turns: [turn] };
+    const scenario = { ...base, evaluationMode:undefined, turns: [turn] };
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
       output_text: JSON.stringify({ verdict: {
         turn_id: 'available', approved: false, failures: [{
@@ -517,7 +517,7 @@ describe('golden hard judge', () => {
   it('does not attribute a canonical backend-appended payment URL to Agent A', async () => {
     const base = GOLDEN_CASES[10]!;
     const turn = base.turns.find((candidate) => candidate.id === 'plan_and_link')!;
-    const scenario = { ...base, turns: [turn] };
+    const scenario = { ...base, evaluationMode:undefined, turns: [turn] };
     const canonicalLink = 'https://buy.stripe.com/test_studyx_golden_12m';
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
       output_text: JSON.stringify({ verdict: {
@@ -551,7 +551,7 @@ describe('golden hard judge', () => {
   it('presents the single-course rule atomically so an equipment question is not judged as a menu', async () => {
     const base = GOLDEN_CASES[2]!;
     const turn = base.turns.find((candidate) => candidate.id === 'recommend')!;
-    const scenario = { ...base, turns: [turn] };
+    const scenario = { ...base, evaluationMode:undefined, turns: [turn] };
     let judgeRequest: { instructions?: string; input?: string } = {};
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (_url, init) => {
       judgeRequest = JSON.parse(String(init?.body)) as { instructions?: string; input?: string };
@@ -591,7 +591,7 @@ describe('golden hard judge', () => {
   it('distinguishes a price objection recorded now from one that already existed before the turn', async () => {
     const base = GOLDEN_CASES[13]!;
     const turn = base.turns.find((candidate) => candidate.id === 'price_1')!;
-    const scenario = { ...base, turns: [turn] };
+    const scenario = { ...base, evaluationMode:undefined, turns: [turn] };
     let judgeRequest: { instructions?: string; input?: string } = {};
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (_url, init) => {
       judgeRequest = JSON.parse(String(init?.body)) as { instructions?: string; input?: string };
@@ -630,7 +630,7 @@ describe('golden hard judge', () => {
   it('treats a full name as name plus surname and judges premature plan choice separately', async () => {
     const base = GOLDEN_CASES[10]!;
     const turn = base.turns.find((candidate) => candidate.id === 'data')!;
-    const scenario = { ...base, turns: [turn] };
+    const scenario = { ...base, evaluationMode:undefined, turns: [turn] };
     let judgeRequest: { instructions?: string; input?: string } = {};
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (_url, init) => {
       judgeRequest = JSON.parse(String(init?.body)) as { instructions?: string; input?: string };
@@ -681,7 +681,7 @@ describe('golden hard judge', () => {
     }), { status: 200, headers: { 'content-type': 'application/json' } }));
 
     await expect(judgeCaseSemantically({
-      apiKey: 'test', model: 'deepseek-test', scenario: { ...base, turns: [turn] },
+      apiKey: 'test', model: 'deepseek-test', scenario: { ...base, evaluationMode:undefined, turns: [turn] },
       observations: [observation({
         response: 'Marketing Digital te sirve para ordenar tus redes. Qué vendés y por dónde querés empezar?',
         move: 'select_course',
@@ -707,7 +707,7 @@ describe('golden hard judge', () => {
     }), { status: 200, headers: { 'content-type': 'application/json' } }));
 
     await expect(judgeCaseSemantically({
-      apiKey: 'test', model: 'deepseek-test', scenario: { ...base, turns: [turn] },
+      apiKey: 'test', model: 'deepseek-test', scenario: { ...base, evaluationMode:undefined, turns: [turn] },
       observations: [observation({ response: 'Marketing Digital te garantiza ingresos.' })],
     })).resolves.toEqual([{
       turn_id: 'context', approved: false, evaluation_error: null,
@@ -731,7 +731,7 @@ describe('golden hard judge', () => {
     }), { status: 200, headers: { 'content-type': 'application/json' } }));
 
     await expect(judgeCaseSemantically({
-      apiKey: 'test', model: 'deepseek-test', scenario: { ...base, turns: [turn] },
+      apiKey: 'test', model: 'deepseek-test', scenario: { ...base, evaluationMode:undefined, turns: [turn] },
       observations: [observation({ state: {
         selectedCourse: null, stage: 'exploring', awaitingReply: 'none', plan: null,
         promotion: { status: null, bonusCount: 0, paidCourse: null, bonusCourses: [] },
@@ -757,7 +757,7 @@ describe('golden hard judge', () => {
     }), { status: 200, headers: { 'content-type': 'application/json' } }));
 
     await expect(judgeCaseSemantically({
-      apiKey: 'test', model: 'deepseek-test', scenario: { ...base, turns: [turn] },
+      apiKey: 'test', model: 'deepseek-test', scenario: { ...base, evaluationMode:undefined, turns: [turn] },
       observations: [observation({
         response: 'Cuéntame qué te gustaría aprender. Qué área te llama más la atención?',
         move: 'browse_catalog',
@@ -782,7 +782,7 @@ describe('golden hard judge', () => {
     }), { status: 200, headers: { 'content-type': 'application/json' } }));
 
     await expect(judgeCaseSemantically({
-      apiKey: 'test', model: 'deepseek-test', scenario: { ...base, turns: [turn] },
+      apiKey: 'test', model: 'deepseek-test', scenario: { ...base, evaluationMode:undefined, turns: [turn] },
       observations: [observation({
         response: 'Puedo llamarte ahora si estás disponible, o más tarde si te queda mejor. Cómo preferís?',
         move: 'request_call', proposedAction: { type: 'none' },
@@ -816,7 +816,7 @@ describe('golden hard judge', () => {
     })]);
     const fetchMock = vi.spyOn(globalThis, 'fetch');
     await expect(judgeCaseSemantically({
-      apiKey: 'test', model: 'deepseek-test', scenario: { ...base, turns: [turn] },
+      apiKey: 'test', model: 'deepseek-test', scenario: { ...base, evaluationMode:undefined, turns: [turn] },
       observations: [current],
     })).resolves.toEqual([{
       turn_id: 'never_fourth', approved: true, failures: [], evaluation_error: null,
@@ -863,5 +863,73 @@ describe('golden hard judge', () => {
       { turn_id: 'customer_acknowledgement', approved: true, failures: [], evaluation_error: null },
     ]);
     fetchMock.mockRestore();
+  });
+});
+
+
+describe('negotiation invariant judge mode',()=>{
+  it('keeps the other fourteen cases in legacy mode',()=>{
+    expect(GOLDEN_CASES.filter(c=>c.evaluationMode).map(c=>c.id.slice(0,2))).toEqual(['06','14']);
+  });
+  it('does not enforce incidental move/action turn labels in invariant mode',()=>{
+    const t=GOLDEN_CASES[5]!.turns.find(t=>t.id==='bonus_1')!;
+    expect(evaluateHardRules(t,observation(),null,'negotiation_invariants').failures).toEqual([]);
+    expect(evaluateHardRules(t,observation()).failures.length).toBeGreaterThan(0);
+  });
+  it('checks enabled/max-course facts dynamically for a bonus on any turn',()=>{
+    const t=GOLDEN_CASES[5]!.turns[0]!;
+    const o=observation({proposedAction:{type:'offer_course_bonus'},backendAction:'offer_course_bonus',courseBonus:{enabled:false,maxBonusCourses:2,mayOfferBonus:false,status:'unavailable'},priceObjectionMemory:{present:true,sourceMessageIds:['prior'],priorSourceMessageIds:['prior']}});
+    const hard=evaluateHardRules(t,o,null,'negotiation_invariants');
+    expect(hard.failures.map(f=>f.code)).toEqual(expect.arrayContaining(['BONUS_CONFIGURATION_DISABLED','BONUS_MAX_COURSES_CONFIG_MISMATCH']));
+  });
+  it('retains current objection memory and unrelated hard facts in invariant mode',()=>{
+    const t=GOLDEN_CASES[5]!.turns.find(t=>t.id==='value')!;
+    const failures=evaluateHardRules(t,observation({priceObjectionMemory:{present:false,sourceMessageIds:[],priorSourceMessageIds:[]}}),null,'negotiation_invariants').failures;
+    expect(failures.map(f=>f.code)).toContain('CURRENT_PRICE_OBJECTION_NOT_RECORDED');
+  });
+  it('sends delivered chronological history and generation facts without skipping changed preconditions',async()=>{
+    const base=GOLDEN_CASES[5]!;
+    const scenario={...base,turns:[base.turns[0]!,base.turns.at(-1)!]};
+    const payloads:Array<Record<string,unknown>>=[];
+    const mock=vi.spyOn(globalThis,'fetch').mockImplementation(async(_url,init)=>{
+      const body=JSON.parse(String(init?.body));const payload=JSON.parse(body.input);payloads.push(payload);
+      return new Response(JSON.stringify({output_text:JSON.stringify({verdict:{turn_id:payload.turn_id,approved:true,failures:[]}})}),{status:200});
+    });
+    try{
+      const facts={currentTurnId:'t',priorPriceSourceIds:['a','b','c'],ladder:{eligible:true,observed_price_objection_count:3,required_price_objection_count:3 as const,call_invitation_status:'offered',call_offer_count:1,may_offer_call:true,missing_steps:[]}};
+      await judgeCaseSemantically({apiKey:'offline-mock',model:'test',scenario,observations:[observation({negotiationFacts:facts}),observation({negotiationFacts:facts})]});
+      expect(mock).toHaveBeenCalledTimes(2);
+      expect(payloads[1]!.delivered_history).toHaveLength(2);
+      expect(payloads[1]!.negotiation_ledger).toEqual(expect.arrayContaining([expect.objectContaining({ladder:facts.ladder})]));
+      expect(JSON.stringify(payloads[1]!.requirements)).not.toContain('Mantener el paquete acumulado de tres');
+      expect(JSON.stringify(payloads[1]!.requirements)).toContain('aislamiento');
+      expect(JSON.stringify(payloads[1]!.requirements)).toContain('insinuar');
+      expect(JSON.stringify(payloads[1]!.requirements)).toContain('te regalo');
+      expect(JSON.stringify(payloads[1]!.requirements)).toContain('evitar responder por chat');
+      expect(JSON.stringify(payloads[1]!.requirements)).toContain('repetir sólo');
+    }finally{mock.mockRestore();}
+  });
+});
+
+
+describe('negotiation historical evidence boundary',()=>{
+  it.each([false,true])('validates historical quotes and carries each turn facts independently (fake=%s)',async(fake)=>{
+    const base=GOLDEN_CASES[13]!;const scenario={...base,turns:[base.turns[0]!,base.turns.at(-1)!]};
+    const payloads:Array<Record<string,unknown>>=[];
+    const mock=vi.spyOn(globalThis,'fetch').mockImplementation(async(_url,init)=>{
+      const body=JSON.parse(String(init?.body));const input=JSON.parse(body.input);payloads.push(input);
+      const first=input.turn_id===scenario.turns[0]!.id;
+      return new Response(JSON.stringify({output_text:JSON.stringify({verdict:{turn_id:input.turn_id,approved:first,failures:first?[]:[{
+        code:'SEMANTIC_MUST_NOT_FAILED',requirement_id:'must_not:0',authority_line_index:0,evidence_source:'delivered_history',observed_evidence:fake?'cita histórica inventada':'Antes ofrecí un extra sin acción',explanation:'Una oferta implícita sin efecto quedó en el historial entregado.'
+      }]}})}),{status:200});
+    });
+    try{
+      const facts=[{id:'photo:fact',kind:'duration',value:'Dato anterior fotografía'}];
+      const verdicts=await judgeCaseSemantically({apiKey:'offline-mock',model:'test',scenario,observations:[observation({response:'Antes ofrecí un extra sin acción',authorizedFacts:facts,usedFactIds:['photo:fact']}),observation({response:'Ahora Marketing Digital',authorizedFacts:[{id:'marketing:fact',kind:'duration',value:'Otro dato'}]})]});
+      const history=payloads[1]!.delivered_history as Array<{authorizedFacts:unknown;usedFactIds:unknown}>;
+      expect(history[0]!.authorizedFacts).toEqual(facts);expect(history[0]!.usedFactIds).toEqual(['photo:fact']);
+      if(fake)expect(verdicts[1]).toMatchObject({approved:null,evaluation_error:'GOLDEN_JUDGE_FAILURE_EVIDENCE_INVALID'});
+      else expect(verdicts[1]).toMatchObject({approved:false,failures:[expect.objectContaining({code:'SEMANTIC_MUST_NOT_FAILED'})]});
+    }finally{mock.mockRestore();}
   });
 });

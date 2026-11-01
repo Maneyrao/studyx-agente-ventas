@@ -1,3 +1,6 @@
+import { evaluateNegotiationInvariantsV1, type InvariantStatusV1 } from './negotiation-invariants';
+import { negotiationEvidenceV1, negotiationSemanticTurnV1 } from './negotiation-evidence';
+import type { AgentAContextV1 } from '../../botpress-agent/src/schemas/agent-a-brain';
 import { execFileSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
@@ -38,6 +41,7 @@ import {
   type GoldenResponsesProviderV1,
 } from './provider';
 import {
+  extractAuthorizedContextV1,
   extractBackendRejectionsV1,
   extractContextEvidenceV1,
   extractFinalBackendDecisionErrorV1,
@@ -75,6 +79,7 @@ interface PromotionEvidenceV1 {
 
 interface TurnResultV1 {
   readonly case_id: string;
+  readonly invariant_status?: InvariantStatusV1;
   readonly turn_id: string;
   readonly customer: string;
   readonly approved: boolean | null;
@@ -102,6 +107,7 @@ interface TurnResultV1 {
 }
 
 interface CaseResultV1 {
+  readonly negotiation_evaluation?: ReturnType<typeof evaluateNegotiationInvariantsV1>;
   readonly case_id: string;
   readonly title: string;
   readonly approved: boolean | null;
@@ -290,10 +296,12 @@ async function observeTurn(input: {
   });
   const proposal = extractLastProposalV1(input.evidence.httpExchanges);
   const context = extractContextEvidenceV1(input.evidence.httpExchanges);
+  const generationContext = input.evidence.httpExchanges.filter(e=>e.boundary==='deepseek').map(e=>extractAuthorizedContextV1(e.requestBody)).filter(Boolean).at(-1) as AgentAContextV1|null|undefined;
   const promotion = await promotionEvidence(input.externalConversationId);
   const activeCourseEvidence = await activatedCourseEvidence(input.externalConversationId);
   const decision = persisted.decisions.find((item) => item.turnId === input.evidence.turnId);
   return {
+    negotiationFacts:{currentTurnId:input.evidence.turnId,ladder:generationContext?.capabilities.course_bonus?.ladder,priorPriceSourceIds:generationContext?.commercial_state.negotiation?.price_objections.latest_source_turn_ids},
     response: input.evidence.authorizedMessages.join('\n'),
     move: proposal.move,
     secondaryMoves: proposal.secondaryMoves,
@@ -963,6 +971,7 @@ live('authority-only Agent A golden baseline through the real workflow', () => {
           turn,
           observation,
           pending.observations[index - 1] ?? null,
+          pending.scenario.evaluationMode,
         )
           : { failures: [], evaluatorErrors: [] };
         const hardFailures = hard.failures.map((failure) => ({
@@ -1003,8 +1012,8 @@ live('authority-only Agent A golden baseline through the real workflow', () => {
           approved: executionStatus === 'executed' ? failures.length === 0 : null,
           execution_status: executionStatus,
           authority: primaryCitation ? [primaryCitation] : [],
-          must: turn.must,
-          must_not: turn.mustNot,
+          must: pending.scenario.evaluationMode==='negotiation_invariants'?negotiationSemanticTurnV1(turn,index===pending.scenario.turns.length-1).must:turn.must,
+          must_not: pending.scenario.evaluationMode==='negotiation_invariants'?negotiationSemanticTurnV1(turn,index===pending.scenario.turns.length-1).mustNot:turn.mustNot,
           response_real: observation.response,
           move: observation.move,
           proposed_action: observation.proposedAction,
@@ -1025,10 +1034,22 @@ live('authority-only Agent A golden baseline through the real workflow', () => {
         });
       }
       const hasUnevaluatedTurns = turns.some((turn) => turn.execution_status !== 'executed');
+      const semanticStatus:InvariantStatusV1=semantic.some(t=>t.approved===false)?'FAIL':semantic.length!==pending.scenario.turns.length||semantic.some(t=>t.approved===null)?'INDETERMINATE':'PASS';
+      const negotiation = pending.scenario.evaluationMode==='negotiation_invariants'?evaluateNegotiationInvariantsV1(pending.scenario.id,pending.scenario.turns.map((t,i)=>negotiationEvidenceV1(t,pending.observations[i]??blankObservation())),semanticStatus,hasUnevaluatedTurns?'INDETERMINATE':turns.some(t=>t.failures.some(f=>!f.code.startsWith('SEMANTIC_')))?'FAIL':'PASS'):undefined;
+      if(negotiation)for(const [index,turn] of turns.entries()){
+        const structural=negotiation.turn_results[index]!;
+        const failed=negotiation.checks.filter(c=>c.failedTurnIds.includes(turn.turn_id));
+        const structuralFailures:GoldenFailureV1[]=failed.map(c=>({code:'NEGOTIATION_INVARIANT_FAILED',detail:`${c.id}: ${c.evidence.join('; ')}`,authorityReference:c.authority}));
+        turns[index]={...turn,invariant_status:structural.status,
+          approved:structural.status==='FAIL'?false:structural.status==='INDETERMINATE'&&turn.approved===true?null:turn.approved,
+          failures:[...turn.failures,...structuralFailures],
+          ...(structuralFailures.length?{failure_layer:inferFailureAttribution(pending.scenario.turns[index]!,pending.observations[index]??blankObservation(),structuralFailures.map(f=>f.code)).layer}:{})};
+      }
       completedCases.push({
         case_id: pending.scenario.id,
         title: pending.scenario.title,
-        approved: hasUnevaluatedTurns ? null : turns.every((turn) => turn.approved === true),
+        approved: negotiation?negotiation.approved:hasUnevaluatedTurns ? null : turns.every((turn) => turn.approved === true),
+        ...(negotiation?{negotiation_evaluation:negotiation}:{}),
         ...(pending.setupEvidence === undefined ? {} : { setup_evidence: pending.setupEvidence }),
         turns,
       });

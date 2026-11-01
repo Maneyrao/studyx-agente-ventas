@@ -1,3 +1,4 @@
+import { negotiationEvidenceV1, negotiationSemanticTurnV1, type GenerationNegotiationFactsV1 } from './negotiation-evidence';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -15,6 +16,7 @@ export interface GoldenModelAttemptV1 {
 }
 
 export interface GoldenTurnObservationV1 {
+  readonly negotiationFacts?: GenerationNegotiationFactsV1;
   readonly response: string;
   readonly move: string | null;
   readonly secondaryMoves: readonly string[];
@@ -136,9 +138,21 @@ export function evaluateHardRules(
   turn: GoldenTurnV1,
   observation: GoldenTurnObservationV1,
   previousObservation: GoldenTurnObservationV1 | null = null,
+  evaluationMode?: 'negotiation_invariants',
 ): HardJudgeResultV1 {
   const failures: GoldenFailureV1[] = [];
   const evaluatorErrors: GoldenFailureV1[] = [];
+  if(evaluationMode==='negotiation_invariants') {
+    // Keep objective facts; discard only positional labels/package milestones.
+    const retained=new Set(['current_price_objection_recorded','question_count_at_most','response_uses_authorized_syllabus','selected_course_equals','payment_link_delivered','requests_only_missing_call_fields','access_lists_all_activated_courses']);
+    const hard=turn.hard?.filter(rule=>retained.has(rule.type))??[];
+    // Configuration and prior-memory evidence are facts whenever an actual bonus is proposed/executed.
+    if(observation.proposedAction?.type==='offer_course_bonus'||observation.backendAction==='offer_course_bonus')hard.push({type:'course_bonus_preconditions'});
+    const result=evaluateHardRules({...turn,priorPromotion:undefined,expected:{move:[observation.move??'none'],action:[actionType(observation)],state:{}},hard},observation,previousObservation);
+    if(!observation.workflow)return {...result,evaluatorErrors:[...result.evaluatorErrors,{code:'WORKFLOW_EVIDENCE_MISSING',detail:'No commit receipt evidence.'}]};
+    if(!observation.workflow.commitSucceeded||observation.workflow.errorCode||observation.workflow.finalBackendDecisionError)return {...result,failures:[...result.failures,{code:'WORKFLOW_COMMIT_FAILED',detail:JSON.stringify(observation.workflow)}]};
+    return result;
+  }
   const preconditionFailure = priorPromotionPreconditionFailure(turn, previousObservation);
   if (preconditionFailure) return { failures: [preconditionFailure], evaluatorErrors };
   if (!observation.response.trim()) add(failures, 'SILENT_TURN', 'No hubo respuesta visible autorizada.');
@@ -497,7 +511,7 @@ interface RawSemanticTurnVerdictV1 {
     readonly requirement_id: string;
     readonly authority_line_index: number;
     readonly evidence_source: 'response' | 'move' | 'proposed_action' | 'backend_action'
-      | 'state' | 'backend_rejections' | 'preconditions';
+      | 'state' | 'backend_rejections' | 'preconditions' | 'delivered_history' | 'negotiation_ledger';
     readonly observed_evidence: string;
     readonly explanation: string;
   }[];
@@ -607,6 +621,7 @@ async function judgeTurnSemantically(input: {
   readonly turn: GoldenTurnV1;
   readonly observation: GoldenTurnObservationV1;
   readonly previousObservation: GoldenTurnObservationV1 | null;
+  readonly negotiationHistory?: readonly ReturnType<typeof negotiationEvidenceV1>[];
 }): Promise<SemanticTurnVerdictV1> {
   if (!input.observation.response.trim()) {
     return { turn_id: input.turn.id, approved: true, failures: [], evaluation_error: null };
@@ -624,6 +639,7 @@ async function judgeTurnSemantically(input: {
   };
   const payload = {
     turn_id: input.turn.id,
+    ...(input.negotiationHistory?{evaluation_mode:'negotiation_invariants',delivered_history:input.negotiationHistory,negotiation_ledger:input.negotiationHistory.map(t=>({turn_id:t.turnId,ladder:t.ladder,action:t.action,promotion:t.promotion})),semantic_scope:'Judge delivered history and the current reply; stage names and move labels do not impose a fixed turn. Earlier completed steps count. Explicit or implicit unauthorized bonus offers fail, including questions and hypotheses.'}:{}),
     customer: input.turn.customer,
     requirements: [
       ...input.turn.must.map((text, index) => ({ id: `must:${index}`, kind: 'must', text })),
@@ -649,6 +665,7 @@ async function judgeTurnSemantically(input: {
     ...input.turn.mustNot.map((_, index) => `must_not:${index}`),
   ];
   const evidenceSources = {
+    ...(input.negotiationHistory?{delivered_history:JSON.stringify(input.negotiationHistory),negotiation_ledger:JSON.stringify(input.negotiationHistory.map(t=>({turn_id:t.turnId,ladder:t.ladder,action:t.action,promotion:t.promotion})))}:{}),
     response: input.observation.response,
     move: JSON.stringify({ move: input.observation.move, secondary_moves: input.observation.secondaryMoves }),
     proposed_action: JSON.stringify(input.observation.proposedAction),
@@ -717,6 +734,7 @@ async function judgeTurnSemantically(input: {
         }
         const evidence = evidenceSources[failure.evidence_source];
         if (typeof evidence !== 'string'
+          || (['delivered_history','negotiation_ledger'].includes(failure.evidence_source)&&failure.observed_evidence.length>0&&!evidence.includes(failure.observed_evidence))
           || (failure.code === 'SEMANTIC_MUST_NOT_FAILED'
             && (!failure.observed_evidence || !evidence.includes(failure.observed_evidence)))) {
           throw new Error('GOLDEN_JUDGE_FAILURE_EVIDENCE_INVALID');
@@ -756,12 +774,13 @@ export async function judgeCaseSemantically(input: {
         evaluation_error: 'GOLDEN_JUDGE_OBSERVATION_MISSING' });
       continue;
     }
-    if (!turnHasRequiredPriorPromotion(turn, input.observations[index - 1] ?? null)) {
+    if (input.scenario.evaluationMode!=='negotiation_invariants' && !turnHasRequiredPriorPromotion(turn, input.observations[index - 1] ?? null)) {
       verdicts.push({ turn_id: turn.id, approved: true, failures: [], evaluation_error: null });
       continue;
     }
     verdicts.push(await judgeTurnSemantically({
-      apiKey: input.apiKey, model: input.model, turn, observation,
+      apiKey: input.apiKey, model: input.model, turn:input.scenario.evaluationMode==='negotiation_invariants'?negotiationSemanticTurnV1(turn,index===input.scenario.turns.length-1):turn, observation,
+      ...(input.scenario.evaluationMode==='negotiation_invariants'?{negotiationHistory:input.scenario.turns.slice(0,index+1).map((t,i)=>negotiationEvidenceV1(t,input.observations[i]!))}:{}),
       previousObservation: input.observations[index - 1] ?? null,
     }));
   }

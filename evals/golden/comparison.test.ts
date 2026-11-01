@@ -22,6 +22,10 @@ describe('golden run comparison', () => {
     cases[11].approved = false;
     expect(absoluteGoldenAcceptanceV1(cases).approved).toBe(false);
   });
+  it.each(['INDETERMINATE','NOT_EXERCISED'])('does not grant full acceptance with unknown invariant coverage: %s',(status)=>{
+    const cases=Array.from({length:16},(_,i)=>({case_id:`${String(i+1).padStart(2,'0')}_synthetic`,approved:true,turns:Array.from({length:3},(_,j)=>({turn_id:String(j),approved:true})),...(i===5?{negotiation_evaluation:{status}}:{})}));
+    expect(absoluteGoldenAcceptanceV1(cases).approved).toBe(false);
+  });
   it('compares every case and turn without implying the agent is the only changed variable', () => {
     const comparison = compareGoldenRunsV1({
       baselineLabel: 'baseline-v8',
