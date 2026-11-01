@@ -1,0 +1,801 @@
+{
+  "stem": "/Users/tmaneyro22/Documents/AGENTE IA/studyx-agente-ventas/.worktrees/orchestrator-mvp-closure/evals/golden/results/focused-10d7b3e-flash-r1-20261101",
+  "sha": "10d7b3e5e7b5cdce3c88901cfedd3493346ecce2",
+  "provider_status": "completed",
+  "summary": {
+    "agent_requests": 22,
+    "with_ladder": 16,
+    "without_ladder_by_capability_status": {
+      "needs_interest": 2,
+      "checkin_available": 4
+    },
+    "eligible": 5,
+    "ladder_observed_counts": {
+      "0": 4,
+      "1": 2,
+      "2": 2,
+      "3": 6,
+      "4": 1,
+      "5": 1
+    },
+    "repair_requests": 0,
+    "proposal_rejected_events": 0,
+    "current_turn_in_prior_sources": 0
+  },
+  "strict_prior_note": "Counter reflects prior committed model price_objection memories; current proposal and its memory candidates do not count toward this request. No regex/text classifier was used.",
+  "repair_transport_verdict": "NOT_EXERCISED: no rejection or mandatory repair in this run",
+  "requests": [
+    {
+      "call_id": "call-0001",
+      "trace_id": "2b73f288-384f-43f8-9b89-e9bbf64c3a67",
+      "source_turn_id": "904a269c-adc2-4602-ac7a-ca01d3ee1965",
+      "case_turn": [
+        "03_single_course_recommendation",
+        "recommend",
+        false
+      ],
+      "capability_status": "needs_interest",
+      "ladder": null,
+      "negotiation_prior_count": null,
+      "prior_source_turn_ids": [],
+      "current_turn_in_prior_sources": false,
+      "current_message_ids": [
+        "904a269c-adc2-4602-ac7a-ca01d3ee1965"
+      ],
+      "current_proposed_price_objections": [],
+      "proposed_action": {
+        "type": "none"
+      },
+      "turn_rejection": null,
+      "mandatory_repair_present": false
+    },
+    {
+      "call_id": "call-0002",
+      "trace_id": "246a8914-e2ee-4bda-9dfe-9b9d574b6e43",
+      "source_turn_id": "3b7b6a69-0f78-4d0b-bfdd-4e37f95c9baa",
+      "case_turn": [
+        "03_single_course_recommendation",
+        "test_close_reply",
+        true
+      ],
+      "capability_status": "needs_interest",
+      "ladder": null,
+      "negotiation_prior_count": 0,
+      "prior_source_turn_ids": [],
+      "current_turn_in_prior_sources": false,
+      "current_message_ids": [
+        "3b7b6a69-0f78-4d0b-bfdd-4e37f95c9baa"
+      ],
+      "current_proposed_price_objections": [],
+      "proposed_action": {
+        "type": "none"
+      },
+      "turn_rejection": null,
+      "mandatory_repair_present": false
+    },
+    {
+      "call_id": "call-0003",
+      "trace_id": "b5f2a5cc-0e0b-4647-9fd3-292bced147d5",
+      "source_turn_id": "f8318d06-e8ef-42da-930a-61b26ac33363",
+      "case_turn": [
+        "04_price_value_objection",
+        "interest",
+        true
+      ],
+      "capability_status": "checkin_available",
+      "ladder": null,
+      "negotiation_prior_count": null,
+      "prior_source_turn_ids": [],
+      "current_turn_in_prior_sources": false,
+      "current_message_ids": [
+        "f8318d06-e8ef-42da-930a-61b26ac33363"
+      ],
+      "current_proposed_price_objections": [],
+      "proposed_action": {
+        "type": "none"
+      },
+      "turn_rejection": null,
+      "mandatory_repair_present": false
+    },
+    {
+      "call_id": "call-0004",
+      "trace_id": "931c7466-7f48-4258-be29-820cafd2aa49",
+      "source_turn_id": "bfd06286-66e5-433b-8b48-a2fd264a1681",
+      "case_turn": [
+        "04_price_value_objection",
+        "expensive",
+        true
+      ],
+      "capability_status": "checkin_available",
+      "ladder": {
+        "eligible": false,
+        "observed_price_objection_count": 0,
+        "required_price_objection_count": 3,
+        "call_invitation_status": "not_offered",
+        "call_offer_count": 0,
+        "may_offer_call": true,
+        "missing_steps": [
+          "recorded_price_objections",
+          "call_invitation"
+        ]
+      },
+      "negotiation_prior_count": 0,
+      "prior_source_turn_ids": [],
+      "current_turn_in_prior_sources": false,
+      "current_message_ids": [
+        "bfd06286-66e5-433b-8b48-a2fd264a1681"
+      ],
+      "current_proposed_price_objections": [
+        {
+          "source_quote": "Está caro, no sé si realmente lo vale."
+        }
+      ],
+      "proposed_action": {
+        "type": "none"
+      },
+      "turn_rejection": null,
+      "mandatory_repair_present": false
+    },
+    {
+      "call_id": "call-0005",
+      "trace_id": "c0e8c52b-86d2-425a-a8b4-09840707f449",
+      "source_turn_id": "63082eb9-bc5d-456e-af45-c3bdacc33895",
+      "case_turn": [
+        "06_repeated_price_bonus_ladder",
+        "select",
+        true
+      ],
+      "capability_status": "checkin_available",
+      "ladder": null,
+      "negotiation_prior_count": null,
+      "prior_source_turn_ids": [],
+      "current_turn_in_prior_sources": false,
+      "current_message_ids": [
+        "63082eb9-bc5d-456e-af45-c3bdacc33895"
+      ],
+      "current_proposed_price_objections": [],
+      "proposed_action": {
+        "type": "none"
+      },
+      "turn_rejection": null,
+      "mandatory_repair_present": false
+    },
+    {
+      "call_id": "call-0006",
+      "trace_id": "53d9f910-4a43-4d49-b09f-31932825e846",
+      "source_turn_id": "058bb8bd-cbbd-420a-8a52-aee7755233c9",
+      "case_turn": [
+        "06_repeated_price_bonus_ladder",
+        "value",
+        true
+      ],
+      "capability_status": "checkin_available",
+      "ladder": {
+        "eligible": false,
+        "observed_price_objection_count": 0,
+        "required_price_objection_count": 3,
+        "call_invitation_status": "not_offered",
+        "call_offer_count": 0,
+        "may_offer_call": true,
+        "missing_steps": [
+          "recorded_price_objections",
+          "call_invitation"
+        ]
+      },
+      "negotiation_prior_count": 0,
+      "prior_source_turn_ids": [],
+      "current_turn_in_prior_sources": false,
+      "current_message_ids": [
+        "058bb8bd-cbbd-420a-8a52-aee7755233c9"
+      ],
+      "current_proposed_price_objections": [
+        {
+          "source_quote": "Me interesa, pero está caro."
+        }
+      ],
+      "proposed_action": {
+        "type": "none"
+      },
+      "turn_rejection": null,
+      "mandatory_repair_present": false
+    },
+    {
+      "call_id": "call-0007",
+      "trace_id": "f8fd5fbe-03f6-45e0-99ff-0c7cc3a46135",
+      "source_turn_id": "00c1233f-31d7-4e0b-9e80-7edff65f4b64",
+      "case_turn": [
+        "06_repeated_price_bonus_ladder",
+        "installments",
+        true
+      ],
+      "capability_status": "checkin_available",
+      "ladder": {
+        "eligible": false,
+        "observed_price_objection_count": 1,
+        "required_price_objection_count": 3,
+        "call_invitation_status": "not_offered",
+        "call_offer_count": 0,
+        "may_offer_call": true,
+        "missing_steps": [
+          "recorded_price_objections",
+          "call_invitation"
+        ]
+      },
+      "negotiation_prior_count": 1,
+      "prior_source_turn_ids": [
+        "058bb8bd-cbbd-420a-8a52-aee7755233c9"
+      ],
+      "current_turn_in_prior_sources": false,
+      "current_message_ids": [
+        "00c1233f-31d7-4e0b-9e80-7edff65f4b64"
+      ],
+      "current_proposed_price_objections": [
+        {
+          "source_quote": "Lo veo útil, pero el precio me sigue frenando."
+        }
+      ],
+      "proposed_action": {
+        "type": "none"
+      },
+      "turn_rejection": null,
+      "mandatory_repair_present": false
+    },
+    {
+      "call_id": "call-0008",
+      "trace_id": "e284aefa-3610-45a4-b788-d9970daa5906",
+      "source_turn_id": "4ae29284-a4a9-43ae-8b90-61a57b263182",
+      "case_turn": [
+        "06_repeated_price_bonus_ladder",
+        "isolate",
+        false
+      ],
+      "capability_status": "checkin_available",
+      "ladder": {
+        "eligible": false,
+        "observed_price_objection_count": 2,
+        "required_price_objection_count": 3,
+        "call_invitation_status": "not_offered",
+        "call_offer_count": 0,
+        "may_offer_call": true,
+        "missing_steps": [
+          "recorded_price_objections",
+          "call_invitation"
+        ]
+      },
+      "negotiation_prior_count": 2,
+      "prior_source_turn_ids": [
+        "00c1233f-31d7-4e0b-9e80-7edff65f4b64",
+        "058bb8bd-cbbd-420a-8a52-aee7755233c9"
+      ],
+      "current_turn_in_prior_sources": false,
+      "current_message_ids": [
+        "4ae29284-a4a9-43ae-8b90-61a57b263182"
+      ],
+      "current_proposed_price_objections": [
+        {
+          "source_quote": "Aun así me parece caro."
+        }
+      ],
+      "proposed_action": {
+        "type": "none"
+      },
+      "turn_rejection": null,
+      "mandatory_repair_present": false
+    },
+    {
+      "call_id": "call-0009",
+      "trace_id": "d3d18456-0ec4-406d-9fbb-12bbae1d906a",
+      "source_turn_id": "ba07a447-4554-489f-b232-578216e027db",
+      "case_turn": [
+        "06_repeated_price_bonus_ladder",
+        "call_step",
+        false
+      ],
+      "capability_status": "checkin_available",
+      "ladder": {
+        "eligible": false,
+        "observed_price_objection_count": 3,
+        "required_price_objection_count": 3,
+        "call_invitation_status": "not_offered",
+        "call_offer_count": 0,
+        "may_offer_call": true,
+        "missing_steps": [
+          "call_invitation"
+        ]
+      },
+      "negotiation_prior_count": 3,
+      "prior_source_turn_ids": [
+        "4ae29284-a4a9-43ae-8b90-61a57b263182",
+        "00c1233f-31d7-4e0b-9e80-7edff65f4b64",
+        "058bb8bd-cbbd-420a-8a52-aee7755233c9"
+      ],
+      "current_turn_in_prior_sources": false,
+      "current_message_ids": [
+        "ba07a447-4554-489f-b232-578216e027db"
+      ],
+      "current_proposed_price_objections": [],
+      "proposed_action": {
+        "type": "none"
+      },
+      "turn_rejection": null,
+      "mandatory_repair_present": false
+    },
+    {
+      "call_id": "call-0010",
+      "trace_id": "17a5a7b8-7839-4058-adc7-77d54e480f15",
+      "source_turn_id": "727a8378-9bf0-491f-b7bc-a0d407ebcad5",
+      "case_turn": [
+        "06_repeated_price_bonus_ladder",
+        "bonus_1",
+        false
+      ],
+      "capability_status": "checkin_available",
+      "ladder": {
+        "eligible": false,
+        "observed_price_objection_count": 3,
+        "required_price_objection_count": 3,
+        "call_invitation_status": "not_offered",
+        "call_offer_count": 0,
+        "may_offer_call": true,
+        "missing_steps": [
+          "call_invitation"
+        ]
+      },
+      "negotiation_prior_count": 3,
+      "prior_source_turn_ids": [
+        "4ae29284-a4a9-43ae-8b90-61a57b263182",
+        "00c1233f-31d7-4e0b-9e80-7edff65f4b64",
+        "058bb8bd-cbbd-420a-8a52-aee7755233c9"
+      ],
+      "current_turn_in_prior_sources": false,
+      "current_message_ids": [
+        "727a8378-9bf0-491f-b7bc-a0d407ebcad5"
+      ],
+      "current_proposed_price_objections": [],
+      "proposed_action": {
+        "type": "none"
+      },
+      "turn_rejection": null,
+      "mandatory_repair_present": false
+    },
+    {
+      "call_id": "call-0011",
+      "trace_id": "eb55b056-cb80-46e9-95eb-54962579cef3",
+      "source_turn_id": "a1fc3388-e7ca-4188-97f6-c8ef4c6eeacc",
+      "case_turn": [
+        "06_repeated_price_bonus_ladder",
+        "bonus_2",
+        false
+      ],
+      "capability_status": "checkin_available",
+      "ladder": {
+        "eligible": false,
+        "observed_price_objection_count": 3,
+        "required_price_objection_count": 3,
+        "call_invitation_status": "not_offered",
+        "call_offer_count": 0,
+        "may_offer_call": true,
+        "missing_steps": [
+          "call_invitation"
+        ]
+      },
+      "negotiation_prior_count": 3,
+      "prior_source_turn_ids": [
+        "4ae29284-a4a9-43ae-8b90-61a57b263182",
+        "00c1233f-31d7-4e0b-9e80-7edff65f4b64",
+        "058bb8bd-cbbd-420a-8a52-aee7755233c9"
+      ],
+      "current_turn_in_prior_sources": false,
+      "current_message_ids": [
+        "a1fc3388-e7ca-4188-97f6-c8ef4c6eeacc"
+      ],
+      "current_proposed_price_objections": [
+        {
+          "source_quote": "Me suma, pero sigo dudando por el mismo precio."
+        }
+      ],
+      "proposed_action": {
+        "type": "none"
+      },
+      "turn_rejection": null,
+      "mandatory_repair_present": false
+    },
+    {
+      "call_id": "call-0012",
+      "trace_id": "915c1f75-2d6f-4d4f-8b18-15eca0b04e68",
+      "source_turn_id": "3c0ebf68-171e-43b0-8f4d-e73b17b45225",
+      "case_turn": [
+        "06_repeated_price_bonus_ladder",
+        "bonus_3",
+        false
+      ],
+      "capability_status": "checkin_available",
+      "ladder": {
+        "eligible": true,
+        "observed_price_objection_count": 4,
+        "required_price_objection_count": 3,
+        "call_invitation_status": "offered",
+        "call_offer_count": 1,
+        "may_offer_call": true,
+        "missing_steps": []
+      },
+      "negotiation_prior_count": 4,
+      "prior_source_turn_ids": [
+        "a1fc3388-e7ca-4188-97f6-c8ef4c6eeacc",
+        "4ae29284-a4a9-43ae-8b90-61a57b263182",
+        "00c1233f-31d7-4e0b-9e80-7edff65f4b64",
+        "058bb8bd-cbbd-420a-8a52-aee7755233c9"
+      ],
+      "current_turn_in_prior_sources": false,
+      "current_message_ids": [
+        "3c0ebf68-171e-43b0-8f4d-e73b17b45225"
+      ],
+      "current_proposed_price_objections": [
+        {
+          "source_quote": "Todavía me cuesta decidir por el precio."
+        }
+      ],
+      "proposed_action": {
+        "type": "offer_course_bonus",
+        "interest_offering_code": "fotografia_profesional",
+        "bonus_offering_code": "fotografia_celulares_tiendas_online"
+      },
+      "turn_rejection": null,
+      "mandatory_repair_present": false
+    },
+    {
+      "call_id": "call-0013",
+      "trace_id": "04dd0d16-e212-48eb-9ba0-5340bd080df7",
+      "source_turn_id": "af56c5e3-bd41-4471-9ffc-c7bb88e94cf7",
+      "case_turn": [
+        "06_repeated_price_bonus_ladder",
+        "never_fourth",
+        false
+      ],
+      "capability_status": "offer_available",
+      "ladder": {
+        "eligible": true,
+        "observed_price_objection_count": 5,
+        "required_price_objection_count": 3,
+        "call_invitation_status": "offered",
+        "call_offer_count": 1,
+        "may_offer_call": true,
+        "missing_steps": []
+      },
+      "negotiation_prior_count": 5,
+      "prior_source_turn_ids": [
+        "3c0ebf68-171e-43b0-8f4d-e73b17b45225",
+        "a1fc3388-e7ca-4188-97f6-c8ef4c6eeacc",
+        "4ae29284-a4a9-43ae-8b90-61a57b263182",
+        "00c1233f-31d7-4e0b-9e80-7edff65f4b64",
+        "058bb8bd-cbbd-420a-8a52-aee7755233c9"
+      ],
+      "current_turn_in_prior_sources": false,
+      "current_message_ids": [
+        "af56c5e3-bd41-4471-9ffc-c7bb88e94cf7"
+      ],
+      "current_proposed_price_objections": [],
+      "proposed_action": {
+        "type": "none"
+      },
+      "turn_rejection": null,
+      "mandatory_repair_present": false
+    },
+    {
+      "call_id": "call-0014",
+      "trace_id": "089567ee-695d-486d-8707-1e5c74dd43d5",
+      "source_turn_id": "10e9b2c1-5c79-4378-af9f-40cc72bfacd8",
+      "case_turn": [
+        "07_think_it_over_not_closed",
+        "plans",
+        true
+      ],
+      "capability_status": "checkin_available",
+      "ladder": null,
+      "negotiation_prior_count": null,
+      "prior_source_turn_ids": [],
+      "current_turn_in_prior_sources": false,
+      "current_message_ids": [
+        "10e9b2c1-5c79-4378-af9f-40cc72bfacd8"
+      ],
+      "current_proposed_price_objections": [],
+      "proposed_action": {
+        "type": "none"
+      },
+      "turn_rejection": null,
+      "mandatory_repair_present": false
+    },
+    {
+      "call_id": "call-0015",
+      "trace_id": "e5f12e9d-8276-4f70-a3d3-b1dd5952eb95",
+      "source_turn_id": "f7e7b915-bd10-4eca-9200-a4b5e146c15d",
+      "case_turn": [
+        "07_think_it_over_not_closed",
+        "think",
+        true
+      ],
+      "capability_status": "checkin_available",
+      "ladder": {
+        "eligible": false,
+        "observed_price_objection_count": 0,
+        "required_price_objection_count": 3,
+        "call_invitation_status": "not_offered",
+        "call_offer_count": 0,
+        "may_offer_call": true,
+        "missing_steps": [
+          "recorded_price_objections",
+          "call_invitation"
+        ]
+      },
+      "negotiation_prior_count": 0,
+      "prior_source_turn_ids": [],
+      "current_turn_in_prior_sources": false,
+      "current_message_ids": [
+        "f7e7b915-bd10-4eca-9200-a4b5e146c15d"
+      ],
+      "current_proposed_price_objections": [],
+      "proposed_action": {
+        "type": "none"
+      },
+      "turn_rejection": null,
+      "mandatory_repair_present": false
+    },
+    {
+      "call_id": "call-0016",
+      "trace_id": "12b7285e-d4a6-42af-b8bd-1bb3d2a3f88d",
+      "source_turn_id": "3c7ee788-ec5a-4ccb-aaf9-a80db4c27eb9",
+      "case_turn": [
+        "14_course_change_cancels_promotion",
+        "interest",
+        true
+      ],
+      "capability_status": "checkin_available",
+      "ladder": null,
+      "negotiation_prior_count": null,
+      "prior_source_turn_ids": [],
+      "current_turn_in_prior_sources": false,
+      "current_message_ids": [
+        "3c7ee788-ec5a-4ccb-aaf9-a80db4c27eb9"
+      ],
+      "current_proposed_price_objections": [],
+      "proposed_action": {
+        "type": "none"
+      },
+      "turn_rejection": null,
+      "mandatory_repair_present": false
+    },
+    {
+      "call_id": "call-0017",
+      "trace_id": "cd979f03-dfd9-4fac-9c93-057234b13323",
+      "source_turn_id": "772de207-df34-4f6f-a77c-37efe1e8c5d7",
+      "case_turn": [
+        "14_course_change_cancels_promotion",
+        "price_1",
+        false
+      ],
+      "capability_status": "checkin_available",
+      "ladder": {
+        "eligible": false,
+        "observed_price_objection_count": 0,
+        "required_price_objection_count": 3,
+        "call_invitation_status": "not_offered",
+        "call_offer_count": 0,
+        "may_offer_call": true,
+        "missing_steps": [
+          "recorded_price_objections",
+          "call_invitation"
+        ]
+      },
+      "negotiation_prior_count": 0,
+      "prior_source_turn_ids": [],
+      "current_turn_in_prior_sources": false,
+      "current_message_ids": [
+        "772de207-df34-4f6f-a77c-37efe1e8c5d7"
+      ],
+      "current_proposed_price_objections": [
+        {
+          "source_quote": "El precio es lo único que me frena."
+        }
+      ],
+      "proposed_action": {
+        "type": "none"
+      },
+      "turn_rejection": null,
+      "mandatory_repair_present": false
+    },
+    {
+      "call_id": "call-0018",
+      "trace_id": "9bc30200-6d30-4d89-96f8-9b5dac6140dc",
+      "source_turn_id": "0860b50f-daae-4fe7-a802-54207ee02fdd",
+      "case_turn": [
+        "14_course_change_cancels_promotion",
+        "installments",
+        false
+      ],
+      "capability_status": "checkin_available",
+      "ladder": {
+        "eligible": false,
+        "observed_price_objection_count": 1,
+        "required_price_objection_count": 3,
+        "call_invitation_status": "not_offered",
+        "call_offer_count": 0,
+        "may_offer_call": true,
+        "missing_steps": [
+          "recorded_price_objections",
+          "call_invitation"
+        ]
+      },
+      "negotiation_prior_count": 1,
+      "prior_source_turn_ids": [
+        "772de207-df34-4f6f-a77c-37efe1e8c5d7"
+      ],
+      "current_turn_in_prior_sources": false,
+      "current_message_ids": [
+        "0860b50f-daae-4fe7-a802-54207ee02fdd"
+      ],
+      "current_proposed_price_objections": [
+        {
+          "source_quote": "Sigue siendo caro para mí."
+        }
+      ],
+      "proposed_action": {
+        "type": "none"
+      },
+      "turn_rejection": null,
+      "mandatory_repair_present": false
+    },
+    {
+      "call_id": "call-0019",
+      "trace_id": "c454e11c-b562-4a22-9a73-0ed4e3197555",
+      "source_turn_id": "5d2b1858-f76a-4e4f-bb65-0aba45c87ae3",
+      "case_turn": [
+        "14_course_change_cancels_promotion",
+        "isolate",
+        false
+      ],
+      "capability_status": "checkin_available",
+      "ladder": {
+        "eligible": false,
+        "observed_price_objection_count": 2,
+        "required_price_objection_count": 3,
+        "call_invitation_status": "offered",
+        "call_offer_count": 1,
+        "may_offer_call": true,
+        "missing_steps": [
+          "recorded_price_objections"
+        ]
+      },
+      "negotiation_prior_count": 2,
+      "prior_source_turn_ids": [
+        "0860b50f-daae-4fe7-a802-54207ee02fdd",
+        "772de207-df34-4f6f-a77c-37efe1e8c5d7"
+      ],
+      "current_turn_in_prior_sources": false,
+      "current_message_ids": [
+        "5d2b1858-f76a-4e4f-bb65-0aba45c87ae3"
+      ],
+      "current_proposed_price_objections": [
+        {
+          "source_quote": "Aun en cuotas me frena el precio."
+        }
+      ],
+      "proposed_action": {
+        "type": "none"
+      },
+      "turn_rejection": null,
+      "mandatory_repair_present": false
+    },
+    {
+      "call_id": "call-0020",
+      "trace_id": "a11f2edf-90f8-4862-b7cf-d3fa09a06dbd",
+      "source_turn_id": "fd8d9409-49d0-4592-bc63-7b4f8457dbfb",
+      "case_turn": [
+        "14_course_change_cancels_promotion",
+        "call_step",
+        false
+      ],
+      "capability_status": "checkin_available",
+      "ladder": {
+        "eligible": true,
+        "observed_price_objection_count": 3,
+        "required_price_objection_count": 3,
+        "call_invitation_status": "offered",
+        "call_offer_count": 1,
+        "may_offer_call": true,
+        "missing_steps": []
+      },
+      "negotiation_prior_count": 3,
+      "prior_source_turn_ids": [
+        "5d2b1858-f76a-4e4f-bb65-0aba45c87ae3",
+        "0860b50f-daae-4fe7-a802-54207ee02fdd",
+        "772de207-df34-4f6f-a77c-37efe1e8c5d7"
+      ],
+      "current_turn_in_prior_sources": false,
+      "current_message_ids": [
+        "fd8d9409-49d0-4592-bc63-7b4f8457dbfb"
+      ],
+      "current_proposed_price_objections": [],
+      "proposed_action": {
+        "type": "offer_course_bonus",
+        "interest_offering_code": "fotografia_profesional",
+        "bonus_offering_code": "fotografia_celulares_tiendas_online"
+      },
+      "turn_rejection": null,
+      "mandatory_repair_present": false
+    },
+    {
+      "call_id": "call-0021",
+      "trace_id": "c34ad3f7-dee4-4e3d-94f4-e8cce243c206",
+      "source_turn_id": "6c9adf5e-a4b8-4453-b244-908b0bd3650a",
+      "case_turn": [
+        "14_course_change_cancels_promotion",
+        "bonus_1",
+        false
+      ],
+      "capability_status": "offer_available",
+      "ladder": {
+        "eligible": true,
+        "observed_price_objection_count": 3,
+        "required_price_objection_count": 3,
+        "call_invitation_status": "offered",
+        "call_offer_count": 1,
+        "may_offer_call": true,
+        "missing_steps": []
+      },
+      "negotiation_prior_count": 3,
+      "prior_source_turn_ids": [
+        "5d2b1858-f76a-4e4f-bb65-0aba45c87ae3",
+        "0860b50f-daae-4fe7-a802-54207ee02fdd",
+        "772de207-df34-4f6f-a77c-37efe1e8c5d7"
+      ],
+      "current_turn_in_prior_sources": false,
+      "current_message_ids": [
+        "6c9adf5e-a4b8-4453-b244-908b0bd3650a"
+      ],
+      "current_proposed_price_objections": [],
+      "proposed_action": {
+        "type": "none"
+      },
+      "turn_rejection": null,
+      "mandatory_repair_present": false
+    },
+    {
+      "call_id": "call-0022",
+      "trace_id": "a905436a-c8be-47cb-b859-f592ee354ae4",
+      "source_turn_id": "70fd9a76-66f7-4c7f-be42-30129ef444d2",
+      "case_turn": [
+        "14_course_change_cancels_promotion",
+        "change",
+        true
+      ],
+      "capability_status": "checkin_available",
+      "ladder": {
+        "eligible": true,
+        "observed_price_objection_count": 3,
+        "required_price_objection_count": 3,
+        "call_invitation_status": "declined",
+        "call_offer_count": 1,
+        "may_offer_call": true,
+        "missing_steps": []
+      },
+      "negotiation_prior_count": 3,
+      "prior_source_turn_ids": [
+        "5d2b1858-f76a-4e4f-bb65-0aba45c87ae3",
+        "0860b50f-daae-4fe7-a802-54207ee02fdd",
+        "772de207-df34-4f6f-a77c-37efe1e8c5d7"
+      ],
+      "current_turn_in_prior_sources": false,
+      "current_message_ids": [
+        "70fd9a76-66f7-4c7f-be42-30129ef444d2"
+      ],
+      "current_proposed_price_objections": [],
+      "proposed_action": {
+        "type": "none"
+      },
+      "turn_rejection": null,
+      "mandatory_repair_present": false
+    }
+  ],
+  "repair_requests": [],
+  "proposal_rejected_events": []
+}

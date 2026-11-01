@@ -1,0 +1,1853 @@
+{
+  "stem": "/Users/tmaneyro22/Documents/AGENTE IA/studyx-agente-ventas/.worktrees/orchestrator-mvp-closure/evals/golden/results/focused-10d7b3e-flash-r2-20261101",
+  "sha": "10d7b3e5e7b5cdce3c88901cfedd3493346ecce2",
+  "provider_status": "completed",
+  "summary": {
+    "agent_requests": 26,
+    "with_ladder": 20,
+    "without_ladder_by_capability_status": {
+      "needs_interest": 2,
+      "checkin_available": 4
+    },
+    "eligible": 0,
+    "ladder_observed_counts": {
+      "0": 4,
+      "1": 4,
+      "2": 3,
+      "3": 7,
+      "4": 1,
+      "5": 1
+    },
+    "repair_requests": 4,
+    "proposal_rejected_events": 4,
+    "current_turn_in_prior_sources": 0
+  },
+  "provider_timing_note": "latency_ms is measured at the provider request boundary, not a standalone agent-quality failure. No cross-provider causal inference is made.",
+  "strict_prior_note": "Counter reflects prior committed model price_objection memories; current proposal and its memory candidates do not count toward this request. No regex/text classifier was used.",
+  "repair_transport_verdict": "Inspect exact rejection payloads and mandatory repair markers below; successful repairs are not agent failures.",
+  "requests": [
+    {
+      "provider_latency_ms": 3312,
+      "provider_status": 200,
+      "provider_error": null,
+      "call_id": "call-0001",
+      "trace_id": "eadd5def-1df9-4281-88d2-1ef8cc9c0110",
+      "source_turn_id": "57b85c20-c630-4ee1-aaa2-e1c71881c993",
+      "case_turn": [
+        "03_single_course_recommendation",
+        "recommend",
+        false
+      ],
+      "capability_status": "needs_interest",
+      "ladder": null,
+      "negotiation_prior_count": null,
+      "prior_source_turn_ids": [],
+      "current_turn_in_prior_sources": false,
+      "current_message_ids": [
+        "57b85c20-c630-4ee1-aaa2-e1c71881c993"
+      ],
+      "current_proposed_price_objections": [],
+      "proposed_action": {
+        "type": "none"
+      },
+      "draft_text": "Hola, soy Emma, asesora de Studyx. Me queda claro lo que buscás: dar el salto del celular a la cámara y sumar edición para ofrecer fotos profesionales a emprendedores.\nTenemos Fotografía Profesional, que apunta justo a eso. Contame, ya tenés alguna cámara o todavía estás viendo con qué equipo arrancar?",
+      "turn_rejection": null,
+      "mandatory_repair_present": false
+    },
+    {
+      "provider_latency_ms": 2701,
+      "provider_status": 200,
+      "provider_error": null,
+      "call_id": "call-0002",
+      "trace_id": "e293faac-ab2c-40a4-b235-05914c11dff1",
+      "source_turn_id": "1edc1ad5-f9e5-40f2-9415-ea45db56b081",
+      "case_turn": [
+        "03_single_course_recommendation",
+        "test_close_reply",
+        true
+      ],
+      "capability_status": "needs_interest",
+      "ladder": null,
+      "negotiation_prior_count": 0,
+      "prior_source_turn_ids": [],
+      "current_turn_in_prior_sources": false,
+      "current_message_ids": [
+        "1edc1ad5-f9e5-40f2-9415-ea45db56b081"
+      ],
+      "current_proposed_price_objections": [],
+      "proposed_action": {
+        "type": "none"
+      },
+      "draft_text": "Eso es exactamente lo que buscás. Con Fotografía Profesional aprenderías cámara y edición para ofrecer sesiones a emprendedores, no sólo fotos con el celular.\nPara arrancar, ¿preferís ver primero cómo se organiza el curso o directamente cómo inscribirte?",
+      "turn_rejection": null,
+      "mandatory_repair_present": false
+    },
+    {
+      "provider_latency_ms": 2642,
+      "provider_status": 200,
+      "provider_error": null,
+      "call_id": "call-0003",
+      "trace_id": "318af0ae-9438-49eb-b446-632f19762e45",
+      "source_turn_id": "ef5d8c9e-f4e1-4d91-9b01-16cdcedf3941",
+      "case_turn": [
+        "04_price_value_objection",
+        "interest",
+        true
+      ],
+      "capability_status": "checkin_available",
+      "ladder": null,
+      "negotiation_prior_count": null,
+      "prior_source_turn_ids": [],
+      "current_turn_in_prior_sources": false,
+      "current_message_ids": [
+        "ef5d8c9e-f4e1-4d91-9b01-16cdcedf3941"
+      ],
+      "current_proposed_price_objections": [],
+      "proposed_action": {
+        "type": "none"
+      },
+      "draft_text": "Hola, soy Emma, asesora de Studyx. Fotografía Profesional encaja muy bien con eso: son 41 clases online, desde cero con el proceso fotográfico digital, para que puedas ofrecer sesiones con seguridad.\nContame, ya tenés cámara o estás empezando de cero con el equipo?",
+      "turn_rejection": null,
+      "mandatory_repair_present": false
+    },
+    {
+      "provider_latency_ms": 2947,
+      "provider_status": 200,
+      "provider_error": null,
+      "call_id": "call-0004",
+      "trace_id": "c53592d8-6c14-40b3-b138-185aa89e2ea0",
+      "source_turn_id": "c6d288a7-43a9-4e9b-ab09-22e5d5cd47fd",
+      "case_turn": [
+        "04_price_value_objection",
+        "expensive",
+        false
+      ],
+      "capability_status": "checkin_available",
+      "ladder": {
+        "eligible": false,
+        "observed_price_objection_count": 0,
+        "required_price_objection_count": 3,
+        "call_invitation_status": "not_offered",
+        "call_offer_count": 0,
+        "may_offer_call": true,
+        "missing_steps": [
+          "recorded_price_objections",
+          "call_invitation"
+        ]
+      },
+      "negotiation_prior_count": 0,
+      "prior_source_turn_ids": [],
+      "current_turn_in_prior_sources": false,
+      "current_message_ids": [
+        "c6d288a7-43a9-4e9b-ab09-22e5d5cd47fd"
+      ],
+      "current_proposed_price_objections": [
+        {
+          "source_quote": "Está caro, no sé si realmente lo vale."
+        }
+      ],
+      "proposed_action": {
+        "type": "none"
+      },
+      "draft_text": "Te entiendo, es una inversión. Pensalo así: son 41 clases para aprender desde cero el proceso fotográfico digital y poder ofrecer sesiones con seguridad, que es justo lo que buscás para sumar ingresos.\nY no hace falta pagarlo todo junto: podés hacerlo en 12 cuotas de USD 30 por mes. Con eso, cuánto te costaría empezar a ofrecer tus primeras sesiones?",
+      "turn_rejection": null,
+      "mandatory_repair_present": false
+    },
+    {
+      "provider_latency_ms": 2575,
+      "provider_status": 200,
+      "provider_error": null,
+      "call_id": "call-0005",
+      "trace_id": "14b6fd28-6928-433a-bbcb-fc216e19260e",
+      "source_turn_id": "70d7f93a-e1bb-416b-afa2-d6d389f7080d",
+      "case_turn": [
+        "06_repeated_price_bonus_ladder",
+        "select",
+        true
+      ],
+      "capability_status": "checkin_available",
+      "ladder": null,
+      "negotiation_prior_count": null,
+      "prior_source_turn_ids": [],
+      "current_turn_in_prior_sources": false,
+      "current_message_ids": [
+        "70d7f93a-e1bb-416b-afa2-d6d389f7080d"
+      ],
+      "current_proposed_price_objections": [],
+      "proposed_action": {
+        "type": "none"
+      },
+      "draft_text": "Hola, soy Emma, asesora de Studyx. Fotografía Profesional encaja justo con eso: son 41 clases online, desde cero con el proceso digital, para que puedas trabajar con tiendas y emprendedores.\nPara apuntar bien la recomendación, ¿ya tenés cámara propia o estás arrancando con el celular?",
+      "turn_rejection": null,
+      "mandatory_repair_present": false
+    },
+    {
+      "provider_latency_ms": 2593,
+      "provider_status": 200,
+      "provider_error": null,
+      "call_id": "call-0006",
+      "trace_id": "cb443fe4-bf62-448d-92c3-4f95103e5e1d",
+      "source_turn_id": "7f87eb1a-4a12-401e-9a0a-76e37cbd16d4",
+      "case_turn": [
+        "06_repeated_price_bonus_ladder",
+        "value",
+        true
+      ],
+      "capability_status": "checkin_available",
+      "ladder": {
+        "eligible": false,
+        "observed_price_objection_count": 0,
+        "required_price_objection_count": 3,
+        "call_invitation_status": "not_offered",
+        "call_offer_count": 0,
+        "may_offer_call": true,
+        "missing_steps": [
+          "recorded_price_objections",
+          "call_invitation"
+        ]
+      },
+      "negotiation_prior_count": 0,
+      "prior_source_turn_ids": [],
+      "current_turn_in_prior_sources": false,
+      "current_message_ids": [
+        "7f87eb1a-4a12-401e-9a0a-76e37cbd16d4"
+      ],
+      "current_proposed_price_objections": [
+        {
+          "source_quote": "Me interesa, pero está caro."
+        }
+      ],
+      "proposed_action": {
+        "type": "none"
+      },
+      "draft_text": "Es una inversión, sí, pero pensala así: son 41 clases online para que puedas ofrecer fotos a tiendas y emprendedores, y se puede pagar en 12 cuotas de USD 30 al mes.\nSi te sirve, te paso el enlace con ese plan y arrancás hoy mismo. Lo hacemos así?",
+      "turn_rejection": null,
+      "mandatory_repair_present": false
+    },
+    {
+      "provider_latency_ms": 2550,
+      "provider_status": 200,
+      "provider_error": null,
+      "call_id": "call-0007",
+      "trace_id": "b62844f4-2dc3-4110-9202-50d090fd6ea9",
+      "source_turn_id": "32e1a2eb-497c-420f-8f36-a9dedf9f6e91",
+      "case_turn": [
+        "06_repeated_price_bonus_ladder",
+        "installments",
+        false
+      ],
+      "capability_status": "checkin_available",
+      "ladder": {
+        "eligible": false,
+        "observed_price_objection_count": 1,
+        "required_price_objection_count": 3,
+        "call_invitation_status": "not_offered",
+        "call_offer_count": 0,
+        "may_offer_call": true,
+        "missing_steps": [
+          "recorded_price_objections",
+          "call_invitation"
+        ]
+      },
+      "negotiation_prior_count": 1,
+      "prior_source_turn_ids": [
+        "7f87eb1a-4a12-401e-9a0a-76e37cbd16d4"
+      ],
+      "current_turn_in_prior_sources": false,
+      "current_message_ids": [
+        "32e1a2eb-497c-420f-8f36-a9dedf9f6e91"
+      ],
+      "current_proposed_price_objections": [
+        {
+          "source_quote": "Lo veo útil, pero el precio me sigue frenando."
+        }
+      ],
+      "proposed_action": {
+        "type": "none"
+      },
+      "draft_text": "Te entiendo, y me alegra que lo veas útil. Antes de hablar de plata, quiero entender bien qué te frena: es que hoy no te cierra el monto, o te queda la duda de si con esto vas a poder ofrecer fotos a tiendas y emprendedores como querés?",
+      "turn_rejection": null,
+      "mandatory_repair_present": false
+    },
+    {
+      "provider_latency_ms": 2623,
+      "provider_status": 200,
+      "provider_error": null,
+      "call_id": "call-0008",
+      "trace_id": "344b4518-07c3-48e9-846a-21a159adfd45",
+      "source_turn_id": "1e1cf2d6-cae1-415a-8671-0d3737085120",
+      "case_turn": [
+        "06_repeated_price_bonus_ladder",
+        "isolate",
+        true
+      ],
+      "capability_status": "checkin_available",
+      "ladder": {
+        "eligible": false,
+        "observed_price_objection_count": 2,
+        "required_price_objection_count": 3,
+        "call_invitation_status": "not_offered",
+        "call_offer_count": 0,
+        "may_offer_call": true,
+        "missing_steps": [
+          "recorded_price_objections",
+          "call_invitation"
+        ]
+      },
+      "negotiation_prior_count": 2,
+      "prior_source_turn_ids": [
+        "32e1a2eb-497c-420f-8f36-a9dedf9f6e91",
+        "7f87eb1a-4a12-401e-9a0a-76e37cbd16d4"
+      ],
+      "current_turn_in_prior_sources": false,
+      "current_message_ids": [
+        "1e1cf2d6-cae1-415a-8671-0d3737085120"
+      ],
+      "current_proposed_price_objections": [
+        {
+          "source_quote": "Aun así me parece caro."
+        }
+      ],
+      "proposed_action": {
+        "type": "none"
+      },
+      "draft_text": "Entonces el freno es el monto, no la utilidad. Con las 12 cuotas de USD 30 al mes podés empezar a formarte y armar tu portfolio para ofrecer fotos a tiendas y emprendedores desde el primer mes.\nSi eso queda resuelto, arrancamos con tu inscripción en ese plan?",
+      "turn_rejection": null,
+      "mandatory_repair_present": false
+    },
+    {
+      "provider_latency_ms": 2900,
+      "provider_status": 200,
+      "provider_error": null,
+      "call_id": "call-0009",
+      "trace_id": "9f14647a-3762-42d7-99c0-d5b3717b31e7",
+      "source_turn_id": "ebebfce1-5367-4bf2-aa2f-56db08f6ec9d",
+      "case_turn": [
+        "06_repeated_price_bonus_ladder",
+        "call_step",
+        false
+      ],
+      "capability_status": "checkin_available",
+      "ladder": {
+        "eligible": false,
+        "observed_price_objection_count": 3,
+        "required_price_objection_count": 3,
+        "call_invitation_status": "not_offered",
+        "call_offer_count": 0,
+        "may_offer_call": true,
+        "missing_steps": [
+          "call_invitation"
+        ]
+      },
+      "negotiation_prior_count": 3,
+      "prior_source_turn_ids": [
+        "1e1cf2d6-cae1-415a-8671-0d3737085120",
+        "32e1a2eb-497c-420f-8f36-a9dedf9f6e91",
+        "7f87eb1a-4a12-401e-9a0a-76e37cbd16d4"
+      ],
+      "current_turn_in_prior_sources": false,
+      "current_message_ids": [
+        "ebebfce1-5367-4bf2-aa2f-56db08f6ec9d"
+      ],
+      "current_proposed_price_objections": [],
+      "proposed_action": {
+        "type": "none"
+      },
+      "draft_text": "Perfecto, entonces vamos a resolverlo. Fotografía Profesional son 41 clases online y el total es USD 360, que podés pagar de tres formas:\n12 cuotas de USD 30\n6 cuotas de USD 60\nun pago de USD 360\nCon cuál te sentís más cómodo para arrancar?",
+      "turn_rejection": null,
+      "mandatory_repair_present": false
+    },
+    {
+      "provider_latency_ms": 3214,
+      "provider_status": 200,
+      "provider_error": null,
+      "call_id": "call-0010",
+      "trace_id": "3ea0cf89-b239-43e8-a8e1-5a99d44a975d",
+      "source_turn_id": "7832bdb5-7128-474b-b66b-7d886d928665",
+      "case_turn": [
+        "06_repeated_price_bonus_ladder",
+        "bonus_1",
+        false
+      ],
+      "capability_status": "checkin_available",
+      "ladder": {
+        "eligible": false,
+        "observed_price_objection_count": 3,
+        "required_price_objection_count": 3,
+        "call_invitation_status": "not_offered",
+        "call_offer_count": 0,
+        "may_offer_call": true,
+        "missing_steps": [
+          "call_invitation"
+        ]
+      },
+      "negotiation_prior_count": 3,
+      "prior_source_turn_ids": [
+        "1e1cf2d6-cae1-415a-8671-0d3737085120",
+        "32e1a2eb-497c-420f-8f36-a9dedf9f6e91",
+        "7f87eb1a-4a12-401e-9a0a-76e37cbd16d4"
+      ],
+      "current_turn_in_prior_sources": false,
+      "current_message_ids": [
+        "7832bdb5-7128-474b-b66b-7d886d928665"
+      ],
+      "current_proposed_price_objections": [],
+      "proposed_action": {
+        "type": "none"
+      },
+      "draft_text": "Perfecto, seguimos por chat. Si el precio es lo único, la forma más liviana de arrancar es con las 12 cuotas de USD 30 al mes, y ya quedás dentro de las 41 clases para ofrecer fotos a tiendas y emprendedores.\nArrancamos con ese plan? Para dejarte la inscripción lista necesito tu nombre, apellido, correo y teléfono.",
+      "turn_rejection": null,
+      "mandatory_repair_present": false
+    },
+    {
+      "provider_latency_ms": 3414,
+      "provider_status": 200,
+      "provider_error": null,
+      "call_id": "call-0011",
+      "trace_id": "027e1fe3-3943-4d13-8b04-8da297cde308",
+      "source_turn_id": "0e593549-a692-4c0c-83d9-108519cb4ac8",
+      "case_turn": [
+        "06_repeated_price_bonus_ladder",
+        "bonus_2",
+        false
+      ],
+      "capability_status": "checkin_available",
+      "ladder": {
+        "eligible": false,
+        "observed_price_objection_count": 3,
+        "required_price_objection_count": 3,
+        "call_invitation_status": "not_offered",
+        "call_offer_count": 0,
+        "may_offer_call": true,
+        "missing_steps": [
+          "call_invitation"
+        ]
+      },
+      "negotiation_prior_count": 3,
+      "prior_source_turn_ids": [
+        "1e1cf2d6-cae1-415a-8671-0d3737085120",
+        "32e1a2eb-497c-420f-8f36-a9dedf9f6e91",
+        "7f87eb1a-4a12-401e-9a0a-76e37cbd16d4"
+      ],
+      "current_turn_in_prior_sources": false,
+      "current_message_ids": [
+        "0e593549-a692-4c0c-83d9-108519cb4ac8"
+      ],
+      "current_proposed_price_objections": [
+        {
+          "source_quote": "Me suma, pero sigo dudando por el mismo precio."
+        }
+      ],
+      "proposed_action": {
+        "type": "none"
+      },
+      "draft_text": "Te suma y aun así el precio te frena; eso ya lo tengo claro. Antes de seguir con el monto, quiero entender qué te falta para decidirte: es que hoy no te cierra el número, o te queda la duda de si con esto vas a poder ofrecer fotos a tiendas y emprendedores como querés?",
+      "turn_rejection": null,
+      "mandatory_repair_present": false
+    },
+    {
+      "provider_latency_ms": 3122,
+      "provider_status": 200,
+      "provider_error": null,
+      "call_id": "call-0012",
+      "trace_id": "c7a8e0f4-af26-4e51-b984-db28b79a5f53",
+      "source_turn_id": "fb730d8f-5de5-4ba4-83b1-60cd95ebc1cf",
+      "case_turn": [
+        "06_repeated_price_bonus_ladder",
+        "bonus_3",
+        false
+      ],
+      "capability_status": "checkin_available",
+      "ladder": {
+        "eligible": false,
+        "observed_price_objection_count": 4,
+        "required_price_objection_count": 3,
+        "call_invitation_status": "not_offered",
+        "call_offer_count": 0,
+        "may_offer_call": true,
+        "missing_steps": [
+          "call_invitation"
+        ]
+      },
+      "negotiation_prior_count": 4,
+      "prior_source_turn_ids": [
+        "0e593549-a692-4c0c-83d9-108519cb4ac8",
+        "1e1cf2d6-cae1-415a-8671-0d3737085120",
+        "32e1a2eb-497c-420f-8f36-a9dedf9f6e91",
+        "7f87eb1a-4a12-401e-9a0a-76e37cbd16d4"
+      ],
+      "current_turn_in_prior_sources": false,
+      "current_message_ids": [
+        "fb730d8f-5de5-4ba4-83b1-60cd95ebc1cf"
+      ],
+      "current_proposed_price_objections": [
+        {
+          "source_quote": "Todavía me cuesta decidir por el precio."
+        }
+      ],
+      "proposed_action": {
+        "type": "none"
+      },
+      "draft_text": "Sí, hay algo que suma valor real: el curso está pensado para que salgas a ofrecer fotos a tiendas y emprendedores, no solo para aprender la técnica. Con las 41 clases armás tu portfolio y tu forma de trabajar, y eso es lo que después te permite cobrar por ese servicio.\nSi el monto es lo único que te frena, la cuota de USD 30 al mes es la forma más liviana de entrar. Arrancamos con ese plan y te dejo la inscripción lista?",
+      "turn_rejection": null,
+      "mandatory_repair_present": false
+    },
+    {
+      "provider_latency_ms": 2725,
+      "provider_status": 200,
+      "provider_error": null,
+      "call_id": "call-0013",
+      "trace_id": "6852a4b3-163f-4311-abd9-2f924dbb4d59",
+      "source_turn_id": "29c10a78-d029-4808-825a-13223a3abc6f",
+      "case_turn": [
+        "06_repeated_price_bonus_ladder",
+        "never_fourth",
+        false
+      ],
+      "capability_status": "checkin_available",
+      "ladder": {
+        "eligible": false,
+        "observed_price_objection_count": 5,
+        "required_price_objection_count": 3,
+        "call_invitation_status": "not_offered",
+        "call_offer_count": 0,
+        "may_offer_call": true,
+        "missing_steps": [
+          "call_invitation"
+        ]
+      },
+      "negotiation_prior_count": 5,
+      "prior_source_turn_ids": [
+        "fb730d8f-5de5-4ba4-83b1-60cd95ebc1cf",
+        "0e593549-a692-4c0c-83d9-108519cb4ac8",
+        "1e1cf2d6-cae1-415a-8671-0d3737085120",
+        "32e1a2eb-497c-420f-8f36-a9dedf9f6e91",
+        "7f87eb1a-4a12-401e-9a0a-76e37cbd16d4"
+      ],
+      "current_turn_in_prior_sources": false,
+      "current_message_ids": [
+        "29c10a78-d029-4808-825a-13223a3abc6f"
+      ],
+      "current_proposed_price_objections": [],
+      "proposed_action": {
+        "type": "none"
+      },
+      "draft_text": "Por ahora vamos con Fotografía Profesional, que es el que te sirve para ofrecer fotos a tiendas y emprendedores. Si más adelante querés sumar otra formación, lo vemos, pero primero dejemos encaminado este.\nCon las 12 cuotas de USD 30 al mes arrancás sin que el monto te frene. Te dejo la inscripción lista con ese plan?",
+      "turn_rejection": null,
+      "mandatory_repair_present": false
+    },
+    {
+      "provider_latency_ms": 2674,
+      "provider_status": 200,
+      "provider_error": null,
+      "call_id": "call-0014",
+      "trace_id": "29661790-5fa1-46ac-8884-f8d5efb0ac8e",
+      "source_turn_id": "1d4098f3-364c-427f-b260-63d7ff0d684b",
+      "case_turn": [
+        "07_think_it_over_not_closed",
+        "plans",
+        true
+      ],
+      "capability_status": "checkin_available",
+      "ladder": null,
+      "negotiation_prior_count": null,
+      "prior_source_turn_ids": [],
+      "current_turn_in_prior_sources": false,
+      "current_message_ids": [
+        "1d4098f3-364c-427f-b260-63d7ff0d684b"
+      ],
+      "current_proposed_price_objections": [],
+      "proposed_action": {
+        "type": "none"
+      },
+      "draft_text": "Hola, soy Emma, asesora de Studyx. Fotografía Profesional son 41 clases online, desde cero con el proceso digital.\nLos planes son estos, todos por USD 360 en total:\n12 pagos mensuales de USD 30\n6 pagos mensuales de USD 60\nPago único de USD 360\nCuál te acomoda más?",
+      "turn_rejection": null,
+      "mandatory_repair_present": false
+    },
+    {
+      "provider_latency_ms": 2373,
+      "provider_status": 200,
+      "provider_error": null,
+      "call_id": "call-0015",
+      "trace_id": "5396c9fb-eaab-4b50-9412-beac9c6e8403",
+      "source_turn_id": "056b8497-6d96-4025-96ed-8fe34e987433",
+      "case_turn": [
+        "07_think_it_over_not_closed",
+        "think",
+        true
+      ],
+      "capability_status": "checkin_available",
+      "ladder": {
+        "eligible": false,
+        "observed_price_objection_count": 0,
+        "required_price_objection_count": 3,
+        "call_invitation_status": "not_offered",
+        "call_offer_count": 0,
+        "may_offer_call": true,
+        "missing_steps": [
+          "recorded_price_objections",
+          "call_invitation"
+        ]
+      },
+      "negotiation_prior_count": 0,
+      "prior_source_turn_ids": [],
+      "current_turn_in_prior_sources": false,
+      "current_message_ids": [
+        "056b8497-6d96-4025-96ed-8fe34e987433"
+      ],
+      "current_proposed_price_objections": [],
+      "proposed_action": {
+        "type": "none"
+      },
+      "draft_text": "Claro, tomate tu tiempo. Sólo para dejarte tranquila: qué es lo que querés terminar de definir antes de decidir? Así te ayudo con eso puntual.",
+      "turn_rejection": null,
+      "mandatory_repair_present": false
+    },
+    {
+      "provider_latency_ms": 2934,
+      "provider_status": 200,
+      "provider_error": null,
+      "call_id": "call-0016",
+      "trace_id": "699fde6c-4cbf-4c29-9ead-8337a3e20fbb",
+      "source_turn_id": "035ee206-a0ef-427c-bedd-410e6b39035e",
+      "case_turn": [
+        "14_course_change_cancels_promotion",
+        "interest",
+        true
+      ],
+      "capability_status": "checkin_available",
+      "ladder": null,
+      "negotiation_prior_count": null,
+      "prior_source_turn_ids": [],
+      "current_turn_in_prior_sources": false,
+      "current_message_ids": [
+        "035ee206-a0ef-427c-bedd-410e6b39035e"
+      ],
+      "current_proposed_price_objections": [],
+      "proposed_action": {
+        "type": "none"
+      },
+      "draft_text": "Hola, soy Emma, asesora de Studyx. Fotografía Profesional encaja justo con eso: son 41 clases online y arrancan desde cero con el proceso fotográfico digital, así podrías producir las imágenes que necesitan las tiendas y los emprendedores.\n¿Ya tenés cámara o estás empezando con el celular?",
+      "turn_rejection": null,
+      "mandatory_repair_present": false
+    },
+    {
+      "provider_latency_ms": 2944,
+      "provider_status": 200,
+      "provider_error": null,
+      "call_id": "call-0017",
+      "trace_id": "08c1e979-21c8-4ff9-981a-b08192824e90",
+      "source_turn_id": "33d79de7-5bcd-40ed-ad3b-2ac0596c8b89",
+      "case_turn": [
+        "14_course_change_cancels_promotion",
+        "price_1",
+        true
+      ],
+      "capability_status": "checkin_available",
+      "ladder": {
+        "eligible": false,
+        "observed_price_objection_count": 0,
+        "required_price_objection_count": 3,
+        "call_invitation_status": "not_offered",
+        "call_offer_count": 0,
+        "may_offer_call": true,
+        "missing_steps": [
+          "recorded_price_objections",
+          "call_invitation"
+        ]
+      },
+      "negotiation_prior_count": 0,
+      "prior_source_turn_ids": [],
+      "current_turn_in_prior_sources": false,
+      "current_message_ids": [
+        "33d79de7-5bcd-40ed-ad3b-2ac0596c8b89"
+      ],
+      "current_proposed_price_objections": [
+        {
+          "source_quote": "El precio es lo único que me frena."
+        }
+      ],
+      "proposed_action": {
+        "type": "none"
+      },
+      "draft_text": "Entonces es cuestión de cómo acomodarlo, no de si te sirve. La formación completa son USD 360 y podés pagarla en 12 cuotas de USD 30 al mes.\nCon eso ya podrías empezar a armar tu material para tiendas y emprendedores. Preferís las 12 cuotas de USD 30 o las 6 de USD 60?",
+      "turn_rejection": null,
+      "mandatory_repair_present": false
+    },
+    {
+      "provider_latency_ms": 3048,
+      "provider_status": 200,
+      "provider_error": null,
+      "call_id": "call-0018",
+      "trace_id": "f65df51a-a39f-48ae-a46e-7fb4205c7ad2",
+      "source_turn_id": "b5308afd-e5a7-405b-98da-0ce6b85fd356",
+      "case_turn": [
+        "14_course_change_cancels_promotion",
+        "installments",
+        true
+      ],
+      "capability_status": "checkin_available",
+      "ladder": {
+        "eligible": false,
+        "observed_price_objection_count": 1,
+        "required_price_objection_count": 3,
+        "call_invitation_status": "not_offered",
+        "call_offer_count": 0,
+        "may_offer_call": true,
+        "missing_steps": [
+          "recorded_price_objections",
+          "call_invitation"
+        ]
+      },
+      "negotiation_prior_count": 1,
+      "prior_source_turn_ids": [
+        "33d79de7-5bcd-40ed-ad3b-2ac0596c8b89"
+      ],
+      "current_turn_in_prior_sources": false,
+      "current_message_ids": [
+        "b5308afd-e5a7-405b-98da-0ce6b85fd356"
+      ],
+      "current_proposed_price_objections": [
+        {
+          "source_quote": "Sigue siendo caro para mí."
+        }
+      ],
+      "proposed_action": {
+        "type": "none"
+      },
+      "draft_text": "Te entiendo, y no es poca cosa. Por eso justamente la idea es que no tengas que soltar los USD 360 de una: con las 12 cuotas son USD 30 al mes, menos de lo que cuesta una salida, y mientras tanto ya vas armando tu material para tiendas y emprendedores.\nSi el mes que viene te queda cómodo arrancar con esos USD 30, te dejo todo listo para inscribirte?",
+      "turn_rejection": null,
+      "mandatory_repair_present": false
+    },
+    {
+      "provider_latency_ms": 2914,
+      "provider_status": 200,
+      "provider_error": null,
+      "call_id": "call-0019",
+      "trace_id": "f65df51a-a39f-48ae-a46e-7fb4205c7ad2",
+      "source_turn_id": "b5308afd-e5a7-405b-98da-0ce6b85fd356",
+      "case_turn": [
+        "14_course_change_cancels_promotion",
+        "installments",
+        true
+      ],
+      "capability_status": "checkin_available",
+      "ladder": {
+        "eligible": false,
+        "observed_price_objection_count": 1,
+        "required_price_objection_count": 3,
+        "call_invitation_status": "not_offered",
+        "call_offer_count": 0,
+        "may_offer_call": true,
+        "missing_steps": [
+          "recorded_price_objections",
+          "call_invitation"
+        ]
+      },
+      "negotiation_prior_count": 1,
+      "prior_source_turn_ids": [
+        "33d79de7-5bcd-40ed-ad3b-2ac0596c8b89"
+      ],
+      "current_turn_in_prior_sources": false,
+      "current_message_ids": [
+        "b5308afd-e5a7-405b-98da-0ce6b85fd356"
+      ],
+      "current_proposed_price_objections": [
+        {
+          "source_quote": "Sigue siendo caro para mí."
+        }
+      ],
+      "proposed_action": {
+        "type": "none"
+      },
+      "draft_text": "Te entiendo, y no quiero que el precio te deje afuera de algo que sí querés hacer. La cuota más baja es la de 12 pagos de USD 30 al mes, y con eso accedés a las 41 clases completas.\nSi te sirve, lo vemos juntos en una llamada corta y armamos la forma de pago que te quede cómoda. Te parece?\nTe parece si lo vemos en una llamada breve y te ayudo a acomodarlo?",
+      "turn_rejection": {
+        "schema_version": 1,
+        "rejection_id": "44017282-672a-4145-af16-b331ca69c2a7",
+        "attempt": 1,
+        "rejections": [
+          {
+            "code": "FACT_VALUE_MISMATCH",
+            "subject": "price"
+          }
+        ],
+        "authorized_alternatives_selected": {
+          "missing_information": [
+            "nombre",
+            "apellido",
+            "correo",
+            "telefono"
+          ],
+          "actions": [
+            "none",
+            "send_test_payment_link"
+          ]
+        }
+      },
+      "mandatory_repair_present": true
+    },
+    {
+      "provider_latency_ms": 2534,
+      "provider_status": 200,
+      "provider_error": null,
+      "call_id": "call-0020",
+      "trace_id": "f65df51a-a39f-48ae-a46e-7fb4205c7ad2",
+      "source_turn_id": "b5308afd-e5a7-405b-98da-0ce6b85fd356",
+      "case_turn": [
+        "14_course_change_cancels_promotion",
+        "installments",
+        true
+      ],
+      "capability_status": "checkin_available",
+      "ladder": {
+        "eligible": false,
+        "observed_price_objection_count": 1,
+        "required_price_objection_count": 3,
+        "call_invitation_status": "not_offered",
+        "call_offer_count": 0,
+        "may_offer_call": true,
+        "missing_steps": [
+          "recorded_price_objections",
+          "call_invitation"
+        ]
+      },
+      "negotiation_prior_count": 1,
+      "prior_source_turn_ids": [
+        "33d79de7-5bcd-40ed-ad3b-2ac0596c8b89"
+      ],
+      "current_turn_in_prior_sources": false,
+      "current_message_ids": [
+        "b5308afd-e5a7-405b-98da-0ce6b85fd356"
+      ],
+      "current_proposed_price_objections": [
+        {
+          "source_quote": "Sigue siendo caro para mí."
+        }
+      ],
+      "proposed_action": {
+        "type": "none"
+      },
+      "draft_text": "Te entiendo. Por eso lo más liviano es arrancar con las 12 cuotas de USD 30 al mes: es la misma formación completa, sin pagar todo junto.\nSi eso te acomoda, te dejo el enlace para inscribirte con ese plan?",
+      "turn_rejection": {
+        "schema_version": 1,
+        "rejection_id": "e025e90e-31fd-4091-a437-56635cc3901a",
+        "attempt": 1,
+        "rejections": [
+          {
+            "code": "CALL_OFFER_MESSAGE_BOUNDARY_INVALID",
+            "subject": "call_offer"
+          },
+          {
+            "code": "CALL_OFFER_MESSAGE_BOUNDARY_INVALID",
+            "subject": "duplicate_call_offer"
+          }
+        ],
+        "authorized_alternatives_selected": {
+          "missing_information": [
+            "nombre",
+            "apellido",
+            "correo",
+            "telefono"
+          ],
+          "actions": [
+            "none"
+          ]
+        }
+      },
+      "mandatory_repair_present": true
+    },
+    {
+      "provider_latency_ms": 3004,
+      "provider_status": 200,
+      "provider_error": null,
+      "call_id": "call-0021",
+      "trace_id": "ec3a83db-a0fa-49a7-bfd8-29a2a26ef941",
+      "source_turn_id": "6bae9863-b21a-4fd3-a8e9-796787481268",
+      "case_turn": [
+        "14_course_change_cancels_promotion",
+        "isolate",
+        false
+      ],
+      "capability_status": "checkin_available",
+      "ladder": {
+        "eligible": false,
+        "observed_price_objection_count": 2,
+        "required_price_objection_count": 3,
+        "call_invitation_status": "not_offered",
+        "call_offer_count": 0,
+        "may_offer_call": true,
+        "missing_steps": [
+          "recorded_price_objections",
+          "call_invitation"
+        ]
+      },
+      "negotiation_prior_count": 2,
+      "prior_source_turn_ids": [
+        "b5308afd-e5a7-405b-98da-0ce6b85fd356",
+        "33d79de7-5bcd-40ed-ad3b-2ac0596c8b89"
+      ],
+      "current_turn_in_prior_sources": false,
+      "current_message_ids": [
+        "6bae9863-b21a-4fd3-a8e9-796787481268"
+      ],
+      "current_proposed_price_objections": [
+        {
+          "source_quote": "Aun en cuotas me frena el precio."
+        }
+      ],
+      "proposed_action": {
+        "type": "none"
+      },
+      "draft_text": "Entiendo, y no quiero que te inscribas apretada. Si el precio sigue siendo el freno, prefiero que lo veamos juntos con calma y ver qué opción real te puedo armar para Fotografía Profesional.\nTe parece si te llamo y lo revisamos en una charla corta? Así te digo con claridad qué se puede hacer y vos decidís sin presión.\nTe parece si te llamo y lo revisamos en una charla corta?",
+      "turn_rejection": null,
+      "mandatory_repair_present": false
+    },
+    {
+      "provider_latency_ms": 2504,
+      "provider_status": 200,
+      "provider_error": null,
+      "call_id": "call-0022",
+      "trace_id": "ec3a83db-a0fa-49a7-bfd8-29a2a26ef941",
+      "source_turn_id": "6bae9863-b21a-4fd3-a8e9-796787481268",
+      "case_turn": [
+        "14_course_change_cancels_promotion",
+        "isolate",
+        false
+      ],
+      "capability_status": "checkin_available",
+      "ladder": {
+        "eligible": false,
+        "observed_price_objection_count": 2,
+        "required_price_objection_count": 3,
+        "call_invitation_status": "not_offered",
+        "call_offer_count": 0,
+        "may_offer_call": true,
+        "missing_steps": [
+          "recorded_price_objections",
+          "call_invitation"
+        ]
+      },
+      "negotiation_prior_count": 2,
+      "prior_source_turn_ids": [
+        "b5308afd-e5a7-405b-98da-0ce6b85fd356",
+        "33d79de7-5bcd-40ed-ad3b-2ac0596c8b89"
+      ],
+      "current_turn_in_prior_sources": false,
+      "current_message_ids": [
+        "6bae9863-b21a-4fd3-a8e9-796787481268"
+      ],
+      "current_proposed_price_objections": [
+        {
+          "source_quote": "Aun en cuotas me frena el precio."
+        }
+      ],
+      "proposed_action": {
+        "type": "none"
+      },
+      "draft_text": "Entiendo, y no es lo mismo que decir que el curso no te sirve. Antes de buscarle la vuelta al pago, contame: además del precio, hay algo más que te haga dudar?",
+      "turn_rejection": {
+        "schema_version": 1,
+        "rejection_id": "3e822f60-bb11-4f21-a734-947f66d424ef",
+        "attempt": 1,
+        "rejections": [
+          {
+            "code": "CALL_OFFER_MESSAGE_BOUNDARY_INVALID",
+            "subject": "call_offer"
+          },
+          {
+            "code": "CALL_OFFER_MESSAGE_BOUNDARY_INVALID",
+            "subject": "duplicate_call_offer"
+          }
+        ],
+        "authorized_alternatives_selected": {
+          "missing_information": [
+            "nombre",
+            "apellido",
+            "correo",
+            "telefono"
+          ],
+          "actions": [
+            "none",
+            "send_test_payment_link"
+          ]
+        }
+      },
+      "mandatory_repair_present": true
+    },
+    {
+      "provider_latency_ms": 2327,
+      "provider_status": 200,
+      "provider_error": null,
+      "call_id": "call-0023",
+      "trace_id": "dc40d804-4765-4a32-a39b-c2133eebc4b1",
+      "source_turn_id": "8874f75e-78f2-48d0-b0d5-f153e233b60e",
+      "case_turn": [
+        "14_course_change_cancels_promotion",
+        "call_step",
+        false
+      ],
+      "capability_status": "checkin_available",
+      "ladder": {
+        "eligible": false,
+        "observed_price_objection_count": 3,
+        "required_price_objection_count": 3,
+        "call_invitation_status": "not_offered",
+        "call_offer_count": 0,
+        "may_offer_call": true,
+        "missing_steps": [
+          "call_invitation"
+        ]
+      },
+      "negotiation_prior_count": 3,
+      "prior_source_turn_ids": [
+        "6bae9863-b21a-4fd3-a8e9-796787481268",
+        "b5308afd-e5a7-405b-98da-0ce6b85fd356",
+        "33d79de7-5bcd-40ed-ad3b-2ac0596c8b89"
+      ],
+      "current_turn_in_prior_sources": false,
+      "current_message_ids": [
+        "8874f75e-78f2-48d0-b0d5-f153e233b60e"
+      ],
+      "current_proposed_price_objections": [],
+      "proposed_action": {
+        "type": "none"
+      },
+      "draft_text": "Perfecto, entonces vamos a resolverlo. La formación completa son USD 360 y la forma más liviana de cubrirlo es en 12 cuotas de USD 30 al mes, sin pagar todo junto.\nPreferís arrancar con las 12 cuotas de USD 30 o con las 6 de USD 60?",
+      "turn_rejection": null,
+      "mandatory_repair_present": false
+    },
+    {
+      "provider_latency_ms": 3044,
+      "provider_status": 200,
+      "provider_error": null,
+      "call_id": "call-0024",
+      "trace_id": "7915c646-2cf7-4369-85ab-79fdce2de315",
+      "source_turn_id": "88cf86de-c8b2-4768-9829-79c1086b6b11",
+      "case_turn": [
+        "14_course_change_cancels_promotion",
+        "bonus_1",
+        false
+      ],
+      "capability_status": "checkin_available",
+      "ladder": {
+        "eligible": false,
+        "observed_price_objection_count": 3,
+        "required_price_objection_count": 3,
+        "call_invitation_status": "not_offered",
+        "call_offer_count": 0,
+        "may_offer_call": true,
+        "missing_steps": [
+          "call_invitation"
+        ]
+      },
+      "negotiation_prior_count": 3,
+      "prior_source_turn_ids": [
+        "6bae9863-b21a-4fd3-a8e9-796787481268",
+        "b5308afd-e5a7-405b-98da-0ce6b85fd356",
+        "33d79de7-5bcd-40ed-ad3b-2ac0596c8b89"
+      ],
+      "current_turn_in_prior_sources": false,
+      "current_message_ids": [
+        "88cf86de-c8b2-4768-9829-79c1086b6b11"
+      ],
+      "current_proposed_price_objections": [
+        {
+          "source_quote": "El precio sigue siendo lo único que me frena."
+        }
+      ],
+      "proposed_action": {
+        "type": "none"
+      },
+      "draft_text": "Perfecto, seguimos por acá. Ya sabemos que Fotografía Profesional es lo que querés y que el precio es el único freno, así que te propongo algo: sumarte también el curso de Fotografía con Celulares para Tiendas Online, sin costo extra, para que cubras las fotos de tiendas desde el celular y con cámara. El precio de Fotografía Profesional sigue igual, USD 360.\nLo arrancamos con las 12 cuotas de USD 30 al mes?",
+      "turn_rejection": null,
+      "mandatory_repair_present": false
+    },
+    {
+      "provider_latency_ms": 2749,
+      "provider_status": 200,
+      "provider_error": null,
+      "call_id": "call-0025",
+      "trace_id": "7915c646-2cf7-4369-85ab-79fdce2de315",
+      "source_turn_id": "88cf86de-c8b2-4768-9829-79c1086b6b11",
+      "case_turn": [
+        "14_course_change_cancels_promotion",
+        "bonus_1",
+        false
+      ],
+      "capability_status": "checkin_available",
+      "ladder": {
+        "eligible": false,
+        "observed_price_objection_count": 3,
+        "required_price_objection_count": 3,
+        "call_invitation_status": "not_offered",
+        "call_offer_count": 0,
+        "may_offer_call": true,
+        "missing_steps": [
+          "call_invitation"
+        ]
+      },
+      "negotiation_prior_count": 3,
+      "prior_source_turn_ids": [
+        "6bae9863-b21a-4fd3-a8e9-796787481268",
+        "b5308afd-e5a7-405b-98da-0ce6b85fd356",
+        "33d79de7-5bcd-40ed-ad3b-2ac0596c8b89"
+      ],
+      "current_turn_in_prior_sources": false,
+      "current_message_ids": [
+        "88cf86de-c8b2-4768-9829-79c1086b6b11"
+      ],
+      "current_proposed_price_objections": [],
+      "proposed_action": {
+        "type": "none"
+      },
+      "draft_text": "Perfecto, seguimos por chat. Ya sabemos que Fotografía Profesional es lo que querés y que el precio es el único freno, así que te propongo algo: si sumo un curso extra a tu inscripción, sin cambiar los USD 360, te ayudaría a avanzar?",
+      "turn_rejection": {
+        "schema_version": 1,
+        "rejection_id": "0af8b822-cd37-4577-bd54-92693307672f",
+        "attempt": 1,
+        "rejections": [
+          {
+            "code": "FACT_VALUE_MISMATCH",
+            "subject": "forbidden_promise"
+          }
+        ],
+        "authorized_alternatives_selected": {
+          "missing_information": [
+            "nombre",
+            "apellido",
+            "correo",
+            "telefono"
+          ],
+          "actions": [
+            "none",
+            "send_test_payment_link"
+          ]
+        }
+      },
+      "mandatory_repair_present": true
+    },
+    {
+      "provider_latency_ms": 2858,
+      "provider_status": 200,
+      "provider_error": null,
+      "call_id": "call-0026",
+      "trace_id": "9ef64952-d466-4c5b-885a-a590ff738af2",
+      "source_turn_id": "ec3ed07e-1467-4aa2-93f9-a4283f291efa",
+      "case_turn": [
+        "14_course_change_cancels_promotion",
+        "change",
+        false
+      ],
+      "capability_status": "checkin_available",
+      "ladder": {
+        "eligible": false,
+        "observed_price_objection_count": 3,
+        "required_price_objection_count": 3,
+        "call_invitation_status": "not_offered",
+        "call_offer_count": 0,
+        "may_offer_call": true,
+        "missing_steps": [
+          "call_invitation"
+        ]
+      },
+      "negotiation_prior_count": 3,
+      "prior_source_turn_ids": [
+        "6bae9863-b21a-4fd3-a8e9-796787481268",
+        "b5308afd-e5a7-405b-98da-0ce6b85fd356",
+        "33d79de7-5bcd-40ed-ad3b-2ac0596c8b89"
+      ],
+      "current_turn_in_prior_sources": false,
+      "current_message_ids": [
+        "ec3ed07e-1467-4aa2-93f9-a4283f291efa"
+      ],
+      "current_proposed_price_objections": [],
+      "proposed_action": {
+        "type": "none"
+      },
+      "draft_text": "Marketing Digital entonces, perfecto. Son 16 clases online para armar estrategias y comunicar tu negocio de forma eficaz.\nSeguimos con el precio como único freno, así que te propongo lo mismo: sumar un curso extra a tu inscripción sin cambiar los USD 360. Te sirve para avanzar?",
+      "turn_rejection": null,
+      "mandatory_repair_present": false
+    }
+  ],
+  "repair_requests": [
+    {
+      "provider_latency_ms": 2914,
+      "provider_status": 200,
+      "provider_error": null,
+      "call_id": "call-0019",
+      "trace_id": "f65df51a-a39f-48ae-a46e-7fb4205c7ad2",
+      "source_turn_id": "b5308afd-e5a7-405b-98da-0ce6b85fd356",
+      "case_turn": [
+        "14_course_change_cancels_promotion",
+        "installments",
+        true
+      ],
+      "capability_status": "checkin_available",
+      "ladder": {
+        "eligible": false,
+        "observed_price_objection_count": 1,
+        "required_price_objection_count": 3,
+        "call_invitation_status": "not_offered",
+        "call_offer_count": 0,
+        "may_offer_call": true,
+        "missing_steps": [
+          "recorded_price_objections",
+          "call_invitation"
+        ]
+      },
+      "negotiation_prior_count": 1,
+      "prior_source_turn_ids": [
+        "33d79de7-5bcd-40ed-ad3b-2ac0596c8b89"
+      ],
+      "current_turn_in_prior_sources": false,
+      "current_message_ids": [
+        "b5308afd-e5a7-405b-98da-0ce6b85fd356"
+      ],
+      "current_proposed_price_objections": [
+        {
+          "source_quote": "Sigue siendo caro para mí."
+        }
+      ],
+      "proposed_action": {
+        "type": "none"
+      },
+      "draft_text": "Te entiendo, y no quiero que el precio te deje afuera de algo que sí querés hacer. La cuota más baja es la de 12 pagos de USD 30 al mes, y con eso accedés a las 41 clases completas.\nSi te sirve, lo vemos juntos en una llamada corta y armamos la forma de pago que te quede cómoda. Te parece?\nTe parece si lo vemos en una llamada breve y te ayudo a acomodarlo?",
+      "turn_rejection": {
+        "schema_version": 1,
+        "rejection_id": "44017282-672a-4145-af16-b331ca69c2a7",
+        "attempt": 1,
+        "rejections": [
+          {
+            "code": "FACT_VALUE_MISMATCH",
+            "subject": "price"
+          }
+        ],
+        "authorized_alternatives_selected": {
+          "missing_information": [
+            "nombre",
+            "apellido",
+            "correo",
+            "telefono"
+          ],
+          "actions": [
+            "none",
+            "send_test_payment_link"
+          ]
+        }
+      },
+      "mandatory_repair_present": true
+    },
+    {
+      "provider_latency_ms": 2534,
+      "provider_status": 200,
+      "provider_error": null,
+      "call_id": "call-0020",
+      "trace_id": "f65df51a-a39f-48ae-a46e-7fb4205c7ad2",
+      "source_turn_id": "b5308afd-e5a7-405b-98da-0ce6b85fd356",
+      "case_turn": [
+        "14_course_change_cancels_promotion",
+        "installments",
+        true
+      ],
+      "capability_status": "checkin_available",
+      "ladder": {
+        "eligible": false,
+        "observed_price_objection_count": 1,
+        "required_price_objection_count": 3,
+        "call_invitation_status": "not_offered",
+        "call_offer_count": 0,
+        "may_offer_call": true,
+        "missing_steps": [
+          "recorded_price_objections",
+          "call_invitation"
+        ]
+      },
+      "negotiation_prior_count": 1,
+      "prior_source_turn_ids": [
+        "33d79de7-5bcd-40ed-ad3b-2ac0596c8b89"
+      ],
+      "current_turn_in_prior_sources": false,
+      "current_message_ids": [
+        "b5308afd-e5a7-405b-98da-0ce6b85fd356"
+      ],
+      "current_proposed_price_objections": [
+        {
+          "source_quote": "Sigue siendo caro para mí."
+        }
+      ],
+      "proposed_action": {
+        "type": "none"
+      },
+      "draft_text": "Te entiendo. Por eso lo más liviano es arrancar con las 12 cuotas de USD 30 al mes: es la misma formación completa, sin pagar todo junto.\nSi eso te acomoda, te dejo el enlace para inscribirte con ese plan?",
+      "turn_rejection": {
+        "schema_version": 1,
+        "rejection_id": "e025e90e-31fd-4091-a437-56635cc3901a",
+        "attempt": 1,
+        "rejections": [
+          {
+            "code": "CALL_OFFER_MESSAGE_BOUNDARY_INVALID",
+            "subject": "call_offer"
+          },
+          {
+            "code": "CALL_OFFER_MESSAGE_BOUNDARY_INVALID",
+            "subject": "duplicate_call_offer"
+          }
+        ],
+        "authorized_alternatives_selected": {
+          "missing_information": [
+            "nombre",
+            "apellido",
+            "correo",
+            "telefono"
+          ],
+          "actions": [
+            "none"
+          ]
+        }
+      },
+      "mandatory_repair_present": true
+    },
+    {
+      "provider_latency_ms": 2504,
+      "provider_status": 200,
+      "provider_error": null,
+      "call_id": "call-0022",
+      "trace_id": "ec3a83db-a0fa-49a7-bfd8-29a2a26ef941",
+      "source_turn_id": "6bae9863-b21a-4fd3-a8e9-796787481268",
+      "case_turn": [
+        "14_course_change_cancels_promotion",
+        "isolate",
+        false
+      ],
+      "capability_status": "checkin_available",
+      "ladder": {
+        "eligible": false,
+        "observed_price_objection_count": 2,
+        "required_price_objection_count": 3,
+        "call_invitation_status": "not_offered",
+        "call_offer_count": 0,
+        "may_offer_call": true,
+        "missing_steps": [
+          "recorded_price_objections",
+          "call_invitation"
+        ]
+      },
+      "negotiation_prior_count": 2,
+      "prior_source_turn_ids": [
+        "b5308afd-e5a7-405b-98da-0ce6b85fd356",
+        "33d79de7-5bcd-40ed-ad3b-2ac0596c8b89"
+      ],
+      "current_turn_in_prior_sources": false,
+      "current_message_ids": [
+        "6bae9863-b21a-4fd3-a8e9-796787481268"
+      ],
+      "current_proposed_price_objections": [
+        {
+          "source_quote": "Aun en cuotas me frena el precio."
+        }
+      ],
+      "proposed_action": {
+        "type": "none"
+      },
+      "draft_text": "Entiendo, y no es lo mismo que decir que el curso no te sirve. Antes de buscarle la vuelta al pago, contame: además del precio, hay algo más que te haga dudar?",
+      "turn_rejection": {
+        "schema_version": 1,
+        "rejection_id": "3e822f60-bb11-4f21-a734-947f66d424ef",
+        "attempt": 1,
+        "rejections": [
+          {
+            "code": "CALL_OFFER_MESSAGE_BOUNDARY_INVALID",
+            "subject": "call_offer"
+          },
+          {
+            "code": "CALL_OFFER_MESSAGE_BOUNDARY_INVALID",
+            "subject": "duplicate_call_offer"
+          }
+        ],
+        "authorized_alternatives_selected": {
+          "missing_information": [
+            "nombre",
+            "apellido",
+            "correo",
+            "telefono"
+          ],
+          "actions": [
+            "none",
+            "send_test_payment_link"
+          ]
+        }
+      },
+      "mandatory_repair_present": true
+    },
+    {
+      "provider_latency_ms": 2749,
+      "provider_status": 200,
+      "provider_error": null,
+      "call_id": "call-0025",
+      "trace_id": "7915c646-2cf7-4369-85ab-79fdce2de315",
+      "source_turn_id": "88cf86de-c8b2-4768-9829-79c1086b6b11",
+      "case_turn": [
+        "14_course_change_cancels_promotion",
+        "bonus_1",
+        false
+      ],
+      "capability_status": "checkin_available",
+      "ladder": {
+        "eligible": false,
+        "observed_price_objection_count": 3,
+        "required_price_objection_count": 3,
+        "call_invitation_status": "not_offered",
+        "call_offer_count": 0,
+        "may_offer_call": true,
+        "missing_steps": [
+          "call_invitation"
+        ]
+      },
+      "negotiation_prior_count": 3,
+      "prior_source_turn_ids": [
+        "6bae9863-b21a-4fd3-a8e9-796787481268",
+        "b5308afd-e5a7-405b-98da-0ce6b85fd356",
+        "33d79de7-5bcd-40ed-ad3b-2ac0596c8b89"
+      ],
+      "current_turn_in_prior_sources": false,
+      "current_message_ids": [
+        "88cf86de-c8b2-4768-9829-79c1086b6b11"
+      ],
+      "current_proposed_price_objections": [],
+      "proposed_action": {
+        "type": "none"
+      },
+      "draft_text": "Perfecto, seguimos por chat. Ya sabemos que Fotografía Profesional es lo que querés y que el precio es el único freno, así que te propongo algo: si sumo un curso extra a tu inscripción, sin cambiar los USD 360, te ayudaría a avanzar?",
+      "turn_rejection": {
+        "schema_version": 1,
+        "rejection_id": "0af8b822-cd37-4577-bd54-92693307672f",
+        "attempt": 1,
+        "rejections": [
+          {
+            "code": "FACT_VALUE_MISMATCH",
+            "subject": "forbidden_promise"
+          }
+        ],
+        "authorized_alternatives_selected": {
+          "missing_information": [
+            "nombre",
+            "apellido",
+            "correo",
+            "telefono"
+          ],
+          "actions": [
+            "none",
+            "send_test_payment_link"
+          ]
+        }
+      },
+      "mandatory_repair_present": true
+    }
+  ],
+  "proposal_rejected_events": [
+    {
+      "data": {
+        "rejection": {
+          "attempt": 1,
+          "rejections": [
+            {
+              "code": "FACT_VALUE_MISMATCH",
+              "subject": "price"
+            }
+          ],
+          "rejection_id": "44017282-672a-4145-af16-b331ca69c2a7",
+          "schema_version": 1,
+          "authorized_alternatives": {
+            "actions": [
+              "none",
+              "send_test_payment_link"
+            ],
+            "fact_ids": [
+              "offering:fotografia_profesional:name:v1",
+              "offering:fotografia_profesional:description:v1",
+              "offering:fotografia_profesional:duration:v1",
+              "offering:fotografia_profesional:modality:v1",
+              "payment:fotografia_profesional:monthly_12:label:v1",
+              "payment:fotografia_profesional:monthly_12:price:v1",
+              "payment:fotografia_profesional:monthly_6:label:v1",
+              "payment:fotografia_profesional:monthly_6:price:v1",
+              "payment:fotografia_profesional:one_time:label:v1",
+              "payment:fotografia_profesional:one_time:price:v1",
+              "offering:aires_acondicionados:name:v1",
+              "offering:armado_reparacion_pc:name:v1",
+              "offering:autocad_interiores:name:v1",
+              "offering:camaras_seguridad:name:v1",
+              "offering:coaching_liderazgo:name:v1",
+              "offering:community_manager:name:v1",
+              "offering:comunicacion_interna_empresas:name:v1",
+              "offering:decoracion_de_interiores:name:v1",
+              "offering:diseno_corel_draw:name:v1",
+              "offering:diseno_illustrator:name:v1",
+              "offering:diseno_photoshop:name:v1",
+              "offering:energia_solar_fotovoltaica:name:v1",
+              "offering:entrenamiento_funcional:name:v1",
+              "offering:especialista_marketing:name:v1",
+              "offering:especialista_ventas:name:v1",
+              "offering:estrategias_emprender:name:v1",
+              "offering:excel_integral:name:v1",
+              "offering:fotografia_celulares_tiendas_online:name:v1",
+              "offering:fotografia_profesional:name:v1",
+              "offering:influencers_creadores_contenidos:name:v1",
+              "offering:ingles_1:name:v1",
+              "offering:ingles_2:name:v1",
+              "offering:ingles_3:name:v1",
+              "offering:instagram_emprendedores:name:v1",
+              "offering:introduccion_catering:name:v1",
+              "offering:introduccion_criptomonedas:name:v1",
+              "offering:introduccion_ecommerce:name:v1",
+              "offering:maquillaje_profesional:name:v1",
+              "offering:marketing_digital:name:v1",
+              "offering:nutricion_alimentacion:name:v1",
+              "offering:oratoria:name:v1",
+              "offering:organizacion_baby_shower:name:v1",
+              "offering:organizador_eventos_sociales:name:v1",
+              "offering:paisajismo_jardineria:name:v1",
+              "offering:publicidad_redes_sociales:name:v1",
+              "offering:redes_informaticas:name:v1",
+              "offering:reparacion_celulares:name:v1",
+              "offering:sushi_principiantes:name:v1",
+              "offering:unas_gelificadas:name:v1",
+              "offering:vino_cata_maridaje:name:v1",
+              "area:academia-de-oficios:name:v1",
+              "area:academia-de-diseno-informatico:name:v1",
+              "area:academia-de-negocios:name:v1",
+              "area:academia-de-marketing:name:v1",
+              "area:academia-de-emprendedores:name:v1",
+              "area:academia-de-salud-y-bienestar:name:v1",
+              "area:academia-cultural:name:v1",
+              "area:academia-gastronomica:name:v1",
+              "area:academia-de-moda-y-belleza:name:v1",
+              "payment:fotografia_profesional:monthly_12:label:v1",
+              "payment:fotografia_profesional:monthly_6:label:v1",
+              "payment:fotografia_profesional:one_time:label:v1",
+              "payment-test:stripe_verification_050:label:v1"
+            ],
+            "missing_information": [
+              "nombre",
+              "apellido",
+              "correo",
+              "telefono"
+            ]
+          }
+        }
+      },
+      "kind": "proposal_rejected",
+      "event_id": "58460448-671f-45f3-8b0b-3a36f4933b4e",
+      "trace_id": "f65df51a-a39f-48ae-a46e-7fb4205c7ad2",
+      "subject_id": "b5308afd-e5a7-405b-98da-0ce6b85fd356",
+      "subject_type": "turn",
+      "brain_version": "studyx-agent-a-brain-v146",
+      "prompt_version": "studyx-agent-a-canonical-v101",
+      "botpress_version": "studyx-botpress-turn-evidence-v1"
+    },
+    {
+      "data": {
+        "rejection": {
+          "attempt": 1,
+          "rejections": [
+            {
+              "code": "FACT_VALUE_MISMATCH",
+              "subject": "price"
+            }
+          ],
+          "rejection_id": "44017282-672a-4145-af16-b331ca69c2a7",
+          "schema_version": 1,
+          "authorized_alternatives": {
+            "actions": [
+              "none",
+              "send_test_payment_link"
+            ],
+            "fact_ids": [
+              "offering:fotografia_profesional:name:v1",
+              "offering:fotografia_profesional:description:v1",
+              "offering:fotografia_profesional:duration:v1",
+              "offering:fotografia_profesional:modality:v1",
+              "payment:fotografia_profesional:monthly_12:label:v1",
+              "payment:fotografia_profesional:monthly_12:price:v1",
+              "payment:fotografia_profesional:monthly_6:label:v1",
+              "payment:fotografia_profesional:monthly_6:price:v1",
+              "payment:fotografia_profesional:one_time:label:v1",
+              "payment:fotografia_profesional:one_time:price:v1",
+              "offering:aires_acondicionados:name:v1",
+              "offering:armado_reparacion_pc:name:v1",
+              "offering:autocad_interiores:name:v1",
+              "offering:camaras_seguridad:name:v1",
+              "offering:coaching_liderazgo:name:v1",
+              "offering:community_manager:name:v1",
+              "offering:comunicacion_interna_empresas:name:v1",
+              "offering:decoracion_de_interiores:name:v1",
+              "offering:diseno_corel_draw:name:v1",
+              "offering:diseno_illustrator:name:v1",
+              "offering:diseno_photoshop:name:v1",
+              "offering:energia_solar_fotovoltaica:name:v1",
+              "offering:entrenamiento_funcional:name:v1",
+              "offering:especialista_marketing:name:v1",
+              "offering:especialista_ventas:name:v1",
+              "offering:estrategias_emprender:name:v1",
+              "offering:excel_integral:name:v1",
+              "offering:fotografia_celulares_tiendas_online:name:v1",
+              "offering:fotografia_profesional:name:v1",
+              "offering:influencers_creadores_contenidos:name:v1",
+              "offering:ingles_1:name:v1",
+              "offering:ingles_2:name:v1",
+              "offering:ingles_3:name:v1",
+              "offering:instagram_emprendedores:name:v1",
+              "offering:introduccion_catering:name:v1",
+              "offering:introduccion_criptomonedas:name:v1",
+              "offering:introduccion_ecommerce:name:v1",
+              "offering:maquillaje_profesional:name:v1",
+              "offering:marketing_digital:name:v1",
+              "offering:nutricion_alimentacion:name:v1",
+              "offering:oratoria:name:v1",
+              "offering:organizacion_baby_shower:name:v1",
+              "offering:organizador_eventos_sociales:name:v1",
+              "offering:paisajismo_jardineria:name:v1",
+              "offering:publicidad_redes_sociales:name:v1",
+              "offering:redes_informaticas:name:v1",
+              "offering:reparacion_celulares:name:v1",
+              "offering:sushi_principiantes:name:v1",
+              "offering:unas_gelificadas:name:v1",
+              "offering:vino_cata_maridaje:name:v1",
+              "area:academia-de-oficios:name:v1",
+              "area:academia-de-diseno-informatico:name:v1",
+              "area:academia-de-negocios:name:v1",
+              "area:academia-de-marketing:name:v1",
+              "area:academia-de-emprendedores:name:v1",
+              "area:academia-de-salud-y-bienestar:name:v1",
+              "area:academia-cultural:name:v1",
+              "area:academia-gastronomica:name:v1",
+              "area:academia-de-moda-y-belleza:name:v1",
+              "payment:fotografia_profesional:monthly_12:label:v1",
+              "payment:fotografia_profesional:monthly_6:label:v1",
+              "payment:fotografia_profesional:one_time:label:v1",
+              "payment-test:stripe_verification_050:label:v1"
+            ],
+            "missing_information": [
+              "nombre",
+              "apellido",
+              "correo",
+              "telefono"
+            ]
+          }
+        }
+      },
+      "kind": "proposal_rejected",
+      "event_id": "1c36766c-6115-4a2c-9aee-0edb13dbb3e8",
+      "trace_id": "f65df51a-a39f-48ae-a46e-7fb4205c7ad2",
+      "subject_id": "b5308afd-e5a7-405b-98da-0ce6b85fd356",
+      "subject_type": "turn",
+      "brain_version": "studyx-agent-a-brain-v146",
+      "prompt_version": "studyx-agent-a-canonical-v101",
+      "botpress_version": "studyx-botpress-turn-evidence-v1"
+    },
+    {
+      "data": {
+        "rejection": {
+          "attempt": 1,
+          "rejections": [
+            {
+              "code": "CALL_OFFER_MESSAGE_BOUNDARY_INVALID",
+              "subject": "call_offer"
+            },
+            {
+              "code": "CALL_OFFER_MESSAGE_BOUNDARY_INVALID",
+              "subject": "duplicate_call_offer"
+            }
+          ],
+          "rejection_id": "3e822f60-bb11-4f21-a734-947f66d424ef",
+          "schema_version": 1,
+          "authorized_alternatives": {
+            "actions": [
+              "none",
+              "send_test_payment_link"
+            ],
+            "fact_ids": [
+              "offering:fotografia_profesional:name:v1",
+              "offering:fotografia_profesional:description:v1",
+              "offering:fotografia_profesional:duration:v1",
+              "offering:fotografia_profesional:modality:v1",
+              "payment:fotografia_profesional:monthly_12:label:v1",
+              "payment:fotografia_profesional:monthly_12:price:v1",
+              "payment:fotografia_profesional:monthly_6:label:v1",
+              "payment:fotografia_profesional:monthly_6:price:v1",
+              "payment:fotografia_profesional:one_time:label:v1",
+              "payment:fotografia_profesional:one_time:price:v1",
+              "offering:aires_acondicionados:name:v1",
+              "offering:armado_reparacion_pc:name:v1",
+              "offering:autocad_interiores:name:v1",
+              "offering:camaras_seguridad:name:v1",
+              "offering:coaching_liderazgo:name:v1",
+              "offering:community_manager:name:v1",
+              "offering:comunicacion_interna_empresas:name:v1",
+              "offering:decoracion_de_interiores:name:v1",
+              "offering:diseno_corel_draw:name:v1",
+              "offering:diseno_illustrator:name:v1",
+              "offering:diseno_photoshop:name:v1",
+              "offering:energia_solar_fotovoltaica:name:v1",
+              "offering:entrenamiento_funcional:name:v1",
+              "offering:especialista_marketing:name:v1",
+              "offering:especialista_ventas:name:v1",
+              "offering:estrategias_emprender:name:v1",
+              "offering:excel_integral:name:v1",
+              "offering:fotografia_celulares_tiendas_online:name:v1",
+              "offering:fotografia_profesional:name:v1",
+              "offering:influencers_creadores_contenidos:name:v1",
+              "offering:ingles_1:name:v1",
+              "offering:ingles_2:name:v1",
+              "offering:ingles_3:name:v1",
+              "offering:instagram_emprendedores:name:v1",
+              "offering:introduccion_catering:name:v1",
+              "offering:introduccion_criptomonedas:name:v1",
+              "offering:introduccion_ecommerce:name:v1",
+              "offering:maquillaje_profesional:name:v1",
+              "offering:marketing_digital:name:v1",
+              "offering:nutricion_alimentacion:name:v1",
+              "offering:oratoria:name:v1",
+              "offering:organizacion_baby_shower:name:v1",
+              "offering:organizador_eventos_sociales:name:v1",
+              "offering:paisajismo_jardineria:name:v1",
+              "offering:publicidad_redes_sociales:name:v1",
+              "offering:redes_informaticas:name:v1",
+              "offering:reparacion_celulares:name:v1",
+              "offering:sushi_principiantes:name:v1",
+              "offering:unas_gelificadas:name:v1",
+              "offering:vino_cata_maridaje:name:v1",
+              "area:academia-de-oficios:name:v1",
+              "area:academia-de-diseno-informatico:name:v1",
+              "area:academia-de-negocios:name:v1",
+              "area:academia-de-marketing:name:v1",
+              "area:academia-de-emprendedores:name:v1",
+              "area:academia-de-salud-y-bienestar:name:v1",
+              "area:academia-cultural:name:v1",
+              "area:academia-gastronomica:name:v1",
+              "area:academia-de-moda-y-belleza:name:v1",
+              "payment:fotografia_profesional:monthly_12:label:v1",
+              "payment:fotografia_profesional:monthly_6:label:v1",
+              "payment:fotografia_profesional:one_time:label:v1",
+              "payment-test:stripe_verification_050:label:v1"
+            ],
+            "missing_information": [
+              "nombre",
+              "apellido",
+              "correo",
+              "telefono"
+            ]
+          }
+        }
+      },
+      "kind": "proposal_rejected",
+      "event_id": "7ffadf09-1d19-4e9b-b7e6-5570880f0d01",
+      "trace_id": "ec3a83db-a0fa-49a7-bfd8-29a2a26ef941",
+      "subject_id": "6bae9863-b21a-4fd3-a8e9-796787481268",
+      "subject_type": "turn",
+      "brain_version": "studyx-agent-a-brain-v146",
+      "prompt_version": "studyx-agent-a-canonical-v101",
+      "botpress_version": "studyx-botpress-turn-evidence-v1"
+    },
+    {
+      "data": {
+        "rejection": {
+          "attempt": 1,
+          "rejections": [
+            {
+              "code": "FACT_VALUE_MISMATCH",
+              "subject": "forbidden_promise"
+            }
+          ],
+          "rejection_id": "0af8b822-cd37-4577-bd54-92693307672f",
+          "schema_version": 1,
+          "authorized_alternatives": {
+            "actions": [
+              "none",
+              "send_test_payment_link"
+            ],
+            "fact_ids": [
+              "offering:fotografia_profesional:name:v1",
+              "offering:fotografia_profesional:description:v1",
+              "offering:fotografia_profesional:duration:v1",
+              "offering:fotografia_profesional:modality:v1",
+              "payment:fotografia_profesional:monthly_12:label:v1",
+              "payment:fotografia_profesional:monthly_12:price:v1",
+              "payment:fotografia_profesional:monthly_6:label:v1",
+              "payment:fotografia_profesional:monthly_6:price:v1",
+              "payment:fotografia_profesional:one_time:label:v1",
+              "payment:fotografia_profesional:one_time:price:v1",
+              "offering:aires_acondicionados:name:v1",
+              "offering:armado_reparacion_pc:name:v1",
+              "offering:autocad_interiores:name:v1",
+              "offering:camaras_seguridad:name:v1",
+              "offering:coaching_liderazgo:name:v1",
+              "offering:community_manager:name:v1",
+              "offering:comunicacion_interna_empresas:name:v1",
+              "offering:decoracion_de_interiores:name:v1",
+              "offering:diseno_corel_draw:name:v1",
+              "offering:diseno_illustrator:name:v1",
+              "offering:diseno_photoshop:name:v1",
+              "offering:energia_solar_fotovoltaica:name:v1",
+              "offering:entrenamiento_funcional:name:v1",
+              "offering:especialista_marketing:name:v1",
+              "offering:especialista_ventas:name:v1",
+              "offering:estrategias_emprender:name:v1",
+              "offering:excel_integral:name:v1",
+              "offering:fotografia_celulares_tiendas_online:name:v1",
+              "offering:fotografia_profesional:name:v1",
+              "offering:influencers_creadores_contenidos:name:v1",
+              "offering:ingles_1:name:v1",
+              "offering:ingles_2:name:v1",
+              "offering:ingles_3:name:v1",
+              "offering:instagram_emprendedores:name:v1",
+              "offering:introduccion_catering:name:v1",
+              "offering:introduccion_criptomonedas:name:v1",
+              "offering:introduccion_ecommerce:name:v1",
+              "offering:maquillaje_profesional:name:v1",
+              "offering:marketing_digital:name:v1",
+              "offering:nutricion_alimentacion:name:v1",
+              "offering:oratoria:name:v1",
+              "offering:organizacion_baby_shower:name:v1",
+              "offering:organizador_eventos_sociales:name:v1",
+              "offering:paisajismo_jardineria:name:v1",
+              "offering:publicidad_redes_sociales:name:v1",
+              "offering:redes_informaticas:name:v1",
+              "offering:reparacion_celulares:name:v1",
+              "offering:sushi_principiantes:name:v1",
+              "offering:unas_gelificadas:name:v1",
+              "offering:vino_cata_maridaje:name:v1",
+              "area:academia-de-oficios:name:v1",
+              "area:academia-de-diseno-informatico:name:v1",
+              "area:academia-de-negocios:name:v1",
+              "area:academia-de-marketing:name:v1",
+              "area:academia-de-emprendedores:name:v1",
+              "area:academia-de-salud-y-bienestar:name:v1",
+              "area:academia-cultural:name:v1",
+              "area:academia-gastronomica:name:v1",
+              "area:academia-de-moda-y-belleza:name:v1",
+              "payment:fotografia_profesional:monthly_12:label:v1",
+              "payment:fotografia_profesional:monthly_6:label:v1",
+              "payment:fotografia_profesional:one_time:label:v1",
+              "payment-test:stripe_verification_050:label:v1"
+            ],
+            "missing_information": [
+              "nombre",
+              "apellido",
+              "correo",
+              "telefono"
+            ]
+          }
+        }
+      },
+      "kind": "proposal_rejected",
+      "event_id": "f0f48ea1-1532-4ac6-956c-165d3ebd3d12",
+      "trace_id": "7915c646-2cf7-4369-85ab-79fdce2de315",
+      "subject_id": "88cf86de-c8b2-4768-9829-79c1086b6b11",
+      "subject_type": "turn",
+      "brain_version": "studyx-agent-a-brain-v146",
+      "prompt_version": "studyx-agent-a-canonical-v101",
+      "botpress_version": "studyx-botpress-turn-evidence-v1"
+    }
+  ]
+}

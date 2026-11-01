@@ -1,0 +1,28 @@
+{
+  "evaluated_sha": "10d7b3e5e7b5cdce3c88901cfedd3493346ecce2",
+  "focused_runs": 2,
+  "full_suite_runs": 0,
+  "operational_prerequisite_case_ids": [
+    "06",
+    "07",
+    "14"
+  ],
+  "operational_interpretation_announced_before_second_run": true,
+  "not_a_change_to_judge_criteria": true,
+  "formal_full_suite_critical_case_ids": [
+    "07",
+    "10",
+    "11",
+    "12",
+    "15"
+  ],
+  "formal_full_suite_criterion": {
+    "required_passed_turns": 41,
+    "total_turns": 48,
+    "all_five_critical_cases_must_pass": true
+  },
+  "absolute_acceptance_evaluated": false,
+  "only_formal_critical_present_in_focused_scope": "07",
+  "case_07_passed_both": true,
+  "full_suite_not_run_reason": "06 and 14 did not pass completely in both focused runs"
+}

@@ -1,0 +1,81 @@
+{
+  "source_sha": "10d7b3e5e7b5cdce3c88901cfedd3493346ecce2",
+  "date": "2026-11-01",
+  "deployment": false,
+  "prompt_canonical": "studyx-agent-a-canonical-v101",
+  "brain_annex": "studyx-agent-a-brain-v146",
+  "unit": {
+    "passed": 4890,
+    "skipped": 17,
+    "todo": 7,
+    "files_passed": 261,
+    "files_skipped": 2,
+    "log": "rule10-unit-final2.log",
+    "workers": 1
+  },
+  "integration": {
+    "passed": 945,
+    "skipped": 1,
+    "files_passed": 94,
+    "log": "rule10-integration-full.log",
+    "database": "disposable PostgreSQL17 localhost55434, all migrations applied, fresh seed and fake offline knowledge embeddings"
+  },
+  "eval_offline": {
+    "passed": 75,
+    "skipped": 3,
+    "log": "rule10-eval-offline.log"
+  },
+  "typecheck": {
+    "passed": true,
+    "log": "rule10-typecheck-final.log"
+  },
+  "lint": {
+    "passed": true,
+    "log": "rule10-lint-final.log"
+  },
+  "build": {
+    "passed": true,
+    "log": "rule10-build-final.log"
+  },
+  "adk": {
+    "passed": true,
+    "log": "rule10-adk-final.log"
+  },
+  "architect": {
+    "status": "approved",
+    "resolved_findings": [
+      "effective and terminal-call reconciliation, not raw call state",
+      "literal source evidence for committed price objection candidates"
+    ],
+    "regressions": [
+      "current and future sources excluded",
+      "same draft invitation excluded",
+      "invented source quotes excluded",
+      "literal quote in correlated batch supported",
+      "terminal call and expired state permission",
+      "blocked rollback",
+      "stale capability transactional revalidation",
+      "exact replay and previously delivered package acceptance"
+    ],
+    "evidence_review": "approved: 44/44 results and deliveries match originals, cost and formal preconditions cross-checked"
+  },
+  "incidents_resolved": [
+    {
+      "phase": "unit first",
+      "cause": "updated guard requires truthful fixture and v146 metadata; ADK registration5s timeout under concurrency",
+      "resolution": "fixture and version metadata updated; registration alone1/1, final fullunit workers1; no timeout change"
+    },
+    {
+      "phase": "unit second",
+      "cause": "static state-store adapter import required DATABASE_URL even for pure disabled tests",
+      "resolution": "defer adapter import inside reader; caller transaction injected; final complete unit pass"
+    }
+  ],
+  "authority_unchanged": true,
+  "golden_semantic_criteria_unchanged": true,
+  "heldout_metadata_only": "prompt_version v145->v146; semantic cases unchanged",
+  "evidence_secret_scan": {
+    "scanned_files": 73,
+    "actual_provider_key_matches": 0
+  }
+}

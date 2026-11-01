@@ -1,0 +1,372 @@
+{
+  "schema_version": 1,
+  "evaluated_sha": "10d7b3e5e7b5cdce3c88901cfedd3493346ecce2",
+  "generated_at": "2026-11-01T04:19:01.568066+00:00",
+  "files": [
+    {
+      "path": "docs/reports/2026-11-01-backend-negotiation-ladder.md",
+      "sha256": "8c6170ff3bfdab5808b1a4d1389a6fd960dcb396eb24cfff9425ecdb0c781006",
+      "bytes": 8337
+    },
+    {
+      "path": "docs/reports/evidence/2026-11-01-backend-negotiation-ladder/balance-after.json",
+      "sha256": "27e43f1b95f94554c6874d9e26bbc5ae63f87e7b327f0c5e43fd8431ba2db568",
+      "bytes": 248
+    },
+    {
+      "path": "docs/reports/evidence/2026-11-01-backend-negotiation-ladder/balance-before.json",
+      "sha256": "f76df74ef97af4c322d36d546ccb7fc3e2d29e72fee18be82c10c74551799ca0",
+      "bytes": 269
+    },
+    {
+      "path": "docs/reports/evidence/2026-11-01-backend-negotiation-ladder/balance-between.json",
+      "sha256": "1ed1e030656c7d74e1faedc62b7f32e4fcf79b543a4e7a8b6808b39a985cd34f",
+      "bytes": 248
+    },
+    {
+      "path": "docs/reports/evidence/2026-11-01-backend-negotiation-ladder/checks.json",
+      "sha256": "3b878851873d2ad4efc04f36cffbbfde461201fb2415c938c6ce4829b1da87a7",
+      "bytes": 2626
+    },
+    {
+      "path": "docs/reports/evidence/2026-11-01-backend-negotiation-ladder/por-turno.csv",
+      "sha256": "8c33d31a873545a904ebb694574047a6f922890a2951ecf6820b91f3f65fcddf",
+      "bytes": 189727
+    },
+    {
+      "path": "docs/reports/evidence/2026-11-01-backend-negotiation-ladder/por-turno.md",
+      "sha256": "f9c0e1c4c77c20f034a12a3bfda74cdcd29c7c4dccbff76385bee827bb9275af",
+      "bytes": 38650
+    },
+    {
+      "path": "docs/reports/evidence/2026-11-01-backend-negotiation-ladder/pre-full-gate.json",
+      "sha256": "b489c9bf7617f1005ece94b91e7c08ff0830bbad9e00bd3a5203d0698a2bdfd4",
+      "bytes": 752
+    },
+    {
+      "path": "docs/reports/evidence/2026-11-01-backend-negotiation-ladder/r1-diagnosis.json",
+      "sha256": "5c5648fa1a05fb3611614fbf95110eedbc80e861fe6a2456b48baf6a038f3d24",
+      "bytes": 30388
+    },
+    {
+      "path": "docs/reports/evidence/2026-11-01-backend-negotiation-ladder/r1-ladder-context.json",
+      "sha256": "d4cdd337d4334f4e860b856b76b11268344cd7d269d32dd0d9a619781d3c34b2",
+      "bytes": 24545
+    },
+    {
+      "path": "docs/reports/evidence/2026-11-01-backend-negotiation-ladder/r2-diagnosis.json",
+      "sha256": "c989b8ecdb99d8d43e2be3d2bf40569f9f6b4c216fa74f874cea540dc006daa2",
+      "bytes": 104379
+    },
+    {
+      "path": "docs/reports/evidence/2026-11-01-backend-negotiation-ladder/r2-ladder-context.json",
+      "sha256": "9b50f2931520f7345d2be9168b0c8c8a31d35187cd3a265e86fa94d5bf90abb1",
+      "bytes": 70329
+    },
+    {
+      "path": "docs/reports/evidence/2026-11-01-backend-negotiation-ladder/raw/r1/focused-10d7b3e-flash-r1-20261101-durable-evidence.json",
+      "sha256": "a978e1f7027c86b9affbdd1e7f8fa0d0dbff6f54aa7a758c60a0ed7628ca05f3",
+      "bytes": 463548
+    },
+    {
+      "path": "docs/reports/evidence/2026-11-01-backend-negotiation-ladder/raw/r1/focused-10d7b3e-flash-r1-20261101-observations.partial.json",
+      "sha256": "8a1319c533371efbd34c71ed151b0cfc14845b0b155912b25dec4112bd72e7f2",
+      "bytes": 1983342
+    },
+    {
+      "path": "docs/reports/evidence/2026-11-01-backend-negotiation-ladder/raw/r1/focused-10d7b3e-flash-r1-20261101-provider.json",
+      "sha256": "67b330cb7bc1a12822f7bd24437ef5c8fab8c3fafcf18b94be0585b322f938e7",
+      "bytes": 1860300
+    },
+    {
+      "path": "docs/reports/evidence/2026-11-01-backend-negotiation-ladder/raw/r1/focused-10d7b3e-flash-r1-20261101-provider.partial.json",
+      "sha256": "69cf21bdbd8d3faadfe2968bf5a0bb734f86442965623dd0db6498185d7737f0",
+      "bytes": 1860296
+    },
+    {
+      "path": "docs/reports/evidence/2026-11-01-backend-negotiation-ladder/raw/r1/focused-10d7b3e-flash-r1-20261101-run-state.json",
+      "sha256": "c3dd23864f0ed7a67a5ef444de89e8beb81e317f8202817534693aacee34fea3",
+      "bytes": 362
+    },
+    {
+      "path": "docs/reports/evidence/2026-11-01-backend-negotiation-ladder/raw/r1/focused-10d7b3e-flash-r1-20261101.json",
+      "sha256": "0703494ed50de5b774fc25e9cd85a626ed1d952614b8cd7fcb5f62446eeb0704",
+      "bytes": 2001369
+    },
+    {
+      "path": "docs/reports/evidence/2026-11-01-backend-negotiation-ladder/raw/r1/focused-10d7b3e-flash-r1-20261101.md",
+      "sha256": "9c5d9576964613407f40adb5995244c0ec956954eed89b89602afb0a5da236a2",
+      "bytes": 52835
+    },
+    {
+      "path": "docs/reports/evidence/2026-11-01-backend-negotiation-ladder/raw/r1/runtime/workflow-turn-2026-11-01T04-06-04-304Z-10d86d7b-9e30-40db-8807-d68be52efd9c.json",
+      "sha256": "2717db211f1318cfa51c718d0d36aa3b2ba9a178eaead61c0b516ae6ae04ad9b",
+      "bytes": 272203
+    },
+    {
+      "path": "docs/reports/evidence/2026-11-01-backend-negotiation-ladder/raw/r1/runtime/workflow-turn-2026-11-01T04-06-13-762Z-bd16505d-405a-4685-b0c6-597c594d56e3.json",
+      "sha256": "a3d310ca51686058b995ebb6a2969aba2507cef14629beae2964ccc9a9b233b7",
+      "bytes": 272900
+    },
+    {
+      "path": "docs/reports/evidence/2026-11-01-backend-negotiation-ladder/raw/r1/runtime/workflow-turn-2026-11-01T04-06-22-439Z-26d6d5d7-e5be-4163-a7b9-dc1b9ec33944.json",
+      "sha256": "34a80e7ac17e7eaaab0b3bf7303c66d2fc47dd3ee5f75da17cb9b0eed4ffc971",
+      "bytes": 269441
+    },
+    {
+      "path": "docs/reports/evidence/2026-11-01-backend-negotiation-ladder/raw/r1/runtime/workflow-turn-2026-11-01T04-06-31-831Z-8d5b8f90-cfc8-43a7-a6bc-ad014dcb5cd8.json",
+      "sha256": "503c88b05dbaf091725482300128f49555803a5b0eee294e40658fff6c251f15",
+      "bytes": 273978
+    },
+    {
+      "path": "docs/reports/evidence/2026-11-01-backend-negotiation-ladder/raw/r1/runtime/workflow-turn-2026-11-01T04-06-40-810Z-dea9099b-5534-4d91-8cfa-f4c37b8d2aba.json",
+      "sha256": "b0ab01b514a13097316546c79c555c9e86ad26786bd3c8db775e5e9307be93fb",
+      "bytes": 268991
+    },
+    {
+      "path": "docs/reports/evidence/2026-11-01-backend-negotiation-ladder/raw/r1/runtime/workflow-turn-2026-11-01T04-06-50-361Z-2525334f-7514-405b-907c-a3339998f9b1.json",
+      "sha256": "d1b149cf5ed4eac2426dc6a40c4fdd4ba30b6c6d79548cda47e22e2566859145",
+      "bytes": 273484
+    },
+    {
+      "path": "docs/reports/evidence/2026-11-01-backend-negotiation-ladder/raw/r1/runtime/workflow-turn-2026-11-01T04-06-59-727Z-d9edcee1-cfe2-4af5-8f7a-08ffb898f29e.json",
+      "sha256": "776681cd003c198e6775154a8bc7b83108ae67f9de3976d96540ab9cc633e840",
+      "bytes": 276803
+    },
+    {
+      "path": "docs/reports/evidence/2026-11-01-backend-negotiation-ladder/raw/r1/runtime/workflow-turn-2026-11-01T04-07-07-429Z-83c19af0-cc29-4ada-9441-66ae46970388.json",
+      "sha256": "52fd1ab0cc025909c2ca62af81af8c1ddd896ae3c9ad6b234c712192880a12f9",
+      "bytes": 271037
+    },
+    {
+      "path": "docs/reports/evidence/2026-11-01-backend-negotiation-ladder/raw/r1/runtime/workflow-turn-2026-11-01T04-07-16-893Z-1c8fbeb2-fdfc-4253-bb2e-3f2a6ed52049.json",
+      "sha256": "9c104bdad65fa75b357116b22655783586bb322d615233f513c80176f146fc42",
+      "bytes": 282505
+    },
+    {
+      "path": "docs/reports/evidence/2026-11-01-backend-negotiation-ladder/raw/r1/runtime/workflow-turn-2026-11-01T04-07-25-770Z-228b4b05-8047-40d8-8d6b-b585121030a6.json",
+      "sha256": "0216bafa4d18502b6307ad3ac9d166876d0cea46a75bfc0288eeff3fced421ab",
+      "bytes": 286394
+    },
+    {
+      "path": "docs/reports/evidence/2026-11-01-backend-negotiation-ladder/raw/r1/runtime/workflow-turn-2026-11-01T04-07-35-983Z-ae3030e1-b4be-472b-9f4b-0006553e64a2.json",
+      "sha256": "3e779b1907a032edc1f92606f6ee2763b15dbc6830728e9661a9a2b3dee0b759",
+      "bytes": 290863
+    },
+    {
+      "path": "docs/reports/evidence/2026-11-01-backend-negotiation-ladder/raw/r1/runtime/workflow-turn-2026-11-01T04-07-44-851Z-b11c6ea2-9b18-45ae-b0ad-13091c8f415c.json",
+      "sha256": "5aa7462e8073fe1c0923fced9d54a23ace8e448b07856b43cf272f1b0218dbd5",
+      "bytes": 290946
+    },
+    {
+      "path": "docs/reports/evidence/2026-11-01-backend-negotiation-ladder/raw/r1/runtime/workflow-turn-2026-11-01T04-07-53-762Z-b1a8e463-f0eb-4ad1-9905-bc8aca9809a3.json",
+      "sha256": "ca617a4b8081cc38629ffca9d9c0cf9cfdeb697988474c41d447289bbdfe35a1",
+      "bytes": 300286
+    },
+    {
+      "path": "docs/reports/evidence/2026-11-01-backend-negotiation-ladder/raw/r1/runtime/workflow-turn-2026-11-01T04-08-02-845Z-cb6c7121-e1ef-46ba-aed2-24db510ae9e8.json",
+      "sha256": "ebf2740f84466e47aa20b3f0b470300d02fdde41872fd97fd2b841e4ccc1cc3d",
+      "bytes": 268611
+    },
+    {
+      "path": "docs/reports/evidence/2026-11-01-backend-negotiation-ladder/raw/r1/runtime/workflow-turn-2026-11-01T04-08-10-965Z-c94c90cd-ad18-435f-8708-3535f007224e.json",
+      "sha256": "59d49f9709f0eb780cf9ee60e19bf556f4983ad654f4e25b1a9379e7321240b9",
+      "bytes": 264260
+    },
+    {
+      "path": "docs/reports/evidence/2026-11-01-backend-negotiation-ladder/raw/r1/runtime/workflow-turn-2026-11-01T04-08-19-908Z-0f2398ea-66f0-4168-ac65-38d38b59cd8c.json",
+      "sha256": "860f7bc09299999efef30599a5d266baeaac4b4caa9b055aa9a764f2c2072178",
+      "bytes": 268951
+    },
+    {
+      "path": "docs/reports/evidence/2026-11-01-backend-negotiation-ladder/raw/r1/runtime/workflow-turn-2026-11-01T04-08-29-106Z-b8d30e67-f3c8-42e6-8093-d57d7fd6c819.json",
+      "sha256": "f87fe85da9d75cd05abe9b85d875628c4e0fd61fc984ed8c89d623cc5e651742",
+      "bytes": 274194
+    },
+    {
+      "path": "docs/reports/evidence/2026-11-01-backend-negotiation-ladder/raw/r1/runtime/workflow-turn-2026-11-01T04-08-38-484Z-09cdc017-dfa4-44aa-a8e5-24ec2a27f308.json",
+      "sha256": "cbcc2e2e3a00356e2a7c2a05a0405f8b863b64cd4b718584282284311b9d1bcb",
+      "bytes": 276981
+    },
+    {
+      "path": "docs/reports/evidence/2026-11-01-backend-negotiation-ladder/raw/r1/runtime/workflow-turn-2026-11-01T04-08-48-112Z-56c9d4a4-562d-43f2-b701-eb9f51279433.json",
+      "sha256": "fe8fbbaf1dcc264e7a81a6025daa7a39b51af1350e0e58b72e4e6f49c7798d19",
+      "bytes": 279437
+    },
+    {
+      "path": "docs/reports/evidence/2026-11-01-backend-negotiation-ladder/raw/r1/runtime/workflow-turn-2026-11-01T04-08-56-348Z-df87d36e-74e6-4ffa-b029-abc6e6d36751.json",
+      "sha256": "18a492d1213759b10dff4b76234dd75538dcf13025d88274c0f2e3fe1fedd57e",
+      "bytes": 287004
+    },
+    {
+      "path": "docs/reports/evidence/2026-11-01-backend-negotiation-ladder/raw/r1/runtime/workflow-turn-2026-11-01T04-09-05-832Z-b29382f5-077c-4db6-9444-221b48909de2.json",
+      "sha256": "363e3584d71e700e51958610d665612233f738e43af1f3246247cda5ab80c829",
+      "bytes": 300201
+    },
+    {
+      "path": "docs/reports/evidence/2026-11-01-backend-negotiation-ladder/raw/r1/runtime/workflow-turn-2026-11-01T04-09-14-510Z-8f822bd3-aae0-4181-b56e-d77b58fdfe42.json",
+      "sha256": "3f6105cf24933af3250198cf2a596010b95ebad2c6e76ed245df43b86acf1a85",
+      "bytes": 293507
+    },
+    {
+      "path": "docs/reports/evidence/2026-11-01-backend-negotiation-ladder/raw/r2/focused-10d7b3e-flash-r2-20261101-durable-evidence.json",
+      "sha256": "48d83d3dfab4831bce9603d1fbad847cc10d9a932b40da9b43296cbbd0763c01",
+      "bytes": 505458
+    },
+    {
+      "path": "docs/reports/evidence/2026-11-01-backend-negotiation-ladder/raw/r2/focused-10d7b3e-flash-r2-20261101-observations.partial.json",
+      "sha256": "86226d836cf566699ef3bde4d5a3b46a546d9b901c8f982823a1b2bf358deabf",
+      "bytes": 2306687
+    },
+    {
+      "path": "docs/reports/evidence/2026-11-01-backend-negotiation-ladder/raw/r2/focused-10d7b3e-flash-r2-20261101-provider.json",
+      "sha256": "89a5cdba85898742bf2256b23fb8733a297161d9d2e79f93f9c7f5e1b28c4e3e",
+      "bytes": 2139041
+    },
+    {
+      "path": "docs/reports/evidence/2026-11-01-backend-negotiation-ladder/raw/r2/focused-10d7b3e-flash-r2-20261101-provider.partial.json",
+      "sha256": "54d7fad968161196dac5c3e22c331db7e8433227f560233da2ee81283341ca7c",
+      "bytes": 2139037
+    },
+    {
+      "path": "docs/reports/evidence/2026-11-01-backend-negotiation-ladder/raw/r2/focused-10d7b3e-flash-r2-20261101-run-state.json",
+      "sha256": "d64991efe8f62f2735c279493539ccb58e1bbbac079fffb6b5b308a1e73d1c52",
+      "bytes": 362
+    },
+    {
+      "path": "docs/reports/evidence/2026-11-01-backend-negotiation-ladder/raw/r2/focused-10d7b3e-flash-r2-20261101.json",
+      "sha256": "bbd34d881ff77d921a15a9652322be6cf3b342f91323463fd09b56188b23f9ae",
+      "bytes": 2315548
+    },
+    {
+      "path": "docs/reports/evidence/2026-11-01-backend-negotiation-ladder/raw/r2/focused-10d7b3e-flash-r2-20261101.md",
+      "sha256": "28a6acd27f5e3e0bbe8017c8ecec0b21a0dd4b5a199e533b3f8328c1375fc705",
+      "bytes": 64033
+    },
+    {
+      "path": "docs/reports/evidence/2026-11-01-backend-negotiation-ladder/raw/r2/runtime/workflow-turn-2026-11-01T04-10-41-090Z-aa0336b4-e525-4099-9bc5-e54ba4ad7a98.json",
+      "sha256": "745d1f2a032f1cf3ebb1757cc62f5ee6dfaf07417d689925ffd1944f936ec8ec",
+      "bytes": 272597
+    },
+    {
+      "path": "docs/reports/evidence/2026-11-01-backend-negotiation-ladder/raw/r2/runtime/workflow-turn-2026-11-01T04-10-50-240Z-d65a3186-073e-4de2-8ac8-1f03f77360ec.json",
+      "sha256": "a10e88943195d82f449930323cafd701c57e7c174d12f7a01d767f111ed1a498",
+      "bytes": 271137
+    },
+    {
+      "path": "docs/reports/evidence/2026-11-01-backend-negotiation-ladder/raw/r2/runtime/workflow-turn-2026-11-01T04-10-59-211Z-0d0e72fc-3eab-4cff-8360-064101c9d25f.json",
+      "sha256": "bb88328a025d9868394afdac055fbfd37d26f5f67ad011a1c75cbdd86126febd",
+      "bytes": 268796
+    },
+    {
+      "path": "docs/reports/evidence/2026-11-01-backend-negotiation-ladder/raw/r2/runtime/workflow-turn-2026-11-01T04-11-08-576Z-8e1361a8-d2fd-4510-ad47-5436275e8abf.json",
+      "sha256": "41142433a5a67dfb4ac21d195c89deca60c9047c16814bd866158a9700e5c792",
+      "bytes": 272931
+    },
+    {
+      "path": "docs/reports/evidence/2026-11-01-backend-negotiation-ladder/raw/r2/runtime/workflow-turn-2026-11-01T04-11-17-533Z-fb33187a-bac2-45cc-85ec-1ed520495a32.json",
+      "sha256": "14b26c91407875fe534ffbaac4e8d8f2a8d2eaed13af5e76953ae941a413af7e",
+      "bytes": 269054
+    },
+    {
+      "path": "docs/reports/evidence/2026-11-01-backend-negotiation-ladder/raw/r2/runtime/workflow-turn-2026-11-01T04-11-26-390Z-1a9bef37-0cd0-4488-a16c-96513c1df265.json",
+      "sha256": "c799763b682ea77f8af5cee562eda8d9edc5d46569362370a2cc8b027a8a1ac7",
+      "bytes": 272712
+    },
+    {
+      "path": "docs/reports/evidence/2026-11-01-backend-negotiation-ladder/raw/r2/runtime/workflow-turn-2026-11-01T04-11-34-312Z-5d2582f5-9904-44fe-9493-c6d0a72c2c9a.json",
+      "sha256": "3a67a35e36bbe4fe723b3f9334b145cb9e1f41c539e50ba64690c16f49c88926",
+      "bytes": 268882
+    },
+    {
+      "path": "docs/reports/evidence/2026-11-01-backend-negotiation-ladder/raw/r2/runtime/workflow-turn-2026-11-01T04-11-43-301Z-abc77713-aea4-49da-af80-5e2cd302c43b.json",
+      "sha256": "ef963802b84a77cfa17f30192f03efac366fcb545ea72eea9f9b7306d4d15927",
+      "bytes": 277296
+    },
+    {
+      "path": "docs/reports/evidence/2026-11-01-backend-negotiation-ladder/raw/r2/runtime/workflow-turn-2026-11-01T04-11-51-587Z-9e0f72e4-27e0-40eb-b15f-dff8b0a1813f.json",
+      "sha256": "8b203de9c164d4cf0510a1fbcfed4dd2d6a428c7cfe785671c3e5fe878c1eba3",
+      "bytes": 278146
+    },
+    {
+      "path": "docs/reports/evidence/2026-11-01-backend-negotiation-ladder/raw/r2/runtime/workflow-turn-2026-11-01T04-12-01-200Z-d37b6f82-5fae-444e-88ed-c782acd24fea.json",
+      "sha256": "27725d90c2e6cff6c3bf28973f2fc4d4ab7d9264d71216d3ffd6e70b6f82a848",
+      "bytes": 287187
+    },
+    {
+      "path": "docs/reports/evidence/2026-11-01-backend-negotiation-ladder/raw/r2/runtime/workflow-turn-2026-11-01T04-12-10-055Z-9bd53c09-ebac-4f5d-b539-65b307a4b138.json",
+      "sha256": "293fdca115c0caa16938019115647e8239c28fd22b582ac50c9339988b9150f2",
+      "bytes": 281381
+    },
+    {
+      "path": "docs/reports/evidence/2026-11-01-backend-negotiation-ladder/raw/r2/runtime/workflow-turn-2026-11-01T04-12-19-296Z-af1ad114-bdc7-40ca-a44e-98915396d216.json",
+      "sha256": "025b7dfe83d470ad0ab9d52466e662028f5a8293cb2f314d209896a86b7b166a",
+      "bytes": 288160
+    },
+    {
+      "path": "docs/reports/evidence/2026-11-01-backend-negotiation-ladder/raw/r2/runtime/workflow-turn-2026-11-01T04-12-28-265Z-02fa2867-8065-4f14-993d-d468527f3f7e.json",
+      "sha256": "f7b27d85f010cd5302495edaaff67d6cfb4843fdfd392e72a848436d9397d346",
+      "bytes": 286448
+    },
+    {
+      "path": "docs/reports/evidence/2026-11-01-backend-negotiation-ladder/raw/r2/runtime/workflow-turn-2026-11-01T04-12-37-213Z-f38f94b2-87fa-4e18-96ea-b63413050b28.json",
+      "sha256": "05e238d9dcc6e089cc7fa982256d7460954615489bce28eed2db1b99eb6f8d9a",
+      "bytes": 268001
+    },
+    {
+      "path": "docs/reports/evidence/2026-11-01-backend-negotiation-ladder/raw/r2/runtime/workflow-turn-2026-11-01T04-12-45-013Z-a3e521f9-5113-41ae-964d-f331eb329899.json",
+      "sha256": "a4c313cf1f7729f291a992cd7fbb8289c952022d01c6cbcff0783a369f681af3",
+      "bytes": 263846
+    },
+    {
+      "path": "docs/reports/evidence/2026-11-01-backend-negotiation-ladder/raw/r2/runtime/workflow-turn-2026-11-01T04-12-54-114Z-0d8498fb-4a81-4e6d-b546-c6c03e46d967.json",
+      "sha256": "c9ee948e5a7e57284851d6f8470a4a34cde2b12bcb34321fdc91dec7e86ac1f4",
+      "bytes": 269105
+    },
+    {
+      "path": "docs/reports/evidence/2026-11-01-backend-negotiation-ladder/raw/r2/runtime/workflow-turn-2026-11-01T04-13-03-431Z-e89f86bd-d88a-485f-97a1-a2d9b5480353.json",
+      "sha256": "9ad0055c05699038b3bfe4630b693bd8bf28e6fb61ed60a00f920f7830c7f91d",
+      "bytes": 274389
+    },
+    {
+      "path": "docs/reports/evidence/2026-11-01-backend-negotiation-ladder/raw/r2/runtime/workflow-turn-2026-11-01T04-13-18-374Z-7813d0fa-26f4-4614-af64-2d8c8381bbd5.json",
+      "sha256": "7b4920c208756e35ae49df967abde295007a3cc5977e093c2d7a1214618dbdb7",
+      "bytes": 593381
+    },
+    {
+      "path": "docs/reports/evidence/2026-11-01-backend-negotiation-ladder/raw/r2/runtime/workflow-turn-2026-11-01T04-13-29-299Z-8d4fa3ba-296b-421d-a4f0-7c48d1098369.json",
+      "sha256": "15fdac660bfa221892f87fa58bd3df32791b3ccf98e7b944e0786d7881020fa4",
+      "bytes": 444559
+    },
+    {
+      "path": "docs/reports/evidence/2026-11-01-backend-negotiation-ladder/raw/r2/runtime/workflow-turn-2026-11-01T04-13-37-876Z-509166ab-7a4c-49d3-915c-bf68c8a875de.json",
+      "sha256": "87efbad1e8c43bb4dcf50748534fab36d20c46a99cc84b4a2a04cd325f3d7a4f",
+      "bytes": 281738
+    },
+    {
+      "path": "docs/reports/evidence/2026-11-01-backend-negotiation-ladder/raw/r2/runtime/workflow-turn-2026-11-01T04-13-49-246Z-354a4404-e671-4aee-8a04-9283c85b8d4d.json",
+      "sha256": "179486494ed3853e8967dcb69b88c8fa76359f5ea432dce9751657a2067fe586",
+      "bytes": 454597
+    },
+    {
+      "path": "docs/reports/evidence/2026-11-01-backend-negotiation-ladder/raw/r2/runtime/workflow-turn-2026-11-01T04-13-58-373Z-6fe4e467-b035-4c13-a630-56334ec2e8aa.json",
+      "sha256": "af8c4640f201d6d7ebb7c43504c3d7d68a5aebd1d65124ba507b5a43a3f93daf",
+      "bytes": 284288
+    },
+    {
+      "path": "docs/reports/evidence/2026-11-01-backend-negotiation-ladder/resumen.json",
+      "sha256": "8a8c50c6251c7c8411f183783c333098676c22d3324b511cb9a63c1ebde12b36",
+      "bytes": 10835
+    },
+    {
+      "path": "docs/reports/evidence/2026-11-01-backend-negotiation-ladder/resumen.md",
+      "sha256": "8e4da8abc2f7caf742c88c05afc0b81b9453f688170df436151960856c2b5f85",
+      "bytes": 2137
+    },
+    {
+      "path": "docs/reports/evidence/2026-11-01-backend-negotiation-ladder/summarize.py",
+      "sha256": "bbc845c487db289d47753358bb4071d175d80defeb82099d35b6e86307a1bf36",
+      "bytes": 15899
+    }
+  ]
+}
