@@ -2,12 +2,13 @@
  * Transport-only publication. Run with Bun from botpress-agent; default is read-only.
  * --publish permits updating ONLY code after a fresh production build and contract checks.
  * A change to API contracts/dependencies must use a separately reviewed full deployment.
- * SDK entry points are pinned to installed ADK 2.0.6; fail closed after SDK upgrades.
+ * SDK entry points are pinned to installed ADK 2.0.8; fail closed after SDK upgrades.
  */
 import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { createHash } from 'node:crypto';
+import { loadReviewedBotpressAdk, requireBotpressReleaseProfile } from './lib/botpress-reviewed-adk.mjs';
 import {
   buildBotpressAdditiveEventUpdate,
   inspectBotpressRemoteCode,
@@ -18,7 +19,7 @@ import {
 
 const expectedBotId = '0d7c9ecb-4781-4c65-913d-f7e947fa14d4';
 const expectedWorkspaceId = 'wkspace_01M4XEBZNC10HX2KDHKY36T6R0';
-const expectedProfile = process.env.STUDYX_BOTPRESS_PROFILE ?? 'vertice';
+const expectedProfile = process.env.STUDYX_BOTPRESS_PROFILE;
 const root = process.cwd();
 const outputDirectory = process.env.STUDYX_RELEASE_EVIDENCE_DIR;
 const publish = process.argv.includes('--publish');
@@ -46,12 +47,10 @@ try {
   assert(outputDirectory && path.isAbsolute(outputDirectory), 'ABSOLUTE_EVIDENCE_DIRECTORY_REQUIRED');
   fs.mkdirSync(outputDirectory, { recursive: true, mode: 0o700 });
   const sdkPackage = JSON.parse(fs.readFileSync(path.join(root, 'node_modules/@botpress/adk-cli/package.json'), 'utf8'));
-  assert(sdkPackage.version === '2.0.6', 'UNREVIEWED_ADK_VERSION');
-  const { auth } = await load('node_modules/@botpress/adk-cli/dist/chunk-dcbcz1ws.js');
+  requireBotpressReleaseProfile(expectedProfile);
+  const { auth, resolveCommandContext, refreshDependencySnapshotOnce, adkBuild }
+    = await loadReviewedBotpressAdk(sdkPackage.version, load);
   auth.setProfileOverride(expectedProfile);
-  const { resolveCommandContext } = await load('node_modules/@botpress/adk-cli/dist/chunk-wddbs9hm.js');
-  const { refreshDependencySnapshotOnce } = await load('node_modules/@botpress/adk-cli/dist/chunk-rq2e6ba8.js');
-  const { adkBuild } = await load('node_modules/@botpress/adk-cli/dist/chunk-p4ar5kkm.js');
   const { Client } = await load('node_modules/@botpress/client/dist/index.cjs');
   const { prepareCreateBotBody } = await load('node_modules/@botpress/cli/dist/api/bot-body.js');
   const ctx = await resolveCommandContext({ target: 'prod', projectLoadOptions: { adkCommand: 'adk-deploy' },
@@ -139,7 +138,7 @@ try {
     && before.deployedAt === current.deployedAt,
     'REMOTE_CHANGED_DURING_BUILD');
   const bundleSha256 = createHash('sha256').update(bundle).digest('hex');
-  const preflight = { at: new Date().toISOString(), botId: ctx.botId, workspaceId: ctx.workspaceId,
+  const preflight = { at: new Date().toISOString(), profile: expectedProfile, adkVersion: sdkPackage.version, botId: ctx.botId, workspaceId: ctx.workspaceId,
     bundleSha256, remoteCodeEvidence: inspectBotpressRemoteCode({
       remoteCode: before.code,
       expectedSha256: bundleSha256,
