@@ -1,0 +1,77 @@
+{
+  "evaluated_sha": "89504243891f9bd5075aaff12c0dd9a9c4a09b9a",
+  "unit": {
+    "passed": 4879,
+    "skipped": 17,
+    "todo": 7
+  },
+  "integration": {
+    "passed": 928,
+    "skipped": 1
+  },
+  "eval_offline": {
+    "passed": 67
+  },
+  "typecheck": "passed",
+  "lint": "passed",
+  "build": "passed",
+  "adk_offline": "passed",
+  "fresh_migration_fixture_isolation": {
+    "migration_tests_passed": 8,
+    "facts_tests_passed": 6,
+    "immutable_function_protected": true,
+    "prepared_memory_overloads": 1
+  },
+  "red_green": {
+    "context": "2 failed ->126 passed",
+    "claim_facts": "2 failed ->112 passed",
+    "persistence": "missing state failed ->6 passed",
+    "judge": "5 failed ->41 passed"
+  },
+  "fixture_incidents": [
+    "Memory worker tests initially consumed jobs left by the new fixture; cleanup is scoped to its own turn IDs and the clean full suite passed.",
+    "Historical migration test restored an old immutability function and capped metrics at2; it now restores captured DDL and only removes introduced overloads. Post-suite and targeted checks preserved the current contract."
+  ],
+  "logs": {
+    "unit": {
+      "local_log": "negotiation-unit-final.log",
+      "sha256": "c504a3012214d340054dee2fcf2d30ec3867bfc151f0313946d5e3a3255bc669"
+    },
+    "integration": {
+      "local_log": "negotiation-integration-full-final.log",
+      "sha256": "287aadb78375b5e087f6f0550fbfe473636519b19cd1c4ceae0af6e21ba3a083"
+    },
+    "offline_eval": {
+      "local_log": "negotiation-eval-offline.log",
+      "sha256": "095bb02233246f948cbb3b62843318fdc1f88137e89a5255e95edeec614844a1"
+    },
+    "typecheck": {
+      "local_log": "negotiation-types-ready.log",
+      "sha256": "96efe7fb66fd4d0be314274311b86918b947c19bb6f1bdf96952bc2f7304db38"
+    },
+    "lint": {
+      "local_log": "negotiation-lint-ready.log",
+      "sha256": "58be5986f675e359bb75562f0fdc333a2164d337b11c4863ab9c053f09d33b10"
+    },
+    "build": {
+      "local_log": "negotiation-build.log",
+      "sha256": "dfebc57ff2d67f8218b4a855860c75c9e5e7ea8628f9f9e6732426181e37a672"
+    },
+    "adk": {
+      "local_log": "negotiation-adk.log",
+      "sha256": "239dfcbb07f496fbe6ef0c1d9aa9c01d8081d044ddf94d162da08b9b46581527"
+    },
+    "migration_fixture_isolation": {
+      "local_log": "negotiation-migration-isolation-proof.log",
+      "sha256": "7de47194bc953c6cd8c833428a3afd0448c108fc95e28f1451aca81f017078fb"
+    },
+    "facts_after_migration_fixture": {
+      "local_log": "negotiation-post-isolation-proof.log",
+      "sha256": "a2f1d3917cc02fd7c92e2f33df9d0c00f6477c6250618ad2568fe9f2cb7f9d59"
+    },
+    "immutable_function_and_workspace_overload_count": {
+      "local_log": "negotiation-isolation-db-proof.log",
+      "sha256": "a613c9903bf3f07773f99b47dde52264965f5bbb6ef572cd51fe2ba0be933525"
+    }
+  }
+}
