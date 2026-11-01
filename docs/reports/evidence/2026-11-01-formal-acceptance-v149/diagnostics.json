@@ -1,0 +1,591 @@
+{
+  "source_sha": "f1f0f9c5d3676d324642238e43279c0c0fada2b7",
+  "model_calls_by_analysis": 0,
+  "input_mutated": false,
+  "difference_review_rows": [
+    {
+      "case": "05_real_budget_limit",
+      "turn": "interest",
+      "original_comparison": "DIFFERENCE_REQUIRES_REVIEW",
+      "classification": "AUTHORIZED_CONTINGENCY_AFTER_GENERATION_VS_BACKEND_SELECTION_MISMATCH",
+      "explanation": "En los tres intentos, el modelo recibió commercial_state.selected_offering_code=marketing_digital, congruente con su declaración role=paid. El backend posteriormente rechazó course_mentions:paid_mismatch:marketing_digital; el estado persistido final quedó selectedCourse=null y se entregó la contingencia completa autorizada. Esto acredita una desalineación entre contexto de generación y validación/persistencia; no acredita que el modelo ignorara una selección nula. La causa interna exacta del code path permanece pendiente de diagnóstico.",
+      "last_draft_text": "Hola, soy Emma, asesora de Studyx. Marketing Digital son 16 clases online, pensadas justamente para armar estrategias que comuniquen bien y muevan tu negocio.\nEl total son USD 360, y lo podés pagar en 12 cuotas de USD 30, en 6 de USD 60 o de una sola vez. Cuál te queda más cómoda?",
+      "delivered": "Qué dato o qué curso revisamos?",
+      "rejections": [
+        "COURSE_ROLE_UNDECLARED",
+        "course_mentions:paid_mismatch:marketing_digital",
+        "DECISION_REJECTED"
+      ],
+      "original_golden_status": "FAIL",
+      "evidence": {
+        "generation_snapshots": [
+          {
+            "call_id": "call-0010",
+            "move": "ask_course_information",
+            "course_mentions": [
+              {
+                "offering_code": "marketing_digital",
+                "role": "paid"
+              }
+            ],
+            "selected_offering_code_before_generation": "marketing_digital"
+          },
+          {
+            "call_id": "call-0011",
+            "move": "ask_course_information",
+            "course_mentions": [
+              {
+                "offering_code": "marketing_digital",
+                "role": "paid"
+              }
+            ],
+            "selected_offering_code_before_generation": "marketing_digital"
+          },
+          {
+            "call_id": "call-0012",
+            "move": "ask_course_information",
+            "course_mentions": [
+              {
+                "offering_code": "marketing_digital",
+                "role": "paid"
+              }
+            ],
+            "selected_offering_code_before_generation": "marketing_digital"
+          }
+        ],
+        "selection_alignment": {
+          "generation_selection_code": "marketing_digital",
+          "generation_contexts": 3,
+          "declared_paid_matches_received_selection": true,
+          "final_persisted_selected_course": null,
+          "validation_rejection": "course_mentions:paid_mismatch:marketing_digital",
+          "causal_status": "observed cross-layer disagreement; internal cause not established by this report"
+        }
+      }
+    },
+    {
+      "case": "05_real_budget_limit",
+      "turn": "budget",
+      "original_comparison": "DIFFERENCE_REQUIRES_REVIEW",
+      "classification": "AUTHORIZED_CONTINGENCY_AFTER_GENERATION_VS_BACKEND_SELECTION_MISMATCH",
+      "explanation": "En los tres intentos, el modelo recibió commercial_state.selected_offering_code=marketing_digital, congruente con su declaración role=paid. El backend posteriormente rechazó course_mentions:paid_mismatch:marketing_digital; el estado persistido final quedó selectedCourse=null y se entregó la contingencia completa autorizada. Esto acredita una desalineación entre contexto de generación y validación/persistencia; no acredita que el modelo ignorara una selección nula. La causa interna exacta del code path permanece pendiente de diagnóstico.",
+      "last_draft_text": "Te entiendo, y no quiero que te aprietes por esto. Marketing Digital son 16 clases online y se puede pagar en 12 cuotas de USD 30, así vas avanzando sin soltar todo de golpe.\nSi hoy no es el momento, lo dejamos para cuando estés más holgado. Qué es lo que más te gustaría mover de tu emprendimiento con el marketing?",
+      "delivered": "Qué dato o qué curso revisamos?",
+      "rejections": [
+        "COURSE_ROLE_UNDECLARED",
+        "course_mentions:paid_mismatch:marketing_digital",
+        "DECISION_REJECTED"
+      ],
+      "original_golden_status": "FAIL",
+      "evidence": {
+        "generation_snapshots": [
+          {
+            "call_id": "call-0013",
+            "move": "defer_payment",
+            "course_mentions": [
+              {
+                "offering_code": "marketing_digital",
+                "role": "paid"
+              }
+            ],
+            "selected_offering_code_before_generation": "marketing_digital"
+          },
+          {
+            "call_id": "call-0014",
+            "move": "defer_payment",
+            "course_mentions": [
+              {
+                "offering_code": "marketing_digital",
+                "role": "paid"
+              }
+            ],
+            "selected_offering_code_before_generation": "marketing_digital"
+          },
+          {
+            "call_id": "call-0015",
+            "move": "defer_payment",
+            "course_mentions": [
+              {
+                "offering_code": "marketing_digital",
+                "role": "paid"
+              }
+            ],
+            "selected_offering_code_before_generation": "marketing_digital"
+          }
+        ],
+        "selection_alignment": {
+          "generation_selection_code": "marketing_digital",
+          "generation_contexts": 3,
+          "declared_paid_matches_received_selection": true,
+          "final_persisted_selected_course": null,
+          "validation_rejection": "course_mentions:paid_mismatch:marketing_digital",
+          "causal_status": "observed cross-layer disagreement; internal cause not established by this report"
+        }
+      }
+    },
+    {
+      "case": "06_repeated_price_bonus_ladder",
+      "turn": "bonus_3",
+      "original_comparison": "UNKNOWN",
+      "classification": "NO_LAST_DRAFT_AFTER_PROVIDER_ABORT_THEN_AUTHORIZED_CONTINGENCY",
+      "explanation": "La reparación no devolvió borrador: timeout de proveedor a 15.010 ms. La comparación con el último borrador queda UNKNOWN. Se conserva la entrega de contingencia sin bono; no es una falla de deduplicación de llamada.",
+      "last_draft_text": null,
+      "delivered": "Qué dato o qué curso revisamos?",
+      "rejections": [
+        "FACT_VALUE_MISMATCH",
+        "forbidden_promise",
+        "direct_bonus:ladder_step_pending",
+        "bonus_ladder:recorded_price_objections:4:required:3",
+        "bonus_ladder:call_invitation:not_offered",
+        "bonus_ladder:missing:call_invitation",
+        "DECISION_REJECTED"
+      ],
+      "original_golden_status": "FAIL",
+      "evidence": {
+        "failed_request": {
+          "call_id": "call-0024",
+          "error_code": "DEEPSEEK_ABORTED",
+          "latency_ms": 15010,
+          "tokens": null
+        }
+      }
+    },
+    {
+      "case": "11_purchase_to_payment_link",
+      "turn": "plan_and_link",
+      "original_comparison": "DIFFERENCE_REQUIRES_REVIEW",
+      "classification": "AUTHORIZED_BACKEND_PAYMENT_LINK_APPEND",
+      "explanation": "El texto redactado se conserva como prefijo exacto; el backend añade etiqueta del plan y URL canónica de pago entregada. No hay sustitución estilística del borrador.",
+      "last_draft_text": "Perfecto, Ana, quedan 12 cuotas de USD 30 para Fotografía Profesional. Te dejo el enlace para completar el pago.",
+      "delivered": "Perfecto, Ana, quedan 12 cuotas de USD 30 para Fotografía Profesional. Te dejo el enlace para completar el pago.\n\n12 pagos mensuales de USD 30: https://buy.stripe.com/test_studyx_golden_12m?client_reference_id=3f47e765-6903-415b-9b65-d9680e6233e0",
+      "rejections": [],
+      "original_golden_status": "PASS",
+      "evidence": {
+        "delivered_links": [
+          "https://buy.stripe.com/test_studyx_golden_12m?client_reference_id=3f47e765-6903-415b-9b65-d9680e6233e0"
+        ],
+        "authored_text_is_exact_prefix": true,
+        "backend_appended_suffix": "\n\n12 pagos mensuales de USD 30: https://buy.stripe.com/test_studyx_golden_12m?client_reference_id=3f47e765-6903-415b-9b65-d9680e6233e0"
+      }
+    },
+    {
+      "case": "13_real_syllabus",
+      "turn": "syllabus",
+      "original_comparison": "DIFFERENCE_REQUIRES_REVIEW",
+      "classification": "AUTHORIZED_CONTINGENCY_AFTER_GENERATION_VS_BACKEND_SELECTION_MISMATCH",
+      "explanation": "En los tres intentos, el modelo recibió commercial_state.selected_offering_code=fotografia_profesional, congruente con su declaración role=paid. El backend posteriormente rechazó course_mentions:paid_mismatch:fotografia_profesional; el estado persistido final quedó selectedCourse=null y se entregó la contingencia completa autorizada. Esto acredita una desalineación entre contexto de generación y validación/persistencia; no acredita que el modelo ignorara una selección nula. La causa interna exacta del code path permanece pendiente de diagnóstico.",
+      "last_draft_text": "Claro, soy Emma, asesora de Studyx. Fotografía Profesional tiene 41 clases online, arrancando desde cero con el proceso digital: tipos de cámara, exposición, ISO, obturador, diafragma, distancia focal, lentes, enfoque, balance de blancos, histograma y composición.\nDespués sigue retrato, flash y accesorios, filtros, trípodes y disparadores, campañas publicitarias y segmentación de público, y cierra con edición en Lightroom, Premiere y Photoshop, más el examen final. ¿Querés que te cuente cómo se cursa o para qué la querés usar?",
+      "delivered": "Qué dato o qué curso revisamos?",
+      "rejections": [
+        "COURSE_ROLE_UNDECLARED",
+        "course_mentions:paid_mismatch:fotografia_profesional",
+        "DECISION_REJECTED"
+      ],
+      "original_golden_status": "FAIL",
+      "evidence": {
+        "generation_snapshots": [
+          {
+            "call_id": "call-0043",
+            "move": "ask_course_information",
+            "course_mentions": [
+              {
+                "offering_code": "fotografia_profesional",
+                "role": "paid"
+              }
+            ],
+            "selected_offering_code_before_generation": "fotografia_profesional"
+          },
+          {
+            "call_id": "call-0044",
+            "move": "ask_course_information",
+            "course_mentions": [
+              {
+                "offering_code": "fotografia_profesional",
+                "role": "paid"
+              }
+            ],
+            "selected_offering_code_before_generation": "fotografia_profesional"
+          },
+          {
+            "call_id": "call-0045",
+            "move": "ask_course_information",
+            "course_mentions": [
+              {
+                "offering_code": "fotografia_profesional",
+                "role": "paid"
+              }
+            ],
+            "selected_offering_code_before_generation": "fotografia_profesional"
+          }
+        ],
+        "selection_alignment": {
+          "generation_selection_code": "fotografia_profesional",
+          "generation_contexts": 3,
+          "declared_paid_matches_received_selection": true,
+          "final_persisted_selected_course": null,
+          "validation_rejection": "course_mentions:paid_mismatch:fotografia_profesional",
+          "causal_status": "observed cross-layer disagreement; internal cause not established by this report"
+        }
+      }
+    },
+    {
+      "case": "13_real_syllabus",
+      "turn": "duration_followup",
+      "original_comparison": "DIFFERENCE_REQUIRES_REVIEW",
+      "classification": "AUTHORIZED_CONTINGENCY_AFTER_GENERATION_VS_BACKEND_SELECTION_MISMATCH",
+      "explanation": "En los tres intentos, el modelo recibió commercial_state.selected_offering_code=fotografia_profesional, congruente con su declaración role=paid. El backend posteriormente rechazó course_mentions:paid_mismatch:fotografia_profesional; el estado persistido final quedó selectedCourse=null y se entregó la contingencia completa autorizada. Esto acredita una desalineación entre contexto de generación y validación/persistencia; no acredita que el modelo ignorara una selección nula. La causa interna exacta del code path permanece pendiente de diagnóstico.",
+      "last_draft_text": "Fotografía Profesional son 41 clases, todo online, desde cero con el proceso fotográfico digital.\nContame para qué querés aprender fotografía y te digo cómo encaja en lo que buscás.",
+      "delivered": "Qué dato o qué curso revisamos?",
+      "rejections": [
+        "FACT_VALUE_MISMATCH",
+        "course_logistics",
+        "course_logistics.self_paced",
+        "COURSE_ROLE_UNDECLARED",
+        "course_mentions:paid_mismatch:fotografia_profesional",
+        "DECISION_REJECTED"
+      ],
+      "original_golden_status": "INDETERMINATE",
+      "evidence": {
+        "generation_snapshots": [
+          {
+            "call_id": "call-0046",
+            "move": "ask_course_information",
+            "course_mentions": [
+              {
+                "offering_code": "fotografia_profesional",
+                "role": "paid"
+              }
+            ],
+            "selected_offering_code_before_generation": "fotografia_profesional"
+          },
+          {
+            "call_id": "call-0047",
+            "move": "ask_course_information",
+            "course_mentions": [
+              {
+                "offering_code": "fotografia_profesional",
+                "role": "paid"
+              }
+            ],
+            "selected_offering_code_before_generation": "fotografia_profesional"
+          },
+          {
+            "call_id": "call-0048",
+            "move": "ask_course_information",
+            "course_mentions": [
+              {
+                "offering_code": "fotografia_profesional",
+                "role": "paid"
+              }
+            ],
+            "selected_offering_code_before_generation": "fotografia_profesional"
+          }
+        ],
+        "selection_alignment": {
+          "generation_selection_code": "fotografia_profesional",
+          "generation_contexts": 3,
+          "declared_paid_matches_received_selection": true,
+          "final_persisted_selected_course": null,
+          "validation_rejection": "course_mentions:paid_mismatch:fotografia_profesional",
+          "causal_status": "observed cross-layer disagreement; internal cause not established by this report"
+        }
+      }
+    }
+  ],
+  "exact_call_duplicate_raw_requests": [],
+  "exact_call_dedup_exercised": false,
+  "dedup_scope_note": "No raw successful agent proposal repeated an exactly identical call_offer as a full messages bubble. Formal acceptance did not exercise exact-copy dedup; offline regression evidence covers it.",
+  "judge_retry_groups": [
+    {
+      "case": "13_real_syllabus",
+      "turn": "duration_followup",
+      "judge_calls": [
+        "call-0099",
+        "call-0100",
+        "call-0101",
+        "call-0102"
+      ],
+      "extra_requests": 3,
+      "original_status": "INDETERMINATE",
+      "observed_problem": "Valid JSON envelope but code=SEMANTIC_MUST_FAILED paired with requirement_id=must_not:0 in all four responses; rejected as GOLDEN_JUDGE_FAILURE_REFERENCE_INVALID. No rescoring.",
+      "responses": [
+        {
+          "call_id": "call-0099",
+          "reference_mismatches": [
+            {
+              "code": "SEMANTIC_MUST_FAILED",
+              "requirement_id": "must_not:0"
+            }
+          ]
+        },
+        {
+          "call_id": "call-0100",
+          "reference_mismatches": [
+            {
+              "code": "SEMANTIC_MUST_FAILED",
+              "requirement_id": "must_not:0"
+            }
+          ]
+        },
+        {
+          "call_id": "call-0101",
+          "reference_mismatches": [
+            {
+              "code": "SEMANTIC_MUST_FAILED",
+              "requirement_id": "must_not:0"
+            }
+          ]
+        },
+        {
+          "call_id": "call-0102",
+          "reference_mismatches": [
+            {
+              "code": "SEMANTIC_MUST_FAILED",
+              "requirement_id": "must_not:0"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "failure_layer_counts": {
+    "validador": 6,
+    "brain": 2,
+    "prompt": 5,
+    "unknown": 1
+  },
+  "original_nonpass_rows": [
+    {
+      "case": "02_info_discovery",
+      "turn": "goal",
+      "original_status": "FAIL",
+      "original_layer": "validador",
+      "failure_codes": [
+        "MOVE_MISMATCH"
+      ],
+      "first_explanation": "Esperado browse_catalog|ask_course_information|unknown; real select_course.",
+      "rejections": [
+        "COURSE_ROLE_UNDECLARED",
+        "course_mentions:paid_mismatch:fotografia_celulares_tiendas_online",
+        "DECISION_REJECTED"
+      ]
+    },
+    {
+      "case": "03_single_course_recommendation",
+      "turn": "recommend",
+      "original_status": "FAIL",
+      "original_layer": "brain",
+      "failure_codes": [
+        "MOVE_MISMATCH",
+        "SEMANTIC_MUST_FAILED",
+        "SEMANTIC_MUST_FAILED"
+      ],
+      "first_explanation": "Esperado ask_course_information|browse_catalog|unknown; real select_course.",
+      "rejections": []
+    },
+    {
+      "case": "03_single_course_recommendation",
+      "turn": "test_close_reply",
+      "original_status": "FAIL",
+      "original_layer": "brain",
+      "failure_codes": [
+        "MOVE_MISMATCH"
+      ],
+      "first_explanation": "Esperado ask_course_information|select_course|request_payment_link|unknown; real continue_by_chat.",
+      "rejections": []
+    },
+    {
+      "case": "05_real_budget_limit",
+      "turn": "interest",
+      "original_status": "FAIL",
+      "original_layer": "validador",
+      "failure_codes": [
+        "MOVE_MISMATCH",
+        "SEMANTIC_MUST_FAILED"
+      ],
+      "first_explanation": "Esperado ask_payment_options|select_course; real ask_course_information.",
+      "rejections": [
+        "COURSE_ROLE_UNDECLARED",
+        "course_mentions:paid_mismatch:marketing_digital",
+        "DECISION_REJECTED"
+      ]
+    },
+    {
+      "case": "05_real_budget_limit",
+      "turn": "budget",
+      "original_status": "FAIL",
+      "original_layer": "validador",
+      "failure_codes": [
+        "TEXT_REQUIRED_MISSING",
+        "CURRENT_PRICE_OBJECTION_NOT_RECORDED",
+        "SEMANTIC_MUST_FAILED"
+      ],
+      "first_explanation": "Falta \"USD 30\".",
+      "rejections": [
+        "COURSE_ROLE_UNDECLARED",
+        "course_mentions:paid_mismatch:marketing_digital",
+        "DECISION_REJECTED"
+      ]
+    },
+    {
+      "case": "06_repeated_price_bonus_ladder",
+      "turn": "call_step",
+      "original_status": "FAIL",
+      "original_layer": "prompt",
+      "failure_codes": [
+        "SEMANTIC_MUST_FAILED"
+      ],
+      "first_explanation": "El escalón de llamada correspondía (may_offer_call=true, objeción de precio persistente, escalones 1-3 ya cumplidos) y la respuesta no ofrece la llamada con razón concreta; sólo repite planes y pregunta por el plan, sin avanzar al escalón de llamada.",
+      "rejections": []
+    },
+    {
+      "case": "06_repeated_price_bonus_ladder",
+      "turn": "bonus_3",
+      "original_status": "FAIL",
+      "original_layer": "validador",
+      "failure_codes": [
+        "SEMANTIC_MUST_FAILED",
+        "SEMANTIC_MUST_NOT_FAILED"
+      ],
+      "first_explanation": "La respuesta no aporta valor personalizado ni cierre útil; no conserva el orden comercial (valor, cuotas, aislamiento, cierre condicional, llamada) y en su lugar abre un menú de cursos/datos.",
+      "rejections": [
+        "FACT_VALUE_MISMATCH",
+        "forbidden_promise",
+        "direct_bonus:ladder_step_pending",
+        "bonus_ladder:recorded_price_objections:4:required:3",
+        "bonus_ladder:call_invitation:not_offered",
+        "bonus_ladder:missing:call_invitation",
+        "DECISION_REJECTED"
+      ]
+    },
+    {
+      "case": "06_repeated_price_bonus_ladder",
+      "turn": "never_fourth",
+      "original_status": "FAIL",
+      "original_layer": "prompt",
+      "failure_codes": [
+        "SEMANTIC_MUST_FAILED"
+      ],
+      "first_explanation": "La conversación completa nunca acredita la invitación a llamada (escalón 4) antes de bonificar; el ledger muestra call_invitation_status not_offered en todos los turnos, incluido el actual, por lo que se omitió una etapa comercial exigida.",
+      "rejections": []
+    },
+    {
+      "case": "08_consult_partner",
+      "turn": "partner",
+      "original_status": "FAIL",
+      "original_layer": "prompt",
+      "failure_codes": [
+        "SEMANTIC_MUST_FAILED"
+      ],
+      "first_explanation": "La respuesta da información clave (para qué sirve y 12 cuotas de USD 30), pero no ofrece resolver las dudas de la pareja, ni siquiera en una llamada, como exige el requisito.",
+      "rejections": []
+    },
+    {
+      "case": "09_definitive_no",
+      "turn": "interest",
+      "original_status": "FAIL",
+      "original_layer": "prompt",
+      "failure_codes": [
+        "SEMANTIC_MUST_FAILED"
+      ],
+      "first_explanation": "La respuesta termina con una afirmación sobre el curso y no incluye ninguna pregunta, propuesta de siguiente paso ni acción de cierre que oriente y avance la conversación.",
+      "rejections": []
+    },
+    {
+      "case": "13_real_syllabus",
+      "turn": "syllabus",
+      "original_status": "FAIL",
+      "original_layer": "validador",
+      "failure_codes": [
+        "SYLLABUS_RESPONSE_NOT_GROUNDED",
+        "SEMANTIC_MUST_FAILED",
+        "SEMANTIC_MUST_NOT_FAILED"
+      ],
+      "first_explanation": "Citó un fact_id de temario, pero la respuesta no refleja su contenido.",
+      "rejections": [
+        "COURSE_ROLE_UNDECLARED",
+        "course_mentions:paid_mismatch:fotografia_profesional",
+        "DECISION_REJECTED"
+      ]
+    },
+    {
+      "case": "13_real_syllabus",
+      "turn": "duration_followup",
+      "original_status": "INDETERMINATE",
+      "original_layer": null,
+      "failure_codes": [
+        "EVALUATOR_ERROR"
+      ],
+      "first_explanation": "GOLDEN_JUDGE_FAILURE_REFERENCE_INVALID",
+      "rejections": [
+        "FACT_VALUE_MISMATCH",
+        "course_logistics",
+        "course_logistics.self_paced",
+        "COURSE_ROLE_UNDECLARED",
+        "course_mentions:paid_mismatch:fotografia_profesional",
+        "DECISION_REJECTED"
+      ]
+    },
+    {
+      "case": "14_course_change_cancels_promotion",
+      "turn": "isolate",
+      "original_status": "FAIL",
+      "original_layer": "validador",
+      "failure_codes": [
+        "SEMANTIC_MUST_FAILED"
+      ],
+      "first_explanation": "El cliente vuelve a expresar que el precio le frena incluso en cuotas. La respuesta no aísla el freno ni cierra condicionalmente (no confirma que, resuelto el precio, avanza), y en su lugar abre una pregunta de preferencia de contenido. Falta el cierre útil exigido por el escalón de aislamiento/cierre condicional.",
+      "rejections": [
+        "CALL_OFFER_MESSAGE_BOUNDARY_INVALID",
+        "call_offer",
+        "duplicate_call_offer"
+      ]
+    },
+    {
+      "case": "14_course_change_cancels_promotion",
+      "turn": "call_step",
+      "original_status": "FAIL",
+      "original_layer": "prompt",
+      "failure_codes": [
+        "SEMANTIC_MUST_FAILED"
+      ],
+      "first_explanation": "El cliente confirmó que el precio es el único freno y que avanzaría si se resuelve. El siguiente escalón pendiente era la llamada (call_invitation), pero la respuesta salta directamente a pedir datos de contacto para el enlace, sin ofrecer la llamada con una razón concreta ni cerrar el orden comercial esperado.",
+      "rejections": []
+    }
+  ],
+  "diagnostic_correction": {
+    "reason": "Generation snapshots contain a non-null selection matching role=paid. Previous prose incorrectly described the generation selection as null; only final persisted selectedCourse is null.",
+    "raw_snapshots_preserved": true,
+    "corrected_rows": [
+      {
+        "case": "05_real_budget_limit",
+        "turn": "interest",
+        "generation_selection_code": "marketing_digital",
+        "generation_contexts": 3,
+        "final_persisted_selected_course": null
+      },
+      {
+        "case": "05_real_budget_limit",
+        "turn": "budget",
+        "generation_selection_code": "marketing_digital",
+        "generation_contexts": 3,
+        "final_persisted_selected_course": null
+      },
+      {
+        "case": "13_real_syllabus",
+        "turn": "syllabus",
+        "generation_selection_code": "fotografia_profesional",
+        "generation_contexts": 3,
+        "final_persisted_selected_course": null
+      },
+      {
+        "case": "13_real_syllabus",
+        "turn": "duration_followup",
+        "generation_selection_code": "fotografia_profesional",
+        "generation_contexts": 3,
+        "final_persisted_selected_course": null
+      }
+    ],
+    "internal_code_path_cause": "pending diagnosis; no source change, model call or re-judging"
+  }
+}

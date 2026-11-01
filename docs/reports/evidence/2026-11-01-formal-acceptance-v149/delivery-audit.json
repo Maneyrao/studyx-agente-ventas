@@ -1,0 +1,2812 @@
+{
+  "schema_version": 1,
+  "run": "acceptance-f1f0f9c-flash-full16-20261101",
+  "evaluated_sha": "f1f0f9c5d3676d324642238e43279c0c0fada2b7",
+  "source_observations": "evals/golden/results/acceptance-f1f0f9c-flash-full16-20261101-observations.partial.json",
+  "source_provider_report": "evals/golden/results/acceptance-f1f0f9c-flash-full16-20261101-provider.partial.json",
+  "audit_scope": "Complete contextual audit of delivered bonus/course-role claims for all available 16 golden cases. PASS/FAIL here is not golden acceptance and does not change judge scores. Raw observations/provider files remain unchanged. Each row uses scenario case id + turn id; retries use provider call IDs.",
+  "completed_case_count": 16,
+  "total_case_count": 16,
+  "audited_case_count": 16,
+  "records": [
+    {
+      "run": "acceptance-f1f0f9c-flash-full16-20261101",
+      "case": "01_first_contact_identity",
+      "turn": "greeting",
+      "delivered_sha256": "4c8cb199e29f43dcd5bcdfc1806ae7ec34cb1bf36b14abfff71fe5029ec50964",
+      "status": "PASS",
+      "reason": "Saluda y pregunta qué quiere aprender; no nombra curso ni implica bonificación.",
+      "delivered": "Hola, buen día! Soy Emma, asesora de Studyx. Contame, qué te gustaría aprender o qué curso tenías en mente?",
+      "classification": "conversation_opening",
+      "evidence": {
+        "observation_ordinal": 1,
+        "proposed_action": {
+          "type": "none"
+        },
+        "backend_action": null,
+        "selected_course": null,
+        "promotion_state": {
+          "status": null,
+          "bonusCount": 0,
+          "paidCourse": null,
+          "bonusCourses": []
+        },
+        "delivered_bonus_courses": [],
+        "model_attempts": [
+          {
+            "call_id": "call-0001",
+            "provider_role": "agent",
+            "response": "Hola, buen día! Soy Emma, asesora de Studyx. Contame, qué te gustaría aprender o qué curso tenías en mente?",
+            "proposed_action": {
+              "type": "none"
+            },
+            "course_mentions": [],
+            "rejection_codes": [],
+            "provider_status": 200,
+            "provider_error": null
+          }
+        ],
+        "workflow": {
+          "commitSucceeded": true,
+          "status": "waiting_user",
+          "errorCode": null,
+          "finalBackendDecisionError": null
+        }
+      }
+    },
+    {
+      "run": "acceptance-f1f0f9c-flash-full16-20261101",
+      "case": "01_first_contact_identity",
+      "turn": "continuity",
+      "delivered_sha256": "a5b2fd25f4d0eb4d3f9c2f6e3086072a5a2643aaec373f4f4078ee2b45fc3663",
+      "status": "PASS",
+      "reason": "Presenta Fotografía Profesional y Fotografía con Celulares para Tiendas Online como opciones de catálogo; no dice que una esté incluida o sea gratuita. Sin selección ni paquete.",
+      "delivered": "Tenemos dos opciones de fotografía:\nFotografía Profesional: 41 clases, desde cero en el proceso fotográfico digital.\nFotografía con Celulares para Tiendas Online: 20 clases, para sacarle jugo a la cámara del celular y aplicarlo a tu negocio o redes.",
+      "classification": "catalog_menu",
+      "evidence": {
+        "observation_ordinal": 2,
+        "proposed_action": {
+          "type": "none"
+        },
+        "backend_action": null,
+        "selected_course": null,
+        "promotion_state": {
+          "status": null,
+          "bonusCount": 0,
+          "paidCourse": null,
+          "bonusCourses": []
+        },
+        "delivered_bonus_courses": [],
+        "model_attempts": [
+          {
+            "call_id": "call-0002",
+            "provider_role": "agent",
+            "response": "Tenemos dos opciones de fotografía:\nFotografía Profesional: 41 clases, desde cero en el proceso fotográfico digital.\nFotografía con Celulares para Tiendas Online: 20 clases, para sacarle jugo a la cámara del celular y aplicarlo a tu negocio o redes.",
+            "proposed_action": {
+              "type": "none"
+            },
+            "course_mentions": [
+              {
+                "offering_code": "fotografia_profesional",
+                "role": "alternative"
+              },
+              {
+                "offering_code": "fotografia_celulares_tiendas_online",
+                "role": "alternative"
+              }
+            ],
+            "rejection_codes": [],
+            "provider_status": 200,
+            "provider_error": null
+          }
+        ],
+        "workflow": {
+          "commitSucceeded": true,
+          "status": "waiting_user",
+          "errorCode": null,
+          "finalBackendDecisionError": null
+        }
+      }
+    },
+    {
+      "run": "acceptance-f1f0f9c-flash-full16-20261101",
+      "case": "02_info_discovery",
+      "turn": "info",
+      "delivered_sha256": "10ab8322be832efffb5e70037122f39a875ce6c47349e4e71b09996383c434c0",
+      "status": "PASS",
+      "reason": "Pide contexto sobre el interés; no presenta cursos ni beneficios incluidos.",
+      "delivered": "Hola, soy Emma, asesora de Studyx. Contame qué te gustaría aprender o qué curso viste, así te oriento con el que más te sirve.",
+      "classification": "conversation_opening",
+      "evidence": {
+        "observation_ordinal": 1,
+        "proposed_action": {
+          "type": "none"
+        },
+        "backend_action": null,
+        "selected_course": null,
+        "promotion_state": {
+          "status": null,
+          "bonusCount": 0,
+          "paidCourse": null,
+          "bonusCourses": []
+        },
+        "delivered_bonus_courses": [],
+        "model_attempts": [
+          {
+            "call_id": "call-0003",
+            "provider_role": "agent",
+            "response": "Hola, soy Emma, asesora de Studyx. Contame qué te gustaría aprender o qué curso viste, así te oriento con el que más te sirve.",
+            "proposed_action": {
+              "type": "none"
+            },
+            "course_mentions": [],
+            "rejection_codes": [],
+            "provider_status": 200,
+            "provider_error": null
+          }
+        ],
+        "workflow": {
+          "commitSucceeded": true,
+          "status": "waiting_user",
+          "errorCode": null,
+          "finalBackendDecisionError": null
+        }
+      }
+    },
+    {
+      "run": "acceptance-f1f0f9c-flash-full16-20261101",
+      "case": "02_info_discovery",
+      "turn": "goal",
+      "delivered_sha256": "8aa32ac4db9b2c15b6cb2ccd1d4caa104423d46af81918536f72475e0dcb7e46",
+      "status": "PASS",
+      "reason": "Recomienda Fotografía con Celulares para Tiendas Online, que queda como curso seleccionado; promoción registra cero bonificados. Borrador previo rechazado por paid_mismatch, pero la entrega no ofrece un extra.",
+      "delivered": "Para fotos de productos de tu tienda online te sirve Fotografía con Celulares para Tiendas Online: está pensado justo para eso, sacar fotos que vendan usando el celular.\nContame cómo estás sacando las fotos hoy, con el celular nomás o con alguna cámara?",
+      "classification": "paid_course_recommendation",
+      "evidence": {
+        "observation_ordinal": 2,
+        "proposed_action": {
+          "type": "none"
+        },
+        "backend_action": null,
+        "selected_course": "fotografia_celulares_tiendas_online",
+        "promotion_state": {
+          "status": null,
+          "bonusCount": 0,
+          "paidCourse": null,
+          "bonusCourses": []
+        },
+        "delivered_bonus_courses": [],
+        "model_attempts": [
+          {
+            "call_id": "call-0004",
+            "provider_role": "agent",
+            "response": "Para fotos de productos de tu tienda online te recomiendo Fotografía con Celulares para Tiendas Online: está pensado justo para eso, para que tus productos se vean bien con el celular y sin equipo complicado.\nContame cómo estás mostrando hoy los productos, con fotos propias o con las que te pasa el proveedor?",
+            "proposed_action": {
+              "type": "none"
+            },
+            "course_mentions": [
+              {
+                "offering_code": "fotografia_celulares_tiendas_online",
+                "role": "paid"
+              }
+            ],
+            "rejection_codes": [],
+            "provider_status": 200,
+            "provider_error": null
+          },
+          {
+            "call_id": "call-0005",
+            "provider_role": "agent",
+            "response": "Para fotos de productos de tu tienda online te sirve Fotografía con Celulares para Tiendas Online: está pensado justo para eso, sacar fotos que vendan usando el celular.\nContame cómo estás sacando las fotos hoy, con el celular nomás o con alguna cámara?",
+            "proposed_action": {
+              "type": "none"
+            },
+            "course_mentions": [
+              {
+                "offering_code": "fotografia_celulares_tiendas_online",
+                "role": "paid"
+              }
+            ],
+            "rejection_codes": [
+              "COURSE_ROLE_UNDECLARED"
+            ],
+            "provider_status": 200,
+            "provider_error": null
+          }
+        ],
+        "workflow": {
+          "commitSucceeded": true,
+          "status": "waiting_user",
+          "errorCode": null,
+          "finalBackendDecisionError": null
+        }
+      }
+    },
+    {
+      "run": "acceptance-f1f0f9c-flash-full16-20261101",
+      "case": "03_single_course_recommendation",
+      "turn": "recommend",
+      "delivered_sha256": "081aa7f38ec1458a51d96f9f0c255831df5647419ea69b9326c4f3a0ec61b6ad",
+      "status": "PASS",
+      "reason": "Describe Fotografía Profesional, curso seleccionado. La lista de posibles tipos de fotos son aplicaciones, no cursos incluidos.",
+      "delivered": "Hola, soy Emma, asesora de Studyx. Fotografía Profesional encaja justo con eso: cámara y edición para ofrecer un servicio serio a emprendedores.\nPara orientarte mejor, qué tipo de fotos querés ofrecer primero: productos para tiendas online o sesiones de marca personal?",
+      "classification": "paid_course_recommendation",
+      "evidence": {
+        "observation_ordinal": 1,
+        "proposed_action": {
+          "type": "none"
+        },
+        "backend_action": null,
+        "selected_course": "fotografia_profesional",
+        "promotion_state": {
+          "status": null,
+          "bonusCount": 0,
+          "paidCourse": null,
+          "bonusCourses": []
+        },
+        "delivered_bonus_courses": [],
+        "model_attempts": [
+          {
+            "call_id": "call-0006",
+            "provider_role": "agent",
+            "response": "Hola, soy Emma, asesora de Studyx. Fotografía Profesional encaja justo con eso: cámara y edición para ofrecer un servicio serio a emprendedores.\nPara orientarte mejor, qué tipo de fotos querés ofrecer primero: productos para tiendas online o sesiones de marca personal?",
+            "proposed_action": {
+              "type": "none"
+            },
+            "course_mentions": [
+              {
+                "offering_code": "fotografia_profesional",
+                "role": "paid"
+              }
+            ],
+            "rejection_codes": [],
+            "provider_status": 200,
+            "provider_error": null
+          }
+        ],
+        "workflow": {
+          "commitSucceeded": true,
+          "status": "waiting_user",
+          "errorCode": null,
+          "finalBackendDecisionError": null
+        }
+      }
+    },
+    {
+      "run": "acceptance-f1f0f9c-flash-full16-20261101",
+      "case": "03_single_course_recommendation",
+      "turn": "test_close_reply",
+      "delivered_sha256": "c2050dba24807f0c2e2c58ca195c8e0e865a3b86d6a7dda08a311df0b30464d2",
+      "status": "PASS",
+      "reason": "Habla del curso pago seleccionado y compara sus cuotas; no añade cursos ni cambia el precio.",
+      "delivered": "Perfecto, entonces apuntá a sesiones de marca personal: con cámara y edición vas a poder entregar un trabajo que se note profesional, no de celular.\nSon 41 clases online, desde cero. Preferís arrancar con 12 cuotas de USD 30 o con 6 de USD 60?",
+      "classification": "paid_course_and_payment_options",
+      "evidence": {
+        "observation_ordinal": 2,
+        "proposed_action": {
+          "type": "none"
+        },
+        "backend_action": null,
+        "selected_course": "fotografia_profesional",
+        "promotion_state": {
+          "status": null,
+          "bonusCount": 0,
+          "paidCourse": null,
+          "bonusCourses": []
+        },
+        "delivered_bonus_courses": [],
+        "model_attempts": [
+          {
+            "call_id": "call-0007",
+            "provider_role": "agent",
+            "response": "Perfecto, entonces apuntá a sesiones de marca personal: con cámara y edición vas a poder entregar un trabajo que se note profesional, no de celular.\nSon 41 clases online, desde cero. Preferís arrancar con 12 cuotas de USD 30 o con 6 de USD 60?",
+            "proposed_action": {
+              "type": "none"
+            },
+            "course_mentions": [
+              {
+                "offering_code": "fotografia_profesional",
+                "role": "paid"
+              }
+            ],
+            "rejection_codes": [],
+            "provider_status": 200,
+            "provider_error": null
+          }
+        ],
+        "workflow": {
+          "commitSucceeded": true,
+          "status": "waiting_user",
+          "errorCode": null,
+          "finalBackendDecisionError": null
+        }
+      }
+    },
+    {
+      "run": "acceptance-f1f0f9c-flash-full16-20261101",
+      "case": "04_price_value_objection",
+      "turn": "interest",
+      "delivered_sha256": "e7bd1e27fd7bca592cb444acd9bf6d837d3bc083751fcfa9c69985407f27d3d7",
+      "status": "PASS",
+      "reason": "Describe únicamente Fotografía Profesional, curso seleccionado; no anuncia un extra.",
+      "delivered": "Soy Emma, asesora de Studyx. Fotografía Profesional encaja justo con eso: son 41 clases online que arrancan desde cero con el proceso fotográfico digital, así podrías formarte para ofrecer sesiones con seguridad.\nContame, ya tenés cámara o estás empezando de cero con el equipo?",
+      "classification": "paid_course_recommendation",
+      "evidence": {
+        "observation_ordinal": 1,
+        "proposed_action": {
+          "type": "none"
+        },
+        "backend_action": null,
+        "selected_course": "fotografia_profesional",
+        "promotion_state": {
+          "status": null,
+          "bonusCount": 0,
+          "paidCourse": null,
+          "bonusCourses": []
+        },
+        "delivered_bonus_courses": [],
+        "model_attempts": [
+          {
+            "call_id": "call-0008",
+            "provider_role": "agent",
+            "response": "Soy Emma, asesora de Studyx. Fotografía Profesional encaja justo con eso: son 41 clases online que arrancan desde cero con el proceso fotográfico digital, así podrías formarte para ofrecer sesiones con seguridad.\nContame, ya tenés cámara o estás empezando de cero con el equipo?",
+            "proposed_action": {
+              "type": "none"
+            },
+            "course_mentions": [
+              {
+                "offering_code": "fotografia_profesional",
+                "role": "paid"
+              }
+            ],
+            "rejection_codes": [],
+            "provider_status": 200,
+            "provider_error": null
+          }
+        ],
+        "workflow": {
+          "commitSucceeded": true,
+          "status": "waiting_user",
+          "errorCode": null,
+          "finalBackendDecisionError": null
+        }
+      }
+    },
+    {
+      "run": "acceptance-f1f0f9c-flash-full16-20261101",
+      "case": "04_price_value_objection",
+      "turn": "expensive",
+      "delivered_sha256": "0388fcdf4936230bd18b14b6d772e8fa1a13e6393de44bea86cc0202e2de9d10",
+      "status": "PASS",
+      "reason": "Reencuadra el valor del curso pago y sus cuotas. “Sumar ingresos” describe un objetivo aspiracional, no un curso incluido.",
+      "delivered": "Te entiendo, es una inversión y querés que valga la pena. Pensalo así: son 41 clases para formarte desde cero y poder ofrecer sesiones, justo lo que buscás para sumar ingresos.\nSi te sirve, se puede en 12 cuotas de USD 30 por mes. Qué es lo que más te hace dudar: el monto o si el curso te va a alcanzar para ofrecer sesiones?",
+      "classification": "paid_course_and_payment_options",
+      "evidence": {
+        "observation_ordinal": 2,
+        "proposed_action": {
+          "type": "none"
+        },
+        "backend_action": null,
+        "selected_course": "fotografia_profesional",
+        "promotion_state": {
+          "status": null,
+          "bonusCount": 0,
+          "paidCourse": null,
+          "bonusCourses": []
+        },
+        "delivered_bonus_courses": [],
+        "model_attempts": [
+          {
+            "call_id": "call-0009",
+            "provider_role": "agent",
+            "response": "Te entiendo, es una inversión y querés que valga la pena. Pensalo así: son 41 clases para formarte desde cero y poder ofrecer sesiones, justo lo que buscás para sumar ingresos.\nSi te sirve, se puede en 12 cuotas de USD 30 por mes. Qué es lo que más te hace dudar: el monto o si el curso te va a alcanzar para ofrecer sesiones?",
+            "proposed_action": {
+              "type": "none"
+            },
+            "course_mentions": [
+              {
+                "offering_code": "fotografia_profesional",
+                "role": "paid"
+              }
+            ],
+            "rejection_codes": [],
+            "provider_status": 200,
+            "provider_error": null
+          }
+        ],
+        "workflow": {
+          "commitSucceeded": true,
+          "status": "waiting_user",
+          "errorCode": null,
+          "finalBackendDecisionError": null
+        }
+      }
+    },
+    {
+      "run": "acceptance-f1f0f9c-flash-full16-20261101",
+      "case": "05_real_budget_limit",
+      "turn": "interest",
+      "delivered_sha256": "279dd0a76c91572c31c12bdfcad0c38c60c32183538d8bc87427742780363996",
+      "status": "PASS",
+      "reason": "Entrega la contingencia “Qué dato o qué curso revisamos?”. Marketing Digital aparece sólo en borradores rechazados por COURSE_ROLE_UNDECLARED; no se entregó regalo.",
+      "delivered": "Qué dato o qué curso revisamos?",
+      "classification": "authorized_contingency_after_rejection",
+      "evidence": {
+        "observation_ordinal": 1,
+        "proposed_action": {
+          "type": "none"
+        },
+        "backend_action": null,
+        "selected_course": null,
+        "promotion_state": {
+          "status": null,
+          "bonusCount": 0,
+          "paidCourse": null,
+          "bonusCourses": []
+        },
+        "delivered_bonus_courses": [],
+        "model_attempts": [
+          {
+            "call_id": "call-0010",
+            "provider_role": "agent",
+            "response": "Soy Emma, asesora de Studyx. Marketing Digital es justo lo que necesitas para mover tu emprendimiento: 16 clases online para armar estrategias que comuniquen bien y potencien tu negocio.\nEl total son USD 360, y lo puedes pagar en 12 cuotas de USD 30, en 6 de USD 60 o de una sola vez. Cuál te acomoda más?",
+            "proposed_action": {
+              "type": "none"
+            },
+            "course_mentions": [
+              {
+                "offering_code": "marketing_digital",
+                "role": "paid"
+              }
+            ],
+            "rejection_codes": [],
+            "provider_status": 200,
+            "provider_error": null
+          },
+          {
+            "call_id": "call-0011",
+            "provider_role": "agent",
+            "response": "Hola, soy Emma, asesora de Studyx. Marketing Digital es justo lo que necesitas para mover tu emprendimiento: son 16 clases online donde desarrollas estrategias para comunicar de forma eficaz y potenciar tu negocio.\nEl total son USD 360, y lo puedes pagar en 12 cuotas de USD 30, en 6 de USD 60 o de una sola vez. Cuál te acomoda más?",
+            "proposed_action": {
+              "type": "none"
+            },
+            "course_mentions": [
+              {
+                "offering_code": "marketing_digital",
+                "role": "paid"
+              }
+            ],
+            "rejection_codes": [
+              "COURSE_ROLE_UNDECLARED"
+            ],
+            "provider_status": 200,
+            "provider_error": null
+          },
+          {
+            "call_id": "call-0012",
+            "provider_role": "agent",
+            "response": "Hola, soy Emma, asesora de Studyx. Marketing Digital son 16 clases online, pensadas justamente para armar estrategias que comuniquen bien y muevan tu negocio.\nEl total son USD 360, y lo podés pagar en 12 cuotas de USD 30, en 6 de USD 60 o de una sola vez. Cuál te queda más cómoda?",
+            "proposed_action": {
+              "type": "none"
+            },
+            "course_mentions": [
+              {
+                "offering_code": "marketing_digital",
+                "role": "paid"
+              }
+            ],
+            "rejection_codes": [
+              "COURSE_ROLE_UNDECLARED"
+            ],
+            "provider_status": 200,
+            "provider_error": null
+          }
+        ],
+        "workflow": {
+          "commitSucceeded": true,
+          "status": "waiting_user",
+          "errorCode": null,
+          "finalBackendDecisionError": null
+        }
+      }
+    },
+    {
+      "run": "acceptance-f1f0f9c-flash-full16-20261101",
+      "case": "05_real_budget_limit",
+      "turn": "budget",
+      "delivered_sha256": "279dd0a76c91572c31c12bdfcad0c38c60c32183538d8bc87427742780363996",
+      "status": "PASS",
+      "reason": "Entrega la contingencia; no menciona curso extra ni beneficio. Los borradores de Marketing Digital fueron rechazados por COURSE_ROLE_UNDECLARED.",
+      "delivered": "Qué dato o qué curso revisamos?",
+      "classification": "authorized_contingency_after_rejection",
+      "evidence": {
+        "observation_ordinal": 2,
+        "proposed_action": {
+          "type": "none"
+        },
+        "backend_action": null,
+        "selected_course": null,
+        "promotion_state": {
+          "status": null,
+          "bonusCount": 0,
+          "paidCourse": null,
+          "bonusCourses": []
+        },
+        "delivered_bonus_courses": [],
+        "model_attempts": [
+          {
+            "call_id": "call-0013",
+            "provider_role": "agent",
+            "response": "Te entiendo, a veces el presupuesto aprieta de verdad. Por eso Marketing Digital se puede pagar en 12 cuotas de USD 30 al mes, así no tenés que soltar todo junto.\nCon eso podrías ir armando las estrategias para mover tu emprendimiento mientras pagás cómodo. Te sirve arrancar así?",
+            "proposed_action": {
+              "type": "none"
+            },
+            "course_mentions": [
+              {
+                "offering_code": "marketing_digital",
+                "role": "paid"
+              }
+            ],
+            "rejection_codes": [],
+            "provider_status": 200,
+            "provider_error": null
+          },
+          {
+            "call_id": "call-0014",
+            "provider_role": "agent",
+            "response": "Te entiendo, y no quiero que te aprietes por esto. Marketing Digital son 16 clases online y se puede pagar en 12 cuotas de USD 30, así lo vas manejando mes a mes mientras lo aplicás a tu emprendimiento.\nSi hoy no es el momento, lo dejamos para cuando te acomode. Qué es lo que más te gustaría mover de tu emprendimiento con el marketing?",
+            "proposed_action": {
+              "type": "none"
+            },
+            "course_mentions": [
+              {
+                "offering_code": "marketing_digital",
+                "role": "paid"
+              }
+            ],
+            "rejection_codes": [
+              "COURSE_ROLE_UNDECLARED"
+            ],
+            "provider_status": 200,
+            "provider_error": null
+          },
+          {
+            "call_id": "call-0015",
+            "provider_role": "agent",
+            "response": "Te entiendo, y no quiero que te aprietes por esto. Marketing Digital son 16 clases online y se puede pagar en 12 cuotas de USD 30, así vas avanzando sin soltar todo de golpe.\nSi hoy no es el momento, lo dejamos para cuando estés más holgado. Qué es lo que más te gustaría mover de tu emprendimiento con el marketing?",
+            "proposed_action": {
+              "type": "none"
+            },
+            "course_mentions": [
+              {
+                "offering_code": "marketing_digital",
+                "role": "paid"
+              }
+            ],
+            "rejection_codes": [
+              "COURSE_ROLE_UNDECLARED"
+            ],
+            "provider_status": 200,
+            "provider_error": null
+          }
+        ],
+        "workflow": {
+          "commitSucceeded": true,
+          "status": "waiting_user",
+          "errorCode": null,
+          "finalBackendDecisionError": null
+        }
+      }
+    },
+    {
+      "run": "acceptance-f1f0f9c-flash-full16-20261101",
+      "case": "06_repeated_price_bonus_ladder",
+      "turn": "select",
+      "delivered_sha256": "e43317fc346c01fb4f3690a33ce1d341a25b85f025c7bf5b1c22bb5c1ff0559a",
+      "status": "PASS",
+      "reason": "Describe Fotografía Profesional, curso pago seleccionado; no menciona curso adicional.",
+      "delivered": "Hola, soy Emma, asesora de Studyx. Fotografía Profesional encaja justo con eso: son 41 clases online que arrancan desde cero con el proceso fotográfico digital, así podés formarte pensando en trabajar con tiendas y emprendedores.\nContame, ya tenés cámara o estás empezando de cero con el equipo?",
+      "classification": "paid_course_recommendation",
+      "evidence": {
+        "observation_ordinal": 1,
+        "proposed_action": {
+          "type": "none"
+        },
+        "backend_action": null,
+        "selected_course": "fotografia_profesional",
+        "promotion_state": {
+          "status": null,
+          "bonusCount": 0,
+          "paidCourse": null,
+          "bonusCourses": []
+        },
+        "delivered_bonus_courses": [],
+        "model_attempts": [
+          {
+            "call_id": "call-0016",
+            "provider_role": "agent",
+            "response": "Hola, soy Emma, asesora de Studyx. Fotografía Profesional encaja justo con eso: son 41 clases online que arrancan desde cero con el proceso fotográfico digital, así podés formarte pensando en trabajar con tiendas y emprendedores.\nContame, ya tenés cámara o estás empezando de cero con el equipo?",
+            "proposed_action": {
+              "type": "none"
+            },
+            "course_mentions": [
+              {
+                "offering_code": "fotografia_profesional",
+                "role": "paid"
+              }
+            ],
+            "rejection_codes": [],
+            "provider_status": 200,
+            "provider_error": null
+          }
+        ],
+        "workflow": {
+          "commitSucceeded": true,
+          "status": "waiting_user",
+          "errorCode": null,
+          "finalBackendDecisionError": null
+        }
+      }
+    },
+    {
+      "run": "acceptance-f1f0f9c-flash-full16-20261101",
+      "case": "06_repeated_price_bonus_ladder",
+      "turn": "value",
+      "delivered_sha256": "c6d5f7c26a009afb6bcb5be97a6c47c12f6be3736cacfa8a100f1db77a87b87a",
+      "status": "PASS",
+      "reason": "Se limita al curso pago y cuotas. “Apuntar a trabajar” presenta un uso aspiracional, no un resultado garantizado ni un regalo.",
+      "delivered": "Te entiendo, es una inversión. Pero pensalo así: son 41 clases online para formarte desde cero y apuntar a trabajar con tiendas y emprendedores, y se puede pagar en 12 cuotas de USD 30 al mes.\nSi te sirve esa forma, preferís arrancar con las 12 cuotas de USD 30 o con 6 de USD 60?",
+      "classification": "paid_course_and_payment_options",
+      "evidence": {
+        "observation_ordinal": 2,
+        "proposed_action": {
+          "type": "none"
+        },
+        "backend_action": null,
+        "selected_course": "fotografia_profesional",
+        "promotion_state": {
+          "status": null,
+          "bonusCount": 0,
+          "paidCourse": null,
+          "bonusCourses": []
+        },
+        "delivered_bonus_courses": [],
+        "model_attempts": [
+          {
+            "call_id": "call-0017",
+            "provider_role": "agent",
+            "response": "Te entiendo, es una inversión. Pero pensalo así: son 41 clases online para formarte desde cero y apuntar a trabajar con tiendas y emprendedores, y se puede pagar en 12 cuotas de USD 30 al mes.\nSi te sirve esa forma, preferís arrancar con las 12 cuotas de USD 30 o con 6 de USD 60?",
+            "proposed_action": {
+              "type": "none"
+            },
+            "course_mentions": [
+              {
+                "offering_code": "fotografia_profesional",
+                "role": "paid"
+              }
+            ],
+            "rejection_codes": [],
+            "provider_status": 200,
+            "provider_error": null
+          }
+        ],
+        "workflow": {
+          "commitSucceeded": true,
+          "status": "waiting_user",
+          "errorCode": null,
+          "finalBackendDecisionError": null
+        }
+      }
+    },
+    {
+      "run": "acceptance-f1f0f9c-flash-full16-20261101",
+      "case": "06_repeated_price_bonus_ladder",
+      "turn": "installments",
+      "delivered_sha256": "409550b8b8b9944f6ce063a335b69f431c801dbb1158cf7452ff2ecc82372e1f",
+      "status": "PASS",
+      "reason": "Reformula cuotas y valor del curso pago, sin prometer cursos adicionales.",
+      "delivered": "Es la segunda vez que el precio te frena, así que quiero entenderlo bien: es que hoy no te da el presupuesto, o es que todavía no ves claro que esto te devuelva esa inversión?\nSi es lo primero, las 12 cuotas de USD 30 son la forma más liviana de entrar, y con 41 clases apuntás justo a lo que querés: vivir de la fotografía trabajando con tiendas y emprendedores.",
+      "classification": "paid_course_and_price_objection",
+      "evidence": {
+        "observation_ordinal": 3,
+        "proposed_action": {
+          "type": "none"
+        },
+        "backend_action": null,
+        "selected_course": "fotografia_profesional",
+        "promotion_state": {
+          "status": null,
+          "bonusCount": 0,
+          "paidCourse": null,
+          "bonusCourses": []
+        },
+        "delivered_bonus_courses": [],
+        "model_attempts": [
+          {
+            "call_id": "call-0018",
+            "provider_role": "agent",
+            "response": "Es la segunda vez que el precio te frena, así que quiero entenderlo bien: es que hoy no te da el presupuesto, o es que todavía no ves claro que esto te devuelva esa inversión?\nSi es lo primero, las 12 cuotas de USD 30 son la forma más liviana de entrar, y con 41 clases apuntás justo a lo que querés: vivir de la fotografía trabajando con tiendas y emprendedores.",
+            "proposed_action": {
+              "type": "none"
+            },
+            "course_mentions": [
+              {
+                "offering_code": "fotografia_profesional",
+                "role": "paid"
+              }
+            ],
+            "rejection_codes": [],
+            "provider_status": 200,
+            "provider_error": null
+          }
+        ],
+        "workflow": {
+          "commitSucceeded": true,
+          "status": "waiting_user",
+          "errorCode": null,
+          "finalBackendDecisionError": null
+        }
+      }
+    },
+    {
+      "run": "acceptance-f1f0f9c-flash-full16-20261101",
+      "case": "06_repeated_price_bonus_ladder",
+      "turn": "isolate",
+      "delivered_sha256": "88b20486e18dd0ee3dd669ff7472c4d60c7ad62a170bd6f4a0d8706785157adb",
+      "status": "PASS",
+      "reason": "Pregunta sobre inscribirse en Fotografía Profesional y menciona cuotas; no ofrece un complemento.",
+      "delivered": "Te escucho. Si el precio no fuera el tema, te inscribirías en Fotografía Profesional para arrancar con lo de las tiendas y emprendedores?\nPorque si es así, las 12 cuotas de USD 30 son la forma más liviana de entrar y te quedás con las 41 clases para formarte desde cero.",
+      "classification": "paid_course_and_conditional_close",
+      "evidence": {
+        "observation_ordinal": 4,
+        "proposed_action": {
+          "type": "none"
+        },
+        "backend_action": null,
+        "selected_course": "fotografia_profesional",
+        "promotion_state": {
+          "status": null,
+          "bonusCount": 0,
+          "paidCourse": null,
+          "bonusCourses": []
+        },
+        "delivered_bonus_courses": [],
+        "model_attempts": [
+          {
+            "call_id": "call-0019",
+            "provider_role": "agent",
+            "response": "Te escucho. Si el precio no fuera el tema, ¿te inscribirías en Fotografía Profesional para arrancar con lo de las tiendas y emprendedores?\nPorque si es así, las 12 cuotas de USD 30 son la forma más liviana de entrar y te quedás con las 41 clases para formarte desde cero.",
+            "proposed_action": {
+              "type": "none"
+            },
+            "course_mentions": [
+              {
+                "offering_code": "fotografia_profesional",
+                "role": "paid"
+              }
+            ],
+            "rejection_codes": [],
+            "provider_status": 200,
+            "provider_error": null
+          }
+        ],
+        "workflow": {
+          "commitSucceeded": true,
+          "status": "waiting_user",
+          "errorCode": null,
+          "finalBackendDecisionError": null
+        }
+      }
+    },
+    {
+      "run": "acceptance-f1f0f9c-flash-full16-20261101",
+      "case": "06_repeated_price_bonus_ladder",
+      "turn": "call_step",
+      "delivered_sha256": "ac1ce2d1d6d391bf60ffe01236f620f76f1674a46339a0a56f78d726123730d4",
+      "status": "PASS",
+      "reason": "Menciona sólo el curso pago y cuotas. No ofrece un curso adicional.",
+      "delivered": "Perfecto, entonces vamos a resolverlo. Fotografía Profesional son 41 clases online y el total es USD 360, que podés pagar en 12 cuotas de USD 30 al mes, en 6 de USD 60 o en un solo pago de USD 360.\nCon cuál te sentís más cómodo para arrancar?",
+      "classification": "paid_course_and_payment_options",
+      "evidence": {
+        "observation_ordinal": 5,
+        "proposed_action": {
+          "type": "none"
+        },
+        "backend_action": null,
+        "selected_course": "fotografia_profesional",
+        "promotion_state": {
+          "status": null,
+          "bonusCount": 0,
+          "paidCourse": null,
+          "bonusCourses": []
+        },
+        "delivered_bonus_courses": [],
+        "model_attempts": [
+          {
+            "call_id": "call-0020",
+            "provider_role": "agent",
+            "response": "Perfecto, entonces vamos a resolverlo. Fotografía Profesional son 41 clases online y el total es USD 360, que podés pagar en 12 cuotas de USD 30 al mes, en 6 de USD 60 o en un solo pago de USD 360.\nCon cuál te sentís más cómodo para arrancar?",
+            "proposed_action": {
+              "type": "none"
+            },
+            "course_mentions": [
+              {
+                "offering_code": "fotografia_profesional",
+                "role": "paid"
+              }
+            ],
+            "rejection_codes": [],
+            "provider_status": 200,
+            "provider_error": null
+          }
+        ],
+        "workflow": {
+          "commitSucceeded": true,
+          "status": "waiting_user",
+          "errorCode": null,
+          "finalBackendDecisionError": null
+        }
+      }
+    },
+    {
+      "run": "acceptance-f1f0f9c-flash-full16-20261101",
+      "case": "06_repeated_price_bonus_ladder",
+      "turn": "bonus_1",
+      "delivered_sha256": "bce7a9eff9264d4418861f4894b531b09242f22510c07fc39344f0b35c7af8a1",
+      "status": "PASS",
+      "reason": "Continúa con el curso pago y cuotas; no se refiere a un bonificado. El paquete actual tiene cero bonificados.",
+      "delivered": "Quedamos por chat, sin problema. Y ya sabemos que el precio es lo único que te frena, así que vamos a eso: las 12 cuotas de USD 30 son la forma más liviana de entrar y te quedás con las 41 clases para formarte desde cero y apuntar a tiendas y emprendedores.\nArrancamos con las 12 cuotas de USD 30, o preferís las 6 de USD 60?",
+      "classification": "paid_course_and_payment_options",
+      "evidence": {
+        "observation_ordinal": 6,
+        "proposed_action": {
+          "type": "none"
+        },
+        "backend_action": null,
+        "selected_course": "fotografia_profesional",
+        "promotion_state": {
+          "status": null,
+          "bonusCount": 0,
+          "paidCourse": null,
+          "bonusCourses": []
+        },
+        "delivered_bonus_courses": [],
+        "model_attempts": [
+          {
+            "call_id": "call-0021",
+            "provider_role": "agent",
+            "response": "Quedamos por chat, sin problema. Y ya sabemos que el precio es lo único que te frena, así que vamos a eso: las 12 cuotas de USD 30 son la forma más liviana de entrar y te quedás con las 41 clases para formarte desde cero y apuntar a tiendas y emprendedores.\nArrancamos con las 12 cuotas de USD 30, o preferís las 6 de USD 60?",
+            "proposed_action": {
+              "type": "none"
+            },
+            "course_mentions": [
+              {
+                "offering_code": "fotografia_profesional",
+                "role": "paid"
+              }
+            ],
+            "rejection_codes": [],
+            "provider_status": 200,
+            "provider_error": null
+          }
+        ],
+        "workflow": {
+          "commitSucceeded": true,
+          "status": "waiting_user",
+          "errorCode": null,
+          "finalBackendDecisionError": null
+        }
+      }
+    },
+    {
+      "run": "acceptance-f1f0f9c-flash-full16-20261101",
+      "case": "06_repeated_price_bonus_ladder",
+      "turn": "bonus_2",
+      "delivered_sha256": "d70397f4be9c9b72f632349755c7223d682cb006f6dd0d397f70b931b641ce41",
+      "status": "PASS",
+      "reason": "“Te suma” retoma la valoración de la persona y la respuesta pregunta qué haría que el curso valga la pena; no nombra ni insinúa un curso gratuito.",
+      "delivered": "Te suma y aun así el precio te sigue pesando, así que no te voy a repetir las cuotas. Lo que quiero entender es qué te haría sentir que vale la pena: que las 41 clases te dejen lista para trabajar con tiendas y emprendedores, o que puedas empezar sin soltar los USD 30 de una?",
+      "classification": "paid_course_price_discussion",
+      "evidence": {
+        "observation_ordinal": 7,
+        "proposed_action": {
+          "type": "none"
+        },
+        "backend_action": null,
+        "selected_course": "fotografia_profesional",
+        "promotion_state": {
+          "status": null,
+          "bonusCount": 0,
+          "paidCourse": null,
+          "bonusCourses": []
+        },
+        "delivered_bonus_courses": [],
+        "model_attempts": [
+          {
+            "call_id": "call-0022",
+            "provider_role": "agent",
+            "response": "Te suma y aun así el precio te sigue pesando, así que no te voy a repetir las cuotas. Lo que quiero entender es qué te haría sentir que vale la pena: que las 41 clases te dejen lista para trabajar con tiendas y emprendedores, o que puedas empezar sin soltar los USD 30 de una?",
+            "proposed_action": {
+              "type": "none"
+            },
+            "course_mentions": [
+              {
+                "offering_code": "fotografia_profesional",
+                "role": "paid"
+              }
+            ],
+            "rejection_codes": [],
+            "provider_status": 200,
+            "provider_error": null
+          }
+        ],
+        "workflow": {
+          "commitSucceeded": true,
+          "status": "waiting_user",
+          "errorCode": null,
+          "finalBackendDecisionError": null
+        }
+      }
+    },
+    {
+      "run": "acceptance-f1f0f9c-flash-full16-20261101",
+      "case": "06_repeated_price_bonus_ladder",
+      "turn": "bonus_3",
+      "delivered_sha256": "279dd0a76c91572c31c12bdfcad0c38c60c32183538d8bc87427742780363996",
+      "status": "PASS",
+      "reason": "El intento inicial ofreció sumar Fotografía con Celulares para Tiendas Online con proposed_action=none; backend lo rechazó por forbidden_promise/ladder_step_pending y el proveedor abortó la reparación. La entrega final es sólo “Qué dato o qué curso revisamos?”. PASS se limita a entrega; intento fallido queda documentado.",
+      "delivered": "Qué dato o qué curso revisamos?",
+      "classification": "repaired_contingency_after_rejected_bonus_draft",
+      "evidence": {
+        "observation_ordinal": 8,
+        "proposed_action": {
+          "type": "none"
+        },
+        "backend_action": null,
+        "selected_course": "fotografia_profesional",
+        "promotion_state": {
+          "status": null,
+          "bonusCount": 0,
+          "paidCourse": null,
+          "bonusCourses": []
+        },
+        "delivered_bonus_courses": [],
+        "model_attempts": [
+          {
+            "call_id": "call-0023",
+            "provider_role": "agent",
+            "response": "Sí, hay algo que suma y no cambia el precio del curso: sumarte Fotografía con Celulares para Tiendas Online, para que puedas resolver fotos de producto con el celular desde el primer día, justo para las tiendas y emprendedores que querés atender.\nFotografía Profesional sigue en 12 cuotas de USD 30. Arrancamos con esas 12 cuotas?",
+            "proposed_action": {
+              "type": "none"
+            },
+            "course_mentions": [
+              {
+                "offering_code": "fotografia_profesional",
+                "role": "paid"
+              },
+              {
+                "offering_code": "fotografia_celulares_tiendas_online",
+                "role": "bonus"
+              }
+            ],
+            "rejection_codes": [],
+            "provider_status": 200,
+            "provider_error": null
+          },
+          {
+            "call_id": "call-0024",
+            "provider_role": "agent",
+            "response": null,
+            "proposed_action": null,
+            "course_mentions": null,
+            "rejection_codes": [
+              "FACT_VALUE_MISMATCH",
+              "FACT_VALUE_MISMATCH",
+              "FACT_VALUE_MISMATCH",
+              "FACT_VALUE_MISMATCH",
+              "FACT_VALUE_MISMATCH"
+            ],
+            "provider_status": null,
+            "provider_error": "This operation was aborted"
+          }
+        ],
+        "workflow": {
+          "commitSucceeded": true,
+          "status": "waiting_user",
+          "errorCode": null,
+          "finalBackendDecisionError": null
+        }
+      }
+    },
+    {
+      "run": "acceptance-f1f0f9c-flash-full16-20261101",
+      "case": "06_repeated_price_bonus_ladder",
+      "turn": "never_fourth",
+      "delivered_sha256": "400dc36d7a1604e817a447e939d2af0cb921808393014aac0c57d46ea226d672",
+      "status": "PASS",
+      "reason": "“Sumar otra formación” queda como posibilidad futura, sin gratuidad ni inclusión; el texto actual vuelve a cuotas del curso pago. No insinúa una cuarta bonificación.",
+      "delivered": "Por ahora vamos con Fotografía Profesional, que es lo que te sirve para tiendas y emprendedores. Si más adelante querés sumar otra formación, lo vemos, pero primero dejemos resuelto esto.\nCon las 12 cuotas de USD 30 arrancamos hoy mismo. Te parece si avanzamos así?",
+      "classification": "paid_course_and_future_paid_option",
+      "evidence": {
+        "observation_ordinal": 9,
+        "proposed_action": {
+          "type": "none"
+        },
+        "backend_action": null,
+        "selected_course": "fotografia_profesional",
+        "promotion_state": {
+          "status": null,
+          "bonusCount": 0,
+          "paidCourse": null,
+          "bonusCourses": []
+        },
+        "delivered_bonus_courses": [],
+        "model_attempts": [
+          {
+            "call_id": "call-0025",
+            "provider_role": "agent",
+            "response": "Por ahora vamos con Fotografía Profesional, que es lo que te sirve para tiendas y emprendedores. Si más adelante querés sumar otra formación, lo vemos, pero primero dejemos resuelto esto.\nCon las 12 cuotas de USD 30 arrancamos hoy mismo. Te parece si avanzamos así?",
+            "proposed_action": {
+              "type": "none"
+            },
+            "course_mentions": [
+              {
+                "offering_code": "fotografia_profesional",
+                "role": "paid"
+              }
+            ],
+            "rejection_codes": [],
+            "provider_status": 200,
+            "provider_error": null
+          }
+        ],
+        "workflow": {
+          "commitSucceeded": true,
+          "status": "waiting_user",
+          "errorCode": null,
+          "finalBackendDecisionError": null
+        }
+      }
+    },
+    {
+      "run": "acceptance-f1f0f9c-flash-full16-20261101",
+      "case": "07_think_it_over_not_closed",
+      "turn": "plans",
+      "delivered_sha256": "913a8afc41ea3c7ba5e56d60a69a8b0c505762a8de0a7ef96e48a99ea42d1136",
+      "status": "PASS",
+      "reason": "Enumera planes de pago para Fotografía Profesional; las cuotas son opciones de pago, no regalos.",
+      "delivered": "Soy Emma, asesora de Studyx. Fotografía Profesional son 41 clases online, desde cero con el proceso digital. Los planes son estos:\n12 pagos mensuales de USD 30\n6 pagos mensuales de USD 60\nPago único de USD 360\nCuál te acomoda más?",
+      "classification": "paid_course_and_payment_options",
+      "evidence": {
+        "observation_ordinal": 1,
+        "proposed_action": {
+          "type": "none"
+        },
+        "backend_action": null,
+        "selected_course": "fotografia_profesional",
+        "promotion_state": {
+          "status": null,
+          "bonusCount": 0,
+          "paidCourse": null,
+          "bonusCourses": []
+        },
+        "delivered_bonus_courses": [],
+        "model_attempts": [
+          {
+            "call_id": "call-0026",
+            "provider_role": "agent",
+            "response": "Soy Emma, asesora de Studyx. Fotografía Profesional son 41 clases online, desde cero con el proceso digital. Los planes son estos:\n12 pagos mensuales de USD 30\n6 pagos mensuales de USD 60\nPago único de USD 360\nCuál te acomoda más?",
+            "proposed_action": {
+              "type": "none"
+            },
+            "course_mentions": [
+              {
+                "offering_code": "fotografia_profesional",
+                "role": "paid"
+              }
+            ],
+            "rejection_codes": [],
+            "provider_status": 200,
+            "provider_error": null
+          }
+        ],
+        "workflow": {
+          "commitSucceeded": true,
+          "status": "waiting_user",
+          "errorCode": null,
+          "finalBackendDecisionError": null
+        }
+      }
+    },
+    {
+      "run": "acceptance-f1f0f9c-flash-full16-20261101",
+      "case": "07_think_it_over_not_closed",
+      "turn": "think",
+      "delivered_sha256": "66e1f30a61af1222261227b35e8fbc42b972a2cd169238212898aaf321ec60ab",
+      "status": "PASS",
+      "reason": "Responde al deseo de pensarlo y habla del curso seleccionado. No promete un extra ni un resultado seguro.",
+      "delivered": "Claro, tomate tu tiempo. Solo para dejarte tranquila: Fotografía Profesional son 41 clases online y podés empezar desde cero, así que no necesitás experiencia previa.\nQué es lo que querés terminar de definir antes de decidir? Si es algo puntual, te lo resuelvo por acá.",
+      "classification": "defer_purchase_decision",
+      "evidence": {
+        "observation_ordinal": 2,
+        "proposed_action": {
+          "type": "none"
+        },
+        "backend_action": null,
+        "selected_course": "fotografia_profesional",
+        "promotion_state": {
+          "status": null,
+          "bonusCount": 0,
+          "paidCourse": null,
+          "bonusCourses": []
+        },
+        "delivered_bonus_courses": [],
+        "model_attempts": [
+          {
+            "call_id": "call-0027",
+            "provider_role": "agent",
+            "response": "Claro, tomate tu tiempo. Solo para dejarte tranquila: Fotografía Profesional son 41 clases online y podés empezar desde cero, así que no necesitás experiencia previa.\nQué es lo que querés terminar de definir antes de decidir? Si es algo puntual, te lo resuelvo por acá.",
+            "proposed_action": {
+              "type": "none"
+            },
+            "course_mentions": [
+              {
+                "offering_code": "fotografia_profesional",
+                "role": "paid"
+              }
+            ],
+            "rejection_codes": [],
+            "provider_status": 200,
+            "provider_error": null
+          }
+        ],
+        "workflow": {
+          "commitSucceeded": true,
+          "status": "waiting_user",
+          "errorCode": null,
+          "finalBackendDecisionError": null
+        }
+      }
+    },
+    {
+      "run": "acceptance-f1f0f9c-flash-full16-20261101",
+      "case": "08_consult_partner",
+      "turn": "context",
+      "delivered_sha256": "6e13050bd8a8a24fa6c382c761818edf08bc6ab9e2776cfd644a4a77b398f7a9",
+      "status": "PASS",
+      "reason": "Describe Marketing Digital, curso seleccionado/pago; no ofrece otro curso.",
+      "delivered": "Hola, soy Emma, asesora de Studyx. Marketing Digital encaja justo con lo que buscás: son 16 clases online para armar estrategias que comuniquen bien y potencien tu negocio, así ordenás tus redes con un objetivo claro de venta.\nContame un poco más: qué vendés hoy y por dónde te gustaría empezar a moverlo?",
+      "classification": "paid_course_recommendation",
+      "evidence": {
+        "observation_ordinal": 1,
+        "proposed_action": {
+          "type": "none"
+        },
+        "backend_action": null,
+        "selected_course": "marketing_digital",
+        "promotion_state": {
+          "status": null,
+          "bonusCount": 0,
+          "paidCourse": null,
+          "bonusCourses": []
+        },
+        "delivered_bonus_courses": [],
+        "model_attempts": [
+          {
+            "call_id": "call-0028",
+            "provider_role": "agent",
+            "response": "Hola, soy Emma, asesora de Studyx. Marketing Digital encaja justo con lo que buscás: son 16 clases online para armar estrategias que comuniquen bien y potencien tu negocio, así ordenás tus redes con un objetivo claro de venta.\nContame un poco más: qué vendés hoy y por dónde te gustaría empezar a moverlo?",
+            "proposed_action": {
+              "type": "none"
+            },
+            "course_mentions": [
+              {
+                "offering_code": "marketing_digital",
+                "role": "paid"
+              }
+            ],
+            "rejection_codes": [],
+            "provider_status": 200,
+            "provider_error": null
+          }
+        ],
+        "workflow": {
+          "commitSucceeded": true,
+          "status": "waiting_user",
+          "errorCode": null,
+          "finalBackendDecisionError": null
+        }
+      }
+    },
+    {
+      "run": "acceptance-f1f0f9c-flash-full16-20261101",
+      "case": "08_consult_partner",
+      "turn": "partner",
+      "delivered_sha256": "6319956e6a849c2ddaa1177543f7396f7916efd936d35795160dea9e2fac40a1",
+      "status": "PASS",
+      "reason": "Resume Marketing Digital y sus cuotas para consultarlo con la pareja; “te dejo lo clave” refiere al resumen, no a un regalo.",
+      "delivered": "Tiene sentido consultarlo, sobre todo cuando es una decisión que se comparte. Si querés, te dejo lo clave para mostrárselo: Marketing Digital son 16 clases online para armar estrategias que comuniquen bien y te ayuden a vender más con tu emprendimiento, y se puede pagar en 12 cuotas de USD 30.",
+      "classification": "paid_course_summary_for_consultation",
+      "evidence": {
+        "observation_ordinal": 2,
+        "proposed_action": {
+          "type": "none"
+        },
+        "backend_action": null,
+        "selected_course": "marketing_digital",
+        "promotion_state": {
+          "status": null,
+          "bonusCount": 0,
+          "paidCourse": null,
+          "bonusCourses": []
+        },
+        "delivered_bonus_courses": [],
+        "model_attempts": [
+          {
+            "call_id": "call-0029",
+            "provider_role": "agent",
+            "response": "Tiene sentido consultarlo, sobre todo cuando es una decisión que se comparte. Si querés, te dejo lo clave para mostrárselo: Marketing Digital son 16 clases online para armar estrategias que comuniquen bien y te ayuden a vender más con tu emprendimiento, y se puede pagar en 12 cuotas de USD 30.",
+            "proposed_action": {
+              "type": "none"
+            },
+            "course_mentions": [
+              {
+                "offering_code": "marketing_digital",
+                "role": "paid"
+              }
+            ],
+            "rejection_codes": [],
+            "provider_status": 200,
+            "provider_error": null
+          }
+        ],
+        "workflow": {
+          "commitSucceeded": true,
+          "status": "waiting_user",
+          "errorCode": null,
+          "finalBackendDecisionError": null
+        }
+      }
+    },
+    {
+      "run": "acceptance-f1f0f9c-flash-full16-20261101",
+      "case": "09_definitive_no",
+      "turn": "interest",
+      "delivered_sha256": "d32cb0aa75677eb73072eba91c503bd2b307fd471a6904290f2017c27574f364",
+      "status": "PASS",
+      "reason": "Describe Fotografía Profesional, curso seleccionado; no ofrece cursos extra.",
+      "delivered": "Hola, soy Emma, asesora de Studyx. Fotografía Profesional es una buena elección para eso: son 41 clases online y arranca desde cero con el proceso fotográfico digital, así que podrías aplicar lo que aprendés directo a tu trabajo.",
+      "classification": "paid_course_recommendation",
+      "evidence": {
+        "observation_ordinal": 1,
+        "proposed_action": {
+          "type": "none"
+        },
+        "backend_action": null,
+        "selected_course": "fotografia_profesional",
+        "promotion_state": {
+          "status": null,
+          "bonusCount": 0,
+          "paidCourse": null,
+          "bonusCourses": []
+        },
+        "delivered_bonus_courses": [],
+        "model_attempts": [
+          {
+            "call_id": "call-0030",
+            "provider_role": "agent",
+            "response": "Hola, soy Emma, asesora de Studyx. Fotografía Profesional es una buena elección para eso: son 41 clases online y arranca desde cero con el proceso fotográfico digital, así que podrías aplicar lo que aprendés directo a tu trabajo.",
+            "proposed_action": {
+              "type": "none"
+            },
+            "course_mentions": [
+              {
+                "offering_code": "fotografia_profesional",
+                "role": "paid"
+              }
+            ],
+            "rejection_codes": [],
+            "provider_status": 200,
+            "provider_error": null
+          }
+        ],
+        "workflow": {
+          "commitSucceeded": true,
+          "status": "waiting_user",
+          "errorCode": null,
+          "finalBackendDecisionError": null
+        }
+      }
+    },
+    {
+      "run": "acceptance-f1f0f9c-flash-full16-20261101",
+      "case": "09_definitive_no",
+      "turn": "hidden_friction",
+      "delivered_sha256": "0869690bc57a5461a9bcc72ee427095415c67609aecc82604c7f2061ab7c24aa",
+      "status": "PASS",
+      "reason": "Pregunta qué falta decidir sobre el mismo curso; no promete un beneficio adicional.",
+      "delivered": "Claro, tomate tu tiempo. Sólo para ayudarte mejor: qué es lo que te queda por definir, el precio o si el curso te va a servir para tu trabajo?",
+      "classification": "defer_purchase_decision",
+      "evidence": {
+        "observation_ordinal": 2,
+        "proposed_action": {
+          "type": "none"
+        },
+        "backend_action": null,
+        "selected_course": "fotografia_profesional",
+        "promotion_state": {
+          "status": null,
+          "bonusCount": 0,
+          "paidCourse": null,
+          "bonusCourses": []
+        },
+        "delivered_bonus_courses": [],
+        "model_attempts": [
+          {
+            "call_id": "call-0031",
+            "provider_role": "agent",
+            "response": "Claro, tomate tu tiempo. Sólo para ayudarte mejor: qué es lo que te queda por definir, el precio o si el curso te va a servir para tu trabajo?",
+            "proposed_action": {
+              "type": "none"
+            },
+            "course_mentions": [],
+            "rejection_codes": [],
+            "provider_status": 200,
+            "provider_error": null
+          }
+        ],
+        "workflow": {
+          "commitSucceeded": true,
+          "status": "waiting_user",
+          "errorCode": null,
+          "finalBackendDecisionError": null
+        }
+      }
+    },
+    {
+      "run": "acceptance-f1f0f9c-flash-full16-20261101",
+      "case": "09_definitive_no",
+      "turn": "definitive",
+      "delivered_sha256": "0bd29a05835eb90435329f54f8b730677b8ddbb9f36b61360d2b5da35a157189",
+      "status": "PASS",
+      "reason": "Confirma que no seguirá insistiendo; no contiene oferta ni insinuación de bonificación.",
+      "delivered": "Gracias por decírmelo claro. Queda todo como está, sin más mensajes de mi parte.",
+      "classification": "purchase_decline_acknowledgement",
+      "evidence": {
+        "observation_ordinal": 3,
+        "proposed_action": {
+          "type": "none"
+        },
+        "backend_action": null,
+        "selected_course": "fotografia_profesional",
+        "promotion_state": {
+          "status": null,
+          "bonusCount": 0,
+          "paidCourse": null,
+          "bonusCourses": []
+        },
+        "delivered_bonus_courses": [],
+        "model_attempts": [
+          {
+            "call_id": "call-0032",
+            "provider_role": "agent",
+            "response": "Gracias por decírmelo claro. Queda todo como está, sin más mensajes de mi parte.",
+            "proposed_action": {
+              "type": "none"
+            },
+            "course_mentions": [],
+            "rejection_codes": [],
+            "provider_status": 200,
+            "provider_error": null
+          }
+        ],
+        "workflow": {
+          "commitSucceeded": true,
+          "status": "completed",
+          "errorCode": null,
+          "finalBackendDecisionError": null
+        }
+      }
+    },
+    {
+      "run": "acceptance-f1f0f9c-flash-full16-20261101",
+      "case": "10_requested_call",
+      "turn": "request",
+      "delivered_sha256": "4e6efa6bdcc34cf5acd9c279d4252f00d73ae87c7a2523088bdb28fd26f9eb33",
+      "status": "PASS",
+      "reason": "Pide datos para coordinar la llamada sobre cursos de fotografía; no promete un curso incluido.",
+      "delivered": "Hola, soy Emma, asesora de Studyx. Con gusto te oriento por llamada sobre los cursos de fotografía. Para coordinar, pasame tu nombre, apellido, correo y teléfono.",
+      "classification": "call_invitation_and_intake",
+      "evidence": {
+        "observation_ordinal": 1,
+        "proposed_action": {
+          "type": "none"
+        },
+        "backend_action": null,
+        "selected_course": null,
+        "promotion_state": {
+          "status": null,
+          "bonusCount": 0,
+          "paidCourse": null,
+          "bonusCourses": []
+        },
+        "delivered_bonus_courses": [],
+        "model_attempts": [
+          {
+            "call_id": "call-0033",
+            "provider_role": "agent",
+            "response": "Hola, soy Emma, asesora de Studyx. Con gusto te oriento por llamada sobre los cursos de fotografía. Para coordinar, pasame tu nombre, apellido, correo y teléfono.",
+            "proposed_action": {
+              "type": "none"
+            },
+            "course_mentions": [],
+            "rejection_codes": [],
+            "provider_status": 200,
+            "provider_error": null
+          }
+        ],
+        "workflow": {
+          "commitSucceeded": true,
+          "status": "waiting_user",
+          "errorCode": null,
+          "finalBackendDecisionError": null
+        }
+      }
+    },
+    {
+      "run": "acceptance-f1f0f9c-flash-full16-20261101",
+      "case": "10_requested_call",
+      "turn": "data",
+      "delivered_sha256": "8d4e622fe20ef491f0724f2bb1e19a1440e5106443bc35a0e15f26c18fce47ac",
+      "status": "PASS",
+      "reason": "Confirma datos y pregunta disponibilidad para la llamada; no anuncia ningún curso extra.",
+      "delivered": "Gracias, Ana. Ya tengo tus datos: Ana Pérez, ana.perez@example.test, +1 305 555 0182.\nPuedes atender la llamada ahora para orientarte con los cursos de fotografía?",
+      "classification": "call_availability_check",
+      "evidence": {
+        "observation_ordinal": 2,
+        "proposed_action": {
+          "type": "none"
+        },
+        "backend_action": null,
+        "selected_course": null,
+        "promotion_state": {
+          "status": null,
+          "bonusCount": 0,
+          "paidCourse": null,
+          "bonusCourses": []
+        },
+        "delivered_bonus_courses": [],
+        "model_attempts": [
+          {
+            "call_id": "call-0034",
+            "provider_role": "agent",
+            "response": "Gracias, Ana. Ya tengo tus datos: Ana Pérez, ana.perez@example.test, +1 305 555 0182.\nPuedes atender la llamada ahora para orientarte con los cursos de fotografía?",
+            "proposed_action": {
+              "type": "none"
+            },
+            "course_mentions": [],
+            "rejection_codes": [],
+            "provider_status": 200,
+            "provider_error": null
+          }
+        ],
+        "workflow": {
+          "commitSucceeded": true,
+          "status": "waiting_user",
+          "errorCode": null,
+          "finalBackendDecisionError": null
+        }
+      }
+    },
+    {
+      "run": "acceptance-f1f0f9c-flash-full16-20261101",
+      "case": "10_requested_call",
+      "turn": "available",
+      "delivered_sha256": "89d8b1365e913af17c69444b8cc5d33e50d9a1bbe17e28499df7df997436fc49",
+      "status": "PASS",
+      "reason": "El texto de llamada coincide con proposed_action/backend_action=request_call_now; no contiene cursos bonificados.",
+      "delivered": "Perfecto, Ana. Te llamo ahora para orientarte con los cursos de fotografía.",
+      "classification": "authorized_call_dispatch",
+      "evidence": {
+        "observation_ordinal": 3,
+        "proposed_action": {
+          "type": "request_call_now",
+          "reason": "accepted_offer"
+        },
+        "backend_action": "request_call_now",
+        "selected_course": null,
+        "promotion_state": {
+          "status": null,
+          "bonusCount": 0,
+          "paidCourse": null,
+          "bonusCourses": []
+        },
+        "delivered_bonus_courses": [],
+        "model_attempts": [
+          {
+            "call_id": "call-0035",
+            "provider_role": "agent",
+            "response": "Perfecto, Ana. Te llamo ahora para orientarte con los cursos de fotografía.",
+            "proposed_action": {
+              "type": "request_call_now",
+              "reason": "accepted_offer"
+            },
+            "course_mentions": [],
+            "rejection_codes": [],
+            "provider_status": 200,
+            "provider_error": null
+          }
+        ],
+        "workflow": {
+          "commitSucceeded": true,
+          "status": "waiting_user",
+          "errorCode": null,
+          "finalBackendDecisionError": null
+        }
+      }
+    },
+    {
+      "run": "acceptance-f1f0f9c-flash-full16-20261101",
+      "case": "11_purchase_to_payment_link",
+      "turn": "buy",
+      "delivered_sha256": "b6a209248304753d91ebdd291bd67039330409a4692fe3a6b7eed02e1688a467",
+      "status": "PASS",
+      "reason": "Confirma Fotografía Profesional y solicita los datos para la inscripción. No ofrece un curso adicional.",
+      "delivered": "Soy Emma, asesora de Studyx. Fotografía Profesional es una buena elección: son 41 clases online, desde cero con el proceso fotográfico digital.\nPara dejarte inscripto te pido nombre, apellido, correo y teléfono.",
+      "classification": "paid_course_checkout_intake",
+      "evidence": {
+        "observation_ordinal": 1,
+        "proposed_action": {
+          "type": "none"
+        },
+        "backend_action": null,
+        "selected_course": "fotografia_profesional",
+        "promotion_state": {
+          "status": null,
+          "bonusCount": 0,
+          "paidCourse": null,
+          "bonusCourses": []
+        },
+        "delivered_bonus_courses": [],
+        "active_courses": [],
+        "active_course_names": [],
+        "model_attempts": [
+          {
+            "call_id": "call-0036",
+            "provider_role": "agent",
+            "response": "Soy Emma, asesora de Studyx. Fotografía Profesional es una buena elección: son 41 clases online, desde cero con el proceso fotográfico digital.\nPara dejarte inscripto te pido nombre, apellido, correo y teléfono.",
+            "proposed_action": {
+              "type": "none"
+            },
+            "course_mentions": [
+              {
+                "offering_code": "fotografia_profesional",
+                "role": "paid"
+              }
+            ],
+            "rejection_codes": [],
+            "provider_status": 200,
+            "provider_error": null,
+            "provider_latency_ms": 3039
+          }
+        ],
+        "workflow": {
+          "commitSucceeded": true,
+          "status": "waiting_user",
+          "errorCode": null,
+          "finalBackendDecisionError": null
+        }
+      }
+    },
+    {
+      "run": "acceptance-f1f0f9c-flash-full16-20261101",
+      "case": "11_purchase_to_payment_link",
+      "turn": "data",
+      "delivered_sha256": "2df6a0c7ee59bae457d5dcfa3f711c2108e2626630eb0f74d778736c4a462615",
+      "status": "PASS",
+      "reason": "Confirma los datos asociados a la inscripción en Fotografía Profesional; no promete un bonificado.",
+      "delivered": "Perfecto, Ana. Te confirmo los datos para tu inscripción en Fotografía Profesional:\nAna Pérez\nana.perez@example.test\n+1 305 555 0182\nEstán correctos?",
+      "classification": "paid_course_data_confirmation",
+      "evidence": {
+        "observation_ordinal": 2,
+        "proposed_action": {
+          "type": "none"
+        },
+        "backend_action": null,
+        "selected_course": "fotografia_profesional",
+        "promotion_state": {
+          "status": null,
+          "bonusCount": 0,
+          "paidCourse": null,
+          "bonusCourses": []
+        },
+        "delivered_bonus_courses": [],
+        "active_courses": [],
+        "active_course_names": [],
+        "model_attempts": [
+          {
+            "call_id": "call-0037",
+            "provider_role": "agent",
+            "response": "Perfecto, Ana. Te confirmo los datos para tu inscripción en Fotografía Profesional:\nAna Pérez\nana.perez@example.test\n+1 305 555 0182\nEstán correctos?",
+            "proposed_action": {
+              "type": "none"
+            },
+            "course_mentions": [
+              {
+                "offering_code": "fotografia_profesional",
+                "role": "paid"
+              }
+            ],
+            "rejection_codes": [],
+            "provider_status": 200,
+            "provider_error": null,
+            "provider_latency_ms": 2456
+          }
+        ],
+        "workflow": {
+          "commitSucceeded": true,
+          "status": "waiting_user",
+          "errorCode": null,
+          "finalBackendDecisionError": null
+        }
+      }
+    },
+    {
+      "run": "acceptance-f1f0f9c-flash-full16-20261101",
+      "case": "11_purchase_to_payment_link",
+      "turn": "confirm",
+      "delivered_sha256": "acc79ff75612cc12abc3622147e9b55c6a55ae656a5163ff489d21cb4da0a4b2",
+      "status": "PASS",
+      "reason": "Confirma datos y pregunta forma de pago para el curso pago; no añade cursos.",
+      "delivered": "Listo, Ana, tus datos quedan confirmados para Fotografía Profesional.\nCómo preferís pagar: 12 cuotas de USD 30, 6 cuotas de USD 60 o un pago único de USD 360?",
+      "classification": "paid_course_payment_options",
+      "evidence": {
+        "observation_ordinal": 3,
+        "proposed_action": {
+          "type": "none"
+        },
+        "backend_action": null,
+        "selected_course": "fotografia_profesional",
+        "promotion_state": {
+          "status": null,
+          "bonusCount": 0,
+          "paidCourse": null,
+          "bonusCourses": []
+        },
+        "delivered_bonus_courses": [],
+        "active_courses": [],
+        "active_course_names": [],
+        "model_attempts": [
+          {
+            "call_id": "call-0038",
+            "provider_role": "agent",
+            "response": "Listo, Ana, tus datos quedan confirmados para Fotografía Profesional.\nCómo preferís pagar: 12 cuotas de USD 30, 6 cuotas de USD 60 o un pago único de USD 360?",
+            "proposed_action": {
+              "type": "none"
+            },
+            "course_mentions": [
+              {
+                "offering_code": "fotografia_profesional",
+                "role": "paid"
+              }
+            ],
+            "rejection_codes": [],
+            "provider_status": 200,
+            "provider_error": null,
+            "provider_latency_ms": 2823
+          }
+        ],
+        "workflow": {
+          "commitSucceeded": true,
+          "status": "waiting_user",
+          "errorCode": null,
+          "finalBackendDecisionError": null
+        }
+      }
+    },
+    {
+      "run": "acceptance-f1f0f9c-flash-full16-20261101",
+      "case": "11_purchase_to_payment_link",
+      "turn": "plan_and_link",
+      "delivered_sha256": "b8073e561ba8fba536c7e3bee5ef4462948c516edd5445a81b4c0a7ae7c0ebb4",
+      "status": "PASS",
+      "reason": "Entrega el enlace canónico de pago para Fotografía Profesional con proposed_action y backend_action send_payment_link; el enlace es checkout del curso pago, no regalo.",
+      "delivered": "Perfecto, Ana, quedan 12 cuotas de USD 30 para Fotografía Profesional. Te dejo el enlace para completar el pago.\n\n12 pagos mensuales de USD 30: https://buy.stripe.com/test_studyx_golden_12m?client_reference_id=3f47e765-6903-415b-9b65-d9680e6233e0",
+      "classification": "paid_course_payment_link",
+      "evidence": {
+        "observation_ordinal": 4,
+        "proposed_action": {
+          "type": "send_payment_link",
+          "offering_code": "fotografia_profesional",
+          "payment_plan": "monthly_12"
+        },
+        "backend_action": "send_payment_link",
+        "selected_course": "fotografia_profesional",
+        "promotion_state": {
+          "status": null,
+          "bonusCount": 0,
+          "paidCourse": null,
+          "bonusCourses": []
+        },
+        "delivered_bonus_courses": [],
+        "active_courses": [],
+        "active_course_names": [],
+        "model_attempts": [
+          {
+            "call_id": "call-0039",
+            "provider_role": "agent",
+            "response": "Perfecto, Ana, quedan 12 cuotas de USD 30 para Fotografía Profesional. Te dejo el enlace para completar el pago.",
+            "proposed_action": {
+              "type": "send_payment_link",
+              "offering_code": "fotografia_profesional",
+              "payment_plan": "monthly_12"
+            },
+            "course_mentions": [
+              {
+                "offering_code": "fotografia_profesional",
+                "role": "paid"
+              }
+            ],
+            "rejection_codes": [],
+            "provider_status": 200,
+            "provider_error": null,
+            "provider_latency_ms": 2010
+          }
+        ],
+        "workflow": {
+          "commitSucceeded": true,
+          "status": "waiting_user",
+          "errorCode": null,
+          "finalBackendDecisionError": null
+        }
+      }
+    },
+    {
+      "run": "acceptance-f1f0f9c-flash-full16-20261101",
+      "case": "12_verified_payment_bonus_fulfillment",
+      "turn": "verified_access_event",
+      "delivered_sha256": "f2c2180f536b6f7ed84cb578934f06d53948db2a1a3ab59f8b92404519a09a47",
+      "status": "PASS",
+      "reason": "Mensaje transaccional de post_sale tras pago/alta verificados. Enumera Fotografía Profesional y los dos cursos bonificados; activeCourses y promotion state acreditan esos tres cursos activos y el paquete de dos bonificados. No es una oferta de venta.",
+      "delivered": "Ana, ya está habilitado tu acceso a Studyx. Te dejo abajo tus datos para que entres sin problema.\n\nCurso principal: Fotografía Profesional\nCurso bonificado: Fotografía con Celulares para Tiendas Online\nCurso bonificado: Marketing Digital\n\nCampus: https://mystudyx.com/campus-virtual\n\nUsuario: ana.golden@example.test\nContraseña: Escuela.123\n\nSi querés, podés cambiar la contraseña cuando ingreses.",
+      "classification": "post_sale_verified_access_and_activated_package",
+      "evidence": {
+        "observation_ordinal": 1,
+        "proposed_action": null,
+        "backend_action": null,
+        "selected_course": "fotografia_profesional",
+        "promotion_state": {
+          "status": "accepted",
+          "bonusCount": 2,
+          "paidCourse": "fotografia_profesional",
+          "bonusCourses": [
+            "fotografia_celulares_tiendas_online",
+            "marketing_digital"
+          ]
+        },
+        "delivered_bonus_courses": [
+          "fotografia_celulares_tiendas_online",
+          "marketing_digital"
+        ],
+        "active_courses": [
+          "fotografia_celulares_tiendas_online",
+          "fotografia_profesional",
+          "marketing_digital"
+        ],
+        "active_course_names": [
+          {
+            "code": "fotografia_celulares_tiendas_online",
+            "displayName": "Fotografía con Celulares para Tiendas Online"
+          },
+          {
+            "code": "fotografia_profesional",
+            "displayName": "Fotografía Profesional"
+          },
+          {
+            "code": "marketing_digital",
+            "displayName": "Marketing Digital"
+          }
+        ],
+        "model_attempts": [
+          {
+            "call_id": "call-0041",
+            "provider_role": "post_sale",
+            "response": "Ana, ya está habilitado tu acceso a Studyx. Te dejo abajo tus datos para que entres sin problema.\nSi querés, podés cambiar la contraseña cuando ingreses.",
+            "proposed_action": null,
+            "course_mentions": null,
+            "rejection_codes": [],
+            "provider_status": 200,
+            "provider_error": null,
+            "provider_latency_ms": 1545
+          }
+        ],
+        "workflow": {
+          "commitSucceeded": true,
+          "status": "post_sale_notification_sent",
+          "errorCode": null,
+          "finalBackendDecisionError": null
+        },
+        "provider_call_id": "call-0041",
+        "provider_role": "post_sale",
+        "post_sale_setup_evidence": {
+          "fixture_kind": "controlled_local_paid_and_fulfilled_package",
+          "payment_id": "29bdf04d-05d7-41d8-a086-ec9dab39ee7e",
+          "promotion_offer_id": "c3434ed0-f5df-4feb-97e1-d9ffe70ce8ff",
+          "paid_course": "fotografia_profesional",
+          "bonus_courses": [
+            "fotografia_celulares_tiendas_online",
+            "marketing_digital"
+          ],
+          "worker": {
+            "enabled": true,
+            "claimed": 1,
+            "completed": 1,
+            "retried": 0,
+            "skipped": 0,
+            "dead_lettered": 0,
+            "lease_lost": 0
+          },
+          "access_message": "Ana, ya está habilitado tu acceso a Studyx. Te dejo abajo tus datos para que entres sin problema.\n\nCurso principal: Fotografía Profesional\nCurso bonificado: Fotografía con Celulares para Tiendas Online\nCurso bonificado: Marketing Digital\n\nCampus: https://mystudyx.com/campus-virtual\n\nUsuario: ana.golden@example.test\nContraseña: Escuela.123\n\nSi querés, podés cambiar la contraseña cuando ingreses.",
+          "narrative_delivery": {
+            "outcome": "sent"
+          }
+        },
+        "access_claims_match_activated_courses": true
+      }
+    },
+    {
+      "run": "acceptance-f1f0f9c-flash-full16-20261101",
+      "case": "12_verified_payment_bonus_fulfillment",
+      "turn": "customer_acknowledgement",
+      "delivered_sha256": "cf3b635b783cd3b822c2d510ffa5644bb8442b542612608ad0eca9651ddf8a3b",
+      "status": "PASS",
+      "reason": "Responde al agradecimiento y alude a inscripción/acceso ya activos. No añade una bonificación; el paquete previo de dos cursos coincide con activeCourses.",
+      "delivered": "Qué bueno, Ana. Veo que tu inscripción en Fotografía Profesional ya está activa y el acceso con tus credenciales te llegó por este chat.\nSi algo no te abre o querés que te oriente con el primer módulo, decime y lo vemos.",
+      "classification": "post_sale_followup_on_active_enrollment",
+      "evidence": {
+        "observation_ordinal": 2,
+        "proposed_action": {
+          "type": "none"
+        },
+        "backend_action": null,
+        "selected_course": "fotografia_profesional",
+        "promotion_state": {
+          "status": "accepted",
+          "bonusCount": 2,
+          "paidCourse": "fotografia_profesional",
+          "bonusCourses": [
+            "fotografia_celulares_tiendas_online",
+            "marketing_digital"
+          ]
+        },
+        "delivered_bonus_courses": [
+          "fotografia_celulares_tiendas_online",
+          "marketing_digital"
+        ],
+        "active_courses": [
+          "fotografia_celulares_tiendas_online",
+          "fotografia_profesional",
+          "marketing_digital"
+        ],
+        "active_course_names": [
+          {
+            "code": "fotografia_celulares_tiendas_online",
+            "displayName": "Fotografía con Celulares para Tiendas Online"
+          },
+          {
+            "code": "fotografia_profesional",
+            "displayName": "Fotografía Profesional"
+          },
+          {
+            "code": "marketing_digital",
+            "displayName": "Marketing Digital"
+          }
+        ],
+        "model_attempts": [
+          {
+            "call_id": "call-0042",
+            "provider_role": "agent",
+            "response": "Qué bueno, Ana. Veo que tu inscripción en Fotografía Profesional ya está activa y el acceso con tus credenciales te llegó por este chat.\nSi algo no te abre o querés que te oriente con el primer módulo, decime y lo vemos.",
+            "proposed_action": {
+              "type": "none"
+            },
+            "course_mentions": [
+              {
+                "offering_code": "fotografia_profesional",
+                "role": "paid"
+              }
+            ],
+            "rejection_codes": [],
+            "provider_status": 200,
+            "provider_error": null,
+            "provider_latency_ms": 2714
+          }
+        ],
+        "workflow": {
+          "commitSucceeded": true,
+          "status": "waiting_user",
+          "errorCode": null,
+          "finalBackendDecisionError": null
+        }
+      }
+    },
+    {
+      "run": "acceptance-f1f0f9c-flash-full16-20261101",
+      "case": "13_real_syllabus",
+      "turn": "syllabus",
+      "delivered_sha256": "279dd0a76c91572c31c12bdfcad0c38c60c32183538d8bc87427742780363996",
+      "status": "PASS",
+      "reason": "La entrega final es “Qué dato o qué curso revisamos?”. Los intentos de compartir temario de Fotografía Profesional fueron rechazados por COURSE_ROLE_UNDECLARED; no se entregó promesa de curso bonificado.",
+      "delivered": "Qué dato o qué curso revisamos?",
+      "classification": "authorized_contingency_after_rejected_course_facts",
+      "evidence": {
+        "observation_ordinal": 1,
+        "proposed_action": {
+          "type": "none"
+        },
+        "backend_action": null,
+        "selected_course": null,
+        "promotion_state": {
+          "status": null,
+          "bonusCount": 0,
+          "paidCourse": null,
+          "bonusCourses": []
+        },
+        "delivered_bonus_courses": [],
+        "active_courses": [],
+        "active_course_names": [],
+        "model_attempts": [
+          {
+            "call_id": "call-0043",
+            "provider_role": "agent",
+            "response": "Soy Emma, asesora de Studyx. Te comparto el temario de Fotografía Profesional, que son 41 clases online:\nClase 1: Introducción. Tipos de cámaras digitales y visores\nClase 2: Leer una cámara réflex o mirrorless. Valor de exposición y sensor\nClase 3: Sensibilidad / ISO\nClase 4: Obturador y velocidad de obturación\nClase 5: Apertura de diafragma y profundidad de campo\nClase 6: Distancia focal y tamaño del sensor\nClase 7: Lentes y sus categorías\nClase 8: Sistemas de enfoque y medición\nClase 9: Balance de blancos\nClase 10: Histograma y formatos RAW, JPEG y TIFF\nClase 11: Composición. Secuencia de Fibonacci\nClase 12: Otras formas de componer\nClase 13: Retrato. Equipo y lentes\nClase 14: Planos de recorte y ángulos de toma\nClase 15: Compresión de planos\nClase 16: Tips para retratos\nClase 17: Flash de zapata, temperatura de la luz y modos de disparo\nClase 18: Velocidad de sincronización de flash, remotos y radios\nClase 19: Difusores y accesorios de flash\nClase 20: Filtros para lentes\nClase 21: Barrido, panning y zooming\nClase 22: Trípodes y monopies\nClase 23: Disparadores de cámara e intervalómetro\nClase 24: Campañas publicitarias\nClase 25: Segmentación de público\nClase 26: Edición de video. Formato y resolución\nClase 27: Lightroom\nClase 28: Biblioteca y metadatos\nClase 29: Paneles del módulo Revelar\nClase 30: Ajustes básicos\nClase 31: Quitar manchas y ojos rojos\nClase 32: Filtros degradado y puntual\nClase 33: Exportación y calidades\nClase 34: Premiere. Introducción\nClase 35: Sincronizar audio y video\nClase 36: Música, efectos y cortes\nClase 37: Exportar y renderizado\nClase 38: Photoshop. Introducción\nClase 39: Maquillaje digital\nClase 40: Cambio de color de ojo\nClase 41: Collage fotoproducto\nExamen final\nContame, qué te gustaría lograr con la fotografía? Es para trabajar en algo propio, para sumar a tu trabajo actual o más por gusto?",
+            "proposed_action": {
+              "type": "none"
+            },
+            "course_mentions": [
+              {
+                "offering_code": "fotografia_profesional",
+                "role": "paid"
+              }
+            ],
+            "rejection_codes": [],
+            "provider_status": 200,
+            "provider_error": null,
+            "provider_latency_ms": 5120
+          },
+          {
+            "call_id": "call-0044",
+            "provider_role": "agent",
+            "response": "Claro, te paso el temario de Fotografía Profesional. Son 41 clases online, arrancando desde cero con el proceso digital:\nClase 1: Introducción, tipos de cámaras digitales y visores\nClase 2: Leer una cámara réflex o mirrorless, valor de exposición y sensor\nClase 3: Sensibilidad / ISO\nClase 4: Obturador y velocidad de obturación\nClase 5: Apertura de diafragma y profundidad de campo\nClase 6: Distancia focal y tamaño del sensor\nClase 7: Lentes y sus categorías\nClase 8: Sistemas de enfoque y medición\nClase 9: Balance de blancos\nClase 10: Histograma, RAW, JPEG y TIFF\nClase 11: Composición y secuencia de Fibonacci\nClase 12: Otras formas de componer\nClase 13: Retrato, equipo y lentes\nClase 14: Planos de recorte y ángulos de toma\nClase 15: Compresión de planos\nClase 16: Tips para retratos\nClase 17: Flash de zapata, temperatura de luz y modos de disparo\nClase 18: Velocidad de sincronización de flash, remotos y radios\nClase 19: Difusores y accesorios de flash\nClase 20: Filtros para lentes\nClase 21: Barrido, panning y zooming\nClase 22: Trípodes y monopies\nClase 23: Disparadores de cámara e intervalómetro\nClase 24: Campañas publicitarias\nClase 25: Segmentación de público\nClase 26: Edición de video, formato y resolución\nClase 27: Lightroom\nClase 28: Biblioteca y metadatos\nClase 29: Paneles del módulo Revelar\nClase 30: Ajustes básicos\nClase 31: Quitar manchas y ojos rojos\nClase 32: Filtros degradado y puntual\nClase 33: Exportación y calidades\nClase 34: Premiere, introducción\nClase 35: Sincronizar audio y video\nClase 36: Música, efectos y cortes\nClase 37: Exportar y renderizado\nClase 38: Photoshop, introducción\nClase 39: Maquillaje digital\nClase 40: Cambio de color de ojo\nClase 41: Collage fotoproducto\nExamen final\n¿Qué te gustaría lograr con la fotografía: mejorar tus propias imágenes, ofrecer un servicio o algo más?",
+            "proposed_action": {
+              "type": "none"
+            },
+            "course_mentions": [
+              {
+                "offering_code": "fotografia_profesional",
+                "role": "paid"
+              }
+            ],
+            "rejection_codes": [
+              "COURSE_ROLE_UNDECLARED"
+            ],
+            "provider_status": 200,
+            "provider_error": null,
+            "provider_latency_ms": 5103
+          },
+          {
+            "call_id": "call-0045",
+            "provider_role": "agent",
+            "response": "Claro, soy Emma, asesora de Studyx. Fotografía Profesional tiene 41 clases online, arrancando desde cero con el proceso digital: tipos de cámara, exposición, ISO, obturador, diafragma, distancia focal, lentes, enfoque, balance de blancos, histograma y composición.\nDespués sigue retrato, flash y accesorios, filtros, trípodes y disparadores, campañas publicitarias y segmentación de público, y cierra con edición en Lightroom, Premiere y Photoshop, más el examen final. ¿Querés que te cuente cómo se cursa o para qué la querés usar?",
+            "proposed_action": {
+              "type": "none"
+            },
+            "course_mentions": [
+              {
+                "offering_code": "fotografia_profesional",
+                "role": "paid"
+              }
+            ],
+            "rejection_codes": [
+              "COURSE_ROLE_UNDECLARED"
+            ],
+            "provider_status": 200,
+            "provider_error": null,
+            "provider_latency_ms": 3245
+          }
+        ],
+        "workflow": {
+          "commitSucceeded": true,
+          "status": "waiting_user",
+          "errorCode": null,
+          "finalBackendDecisionError": null
+        }
+      }
+    },
+    {
+      "run": "acceptance-f1f0f9c-flash-full16-20261101",
+      "case": "13_real_syllabus",
+      "turn": "duration_followup",
+      "delivered_sha256": "279dd0a76c91572c31c12bdfcad0c38c60c32183538d8bc87427742780363996",
+      "status": "PASS",
+      "reason": "La entrega final es “Qué dato o qué curso revisamos?”. Los intentos sobre duración/curso fueron rechazados; no hay oferta ni insinuación de curso adicional entregada.",
+      "delivered": "Qué dato o qué curso revisamos?",
+      "classification": "authorized_contingency_after_rejected_course_facts",
+      "evidence": {
+        "observation_ordinal": 2,
+        "proposed_action": {
+          "type": "none"
+        },
+        "backend_action": null,
+        "selected_course": null,
+        "promotion_state": {
+          "status": null,
+          "bonusCount": 0,
+          "paidCourse": null,
+          "bonusCourses": []
+        },
+        "delivered_bonus_courses": [],
+        "active_courses": [],
+        "active_course_names": [],
+        "model_attempts": [
+          {
+            "call_id": "call-0046",
+            "provider_role": "agent",
+            "response": "Fotografía Profesional tiene 41 clases y es online, así que lo podés hacer a tu ritmo. Arranca desde cero con el proceso fotográfico digital.",
+            "proposed_action": {
+              "type": "none"
+            },
+            "course_mentions": [
+              {
+                "offering_code": "fotografia_profesional",
+                "role": "paid"
+              }
+            ],
+            "rejection_codes": [],
+            "provider_status": 200,
+            "provider_error": null,
+            "provider_latency_ms": 1974
+          },
+          {
+            "call_id": "call-0047",
+            "provider_role": "agent",
+            "response": "Fotografía Profesional tiene 41 clases, y la modalidad es online. Arranca desde cero con el proceso fotográfico digital, así que no necesitás experiencia previa.",
+            "proposed_action": {
+              "type": "none"
+            },
+            "course_mentions": [
+              {
+                "offering_code": "fotografia_profesional",
+                "role": "paid"
+              }
+            ],
+            "rejection_codes": [
+              "FACT_VALUE_MISMATCH",
+              "FACT_VALUE_MISMATCH"
+            ],
+            "provider_status": 200,
+            "provider_error": null,
+            "provider_latency_ms": 1984
+          },
+          {
+            "call_id": "call-0048",
+            "provider_role": "agent",
+            "response": "Fotografía Profesional son 41 clases, todo online, desde cero con el proceso fotográfico digital.\nContame para qué querés aprender fotografía y te digo cómo encaja en lo que buscás.",
+            "proposed_action": {
+              "type": "none"
+            },
+            "course_mentions": [
+              {
+                "offering_code": "fotografia_profesional",
+                "role": "paid"
+              }
+            ],
+            "rejection_codes": [
+              "COURSE_ROLE_UNDECLARED"
+            ],
+            "provider_status": 200,
+            "provider_error": null,
+            "provider_latency_ms": 2389
+          }
+        ],
+        "workflow": {
+          "commitSucceeded": true,
+          "status": "waiting_user",
+          "errorCode": null,
+          "finalBackendDecisionError": null
+        }
+      }
+    },
+    {
+      "run": "acceptance-f1f0f9c-flash-full16-20261101",
+      "case": "14_course_change_cancels_promotion",
+      "turn": "interest",
+      "delivered_sha256": "2ea47d644659f8d3c816451e9b376ca032550e0a1ae56fd385189cc7d699073f",
+      "status": "PASS",
+      "reason": "Describe Fotografía Profesional, el curso pago seleccionado; no anuncia un extra.",
+      "delivered": "Hola, soy Emma, asesora de Studyx. Fotografía Profesional encaja muy bien con eso: son 41 clases online, desde cero con el proceso fotográfico digital, para que puedas producir imágenes que vendan.\nPara apuntar mejor la recomendación, ya tenés cámara o estás arrancando sólo con el celular?",
+      "classification": "paid_course_recommendation",
+      "evidence": {
+        "observation_ordinal": 1,
+        "proposed_action": {
+          "type": "none"
+        },
+        "backend_action": null,
+        "selected_course": "fotografia_profesional",
+        "promotion_state": {
+          "status": null,
+          "bonusCount": 0,
+          "paidCourse": null,
+          "bonusCourses": []
+        },
+        "delivered_bonus_courses": [],
+        "active_courses": [],
+        "model_attempts": [
+          {
+            "call_id": "call-0049",
+            "provider_role": "agent",
+            "response": "Hola, soy Emma, asesora de Studyx. Fotografía Profesional encaja muy bien con eso: son 41 clases online, desde cero con el proceso fotográfico digital, para que puedas producir imágenes que vendan.\nPara apuntar mejor la recomendación, ¿ya tenés cámara o estás arrancando sólo con el celular?",
+            "proposed_action": {
+              "type": "none"
+            },
+            "course_mentions": [
+              {
+                "offering_code": "fotografia_profesional",
+                "role": "paid"
+              }
+            ],
+            "rejection_codes": [],
+            "provider_status": 200,
+            "provider_error": null,
+            "provider_latency_ms": 2703
+          }
+        ],
+        "workflow": {
+          "commitSucceeded": true,
+          "status": "waiting_user",
+          "errorCode": null,
+          "finalBackendDecisionError": null
+        }
+      }
+    },
+    {
+      "run": "acceptance-f1f0f9c-flash-full16-20261101",
+      "case": "14_course_change_cancels_promotion",
+      "turn": "price_1",
+      "delivered_sha256": "548da1e29acc7182012fa0f4c32a296a5476f824e6ef47e957fff608af718717",
+      "status": "PASS",
+      "reason": "Reencuadra valor y cuotas del curso pago; “lo demás ya está resuelto” se refiere a la objeción, no a un bonificado. El paquete registra cero bonificados.",
+      "delivered": "Entiendo, y es bueno saberlo: si el precio es lo único que te frena, entonces lo demás ya está resuelto. Fotografía Profesional son 41 clases online y el total es USD 360, que podés pagar en 12 cuotas de USD 30 al mes.\nPensando en trabajar con emprendedores y tiendas online, esos USD 30 son lo que te separa de empezar a producir imágenes que vendan. Cómo preferís pagarlo: en 12 cuotas de USD 30 o en 6 de USD 60?",
+      "classification": "paid_course_price_objection",
+      "evidence": {
+        "observation_ordinal": 2,
+        "proposed_action": {
+          "type": "none"
+        },
+        "backend_action": null,
+        "selected_course": "fotografia_profesional",
+        "promotion_state": {
+          "status": null,
+          "bonusCount": 0,
+          "paidCourse": null,
+          "bonusCourses": []
+        },
+        "delivered_bonus_courses": [],
+        "active_courses": [],
+        "model_attempts": [
+          {
+            "call_id": "call-0050",
+            "provider_role": "agent",
+            "response": "Entiendo, y es bueno saberlo: si el precio es lo único que te frena, entonces lo demás ya está resuelto. Fotografía Profesional son 41 clases online y el total es USD 360, que podés pagar en 12 cuotas de USD 30 al mes.\nPensando en trabajar con emprendedores y tiendas online, esos USD 30 son lo que te separa de empezar a producir imágenes que vendan. Cómo preferís pagarlo: en 12 cuotas de USD 30 o en 6 de USD 60?",
+            "proposed_action": {
+              "type": "none"
+            },
+            "course_mentions": [
+              {
+                "offering_code": "fotografia_profesional",
+                "role": "paid"
+              }
+            ],
+            "rejection_codes": [],
+            "provider_status": 200,
+            "provider_error": null,
+            "provider_latency_ms": 3208
+          }
+        ],
+        "workflow": {
+          "commitSucceeded": true,
+          "status": "waiting_user",
+          "errorCode": null,
+          "finalBackendDecisionError": null
+        }
+      }
+    },
+    {
+      "run": "acceptance-f1f0f9c-flash-full16-20261101",
+      "case": "14_course_change_cancels_promotion",
+      "turn": "installments",
+      "delivered_sha256": "001026d5dde4f1d5a7daa4830c6325fa2725aaf6b5317bbbb73ef09f18c464da",
+      "status": "PASS",
+      "reason": "Habla de las cuotas para el curso pago y de su uso potencial; no menciona ni incluye otro curso.",
+      "delivered": "Te entiendo, y no quiero que el precio te deje afuera de algo que ya tenés claro. Por eso el plan de 12 cuotas de USD 30 es el más liviano: es lo que cuesta por mes acceder a las 41 clases y empezar a producir imágenes para tiendas online.\nSi eso te acomoda, arrancamos con las 12 cuotas de USD 30?",
+      "classification": "paid_course_and_payment_options",
+      "evidence": {
+        "observation_ordinal": 3,
+        "proposed_action": {
+          "type": "none"
+        },
+        "backend_action": null,
+        "selected_course": "fotografia_profesional",
+        "promotion_state": {
+          "status": null,
+          "bonusCount": 0,
+          "paidCourse": null,
+          "bonusCourses": []
+        },
+        "delivered_bonus_courses": [],
+        "active_courses": [],
+        "model_attempts": [
+          {
+            "call_id": "call-0051",
+            "provider_role": "agent",
+            "response": "Te entiendo, y no quiero que el precio te deje afuera de algo que ya tenés claro. Por eso el plan de 12 cuotas de USD 30 es el más liviano: es lo que cuesta por mes acceder a las 41 clases y empezar a producir imágenes para tiendas online.\nSi eso te acomoda, arrancamos con las 12 cuotas de USD 30?",
+            "proposed_action": {
+              "type": "none"
+            },
+            "course_mentions": [
+              {
+                "offering_code": "fotografia_profesional",
+                "role": "paid"
+              }
+            ],
+            "rejection_codes": [],
+            "provider_status": 200,
+            "provider_error": null,
+            "provider_latency_ms": 2612
+          }
+        ],
+        "workflow": {
+          "commitSucceeded": true,
+          "status": "waiting_user",
+          "errorCode": null,
+          "finalBackendDecisionError": null
+        }
+      }
+    },
+    {
+      "run": "acceptance-f1f0f9c-flash-full16-20261101",
+      "case": "14_course_change_cancels_promotion",
+      "turn": "isolate",
+      "delivered_sha256": "24ed4a731b173cd8c3c26199d64095e09551e5d3757b3e3e41025c09464536c7",
+      "status": "PASS",
+      "reason": "Los intentos 1 y 2 colocan una invitación dentro de una burbuja de prosa y otra invitación distinta en call_offer; ninguna burbuja completa es literalmente igual al campo call_offer (comparación string exacta: false). Se rechazaron por la regla semántica amplia CALL_OFFER_MESSAGE_BOUNDARY_INVALID, no por una copia exacta deduplicable. El intento 3 quitó ambas invitaciones y fue entregado como respuesta normal; no hubo contingencia/fallback ni invitación final. Esta evidencia no demuestra que el helper autorizado de igualdad exacta hubiera corregido este caso.",
+      "delivered": "Te escucho, y no quiero que el precio te deje afuera de algo que ya tenés claro. Si las 12 cuotas de USD 30 no entran en tu presupuesto hoy, no te voy a apurar: lo importante es que no pierdas de vista para qué lo querés.\nQué es lo que más te gustaría poder hacer primero con la fotografía: armar el catálogo de una tienda online o salir a ofrecer tus servicios a emprendedores?",
+      "classification": "paid_course_price_objection",
+      "evidence": {
+        "observation_ordinal": 4,
+        "proposed_action": {
+          "type": "none"
+        },
+        "backend_action": null,
+        "selected_course": "fotografia_profesional",
+        "promotion_state": {
+          "status": null,
+          "bonusCount": 0,
+          "paidCourse": null,
+          "bonusCourses": []
+        },
+        "delivered_bonus_courses": [],
+        "active_courses": [],
+        "model_attempts": [
+          {
+            "call_id": "call-0052",
+            "provider_role": "agent",
+            "response": "Te escucho, y no quiero que sientas que te empujo a algo que hoy no te cierra. Si el precio sigue pesando incluso en cuotas, quizás lo que falta es verlo con calma: puedo explicarte cómo se aplica la formación a tiendas online y qué harías mes a mes mientras pagás esas cuotas.\nSi te sirve, lo vemos juntos en una llamada breve y sin compromiso, y ahí decides con más claridad.\nTe parece si lo conversamos en una llamada corta para ver si realmente te conviene hoy?",
+            "proposed_action": {
+              "type": "none"
+            },
+            "course_mentions": [
+              {
+                "offering_code": "fotografia_profesional",
+                "role": "paid"
+              }
+            ],
+            "rejection_codes": [],
+            "provider_status": 200,
+            "provider_error": null,
+            "provider_latency_ms": 2972
+          },
+          {
+            "call_id": "call-0053",
+            "provider_role": "agent",
+            "response": "Te escucho, y no quiero que el precio te deje afuera de algo que ya tenés claro. Si las cuotas no alcanzan, prefiero que lo veamos juntos en una llamada corta y sin compromiso: me contás tu situación y vemos cómo encaja Fotografía Profesional en tu presupuesto.\nTe sirve que te llame y lo vemos juntos?",
+            "proposed_action": {
+              "type": "none"
+            },
+            "course_mentions": [
+              {
+                "offering_code": "fotografia_profesional",
+                "role": "paid"
+              }
+            ],
+            "rejection_codes": [
+              "CALL_OFFER_MESSAGE_BOUNDARY_INVALID",
+              "CALL_OFFER_MESSAGE_BOUNDARY_INVALID"
+            ],
+            "provider_status": 200,
+            "provider_error": null,
+            "provider_latency_ms": 2604
+          },
+          {
+            "call_id": "call-0054",
+            "provider_role": "agent",
+            "response": "Te escucho, y no quiero que el precio te deje afuera de algo que ya tenés claro. Si las 12 cuotas de USD 30 no entran en tu presupuesto hoy, no te voy a apurar: lo importante es que no pierdas de vista para qué lo querés.\nQué es lo que más te gustaría poder hacer primero con la fotografía: armar el catálogo de una tienda online o salir a ofrecer tus servicios a emprendedores?",
+            "proposed_action": {
+              "type": "none"
+            },
+            "course_mentions": [
+              {
+                "offering_code": "fotografia_profesional",
+                "role": "paid"
+              }
+            ],
+            "rejection_codes": [
+              "CALL_OFFER_MESSAGE_BOUNDARY_INVALID",
+              "CALL_OFFER_MESSAGE_BOUNDARY_INVALID"
+            ],
+            "provider_status": 200,
+            "provider_error": null,
+            "provider_latency_ms": 3054
+          }
+        ],
+        "workflow": {
+          "commitSucceeded": true,
+          "status": "waiting_user",
+          "errorCode": null,
+          "finalBackendDecisionError": null
+        },
+        "call_boundary_analysis": {
+          "comparator": "strict full-string equality; no trim/case/normalization",
+          "attempts": [
+            {
+              "provider_call_id": "call-0052",
+              "messages": [
+                "Te escucho, y no quiero que sientas que te empujo a algo que hoy no te cierra. Si el precio sigue pesando incluso en cuotas, quizás lo que falta es verlo con calma: puedo explicarte cómo se aplica la formación a tiendas online y qué harías mes a mes mientras pagás esas cuotas.",
+                "Si te sirve, lo vemos juntos en una llamada breve y sin compromiso, y ahí decides con más claridad."
+              ],
+              "call_offer": "Te parece si lo conversamos en una llamada corta para ver si realmente te conviene hoy?",
+              "message_equals_call_offer": [
+                false,
+                false
+              ],
+              "rejection_codes": [
+                "CALL_OFFER_MESSAGE_BOUNDARY_INVALID"
+              ]
+            },
+            {
+              "provider_call_id": "call-0053",
+              "messages": [
+                "Te escucho, y no quiero que el precio te deje afuera de algo que ya tenés claro. Si las cuotas no alcanzan, prefiero que lo veamos juntos en una llamada corta y sin compromiso: me contás tu situación y vemos cómo encaja Fotografía Profesional en tu presupuesto."
+              ],
+              "call_offer": "Te sirve que te llame y lo vemos juntos?",
+              "message_equals_call_offer": [
+                false
+              ],
+              "rejection_codes": [
+                "CALL_OFFER_MESSAGE_BOUNDARY_INVALID"
+              ]
+            },
+            {
+              "provider_call_id": "call-0054",
+              "messages": [
+                "Te escucho, y no quiero que el precio te deje afuera de algo que ya tenés claro. Si las 12 cuotas de USD 30 no entran en tu presupuesto hoy, no te voy a apurar: lo importante es que no pierdas de vista para qué lo querés.",
+                "Qué es lo que más te gustaría poder hacer primero con la fotografía: armar el catálogo de una tienda online o salir a ofrecer tus servicios a emprendedores?"
+              ],
+              "call_offer": null,
+              "message_equals_call_offer": null,
+              "rejection_codes": [
+                "CALL_OFFER_MESSAGE_BOUNDARY_INVALID"
+              ]
+            }
+          ],
+          "final_delivery": "El texto entregado coincide con el borrador del intento 3 (messages unidas, sin call_offer); es una respuesta normal, no fallback. El resultado no contiene invitación a llamada.",
+          "strict_dedup_would_apply_to_attempts": [
+            false,
+            false,
+            false
+          ]
+        }
+      }
+    },
+    {
+      "run": "acceptance-f1f0f9c-flash-full16-20261101",
+      "case": "14_course_change_cancels_promotion",
+      "turn": "call_step",
+      "delivered_sha256": "3ab5608a38514bb767e67244c285379b5ba18cf1e8681186c0b76a60ef744135",
+      "status": "PASS",
+      "reason": "Solicita datos antes de enviar enlace de pago del curso pago. No promete regalos.",
+      "delivered": "Perfecto, entonces vamos a resolverlo. Antes de pasarte el enlace quiero dejarte todo listo: me pasás tu nombre, apellido, correo y teléfono?",
+      "classification": "paid_course_intake",
+      "evidence": {
+        "observation_ordinal": 5,
+        "proposed_action": {
+          "type": "none"
+        },
+        "backend_action": null,
+        "selected_course": "fotografia_profesional",
+        "promotion_state": {
+          "status": null,
+          "bonusCount": 0,
+          "paidCourse": null,
+          "bonusCourses": []
+        },
+        "delivered_bonus_courses": [],
+        "active_courses": [],
+        "model_attempts": [
+          {
+            "call_id": "call-0055",
+            "provider_role": "agent",
+            "response": "Perfecto, entonces vamos a resolverlo. Antes de pasarte el enlace quiero dejarte todo listo: me pasás tu nombre, apellido, correo y teléfono?",
+            "proposed_action": {
+              "type": "none"
+            },
+            "course_mentions": [
+              {
+                "offering_code": "fotografia_profesional",
+                "role": "paid"
+              }
+            ],
+            "rejection_codes": [],
+            "provider_status": 200,
+            "provider_error": null,
+            "provider_latency_ms": 2511
+          }
+        ],
+        "workflow": {
+          "commitSucceeded": true,
+          "status": "waiting_user",
+          "errorCode": null,
+          "finalBackendDecisionError": null
+        }
+      }
+    },
+    {
+      "run": "acceptance-f1f0f9c-flash-full16-20261101",
+      "case": "14_course_change_cancels_promotion",
+      "turn": "bonus_1",
+      "delivered_sha256": "046d74b57af256a3e1f09e922dceb07dd9ebe4d03420c27872fac0e49fd702bf",
+      "status": "PASS",
+      "reason": "El primer borrador proponía añadir Fotografía con Celulares como curso bonificado con proposed_action=none; backend lo rechazó por forbidden_promise y falta de datos. La entrega final sólo solicita datos para inscribir Fotografía Profesional; paquete con cero bonificados. PASS sólo para texto entregado.",
+      "delivered": "Quedamos por chat, sin problema. Y como el precio es lo único que te frena, lo miramos con calma: Fotografía Profesional son 41 clases online y el total es USD 360, que podés pagar en 12 cuotas de USD 30 al mes.\nPara dejar tu inscripción lista, pasame tu nombre, apellido, correo y teléfono.",
+      "classification": "paid_course_intake_after_rejected_bonus_draft",
+      "evidence": {
+        "observation_ordinal": 6,
+        "proposed_action": {
+          "type": "none"
+        },
+        "backend_action": null,
+        "selected_course": "fotografia_profesional",
+        "promotion_state": {
+          "status": null,
+          "bonusCount": 0,
+          "paidCourse": null,
+          "bonusCourses": []
+        },
+        "delivered_bonus_courses": [],
+        "active_courses": [],
+        "model_attempts": [
+          {
+            "call_id": "call-0056",
+            "provider_role": "agent",
+            "response": "Perfecto, seguimos por chat. Ya sé que el precio es lo único que te frena, así que te propongo algo concreto: sumar Fotografía con Celulares para Tiendas Online como curso bonificado a tu inscripción en Fotografía Profesional, sin cambiar el precio del curso principal. Te serviría para complementar justo lo que querés hacer con tiendas online. Arrancamos con las 12 cuotas de USD 30?",
+            "proposed_action": {
+              "type": "none"
+            },
+            "course_mentions": [
+              {
+                "offering_code": "fotografia_profesional",
+                "role": "paid"
+              },
+              {
+                "offering_code": "fotografia_celulares_tiendas_online",
+                "role": "bonus"
+              }
+            ],
+            "rejection_codes": [],
+            "provider_status": 200,
+            "provider_error": null,
+            "provider_latency_ms": 3294
+          },
+          {
+            "call_id": "call-0057",
+            "provider_role": "agent",
+            "response": "Quedamos por chat, sin problema. Y como el precio es lo único que te frena, lo miramos con calma: Fotografía Profesional son 41 clases online y el total es USD 360, que podés pagar en 12 cuotas de USD 30 al mes.\nPara dejar tu inscripción lista, pasame tu nombre, apellido, correo y teléfono.",
+            "proposed_action": {
+              "type": "none"
+            },
+            "course_mentions": [
+              {
+                "offering_code": "fotografia_profesional",
+                "role": "paid"
+              }
+            ],
+            "rejection_codes": [
+              "FACT_VALUE_MISMATCH",
+              "MISSING_INTAKE"
+            ],
+            "provider_status": 200,
+            "provider_error": null,
+            "provider_latency_ms": 2784
+          }
+        ],
+        "workflow": {
+          "commitSucceeded": true,
+          "status": "waiting_user",
+          "errorCode": null,
+          "finalBackendDecisionError": null
+        }
+      }
+    },
+    {
+      "run": "acceptance-f1f0f9c-flash-full16-20261101",
+      "case": "14_course_change_cancels_promotion",
+      "turn": "change",
+      "delivered_sha256": "8db222f36918ba8769106047e3ef4f03d4c5194a03569a62eaa4d641b1ee8e55",
+      "status": "PASS",
+      "reason": "Confirma Marketing Digital como nuevo curso pago y conserva el total/cuotas. No presenta un curso incluido ni menciona un paquete bonificado.",
+      "delivered": "Perfecto, Marketing Digital queda como tu curso. Son 16 clases online para armar estrategias que comuniquen bien y muevan tu negocio, y el total sigue en USD 360, con la opción de 12 cuotas de USD 30.",
+      "classification": "paid_course_switch",
+      "evidence": {
+        "observation_ordinal": 7,
+        "proposed_action": {
+          "type": "none"
+        },
+        "backend_action": null,
+        "selected_course": "marketing_digital",
+        "promotion_state": {
+          "status": null,
+          "bonusCount": 0,
+          "paidCourse": null,
+          "bonusCourses": []
+        },
+        "delivered_bonus_courses": [],
+        "active_courses": [],
+        "model_attempts": [
+          {
+            "call_id": "call-0058",
+            "provider_role": "agent",
+            "response": "Perfecto, Marketing Digital queda como tu curso. Son 16 clases online para armar estrategias que comuniquen bien y muevan tu negocio, y el total sigue en USD 360, con la opción de 12 cuotas de USD 30.",
+            "proposed_action": {
+              "type": "none"
+            },
+            "course_mentions": [
+              {
+                "offering_code": "marketing_digital",
+                "role": "paid"
+              }
+            ],
+            "rejection_codes": [],
+            "provider_status": 200,
+            "provider_error": null,
+            "provider_latency_ms": 2443
+          }
+        ],
+        "workflow": {
+          "commitSucceeded": true,
+          "status": "waiting_user",
+          "errorCode": null,
+          "finalBackendDecisionError": null
+        }
+      }
+    },
+    {
+      "run": "acceptance-f1f0f9c-flash-full16-20261101",
+      "case": "15_purchase_signal_executes",
+      "turn": "context",
+      "delivered_sha256": "562e3527b5b32f3cd1388ea8198d4e55606ec35a539b77df9ef3affe231a233b",
+      "status": "PASS",
+      "reason": "Describe Fotografía Profesional, curso seleccionado; no promete un curso adicional.",
+      "delivered": "Soy Emma, asesora de Studyx. Fotografía Profesional encaja justo con eso: son 41 clases online y arrancan desde cero con el proceso fotográfico digital, así que podrías ir armando tu portafolio mientras aprendés.\nPara ofrecer sesiones, qué te gustaría fotografiar más: personas, productos o eventos?",
+      "classification": "paid_course_recommendation",
+      "evidence": {
+        "observation_ordinal": 1,
+        "proposed_action": {
+          "type": "none"
+        },
+        "backend_action": null,
+        "selected_course": "fotografia_profesional",
+        "promotion_state": {
+          "status": null,
+          "bonusCount": 0,
+          "paidCourse": null,
+          "bonusCourses": []
+        },
+        "delivered_bonus_courses": [],
+        "active_courses": [],
+        "model_attempts": [
+          {
+            "call_id": "call-0059",
+            "provider_role": "agent",
+            "response": "Soy Emma, asesora de Studyx. Fotografía Profesional encaja justo con eso: son 41 clases online y arrancan desde cero con el proceso fotográfico digital, así que podrías ir armando tu portafolio mientras aprendés.\nPara ofrecer sesiones, qué te gustaría fotografiar más: personas, productos o eventos?",
+            "proposed_action": {
+              "type": "none"
+            },
+            "course_mentions": [
+              {
+                "offering_code": "fotografia_profesional",
+                "role": "paid"
+              }
+            ],
+            "rejection_codes": [],
+            "provider_status": 200,
+            "provider_error": null,
+            "provider_latency_ms": 3166
+          }
+        ],
+        "workflow": {
+          "commitSucceeded": true,
+          "status": "waiting_user",
+          "errorCode": null,
+          "finalBackendDecisionError": null
+        }
+      }
+    },
+    {
+      "run": "acceptance-f1f0f9c-flash-full16-20261101",
+      "case": "15_purchase_signal_executes",
+      "turn": "signal",
+      "delivered_sha256": "b13b34e0ca1426c9d7fe021f51632f6ddb5ae192b3e492a3a57722813fe33f52",
+      "status": "PASS",
+      "reason": "Inicia la inscripción al mismo curso pago y pide datos; no promete un bonificado.",
+      "delivered": "Perfecto, arrancamos con tu inscripción a Fotografía Profesional. Para dejarte todo listo necesito tus datos: nombre, apellido, correo y teléfono.",
+      "classification": "paid_course_signup_intake",
+      "evidence": {
+        "observation_ordinal": 2,
+        "proposed_action": {
+          "type": "none"
+        },
+        "backend_action": null,
+        "selected_course": "fotografia_profesional",
+        "promotion_state": {
+          "status": null,
+          "bonusCount": 0,
+          "paidCourse": null,
+          "bonusCourses": []
+        },
+        "delivered_bonus_courses": [],
+        "active_courses": [],
+        "model_attempts": [
+          {
+            "call_id": "call-0060",
+            "provider_role": "agent",
+            "response": "Perfecto, arrancamos con tu inscripción a Fotografía Profesional. Para dejarte todo listo necesito tus datos: nombre, apellido, correo y teléfono.",
+            "proposed_action": {
+              "type": "none"
+            },
+            "course_mentions": [
+              {
+                "offering_code": "fotografia_profesional",
+                "role": "paid"
+              }
+            ],
+            "rejection_codes": [],
+            "provider_status": 200,
+            "provider_error": null,
+            "provider_latency_ms": 2669
+          }
+        ],
+        "workflow": {
+          "commitSucceeded": true,
+          "status": "waiting_user",
+          "errorCode": null,
+          "finalBackendDecisionError": null
+        }
+      }
+    },
+    {
+      "run": "acceptance-f1f0f9c-flash-full16-20261101",
+      "case": "16_discount_limit_stays_commercial",
+      "turn": "context",
+      "delivered_sha256": "5f6adc76fd15e49f1c0f1dd3caa2fdacb62d70a779ea17e30bad8d7776aa9905",
+      "status": "PASS",
+      "reason": "Presenta Marketing Digital, seleccionado como curso pago, y sus cuotas; no anuncia una bonificación.",
+      "delivered": "Soy Emma, asesora de Studyx. Marketing Digital te va a servir para eso: son 16 clases online para armar estrategias que comuniquen bien y potencien tu negocio.\nEl total es USD 360, y lo podés pagar en 12 cuotas de USD 30, en 6 de USD 60 o en un solo pago. Cuál te queda más cómoda?",
+      "classification": "paid_course_and_payment_options",
+      "evidence": {
+        "observation_ordinal": 1,
+        "proposed_action": {
+          "type": "none"
+        },
+        "backend_action": null,
+        "selected_course": "marketing_digital",
+        "promotion_state": {
+          "status": null,
+          "bonusCount": 0,
+          "paidCourse": null,
+          "bonusCourses": []
+        },
+        "delivered_bonus_courses": [],
+        "active_courses": [],
+        "model_attempts": [
+          {
+            "call_id": "call-0061",
+            "provider_role": "agent",
+            "response": "Soy Emma, asesora de Studyx. Marketing Digital te va a servir para eso: son 16 clases online para armar estrategias que comuniquen bien y potencien tu negocio.\nEl total es USD 360, y lo podés pagar en 12 cuotas de USD 30, en 6 de USD 60 o en un solo pago. Cuál te queda más cómoda?",
+            "proposed_action": {
+              "type": "none"
+            },
+            "course_mentions": [
+              {
+                "offering_code": "marketing_digital",
+                "role": "paid"
+              }
+            ],
+            "rejection_codes": [],
+            "provider_status": 200,
+            "provider_error": null,
+            "provider_latency_ms": 2383
+          }
+        ],
+        "workflow": {
+          "commitSucceeded": true,
+          "status": "waiting_user",
+          "errorCode": null,
+          "finalBackendDecisionError": null
+        }
+      }
+    },
+    {
+      "run": "acceptance-f1f0f9c-flash-full16-20261101",
+      "case": "16_discount_limit_stays_commercial",
+      "turn": "discount",
+      "delivered_sha256": "d038251386c852b4f374c533ec6acbf8261e5fb4fe36d7ef60272825e1b39805",
+      "status": "PASS",
+      "reason": "Aclara que el total no cambia y explica 12 cuotas para el curso pago. No concede descuento, no ofrece curso adicional ni implica gratuidad.",
+      "delivered": "El total no cambia, pero sí podés hacerlo liviano: 12 cuotas de USD 30 por mes. Eso es menos de lo que muchas veces se invierte en publicidad suelta que no deja estrategia.\nCon Marketing Digital armarías un plan para comunicar y vender mejor tu emprendimiento, y lo pagás mientras lo aplicás. Arrancamos con las 12 cuotas?",
+      "classification": "paid_course_installment_reframing",
+      "evidence": {
+        "observation_ordinal": 2,
+        "proposed_action": {
+          "type": "none"
+        },
+        "backend_action": null,
+        "selected_course": "marketing_digital",
+        "promotion_state": {
+          "status": null,
+          "bonusCount": 0,
+          "paidCourse": null,
+          "bonusCourses": []
+        },
+        "delivered_bonus_courses": [],
+        "active_courses": [],
+        "model_attempts": [
+          {
+            "call_id": "call-0062",
+            "provider_role": "agent",
+            "response": "El total no cambia, pero sí podés hacerlo liviano: 12 cuotas de USD 30 por mes. Eso es menos de lo que muchas veces se invierte en publicidad suelta que no deja estrategia.\nCon Marketing Digital armarías un plan para comunicar y vender mejor tu emprendimiento, y lo pagás mientras lo aplicás. Arrancamos con las 12 cuotas?",
+            "proposed_action": {
+              "type": "none"
+            },
+            "course_mentions": [
+              {
+                "offering_code": "marketing_digital",
+                "role": "paid"
+              }
+            ],
+            "rejection_codes": [],
+            "provider_status": 200,
+            "provider_error": null,
+            "provider_latency_ms": 2859
+          }
+        ],
+        "workflow": {
+          "commitSucceeded": true,
+          "status": "waiting_user",
+          "errorCode": null,
+          "finalBackendDecisionError": null
+        }
+      }
+    }
+  ],
+  "scope_note": "Case 14/isolate duplicate-call audit is semantic/prose overlap, not an exact whole-bubble duplicate; only exact duplicate rows are candidates for the authorized exact dedup helper."
+}

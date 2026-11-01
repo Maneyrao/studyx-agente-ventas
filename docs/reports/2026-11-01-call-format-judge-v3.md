@@ -31,3 +31,5 @@ Se reprodujeron cinco fallos de selección de evidencia y un fallo de cita falsa
 Logs originales comprimidos sin modificar sus bytes: [evidencia](evidence/2026-11-01-call-format-judge-v3/checks.json). El empaquetado ADK mantiene la limitación local de interfaces documentada previamente; no se declara aprobado ni se despliega.
 
 Tras commit y push se autoriza **una** corrida Flash de las 16 conversaciones: mínimo 41/48, críticos 07/10/11/12/15 completos y cero bonificaciones sin respaldo. 06 y 14 se informan sin gate individual, pero sus turnos siguen dentro del total de 48. No hubo llamadas al modelo durante esta implementación.
+
+La [aceptación formal posterior](2026-11-01-formal-acceptance-v149.md) ejecutó las 16 una vez sobre f1f0f9c: 34/48, críticos completos y cero bonos sin respaldo observados. No alcanza el mínimo de 41/48 y no se desplegó.

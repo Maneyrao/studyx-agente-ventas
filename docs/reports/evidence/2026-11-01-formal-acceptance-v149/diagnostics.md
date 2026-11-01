@@ -1,0 +1,37 @@
+# Diagnóstico factual de la aceptación f1f0f9c
+
+Análisis offline: cero modelos, sin modificar fuente ni scores.
+
+Precisión de selección: en los 12 snapshots de los cuatro turnos afectados el contexto recibido por el modelo contiene selección no nula (Marketing Digital o Fotografía Profesional), congruente con role=paid. El backend devuelve paid_mismatch y el estado persistido final queda nulo. La desalineación está observada; su causa interna permanece pendiente de diagnóstico.
+
+| Caso/turno | Comparación original | Clasificación factual | Motivo |
+|---|---|---|---|
+| 05_real_budget_limit/interest | DIFFERENCE_REQUIRES_REVIEW | AUTHORIZED_CONTINGENCY_AFTER_GENERATION_VS_BACKEND_SELECTION_MISMATCH | En los tres intentos, el modelo recibió commercial_state.selected_offering_code=marketing_digital, congruente con su declaración role=paid. El backend posteriormente rechazó course_mentions:paid_mismatch:marketing_digital; el estado persistido final quedó selectedCourse=null y se entregó la contingencia completa autorizada. Esto acredita una desalineación entre contexto de generación y validación/persistencia; no acredita que el modelo ignorara una selección nula. La causa interna exacta del code path permanece pendiente de diagnóstico. |
+| 05_real_budget_limit/budget | DIFFERENCE_REQUIRES_REVIEW | AUTHORIZED_CONTINGENCY_AFTER_GENERATION_VS_BACKEND_SELECTION_MISMATCH | En los tres intentos, el modelo recibió commercial_state.selected_offering_code=marketing_digital, congruente con su declaración role=paid. El backend posteriormente rechazó course_mentions:paid_mismatch:marketing_digital; el estado persistido final quedó selectedCourse=null y se entregó la contingencia completa autorizada. Esto acredita una desalineación entre contexto de generación y validación/persistencia; no acredita que el modelo ignorara una selección nula. La causa interna exacta del code path permanece pendiente de diagnóstico. |
+| 06_repeated_price_bonus_ladder/bonus_3 | UNKNOWN | NO_LAST_DRAFT_AFTER_PROVIDER_ABORT_THEN_AUTHORIZED_CONTINGENCY | La reparación no devolvió borrador: timeout de proveedor a 15.010 ms. La comparación con el último borrador queda UNKNOWN. Se conserva la entrega de contingencia sin bono; no es una falla de deduplicación de llamada. |
+| 11_purchase_to_payment_link/plan_and_link | DIFFERENCE_REQUIRES_REVIEW | AUTHORIZED_BACKEND_PAYMENT_LINK_APPEND | El texto redactado se conserva como prefijo exacto; el backend añade etiqueta del plan y URL canónica de pago entregada. No hay sustitución estilística del borrador. |
+| 13_real_syllabus/syllabus | DIFFERENCE_REQUIRES_REVIEW | AUTHORIZED_CONTINGENCY_AFTER_GENERATION_VS_BACKEND_SELECTION_MISMATCH | En los tres intentos, el modelo recibió commercial_state.selected_offering_code=fotografia_profesional, congruente con su declaración role=paid. El backend posteriormente rechazó course_mentions:paid_mismatch:fotografia_profesional; el estado persistido final quedó selectedCourse=null y se entregó la contingencia completa autorizada. Esto acredita una desalineación entre contexto de generación y validación/persistencia; no acredita que el modelo ignorara una selección nula. La causa interna exacta del code path permanece pendiente de diagnóstico. |
+| 13_real_syllabus/duration_followup | DIFFERENCE_REQUIRES_REVIEW | AUTHORIZED_CONTINGENCY_AFTER_GENERATION_VS_BACKEND_SELECTION_MISMATCH | En los tres intentos, el modelo recibió commercial_state.selected_offering_code=fotografia_profesional, congruente con su declaración role=paid. El backend posteriormente rechazó course_mentions:paid_mismatch:fotografia_profesional; el estado persistido final quedó selectedCourse=null y se entregó la contingencia completa autorizada. Esto acredita una desalineación entre contexto de generación y validación/persistencia; no acredita que el modelo ignorara una selección nula. La causa interna exacta del code path permanece pendiente de diagnóstico. |
+
+No raw successful agent proposal repeated an exactly identical call_offer as a full messages bubble. Formal acceptance did not exercise exact-copy dedup; offline regression evidence covers it.
+
+Las tres solicitudes extra del juez son reintentos de 13/duration_followup: los cuatro JSON son sintácticamente válidos, pero una falla usa code SEMANTIC_MUST_FAILED con requirement_id must_not:0. El evaluador rechaza esa referencia incoherente y deja INDETERMINATE. No se cambió el score.
+
+## Filas no aprobadas originales
+
+| Caso/turno | Estado | Capa original | Primer motivo original |
+|---|---|---|---|
+| 02_info_discovery/goal | FAIL | validador | Esperado browse_catalog\|ask_course_information\|unknown; real select_course. |
+| 03_single_course_recommendation/recommend | FAIL | brain | Esperado ask_course_information\|browse_catalog\|unknown; real select_course. |
+| 03_single_course_recommendation/test_close_reply | FAIL | brain | Esperado ask_course_information\|select_course\|request_payment_link\|unknown; real continue_by_chat. |
+| 05_real_budget_limit/interest | FAIL | validador | Esperado ask_payment_options\|select_course; real ask_course_information. |
+| 05_real_budget_limit/budget | FAIL | validador | Falta "USD 30". |
+| 06_repeated_price_bonus_ladder/call_step | FAIL | prompt | El escalón de llamada correspondía (may_offer_call=true, objeción de precio persistente, escalones 1-3 ya cumplidos) y la respuesta no ofrece la llamada con razón concreta; sólo repite planes y pregunta por el plan, sin avanzar al escalón de llamada. |
+| 06_repeated_price_bonus_ladder/bonus_3 | FAIL | validador | La respuesta no aporta valor personalizado ni cierre útil; no conserva el orden comercial (valor, cuotas, aislamiento, cierre condicional, llamada) y en su lugar abre un menú de cursos/datos. |
+| 06_repeated_price_bonus_ladder/never_fourth | FAIL | prompt | La conversación completa nunca acredita la invitación a llamada (escalón 4) antes de bonificar; el ledger muestra call_invitation_status not_offered en todos los turnos, incluido el actual, por lo que se omitió una etapa comercial exigida. |
+| 08_consult_partner/partner | FAIL | prompt | La respuesta da información clave (para qué sirve y 12 cuotas de USD 30), pero no ofrece resolver las dudas de la pareja, ni siquiera en una llamada, como exige el requisito. |
+| 09_definitive_no/interest | FAIL | prompt | La respuesta termina con una afirmación sobre el curso y no incluye ninguna pregunta, propuesta de siguiente paso ni acción de cierre que oriente y avance la conversación. |
+| 13_real_syllabus/syllabus | FAIL | validador | Citó un fact_id de temario, pero la respuesta no refleja su contenido. |
+| 13_real_syllabus/duration_followup | INDETERMINATE | None | GOLDEN_JUDGE_FAILURE_REFERENCE_INVALID |
+| 14_course_change_cancels_promotion/isolate | FAIL | validador | El cliente vuelve a expresar que el precio le frena incluso en cuotas. La respuesta no aísla el freno ni cierra condicionalmente (no confirma que, resuelto el precio, avanza), y en su lugar abre una pregunta de preferencia de contenido. Falta el cierre útil exigido por el escalón de aislamiento/cierre condicional. |
+| 14_course_change_cancels_promotion/call_step | FAIL | prompt | El cliente confirmó que el precio es el único freno y que avanzaría si se resuelve. El siguiente escalón pendiente era la llamada (call_invitation), pero la respuesta salta directamente a pedir datos de contacto para el enlace, sin ofrecer la llamada con una razón concreta ni cerrar el orden comercial esperado. |
