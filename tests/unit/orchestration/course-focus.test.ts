@@ -78,4 +78,13 @@ describe('current explicit factual references from the complete active catalog',
     expect(currentFactualCourseReferencesV1(['ecommerce me gusta'], null, [])).toEqual([]);
     expect(currentFactualCourseReferencesV1(['ecommerce me gusta'], { ...factualCatalog, offerings_total: 5 }, [])).toEqual([]);
   });
+  it('uses one exact course from the latest agent answer as factual focus for a neutral objection only', () => {
+    const prior = ['Introducción al Ecommerce son 8 clases online. El total es USD 360.'];
+    expect(currentFactualCourseReferencesV1(['Me parece muy caro.'], factualCatalog, prior))
+      .toEqual([expect.objectContaining({ offeringCode: 'introduccion_ecommerce', source: 'prior_agent_named_candidate' })]);
+    expect(currentFactualCourseReferencesV1(['Me parece muy caro.'], factualCatalog,
+      ['Tenemos Introducción al Ecommerce y Community Manager.'])).toEqual([]);
+    expect(focus('Me parece muy caro.', [{ direction: 'outbound', content: prior[0]! }], factualCatalog))
+      .toEqual({ offering_code: 'introduccion_ecommerce', course_of_interest: 'Introducción al Ecommerce' });
+  });
 });

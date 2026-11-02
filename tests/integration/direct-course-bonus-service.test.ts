@@ -505,6 +505,18 @@ run('atomic direct bonus service', () => {
     expect(await offerDirectCourseBonusV1(db!,first)).toMatchObject({ok:true,offer_version:1,outbound_message_id:first.outbound.id});
   });
 
+  it('escalates a delivered package when the customer asks for another promo without a new price objection',async()=>{
+    const f=await fixture();
+    vi.stubEnv('COURSE_BONUS_MAX_COURSES','3');
+    const first=f.input();
+    expect(await offerDirectCourseBonusV1(db!,first)).toMatchObject({ok:true,offer_version:1});
+    await f.deliver(first.outbound.id);
+    const [promoTurn]=await db!`INSERT INTO messages(conversation_id,contact_id,direction,content)
+      VALUES (${f.v.id},${f.c.id},'inbound','¿Y otra promo más?') RETURNING id`;
+    const second=f.input(promoTurn.id,2,1);
+    expect(await offerDirectCourseBonusV1(db!,second)).toMatchObject({ok:true,offer_version:2});
+  });
+
   it('delivers a second and third bonus, refuses a fourth, and cancels the open package when the paid course changes',async()=>{
     const f=await fixture();
     vi.stubEnv('COURSE_BONUS_MAX_COURSES','3');

@@ -128,6 +128,24 @@ export function currentFactualCourseReferencesV1(
       source: 'prior_agent_named_candidate', matchedTerms: matches.map(match => match.term).slice(0, 8),
       position: Math.min(...matches.map(match => match.position)) });
   }
+  // A neutral follow-up such as "me parece caro" contains no course token,
+  // but the immediately preceding answer can still establish one factual
+  // subject. Hydrate facts and validate mentions only when that answer names
+  // exactly one full canonical course. This never persists a sale selection
+  // or authorizes an effect.
+  if (result.size === 0) {
+    const priorCanonical = index.offerings.filter(offering =>
+      previous.includes(` ${normalized(offering.display_name)} `));
+    if (priorCanonical.length === 1) {
+      const offering = priorCanonical[0]!;
+      result.set(offering.code, {
+        offeringCode: offering.code,
+        source: 'prior_agent_named_candidate',
+        matchedTerms: normalized(offering.display_name).split(' ').filter(term => term.length >= 3).slice(0, 8),
+        position: offset,
+      });
+    }
+  }
   return [...result.values()].sort((a, b) => a.position - b.position).slice(0, 3)
     .map(({ offeringCode, source, matchedTerms }) => ({ offeringCode, source, matchedTerms }));
 }

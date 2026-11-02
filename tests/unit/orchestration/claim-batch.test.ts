@@ -2837,6 +2837,19 @@ async function marketingMenuTurn(texts: readonly string[], selectedOfferingCode:
 }
 
 describe('PASO 0 — contexto factual de cursos nombrados (bordes)', () => {
+  it('hydrates the single course from the latest answer for a neutral price objection without selecting it', async () => {
+    const { result, context } = await marketingMenuTurn(['Me parece muy caro.'], null,
+      'Introducción al Ecommerce son 8 clases online. El total es USD 360.');
+    expect(result.business_context?.offerings.find(course => course.code === 'introduccion_ecommerce')?.classes).toBe(8);
+    expect(context.catalog.candidate_offerings).toEqual([expect.objectContaining({
+      code: 'introduccion_ecommerce',
+      reference: expect.objectContaining({ source: 'prior_agent_named_candidate' }),
+      facts: expect.arrayContaining([expect.objectContaining({ kind: 'offering_duration', value: '8 clases' })]),
+    })]);
+    expect(context.commercial_state.selected_offering_code).toBeNull();
+    expect(context.capabilities.may_send_payment_link).toBe(false);
+  });
+
   it('hydrates a current course absent from the preceding menu while preserving a different stored selection', async () => {
     const { result, context } = await marketingMenuTurn(['Ecommerce me gusta. Cuántas clases son?'], 'marketing_digital',
       'Tenemos Marketing Digital y Community Manager.');
