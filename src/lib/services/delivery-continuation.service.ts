@@ -58,9 +58,20 @@ export async function authorizeDeliveryContinuation(input: DeliveryContinuationI
     // Rule A (owner 2026-11-02): the bubble that carries a committed direct
     // bonus offer is the effect itself. Cancelling it after "dame un segundo"
     // would leave the offer undelivered and the package cycle stuck.
+    // Never fail open: an opt-out, revoked consent or blocked contact still
+    // cancels it (ingestion records an opt-out before this check can run).
     const [carriesCommittedOffer] = newer ? await db`
-      SELECT 1 FROM promotion_offer_bonus_offerings
-      WHERE offered_outbound_message_id = ${input.outbound_id}::uuid LIMIT 1` : [];
+      SELECT 1 FROM promotion_offer_bonus_offerings offer
+      JOIN outbound_deliveries od ON od.message_id = offer.offered_outbound_message_id
+      JOIN conversations conversation ON conversation.id = od.conversation_id
+      JOIN contacts contact ON contact.id = od.contact_id
+      WHERE offer.offered_outbound_message_id = ${input.outbound_id}::uuid
+        AND contact.deleted_at IS NULL AND contact.status <> 'inactivo'
+        AND coalesce(contact.lifecycle_status, 'active') = 'active'
+        AND NOT EXISTS (SELECT 1 FROM contact_channel_permissions permission
+          WHERE permission.contact_id = contact.id AND permission.channel = conversation.channel
+            AND permission.consent_status = 'revoked')
+      LIMIT 1` : [];
     if (newer && !carriesCommittedOffer) {
       await db`UPDATE outbound_deliveries SET state = 'cancelled', lease_until = NULL, leased_by = NULL,
         last_error_code = 'DELIVERY_CONTINUATION_SUPERSEDED', updated_at = now() WHERE id = ${delivery.id}::uuid`;
