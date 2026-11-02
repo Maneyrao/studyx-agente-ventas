@@ -62,6 +62,23 @@ describe('owner-rule supplementary golden campaign', () => {
     }
   });
 
+  it('accepts the recorded canonical current-state move only at the fourth-bonus limit check', () => {
+    // Recorded real model behavior, source owner-rules-1687498-20261102T150651Z/17/no_fourth.
+    // This tests evaluator compatibility, not model quality using a handwritten answer.
+    const turn = OWNER_GOLDEN_CASES[0]!.turns.find(item => item.id === 'no_fourth')!;
+    const response = 'Ya quedaron incluidos los tres: Fotografía con Celulares para Tiendas Online, Publicidad en Redes Sociales e Instagram para Emprendedores, junto con Introducción al Ecommerce. No hay un cuarto, pero con esos tres cubrís fotos, publicidad y redes para tu tienda.\nEl total sigue en USD 360, en 12 cuotas de USD 30 por mes. Arrancamos con ese plan?';
+    const current = observed({ response, move: 'ask_current_state',
+      state: { selectedCourse: 'introduccion_ecommerce', stage: 'course_selected', awaitingReply: 'none', plan: null,
+        promotion: { status: 'offer_available', paidCourse: 'introduccion_ecommerce', bonusCount: 3,
+          bonusCourses: ['fotografia_celulares_tiendas_online', 'publicidad_redes_sociales', 'instagram_emprendedores'] } } });
+    expect(evaluateHardRules(turn, current).failures).toEqual([]);
+    expect(OWNER_GOLDEN_CASES.flatMap(scenario => scenario.turns)
+      .filter(item => item.expected.move.includes('ask_current_state')).map(item => item.id)).toEqual(['no_fourth']);
+    expect(evaluateHardRules(turn, { ...current, state: { ...current.state,
+      promotion: { ...current.state.promotion, bonusCount: 4, bonusCourses: [...current.state.promotion.bonusCourses, 'excel_integral'] } } }).failures)
+      .toEqual(expect.arrayContaining([expect.objectContaining({ code: 'PROMOTION_LIMIT_EXCEEDED' })]));
+  });
+
   it('requires committed delivery and persisted call evidence rather than a model invitation alone', () => {
     const turn = measured([{ type: 'workflow_committed' }, { type: 'call_offer_recorded' }]);
     const valid = observed({ callOffer: 'Coordinamos una llamada?', response: 'Respuesta\nCoordinamos una llamada?', recordedCallOfferCount: 1 });

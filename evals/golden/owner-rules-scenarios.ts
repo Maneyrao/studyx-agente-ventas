@@ -73,7 +73,7 @@ export const OWNER_GOLDEN_CASES: readonly GoldenCaseV1[] = [
         must: ['Conservar los tres bonificados existentes, mantener el precio y proponer avanzar o dejar la puerta abierta.'],
         mustNot: ['No ofrecer, insinuar ni materializar un cuarto curso bonificado.'],
         authority: [ruleA, gabi(121, 127, 'Máximo de cursos bonificados')],
-        expected: { move: moves, action: ['none'], state: { promotion: { status: ['offer_available'], bonusCount: [3], paidCourse: ['introduccion_ecommerce'] } } },
+        expected: { move: [...moves, 'ask_current_state'], action: ['none'], state: { promotion: { status: ['offer_available'], bonusCount: [3], paidCourse: ['introduccion_ecommerce'] } } },
         hard: [{ type: 'workflow_committed' }, { type: 'promotion_bonus_count_at_most', value: 3 }],
       }),
     ],
