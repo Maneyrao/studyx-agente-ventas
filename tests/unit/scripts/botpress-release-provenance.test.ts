@@ -29,7 +29,7 @@ function loadGenerated(source: string, log: ReturnType<typeof vi.fn>) {
     logReleaseEntry: (kind: string, input: unknown, workflow: unknown) => void };
 }
 
-describe('instrumented Botpress release provenance from the frozen d558f93 base', () => {
+describe('instrumented Botpress release provenance from the reviewed source commit', () => {
   it('preserves original sources and gives the instrumented artifact a separate provenance', () => {
     const original = structuredClone(sources);
     const result = prepared();
