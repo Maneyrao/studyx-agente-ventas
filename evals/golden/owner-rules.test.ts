@@ -81,6 +81,19 @@ describe('owner-rule supplementary golden campaign', () => {
       .not.toContain('BONUS_PRIOR_PRICE_OBJECTION_MISSING');
   });
 
+  it('counts a new price objection after the Rule C probe as the first bonus trigger', () => {
+    const turns = OWNER_GOLDEN_CASES[0]!.turns;
+    expect(turns.find(turn => turn.id === 'first_price_objection')?.expected.action)
+      .toEqual(['offer_course_bonus']);
+    expect(turns.find(turn => turn.id === 'first_price_objection')?.expected.state.promotion)
+      .toMatchObject({ bonusCount: [1] });
+    expect(turns.find(turn => turn.id === 'price_only_first_bonus')?.expected.state.promotion)
+      .toMatchObject({ bonusCount: [2] });
+    expect(turns.find(turn => turn.id === 'second_bonus')?.expected.state.promotion)
+      .toMatchObject({ bonusCount: [3] });
+    expect(turns.find(turn => turn.id === 'third_bonus')?.expected.action).toEqual(['none']);
+  });
+
   it('accepts the recorded canonical current-state move only at the fourth-bonus limit check', () => {
     // Recorded real model behavior, source owner-rules-1687498-20261102T150651Z/17/no_fourth.
     // This tests evaluator compatibility, not model quality using a handwritten answer.

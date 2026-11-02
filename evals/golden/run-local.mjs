@@ -3,7 +3,7 @@ import { existsSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSyn
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { parseEnv } from 'node:util';
-import { reserveGoldenRunV1 } from './run-config.mjs';
+import { copyGoldenReuseObservationsV1, reserveGoldenRunV1 } from './run-config.mjs';
 
 const BASE_SHA = '028f272fc3a6f6dc4806d19b251564169b55e6d6';
 const POSTGRES_PORT = '55435';
@@ -74,6 +74,9 @@ if (process.env.STUDYX_GOLDEN_DEEPSEEK_MODEL && process.env.STUDYX_GOLDEN_DEEPSE
 }
 const resultStem = process.env.STUDYX_GOLDEN_RESULT_STEM
   ?? (providerName === 'nvidia_nim' ? `acceptance-${headSha.slice(0, 7)}-nim` : 'baseline-v9');
+const reuseObservations = process.env.STUDYX_GOLDEN_REUSE_OBSERVATIONS === 'true';
+const reuseSourceStem = process.env.STUDYX_GOLDEN_REUSE_SOURCE_STEM?.trim() || null;
+if (reuseObservations && !reuseSourceStem) throw new Error('GOLDEN_REUSE_SOURCE_STEM_MISSING');
 if (providerName === 'deepseek' && !localSecrets.deepseek) {
   throw new Error('DEEPSEEK_API_KEY_MISSING: guardala sólo en .eval/.env.local');
 }
@@ -86,6 +89,9 @@ const runStatePath = reserveGoldenRunV1('evals/golden/results', resultStem, {
   judge_model: judgeModel, case_selection: process.env.STUDYX_GOLDEN_CASE_IDS ?? null,
   suite_invocations: 1, started_at: runStartedAt, updated_at: runStartedAt,
 });
+if (reuseObservations) {
+  copyGoldenReuseObservationsV1('evals/golden/results', reuseSourceStem, resultStem);
+}
 
 if (providerName === 'nvidia_nim') {
   const base = providerBaseUrl.replace(/\/+$/u, '');
@@ -139,7 +145,7 @@ const environment = {
   STUDYX_EVAL_API_BASE_URL: apiBaseUrl,
   STUDYX_GOLDEN_LIVE: 'true',
   STUDYX_GOLDEN_EVALUATED_SHA: headSha,
-  STUDYX_GOLDEN_REUSE_OBSERVATIONS: process.env.STUDYX_GOLDEN_REUSE_OBSERVATIONS ?? 'false',
+  STUDYX_GOLDEN_REUSE_OBSERVATIONS: reuseObservations ? 'true' : 'false',
   STUDYX_GOLDEN_DEEPSEEK_MODEL: 'deepseek-v4-flash',
   STUDYX_GOLDEN_JUDGE_MODEL: judgeModel,
   ...(process.env.STUDYX_GOLDEN_CASE_IDS === undefined ? {} : { STUDYX_GOLDEN_CASE_IDS: process.env.STUDYX_GOLDEN_CASE_IDS }),

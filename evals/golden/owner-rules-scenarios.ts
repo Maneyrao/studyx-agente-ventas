@@ -11,6 +11,7 @@ const owner = (start: number, end: number, contains: string): AuthorityReference
 const ruleA = owner(45, 54, '2.ª objeción');
 const ruleB = owner(56, 62, '2.ª o 3.ª respuesta');
 const ownerPromo = owner(66, 66, 'Promo instantánea');
+const ownerPriceProbe = owner(67, 68, 'nueva objeción de precio dispara la oferta');
 const baseAuthority = [gabi(38, 44, 'Una recomendación no es elección'), gabi(68, 89, 'price_objection')];
 const moves = ['greeting', 'browse_catalog', 'select_course', 'ask_course_information', 'ask_payment_options',
   'unknown', 'continue_by_chat', 'defer_payment', 'request_call', 'decline_purchase'];
@@ -61,14 +62,25 @@ export const OWNER_GOLDEN_CASES: readonly GoldenCaseV1[] = [
         authority: [...baseAuthority, gabi(48, 54, 'duración'), gabi(91, 98, 'USD 360'), ruleB],
         hard: [{ type: 'workflow_committed' }, { type: 'current_course_facts_present', value: 'introduccion_ecommerce' }],
       }),
-      turn('first_price_objection', 'Me parece muy caro.', {
-        must: ['Registrar la objeción literal, trabajar el valor y la forma de pago sin bonificación en esta primera objeción.'],
-        expected: { move: moves, action: ['none'], state: noBonus },
-        hard: [{ type: 'workflow_committed' }, { type: 'current_price_objection_recorded' }],
+      (() => {
+        const bonus = bonusTurn('first_price_objection', 'Me parece muy caro.', 1);
+        return { ...bonus,
+          authority: [ownerPriceProbe, ...bonus.authority],
+          must: ['Registrar la objeción literal. Como el agente ya hizo la pregunta de la Regla C, esta nueva objeción dispara el primer bonificado exacto de la tabla.'],
+          hard: [...bonus.hard, { type: 'current_price_objection_recorded' } as const],
+        };
+      })(),
+      bonusTurn('price_only_first_bonus', 'Sí, sólo el precio me frena; sigue siendo caro.', 2),
+      bonusTurn('second_bonus', 'Me suma, pero el precio me sigue pareciendo caro.', 3),
+      turn('third_bonus', 'El curso me interesa, pero todavía no me alcanza por el precio.', {
+        must: ['Conservar el paquete de tres bonificados, mantener el precio y seguir cerrando sin prometer un cuarto curso.'],
+        mustNot: ['No ofrecer, insinuar ni materializar un cuarto curso bonificado.'],
+        authority: [ruleA, gabi(121, 127, 'Máximo de cursos bonificados')],
+        expected: { move: moves, action: ['none'], state: {
+          promotion: { status: ['offer_available'], bonusCount: [3], paidCourse: ['introduccion_ecommerce'] },
+        } },
+        hard: [{ type: 'workflow_committed' }, { type: 'promotion_bonus_count_at_most', value: 3 }],
       }),
-      bonusTurn('price_only_first_bonus', 'Sí, sólo el precio me frena; sigue siendo caro.', 1),
-      bonusTurn('second_bonus', 'Me suma, pero el precio me sigue pareciendo caro.', 2),
-      bonusTurn('third_bonus', 'El curso me interesa, pero todavía no me alcanza por el precio.', 3),
       turn('no_fourth', 'Y otro curso gratuito más también?', {
         must: ['Conservar los tres bonificados existentes, mantener el precio y proponer avanzar o dejar la puerta abierta.'],
         mustNot: ['No ofrecer, insinuar ni materializar un cuarto curso bonificado.'],
