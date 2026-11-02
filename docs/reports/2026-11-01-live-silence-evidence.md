@@ -52,10 +52,37 @@ nuevo del dueño.
 ## Verificación antes de publicación
 
 5.008 pruebas unitarias pasan en la corrida completa; la comprobación real de
-registro ADK excedió cinco segundos con carga y se repitió aislada. Integración
-de evidencia y postventa: 8 aprobadas. TypeScript de backend/Botpress y lint se
-comprueban antes de publicar. El arquitecto revisó el arreglo y sus dos hallazgos
+registro ADK excedió cinco segundos con carga y pasó aislada (5.009 aprobadas en
+total). Integración de evidencia y postventa: 8 aprobadas. TypeScript de
+backend/Botpress y lint aprobados. El arquitecto revisó el arreglo y sus dos hallazgos
 materiales quedaron resueltos.
 
-La publicación y la entrega real se documentan separadamente con sus recibos;
-este informe no afirma que haya ocurrido una respuesta al cliente.
+## Publicación verificada — 2026-11-02
+
+Fuente de aplicación `b839dca186cb6699bc7a44a409d84999d8304154`; backend y
+log de carga de Botpress coinciden. Brain `studyx-agent-a-brain-v149`, prompt
+`studyx-agent-a-canonical-v101`. Instrumentación separada
+`e6887c733551dc54456395426d666705f4412ad462044b96f0a0fb91e220ba1d`;
+bundle enviado `2ec89e37f012da58960c168c307f6241f4fbd15c70f06857b3d8cac8fa60d855`.
+
+| Comprobación | Resultado |
+| --- | --- |
+| Migración en el proyecto autorizado | Aplicada |
+| Backend personal: health y readiness | Aprobados |
+| Endpoint firmado de evidencia + fila durable con nuevo SHA | HTTP 200, verificado |
+| Rol de aplicación sin lectura directa de auditoría | Conservado |
+| Botpress: SHA en log real y nueva fecha de despliegue | Verificados |
+| Configuración, 15 integraciones y 2 plugins | Conservados |
+| Canary real: suspensiones, continuación y callback procesado | Aprobado; estado intacto después del callback |
+| Modelos / envíos externos del canary | 0 / 0 |
+| Nueva entrega real de WhatsApp | Pendiente de mensaje nuevo del dueño |
+
+La publicación de Botpress respondió HTTP 500 después de actualizar el código.
+No se repitió a ciegas: se reconcilió con fecha de despliegue, SHA del log real,
+configuración intacta y el canary terminado. La API no expone el hash remoto del
+bundle; el hash informado corresponde a los bytes enviados, no a una descarga
+del código remoto.
+
+Recibo sin secretos: [verification.json](evidence/2026-11-02-live-silence-b839dca/verification.json).
+Los dos intentos originales conservan cero decisiones y cero salidas. Este
+informe no afirma que haya ocurrido una nueva respuesta al cliente.

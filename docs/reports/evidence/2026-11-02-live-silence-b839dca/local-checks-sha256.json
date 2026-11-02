@@ -1,0 +1,22 @@
+[
+  {
+    "name": "studyx-silence-unit-all.log",
+    "sha256": "e055c134006ec126e8b1719c8a0bc0fe0566a7dad38508f47724ed31543027d1"
+  },
+  {
+    "name": "studyx-silence-adk-registration.log",
+    "sha256": "82035b493f5bbc44019b7bd87191f206d3db0eb921b4f26e242bed750de5d46f"
+  },
+  {
+    "name": "studyx-silence-integration.log",
+    "sha256": "217b3d7f253d686e2c02a7ac0b6a5393a2082d2ff67937a53d4e3617bd27e6a7"
+  },
+  {
+    "name": "studyx-silence-role-red.log",
+    "sha256": "38b6b0820fe0a70a94ee98efcbe869030412e39854bb7576f2635e97e930222d"
+  },
+  {
+    "name": "studyx-silence-role-green.log",
+    "sha256": "0386b461f37c0c3decf7ff7a28af5ce0248fedf11861c44c2aecc690e3f8d703"
+  }
+]
