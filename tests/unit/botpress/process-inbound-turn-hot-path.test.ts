@@ -1,3 +1,4 @@
+import { deriveCourseBonusLadderV1 } from '../../../src/shared/conversation/bonus-ladder';
 import { buildAuthorizedEgress } from '../../../src/features/orchestration/domain/egress-guard';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as evidencePersistence from '../../../botpress-agent/src/lib/observability/persist-turn-evidence';
@@ -378,6 +379,78 @@ describe('processInboundTurn hot path', () => {
     expect(actionSpies.recovery).toHaveBeenCalledTimes(1);
     expect(actionSpies.recovery.mock.calls[0]?.[0].input).toMatchObject({reason_code:'AGENT_A_COMMIT_FAILED'});
   });
+  it.each([false, true])('finalizes a backend repair that newly enables Rule A, without a third provider request and with the actual origin (complete=%s)', async complete => {
+    const paid = 'introduccion_ecommerce';
+    const prior = 'fotografia_celulares_tiendas_online';
+    const next = 'publicidad_redes_sociales';
+    const priorName = 'Fotografía con Celulares para Tiendas Online';
+    const completeText = `Te quedan Introducción al Ecommerce + ${priorName} y Publicidad en Redes Sociales sin costo extra. Avanzamos?`;
+    const claimed = claimedResponse() as unknown as ClaimedTurn;
+    claimed.features = { agent_loop_v3_mode: 'off', conversation_pipeline_v1_enabled: false,
+      agent_a_brain_v1_enabled: true, agent_a_brain_v1_shadow: false, agent_a_repair_enabled: true };
+    claimed.context.batch_messages[0].content = 'me sigue pareciendo caro';
+    claimed.conversation_state_v1 = { selected_offering_code: paid, selected_payment_plan: null,
+      stage: 'course_selected', call_preference: 'unknown', call_offer_status: 'not_offered', call_offer_count: 0, awaiting_reply: 'none', version: 2 };
+    claimed.catalog_index = { as_of: NOW, offerings_total: 3, injection_suspected_count: 0, offerings: [
+      { code: paid, display_name: 'Introducción al Ecommerce', academy: 'Marketing', aliases: [] },
+      { code: prior, display_name: priorName, academy: 'Marketing', aliases: [] },
+      { code: next, display_name: 'Publicidad en Redes Sociales', academy: 'Marketing', aliases: [] },
+    ] };
+    claimed.business_context = paymentBusinessContext();
+    claimed.business_context.offerings[0] = { ...claimed.business_context.offerings[0], code: paid,
+      display_name: 'Introducción al Ecommerce', classes: 8 };
+    claimed.business_context_available = true;
+    claimed.course_bonus_capability = { status: 'offer_available', enabled: true, max_bonus_courses: 3, may_offer_bonus: true,
+      may_schedule_checkin: false, may_request_review: false, may_accept_offer: true, may_send_promoted_payment: false,
+      package_status: 'offered', promotion_code: 'test-offered', interest_offering_code: paid,
+      bonus_offerings: [{ code: prior, display_name: priorName, position: 1 }],
+      delivered_bonus_offerings: [{ code: prior, display_name: priorName, position: 1 }],
+      ladder: deriveCourseBonusLadderV1({ observed_price_objection_count: 2, call_invitation_status: 'not_offered', call_offer_count: 0, may_offer_call: false }),
+      rule_bonus: { paid_offering_code: paid, paid_display_name: 'Introducción al Ecommerce', bonus_offering_code: next, display_name: 'Publicidad en Redes Sociales', position: 2 } };
+    actionSpies.claim.mockResolvedValue(claimed);
+    configuration.agentAPlannerlessV2Enabled = true;
+    const generated = (proposal: Record<string, unknown>) => ({ proposal,
+      provider: 'deepseek-direct', model: 'deepseek-v4-flash', latency_ms: 1, attempt_count: 1 });
+    const base = { schema_version: 1, proposed_action: { type: 'none' }, course_mentions: [],
+      profile_updates: [], profile_requests: [], used_fact_ids: [], used_memory_ids: [], memory_candidates: [], repair_of: null };
+    actionSpies.agentABrainDeepSeek.mockResolvedValueOnce(generated({ ...base,
+      move: { schema_version: 1, move: 'report_payment', secondary_moves: [], vetoes: [], confidence: 1 },
+      response: { messages: ['Te cuento las opciones.'], call_offer: null } }))
+      .mockImplementationOnce(async ({ context }: { context: AgentAContextV1 }) => generated({ ...base,
+        move: { schema_version: 1, move: 'ask_course_information', secondary_moves: [], vetoes: [], course_reference: paid, confidence: 1 },
+        response: { messages: [complete ? completeText : 'Te sumo Publicidad en Redes Sociales sin costo extra.'], call_offer: null },
+        proposed_action: { type: 'offer_course_bonus', interest_offering_code: paid, bonus_offering_code: next },
+        course_mentions: complete ? [{ offering_code: paid, role: 'paid' }, { offering_code: prior, role: 'bonus' },
+          { offering_code: next, role: 'bonus' }] : [{ offering_code: next, role: 'bonus' }],
+        memory_candidates: [{ type: 'objection', key: 'price_objection', value: 'precio', source_quote: 'caro', confidence: 1 }],
+        repair_of: { rejection_id: context.turn_rejection!.rejection_id, attempt: 1 },
+      }));
+    actionSpies.commit.mockRejectedValueOnce(new StudyxHttpError('DECISION_REJECTED', false, 422, 1,
+      { reason: 'AGENT_TURN_V2_REJECTED:FACT_NOT_AUTHORIZED', subjects: ['course_logistics.classes'] }))
+      .mockResolvedValueOnce({ status: 'committed', replayed: false, trace_id: UUID, turn_id: UUID,
+        decision_id: UUID, next_state: 'waiting_user', outbound: null, outbounds: [], call_request: null });
+    const step = Object.assign(async (_name: string, run: () => Promise<unknown>) => run(),
+      { sleep: vi.fn(async () => undefined) });
+    const result = await (processInboundTurn as unknown as {
+      definition: { handler: (args: Record<string, unknown>) => Promise<unknown> };
+    }).definition.handler({ input: workflowInput(), state: processingState(), step, execute: vi.fn(),
+      client: {}, signal: new AbortController().signal, workflow: { id: 'rule-a-backend-finalization' } });
+    expect(result).toMatchObject({ status: 'waiting_user', error_code: null });
+    expect(actionSpies.agentABrainDeepSeek).toHaveBeenCalledTimes(2);
+    expect(actionSpies.commit).toHaveBeenCalledTimes(2);
+    const final = actionSpies.commit.mock.calls[1][0].input.agent_turn_v2.proposal;
+    expect(final.proposed_action).toEqual({ type: 'offer_course_bonus', interest_offering_code: paid, bonus_offering_code: next });
+    expect(final.response.messages).toEqual(complete ? [completeText] : [
+      'Dejame revisar qué te puedo ofrecer, dame un segundo.',
+      `Te sumo también Publicidad en Redes Sociales. Te quedan Introducción al Ecommerce + ${priorName} y Publicidad en Redes Sociales sin costo extra, al mismo precio. Avanzamos?`,
+    ]);
+    const records = vi.mocked(console.info).mock.calls.flatMap(([line]) => {
+      try { const event = JSON.parse(String(line)); return event.event === 'studyx.turn.deterministic_rules' ? [event] : []; }
+      catch { return []; }
+    });
+    expect(records.at(-1)).toMatchObject({ rule_a: complete ? 'rewrite' : 'fixed', phase: 'final_candidate' });
+  });
+
   it('uses a stable 8–14 second WhatsApp reply target', () => {
     const first = whatsappReplyTargetLatencyMs('wamid.first');
     const repeated = whatsappReplyTargetLatencyMs('wamid.first');

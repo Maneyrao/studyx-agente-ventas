@@ -155,6 +155,31 @@ describe('Regla A — redacción y respaldo', () => {
     expect(draftPresentsBonusV1({ ...presented, response: { messages: ['Te sumo un curso.'] } }, decision)).toBe(false);
     expect(draftPresentsBonusV1({ ...presented, proposed_action: { type: 'none' } }, decision)).toBe(false);
   });
+  it.each([1, 2])('requires the complete paid + prior + new identities for escalation %s', count => {
+    const prior = catalog.filter(course => ['fotografia_celulares_tiendas_online', 'publicidad_redes_sociales'].slice(0, count).includes(course.code));
+    const rule = decideBonusRuleV1(ctx({ package_status: 'offered', delivered_bonus: prior,
+      rule_bonus: ruleFor('introduccion_ecommerce', prior.map(course => course.code)) }), draft());
+    if (rule.kind !== 'offer') throw new Error('expected escalation');
+    const proposed_action = { type: 'offer_course_bonus', bonus_offering_code: rule.bonus_code, interest_offering_code: rule.paid_code };
+    const all = [rule.paid_name, ...prior.map(course => course.display_name), rule.bonus_name];
+    const presented = (names: string[]) => draft({ proposed_action, response: { messages: [`Te quedan ${names.join(' + ')} sin costo extra.`] } });
+    expect(draftPresentsBonusV1(presented([rule.bonus_name]), rule)).toBe(false);
+    expect(draftPresentsBonusV1(presented(all), rule)).toBe(true);
+    expect(draftPresentsBonusV1(presented(all.slice(1)), rule)).toBe(false);
+    for (const course of prior) expect(draftPresentsBonusV1(presented(all.filter(name => name !== course.display_name)), rule)).toBe(false);
+    expect(draftPresentsBonusV1({ ...presented([rule.paid_name, rule.bonus_name]), response: { messages: [
+      `Te quedan ${rule.paid_name} + ${rule.bonus_name}. No incluyo ${prior.map(course => course.display_name).join(' ni ')}.`,
+    ] } }, rule)).toBe(false);
+    expect(draftPresentsBonusV1({ ...presented([rule.paid_name, rule.bonus_name]), response: { messages: [
+      `Te quedan ${rule.paid_name} + ${rule.bonus_name}. ${prior[0].display_name} no está incluido.`,
+    ] } }, rule)).toBe(false);
+  });
+  it('does not confuse a different course name with the prior identity', () => {
+    const rule = { ...decision, prior_bonus: [{ code: 'ingles_1', display_name: 'Inglés 1' }], trigger: 'escalation' as const };
+    const presented = draft({ proposed_action: { type: 'offer_course_bonus', bonus_offering_code: rule.bonus_code,
+      interest_offering_code: rule.paid_code }, response: { messages: [`Te quedan ${rule.paid_name} + Inglés 10 + ${rule.bonus_name}.`] } });
+    expect(draftPresentsBonusV1(presented, rule)).toBe(false);
+  });
   it('respaldo fijo: dos burbujas con el texto del dueño', () => {
     expect(bonusFallbackMessagesV1(decision)).toEqual([
       'Dejame revisar qué te puedo ofrecer, dame un segundo.',

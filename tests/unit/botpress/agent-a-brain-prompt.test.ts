@@ -105,6 +105,26 @@ describe('Agent A Brain prompt', () => {
     expect(repair).not.toContain('Use proposed_action=none');
     expect(repair).toContain('response.call_offer only');
   });
+  it('names every delivered course explicitly in the one escalation repair instruction', () => {
+    const current = context();
+    current.capabilities.course_bonus = { status: 'offer_available', enabled: true, max_bonus_courses: 3,
+      may_offer_bonus: true, may_schedule_checkin: false, may_request_review: false,
+      may_accept_offer: true, may_send_promoted_payment: false, promotion_code: 'offered',
+      interest_offering_code: 'introduccion_ecommerce', bonus_offerings: [],
+      delivered_bonus_offerings: [
+        { code: 'fotografia_celulares_tiendas_online', display_name: 'Fotografía con Celulares para Tiendas Online', position: 1 },
+        { code: 'publicidad_redes_sociales', display_name: 'Publicidad en Redes Sociales', position: 2 },
+      ], rule_bonus: { paid_offering_code: 'introduccion_ecommerce', paid_display_name: 'Introducción al Ecommerce',
+        bonus_offering_code: 'instagram_emprendedores', display_name: 'Instagram para Emprendedores', position: 3 } };
+    current.turn_rejection = { schema_version: 1, rejection_id: '00000000-0000-4000-8000-000000000009', attempt: 1,
+      rejections: [{ code: 'BONUS_OFFER_REQUIRED', subject: 'rule_a:bonus:instagram_emprendedores' }],
+      authorized_alternatives: { fact_ids: [], actions: ['offer_course_bonus'], missing_information: [] } };
+    const repair = buildAgentABrainInstructionsV1(current).split('<mandatory_repair')[1]?.split('</mandatory_repair>')[0] ?? '';
+    for (const name of ['Introducción al Ecommerce', 'Fotografía con Celulares para Tiendas Online', 'Publicidad en Redes Sociales', 'Instagram para Emprendedores'])
+      expect(repair).toContain(name);
+    expect(repair).toContain('EVERY previously delivered bonus');
+    expect(repair).toContain('only rewrite');
+  });
   it('requires model-declared course roles while keeping metadata separate from authorization',()=>{
     const instructions=buildAgentABrainInstructionsV1(context());
     const contract=instructions.split('<course_mentions_contract>')[1]?.split('</course_mentions_contract>')[0]??'';

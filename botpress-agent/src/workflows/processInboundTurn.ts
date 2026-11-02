@@ -85,7 +85,7 @@ import {
 } from '../lib/conversation/agent-a-attempt'
 import { resolveAgentAProposalV1 } from '../lib/conversation/resolve-agent-a-proposal'
 import { resolveAgentAPlannerlessProposalV2 } from '../lib/conversation/resolve-agent-a-plannerless'
-import { resolveDeterministicRulesTurnV1 } from '../lib/conversation/deterministic-rules-turn'
+import { finalizeDeterministicRulesCandidateV1, resolveDeterministicRulesTurnV1, type RuleOutcomeRecordV1 } from '../lib/conversation/deterministic-rules-turn'
 import { authorizedPromotionActionsV1, continueAgentAAfterActionFeedbackV1, fencedAgentARequestV1, plannerlessActionFeedbackV1 } from '../lib/conversation/agent-a-action-feedback'
 import { evaluateCallOfferTurnPolicyV1 } from '../lib/conversation/call-offer-turn-policy'
 import type { AgentATurnProposalV1 } from '../schemas/agent-a-brain'
@@ -1075,6 +1075,54 @@ export const processInboundTurn = new Workflow({
       observe => generateGroqUnobserved({ ...args, observe }), { route: 'legacy_groq' },
     )
     const commitDecision = { execute: async (args: Parameters<typeof commitDecisionUnobserved.execute>[0]) => {
+      // Every plannerless proposal crosses this same final boundary, including
+      // backend repairs, final continuations and recovered conversation floors.
+      // An already consumed rewrite permits fixed copy only, not a generation.
+      const request = args as Parameters<typeof commitDecisionUnobserved.execute>[0] & { input: { agent_turn_v2?: AgentATurnCommitV2 | null;
+        model: { provider: GeneratedAgentATurnProposalV1['provider'] | 'botpress'; model: string }; [key: string]: unknown };
+        [key: string]: unknown }
+      const candidate = request.input.agent_turn_v2
+      if (plannerlessV2Enabled && agentABrainContext && candidate && request.input.model.provider !== 'botpress') {
+        const receiptForbidsBonus = latestRejection != null
+          && !latestRejection.authorized_alternatives.actions.includes('offer_course_bonus')
+        const finalContext = { ...agentABrainContext,
+          ...(latestRejection ? { turn_rejection: latestRejection } : {}),
+          capabilities: { ...agentABrainContext.capabilities,
+            ...(latestRejection?.rejections.some(reason => reason.code === 'CALL_BUDGET_EXHAUSTED')
+              ? { may_offer_call: false } : {}),
+            ...(agentABrainContext.capabilities.course_bonus ? { course_bonus: {
+              ...agentABrainContext.capabilities.course_bonus,
+              ...(candidate.conversation_only || receiptForbidsBonus ? { enabled: false, may_offer_bonus: false, rule_bonus: null } : {}),
+            } } : {}),
+          },
+        }
+        const finalRules = await finalizeDeterministicRulesCandidateV1({
+          context: finalContext,
+          initial: { proposal: candidate.proposal, provider: request.input.model.provider,
+            model: request.input.model.model, latency_ms: 0, attempt_count: 1 },
+          rejection_id: randomUUID, observe: journal.capture,
+          authored_outcome: rulesOutcomeByProposal.get(candidate.proposal)
+            ?? (latestRejection != null || agentAGenerationAttempts > 1 ? 'rewrite' : 'model'),
+          resolve: (initial, repair, rejectionId = randomUUID()) => {
+            if (repair) throw new Error('FINAL_RULE_CANDIDATE_GENERATION_NOT_ALLOWED')
+            return resolveAgentAPlannerlessProposalV2({
+              initial, context: finalContext, repair_enabled: false, semantic_rejections: 'advisory',
+              rejection_id: rejectionId, observe: journal.capture,
+              repair: async () => { throw new Error('FINAL_RULE_CANDIDATE_GENERATION_NOT_ALLOWED') },
+            })
+          },
+        })
+        if (finalRules.resolved !== null) {
+          agentTurnV2Commit = { ...candidate, proposal: finalRules.resolved.effective.proposal }
+          pipelineMemoryCandidates = finalRules.resolved.effective.proposal.memory_candidates
+          args = { ...request, input: { ...request.input, agent_turn_v2: agentTurnV2Commit } }
+        }
+        const finalProposal = finalRules.resolved?.effective.proposal ?? candidate.proposal
+        rulesOutcomeByProposal.set(finalProposal, finalRules.record)
+        journal.capture({ ...finalRules.record, phase: 'final_candidate' })
+        safeLog('studyx.turn.deterministic_rules', { trace_id: input.trace_id, turn_id: owned.turn_id,
+          ...finalRules.record, phase: 'final_candidate' })
+      }
       const wire = (args as { input: Record<string, unknown> }).input
       journal.capture({ kind: 'commit_proposed', proposal: wire.agent_turn_v2 ?? null,
         fallback_decision: wire.decision, model: wire.model })
@@ -1164,6 +1212,7 @@ export const processInboundTurn = new Workflow({
     let pipelineDecisionModel = 'conversation-pipeline-v1'
     let pipelinePromptVersion = `${CONVERSATION_INTERPRETER_PROMPT_VERSION}+${CONVERSATION_COMPOSER_PROMPT_VERSION}+${STUDYX_SALES_BEHAVIOR_VERSION}`
     let pipelineMemoryCandidates: Decision['memory_candidates'] = []
+    const rulesOutcomeByProposal = new WeakMap<AgentATurnProposalV1, RuleOutcomeRecordV1>()
     const precommitModelAuthoredCandidates: GeneratedAgentATurnProposalV1[] = []
     let turnDiagnostics: TurnDiagnosticsV1 | null = null
     let agentAGenerationAttempts: 0 | 1 | 2 | 3 = 0
@@ -1489,6 +1538,7 @@ export const processInboundTurn = new Workflow({
                 trace_id: input.trace_id, turn_id: owned.turn_id, error_code: errorCode(error),
               }),
             })
+            rulesOutcomeByProposal.set(rulesTurn.resolved.effective.proposal, rulesTurn.record)
             journal.capture({ ...rulesTurn.record })
             safeLog('studyx.turn.deterministic_rules', { trace_id: input.trace_id, turn_id: owned.turn_id, ...rulesTurn.record })
             const resolved = rulesTurn.resolved
@@ -2682,6 +2732,8 @@ export const processInboundTurn = new Workflow({
                     : { type: 'none' as const },
                 },
               }
+              const retainedRuleOutcome = rulesOutcomeByProposal.get(candidate.proposal)
+              if (retainedRuleOutcome) rulesOutcomeByProposal.set(conversationCandidate.proposal, retainedRuleOutcome)
               try {
               const revalidated = await resolveAgentAPlannerlessProposalV2({
               observe: journal.capture,

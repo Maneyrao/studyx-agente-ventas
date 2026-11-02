@@ -39,7 +39,7 @@ export function ruleContextFromAgentAContextV1(context: AgentAContextV1): RuleCo
     call_offer_count: state.call_offer_count,
     call_preference: state.call_preference,
     customer_expressed_interest: state.selected_offering_code !== null
-      || context.catalog.candidate_offerings.length > 0
+      || context.catalog.candidate_offerings.some(candidate => candidate.reference !== undefined)
       || context.catalog.resolution === 'exact' || context.catalog.resolution === 'ambiguous'
       || context.customer.memories.some(memory => memory.type === 'study_goal'),
   }
@@ -193,8 +193,21 @@ export async function resolveDeterministicRulesTurnV1(input: {
 }): Promise<{ resolved: PlannerlessResolutionV2<GeneratedAgentATurnProposalV1>; record: RuleOutcomeRecordV1 }> {
   const decision = decideDeterministicRulesV1(input.context, input.initial.proposal)
   const applies = decision.bonus.kind === 'offer' || decision.call.kind === 'offer'
-  if (!applies) return { resolved: await input.resolve(input.initial, input.repair_enabled),
-    record: ruleOutcomeRecordV1(decision, 'not_applicable') }
+  if (!applies) {
+    const resolved = await input.resolve(input.initial, input.repair_enabled)
+    const effectiveDecision = decideDeterministicRulesV1(input.context, resolved.effective.proposal)
+    if (effectiveDecision.bonus.kind === 'offer' || effectiveDecision.call.kind === 'offer') {
+      // A generic repair can introduce literal model evidence and a new rule
+      // obligation. Its generation already consumed the rewrite: finalize with
+      // validation/fixed copy only, never another provider request.
+      const finalized = await resolveDeterministicRulesTurnV1({ ...input, initial: resolved.effective, repair_enabled: false })
+      if (!resolved.evidence.repair_attempted) return finalized
+      return { ...finalized, record: { ...finalized.record,
+        rule_a: finalized.record.rule_a === 'model' ? 'rewrite' : finalized.record.rule_a,
+        rule_b: finalized.record.rule_b === 'model' ? 'rewrite' : finalized.record.rule_b } }
+    }
+    return { resolved, record: ruleOutcomeRecordV1(effectiveDecision, 'not_applicable') }
+  }
   if (decision.bonus.kind === 'offer') authorizeRuleBonusInContextV1(input.context)
   let resolved: PlannerlessResolutionV2<GeneratedAgentATurnProposalV1> | null = null
   let candidate = input.initial
@@ -245,4 +258,22 @@ export async function resolveDeterministicRulesTurnV1(input: {
     throw error
   }
   return { resolved, record: ruleOutcomeRecordV1(decision, outcomes) }
+}
+
+
+/** Common final-candidate boundary, also used after backend repair and safe
+ * conversation recovery. There is no provider capability in this API. */
+export async function finalizeDeterministicRulesCandidateV1(input: {
+  readonly context: AgentAContextV1
+  readonly initial: GeneratedAgentATurnProposalV1
+  readonly rejection_id: () => string
+  readonly resolve: Parameters<typeof resolveDeterministicRulesTurnV1>[0]['resolve']
+  readonly observe?: (event: ModelObservation) => void
+  readonly authored_outcome?: RuleOutcomeV1 | { readonly rule_a: RuleOutcomeV1; readonly rule_b: RuleOutcomeV1 }
+}): Promise<{ resolved: PlannerlessResolutionV2<GeneratedAgentATurnProposalV1> | null; record: RuleOutcomeRecordV1 }> {
+  const decision = decideDeterministicRulesV1(input.context, input.initial.proposal)
+  if (draftSatisfiesRulesV1(input.initial.proposal, decision)) return { resolved: null,
+    record: ruleOutcomeRecordV1(decision, input.authored_outcome ?? 'model') }
+  return resolveDeterministicRulesTurnV1({ ...input, repair_enabled: false,
+    repair: async () => { throw new Error('FINAL_RULE_CANDIDATE_GENERATION_NOT_ALLOWED') } })
 }

@@ -233,12 +233,37 @@ function normalizedVisible(value: string): string {
   return value.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase();
 }
 
-/** The draft presents the decided offer: it proposes that exact effect and names the course. */
+/** Literal identity check for an escalation recap. This does not evaluate
+ * persuasiveness or infer a package from prose; the backend already owns it.
+ * Obviously negated/excluded names do not establish the required identity. */
+function positivelyNamesCourse(messages: readonly string[], name: string): boolean {
+  const words = (value: string) => normalizedVisible(value).replace(/[^\p{L}\p{N}]+/gu, ' ').trim().split(/\s+/u);
+  const course = words(name);
+  return messages.some(message => message.split(/[,.;:!?\n]+|\bpero\b/iu).some(clause => {
+    const tokens = words(clause);
+    for (let start = 0; start + course.length <= tokens.length; start += 1) {
+      if (!course.every((word, part) => word === tokens[start + part])) continue;
+      const prefix = tokens.slice(Math.max(0, start - 4), start);
+      const negatedBefore = prefix.some((word, position) => ['no', 'ni', 'nunca', 'tampoco', 'excepto'].includes(word)
+        || word === 'sin' && !['costo', 'coste', 'cargo'].includes(prefix[position + 1] ?? ''));
+      const after = tokens.slice(start + course.length);
+      const negatedAfter = after[0] === 'no' && (after.length === 1 || ['esta', 'va', 'entra', 'queda', 'se'].includes(after[1]));
+      if (!negatedBefore && !negatedAfter) return true;
+    }
+    return false;
+  }));
+}
+
+/** First offer: the exact effect and new course. Escalation: additionally name
+ * the paid course and every already delivered bonus in the complete recap. */
 export function draftPresentsBonusV1(draft: RuleDraftV1, decision: Extract<BonusRuleDecisionV1, { kind: 'offer' }>): boolean {
   const action = draft.proposed_action;
-  return action.type === 'offer_course_bonus' && action.bonus_offering_code === decision.bonus_code
+  const presentsNew = action.type === 'offer_course_bonus' && action.bonus_offering_code === decision.bonus_code
     && action.interest_offering_code === decision.paid_code
     && draft.response.messages.some(message => normalizedVisible(message).includes(normalizedVisible(decision.bonus_name)));
+  if (!presentsNew || decision.prior_bonus.length === 0) return presentsNew;
+  return [decision.paid_name, ...decision.prior_bonus.map(course => course.display_name), decision.bonus_name]
+    .every(name => positivelyNamesCourse(draft.response.messages, name));
 }
 
 export const BONUS_FALLBACK_PAUSE_MS_V1 = 20_000;

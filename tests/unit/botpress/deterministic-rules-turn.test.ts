@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { AgentAContextV1, AgentATurnProposalV1 } from '../../../botpress-agent/src/schemas/agent-a-brain';
 import type { GeneratedAgentATurnProposalV1 } from '../../../botpress-agent/src/lib/conversation/agent-a-brain';
 import { resolveAgentAPlannerlessProposalV2 } from '../../../botpress-agent/src/lib/conversation/resolve-agent-a-plannerless';
-import { resolveDeterministicRulesTurnV1 } from '../../../botpress-agent/src/lib/conversation/deterministic-rules-turn';
+import { decideDeterministicRulesV1, finalizeDeterministicRulesCandidateV1, resolveDeterministicRulesTurnV1 } from '../../../botpress-agent/src/lib/conversation/deterministic-rules-turn';
 import { deriveCourseBonusLadderV1 } from '@/shared/conversation/bonus-ladder';
 import { TurnEvidencePersistenceError } from '../../../botpress-agent/src/lib/observability/turn-evidence';
 
@@ -69,6 +69,33 @@ function resolver(current: AgentAContextV1) {
 }
 
 describe('live Rule A/B orchestration, bounded rewrite and validated fallback', () => {
+  it('does not treat three generic navigation candidates as expressed customer interest for Rule B', () => {
+    const current = context(true);
+    current.turn.batch_messages = [{ id: 'current', text: '¿Qué opciones tienen?' }];
+    current.commercial_state.selected_offering_code = null;
+    current.catalog.selected_offering = null;
+    current.catalog.resolution = 'no_catalog_intent';
+    current.catalog.candidate_offerings = ['uno', 'dos', 'tres'].map(code => ({
+      code, display_name: code, fact_id: `offering:${code}:name:v1`, area_code: null,
+    }));
+    const decision = decideDeterministicRulesV1(current, draft({ memory_candidates: [] }).proposal);
+    expect(decision.call).toEqual({ kind: 'none', reason: 'no_expressed_interest' });
+  });
+
+  it.each(['current_customer_named_course', 'prior_agent_named_candidate'] as const)(
+    'retains a positive current literal course reference as expressed interest for Rule B (%s)', source => {
+      const current = context(true);
+      current.turn.batch_messages = [{ id: 'current', text: 'Ecommerce me gusta' }];
+      current.commercial_state.selected_offering_code = null;
+      current.catalog.selected_offering = null;
+      current.catalog.resolution = 'no_catalog_intent';
+      current.catalog.candidate_offerings = [{ code: paid, display_name: 'Introducción al Ecommerce',
+        fact_id: `offering:${paid}:name:v1`, area_code: 'marketing',
+        reference: { source, matched_terms: ['ecommerce'] } }];
+      expect(decideDeterministicRulesV1(current, draft({ memory_candidates: [] }).proposal).call)
+        .toEqual({ kind: 'offer', response_ordinal: 2 });
+    });
+
   it.each(['second_price_objection', 'price_only_barrier'] as const)('rewrites A and B together once, preserving original evidence (%s)', async trigger => {
     const current = context(true);
     const initial = draft();
@@ -133,6 +160,91 @@ describe('live Rule A/B orchestration, bounded rewrite and validated fallback', 
       .toBe('Si querés, coordinamos una llamada corta para verlo juntos. Te sirve?');
     expect(result.resolved.action_rejection).toBeNull();
     expect(repair).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    { priorCount: 1, repaired: true }, { priorCount: 1, repaired: false },
+    { priorCount: 2, repaired: true }, { priorCount: 2, repaired: false },
+  ])('requires a complete escalation recap through the real resolver ($priorCount prior, repaired=$repaired)', async ({ priorCount, repaired }) => {
+    const current = context();
+    const gifts = [
+      { code: bonus, display_name: bonusName, position: 1 },
+      { code: 'publicidad_redes_sociales', display_name: 'Publicidad en Redes Sociales', position: 2 },
+      { code: 'instagram_emprendedores', display_name: 'Instagram para Emprendedores', position: 3 },
+    ];
+    const prior = gifts.slice(0, priorCount);
+    const next = gifts[priorCount];
+    current.catalog.available_offerings = [current.catalog.available_offerings[0], ...gifts.map(course => ({ ...course,
+      fact_id: `offering:${course.code}:name:v1`, area_code: 'marketing' }))];
+    const capability = current.capabilities.course_bonus!;
+    capability.package_status = 'offered';
+    capability.bonus_offerings = prior;
+    capability.delivered_bonus_offerings = prior;
+    capability.rule_bonus = { paid_offering_code: paid, paid_display_name: 'Introducción al Ecommerce',
+      bonus_offering_code: next.code, display_name: next.display_name, position: priorCount + 1 };
+    const original = draft({ response: { messages: [`Te sumo ${next.display_name} sin costo extra.`], call_offer: null },
+      proposed_action: { type: 'offer_course_bonus', interest_offering_code: paid, bonus_offering_code: next.code },
+      course_mentions: [{ offering_code: next.code, role: 'bonus' }] });
+    const full = draft({ ...original.proposal,
+      response: { messages: [`Te quedan Introducción al Ecommerce + ${[...prior, next].map(course => course.display_name).join(' + ')} sin costo extra, al mismo precio. Avanzamos?`], call_offer: null },
+      course_mentions: [{ offering_code: paid, role: 'paid' }, ...[...prior, next].map(course => ({ offering_code: course.code, role: 'bonus' as const }))] });
+    const repair = vi.fn(async () => repaired ? full : original);
+    const result = await resolveDeterministicRulesTurnV1({ context: current, initial: original,
+      repair_enabled: true, rejection_id: () => rejectionId, resolve: resolver(current), repair });
+    expect(repair).toHaveBeenCalledOnce();
+    expect(result.record.rule_a).toBe(repaired ? 'rewrite' : 'fixed');
+    const text = result.resolved.effective.proposal.response.messages.join(' ');
+    for (const name of ['Introducción al Ecommerce', ...prior.map(course => course.display_name), next.display_name]) expect(text).toContain(name);
+    expect(result.resolved.effective.proposal.proposed_action).toEqual(original.proposal.proposed_action);
+    if (!repaired) expect(result.resolved.effective.proposal.response.messages[1])
+      .toContain(`Te quedan Introducción al Ecommerce + ${[...prior, next].map(course => course.display_name).join(priorCount === 1 ? ' y ' : ', ').replace(', Instagram', ' y Instagram')}`);
+  });
+
+  it.each([false, true])('reevaluates a generic repair introducing the trigger without another generation, preserving its origin (complete=%s)', async complete => {
+    const current = context();
+    const next = { code: 'publicidad_redes_sociales', display_name: 'Publicidad en Redes Sociales' };
+    current.catalog.available_offerings.push({ ...next, area_code: 'marketing', fact_id: `offering:${next.code}:name:v1` });
+    const cap = current.capabilities.course_bonus!;
+    cap.package_status = 'offered';
+    cap.bonus_offerings = cap.delivered_bonus_offerings = [{ code: bonus, display_name: bonusName, position: 1 }];
+    cap.may_offer_bonus = true;
+    cap.ladder = deriveCourseBonusLadderV1({ observed_price_objection_count: 2,
+      call_invitation_status: 'not_offered', call_offer_count: 0, may_offer_call: false });
+    cap.rule_bonus = { paid_offering_code: paid, paid_display_name: 'Introducción al Ecommerce',
+      bonus_offering_code: next.code, display_name: next.display_name, position: 2 };
+    const initial = draft({ move: { schema_version: 1, move: 'report_payment', secondary_moves: [], vetoes: [], confidence: 1 },
+      response: { messages: [] }, memory_candidates: [] });
+    const introduced = draft({ response: { messages: [complete
+      ? `Te quedan Introducción al Ecommerce + ${bonusName} + ${next.display_name} sin costo extra.`
+      : `Te sumo ${next.display_name} sin costo extra.`] },
+      proposed_action: { type: 'offer_course_bonus', interest_offering_code: paid, bonus_offering_code: next.code },
+      course_mentions: complete ? [{ offering_code: paid, role: 'paid' }, { offering_code: bonus, role: 'bonus' },
+        { offering_code: next.code, role: 'bonus' }] : [{ offering_code: next.code, role: 'bonus' }] });
+    const genericRepair = vi.fn(async (rejection: TurnRejectionV1) => ({ ...introduced, proposal: { ...introduced.proposal,
+      repair_of: { rejection_id: rejection.rejection_id, attempt: 1 as const } } }));
+    const forbiddenAdditionalGeneration = vi.fn(async () => introduced);
+    const result = await resolveDeterministicRulesTurnV1({ context: current, initial, repair_enabled: true,
+      rejection_id: () => rejectionId, repair: forbiddenAdditionalGeneration,
+      resolve: (candidate, repair, rejection = rejectionId) => resolveAgentAPlannerlessProposalV2({
+        initial: candidate, context: current, repair_enabled: repair, repair: genericRepair,
+        rejection_id: rejection, semantic_rejections: 'advisory' }) });
+    expect(genericRepair).toHaveBeenCalledOnce();
+    expect(forbiddenAdditionalGeneration).not.toHaveBeenCalled();
+    expect(result.record.rule_a).toBe(complete ? 'rewrite' : 'fixed');
+    const text = result.resolved.effective.proposal.response.messages.join(' ');
+    for (const name of ['Introducción al Ecommerce', bonusName, next.display_name]) expect(text).toContain(name);
+  });
+
+  it('keeps a validated fixed proposal classified as fixed at the common final boundary', async () => {
+    const current = context();
+    const fixed = await resolveDeterministicRulesTurnV1({ context: current, initial: draft(), repair_enabled: false,
+      rejection_id: () => rejectionId, resolve: resolver(current), repair: async () => { throw new Error('not allowed'); } });
+    const resolve = vi.fn(resolver(current));
+    const final = await finalizeDeterministicRulesCandidateV1({ context: current, initial: fixed.resolved.effective,
+      rejection_id: () => rejectionId, authored_outcome: fixed.record, resolve });
+    expect(final.record.rule_a).toBe('fixed');
+    expect(final.resolved).toBeNull();
+    expect(resolve).not.toHaveBeenCalled();
   });
 
   it('does not claim fixed success if the validator rejects the fixed proposal', async () => {
