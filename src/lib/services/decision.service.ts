@@ -2001,6 +2001,17 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
         canonicalWorkspaceId = workspaceRows[0]?.id ?? null;
       }
       if (preparedAgentTurn && canonicalWorkspaceId) {
+        // A fresh conversation has no state row until the final transition.
+        // Promotion context is written earlier in this transaction, so create
+        // only its scoped parent first. This preserves the course as
+        // negotiation interest without selecting it as a purchase; the
+        // authoritative transition below still owns every final state field.
+        await db`INSERT INTO conversation_sales_context_states_v1 (
+          workspace_id, conversation_id, contact_id, stage
+        ) VALUES (
+          ${canonicalWorkspaceId}::uuid, ${turn.conversation_id}::uuid,
+          ${turn.contact_id}::uuid, 'exploring'
+        ) ON CONFLICT (workspace_id, conversation_id) DO NOTHING`;
         if (preparedAgentTurn.abandons_course_bonus_offer
           && preparedAgentTurn.transition.selected_offering_code) {
           await cancelOpenCourseBonusOffersForCourseChangeV1(db, {

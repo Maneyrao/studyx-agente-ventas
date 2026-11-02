@@ -60,10 +60,21 @@ run('owner rules at the actual commit and transactional boundaries', () => {
     first.course_mentions = [{ offering_code: marketing, role: 'paid' }];
     first.used_fact_ids = [`offering:${marketing}:name:v1`];
     first.memory_candidates = [];
+    // Production starts without a conversation state row. The first ordinary
+    // commercial reply must persist the interest-only identity before a later
+    // discount request, without turning it into a purchase selection.
+    await db!`DELETE FROM conversation_sales_context_state_events_v1
+      WHERE conversation_id=${f.conversation_id}::uuid`;
+    await db!`DELETE FROM conversation_sales_context_states_v1
+      WHERE conversation_id=${f.conversation_id}::uuid`;
     const firstCommit = await commitAgentDecision({ turn_id: f.turn_id, trace_id: f.trace_id,
       supports_multi_outbound: true, agent_turn_v2: { schema_version: 2 as const, proposal: first },
       decision: f.placeholderDecision as never, model: f.model as never });
     expect(firstCommit.status).toBe('committed');
+    const [persistedInterest] = await db!`SELECT interest_offering_code
+      FROM conversation_promotion_context_v1
+      WHERE conversation_id=${f.conversation_id}::uuid`;
+    expect(persistedInterest).toMatchObject({ interest_offering_code: marketing });
 
     await db!`UPDATE messages SET content=${customerReply},created_at=clock_timestamp(),
       metadata=metadata-'occurred_at_trusted'
