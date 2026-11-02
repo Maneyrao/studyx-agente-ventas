@@ -1,9 +1,10 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { GOLDEN_CASES, validateGoldenAuthorityReferences, type GoldenTurnV1 } from './scenarios';
 import { OWNER_GOLDEN_CASES, OWNER_REPLAY_CASES } from './owner-rules-scenarios';
 import { OWNER_REPLAY_CUSTOMER_TURNS_V1, OWNER_REPLAY_SOURCE_V1 } from './owner-conversation-2026-11-02';
 import { selectGoldenCasesV1 } from './run-config.mjs';
-import { evaluateHardRules, type GoldenTurnObservationV1 } from './judge';
+import { evaluateHardRules, judgeCaseSemantically, goldenPromotionDeltaV1,
+  type EarlyCallOfferEvidenceV1, type GoldenTurnObservationV1 } from './judge';
 import { negotiationSemanticTurnV1 } from './negotiation-evidence';
 import { absoluteGoldenAcceptanceV1 } from './comparison';
 
@@ -65,6 +66,54 @@ describe('owner-rule supplementary golden campaign', () => {
     expect(evaluateHardRules(turn, valid).failures).toEqual([]);
     expect(evaluateHardRules(turn, { ...valid, recordedCallOfferCount: 0 }).failures[0]?.code).toBe('EARLY_CALL_OFFER_NOT_RECORDED');
     expect(evaluateHardRules(turn, { ...valid, workflow: { ...valid.workflow!, commitSucceeded: false } }).failures[0]?.code).toBe('WORKFLOW_COMMIT_FAILED');
+  });
+
+  it('accepts an earlier second/third-response invitation only with committed delivery in this dialogue', () => {
+    const turn = measured([{ type: 'early_call_previously_recorded' }]);
+    const source: EarlyCallOfferEvidenceV1 = { conversationId: 'same-dialogue', turnId: 'turn-2',
+      responseOrdinal: 2, callOffer: 'Coordinamos una llamada?', committed: true, delivered: true, persistedOfferCount: 1 };
+    const valid = observed({ conversationId: 'same-dialogue', recordedCallOfferCount: 1,
+      callOffer: null, earlyCallOfferEvidence: [source] });
+    expect(evaluateHardRules(turn, valid).failures).toEqual([]);
+    for (const earlyCallOfferEvidence of [[], [{ ...source, conversationId: 'another-dialogue' }],
+      [{ ...source, responseOrdinal: 4 }], [{ ...source, committed: false }], [{ ...source, delivered: false }],
+      [{ ...source, persistedOfferCount: 0 }], [{ ...source, turnId: '' }]]) {
+      expect(evaluateHardRules(turn, { ...valid, earlyCallOfferEvidence: earlyCallOfferEvidence as readonly EarlyCallOfferEvidenceV1[] }).failures[0]?.code)
+        .toBe('EARLY_CALL_DELIVERY_EVIDENCE_MISSING');
+    }
+    expect(OWNER_GOLDEN_CASES[0]!.turns[2]!.hard).toContainEqual({ type: 'early_call_previously_recorded' });
+    expect(OWNER_GOLDEN_CASES[1]!.turns[1]!.hard).toContainEqual({ type: 'call_offer_recorded' });
+  });
+
+  it('gives the semantic judge the previous delivered ledger, call receipt and exact next table course', async () => {
+    const source: EarlyCallOfferEvidenceV1 = { conversationId: 'dialogue', turnId: 'turn-2', responseOrdinal: 2,
+      callOffer: 'Coordinamos una llamada?', committed: true, delivered: true, persistedOfferCount: 1 };
+    const prior = observed({ conversationId: 'dialogue', recordedCallOfferCount: 1,
+      callOffer: source.callOffer, earlyCallOfferEvidence: [source], response: 'Con Fotografía. Coordinamos una llamada?',
+      state: { selectedCourse: 'introduccion_ecommerce', stage: 'course_selected', awaitingReply: 'none', plan: null,
+        promotion: { status: 'offer_available', bonusCount: 1, paidCourse: 'introduccion_ecommerce', bonusCourses: ['fotografia_celulares_tiendas_online'] } } });
+    const current = { ...prior, callOffer: null, response: 'Conservás el curso de fotografía sin costo.',
+      ruleBonusBeforeTurn: { paid_offering_code: 'introduccion_ecommerce', bonus_offering_code: 'publicidad_redes_sociales', position: 2 } };
+    const bodies: Array<{ input: string }> = [];
+    const fetch = vi.spyOn(globalThis, 'fetch').mockImplementation(async (_url, init) => {
+      const body = JSON.parse(String(init?.body));
+      bodies.push(body);
+      const payload = JSON.parse(body.input);
+      return new Response(JSON.stringify({ output_text: JSON.stringify({ verdict: { turn_id: payload.turn_id, approved: true, failures: [] } }) }));
+    });
+    try {
+      const scenario = { ...OWNER_GOLDEN_CASES[1]!, turns: OWNER_GOLDEN_CASES[1]!.turns.slice(2, 4) };
+      await judgeCaseSemantically({ apiKey: 'offline-payload-only', model: 'offline', scenario, observations: [prior, current] });
+      const payload = JSON.parse(bodies[1]!.input);
+      expect(payload.previous_delivery).toMatchObject({ conversation_id: 'dialogue', call_offer: source.callOffer,
+        recorded_call_offer_count: 1, state: prior.state, delivery_result: { commitSucceeded: true } });
+      expect(payload.early_call_offer_evidence).toEqual([source]);
+      expect(payload.promotion_delta).toMatchObject({ same_paid_course: true, added_bonus_codes: [], removed_bonus_codes: [], new_bonus_effect_executed: false });
+      expect(payload.actual.preconditions.rule_bonus_before_turn).toEqual(current.ruleBonusBeforeTurn);
+      expect(goldenPromotionDeltaV1({ ...current, backendAction: 'offer_course_bonus', state: { ...current.state,
+        promotion: { ...current.state.promotion, bonusCourses: [...current.state.promotion.bonusCourses, 'publicidad_redes_sociales'], bonusCount: 2 } } }, prior))
+        .toMatchObject({ added_bonus_codes: ['publicidad_redes_sociales'], new_bonus_effect_executed: true });
+    } finally { fetch.mockRestore(); }
   });
 
   it('does not substitute another course duration for Ecommerce facts in the current context', () => {

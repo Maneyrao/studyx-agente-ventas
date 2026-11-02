@@ -1,4 +1,4 @@
-import type { GoldenModelAttemptV1 } from './judge';
+import type { EarlyCallOfferEvidenceV1, GoldenModelAttemptV1 } from './judge';
 
 interface ExchangeLikeV1 {
   readonly boundary: 'deepseek' | 'backend';
@@ -71,17 +71,51 @@ function proposalResponse(proposal: Record<string, unknown> | null): string | nu
 
 /** Only a successful decision receipt establishes which proposal was committed.
  * The last model draft can differ from the whole-turn Rule A fixed fallback. */
-export function extractCommittedProposalV1(exchanges: readonly ExchangeLikeV1[]): Record<string, unknown> | null {
-  for (const exchange of exchanges.toReversed()) {
+function committedExchangeV1(exchanges: readonly ExchangeLikeV1[]): ExchangeLikeV1 | null {
+  for (let index = exchanges.length - 1; index >= 0; index -= 1) {
+    const exchange = exchanges[index]!;
     if (exchange.boundary !== 'backend' || !exchange.url?.endsWith('/decision')
       || exchange.status === null || exchange.status < 200 || exchange.status >= 300 || exchange.error) continue;
     const receipt = record(exchange.responseBody);
     if (!['committed', 'duplicate'].includes(String(receipt?.status))) continue;
     const request = record(exchange.requestBody);
     const proposal = record(record(request?.agent_turn_v2)?.proposal);
-    if (proposal) return proposal;
+    if (proposal) return exchange;
   }
   return null;
+}
+
+export function extractCommittedProposalV1(exchanges: readonly ExchangeLikeV1[]): Record<string, unknown> | null {
+  const exchange = committedExchangeV1(exchanges);
+  return record(record(record(exchange?.requestBody)?.agent_turn_v2)?.proposal);
+}
+
+/** Final repairs can replace an earlier model outcome with a fixed fallback.
+ * No proposal hash is emitted: correlate the last event to the successful
+ * receipt's exact turn/trace and committed effect identity, retaining raw events. */
+export function extractFinalDeterministicRuleOutcomeV1(
+  events: readonly Readonly<Record<string, unknown>>[], exchanges: readonly ExchangeLikeV1[],
+): Readonly<Record<string, unknown>> | null {
+  const exchange = committedExchangeV1(exchanges);
+  const request = record(exchange?.requestBody);
+  const receipt = record(exchange?.responseBody);
+  const proposal = record(record(request?.agent_turn_v2)?.proposal);
+  if (!proposal || typeof request?.turn_id !== 'string' || typeof request.trace_id !== 'string') return null;
+  if (receipt?.turn_id !== request.turn_id
+    || (typeof receipt.trace_id === 'string' && receipt.trace_id !== request.trace_id)) return null;
+  let final: Readonly<Record<string, unknown>> | null = null;
+  for (const event of events) {
+    if (event.event === 'studyx.turn.deterministic_rules'
+      && event.turn_id === request.turn_id && event.trace_id === request.trace_id) final = event;
+  }
+  if (!final) return null;
+  const action = record(proposal.proposed_action);
+  if (typeof final.rule_a_bonus_code === 'string' && (action?.type !== 'offer_course_bonus'
+    || action.bonus_offering_code !== final.rule_a_bonus_code)) return null;
+  if (action?.type === 'offer_course_bonus' && final.rule_a === 'not_applicable') return null;
+  if (['model', 'rewrite', 'fixed'].includes(String(final.rule_b))
+    && !String(record(proposal.response)?.call_offer ?? '').trim()) return null;
+  return final;
 }
 
 export function proposalEvidenceV1(proposal: Record<string, unknown> | null) {
@@ -119,6 +153,27 @@ export function quotedCurrentPriceEvidenceV1(context: Record<string, unknown> | 
     currentPriceOnlyBarrierQuoted: quoted.some(candidate => candidate?.type === 'constraint'
       && candidate.key === 'price_only_barrier' && candidate.value === 'confirmed'),
   };
+}
+
+/** Capture facts, not invitation prose quality: a Rule B ordinal, successful
+ * receipt, persisted count and the exact committed invitation delivered locally. */
+export function appendEarlyCallOfferEvidenceV1(input: {
+  readonly prior: readonly EarlyCallOfferEvidenceV1[];
+  readonly conversationId: string;
+  readonly turnId: string | null;
+  readonly callOffer: string | null;
+  readonly response: string;
+  readonly ruleBReason: unknown;
+  readonly committed: boolean;
+  readonly persistedOfferCount: number;
+}): readonly EarlyCallOfferEvidenceV1[] {
+  const prior = input.prior.filter(source => source.conversationId === input.conversationId);
+  const ordinal = input.ruleBReason === 'response_2' ? 2 : input.ruleBReason === 'response_3' ? 3 : null;
+  if (!ordinal || !input.turnId || !input.callOffer?.trim() || !input.committed
+    || input.persistedOfferCount < 1 || !input.response.includes(input.callOffer)) return prior;
+  return [...prior, { conversationId: input.conversationId, turnId: input.turnId,
+    responseOrdinal: ordinal, callOffer: input.callOffer, committed: true, delivered: true,
+    persistedOfferCount: input.persistedOfferCount }];
 }
 
 export function extractModelAttemptsV1(

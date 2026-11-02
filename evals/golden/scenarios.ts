@@ -51,6 +51,7 @@ export type HardRuleV1 =
   | { readonly type: 'current_price_objection_recorded' }
   | { readonly type: 'workflow_committed' }
   | { readonly type: 'call_offer_recorded' }
+  | { readonly type: 'early_call_previously_recorded' }
   | { readonly type: 'rule_outcomes_recorded' }
   | { readonly type: 'current_course_facts_present'; readonly value: string }
   | { readonly type: 'selected_course_equals'; readonly value: string };

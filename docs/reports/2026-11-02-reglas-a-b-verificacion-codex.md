@@ -21,7 +21,7 @@ Los doce fallos de `knowledge-projection.test.ts` se reprodujeron con esos seeds
 
 Los logs y el manifiesto de la base desechable están en `.local-evidence/codex-continuation-2026-11-02/verification/`, con permisos privados. No deben agregarse a Git. Se mantuvieron los documentos de `docs/authority/` intactos y no se imprimieron claves.
 
-## Estado de verificación
+## Primera ola de verificación (histórica, previa a los golden reales)
 
 - 133/133 integraciones focalizadas de bonificación, checkout, voz, persistencia y permiso por teléfono: aprobadas antes de añadir la regresión de curso activo fuera de orden.
 - 88/88 integraciones de los fixtures complementarios y proyección: aprobadas tras corregir el drenaje.
@@ -34,3 +34,24 @@ Los logs y el manifiesto de la base desechable están en `.local-evidence/codex-
 - Revalidación final: **TypeScript raíz, TypeScript Botpress y lint aprobados**, códigos de salida 0 en `final-compiler-lint-status.json`. `git diff --check` aprobado y `docs/authority/` sin diferencias.
 
 No se ejecutaron commits, push, cambios de configuración remota ni publicaciones desde esta verificación. La base desechable queda identificada arriba para reproducir la evidencia; el original permanece intacto.
+
+## Segunda ola: correcciones posteriores a los golden reales
+
+Base de esta ola: `0fa6bce`. El runtime final se estabilizó a las **14:21:25 UTC** (11:21:25−03:00). La revisión estática aprobó la frontera común para todas las propuestas antes del commit, sin generaciones adicionales, conservando procedencia `model`/`rewrite`/`fixed`. Las referencias factuales ahora contrastan el catálogo activo completo, también con `not_found`, y la escalada exige nombrar el curso pago y todos los bonificados. La navegación genérica de tres candidatos no constituye por sí sola interés expresado para la Regla B.
+
+El único cambio de fixture de esta segunda verificación fue el caso de navegación de `agent-a-context.test.ts`: el mensaje actual pasó de la referencia explícita heredada a «¿Qué opciones tienen?». Se conservan las aserciones de tres candidatos y de estado no disponible; las referencias actuales explícitas cuentan con pruebas separadas.
+
+| Comprobación | Resultado observado | Evidencia privada |
+|---|---|---|
+| Unitarias completas, serial, sin modificar límites | **5.123 aprobadas**, 17 omitidas, 7 `todo`; 272 archivos aprobados y 2 omitidos. Inicio 14:17:55 UTC; duración 48,99 s. | `post-livefix-unit-full-final-serial.log` |
+| Regresiones focalizadas de contexto, referencia, recapitulación y reparaciones | **478/478 aprobadas**, 6 archivos, antes del último ajuste de interés B. | `post-livefix-unit-targeted-finalb.log` |
+| Regresiones de helper B y workflow después del último ajuste de una línea | **164/164 aprobadas**, 2 archivos; inicio 14:25:51 UTC. No se suman a las 5.123: hay solapamiento. | `post-livefix-unit-last-line-b.log` |
+| Integración completa, primera ejecución en base prístina B | **984 aprobadas**, 1 omitida; 99 archivos aprobados. Inicio 14:23:25 UTC; duración 60,47 s. Incluye checkout, llamadas, fulfillment, postventa, memoria y seguimientos. | `post-livefix-integration-full-pristine-b.log` |
+| TypeScript raíz y Botpress, lint y comprobación de diff posteriores al último ajuste | **Aprobados**, todos los códigos de salida 0. | `post-livefix-final-compiler-lint-status.json` |
+| Next build final, con conexión fijada a la base local B | **Aprobado**, código de salida 0. | `post-livefix-next-build.log` |
+
+La corrida completa previa sobre el clon A envejecido produjo **982 aprobadas y 2 fallidas**, por seguimientos de una corrida anterior que ya estaban vencidos: el dispatcher reservó un trabajo adicional. Se conserva `post-livefix-integration-full-final.log` como evidencia de ese fallo ambiental. No se cambiaron el worker ni las aserciones. La repetición completa sobre una base nueva prístina B aprobó los dos casos y toda la suite.
+
+La base B es `127.0.0.1:55434/studyx_verify_20261102_codex_b`. Se creó desde esquema sin datos de `studyx_test`, mediante `template0`, y se cargó únicamente `supabase/seed.sql`. **La integración completa fue la primera prueba ejecutada allí**. No se reseteó la base original ni el clon A, ni se terminaron sesiones; el manifiesto es `post-livefix-fresh-db-b-manifest.json`.
+
+`docs/authority/` y `evals/golden/comparison.ts` permanecen sin cambios. Los hashes del runtime y las pruebas verificadas están en `post-livefix-final-source-manifest.json`. Esta ola no ejecutó proveedores externos, commits, push ni despliegues. La repetición de los golden reales y la publicación corresponden al cierre posterior, con su propio SHA y evidencia; las pruebas locales no reemplazan ese criterio formal.

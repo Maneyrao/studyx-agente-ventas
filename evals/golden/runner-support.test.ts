@@ -5,6 +5,8 @@ import {
   extractCommittedProposalV1,
   proposalEvidenceV1,
   quotedCurrentPriceEvidenceV1,
+  appendEarlyCallOfferEvidenceV1,
+  extractFinalDeterministicRuleOutcomeV1,
   extractFinalBackendDecisionErrorV1,
   extractContextEvidenceV1,
   extractModelAttemptsV1,
@@ -12,6 +14,38 @@ import {
 } from './runner-support';
 
 describe('golden live runner evidence extraction', () => {
+  it('observes the final fixed outcome correlated to the committed proposal and preserves earlier events', () => {
+    const first = { event: 'studyx.turn.deterministic_rules', turn_id: 't1', trace_id: 'trace1',
+      rule_a: 'not_applicable', rule_a_bonus_code: null, rule_b: 'not_applicable' };
+    const last = { ...first, rule_a: 'fixed', rule_a_bonus_code: 'foto' };
+    const fallback = { proposed_action: { type: 'offer_course_bonus', bonus_offering_code: 'foto' },
+      response: { messages: ['Pausa', 'Curso pago más Fotografía sin costo. Avanzamos?'], call_offer: null } };
+    const exchange = { boundary: 'backend' as const, url: 'http://127.0.0.1:3217/turns/t1/decision', status: 200,
+      error: null, requestBody: { turn_id: 't1', trace_id: 'trace1', agent_turn_v2: { proposal: fallback } },
+      responseBody: { status: 'committed', turn_id: 't1' } };
+    const events = [first, last, { ...last, trace_id: 'other-trace', rule_a: 'rewrite' }];
+    const original = JSON.stringify(events);
+    expect(extractFinalDeterministicRuleOutcomeV1(events, [exchange])).toEqual(last);
+    expect(extractCommittedProposalV1([exchange])).toEqual(fallback);
+    expect(JSON.stringify(events)).toBe(original);
+    expect(extractFinalDeterministicRuleOutcomeV1(events, [{ ...exchange, status: 422, responseBody: { status: 'rejected', turn_id: 't1' } }])).toBeNull();
+    expect(extractFinalDeterministicRuleOutcomeV1([first], [exchange])).toBeNull();
+    expect(extractFinalDeterministicRuleOutcomeV1(events, [{ ...exchange, responseBody: { status: 'committed', turn_id: 'other-turn' } }])).toBeNull();
+    expect(extractFinalDeterministicRuleOutcomeV1([first, { ...last, rule_a_bonus_code: 'wrong-course' }], [exchange])).toBeNull();
+  });
+  it('records an early invitation only after its same-dialogue receipt, exact delivery and persisted count', () => {
+    const input = { prior: [], conversationId: 'dialogue', turnId: 'turn-2', callOffer: 'Llamamos?',
+      response: 'Respuesta. Llamamos?', ruleBReason: 'response_2', committed: true, persistedOfferCount: 1 };
+    const proof = appendEarlyCallOfferEvidenceV1(input);
+    expect(proof).toEqual([{ conversationId: 'dialogue', turnId: 'turn-2', responseOrdinal: 2,
+      callOffer: 'Llamamos?', committed: true, delivered: true, persistedOfferCount: 1 }]);
+    for (const override of [{ committed: false }, { persistedOfferCount: 0 }, { response: 'Sin invitación' },
+      { ruleBReason: 'response_4' }, { turnId: null }]) {
+      expect(appendEarlyCallOfferEvidenceV1({ ...input, ...override })).toEqual([]);
+    }
+    expect(appendEarlyCallOfferEvidenceV1({ ...input, prior: proof, callOffer: null, ruleBReason: 'already_offered' })).toEqual(proof);
+    expect(appendEarlyCallOfferEvidenceV1({ ...input, prior: proof, conversationId: 'other', callOffer: null })).toEqual([]);
+  });
   it('measures the committed fixed fallback separately from the unchanged raw model draft', () => {
     const model = { move: { move: 'unknown', secondary_moves: [] }, response: { messages: ['Modelo sin oferta'] }, proposed_action: { type: 'none' } };
     const fallback = { ...model, response: { messages: ['Pausa', 'Te sumo Fotografía sin costo'] },

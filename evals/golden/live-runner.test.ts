@@ -43,6 +43,8 @@ import {
   extractCommittedProposalV1,
   proposalEvidenceV1,
   quotedCurrentPriceEvidenceV1,
+  appendEarlyCallOfferEvidenceV1,
+  extractFinalDeterministicRuleOutcomeV1,
   extractModelAttemptsV1,
   normalizePromotionStatusV1,
 } from './runner-support';
@@ -288,6 +290,7 @@ async function observeTurn(input: {
   readonly externalConversationId: string;
   readonly evidence: WorkflowTurnEvidenceV1;
   readonly accumulatedCaptures: readonly WorkflowTurnEvidenceV1['adapterCaptures'][number][];
+  readonly priorObservations: readonly GoldenTurnObservationV1[];
 }): Promise<GoldenTurnObservationV1> {
   const persisted = await readWorkflowDbEvidenceV1({
     databaseUrl,
@@ -303,8 +306,17 @@ async function observeTurn(input: {
   const decision = persisted.decisions.find((item) => item.turnId === input.evidence.turnId);
   const priceMemory = await priceObjectionMemoryEvidence(input.externalConversationId, input.evidence.turnId);
   const currentPriceEvidence = quotedCurrentPriceEvidenceV1(generationContext as Record<string, unknown> | null, committedProposal);
-  const ruleEvent = input.evidence.workflowEvents.find(event => event.event === 'studyx.turn.deterministic_rules');
+  const ruleEvent = extractFinalDeterministicRuleOutcomeV1(input.evidence.workflowEvents, input.evidence.httpExchanges);
+  const response = input.evidence.authorizedMessages.join('\n');
   return {
+    conversationId: input.externalConversationId,
+    earlyCallOfferEvidence: appendEarlyCallOfferEvidenceV1({
+      prior: input.priorObservations.at(-1)?.earlyCallOfferEvidence ?? [],
+      conversationId: input.externalConversationId, turnId: input.evidence.turnId,
+      callOffer: proposal.callOffer, response, ruleBReason: ruleEvent?.rule_b_reason,
+      committed: input.evidence.commitSucceeded, persistedOfferCount: persisted.state?.callOfferCount ?? 0,
+    }),
+    ruleBonusBeforeTurn: generationContext?.capabilities.course_bonus?.rule_bonus ?? null,
     negotiationFacts:{currentTurnId:input.evidence.turnId,ladder:generationContext?.capabilities.course_bonus?.ladder,
       priorPriceSourceIds:generationContext?.commercial_state.negotiation?.price_objections.latest_source_turn_ids,
       ...currentPriceEvidence,
@@ -314,7 +326,7 @@ async function observeTurn(input: {
     callOffer: proposal.callOffer,
     recordedCallOfferCount: persisted.state?.callOfferCount ?? 0,
     ruleOutcomes: ruleEvent ? { rule_a: ruleEvent.rule_a, rule_b: ruleEvent.rule_b } : null,
-    response: input.evidence.authorizedMessages.join('\n'),
+    response,
     move: proposal.move,
     secondaryMoves: proposal.secondaryMoves,
     proposedAction: proposal.proposedAction,
@@ -892,6 +904,7 @@ live('authority-only Agent A golden baseline through the real workflow', () => {
             externalConversationId: id.conversationId,
             evidence,
             accumulatedCaptures: captures,
+            priorObservations: observations,
           }));
           await projectAgentAMemoriesFn({ limit: 100 }, { db });
         }

@@ -45,6 +45,42 @@ La observación del turno usa la propuesta de la solicitud al backend que obtuvo
 fijo autorizado de un borrador que no presentó la oferta. `model_attempts` conserva todos los
 borradores y reparaciones originales. Una propuesta rechazada no cuenta como efecto ejecutado.
 
+La invitación temprana se prueba con su diálogo y turno de origen, ordinal 2/3 registrado por
+la regla, recibo de commit, contador persistido y entrega local del texto exacto de `call_offer`.
+El caso 17 admite esa invitación ya realizada; no exige repetirla en el tercer turno. El caso 18
+mantiene el requisito de `call_offer` en el turno actual, porque ahí coinciden A y B. Un contador
+positivo sin ese recibo y esa entrega, una invitación de otro diálogo o una posterior a la tercera
+respuesta no satisfacen el check.
+
+El juez semántico recibe en todos los casos el estado y recibo del turno anterior, la comparación
+exacta de miembros del paquete anterior/actual y el próximo curso decidido por el backend en el
+contexto de generación. Así puede distinguir recordar un miembro vigente de prometer uno nuevo,
+y primero/segundo/tercer escalón sin inferirlo sólo de la prosa. No se sustituyen ni se fuerzan sus
+veredictos; una promesa nueva sin efecto sigue siendo un fallo aunque no cambie el ledger.
+
+Si una reparación final del backend sustituye el candidato, se observa el último evento de
+reglas correspondiente al turno y trace del recibo comprometido, contrastando la identidad
+del efecto con la propuesta de ese recibo. Los eventos y borradores anteriores permanecen en
+la evidencia cruda. El runtime no emite un hash de propuesta en ese evento: la correlación
+usa turno, trace, último recibo exitoso e identidad del bonificado; sin commit o con identidad
+incompatible no se declara un outcome válido.
+
+## Primera campaña real y correcciones del evaluador
+
+La campaña `owner-rules-0fa6bce-20261102T134433Z`, sobre runtime `0fa6bce`, ejecutó 14 turnos:
+8 aprobados y 6 fallidos, ambos casos fallidos. Hubo 33 llamadas HTTP 200 (19 agente y 14 juez),
+366.183 tokens de entrada, 7.847 de salida y 172.288 de entrada cacheados; sin usage ausente.
+El intento anterior `134345Z` terminó al iniciar PostgreSQL por IPC bloqueado en sandbox, antes
+de cualquier llamada a modelos. La repetición autorizada necesitó permisos IPC locales.
+
+Se conservaron íntegros los reportes y observaciones originales de `0fa6bce`. Esa campaña reveló
+dos defectos del evaluador: exigir de nuevo la invitación ya entregada, y no mostrar al juez el
+ledger anterior, haciendo que confundiera un recordatorio del paquete con una nueva oferta.
+También reveló defectos reales del runtime: faltaban los datos de Ecommerce cuando no había
+sido nombrado por el agente anterior, y algunas escaladas omitían la recapitulación de cursos
+previos. Las correcciones del evaluador no convierten esos fallos reales en aprobados. Se requiere
+una nueva campaña completa con el SHA revisado que incluya las correcciones del runtime.
+
 ## Comandos
 
 Primero debe estar revisado y commiteado el candidato de runtime: el lanzador conserva el guard

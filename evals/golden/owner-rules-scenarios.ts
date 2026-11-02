@@ -49,10 +49,10 @@ export const OWNER_GOLDEN_CASES: readonly GoldenCaseV1[] = [
       turn('greeting', 'Hola'),
       turn('recommendation', 'Qué me podés recomendar para seguir estudiando?'),
       turn('marketing_budget', 'Tengo poco presupuesto y quiero algo de marketing para vender los productos de mi tienda online.', {
-        must: ['Responder al objetivo de vender en su tienda online y, dentro de la segunda o tercera respuesta con interés expresado, invitar a una llamada mediante response.call_offer sin dejar de responder por chat.'],
+        must: ['Responder al objetivo de vender en su tienda online. La historia debe acreditar una invitación autorizada y entregada en la segunda o tercera respuesta con interés expresado; si ya fue ofrecida antes, no repetirla.'],
         mustNot: ['No convertir poco presupuesto en autorización para regalar un curso ni prometer una llamada inmediata.'],
         expected: { move: moves, action: ['none'], state: noBonus },
-        hard: [{ type: 'workflow_committed' }, { type: 'rule_outcomes_recorded' }, { type: 'call_offer_recorded' }],
+        hard: [{ type: 'workflow_committed' }, { type: 'rule_outcomes_recorded' }, { type: 'early_call_previously_recorded' }],
       }),
       turn('ecommerce_facts_now', 'Ecommerce me gusta. Cuánto es el total y cuántas clases son?', {
         must: ['Responder el precio total autorizado y la duración de Ecommerce con hechos de ese mismo turno: 8 clases en el fixture local.'],
@@ -123,8 +123,8 @@ export const OWNER_REPLAY_CASES: readonly GoldenCaseV1[] = [{
       must: ['Responder sin silencio al mensaje real de este turno, conservando la intención y los hechos de la conversación.'],
       expected: { move: moves, action: allActions, state: {} },
       ...(index === 3 ? {
-        must: ['Responder sobre marketing y presupuesto e incluir la oferta temprana de llamada autorizada por la Regla B, con motivo concreto.'],
-        hard: [{ type: 'workflow_committed' }, { type: 'call_offer_recorded' }],
+        must: ['Responder sobre marketing y presupuesto. Acreditar la invitación temprana de llamada autorizada por la Regla B, con motivo concreto, o conservar la que ya fue entregada antes sin repetirla.'],
+        hard: [{ type: 'workflow_committed' }, { type: 'early_call_previously_recorded' }],
       } : index === 4 ? {
         must: ['Dar el total de USD 360 y, si menciona duración, usar las 8 clases de Ecommerce verificadas en el turno actual.'],
         hard: [{ type: 'workflow_committed' }, { type: 'current_course_facts_present', value: 'introduccion_ecommerce' }],
