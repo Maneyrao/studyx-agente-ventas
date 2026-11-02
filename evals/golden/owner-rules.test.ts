@@ -144,6 +144,7 @@ describe('owner-rule supplementary golden campaign', () => {
       state: { selectedCourse: 'introduccion_ecommerce', stage: 'course_selected', awaitingReply: 'none', plan: null,
         promotion: { status: 'offer_available', bonusCount: 1, paidCourse: 'introduccion_ecommerce', bonusCourses: ['fotografia_celulares_tiendas_online'] } } });
     const current = { ...prior, callOffer: null, response: 'Conservás el curso de fotografía sin costo.',
+      ruleOutcomes: { rule_a: 'not_applicable', rule_b: 'not_applicable' },
       ruleBonusBeforeTurn: { paid_offering_code: 'introduccion_ecommerce', bonus_offering_code: 'publicidad_redes_sociales', position: 2 } };
     const bodies: Array<{ input: string }> = [];
     const fetch = vi.spyOn(globalThis, 'fetch').mockImplementation(async (_url, init) => {
@@ -161,6 +162,7 @@ describe('owner-rule supplementary golden campaign', () => {
       expect(payload.early_call_offer_evidence).toEqual([source]);
       expect(payload.promotion_delta).toMatchObject({ same_paid_course: true, added_bonus_codes: [], removed_bonus_codes: [], new_bonus_effect_executed: false });
       expect(payload.actual.preconditions.rule_bonus_before_turn).toEqual(current.ruleBonusBeforeTurn);
+      expect(payload.actual.preconditions.rule_outcomes).toEqual(current.ruleOutcomes);
       expect(goldenPromotionDeltaV1({ ...current, backendAction: 'offer_course_bonus', state: { ...current.state,
         promotion: { ...current.state.promotion, bonusCourses: [...current.state.promotion.bonusCourses, 'publicidad_redes_sociales'], bonusCount: 2 } } }, prior))
         .toMatchObject({ added_bonus_codes: ['publicidad_redes_sociales'], new_bonus_effect_executed: true });

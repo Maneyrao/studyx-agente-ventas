@@ -216,7 +216,7 @@ describe('golden hard judge', () => {
   });
 
   it('uses persisted promotion state and actual action rather than sales copy', () => {
-    const turn = GOLDEN_CASES[5]!.turns.find((item) => item.id === 'bonus_2')!;
+    const turn = GOLDEN_CASES[5]!.turns.find((item) => item.id === 'isolate')!;
     const failed = evaluateHardRules(turn, observation({
       response: 'Puedo sumar otro curso.',
       proposedAction: { type: 'none' },
@@ -363,7 +363,7 @@ describe('golden hard judge', () => {
   });
 
   it('audits the bonus gate configuration and a price objection from an earlier turn', () => {
-    const turn = GOLDEN_CASES[5]!.turns.find((candidate) => candidate.id === 'bonus_1')!;
+    const turn = GOLDEN_CASES[5]!.turns.find((candidate) => candidate.id === 'installments')!;
     const eligible = observation({
       response: 'Puedo sumar Fotografía con Celulares para Tiendas Online.',
       move: 'unknown',
@@ -662,7 +662,7 @@ describe('golden hard judge', () => {
       judgeRequest = JSON.parse(String(init?.body)) as { instructions?: string; input?: string };
       return new Response(JSON.stringify({ output_text: JSON.stringify({ verdict: {
         turn_id: 'price_1', approved: false, failures: [{
-          code: 'SEMANTIC_MUST_FAILED', requirement_id: 'must:1',
+          code: 'SEMANTIC_MUST_FAILED', requirement_id: 'must:0',
           authority_line_index: 0, evidence_source: 'preconditions', observed_evidence: '',
           explanation: 'No registró la objeción.',
         }],
@@ -951,6 +951,36 @@ describe('negotiation invariant judge mode',()=>{
     const t=GOLDEN_CASES[5]!.turns.find(t=>t.id==='value')!;
     const failures=evaluateHardRules(t,observation({priceObjectionMemory:{present:false,sourceMessageIds:[],priorSourceMessageIds:[]}}),null,'negotiation_invariants').failures;
     expect(failures.map(f=>f.code)).toContain('CURRENT_PRICE_OBJECTION_NOT_RECORDED');
+  });
+  it('discards a false bonus obligation when structural Rule A evidence says the first objection is not eligible',async()=>{
+    const base=GOLDEN_CASES[5]!;
+    const sourceTurn=base.turns.find(turn=>turn.id==='value')!;
+    const scenario={...base,turns:[sourceTurn]};
+    const actual=observation({
+      response:'Te entiendo. Son 41 clases y podés pagarlo en 12 cuotas de USD 30. El precio es el único inconveniente? Puedo revisar una promoción.',
+      backendAction:null,
+      ruleOutcomes:{rule_a:'not_applicable',rule_b:'rewrite'},
+      ruleBonusBeforeTurn:{paid_offering_code:'fotografia_profesional',bonus_offering_code:'diseno_photoshop',position:1},
+      courseBonus:{enabled:true,maxBonusCourses:3,mayOfferBonus:false,status:'checkin_available'},
+      priceObjectionMemory:{present:true,sourceMessageIds:['current'],priorSourceMessageIds:[]},
+      negotiationFacts:{currentTurnId:'current',priorPriceSourceIds:[],currentPriceObjectionQuoted:true,
+        currentPriceObjectionPersisted:true,priceOnlyBarrierConfirmed:false,
+        ladder:{eligible:false,observed_price_objection_count:0,required_price_objection_count:2,
+          call_invitation_status:'not_offered',call_offer_count:0,may_offer_call:true,
+          missing_steps:['recorded_price_objections'],price_only_barrier_confirmed:false}},
+      workflow:{commitSucceeded:true,status:'waiting_user',errorCode:null,finalBackendDecisionError:null},
+    });
+    const mock=vi.spyOn(globalThis,'fetch').mockImplementation(async(_url,init)=>{
+      const payload=JSON.parse(JSON.parse(String(init?.body)).input);
+      return new Response(JSON.stringify({output_text:JSON.stringify({verdict:{turn_id:payload.turn_id,approved:false,failures:[
+        {code:'SEMANTIC_MUST_FAILED',requirement_id:'must:1',authority_line_index:0,evidence_source:'preconditions',observed_evidence:'\"eligible\":false',explanation:'Se debió bonificar.'},
+        {code:'SEMANTIC_MUST_FAILED',requirement_id:'must:2',authority_line_index:0,evidence_source:'response',observed_evidence:'',explanation:'Faltó presentar el curso.'},
+      ]}})}),{status:200});
+    });
+    try{
+      const [verdict]=await judgeCaseSemantically({apiKey:'offline',model:'test',scenario,observations:[actual]});
+      expect(verdict).toEqual({turn_id:'value',approved:true,failures:[],evaluation_error:null});
+    }finally{mock.mockRestore();}
   });
   it('sends delivered chronological history and generation facts without skipping changed preconditions',async()=>{
     const base=GOLDEN_CASES[5]!;

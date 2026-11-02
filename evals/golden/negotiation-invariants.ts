@@ -13,6 +13,7 @@ export interface NegotiationTurnEvidenceV1 {
   readonly priceOnlyBarrierConfirmed?:boolean;
   readonly ladder?: {readonly observed_price_objection_count:number;readonly required_price_objection_count:2|3;
     readonly price_only_barrier_confirmed?:boolean;
+    readonly instant_trigger?:boolean;
     readonly call_invitation_status:string;readonly call_offer_count:number;readonly may_offer_call:boolean;
     readonly missing_steps:readonly string[];readonly eligible:boolean} | null;
   readonly action: string | null;
@@ -32,7 +33,13 @@ export function aggregateInvariantStatusV1(statuses:readonly InvariantStatusV1[]
   if(statuses.length===0||statuses.includes('INDETERMINATE'))return 'INDETERMINATE';
   return statuses.includes('NOT_EXERCISED')?'NOT_EXERCISED':'PASS';
 }
-export function evaluateNegotiationInvariantsV1(caseCode:string, turns:readonly NegotiationTurnEvidenceV1[], semanticStatus:InvariantStatusV1, factStatus:InvariantStatusV1='PASS') {
+export function evaluateNegotiationInvariantsV1(
+  caseCode:string,
+  turns:readonly NegotiationTurnEvidenceV1[],
+  semanticStatus:InvariantStatusV1,
+  factStatus:InvariantStatusV1='PASS',
+  semanticStatusByTurn:Readonly<Record<string,InvariantStatusV1>>={},
+) {
   const records=new Map<string,{status:InvariantStatusV1;evidence:string[];failedTurnIds:string[];indeterminateTurnIds:string[]}>();
   let activeTurnId:string|undefined;
   const record=(id:string,status:InvariantStatusV1,evidence:string)=>{
@@ -90,7 +97,8 @@ export function evaluateNegotiationInvariantsV1(caseCode:string, turns:readonly 
       const added=t.promotion.bonusCourses.filter(c=>!old.includes(c));
       record('one_distinct_addition',added.length===1&&new Set(t.promotion.bonusCourses).size===t.promotion.bonusCount&&added[0]===t.proposedAction?.bonus_offering_code&&old.every(c=>t.promotion.bonusCourses.includes(c))?'PASS':'FAIL',`${t.turnId}:new=${added.join(',')};prior=${old.join(',')}`);
       record('active_distinct_course',added.every(code=>code!==t.promotion.paidCourse&&t.offerings.some(o=>o.code===code))?'PASS':'FAIL',`${t.turnId}:new=${added.join(',')};paid=${t.promotion.paidCourse}`);
-      record('package_recap',semanticStatus==='PASS'?'PASS':'INDETERMINATE',`${t.turnId}:semantic recap of paid=${t.promotion.paidCourse};members=${t.promotion.bonusCourses.join(',')};canonical display-name literal matching is not a requirement`);
+      const recapStatus=semanticStatusByTurn[t.turnId]??semanticStatus;
+      record('package_recap',recapStatus,`${t.turnId}:semantic recap of paid=${t.promotion.paidCourse};members=${t.promotion.bonusCourses.join(',')};canonical display-name literal matching is not a requirement`);
       record('effect_matches_proposal',t.proposedAction?.type==='offer_course_bonus'?'PASS':'FAIL',t.turnId);
     }
     if(previous&&previous.selectedCourse!==t.selectedCourse&&previous.promotion.bonusCount>0&&previous.promotion.status!=='cancelled'){

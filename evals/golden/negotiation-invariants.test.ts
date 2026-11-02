@@ -72,6 +72,18 @@ describe('negotiation invariants (authority:106-129; spec:39-40,59-71)',()=>{
     expect(evaluateNegotiationInvariantsV1('06',[turn(),{...turn(3,['extra','two']),turnId:'t2',response:'Foto profesional más los dos complementos'}],'INDETERMINATE').checks.find(c=>c.id==='package_recap')?.status).toBe('INDETERMINATE');
     expect(evaluateNegotiationInvariantsV1('06',[turn(),{...turn(3,['extra','two']),turnId:'t2',response:'Foto profesional más los dos complementos'}],'PASS').checks.find(c=>c.id==='package_recap')?.status).toBe('PASS');
   });
+  it('attributes recap semantics per bonus turn instead of contaminating valid turns with another failure',()=>{
+    const first=turn();
+    const second={...turn(3,['extra','two']),turnId:'t2',response:'Curso pago más Extra y Dos'};
+    const result=evaluateNegotiationInvariantsV1('06',[first,second],'FAIL','PASS',{t1:'PASS',t2:'FAIL'});
+    expect(result.checks.find(c=>c.id==='package_recap')).toMatchObject({
+      status:'FAIL',failedTurnIds:['t2'],indeterminateTurnIds:[],
+    });
+    expect(result.turn_results).toEqual([
+      {turnId:'t1',status:'PASS'},
+      {turnId:'t2',status:'FAIL'},
+    ]);
+  });
   it('rejects a ghost bonus in the first snapshot of known setup-none cases',()=>{
     const ghost={...turn(),action:null,proposedAction:{type:'none'}};
     const legal={...turn(3,['extra','two']),turnId:'legal',response:'Paquete y los dos complementos'};

@@ -1011,7 +1011,15 @@ live('authority-only Agent A golden baseline through the real workflow', () => {
       }
       const hasUnevaluatedTurns = turns.some((turn) => turn.execution_status !== 'executed');
       const semanticStatus:InvariantStatusV1=semantic.some(t=>t.approved===false)?'FAIL':semantic.length!==pending.scenario.turns.length||semantic.some(t=>t.approved===null)?'INDETERMINATE':'PASS';
-      const negotiation = pending.scenario.evaluationMode==='negotiation_invariants'?evaluateNegotiationInvariantsV1(pending.scenario.id,pending.scenario.turns.map((t,i)=>negotiationEvidenceV1(t,pending.observations[i]??blankObservation())),semanticStatus,hasUnevaluatedTurns?'INDETERMINATE':turns.some(t=>t.failures.some(f=>!f.code.startsWith('SEMANTIC_')))?'FAIL':'PASS'):undefined;
+      const packageRecapStatusByTurn:Readonly<Record<string,InvariantStatusV1>>=Object.fromEntries(
+        pending.scenario.turns.map(turn=>{
+          const verdict=semantic.find(item=>item.turn_id===turn.id);
+          if(!verdict||verdict.approved===null)return [turn.id,'INDETERMINATE' as const];
+          const recapFailed=verdict.failures.some(failure=>failure.code==='SEMANTIC_MUST_FAILED'&&failure.requirement_index===2);
+          return [turn.id,recapFailed?'FAIL' as const:'PASS' as const];
+        }),
+      );
+      const negotiation = pending.scenario.evaluationMode==='negotiation_invariants'?evaluateNegotiationInvariantsV1(pending.scenario.id,pending.scenario.turns.map((t,i)=>negotiationEvidenceV1(t,pending.observations[i]??blankObservation())),semanticStatus,hasUnevaluatedTurns?'INDETERMINATE':turns.some(t=>t.failures.some(f=>!f.code.startsWith('SEMANTIC_')))?'FAIL':'PASS',packageRecapStatusByTurn):undefined;
       if(negotiation)for(const [index,turn] of turns.entries()){
         const structural=negotiation.turn_results[index]!;
         const failed=negotiation.checks.filter(c=>c.failedTurnIds.includes(turn.turn_id));
