@@ -186,6 +186,13 @@ run('owner rules at the actual commit and transactional boundaries', () => {
       conversation_id: f.conversation_id, channel: 'text', selected_offering_code: null, source_turn_id: f.turn_id }, { db: db! });
     expect(capability).toMatchObject({ interest_offering_code: paid, rule_bonus: { bonus_offering_code: bonus } });
     expect(capability.ladder).toMatchObject({ instant_trigger: true, eligible: true });
+    if (variant === 'first_message_without_state') {
+      // Live golden 76c6447/18: at commit time the model's select_course already names the course.
+      const atCommit = await readCourseBonusCapabilityV1({ workspace_slug: 'studyx', contact_id: f.contact_id,
+        conversation_id: f.conversation_id, channel: 'text', selected_offering_code: paid, source_turn_id: f.turn_id }, { db: db! });
+      expect(atCommit.ladder).toMatchObject({ instant_trigger: true, eligible: true });
+      expect(atCommit.rule_bonus).toMatchObject({ bonus_offering_code: bonus });
+    }
     const committed = await commitAgentDecision({ turn_id: f.turn_id, trace_id: f.trace_id, supports_multi_outbound: true,
       agent_turn_v2: { schema_version: 2 as const, proposal: { ...proposal(), memory_candidates: [],
         move: { ...proposal().move, move: 'select_course', course_reference: paid } } },

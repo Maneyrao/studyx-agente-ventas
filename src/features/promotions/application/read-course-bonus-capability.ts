@@ -420,10 +420,10 @@ function ruleBonus(input: Parameters<typeof deriveDirectCourseBonusCapabilityV1>
 /** Owner instant promo (2026-11-02): "me interesa X, tenés promo?" names the
  * paid course in the same message. Only a single, unambiguous, active course
  * named by the customer this turn, and only alongside a promo request. */
-async function promoRequestedCourseThisTurn(input: {
-  workspace_slug: string; contact_id: string; conversation_id: string; source_turn_id?: string;
-}, db: DbClient): Promise<string | null> {
-  if (!input.source_turn_id) return null;
+async function currentBatchTexts(input: {
+  contact_id: string; conversation_id: string; source_turn_id?: string;
+}, db: DbClient): Promise<string[]> {
+  if (!input.source_turn_id) return [];
   const batch = await db<Array<{ content: string }>>`
     SELECT fragment.content FROM messages current JOIN messages fragment
       ON fragment.conversation_id=current.conversation_id AND fragment.contact_id=current.contact_id
@@ -431,7 +431,18 @@ async function promoRequestedCourseThisTurn(input: {
     WHERE current.id=${input.source_turn_id}::uuid AND current.conversation_id=${input.conversation_id}::uuid
       AND current.contact_id=${input.contact_id}::uuid
     ORDER BY fragment.conversation_seq`;
-  const texts = batch.map(row => row.content);
+  return batch.map(row => row.content);
+}
+
+/** No sales state yet (first message) means no checkout; a literal promo request is the trigger. */
+async function promoRequestedThisTurn(input: { contact_id: string; conversation_id: string; source_turn_id?: string }, db: DbClient): Promise<boolean> {
+  return (await currentBatchTexts(input, db)).some(promoRequestV1);
+}
+
+async function promoRequestedCourseThisTurn(input: {
+  workspace_slug: string; contact_id: string; conversation_id: string; source_turn_id?: string;
+}, db: DbClient): Promise<string | null> {
+  const texts = await currentBatchTexts(input, db);
   if (!texts.some(promoRequestV1)) return null;
   const offerings = await db<Array<{ code: string; display_name: string; aliases: string[] | null }>>`
     SELECT o.code, o.display_name, ARRAY(SELECT jsonb_array_elements_text(CASE WHEN jsonb_typeof(o.metadata->'aliases')='array'
@@ -522,7 +533,7 @@ async function readDirectCapability(input: {
   // First message of a conversation: no sales state yet, so no ladder. A promo
   // request naming the course in this very message is the verified instant trigger.
   const ladder=await readCourseBonusLadderV1(input,db)
-    ?? (sameTurn ? { ...deriveCourseBonusLadderV1({ observed_price_objection_count: 0, call_invitation_status: 'not_offered',
+    ?? (sameTurn || await promoRequestedThisTurn(input, db) ? { ...deriveCourseBonusLadderV1({ observed_price_objection_count: 0, call_invitation_status: 'not_offered',
       call_offer_count: 0, may_offer_call: false }), eligible: true, missing_steps: [], current_turn_price_objection: true,
       instant_trigger: true } : null);
   const activeCourses=await db<Array<{code:string;display_name:string}>>`
