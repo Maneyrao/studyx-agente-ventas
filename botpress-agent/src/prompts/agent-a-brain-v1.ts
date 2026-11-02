@@ -1,4 +1,4 @@
-import { priceExpressionHintV1 } from '../../../src/shared/conversation/deterministic-sales-rules';
+import { PRICE_PROBE_V1, priceConcernTextV1, priceExpressionHintV1, promoRequestV1 } from '../../../src/shared/conversation/deterministic-sales-rules';
 import type { AgentAContextV1 } from '../schemas/agent-a-brain';
 import {
   STUDYX_AGENT_A_CANONICAL_PROMPT,
@@ -6,7 +6,7 @@ import {
 } from './studyx-agent-a-canonical.generated';
 import { resolveCanonicalPromptIdentityV1 } from './agent-a-identity';
 
-export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v150' as const;
+export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v151' as const;
 
 /**
  * Runtime contract only. The sales behavior lives in the canonical prompt so
@@ -140,6 +140,10 @@ Rewrite the whole turn presenting exactly that course: name ${ruleBonus.display_
 Use proposed_action offer_course_bonus with those two codes. Declare ${ruleBonus.paid_offering_code} as paid and ${ruleBonus.bonus_offering_code} as bonus in course_mentions${(context.capabilities.course_bonus?.delivered_bonus_offerings?.length ?? 0) > 0 ? ', keep the delivered bonus courses declared as bonus and recap the full package' : ''}. Mention no other gift.` : '';
   const ruleCallRepair = rejection.rejections.some(reason => reason.code === 'CALL_OFFER_REQUIRED' && reason.subject === 'rule_b:call_offer') ? `
 The backend requires a call invitation this turn. Keep your reply in response.messages and put one brief invitation with a concrete reason in response.call_offer only. ${ruleBonusRepair ? 'Keep the independently authorized offer_course_bonus action required by Rule A.' : 'Use proposed_action=none.'} Do not claim a call was placed.` : '';
+  const priceProbeRepair = rejection.rejections.some(reason => reason.code === 'PRICE_PROBE_REQUIRED') ? `
+Owner rule C: the customer asked about or objected to the price. Answer it, then end the turn with exactly: "${PRICE_PROBE_V1}"` : '';
+  const passiveRepair = rejection.rejections.some(reason => reason.code === 'PASSIVE_CLOSING_FORBIDDEN') ? `
+Owner rule D: remove every passive closing ("lo ves tranquilo", "sin apuro", "cuando quieras", "avisame", "quedo atenta" and similar). Close with a concrete step toward buying now.` : '';
   return `
 <mandatory_repair attempt="1" rejection_id="${rejection.rejection_id}">
 Use repair_of with this rejection_id and attempt 1. This is the only rewrite.
@@ -152,6 +156,8 @@ ${courseLogisticsRepair}
 ${forbiddenPromiseRepair}
 ${ruleBonusRepair}
 ${ruleCallRepair}
+${priceProbeRepair}
+${passiveRepair}
 If an action did not occur, do not claim it; continue naturally from the permitted facts and effects.
 Do not repeat confirmed data or an earlier opening or question. Ask only for truly missing information.
 Keep prose and metadata consistent. Preserve accepted observations. Never expose validation to the customer.
@@ -252,6 +258,23 @@ Before returning AgentATurnProposalV1, make response, move, profile metadata and
 - stage_hypothesis is diagnostic and must use only its allowed durable milestone enum. Do not expose internal validation in response.messages.
 </execution_consistency_check>`;
 
+/** Owner rules (AGENTS.md, 2026-11-02 second revision). Backend-decided; the
+ * model writes. Kept technical: what must appear, not how to sell. */
+function ownerSalesRulesDirectiveV1(context: AgentAContextV1): string {
+  const texts = context.turn.batch_messages.map(message => message.text)
+  const rule = context.capabilities.course_bonus?.rule_bonus
+  const enabled = context.capabilities.course_bonus?.enabled === true
+  const promo = enabled && texts.some(promoRequestV1)
+  const priceConcern = enabled && !promo && texts.some(priceConcernTextV1)
+  const lines = [
+    'Never close passively ("lo ves tranquilo", "sin apuro", "cuando quieras", "avisame", "quedo atenta"). Every reply moves the customer to buy now.',
+    promo && rule ? `The customer asked for a promotion or discount: the backend offers ${rule.display_name} (bonus_offering_code=${rule.bonus_offering_code}) with ${rule.paid_display_name} (interest_offering_code=${rule.paid_offering_code}) this turn. Present it with proposed_action offer_course_bonus, say the price of ${rule.paid_display_name} does not change and close in the same message. There is no price discount.` : '',
+    promo && !rule ? 'The customer asked for a promotion or discount: recommend and confirm the paid course now so the backend can add the promotion; there is no price discount.' : '',
+    priceConcern ? `The customer asked about or objected to the price: answer it and end the turn with exactly: "${PRICE_PROBE_V1}"` : '',
+  ].filter(Boolean)
+  return `<owner_sales_rules>\n${lines.join('\n')}\n</owner_sales_rules>`
+}
+
 export function buildAgentABrainInstructionsV1(context: AgentAContextV1): string {
   const canonicalPrompt = context.identity === null
     ? STUDYX_AGENT_A_CANONICAL_PROMPT
@@ -278,6 +301,8 @@ This lexical hint is diagnostic only. Interpret the customer's actual statement.
 </price_expression_hint>
 
 ${currentCatalogResolutionDirectiveV1(context)}
+
+${ownerSalesRulesDirectiveV1(context)}
 
 ${currentCourseBonusEffectContractV1(context)}
 

@@ -6,6 +6,7 @@ import { classifyBatchSalesSignal } from '@/features/orchestration/domain/sales-
 import type { DbClient } from '@/lib/db/types';
 import { CALL_START_TIMEOUT_SECONDS } from '@/features/calls/domain/call-timeouts';
 import { readNegotiationFactsV1 } from '@/features/conversation/application/read-negotiation-facts';
+import { confirmsPriceProbeV1, isBonusCheckoutStateV1, promoRequestV1 } from '@/shared/conversation/deterministic-sales-rules';
 import { deriveCourseBonusLadderV1, mayOfferCallV1, type CourseBonusLadderV1 } from '@/shared/conversation/bonus-ladder';
 
 /** Caller owns the state lock when authorizing an effect. Claims/proposals are never inputs. */
@@ -85,11 +86,25 @@ export async function readCourseBonusLadderV1(input: {
   const currentObjection = current?.candidates?.some(candidate => candidate.type === 'objection'
     && candidate.key === 'price_objection' && priceObservationQuoteInBatchV1(candidate.source_quote, row.customer_messages)) === true;
   const priorObjectionIsCurrent = facts.latest_price_objection_source_turn_ids.includes(row.source_turn_id);
-  return { ...deriveCourseBonusLadderV1({
+  // Owner rule (2026-11-02, second revision): any promo/discount request, or a
+  // confirmation of the "precio es el único inconveniente?" question, enables
+  // the offer instantly and counts as a new objection for escalation.
+  const previousAgent = await db<Array<{ content: string }>>`
+    SELECT prior.content FROM messages prior JOIN messages current ON current.id=${row.source_turn_id}::uuid
+    WHERE prior.conversation_id=current.conversation_id AND prior.contact_id=current.contact_id
+      AND prior.direction='outbound' AND prior.created_at < current.created_at
+    ORDER BY prior.created_at DESC LIMIT 3`;
+  const inCheckout = isBonusCheckoutStateV1({ stage: state.stage, awaiting_reply: state.awaiting_reply,
+    payment_link_request_pending: false }) || state.payment_reported_at !== null || row.payment_reported;
+  const instantTrigger = !inCheckout && row.customer_messages.some(promoRequestV1)
+    || !inCheckout && confirmsPriceProbeV1(row.customer_messages, previousAgent.map(message => message.content));
+  const ladder = deriveCourseBonusLadderV1({
     observed_price_objection_count: facts.price_objection_count + (currentObjection && !priorObjectionIsCurrent ? 1 : 0),
     price_only_barrier_confirmed: facts.price_only_barrier.status === 'confirmed' || current?.price_only === true,
     call_invitation_status: status, call_offer_count: count,
     may_offer_call: mayOfferCallV1({ ...row,stage:state.stage,call_preference:state.call_preference,
-      payment_reported:state.payment_reported_at!==null,call_offer_count:count,call_offer_status:status }) }),
-    current_turn_price_objection: currentObjection };
+      payment_reported:state.payment_reported_at!==null,call_offer_count:count,call_offer_status:status }) });
+  return instantTrigger
+    ? { ...ladder, eligible: true, missing_steps: [], current_turn_price_objection: true, instant_trigger: true }
+    : { ...ladder, current_turn_price_objection: currentObjection };
 }

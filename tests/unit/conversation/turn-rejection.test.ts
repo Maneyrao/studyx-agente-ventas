@@ -29,7 +29,10 @@ describe('TurnRejectionV1', () => {
       'FACT_NOT_AUTHORIZED',
       'FACT_VALUE_MISMATCH',
       'MISSING_INTAKE',
+      // Reglas C y D del dueño (2026-11-02, segunda revisión).
+      'PASSIVE_CLOSING_FORBIDDEN',
       'PLAN_NOT_SELECTED',
+      'PRICE_PROBE_REQUIRED',
       'PROPOSAL_SCHEMA_INVALID',
       // V8: devolver el mismo mensaje que ya se mandó no es contestar.
       'REPEATED_AGENT_REPLY',

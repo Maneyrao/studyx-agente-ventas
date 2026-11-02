@@ -7,10 +7,12 @@ import { isTurnEvidencePersistenceError } from '../observability/turn-evidence'
 import type { ModelObservation } from '../observability/turn-evidence'
 import type { TurnRejectionV1 } from '../../schemas/turn-rejection'
 import {
-  CALL_FALLBACK_OFFER_V1, bonusFallbackMessagesV1, decideBonusRuleV1, decideCallRuleV1,
-  draftPresentsBonusV1, draftPresentsCallV1, priceExpressionHintV1, priceObservationQuoteInBatchV1,
-  type BonusRuleDecisionV1, type CallRuleDecisionV1, type RuleContextV1, type RuleOutcomeV1,
+  CALL_FALLBACK_OFFER_V1, bonusFallbackMessagesV1, decideBonusRuleV1, decideCallRuleV1, decidePriceProbeRuleV1,
+  draftPresentsBonusV1, draftPresentsCallV1, messagesContainPriceProbeV1, passiveClosingSentencesV1, passiveRuleAppliesV1,
+  PRICE_PROBE_V1, priceExpressionHintV1, priceObservationQuoteInBatchV1, withPriceProbeV1, withoutPassiveClosingV1,
+  type BonusRuleDecisionV1, type CallRuleDecisionV1, type PriceProbeRuleDecisionV1, type RuleContextV1, type RuleOutcomeV1,
 } from '../../../../src/shared/conversation/deterministic-sales-rules'
+import { latestAgentTurnMessages } from '../../../../src/features/orchestration/domain/course-focus'
 
 /** Owner rules A/B (AGENTS.md, 2026-11-02). Botpress only orchestrates the
  * rewrite and the fixed fallback; the backend owns the course and the effect. */
@@ -44,12 +46,20 @@ export function ruleContextFromAgentAContextV1(context: AgentAContextV1): RuleCo
       || context.catalog.candidate_offerings.some(candidate => candidate.reference !== undefined)
       || context.catalog.resolution === 'exact' || context.catalog.resolution === 'ambiguous'
       || context.customer.memories.some(memory => memory.type === 'study_goal'),
+    previous_agent_messages: latestAgentTurnMessages(context.turn.recent_turns),
+    payment_reported: state.payment_reported,
+    active_call: state.active_call != null,
+    opted_out: !context.capabilities.may_reply,
   }
 }
 
 export interface DeterministicRulesDecisionV1 {
   readonly bonus: BonusRuleDecisionV1
   readonly call: CallRuleDecisionV1
+  /** Owner rule C (2026-11-02): price concern → "El precio es el único inconveniente?..." */
+  readonly probe: PriceProbeRuleDecisionV1
+  /** Owner rule D (2026-11-02): no passive closings while the sale is open. */
+  readonly passive_forbidden: boolean
   readonly price_expression_hint: boolean
 }
 
@@ -70,8 +80,15 @@ export function decideDeterministicRulesV1(context: AgentAContextV1, draft: Agen
   return {
     bonus,
     call: call.kind === 'offer' && obligation ? obligation : call,
+    probe: decidePriceProbeRuleV1(ruleContext, draft, bonus),
+    passive_forbidden: passiveRuleAppliesV1(ruleContext, draft),
     price_expression_hint: ruleContext.batch_texts.some(priceExpressionHintV1),
   }
+}
+
+function rulesApply(decision: DeterministicRulesDecisionV1, draft: AgentATurnProposalV1): boolean {
+  return decision.bonus.kind === 'offer' || decision.call.kind === 'offer' || decision.probe.kind === 'ask'
+    || (decision.passive_forbidden && passiveClosingSentencesV1(draft.response.messages).length > 0)
 }
 
 /** The backend validated the trigger with this turn's evidence; let the local
@@ -87,6 +104,7 @@ export function ruleRejectionV1(input: {
   readonly decision: DeterministicRulesDecisionV1
   readonly rejection_id: string
   readonly context: AgentAContextV1
+  readonly draft?: AgentATurnProposalV1
 }): TurnRejectionV1 | null {
   const factIds = [
     ...input.context.catalog.available_offerings.map(offering => offering.fact_id),
@@ -97,6 +115,9 @@ export function ruleRejectionV1(input: {
     code: 'BONUS_OFFER_REQUIRED', subject: `rule_a:bonus:${input.decision.bonus.bonus_code}`,
   })
   if (input.decision.call.kind === 'offer') rejections.push({ code: 'CALL_OFFER_REQUIRED', subject: 'rule_b:call_offer' })
+  if (input.decision.probe.kind === 'ask' && !(input.draft && messagesContainPriceProbeV1(input.draft.response.messages)))
+    rejections.push({ code: 'PRICE_PROBE_REQUIRED', subject: 'rule_c:price_probe' })
+  if (input.decision.passive_forbidden && (!input.draft || passiveClosingSentencesV1(input.draft.response.messages).length > 0)) rejections.push({ code: 'PASSIVE_CLOSING_FORBIDDEN', subject: 'rule_d:passive_closing' })
   if (rejections.length) return {
     schema_version: 1, rejection_id: input.rejection_id, attempt: 1, rejections,
     authorized_alternatives: { fact_ids: factIds,
@@ -108,6 +129,18 @@ export function ruleRejectionV1(input: {
 export function draftSatisfiesRulesV1(draft: AgentATurnProposalV1, decision: DeterministicRulesDecisionV1): boolean {
   return (decision.bonus.kind !== 'offer' || draftPresentsBonusV1(draft, decision.bonus))
     && (decision.call.kind !== 'offer' || draftPresentsCallV1(draft))
+    && (decision.probe.kind !== 'ask' || messagesContainPriceProbeV1(draft.response.messages))
+    && (!decision.passive_forbidden || passiveClosingSentencesV1(draft.response.messages).length === 0)
+}
+
+/** Rules C/D fallback on the model's own turn: drop passive sentences, then end
+ * with the owner's probe bubble. Profile requests keep only unchanged bubbles. */
+export function withFixedPriceRulesV1(draft: AgentATurnProposalV1, decision: DeterministicRulesDecisionV1): AgentATurnProposalV1 {
+  let messages: string[] = decision.passive_forbidden ? withoutPassiveClosingV1(draft.response.messages) : [...draft.response.messages]
+  if (decision.probe.kind === 'ask' && !messagesContainPriceProbeV1(messages)) messages = withPriceProbeV1(messages)
+  const unchanged = (index: number) => messages[index] !== undefined && messages[index] === draft.response.messages[index]
+  return { ...draft, response: { ...draft.response, messages: messages as [string, ...string[]] },
+    profile_requests: (draft.profile_requests ?? []).filter(request => unchanged(request.message_index)) }
 }
 
 function offeringFactId(context: AgentAContextV1, code: string): string[] {
@@ -158,12 +191,18 @@ export interface RuleOutcomeRecordV1 {
   readonly rule_a_bonus_code: string | null
   readonly rule_b: RuleOutcomeV1
   readonly rule_b_reason: string
+  readonly rule_c?: RuleOutcomeV1
+  readonly rule_d?: RuleOutcomeV1
   readonly price_expression_hint: boolean
 }
 
+type RuleOutcomesV1 = { readonly rule_a: RuleOutcomeV1; readonly rule_b: RuleOutcomeV1;
+  readonly rule_c?: RuleOutcomeV1; readonly rule_d?: RuleOutcomeV1 }
+
 export function ruleOutcomeRecordV1(decision: DeterministicRulesDecisionV1,
-  outcome: RuleOutcomeV1 | { readonly rule_a: RuleOutcomeV1; readonly rule_b: RuleOutcomeV1 }): RuleOutcomeRecordV1 {
-  const outcomes = typeof outcome === 'string' ? { rule_a: outcome, rule_b: outcome } : outcome
+  outcome: RuleOutcomeV1 | RuleOutcomesV1, passiveApplied = false): RuleOutcomeRecordV1 {
+  const outcomes: RuleOutcomesV1 = typeof outcome === 'string'
+    ? { rule_a: outcome, rule_b: outcome, rule_c: outcome, rule_d: outcome } : outcome
   return {
     kind: 'deterministic_rules',
     rule_a: decision.bonus.kind === 'offer' ? outcomes.rule_a : 'not_applicable',
@@ -171,6 +210,8 @@ export function ruleOutcomeRecordV1(decision: DeterministicRulesDecisionV1,
     rule_a_bonus_code: decision.bonus.kind === 'offer' ? decision.bonus.bonus_code : null,
     rule_b: decision.call.kind === 'offer' ? outcomes.rule_b : 'not_applicable',
     rule_b_reason: decision.call.kind === 'offer' ? `response_${decision.call.response_ordinal}` : decision.call.reason,
+    rule_c: decision.probe.kind === 'ask' ? (outcomes.rule_c ?? outcomes.rule_a) : 'not_applicable',
+    rule_d: passiveApplied ? (outcomes.rule_d ?? outcomes.rule_a) : 'not_applicable',
     price_expression_hint: decision.price_expression_hint,
   }
 }
@@ -210,12 +251,13 @@ export async function resolveDeterministicRulesTurnV1(input: {
   const initial = { ...input.initial, proposal: bindCustomerCallInterpretationV1(interpretation, input.initial.proposal, input.context) }
   let decision = decideDeterministicRulesV1(input.context, initial.proposal, input.call_obligation)
   const callObligation = input.call_obligation ?? (decision.call.kind === 'offer' ? decision.call : undefined)
-  const applies = decision.bonus.kind === 'offer' || decision.call.kind === 'offer'
+  const passiveApplied = decision.passive_forbidden && passiveClosingSentencesV1(initial.proposal.response.messages).length > 0
+  const applies = rulesApply(decision, initial.proposal)
   if (!applies) {
     const resolved = await input.resolve(initial, input.repair_enabled)
     const boundEffective = { ...resolved.effective, proposal: bindCustomerCallInterpretationV1(interpretation, resolved.effective.proposal, input.context) }
     const effectiveDecision = decideDeterministicRulesV1(input.context, boundEffective.proposal, callObligation)
-    if (effectiveDecision.bonus.kind === 'offer' || effectiveDecision.call.kind === 'offer') {
+    if (rulesApply(effectiveDecision, boundEffective.proposal)) {
       // A generic repair can introduce literal model evidence and a new rule
       // obligation. Its generation already consumed the rewrite: finalize with
       // validation/fixed copy only, never another provider request.
@@ -224,7 +266,9 @@ export async function resolveDeterministicRulesTurnV1(input: {
       if (!resolved.evidence.repair_attempted) return finalized
       return { ...finalized, record: { ...finalized.record,
         rule_a: finalized.record.rule_a === 'model' ? 'rewrite' : finalized.record.rule_a,
-        rule_b: finalized.record.rule_b === 'model' ? 'rewrite' : finalized.record.rule_b } }
+        rule_b: finalized.record.rule_b === 'model' ? 'rewrite' : finalized.record.rule_b,
+        rule_c: finalized.record.rule_c === 'model' ? 'rewrite' : finalized.record.rule_c,
+        rule_d: finalized.record.rule_d === 'model' ? 'rewrite' : finalized.record.rule_d } }
     }
     return { resolved: { ...resolved, effective: boundEffective }, record: ruleOutcomeRecordV1(effectiveDecision, 'not_applicable') }
   }
@@ -242,8 +286,9 @@ export async function resolveDeterministicRulesTurnV1(input: {
     if (isTurnEvidencePersistenceError(error)) throw error
     input.on_failure?.('validation', error)
   }
-  if (resolved) return { resolved, record: ruleOutcomeRecordV1(decision, 'model') }
-  const rejection = ruleRejectionV1({ decision, context: input.context, rejection_id: input.rejection_id() })!
+  if (resolved) return { resolved, record: ruleOutcomeRecordV1(decision, 'model', passiveApplied) }
+  const rejection = ruleRejectionV1({ decision, context: input.context, rejection_id: input.rejection_id(), draft: initial.proposal })
+    ?? ruleRejectionV1({ decision, context: input.context, rejection_id: input.rejection_id() })!
   input.observe?.({ kind: 'proposal_rejected', rejection })
   try {
     if (!input.repair_enabled) throw new Error('RULE_REWRITE_DISABLED')
@@ -257,13 +302,19 @@ export async function resolveDeterministicRulesTurnV1(input: {
     if (isTurnEvidencePersistenceError(error)) throw error
     input.on_failure?.('rewrite', error)
   }
-  if (resolved) return { resolved, record: ruleOutcomeRecordV1(decision, 'rewrite') }
-  const outcomes = { rule_a: authored as RuleOutcomeV1, rule_b: authored as RuleOutcomeV1 }
+  if (resolved) return { resolved, record: ruleOutcomeRecordV1(decision, 'rewrite', passiveApplied) }
+  const outcomes: { rule_a: RuleOutcomeV1; rule_b: RuleOutcomeV1; rule_c: RuleOutcomeV1; rule_d: RuleOutcomeV1 } =
+    { rule_a: authored, rule_b: authored, rule_c: authored, rule_d: authored }
   let fixed = candidate.proposal
   if (decision.bonus.kind === 'offer') {
     fixed = bonusFallbackProposalV1({ context: input.context, draft: { ...initial.proposal,
       repair_of: fixed.repair_of }, decision: decision.bonus })
     outcomes.rule_a = 'fixed'
+  } else if (decision.probe.kind === 'ask' || passiveClosingSentencesV1(fixed.response.messages).length > 0) {
+    // Rules C/D keep the model's answer and replace only the closing (owner wording).
+    fixed = withFixedPriceRulesV1(fixed, decision)
+    outcomes.rule_c = 'fixed'
+    outcomes.rule_d = 'fixed'
   }
   // No call_offer from a rejected proposal is trusted merely because it is
   // nonempty (for example an unauthorized immediate-call promise).
@@ -277,9 +328,25 @@ export async function resolveDeterministicRulesTurnV1(input: {
   } catch (error) {
     if (isTurnEvidencePersistenceError(error)) throw error
     input.on_failure?.('fixed', error)
+    // Never silence (owner bound): an invalid fixed fallback never ends the turn.
+    // Best valid model candidate, then the initial draft, then the owner's probe.
+    const unmet = { rule_a: decision.bonus.kind === 'offer' ? 'unmet' as const : outcomes.rule_a,
+      rule_b: decision.call.kind === 'offer' ? 'unmet' as const : outcomes.rule_b, rule_c: 'unmet' as const, rule_d: 'unmet' as const }
+    const lastResort: GeneratedAgentATurnProposalV1 = { ...initial, proposal: { ...initial.proposal,
+      response: { messages: [PRICE_PROBE_V1], call_offer: null }, proposed_action: { type: 'none' },
+      course_mentions: [], used_fact_ids: [], used_memory_ids: [], profile_updates: [], profile_requests: [] } }
+    for (const option of [candidate, initial, ...(input.context.capabilities.course_bonus?.enabled === true ? [lastResort] : [])]) {
+      try {
+        const plain = await input.resolve(option, false)
+        return { resolved: plain, record: ruleOutcomeRecordV1(decision, unmet, passiveApplied) }
+      } catch (plainError) {
+        if (isTurnEvidencePersistenceError(plainError)) throw plainError
+        input.on_failure?.('fixed', plainError)
+      }
+    }
     throw error
   }
-  return { resolved, record: ruleOutcomeRecordV1(decision, outcomes) }
+  return { resolved, record: ruleOutcomeRecordV1(decision, outcomes, passiveApplied) }
 }
 
 

@@ -23,6 +23,8 @@ export interface CourseBonusLadderV1 {
   readonly price_only_barrier_confirmed?: boolean;
   /** This turn's committed model memory recorded a price objection (escalation needs it). */
   readonly current_turn_price_objection?: boolean;
+  /** Promo/discount request or confirmed price probe this turn (owner 2026-11-02). */
+  readonly instant_trigger?: boolean;
 }
 
 /** Rule A trigger (AGENTS.md, owner decision 2026-11-02): a second recorded

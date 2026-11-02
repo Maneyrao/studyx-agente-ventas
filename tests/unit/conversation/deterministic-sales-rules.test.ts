@@ -221,3 +221,117 @@ describe('Regla B — llamada', () => {
     expect(decideCallRuleV1(ctx({ recent_turns: t }), draft(), decideBonusRuleV1(ctx(), draft()))).toMatchObject({ kind: 'offer', response_ordinal: 2 });
   });
 });
+
+// Segunda revisión del dueño (2026-11-02): promo/descuento instantáneo, pregunta
+// fija ante precio y prohibición de cierres pasivos.
+import { PRICE_PROBE_V1, confirmsPriceProbeV1, decidePriceProbeRuleV1, passiveClosingSentencesV1,
+  priceConcernTextV1, promoRequestV1, withPriceProbeV1, withoutPassiveClosingV1 } from '@/shared/conversation/deterministic-sales-rules';
+
+describe('dueño — promo o descuento habilita la oferta al instante', () => {
+  it.each(['tenés alguna promo?', 'me hacés un descuento?', 'hay alguna promoción', 'algo más barato?',
+    'me regalás un curso gratis?', 'hay beca?', 'precio especial?'])('"%s" es pedido de promo', t => {
+    expect(promoRequestV1(t)).toBe(true);
+  });
+  it('sin objeción previa, el pedido de promo ofrece el 1.º de la tabla', () => {
+    expect(decideBonusRuleV1(ctx({ prior_price_objection_count: 0, batch_texts: ['me hacés un descuento?'] }), draft({ memory: [] })))
+      .toMatchObject({ kind: 'offer', trigger: 'promo_request', bonus_code: 'fotografia_celulares_tiendas_online' });
+  });
+  it('con oferta entregada, un nuevo pedido de promo escala al siguiente', () => {
+    const delivered = [{ code: 'fotografia_celulares_tiendas_online', display_name: 'Fotografía con Celulares para Tiendas Online' }];
+    expect(decideBonusRuleV1(ctx({ package_status: 'offered', delivered_bonus: delivered, batch_texts: ['y otra promo más?'],
+      rule_bonus: ruleFor('introduccion_ecommerce', delivered.map(c => c.code)) }), draft({ memory: [] })))
+      .toMatchObject({ kind: 'offer', trigger: 'escalation', bonus_code: 'publicidad_redes_sociales' });
+  });
+  it('nunca con la bonificación deshabilitada, pagado o en checkout', () => {
+    for (const patch of [{ bonus_enabled: false }, { payment_paid: true }, { awaiting_reply: 'contact_details' }])
+      expect(decideBonusRuleV1(ctx({ ...patch, batch_texts: ['descuento?'] }), draft({ memory: [] })).kind).toBe('none');
+  });
+});
+
+describe('dueño — precio → "El precio es el único inconveniente? Puedo revisar una promoción."', () => {
+  it.each(['cuánto sale?', 'es caro', 'qué precio tiene', 'no me alcanza', 'cuánto es la cuota?'])('"%s" exige la pregunta', t => {
+    expect(priceConcernTextV1(t)).toBe(true);
+    expect(decidePriceProbeRuleV1(ctx({ prior_price_objection_count: 0, batch_texts: [t] }), draft({ memory: [] }),
+      { kind: 'none', reason: 'x' })).toEqual({ kind: 'ask' });
+  });
+  it('sin mención de precio no la exige; en un turno de oferta tampoco', () => {
+    expect(decidePriceProbeRuleV1(ctx({ batch_texts: ['me gusta ecommerce'] }), draft({ memory: [] }), { kind: 'none', reason: 'x' }).kind).toBe('none');
+    const offer = decideBonusRuleV1(ctx(), draft());
+    expect(decidePriceProbeRuleV1(ctx(), draft(), offer).kind).toBe('none');
+  });
+  it('"sí" o "sólo el precio" después de la pregunta dispara la oferta', () => {
+    for (const reply of ['sí', 'si, solo el precio', 'obvio', 'el precio'])
+      expect(decideBonusRuleV1(ctx({ prior_price_objection_count: 0, batch_texts: [reply], previous_agent_messages: ['Son USD 360.', PRICE_PROBE_V1] }),
+        draft({ memory: [] }))).toMatchObject({ kind: 'offer', trigger: 'price_probe_confirmed' });
+    expect(confirmsPriceProbeV1(['sí'], ['Son USD 360. Te sirve?'])).toBe(false);
+  });
+  it('respaldo: respuesta del modelo + burbuja fija', () => {
+    expect(withPriceProbeV1(['Son USD 360 o 12 cuotas de USD 30.'])).toEqual(['Son USD 360 o 12 cuotas de USD 30.', PRICE_PROBE_V1]);
+  });
+});
+
+describe('dueño — sin cierres pasivos', () => {
+  it('detecta y quita sólo la oración pasiva', () => {
+    const messages = ['Son 8 clases online. Lo ves tranquilo y me avisás.', 'Arrancamos con las 12 cuotas?'];
+    expect(passiveClosingSentencesV1(messages)).toHaveLength(1);
+    expect(withoutPassiveClosingV1(messages)).toEqual(['Son 8 clases online.', 'Arrancamos con las 12 cuotas?']);
+    expect(passiveClosingSentencesV1(['Arrancamos hoy?'])).toEqual([]);
+  });
+});
+
+// Límites del dueño (2026-11-02, mismo día): acotar las reglas para no romper la venta.
+import { passiveRuleAppliesV1, planChoiceV1, purchaseIntentV1 } from '@/shared/conversation/deterministic-sales-rules';
+
+describe('dueño — límites de las reglas C/D y de la promo instantánea', () => {
+  const none = { kind: 'none' as const, reason: 'x' };
+  it('"elijo 12 cuotas" no dispara la pregunta de precio (elección de plan)', () => {
+    for (const t of ['elijo 12 cuotas', 'quiero el pago único', 'voy con las 12 cuotas de 30']) {
+      expect(planChoiceV1(t)).toBe(true);
+      expect(decidePriceProbeRuleV1(ctx({ batch_texts: [t] }), draft({ memory: [] }), none)).toMatchObject({ kind: 'none', reason: 'plan_choice' });
+    }
+  });
+  it('"no quiero descuento" y "no necesito promo" no disparan la oferta', () => {
+    for (const t of ['no quiero descuento', 'no necesito promo', 'ni promo ni nada, sólo info']) {
+      expect(promoRequestV1(t)).toBe(false);
+      expect(decideBonusRuleV1(ctx({ prior_price_objection_count: 0, batch_texts: [t] }), draft({ memory: [] })).kind).toBe('none');
+    }
+  });
+  it('promo instantánea nunca en checkout ni después de pagar', () => {
+    expect(decideBonusRuleV1(ctx({ stage: 'payment_link_sent', batch_texts: ['tenés descuento?'] }), draft({ memory: [] })))
+      .toMatchObject({ kind: 'none', reason: 'checkout' });
+    expect(decideBonusRuleV1(ctx({ payment_paid: true, batch_texts: ['tenés descuento?'] }), draft({ memory: [] })))
+      .toMatchObject({ kind: 'none', reason: 'paid' });
+  });
+  it('"dale pasame el link" después de la pregunta va al checkout, no a una bonificación nueva', () => {
+    const previous = ['Son USD 360.', PRICE_PROBE_V1];
+    expect(purchaseIntentV1('dale pasame el link')).toBe(true);
+    expect(confirmsPriceProbeV1(['dale pasame el link'], previous)).toBe(false);
+    const checkout = draft({ memory: [], move: { move: 'request_payment_link', secondary_moves: [] },
+      proposed_action: { type: 'send_payment_link' } });
+    expect(decideBonusRuleV1(ctx({ prior_price_objection_count: 0, batch_texts: ['dale pasame el link'], previous_agent_messages: previous }), checkout))
+      .toMatchObject({ kind: 'none', reason: 'checkout' });
+    // Con una oferta vigente, el link adjunta el paquete: ver la integración
+    // 'automatically seals a delivered offered package in the actual payment-link commit'.
+  });
+  it('una nueva objeción después de la pregunta sí la confirma; una pregunta no', () => {
+    const previous = [PRICE_PROBE_V1];
+    expect(confirmsPriceProbeV1(['sigue siendo caro'], previous)).toBe(true);
+    expect(confirmsPriceProbeV1(['es caro?'], previous)).toBe(false);
+  });
+  it('la pregunta sale una sola vez por conversación', () => {
+    const asked = ctx({ batch_texts: ['cuánto sale?'], recent_turns: [{ direction: 'outbound', content: `Son USD 360. ${PRICE_PROBE_V1}` }] });
+    expect(decidePriceProbeRuleV1(asked, draft({ memory: [] }), none)).toMatchObject({ kind: 'none', reason: 'already_asked' });
+  });
+  it('"avisame cuando pagues" en checkout está permitido', () => {
+    for (const patch of [{ stage: 'payment_link_sent' }, { awaiting_reply: 'payment_confirmation' }, { awaiting_reply: 'contact_details' }])
+      expect(passiveRuleAppliesV1(ctx(patch), draft({ memory: [] }))).toBe(false);
+    expect(passiveRuleAppliesV1(ctx(), draft({ memory: [], move: { move: 'request_payment_link', secondary_moves: [] } }))).toBe(false);
+  });
+  it('"no gracias, no me interesa" (no definitivo), opt-out, llamada y postventa permiten la despedida', () => {
+    expect(passiveRuleAppliesV1(ctx(), draft({ memory: [], move: { move: 'decline_purchase', secondary_moves: [] } }))).toBe(false);
+    expect(passiveRuleAppliesV1(ctx({ opted_out: true }), draft({ memory: [] }))).toBe(false);
+    expect(passiveRuleAppliesV1(ctx(), draft({ memory: [], move: { move: 'request_call', secondary_moves: [] } }))).toBe(false);
+    expect(passiveRuleAppliesV1(ctx({ payment_paid: true }), draft({ memory: [] }))).toBe(false);
+    expect(passiveRuleAppliesV1(ctx(), draft({ memory: [] }))).toBe(true);
+  });
+});

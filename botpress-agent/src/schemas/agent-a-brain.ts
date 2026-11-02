@@ -24,6 +24,7 @@ export const CourseBonusLadderV1Schema = z.object({
   missing_steps: z.array(z.enum(['recorded_price_objections', 'call_invitation'])).readonly(),
   price_only_barrier_confirmed: z.boolean().optional(),
   current_turn_price_objection: z.boolean().optional(),
+  instant_trigger: z.boolean().optional(),
 }).strict();
 
 // Zui uses Zod 3; construct the ADK mirror locally from the portable constants.

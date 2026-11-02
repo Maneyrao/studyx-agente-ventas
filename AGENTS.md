@@ -61,6 +61,15 @@ Detección de objeción de precio: la memoria del modelo `type=objection`, `key=
 
 Cada turno registra, por regla, si se cumplió con texto del modelo (`model`), con reescritura (`rewrite`) o con respaldo fijo (`fixed`), o `not_applicable` con su motivo.
 
+## Reglas del dueño — segunda revisión, acotada (2026-11-02)
+Decisión explícita del dueño, por encima de la Regla A y de la autoridad de Gabi donde la contradice. Código: `src/shared/conversation/deterministic-sales-rules.ts`.
+- **Promo instantánea:** cualquier pedido o indicio de promo o descuento («promo», «descuento», «rebaja», «oferta», «gratis», «más barato», «precio especial», etc.) habilita la oferta de la tabla en ese mismo turno, sin objeción previa. Con una oferta ya entregada, un nuevo pedido escala al siguiente bonificado (máximo 3). No se dispara con negaciones («no quiero descuento», «no necesito promo»), durante checkout ni después de pagar. No existe descuento de precio: el total no cambia.
+- **Regla C — pregunta de precio:** ante una objeción o pregunta de precio, el turno termina con «El precio es el único inconveniente? Puedo revisar una promoción.». UNA vez por conversación. Nunca durante checkout (datos, resumen, elección de plan, link), ni ante una elección de plan («12 cuotas», «pago único»), ni con un paquete ya ofrecido. Si falta: una reescritura y, si falla, la respuesta del modelo más esa burbuja fija.
+- **Confirmación de la pregunta:** sólo una afirmación que responde a ESA pregunta («sí», «sólo el precio») o una nueva objeción de precio dispara la oferta. Una intención de compra («dale, pasame el link», «quiero pagar») va al checkout y, con una oferta vigente, el link adjunta el paquete automáticamente.
+- **Regla D — sin cierres pasivos** («lo ves tranquilo», «sin apuro», «cuando quieras», «avisame»…): sólo en cierres de negociación con la venta abierta. Excluidos: checkout, recolección de datos, coordinación de llamada, postventa, un no definitivo y opt-out, donde se permite una despedida cálida (Gabi :127). Si persiste tras la reescritura, se quita sólo la oración pasiva.
+- **Nunca silencio:** un respaldo fijo inválido nunca termina el turno. Sale el mejor candidato válido del modelo, después el borrador inicial y, como último recurso, la frase de la Regla C. El resultado se registra como `unmet`.
+- Se registran por turno `rule_c` y `rule_d` (`model`, `rewrite`, `fixed`, `unmet` o `not_applicable`).
+
 ## Bonificación global — configuración (decisión del dueño, 2026-11-02)
 - La bonificación está habilitada para TODOS los contactos: `CENTRAL_CARGA_BONUS_ENABLED=true`, `COURSE_BONUS_FLOW_MODE=direct`, `COURSE_BONUS_MAX_COURSES=3`. El modo global no depende de listas: `isCentralCargaBonusEnabledForContact` devuelve `true` antes de consultar cualquier lista.
 - `CENTRAL_CARGA_BONUS_CANARY_PHONE_E164S` y `CENTRAL_CARGA_BONUS_CANARY_CONTACT_IDS` quedan sólo como mecanismo de canary con el interruptor global apagado.

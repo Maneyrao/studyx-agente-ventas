@@ -352,3 +352,78 @@ describe('live Rule A/B orchestration, bounded rewrite and validated fallback', 
     expect(repair).not.toHaveBeenCalled();
   });
 });
+
+describe('dueño 2026-11-02 (segunda revisión): promo instantánea, pregunta de precio y sin cierres pasivos', () => {
+  const probe = 'El precio es el único inconveniente? Puedo revisar una promoción.';
+  function priceContext(text: string, objections = 0): AgentAContextV1 {
+    const current = context(false);
+    current.turn.batch_messages = [{ id: 'current', text }];
+    current.capabilities.course_bonus!.ladder = deriveCourseBonusLadderV1({ observed_price_objection_count: objections,
+      call_invitation_status: 'not_offered', call_offer_count: 0, may_offer_call: false });
+    return current;
+  }
+  it('un pedido de descuento sin objeción previa exige la oferta de la tabla en ese turno', async () => {
+    const current = priceContext('me hacés un descuento?');
+    const repair = vi.fn(async () => offered());
+    const result = await resolveDeterministicRulesTurnV1({ context: current, initial: draft({ memory_candidates: [] }),
+      repair_enabled: true, rejection_id: () => rejectionId, resolve: resolver(current), repair });
+    expect(repair).toHaveBeenCalledOnce();
+    expect(result.record).toMatchObject({ rule_a: 'rewrite', rule_a_reason: 'promo_request', rule_a_bonus_code: bonus });
+    expect(result.resolved.effective.proposal.proposed_action).toMatchObject({ type: 'offer_course_bonus', bonus_offering_code: bonus });
+  });
+  it('una pregunta de precio sin la frase: una reescritura y, si falla, burbuja fija al final', async () => {
+    const current = priceContext('cuánto sale?');
+    const repair = vi.fn(async () => { throw new Error('provider timeout'); });
+    const result = await resolveDeterministicRulesTurnV1({ context: current,
+      initial: draft({ memory_candidates: [], response: { messages: ['Tenés varias formas de pago.'], call_offer: null } }),
+      repair_enabled: true, rejection_id: () => rejectionId, resolve: resolver(current), repair });
+    expect(repair).toHaveBeenCalledOnce();
+    expect(result.record).toMatchObject({ rule_a: 'not_applicable', rule_c: 'fixed' });
+    expect(result.resolved.effective.proposal.response.messages).toEqual(['Tenés varias formas de pago.', probe]);
+  });
+  it('el modelo que ya incluye la frase cumple sin reescritura', async () => {
+    const current = priceContext('cuánto sale?');
+    const repair = vi.fn();
+    const result = await resolveDeterministicRulesTurnV1({ context: current,
+      initial: draft({ memory_candidates: [], response: { messages: ['Tenés varias formas de pago.', probe], call_offer: null } }),
+      repair_enabled: true, rejection_id: () => rejectionId, resolve: resolver(current), repair });
+    expect(repair).not.toHaveBeenCalled();
+    expect(result.record).toMatchObject({ rule_c: 'model' });
+  });
+  it('un cierre pasivo se reescribe y, si persiste, se quita sólo esa oración', async () => {
+    const current = priceContext('me gusta ecommerce');
+    const repair = vi.fn(async () => { throw new Error('provider timeout'); });
+    const result = await resolveDeterministicRulesTurnV1({ context: current,
+      initial: draft({ memory_candidates: [], response: { messages: ['Son 8 clases online. Lo ves tranquilo y me avisás.'], call_offer: null } }),
+      repair_enabled: true, rejection_id: () => rejectionId, resolve: resolver(current), repair });
+    expect(result.record).toMatchObject({ rule_d: 'fixed' });
+    expect(result.resolved.effective.proposal.response.messages).toEqual(['Son 8 clases online.']);
+  });
+  it('"sí" a la pregunta de precio dispara la oferta', () => {
+    const current = priceContext('sí, sólo eso');
+    current.turn.recent_turns = [{ id: 'previous', direction: 'outbound', content: `Son USD 360.\n${probe}` }];
+    expect(decideDeterministicRulesV1(current, draft({ memory_candidates: [] }).proposal).bonus)
+      .toMatchObject({ kind: 'offer', trigger: 'price_probe_confirmed' });
+  });
+});
+
+describe('dueño — nunca silencio', () => {
+  it('un respaldo fijo inválido nunca lanza: sale el mejor candidato válido', async () => {
+    const current = context(false);
+    current.turn.batch_messages = [{ id: 'current', text: 'cuánto sale?' }];
+    current.capabilities.course_bonus!.ladder = deriveCourseBonusLadderV1({ observed_price_objection_count: 0,
+      call_invitation_status: 'not_offered', call_offer_count: 0, may_offer_call: false });
+    const real = resolver(current);
+    let calls = 0;
+    const resolve = vi.fn(async (...args: Parameters<typeof real>) => {
+      calls += 1;
+      if (calls === 2) throw new Error('PLANNERLESS_PROPOSAL_REJECTED:FACT_VALUE_MISMATCH:fixed');
+      return real(...args);
+    });
+    const result = await resolveDeterministicRulesTurnV1({ context: current,
+      initial: draft({ memory_candidates: [], response: { messages: ['Tenés varias formas de pago.'], call_offer: null } }),
+      repair_enabled: false, rejection_id: () => rejectionId, resolve, repair: vi.fn() });
+    expect(result.resolved.effective.proposal.response.messages.length).toBeGreaterThan(0);
+    expect(result.record).toMatchObject({ rule_c: 'unmet' });
+  });
+});

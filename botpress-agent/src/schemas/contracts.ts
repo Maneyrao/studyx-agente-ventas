@@ -586,7 +586,7 @@ export const CatalogIndexSchema = z.object({
 // sends exactly these legacy facts; Rule A remains the sole canonical rule (2).
 // Neither the canonical brain schema nor any permission is relaxed here.
 const LegacyClaimCourseBonusLadderV1Schema = CourseBonusLadderV1Schema
-  .omit({ price_only_barrier_confirmed: true, current_turn_price_objection: true })
+  .omit({ price_only_barrier_confirmed: true, current_turn_price_objection: true, instant_trigger: true })
   .extend({ required_price_objection_count: z.literal(3) })
   .strict()
 

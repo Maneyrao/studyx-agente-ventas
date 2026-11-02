@@ -1,5 +1,5 @@
 import { deriveCourseBonusLadderV1 } from '@/shared/conversation/bonus-ladder';
-import { draftConfirmsPriceOnlyBarrierV1, draftRecordsPriceObjectionV1, isCheckoutV1 } from '@/shared/conversation/deterministic-sales-rules';
+import { promoRequestV1, draftConfirmsPriceOnlyBarrierV1, draftRecordsPriceObjectionV1, isCheckoutV1 } from '@/shared/conversation/deterministic-sales-rules';
 import { validateCourseMentionsV1 } from '@/shared/conversation/course-mentions';
 import { messagesWithoutExactCallOfferV1 } from '@/shared/conversation/call-offer-format';
 import { courseBonusLadderRejectionSubjectsV1 } from '@/shared/conversation/bonus-ladder-rejection';
@@ -576,12 +576,15 @@ export function authorizeAgentTurnV2(input: {
       observed_price_objection_count: cap.ladder.observed_price_objection_count + (currentObjection ? 1 : 0),
       price_only_barrier_confirmed: cap.ladder.price_only_barrier_confirmed === true
         || draftConfirmsPriceOnlyBarrierV1(draftEvidence, batch) }) : undefined;
-    const escalationWithoutNewObjection = (cap?.bonus_offerings.length ?? 0) > 0 && !currentObjection;
+    // Owner rule (2026-11-02, second revision): a promo/discount request or a
+    // confirmed price probe enables the offer instantly and allows escalation.
+    const instant = cap?.ladder?.instant_trigger === true || batch.some(promoRequestV1);
+    const escalationWithoutNewObjection = (cap?.bonus_offerings.length ?? 0) > 0 && !currentObjection && !instant;
     const checkout = isCheckoutV1({ stage: state.stage, awaiting_reply: state.awaiting_reply,
       payment_link_request_pending: state.payment_link_request?.status === 'pending' }, draftEvidence);
     const reason = cap?.enabled !== true ? 'bonus_disabled'
       : checkout ? 'sale_already_closed'
-      : ladder?.eligible !== true || escalationWithoutNewObjection ? 'ladder_step_pending'
+      : (ladder?.eligible !== true && !instant) || escalationWithoutNewObjection ? 'ladder_step_pending'
       : !cap.rule_bonus ? ((cap.bonus_offerings.length >= (cap.max_bonus_courses ?? 0)) ? 'bonus_limit_reached' : 'bonus_disabled')
       : proposed.bonus_offering_code !== cap.rule_bonus.bonus_offering_code
         && !cap.bonus_offerings.some(o => o.code === proposed.bonus_offering_code)

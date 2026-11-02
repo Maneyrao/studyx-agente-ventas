@@ -2231,6 +2231,8 @@ export function decideRepairLevelV1(input: {
     || reason.code === 'REPEATED_AGENT_REPLY'
     || reason.code === 'CALL_OFFER_REQUIRED'
     || reason.code === 'BONUS_OFFER_REQUIRED'
+    || reason.code === 'PRICE_PROBE_REQUIRED'
+    || reason.code === 'PASSIVE_CLOSING_FORBIDDEN'
     || reason.code === 'CALL_OFFER_MESSAGE_BOUNDARY_INVALID'
     || reason.code === 'CHANNEL_PREFERENCE_NOT_SUPPORTED'
   ))

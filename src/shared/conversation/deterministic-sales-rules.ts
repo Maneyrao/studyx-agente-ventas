@@ -104,7 +104,135 @@ export function priceExpressionHintV1(text: string): boolean {
   });
 }
 
-export type RuleOutcomeV1 = 'not_applicable' | 'model' | 'rewrite' | 'fixed';
+/** Owner decision (2026-11-02, second revision, bounded the same day): ANY
+ * request or hint about a promotion or discount enables the offer instantly,
+ * except when the customer negates it. Deterministic and literal. */
+const PROMO_REQUEST = /\b(?:promo|promos|promocion|promociones|descuento|descuentos|descontar|descontame|rebaja|rebajar|rebajame|bonificacion|bonificar|beca|becas|cupon|gratis|gratuito|gratuita|sin costo|mas barato|mas barata|precio especial|algun beneficio|alguna ventaja|me haces precio|haceme precio|un mejor precio)\b/gu;
+const NEGATION_WORDS = new Set(['no', 'ni', 'nunca', 'tampoco', 'nada']);
+
+function clausesOf(text: string): string[] {
+  return normalizedVisible(text).split(/[,.;:!?\n]+|\b(?:pero|aunque)\b/u).map(clause => clause.trim()).filter(Boolean);
+}
+
+export function promoRequestV1(text: string): boolean {
+  return clausesOf(text).some(clause => [...clause.matchAll(PROMO_REQUEST)].some(match => {
+    const before = clause.slice(0, match.index).split(/\s+/u).filter(Boolean).slice(-4);
+    return !before.some(word => NEGATION_WORDS.has(word));
+  }));
+}
+
+/** Choosing a plan is checkout, not a price concern ("elijo 12 cuotas", "pago único"). */
+const PLAN_CHOICE = /\b(?:\d+\s*cuotas|(?:en|de)\s+(?:doce|seis|una?)\s+cuotas?|pago unico|un (?:solo )?pago|de contado|al contado|las? \d+ cuotas|el plan de \d+)\b/u;
+
+export function planChoiceV1(text: string): boolean {
+  return PLAN_CHOICE.test(normalizedVisible(text));
+}
+
+/** Purchase intent goes to checkout (with any live offer attached), never to a new bonus. */
+const PURCHASE_INTENT = /\b(?:pasame el link|pasame el enlace|mandame el link|manda(?:me)? el enlace|quiero pagar|como pago|lo compro|lo quiero|me inscribo|quiero inscribirme|inscribime|arranquemos|avancemos|vamos con eso|lo tomo)\b/u;
+
+export function purchaseIntentV1(text: string): boolean {
+  return PURCHASE_INTENT.test(normalizedVisible(text));
+}
+
+const STRONG_PRICE_QUESTION = /\b(?:cuanto (?:sale|cuesta|vale|es|seria|salen|cuestan|queda|pago|tengo que pagar)|que precio|cual es el precio|el precio)\b/u;
+const WEAK_PRICE_WORDS = /\b(?:precio|precios|valor|costo|coste|cuotas?)\b/u;
+const OBJECTION_WORDS = /\b(?:caro|cara|caros|costoso|costosa)\b/u;
+
+/** A price question or objection this turn (owner rule C). A plan choice is not one. */
+export function priceConcernTextV1(text: string): boolean {
+  const objection = priceExpressionHintV1(text) || clausesOf(text).some(clause => {
+    const match = OBJECTION_WORDS.exec(clause);
+    return match !== null && !clause.slice(0, match.index).split(/\s+/u).filter(Boolean).slice(-3).some(word => NEGATION_WORDS.has(word));
+  });
+  if (objection) return true;
+  const normalized = normalizedVisible(text);
+  if (planChoiceV1(text) || purchaseIntentV1(text)) return false;
+  return STRONG_PRICE_QUESTION.test(normalized) || (normalized.includes('?') && WEAK_PRICE_WORDS.test(normalized));
+}
+
+/** A new price objection (not a question): only this confirms the probe besides an affirmation. */
+function priceObjectionTextV1(text: string): boolean {
+  // Excludes questions ("es caro?") and negations ("no es caro").
+  return priceExpressionHintV1(text);
+}
+
+/** Owner wording for rule C. */
+export const PRICE_PROBE_V1 = 'El precio es el único inconveniente? Puedo revisar una promoción.';
+
+export function messagesContainPriceProbeV1(messages: readonly string[]): boolean {
+  const text = normalizedVisible(messages.join(' '));
+  return text.includes('precio es el unico inconveniente') && text.includes('revisar una promocion');
+}
+
+const AFFIRMATIVE = /^(?:si|sii+|sip|claro|obvio|exacto|correcto|asi es|totalmente|seguro|es eso|eso|tal cual|solo eso|solo el precio|el precio|es el precio)\b/u;
+
+/** Only an affirmation answering THAT question, or a new price objection. */
+export function confirmsPriceProbeV1(batch: readonly string[], previousAgentMessages: readonly string[]): boolean {
+  if (!messagesContainPriceProbeV1(previousAgentMessages)) return false;
+  if (batch.some(text => purchaseIntentV1(text) || planChoiceV1(text))) return false;
+  return batch.some(text => {
+    const normalized = normalizedVisible(text).replace(/[^\p{L}\p{N}\s]+/gu, ' ').trim();
+    return AFFIRMATIVE.test(normalized) || priceObjectionTextV1(text);
+  });
+}
+
+/** Passive closings the owner forbids ("lo ves tranquilo"...). */
+const PASSIVE_CLOSING = /\b(?:lo ves tranquil[oa]|lo pensas tranquil[oa]|pensalo tranquil[oa]|tomate (?:tu|el) tiempo|sin apuro|sin presion|cuando quieras|cuando puedas|cuando lo decidas|avisame|me avisas|quedo atent[oa]|quedo a disposicion|aca estoy|estoy a disposicion|lo que decidas|cualquier cosa me escribis|si te decidis)\b/u;
+
+export function passiveClosingSentencesV1(messages: readonly string[]): string[] {
+  return messages.flatMap(message => message.split(/(?<=[.!?])\s+|\n+/u))
+    .filter(sentence => PASSIVE_CLOSING.test(normalizedVisible(sentence)));
+}
+
+/** Rule D fallback: drop only the passive sentences; never empties a bubble. */
+export function withoutPassiveClosingV1(messages: readonly string[]): string[] {
+  const cleaned = messages.map(message => message.split(/(?<=[.!?])\s+|\n+/u)
+    .filter(sentence => !PASSIVE_CLOSING.test(normalizedVisible(sentence))).join(' ').trim());
+  const kept = cleaned.filter(message => message.length > 0);
+  return kept.length ? kept : [...messages];
+}
+
+const CALL_COORDINATION_MOVES = new Set(['request_call', 'decline_call', 'continue_by_chat']);
+const TERMINAL_MOVES = new Set(['decline_purchase']);
+
+/** Rule D applies only to negotiation closings with the sale open (owner bound):
+ * not checkout, data collection, call coordination, post-sale, a definitive no or opt-out. */
+export function passiveRuleAppliesV1(context: RuleContextV1, draft: RuleDraftV1 & { readonly profile_requests?: readonly unknown[] }): boolean {
+  if (context.payment_paid || context.payment_reported === true || context.opted_out === true) return false;
+  if (isCheckoutV1(context, draft) || context.awaiting_reply === 'call_or_chat') return false;
+  if (context.call_offer_status === 'accepted' || context.active_call === true) return false;
+  const moves = draftMoves(draft);
+  if ([...moves].some(move => CALL_COORDINATION_MOVES.has(move) || TERMINAL_MOVES.has(move))) return false;
+  if (['request_call_now'].includes(draft.proposed_action.type) || (draft.profile_requests?.length ?? 0) > 0) return false;
+  return true;
+}
+
+export type PriceProbeRuleDecisionV1 = { readonly kind: 'none'; readonly reason: string } | { readonly kind: 'ask' };
+
+/** Rule C: once per conversation (owner bound), outside checkout, and never for a plan choice. */
+export function decidePriceProbeRuleV1(context: RuleContextV1, draft: RuleDraftV1, bonus: BonusRuleDecisionV1): PriceProbeRuleDecisionV1 {
+  if (bonus.kind === 'offer') return { kind: 'none', reason: 'bonus_turn' };
+  if (!context.bonus_enabled) return { kind: 'none', reason: 'bonus_disabled' };
+  if (context.payment_paid) return { kind: 'none', reason: 'paid' };
+  if (isCheckoutV1(context, draft)) return { kind: 'none', reason: 'checkout' };
+  if (context.package_status === 'offered' || context.package_status === 'accepted' || context.package_status === 'attached')
+    return { kind: 'none', reason: 'package_exists' };
+  if (context.recent_turns.some(turn => turn.direction === 'outbound' && messagesContainPriceProbeV1([turn.content])))
+    return { kind: 'none', reason: 'already_asked' };
+  if (!context.recent_turns_complete) return { kind: 'none', reason: 'history_truncated' };
+  if (context.batch_texts.some(text => planChoiceV1(text) || purchaseIntentV1(text))) return { kind: 'none', reason: 'plan_choice' };
+  const concern = context.batch_texts.some(priceConcernTextV1) || draftRecordsPriceObjectionV1(draft, context.batch_texts);
+  return concern ? { kind: 'ask' } : { kind: 'none', reason: 'no_price_concern' };
+}
+
+/** Rule C fallback: the model's answer bubble plus the fixed probe bubble. */
+export function withPriceProbeV1(messages: readonly string[]): [string, string] | [string] {
+  const answer = messages.find(message => !messagesContainPriceProbeV1([message]));
+  return answer ? [answer, PRICE_PROBE_V1] : [PRICE_PROBE_V1];
+}
+
+export type RuleOutcomeV1 = 'not_applicable' | 'model' | 'rewrite' | 'fixed' | 'unmet';
 
 export interface RuleDraftV1 {
   readonly response: { readonly messages: readonly string[]; readonly call_offer?: string | null };
@@ -135,6 +263,11 @@ export interface RuleContextV1 {
   readonly call_offer_count: number;
   readonly call_preference: string;
   readonly customer_expressed_interest: boolean;
+  /** Latest agent bubbles, for confirming the rule C question. */
+  readonly previous_agent_messages?: readonly string[];
+  readonly payment_reported?: boolean;
+  readonly active_call?: boolean;
+  readonly opted_out?: boolean;
 }
 
 const CHECKOUT_AWAITING = new Set(['payment_plan', 'payment_confirmation', 'contact_details']);
@@ -201,7 +334,7 @@ export function isCheckoutV1(context: Pick<RuleContextV1, 'stage' | 'awaiting_re
 
 export type BonusRuleDecisionV1 =
   | { readonly kind: 'none'; readonly reason: string }
-  | { readonly kind: 'offer'; readonly trigger: 'second_price_objection' | 'price_only_barrier' | 'escalation';
+  | { readonly kind: 'offer'; readonly trigger: 'second_price_objection' | 'price_only_barrier' | 'escalation' | 'promo_request' | 'price_probe_confirmed';
       readonly paid_code: string; readonly paid_name: string; readonly bonus_code: string; readonly bonus_name: string;
       readonly position: number; readonly prior_bonus: readonly { readonly code: string; readonly display_name: string }[] };
 
@@ -212,12 +345,18 @@ export function decideBonusRuleV1(context: RuleContextV1, draft: RuleDraftV1): B
   if (isCheckoutV1(context, draft)) return { kind: 'none', reason: 'checkout' };
   if (context.package_status === 'accepted' || context.package_status === 'attached') return { kind: 'none', reason: 'package_accepted' };
   const currentObjection = draftRecordsPriceObjectionV1(draft, context.batch_texts);
+  const promoRequest = context.batch_texts.some(promoRequestV1);
+  const probeConfirmed = confirmsPriceProbeV1(context.batch_texts, context.previous_agent_messages ?? []);
   const delivered = context.package_status === 'offered' ? context.delivered_bonus : [];
   let trigger: Extract<BonusRuleDecisionV1, { kind: 'offer' }>['trigger'];
   if (delivered.length > 0) {
-    // Escalation: a new price objection in a customer reply after a delivered offer.
-    if (!currentObjection) return { kind: 'none', reason: 'no_new_price_objection' };
+    // Escalation: a new price objection or promo request in a reply after a delivered offer.
+    if (!currentObjection && !promoRequest && !probeConfirmed) return { kind: 'none', reason: 'no_new_price_objection' };
     trigger = 'escalation';
+  } else if (promoRequest) {
+    trigger = 'promo_request';
+  } else if (probeConfirmed) {
+    trigger = 'price_probe_confirmed';
   } else if (context.prior_price_objection_count + (currentObjection ? 1 : 0) >= 2) {
     trigger = 'second_price_objection';
   } else if (context.price_only_confirmed || draftConfirmsPriceOnlyBarrierV1(draft, context.batch_texts)) {
