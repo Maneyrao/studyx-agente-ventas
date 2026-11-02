@@ -296,7 +296,8 @@ export function priceObservationQuoteInBatchV1(quote: string, batch: readonly st
         const localEnd = Math.min(clause.length, end - match.index);
         const quoteStart = normalizedVisible(clause.slice(0, localStart)).length;
         const quoteEnd = normalizedVisible(clause.slice(0, localEnd)).length;
-        const negations = normalizedVisible(clause).matchAll(/\b(?:no|nunca|tampoco|nada|para nada)\s+(?:(?:es|esta|me parece|resulta|lo veo|lo considero)\s+)?(?:tan\s+)?(?:car[oa]s?|costos[oa]s?)\b/gu);
+        // Also "no estoy diciendo que me parezca caro": any negation earlier in the clause.
+        const negations = normalizedVisible(clause).matchAll(/\b(?:no|nunca|tampoco|nada|para nada)\b[^.!?;]*?\b(?:car[oa]s?|costos[oa]s?)\b/gu);
         return [...negations].some(negation => negation.index < quoteEnd
           && negation.index + negation[0].length > quoteStart);
       });

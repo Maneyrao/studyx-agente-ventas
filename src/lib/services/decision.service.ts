@@ -1812,9 +1812,13 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
             const workspace = await db<Array<{id:string}>>`SELECT id FROM workspaces WHERE slug=${workspaceSlug}`;
             canonicalWorkspaceId = workspace[0]?.id ?? null;
             if (!canonicalWorkspaceId) throw new DecisionPolicyError('AGENT_TURN_V2_CONTEXT_NOT_FOUND');
-            // Owner instant promo: the paid course may be named in this same turn.
-            // Record that interest first (no objection counted) so the offer's
-            // identity lock sees it; the regular record below stays unchanged.
+            // Owner instant promo: the paid course may be named in this same turn,
+            // even the very first one. Ensure the minimal state row (source NULL, so
+            // the regular transition below still applies) and record that interest
+            // first (no objection counted) so the offer's identity lock sees it.
+            await db`INSERT INTO conversation_sales_context_states_v1 (workspace_id, conversation_id, contact_id, stage)
+              VALUES (${canonicalWorkspaceId}::uuid, ${turn.conversation_id}::uuid, ${turn.contact_id}::uuid, 'exploring')
+              ON CONFLICT (workspace_id, conversation_id) DO NOTHING`;
             await recordPromotionConversationContextV1(db, {
               workspace_id: canonicalWorkspaceId, contact_id: turn.contact_id, conversation_id: turn.conversation_id,
               source_turn_id: turn.id, discussed_offering_code: committedBusinessAction.interest_offering_code,

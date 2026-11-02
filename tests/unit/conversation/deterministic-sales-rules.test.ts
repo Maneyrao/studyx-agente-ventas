@@ -335,3 +335,14 @@ describe('dueño — límites de las reglas C/D y de la promo instantánea', () 
     expect(passiveRuleAppliesV1(ctx(), draft({ memory: [] }))).toBe(true);
   });
 });
+
+describe('dueño — negación lejana de "caro" no es objeción (golden real 999fada/18)', () => {
+  it('"no estoy diciendo que me parezca caro" no cuenta aunque el modelo la cite', () => {
+    const batch = ['Es caro? Te pregunto, no estoy diciendo que me parezca caro.'];
+    expect(decideBonusRuleV1(ctx({ prior_price_objection_count: 1, batch_texts: batch }),
+      draft({ memory: [{ type: 'objection', key: 'price_objection', value: 'caro', source_quote: 'me parezca caro' }] })).kind).toBe('none');
+  });
+  it('una objeción afirmativa sigue contando', () => {
+    expect(decideBonusRuleV1(ctx({ prior_price_objection_count: 1, batch_texts: ['me sigue pareciendo caro'] }), draft()).kind).toBe('offer');
+  });
+});

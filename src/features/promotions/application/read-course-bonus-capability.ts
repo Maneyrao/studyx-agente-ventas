@@ -1,4 +1,5 @@
 import { readCourseBonusLadderV1 } from './read-course-bonus-ladder';
+import { deriveCourseBonusLadderV1 } from '@/shared/conversation/bonus-ladder';
 import { nextRuleBonusCodeV1, promoRequestV1 } from '@/shared/conversation/deterministic-sales-rules';
 import { currentFactualCourseReferencesV1 } from '@/features/orchestration/domain/course-focus';
 import type { CourseBonusLadderV1 } from '@/shared/conversation/bonus-ladder';
@@ -448,6 +449,7 @@ async function readDirectCapability(input: {
   workspace_slug: string; contact_id: string; conversation_id: string;
   selected_offering_code: string | null; source_turn_id?: string;
 }, db: DbClient, max: CourseBonusMaxCoursesV1): Promise<CourseBonusCapabilityV1> {
+  let sameTurn = false;
   if (!input.selected_offering_code) {
     // Interest is commercial state, not a purchase selection. Resolve only the
     // durable, scoped projection with a correlated source no later than this turn.
@@ -478,6 +480,7 @@ async function readDirectCapability(input: {
     const sameTurnCourse = interest ? null : await promoRequestedCourseThisTurn(input, db);
     if (!interest && !sameTurnCourse) return {...hidden('needs_interest'), enabled:true,max_bonus_courses:max};
     input={...input,selected_offering_code:interest?.interest_offering_code ?? sameTurnCourse};
+    sameTurn = !interest && sameTurnCourse !== null;
   }
   const [row] = await db<Array<{
     promotion_code: string | null; promotion_cycle_id: string; offer_version: number;
@@ -516,7 +519,12 @@ async function readDirectCapability(input: {
     WHERE w.slug=${input.workspace_slug} AND w.status='active'
   `;
   if (!row) return {...hidden('unavailable'),enabled:false,max_bonus_courses:max};
-  const ladder=await readCourseBonusLadderV1(input,db);
+  // First message of a conversation: no sales state yet, so no ladder. A promo
+  // request naming the course in this very message is the verified instant trigger.
+  const ladder=await readCourseBonusLadderV1(input,db)
+    ?? (sameTurn ? { ...deriveCourseBonusLadderV1({ observed_price_objection_count: 0, call_invitation_status: 'not_offered',
+      call_offer_count: 0, may_offer_call: false }), eligible: true, missing_steps: [], current_turn_price_objection: true,
+      instant_trigger: true } : null);
   const activeCourses=await db<Array<{code:string;display_name:string}>>`
     SELECT o.code,o.display_name FROM offerings o JOIN workspaces w ON w.id=o.workspace_id
     WHERE w.slug=${input.workspace_slug} AND o.status='active' AND o.offering_type='course'`;

@@ -175,9 +175,13 @@ run('owner rules at the actual commit and transactional boundaries', () => {
       if (!allowed) expect(result).toMatchObject({ reason: 'ladder_step_pending' });
     });
 
-  it('owner instant promo names the paid course in the same message: capability and commit offer it at once', async () => {
+  it.each(['with_state', 'first_message_without_state'] as const)('owner instant promo names the paid course in the same message: capability and commit offer it at once (%s)', async variant => {
     const text = 'Me interesa Introducción al Ecommerce para mi tienda. Tenés alguna promoción para sumar un curso gratuito?';
     const f = await seedConversationForAgentTurn({ selected_offering_code: null, first_message: text });
+    if (variant === 'first_message_without_state') {
+      await db!`DELETE FROM conversation_sales_context_state_events_v1 WHERE conversation_id=${f.conversation_id}::uuid`;
+      await db!`DELETE FROM conversation_sales_context_states_v1 WHERE conversation_id=${f.conversation_id}::uuid`;
+    }
     const capability = await readCourseBonusCapabilityV1({ workspace_slug: 'studyx', contact_id: f.contact_id,
       conversation_id: f.conversation_id, channel: 'text', selected_offering_code: null, source_turn_id: f.turn_id }, { db: db! });
     expect(capability).toMatchObject({ interest_offering_code: paid, rule_bonus: { bonus_offering_code: bonus } });
@@ -189,6 +193,8 @@ run('owner rules at the actual commit and transactional boundaries', () => {
     expect(committed.status).toBe('committed');
     const [count] = await db!`SELECT count(*)::int count FROM promotion_offer_bonus_offerings WHERE source_turn_id=${f.turn_id}`;
     expect(count.count).toBe(1);
+    const [state] = await db!`SELECT selected_offering_code, source_turn_id FROM conversation_sales_context_states_v1 WHERE conversation_id=${f.conversation_id}::uuid`;
+    expect(state).toMatchObject({ selected_offering_code: paid, source_turn_id: f.turn_id });
   });
 
   it.each(['persisted_selection', 'interest_only'] as const)(
