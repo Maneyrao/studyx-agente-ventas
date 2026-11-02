@@ -3389,7 +3389,10 @@ describe('la conversación sobre candidatos no se confunde con autoridad comerci
     expect(result.effective.proposal.response.messages).toEqual(initial.proposal.response.messages);
   });
 
-  it('rechaza la respuesta completa sin quitar una oración', async () => {
+  // Changed 2026-11-02 (owner: never the technical contingency): after the one
+  // rewrite fails, a reply rejected ONLY for an unsupported prerequisite claim
+  // is sent without that claim instead of "Qué dato o qué curso revisamos?".
+  it('si la reparación falla, envía la respuesta sin la afirmación de requisitos (nunca contingencia)', async () => {
     const initial = generated(proposal({
       response: {
         messages: [
@@ -3400,13 +3403,14 @@ describe('la conversación sobre candidatos no se confunde con autoridad comerci
       },
     }));
 
-    await expect(resolveAgentAPlannerlessProposalV2({
+    const result = await resolveAgentAPlannerlessProposalV2({
       initial,
       context: context(),
       repair_enabled: true,
       rejection_id: '00000000-0000-4000-8000-0000000000ac',
       repair: vi.fn(),
-    })).rejects.toThrow('PLANNERLESS_PROPOSAL_REJECTED');
+    });
+    expect(result.effective.proposal.response.messages).toEqual(['La formación tiene 38 clases.']);
   });
 
   it('rejects an unsupported prerequisite clause without altering it', async () => {

@@ -217,4 +217,27 @@ OWNER_PROMOTION_MODE_REPLAY_CASES_MUTABLE.push({
   ],
 });
 
+/** Owner conversation of 2026-11-02 19:20–19:24: the offer worked; asking for
+ * the syllabus right after it fell into the contingency (unsupported "desde cero"). */
+OWNER_PROMOTION_MODE_REPLAY_CASES_MUTABLE.push({
+  id: '22_owner_promotion_mode_replay_20261102_1920',
+  title: 'Replay 2/11 19:20: promo confirmada → «y el programa?» responde el temario sin contingencia',
+  turns: [
+    englishTurn('promo_first', 'no hay ningna promo\nque me puedas ofrecer?'),
+    englishTurn('english', 'ingles'),
+    englishTurn('from_zero_price', 'seria de 0\ncual es el precio'),
+    englishTurn('price_only_confirmed', 'si\nes el un inconveniente', {
+      must: ['Confirmó que el precio es el único inconveniente: presentar la promoción exclusiva (Inglés 1 con Inglés 2 bonificado) y cerrar con alternativa de plan.'],
+      authority: [promotionMode, ruleA],
+      expected: { move: replayMoves, action: ['offer_course_bonus'], state: {
+        promotion: { status: ['offer_available'], bonusCount: [1], paidCourse: ['ingles_1'] } } },
+      hard: [{ type: 'workflow_committed' }, { type: 'action_bonus_in', values: ['ingles_2'] }, ...noContingency],
+    }),
+    englishTurn('syllabus', 'y el programa?', {
+      must: ['Responder qué incluye Inglés 1 con hechos autorizados, conservando el paquete vigente, sin contingencia.'],
+      hard: [{ type: 'workflow_committed' }, ...noContingency],
+    }),
+  ],
+});
+
 export const OWNER_PROMOTION_MODE_REPLAY_CASES: readonly GoldenCaseV1[] = OWNER_PROMOTION_MODE_REPLAY_CASES_MUTABLE;

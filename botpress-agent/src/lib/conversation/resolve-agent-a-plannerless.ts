@@ -10,6 +10,7 @@ import {
   mentionsMissingIntakeField,
   solicitsACallV1,
   validateAgentATurnProposalV1,
+  withoutUnsupportedPrerequisiteClausesV1,
 } from './agent-a-brain'
 import type {
   AgentAProposalCycleEvidenceV1,
@@ -528,10 +529,37 @@ export async function resolveAgentAPlannerlessProposalV2<
     rejection: terminalRejection,
     action_rejection: initialActionRejection,
   })
+  // Never contingency for a lone unsupported prerequisite claim: send the
+  // model's own reply without that clause, revalidated like any candidate.
+  const onlyPrerequisites = (value: TurnRejectionV1) => value.rejections.length > 0
+    && value.rejections.every((reason) => reason.code === 'FACT_VALUE_MISMATCH' && reason.subject === 'prerequisites')
+  const salvage = (candidates: readonly T[]): PlannerlessResolutionV2<T> | null => {
+    for (const source of candidates) {
+      const messages = source.proposal.response.messages.map(withoutUnsupportedPrerequisiteClausesV1)
+        .filter((message) => message.length > 0)
+      if (messages.length === 0 || messages.join('\n') === source.proposal.response.messages.join('\n')) continue
+      const cleaned = { ...source, proposal: { ...source.proposal,
+        response: { ...source.proposal.response, messages: messages as [string, ...string[]] },
+        profile_requests: messages.length === source.proposal.response.messages.length ? source.proposal.profile_requests : [] } }
+      const checked = preparePlannerlessProposal({
+        initial: cleaned, context: input.context, authorized_fact_ids: factIds,
+        rejection_id: rejection.rejection_id, semantic_rejections: input.semantic_rejections ?? 'blocking',
+      })
+      if (checked.rejection !== null) continue
+      return { effective: checked.effective,
+        evidence: { rejection_codes: rejectedCodes(), repair_attempted: source !== initial, repaired: false,
+          proposal_generation_calls: source !== initial ? 2 : 1 },
+        rejection: terminalRejection, action_rejection: actionRejectionV1(checked.effective.proposal, checked.originalRejection, input.context) }
+    }
+    return null
+  }
+  let lastRepaired: T | null = null
   const mayRepair = input.repair_enabled
     && initial.proposal.repair_of === null
   if (!mayRepair) {
     if (mayDegradeToBackendBoundary(initial.proposal, rejection, input.context)) return degraded(false)
+    const salvaged = onlyPrerequisites(rejection) ? salvage([initial]) : null
+    if (salvaged) return salvaged
     throw plannerlessRejectionError(rejection)
   }
   try {
@@ -571,6 +599,7 @@ export async function resolveAgentAPlannerlessProposalV2<
         }
       }
       terminalRejection = repaired.rejection
+      lastRepaired = repaired.effective
       input.observe?.({ kind: 'proposal_rejected', rejection: terminalRejection })
     }
   } catch (error) {
@@ -607,6 +636,9 @@ export async function resolveAgentAPlannerlessProposalV2<
     }
   }
   if (mayDegradeToBackendBoundary(initial.proposal, rejection, input.context)) return degraded(true)
+  const salvaged = onlyPrerequisites(terminalRejection)
+    ? salvage([...(lastRepaired ? [lastRepaired] : []), ...(onlyPrerequisites(rejection) ? [initial] : [])]) : null
+  if (salvaged) return salvaged
   input.observe?.({ kind: 'proposal_rejected', rejection: terminalRejection })
   throw plannerlessRejectionError(terminalRejection)
 }

@@ -1984,3 +1984,20 @@ it('rejects a call promise even when the same message asks for missing call iden
     subject: 'call_confirmation',
   });
 });
+
+describe('nunca contingencia por una cláusula de requisitos sin respaldo (en vivo 2026-11-02 19:23)', () => {
+  it('después de la única reparación, envía la respuesta del modelo sin esa cláusula', async () => {
+    const { resolveAgentAPlannerlessProposalV2 } = await import('../../../botpress-agent/src/lib/conversation/resolve-agent-a-plannerless');
+    const ctx = context({ turn: { batch_messages: [{ id: 'm2', text: 'y el programa?' }], recent_turns: [] } } as Partial<AgentAContextV1>);
+    const draft = (text: string, repaired = false) => ({ proposal: proposal({
+      response: { messages: [text], call_offer: null }, used_fact_ids: [],
+      ...(repaired ? { repair_of: { rejection_id: '11111111-1111-4111-8111-111111111111', attempt: 1 as const } } : {}),
+    }), provider: 'deepseek-direct' as const, model: 'deepseek-v4-flash', latency_ms: 1, attempt_count: 1 as const });
+    const result = await resolveAgentAPlannerlessProposalV2({
+      context: ctx, repair_enabled: true, rejection_id: '11111111-1111-4111-8111-111111111111',
+      initial: draft('Son clases online, pensadas para que construyas la base desde cero y lo apliques en la práctica, con material teórico incluido.'),
+      repair: async () => draft('Son clases online, pensadas para arrancar desde cero, con material teórico de apoyo.', true),
+    });
+    expect(result.effective.proposal.response.messages).toEqual(['Son clases online, con material teórico de apoyo.']);
+  });
+});

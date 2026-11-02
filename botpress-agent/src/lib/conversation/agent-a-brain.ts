@@ -1525,6 +1525,21 @@ export function assertsUnsupportedPrerequisitesV1(message: string): boolean {
  * drop the whole assertion: a partial sentence must never turn an unconfirmed
  * course requirement into customer-facing copy.
  */
+/** Never-contingency salvage (2026-11-02 live): drop only the clause that
+ * asserts an unsupported prerequisite ("pensadas para que construyas la base
+ * desde cero"), keeping the model's factual answer around it. A sentence that
+ * still asserts it after clause removal is dropped whole. */
+export function withoutUnsupportedPrerequisiteClausesV1(message: string): string {
+  return message.split(/(?<=[.!?\n])/u).map((sentence) => {
+    if (!assertsUnsupportedPrerequisitesV1(sentence)) return sentence;
+    const ending = /[.!?\n]\s*$/u.exec(sentence)?.[0] ?? '';
+    const body = sentence.slice(0, sentence.length - ending.length);
+    const kept = body.split(/,\s+/u).filter((clause) => !assertsUnsupportedPrerequisitesV1(clause));
+    const rebuilt = kept.join(', ').trim();
+    return rebuilt && !assertsUnsupportedPrerequisitesV1(rebuilt) ? `${sentence.match(/^\s*/u)![0]}${rebuilt}${ending}` : '';
+  }).join('').replace(/\s{2,}/gu, ' ').trim();
+}
+
 export function removeUnsupportedPrerequisiteAssertionsV1(message: string): string[] {
   return message
     .split(/(?<=[.!?\n])/u)
