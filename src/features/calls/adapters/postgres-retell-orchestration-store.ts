@@ -29,9 +29,9 @@ import type { RetellPaymentPlanRequest } from '../application/retell-tools';
 import { logger } from '@/lib/observability/structured-log';
 import { splitFullName } from '@/lib/heuristics/contact-identity';
 import {
-  isCentralCargaBonusEnabledForContact,
   loadCentralCargaBonusConfig,
 } from '@/features/fulfillment/central-carga/config';
+import { isCentralCargaBonusEnabledForStoredContact } from '@/features/fulfillment/central-carga/bonus-contact-permission';
 
 export type RetellOutboundSender = (
   input: Parameters<typeof sendOutboundMessage>[0],
@@ -95,7 +95,8 @@ export class PostgresRetellOrchestrationStore implements RetellOrchestrationStor
       };
     }
     if (loadCourseBonusFlowConfig().mode === 'direct') return null;
-    if (!isCentralCargaBonusEnabledForContact(loadCentralCargaBonusConfig(),input.contactId)) return null;
+    if (!await isCentralCargaBonusEnabledForStoredContact(loadCentralCargaBonusConfig(),
+      { contactId: input.contactId, workspaceId: workspace.id }, this.db)) return null;
     const promotion = await this.db.begin(async (tx) => {
       await tx`
         UPDATE promotion_offers offer

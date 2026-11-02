@@ -4,9 +4,9 @@ import type { DbClient } from '@/lib/db/types';
 import { loadCourseBonusFlowConfig } from './course-bonus-flow-config';
 import type { CourseBonusMaxCoursesV1 } from '../domain/course-bonus';
 import {
-  isCentralCargaBonusEnabledForContact,
   loadCentralCargaBonusConfig,
 } from '@/features/fulfillment/central-carga/config';
+import { isCentralCargaBonusEnabledForStoredContact } from '@/features/fulfillment/central-carga/bonus-contact-permission';
 
 export type CourseBonusCapabilityStatus =
   | 'unavailable'
@@ -495,7 +495,8 @@ export async function readCourseBonusCapabilityV1(input: {
           may_request_review:false,may_schedule_checkin:false};
       }
     }
-    if (!isCentralCargaBonusEnabledForContact(loadCentralCargaBonusConfig(),input.contact_id)) {
+    if (!await isCentralCargaBonusEnabledForStoredContact(loadCentralCargaBonusConfig(),
+      { contactId: input.contact_id, workspaceSlug: input.workspace_slug }, deps.db)) {
       return flow.mode === 'direct' && flow.maxBonusCourses !== null
         ? {...hidden('unavailable'),enabled:false,max_bonus_courses:flow.maxBonusCourses}
         : hidden('unavailable');

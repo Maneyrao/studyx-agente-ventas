@@ -5,7 +5,7 @@ import {
   openLocalTestDatabase,
 } from '../helpers/db';
 import { runEnrollmentWorker } from '@/features/fulfillment/central-carga/worker';
-import type { CentralCargaConfig } from '@/features/fulfillment/central-carga/config';
+import { loadCentralCargaBonusConfig, type CentralCargaConfig } from '@/features/fulfillment/central-carga/config';
 
 const run = process.env.TEST_DATABASE_URL ? describe : describe.skip;
 const db = process.env.TEST_DATABASE_URL ? openLocalTestDatabase() : null;
@@ -480,6 +480,22 @@ run('Central de Carga enrollment worker', () => {
       },
     })).toMatchObject({ completed: 1, dead_lettered: 0 });
     expect(central.calls.map((call) => call.method)).toEqual(['POST']);
+  });
+
+  it('PASO 1a: the global switch loaded from env fulfills paid bonuses with no canary list', async () => {
+    const f = await fixture({ bonusCourses: [
+      { code: `BONUS-GLOBAL-${randomUUID().slice(0, 6)}`, displayName: 'Bonus Global', position: 1 },
+    ] });
+    const central = mockCentral((call) => json(201, body(call.paymentId, {
+      bonus_enrollments: f.bonusCodes.map((offering_code) => ({ offering_code, enrollment_status: 'active' })),
+    })));
+    const bonusConfig = loadCentralCargaBonusConfig({ CENTRAL_CARGA_BONUS_ENABLED: 'true' });
+    expect(bonusConfig).toMatchObject({ enabled: true, canaryContactIds: [], canaryPhoneE164s: [] });
+    expect(await runEnrollmentWorker({}, { sql: db!, config, fetchImpl: central.fetchImpl, bonusConfig }))
+      .toMatchObject({ completed: 1, dead_lettered: 0 });
+    expect(central.calls[0].body).toMatchObject({ schema_version: 2,
+      bonus_offerings: f.bonusCodes.map((code) => ({ code })) });
+    expect(await bonusEnrollments(f.paymentId)).toEqual([expect.objectContaining({ enrollment_status: 'active' })]);
   });
 
   it('two concurrent workers never take the same job', async () => {

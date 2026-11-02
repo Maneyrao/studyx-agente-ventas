@@ -13,6 +13,7 @@ import type {
 } from '@/features/orchestration/ports/orchestration-store';
 import type { BusinessContextView } from '@/features/orchestration/domain/business-context';
 import { matchCallHandoffFastPath } from '../../../botpress-agent/src/utils/call-handoff-fast-path';
+import { buildAgentAContextV1 } from '../../../botpress-agent/src/lib/conversation/agent-a-context';
 import {
   ClaimedTurnSchema,
   type ClaimedTurn as BotpressClaimedTurn,
@@ -26,6 +27,46 @@ import {
  */
 
 describe('default retrieval thresholds', () => {
+  it('hydrates Ecommerce facts and syllabus in the same two-fragment turn without selecting or authorizing a purchase', async () => {
+    const marketing = businessOffering('marketing_digital', 'Marketing Digital', 'Marketing');
+    const community = businessOffering('community_manager', 'Community Manager', 'Marketing');
+    const ads = businessOffering('publicidad_redes_sociales', 'Publicidad en Redes Sociales', 'Marketing');
+    const ecommerce = { ...businessOffering('introduccion_ecommerce', 'Introducción al Ecommerce', 'Marketing'),
+      description: 'Creá y gestioná tu tienda online.', classes: 8, modality: 'Online' };
+    const generic = businessContextView({ offerings: [marketing, community, ads] });
+    const menu = 'Tenemos Marketing Digital, Community Manager, Publicidad en Redes Sociales e Introducción al Ecommerce.';
+    const result = await claimBatch(input, { ...buildDeps({
+      factsResult: facts({ recent_turns: [{ direction: 'outbound', content: menu, created_at: '2026-08-11T11:59:00.000Z' }] }),
+      messagesResult: [
+        { id: 'm1', conversation_seq: 1, content: 'ecommerce me gusta', created_at: '2026-08-11T12:00:00.000Z', message_type: 'text' },
+        { id: 'm2', conversation_seq: 2, content: 'cuánto es el total?', created_at: '2026-08-11T12:00:01.000Z', message_type: 'text' },
+      ],
+      knowledge: { search: vi.fn().mockResolvedValue([]), searchByOfferingCode: vi.fn().mockResolvedValue([{
+        source_uri: 'knowledge-source:11111111-1111-4111-8111-111111111111', title: 'Temario Ecommerce',
+        content: 'Clase 1: tienda online. Clase 2: catálogo y ventas.', offering_code: 'introduccion_ecommerce', similarity: 1,
+      }]) },
+    }), business: { load: vi.fn().mockResolvedValue(generic),
+      loadCompleteIndex: vi.fn().mockResolvedValue({ as_of: generic.as_of, offerings_total: 4,
+        offerings: [marketing, community, ads, ecommerce], injection_suspected_count: 0 }),
+      loadByCode: vi.fn(async (code: string) => businessContextView({ offerings: code === 'introduccion_ecommerce' ? [ecommerce] : [] })),
+    } });
+    if (result.outcome !== 'claimed') throw new Error('expected claim');
+    expect(result.business_context?.offerings.find(x => x.code === 'introduccion_ecommerce')).toMatchObject({ classes: 8, modality: 'Online' });
+    const wire = withWireUuids(result) as unknown as BotpressClaimedTurn;
+    wire.conversation_state_v1 = { selected_offering_code: null, selected_payment_plan: null, stage: 'exploring',
+      call_preference: 'unknown', call_offer_status: 'not_offered', call_offer_count: 0, awaiting_reply: 'none', version: 0 };
+    const context = buildAgentAContextV1(wire, 'Emma')!;
+    expect(context.catalog.candidate_offerings.map(x => x.code)).toEqual(['introduccion_ecommerce']);
+    expect(context.catalog.candidate_offerings[0].facts).toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: 'offering_duration', value: '8 clases' }),
+      expect.objectContaining({ kind: 'offering_modality', value: 'Online' }),
+      expect.objectContaining({ kind: 'offering_syllabus', value: 'Clase 1: tienda online. Clase 2: catálogo y ventas.' }),
+    ]));
+    expect(context.commercial_state.selected_offering_code).toBeNull();
+    expect(context.commercial_state.selected_payment_plan).toBeNull();
+    expect(context.capabilities.may_send_payment_link).toBe(false);
+    expect(result.catalog_resolution.kind).toBe('no_catalog_intent');
+  });
   it('loads conversation negotiation facts from the canonical owned turn without changing actions', async () => {
     const recorded = { price_objection_count: 5, latest_price_objection_source_turn_ids: ['prior-turn'],
       price_only_barrier: { status: 'unknown' } };
@@ -2761,5 +2802,96 @@ it('does not bootstrap Info from a different conversation on the same contact', 
   expect(result).toMatchObject({ outcome: 'claimed',
     sales_context: { offering_code: null },
     conversation_state_v1: { selected_offering_code: null, stage: 'exploring' },
+  });
+});
+
+// PASO 0 — bordes del contexto factual de Ecommerce (2026-11-02).
+async function marketingMenuTurn(texts: readonly string[], selectedOfferingCode: string | null = null) {
+  const marketing = { ...businessOffering('marketing_digital', 'Marketing Digital', 'Marketing'), classes: 12, modality: 'Online' };
+  const community = { ...businessOffering('community_manager', 'Community Manager', 'Marketing'), classes: 10, modality: 'Online' };
+  const specialist = businessOffering('especialista_marketing', 'Especialista en Marketing', 'Marketing');
+  const ecommerce = { ...businessOffering('introduccion_ecommerce', 'Introducción al Ecommerce', 'Marketing'), classes: 8, modality: 'Online' };
+  const all = [marketing, community, specialist, ecommerce];
+  const menu = 'Tenemos Marketing Digital, Community Manager, Especialista en Marketing e Introducción al Ecommerce.';
+  const syllabus = vi.fn(async ({ offering_code }: { offering_code: string }) => [{
+    source_uri: `knowledge-source:${offering_code}`, title: `Temario ${offering_code}`,
+    content: `Temario de ${offering_code}.`, offering_code, similarity: 1 }]);
+  const result = await claimBatch(input, { ...buildDeps({
+    factsResult: facts({ recent_turns: [{ direction: 'outbound', content: menu, created_at: '2026-08-11T11:59:00.000Z' }] }),
+    messagesResult: texts.map((content, i) => ({ id: `m${i + 1}`, conversation_seq: i + 1, content,
+      created_at: `2026-08-11T12:00:0${i}.000Z`, message_type: 'text' })),
+    knowledge: { search: vi.fn().mockResolvedValue([]), searchByOfferingCode: syllabus },
+  }), business: { load: vi.fn().mockResolvedValue(businessContextView({ offerings: [marketing] })),
+    loadCompleteIndex: vi.fn().mockResolvedValue({ as_of: '2026-08-11T12:00:00.000Z', offerings_total: all.length,
+      offerings: all, injection_suspected_count: 0 }),
+    loadByCode: vi.fn(async (code: string) => businessContextView({ offerings: all.filter(x => x.code === code) })),
+  } });
+  if (result.outcome !== 'claimed') throw new Error('expected claim');
+  const wire = withWireUuids(result) as unknown as BotpressClaimedTurn;
+  wire.conversation_state_v1 = { selected_offering_code: selectedOfferingCode, selected_payment_plan: null,
+    stage: selectedOfferingCode ? 'course_selected' : 'exploring', call_preference: 'unknown',
+    call_offer_status: 'not_offered', call_offer_count: 0, awaiting_reply: 'none', version: 1 } as never;
+  return { result, context: buildAgentAContextV1(wire, 'Emma')!, syllabus };
+}
+
+describe('PASO 0 — contexto factual de cursos nombrados (bordes)', () => {
+  it('ambiguo: "marketing" no hidrata Ecommerce ni elige curso', async () => {
+    const { result, context } = await marketingMenuTurn(['quiero marketing']);
+    expect(result.catalog_resolution.kind).toBe('ambiguous');
+    expect(context.catalog.candidate_offerings.map(x => x.code)).not.toContain('introduccion_ecommerce');
+    expect(context.commercial_state.selected_offering_code).toBeNull();
+  });
+
+  it('dos cursos nombrados: hidrata ambos con sus propios hechos, sin seleccionar', async () => {
+    const { context, syllabus } = await marketingMenuTurn(['me gustan ecommerce y community']);
+    const byCode = new Map(context.catalog.candidate_offerings.map(x => [x.code, x]));
+    expect([...byCode.keys()].sort()).toEqual(['community_manager', 'introduccion_ecommerce']);
+    expect(byCode.get('introduccion_ecommerce')!.facts).toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: 'offering_duration', value: '8 clases' })]));
+    expect(byCode.get('community_manager')!.facts).toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: 'offering_duration', value: '10 clases' })]));
+    expect(syllabus).toHaveBeenCalledTimes(2);
+    expect(context.commercial_state.selected_offering_code).toBeNull();
+  });
+
+  it('selección anterior distinta: Ecommerce trae sus hechos y Marketing Digital queda sólo con el nombre', async () => {
+    const { context } = await marketingMenuTurn(['ecommerce me gusta'], 'marketing_digital');
+    expect(context.catalog.candidate_offerings.map(x => x.code)).toEqual(['introduccion_ecommerce']);
+    expect(context.catalog.selected_offering?.facts.map(f => f.kind)).toEqual(['offering_name']);
+    expect(context.commercial_state.selected_offering_code).toBe('marketing_digital');
+  });
+});
+
+describe('PASO 1b — defectos corregidos del contexto factual', () => {
+  it('referencia negativa: "no me gusta ecommerce" no debe hidratar Ecommerce', async () => {
+    for (const text of ['no me gusta ecommerce', 'nada de ecommerce']) {
+      const { context } = await marketingMenuTurn([text]);
+      expect(context.catalog.candidate_offerings.map(x => x.code)).not.toContain('introduccion_ecommerce');
+    }
+  });
+
+  it('rechazo y preferencia en la misma frase: sólo hidrata el curso preferido', async () => {
+    const { context } = await marketingMenuTurn(['ecommerce no, prefiero community']);
+    expect(context.catalog.candidate_offerings.map(x => x.code)).toEqual(['community_manager']);
+  });
+
+  it('una duda previa ("no sé") no anula la elección posterior', async () => {
+    const { context } = await marketingMenuTurn(['no sé, ecommerce me gusta']);
+    expect(context.catalog.candidate_offerings.map(x => x.code)).toEqual(['introduccion_ecommerce']);
+  });
+
+  it('validación: nombrar Introducción al Ecommerce como curso pago no debe dar paid_mismatch', async () => {
+    const { deriveConversationCourseFocusV1 } = await import('@/features/orchestration/domain/course-focus');
+    const { validateCourseMentionsV1 } = await import('@/shared/conversation/course-mentions');
+    const o = (code: string, display_name: string) => ({ code, display_name, aliases: [], academy: 'Marketing' });
+    const catalog = [o('marketing_digital', 'Marketing Digital'), o('introduccion_ecommerce', 'Introducción al Ecommerce')];
+    const focus = deriveConversationCourseFocusV1({ currentMessageTexts: ['ecommerce me gusta', 'cuánto es el total?'],
+      recentTurns: [{ direction: 'outbound', content: 'Tenemos Marketing Digital e Introducción al Ecommerce.',
+        created_at: '2026-08-11T11:59:00.000Z' }] as never,
+      catalogIndex: { as_of: 'x', offerings_total: 2, offerings: catalog, injection_suspected_count: 0 } as never });
+    const { violations } = validateCourseMentionsV1({ messages: ['Introducción al Ecommerce son 8 clases online.'],
+      call_offer: null, catalog: catalog as never, paid_offering_code: null, paid_mention_offering_code: focus.offering_code,
+      course_mentions: [{ offering_code: 'introduccion_ecommerce', role: 'paid' }] as never, delivered_bonus_offering_codes: [] } as never);
+    expect(violations).toEqual([]);
   });
 });

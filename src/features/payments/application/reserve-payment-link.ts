@@ -9,9 +9,9 @@ import {
   type PaymentPlanCode,
 } from '../domain/payment-link';
 import {
-  isCentralCargaBonusEnabledForContact,
   loadCentralCargaBonusConfig,
 } from '@/features/fulfillment/central-carga/config';
+import { isCentralCargaBonusEnabledForStoredContact } from '@/features/fulfillment/central-carga/bonus-contact-permission';
 
 export class PaymentLinkReservationError extends Error {
   constructor(readonly code: string) {
@@ -127,9 +127,9 @@ export async function reservePaymentLink(
   }
   // A complete direct tuple is revalidated against the locked, sealed offer
   // below. Rollback must not disable payment for that existing obligation.
-  if (input.promotion_code && !hasDirectIdentity && !isCentralCargaBonusEnabledForContact(
+  if (input.promotion_code && !hasDirectIdentity && !await isCentralCargaBonusEnabledForStoredContact(
     loadCentralCargaBonusConfig(),
-    input.contact_id,
+    { contactId: input.contact_id, workspaceId: input.workspace_id }, db,
   )) {
     throw new PaymentLinkReservationError('COURSE_BONUS_DISABLED');
   }

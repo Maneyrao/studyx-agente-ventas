@@ -6,9 +6,9 @@ import { jsonbParam } from '@/lib/db/json';
 import type { ManagedOutboundSender } from '@/features/messaging/adapters/managed-outbound';
 import {
   isCentralCargaBonusConfigured,
-  isCentralCargaBonusEnabledForContact,
   loadCentralCargaBonusConfig,
 } from '@/features/fulfillment/central-carga/config';
+import { isCentralCargaBonusEnabledForStoredContact } from '@/features/fulfillment/central-carga/bonus-contact-permission';
 import {
   buildAuthorizedEgress,
   protectedFactsInContentV1,
@@ -186,9 +186,9 @@ export async function commitCommercialActionV1(
     readonly now?: Date;
   },
 ): Promise<CommitCommercialActionResultV1> {
-  if (!isCentralCargaBonusEnabledForContact(
+  if (!await isCentralCargaBonusEnabledForStoredContact(
     loadCentralCargaBonusConfig(),
-    input.contact_id,
+    { contactId: input.contact_id, workspaceId: input.workspace_id }, db,
   )) return { offer_id: null, followup: null };
   if (input.action.type === 'accept_promotion') {
     const accepted = await db<Array<{ id: string }>>`
@@ -543,9 +543,9 @@ async function followupSource(db: DbClient, id: string): Promise<FollowupSource 
 }
 
 async function cancellationReason(db: DbClient, source: FollowupSource): Promise<string | null> {
-  if (!isCentralCargaBonusEnabledForContact(
+  if (!await isCentralCargaBonusEnabledForStoredContact(
     loadCentralCargaBonusConfig(),
-    source.contact_id,
+    { contactId: source.contact_id, workspaceId: source.workspace_id }, db,
   )) return 'COURSE_BONUS_DISABLED';
   const now = Date.now();
   if (!source.promotion_active

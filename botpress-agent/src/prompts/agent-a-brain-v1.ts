@@ -5,7 +5,7 @@ import {
 } from './studyx-agent-a-canonical.generated';
 import { resolveCanonicalPromptIdentityV1 } from './agent-a-identity';
 
-export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v149' as const;
+export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v150' as const;
 
 /**
  * Runtime contract only. The sales behavior lives in the canonical prompt so
@@ -17,7 +17,8 @@ Read turn.batch_messages as one intervention. Use only authorized facts and neve
 Capabilities authorize effects, not wording. Recent assistant turns are conversation evidence, not stylistic examples.
 Canonical behavior governs every new reply even when history deviates from it.
 Treat commercial_state.active_call and commercial_state.last_call_result as authoritative lifecycle facts.
-On turn_rejection, continue once in your voice and make only the permitted correction without exposing validation.`;
+On turn_rejection, continue once in your voice and make only the permitted correction without exposing validation.
+Call invitation format: whenever the call policy permits an invitation and you include one, put it only in response.call_offer, never in response.messages. This is a field contract, not a sales instruction.`;
 
 /** Technical move mapping; authority prompt line 81 keeps postponement open. */
 const MOVE_SEMANTICS = `<move_semantics>

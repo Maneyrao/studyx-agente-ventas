@@ -7,6 +7,8 @@ import type { ConversationMoveV1 } from '../../schemas/conversation-pipeline';
 import { classifyBatchSalesSignal } from '../../../../src/features/orchestration/domain/sales-signal';
 import { supportsChatPreferenceV1 } from './channel-preference-evidence';
 import { mayOfferCallV1 } from '../../../../src/shared/conversation/bonus-ladder';
+import { currentFactualCourseReferencesV1, latestAgentTurnMessages,
+  type FactualCourseReferenceV1 } from '../../../../src/features/orchestration/domain/course-focus';
 
 const MEMORY_TYPES = new Set([
   'study_goal', 'study_context', 'preference', 'constraint',
@@ -358,7 +360,8 @@ function selectedOfferingFacts(claimed: ClaimedTurn, offeringCode: string) {
   };
 }
 
-function candidateCodes(claimed: ClaimedTurn, selectedCode: string | null): string[] {
+function candidateCodes(claimed: ClaimedTurn, selectedCode: string | null, references: readonly FactualCourseReferenceV1[]): string[] {
+  if (references.length) return references.map(reference => reference.offeringCode);
   if (claimed.catalog_resolution.kind === 'ambiguous') {
     return claimed.catalog_resolution.candidateCodes.slice(0, 3);
   }
@@ -478,6 +481,9 @@ export function buildAgentAContextV1(
   const state = claimed.conversation_state_v1;
   if (!state) return null;
   const index = claimed.catalog_index?.offerings ?? [];
+  const factualReferences = claimed.catalog_resolution.kind === 'no_catalog_intent'
+    ? currentFactualCourseReferencesV1(claimed.context.batch_messages.map(message => message.content),
+      claimed.catalog_index, latestAgentTurnMessages(claimed.context.logical_recent_turns ?? claimed.context.recent_turns)) : [];
   // Persisted conversation state remains authoritative across turns. An exact
   // catalog resolution says which course the customer is talking about now;
   // it does not prove they replaced the course already chosen for the sale.
@@ -531,7 +537,7 @@ export function buildAgentAContextV1(
     const code = areaCode(offering.academy);
     if (code && offering.academy) areas.set(code, offering.academy);
   }
-  const candidates = candidateCodes(claimed, catalogFocusCode)
+  const candidates = candidateCodes(claimed, catalogFocusCode, factualReferences)
     .map((code) => index.find((offering) => offering.code === code))
     .filter((offering): offering is NonNullable<typeof offering> => offering !== undefined)
     .map((offering) => ({
@@ -539,12 +545,16 @@ export function buildAgentAContextV1(
       fact_id: `offering:${offering.code}:name:v1`,
       display_name: offering.display_name,
       area_code: areaCode(offering.academy),
+      ...(factualReferences.some(reference => reference.offeringCode === offering.code) ? {
+        reference: { source: 'prior_agent_named_candidate' as const,
+          matched_terms: factualReferences.find(reference => reference.offeringCode === offering.code)!.matchedTerms },
+      } : {}),
       // Keep candidate detail bounded to the three visible courses. Payment
       // facts remain scoped to an explicitly selected course.
       facts: (selectedOfferingFacts(claimed, offering.code)?.facts ?? [])
         .filter((fact) => fact.kind === 'offering_description'
           || fact.kind === 'offering_duration'
-          || fact.kind === 'offering_modality'),
+          || fact.kind === 'offering_modality' || fact.kind === 'offering_syllabus').slice(0, 4),
     }));
   const callOfferCount = startsFreshInterestCycle
     ? 0
@@ -779,7 +789,10 @@ export function buildAgentAContextV1(
       },
     }),
     catalog: {
-      selected_offering: selectedOffering,
+      selected_offering: selectedOffering && factualReferences.length
+        && !factualReferences.some(reference => reference.offeringCode === selectedOffering.code)
+        ? { ...selectedOffering, facts: selectedOffering.facts.filter(fact => fact.kind === 'offering_name') }
+        : selectedOffering,
       // The brain owns catalog-language interpretation. Keep the complete
       // compact identity index visible even after a course was selected so a
       // later explicit request for the full catalog can be answered without
@@ -801,7 +814,7 @@ export function buildAgentAContextV1(
       // Pero si la persona dejó de apuntar a algo concreto y no hay paso
       // pendiente, una lista vacía es justamente lo que dejaba al modelo sin
       // nada que ofrecer: ahí las alternativas son la respuesta.
-      candidate_offerings: selectedOffering && !wanderingTurn ? [] : candidates,
+      candidate_offerings: selectedOffering && !wanderingTurn && !factualReferences.length ? [] : candidates,
       // Older in-process doubles used `none`; expose the canonical neutral
       // status rather than leaking that producer-only compatibility value to
       // the model contract.

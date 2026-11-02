@@ -224,7 +224,7 @@ async function decide(
   const source = await loadSource(sql, job.payment_id);
   if (!source) return { kind: 'dead_letter', code: 'payment_not_found' };
   if (source.bonus_offerings.length > 0
-    && !isCentralCargaBonusFulfillmentAllowedForContact(bonusConfig, source.contact_id)) {
+    && !isCentralCargaBonusFulfillmentAllowedForContact(bonusConfig, source.contact_id, source.contact_phone)) {
     return { kind: 'dead_letter', code: 'bonus_fulfillment_paused' };
   }
 

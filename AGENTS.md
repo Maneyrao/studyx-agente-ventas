@@ -61,3 +61,18 @@ seguimientos, audios, no ejecutar dos veces la misma acción.
 - Se informa: SHA, versión del prompt, versión del brain y tabla aprobado/fallido con evidencia.
 - Un test con respuestas del modelo escritas a mano no prueba comportamiento.
 - Nunca digas "listo" sin esa tabla.
+
+## Bonificación global — configuración (decisión del dueño, 2026-11-02)
+- La bonificación está habilitada para TODOS los contactos: `CENTRAL_CARGA_BONUS_ENABLED=true`, `COURSE_BONUS_FLOW_MODE=direct`, `COURSE_BONUS_MAX_COURSES=3`. El modo global no depende de listas: `isCentralCargaBonusEnabledForContact` devuelve `true` antes de consultar cualquier lista.
+- `CENTRAL_CARGA_BONUS_CANARY_PHONE_E164S` y `CENTRAL_CARGA_BONUS_CANARY_CONTACT_IDS` quedan sólo como mecanismo de canary con el interruptor global apagado.
+- Configuración de producción para el handoff: las tres variables de arriba con esos valores, `CENTRAL_CARGA_BONUS_FULFILLMENT_PAUSED=false` y las dos listas de canary vacías.
+
+
+## Identidad de contactos de prueba — decisión del dueño (2026-11-02)
+- La habilitación de bonificaciones de prueba se configura por teléfono internacional normalizado en `CENTRAL_CARGA_BONUS_CANARY_PHONE_E164S`, contrastado exclusivamente con `contacts.phone` y pertenencia al workspace. No usar teléfono declarado, perfil, mensaje ni salida del modelo para conceder el permiso.
+- El permiso debe sobrevivir a un reinicio que cambie el ID del contacto. Aplicar la misma identidad en el contexto, la validación transaccional, el seguimiento y el fulfillment; conservar límites, consentimiento e idempotencia. La compatibilidad con UUID anteriores sólo facilita la migración, no es la identidad nueva de la lista de pruebas.
+
+
+## Continuación Codex para retomar en Claude (2026-11-02)
+- Plan original, estado heredado, cambios de esta continuación y evidencia de publicación: `docs/reports/2026-11-02-reglas-a-b-continuacion-codex.md`.
+- Resultados de verificación y limitaciones: `docs/reports/2026-11-02-reglas-a-b-verificacion-codex.md`. Leer su estado final antes de dar por cumplidos golden o despliegue; estos informes no reemplazan la autoridad ni las reglas anteriores.

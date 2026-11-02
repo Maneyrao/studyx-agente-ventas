@@ -1,4 +1,5 @@
-import { resolveCatalogFromSnapshot, latestAgentTurnMessages, deriveCourseSelection, activeSessionRecentTurns } from '../domain/course-focus';
+import { resolveCatalogFromSnapshot, latestAgentTurnMessages, deriveCourseSelection, activeSessionRecentTurns,
+  currentFactualCourseReferencesV1 } from '../domain/course-focus';
 import type { ContactProfileContextV1 } from '@/shared/conversation/contact-profile-contract';
 import type { RecordedNegotiationFactsV1 } from '@/shared/conversation/negotiation-facts';
 import { evaluateTurnPolicy, type TurnPolicy } from '../domain/turn-policy';
@@ -897,7 +898,7 @@ export async function claimBatch(
     : null;
   const detailRequest = isCatalogDetailRequest(currentMessageTexts);
   const detailRequestOmitsSubject = catalogDetailRequestOmitsSubject(currentMessageTexts);
-  const detailOfferingCode = catalog_resolution.kind === 'exact'
+  const resolvedDetailOfferingCode = catalog_resolution.kind === 'exact'
     ? catalog_resolution.offeringCode
     : detailRequest
       && detailRequestOmitsSubject
@@ -906,10 +907,18 @@ export async function claimBatch(
       ? currentSelection.offering_code ?? persistedDetailOffering
       : null;
 
+  const factualReferences = catalog_resolution.kind === 'no_catalog_intent'
+    ? currentFactualCourseReferencesV1(currentMessageTexts, catalog_index, latestAgentTurnMessages(logicalRecentTurns)) : [];
+  const detailOfferingCodes = [...new Set([
+    ...(resolvedDetailOfferingCode ? [resolvedDetailOfferingCode] : []),
+    ...factualReferences.map(reference => reference.offeringCode),
+    ...(catalog_resolution.kind === 'ambiguous' ? catalog_resolution.candidateCodes : []),
+  ])].slice(0, 3);
   // The index identifies every real offering without bringing every detailed
   // payload into the prompt. Once a course is exact, load only that detail and
   // merge it into the bounded snapshot for factual answers and protected facts.
-  if (detailOfferingCode !== null && deps.business?.loadByCode) {
+  for (const detailOfferingCode of detailOfferingCodes) {
+  if (deps.business?.loadByCode) {
     counters.catalog_calls += 1;
     try {
       const detailContext = await deps.business.loadByCode(detailOfferingCode);
@@ -937,9 +946,7 @@ export async function claimBatch(
     }
   }
   if (
-    detailOfferingCode !== null
-    && detailRequest
-    && deps.knowledge.searchByOfferingCode
+    deps.knowledge.searchByOfferingCode
   ) {
     counters.knowledge_search_calls += 1;
     const startedAt = monotonicNow();
@@ -977,6 +984,7 @@ export async function claimBatch(
     } finally {
       timings.knowledge_search_ms += Math.max(0, monotonicNow() - startedAt);
     }
+  }
   }
   // This legacy projection is contact-scoped. A fresh conversation must not
   // inherit a selection made in an older conversation on the same contact.

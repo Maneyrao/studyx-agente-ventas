@@ -2,7 +2,8 @@ import { readCourseBonusLadderV1 } from './read-course-bonus-ladder';
 import type { CourseBonusLadderV1 } from '@/shared/conversation/bonus-ladder';
 import { createHash } from 'node:crypto';
 import { getPostgresError, type DbClient } from '@/lib/db/types';
-import { isCentralCargaBonusEnabledForContact, loadCentralCargaBonusConfig } from '@/features/fulfillment/central-carga/config';
+import { loadCentralCargaBonusConfig } from '@/features/fulfillment/central-carga/config';
+import { isCentralCargaBonusEnabledForStoredContact } from '@/features/fulfillment/central-carga/bonus-contact-permission';
 import { loadCourseBonusFlowConfig } from './course-bonus-flow-config';
 
 export type DirectCourseBonusRejectionV1 = 'bonus_disabled' | 'no_price_objection' | 'invalid_offering'
@@ -70,18 +71,24 @@ async function transaction<T>(db: DbClient, work: (tx: DbClient) => Promise<T>):
   // A caller already committing a turn owns the outer transaction; a rejection rolls back this savepoint.
   return 'begin' in db ? await db.begin(work) as T : await db.savepoint(work) as T;
 }
-function authorizedLimit(contactId: string): number | null {
+async function authorizedLimit(input: Identity, db: DbClient): Promise<number | null> {
+  let config: ReturnType<typeof loadCourseBonusFlowConfig>;
+  let bonusConfig: ReturnType<typeof loadCentralCargaBonusConfig>;
   try {
-    const config = loadCourseBonusFlowConfig();
-    return config.mode === 'direct' && isCentralCargaBonusEnabledForContact(loadCentralCargaBonusConfig(), contactId)
-      ? config.maxBonusCourses : null;
+    config = loadCourseBonusFlowConfig();
+    bonusConfig = loadCentralCargaBonusConfig();
   } catch { return null; }
+  return config.mode === 'direct' && await isCentralCargaBonusEnabledForStoredContact(bonusConfig,
+    { contactId: input.contact_id, workspaceId: input.workspace_id }, db)
+    ? config.maxBonusCourses : null;
 }
-function mayAcceptExistingPackage(contactId: string): boolean {
+async function mayAcceptExistingPackage(input: Identity, db: DbClient): Promise<boolean> {
+  let mode: ReturnType<typeof loadCourseBonusFlowConfig>['mode'];
   try {
     // Review stops new promises, not acceptance of an already delivered one.
-    return loadCourseBonusFlowConfig().mode === 'review' || authorizedLimit(contactId) !== null;
+    mode = loadCourseBonusFlowConfig().mode;
   } catch { return false; }
+  return mode === 'review' || await authorizedLimit(input, db) !== null;
 }
 async function execute<T>(db: DbClient, work: (tx: DbClient) => Promise<T>): Promise<T | Rejected> {
   try { return await transaction(db, work); } catch (error) {
@@ -209,9 +216,10 @@ async function validateOpen(tx: DbClient, input: Identity, context: {stage:strin
 }
 
 export async function offerDirectCourseBonusV1(db: DbClient, input: OfferDirectCourseBonusInputV1): Promise<DirectCourseBonusResultV1> {
-  const limit=authorizedLimit(input.contact_id);
+  const limit=await authorizedLimit(input, db);
   if (!limit) return {ok:false,reason:'bonus_disabled'};
   return execute(db, async tx => {
+    if (await authorizedLimit(input, tx) !== limit) reject('bonus_disabled');
     if (input.bonus_offering_codes.length!==1) reject('multiple_bonus_in_turn');
     if (!input.outbound.content.trim()) reject('bonus_without_reply');
     if (!Number.isInteger(input.expected_offer_version) || input.expected_offer_version<0
@@ -270,8 +278,9 @@ export async function offerDirectCourseBonusV1(db: DbClient, input: OfferDirectC
 }
 
 export async function acceptDirectCourseBonusV1(db: DbClient, input: AcceptDirectCourseBonusInputV1): Promise<AcceptDirectCourseBonusResultV1> {
-  if (!mayAcceptExistingPackage(input.contact_id)) return {ok:false,reason:'bonus_disabled'};
+  if (!await mayAcceptExistingPackage(input, db)) return {ok:false,reason:'bonus_disabled'};
   return execute(db,async tx=>{
+    if (!await mayAcceptExistingPackage(input, tx)) reject('bonus_disabled');
     if (!input.promotion_code || !input.promotion_cycle_id || !Number.isInteger(input.expected_offer_version) || input.expected_offer_version<1) reject('stale_offer_version');
     const context=await lockIdentity(tx,input);
     const offer=await resolveOffer(tx,input,context.paid_id);
@@ -306,7 +315,7 @@ export async function acceptDirectCourseBonusByVoiceV1(db: DbClient, input: Acce
       if (evidence && evidence.call_id!==input.call_id) reject('stale_offer_version');
       return durable(offer);
     }
-    if (!mayAcceptExistingPackage(input.contact_id)) reject('bonus_disabled');
+    if (!await mayAcceptExistingPackage(input, tx)) reject('bonus_disabled');
     await validateOpen(tx,input,context,offer);
     await tx`INSERT INTO promotion_voice_acceptances(offer_id,call_id,workspace_id,contact_id,conversation_id,promotion_cycle_id,offer_version)
       VALUES (${offer.id}::uuid,${input.call_id}::uuid,${input.workspace_id}::uuid,${input.contact_id}::uuid,
