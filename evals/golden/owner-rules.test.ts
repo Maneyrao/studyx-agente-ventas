@@ -62,6 +62,25 @@ describe('owner-rule supplementary golden campaign', () => {
     }
   });
 
+  it('does not require a prior price objection for the owner-authorized instant promotion', () => {
+    const turn = OWNER_GOLDEN_CASES[1]!.turns.find(item => item.id === 'request_without_objection')!;
+    const current = observed({
+      proposedAction: { type: 'offer_course_bonus', bonus_offering_code: 'fotografia_celulares_tiendas_online' },
+      backendAction: 'offer_course_bonus',
+      courseBonus: { enabled: true, maxBonusCourses: 3, mayOfferBonus: true, status: 'offer_available' },
+      priceObjectionMemory: { present: false, sourceMessageIds: [], priorSourceMessageIds: [] },
+      negotiationFacts: { currentTurnId: 'turn-current', priorPriceSourceIds: [], ladder: {
+        eligible: false, observed_price_objection_count: 0, required_price_objection_count: 2,
+        call_invitation_status: 'not_offered', call_offer_count: 0, may_offer_call: true, missing_steps: [],
+      } },
+      state: { selectedCourse: 'introduccion_ecommerce', stage: 'course_selected', awaitingReply: 'none', plan: null,
+        promotion: { status: 'offer_available', bonusCount: 1, paidCourse: 'introduccion_ecommerce',
+          bonusCourses: ['fotografia_celulares_tiendas_online'] } },
+    });
+    expect(evaluateHardRules(turn, current).failures.map(failure => failure.code))
+      .not.toContain('BONUS_PRIOR_PRICE_OBJECTION_MISSING');
+  });
+
   it('accepts the recorded canonical current-state move only at the fourth-bonus limit check', () => {
     // Recorded real model behavior, source owner-rules-1687498-20261102T150651Z/17/no_fourth.
     // This tests evaluator compatibility, not model quality using a handwritten answer.

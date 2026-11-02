@@ -44,6 +44,7 @@ import {
   proposalEvidenceV1,
   quotedCurrentPriceEvidenceV1,
   appendEarlyCallOfferEvidenceV1,
+  deliveryAcknowledgementTargetsV1,
   extractFinalDeterministicRuleOutcomeV1,
   extractModelAttemptsV1,
   normalizePromotionStatusV1,
@@ -178,18 +179,18 @@ function identity(caseId: string) {
 }
 
 async function acknowledgeDelivery(evidence: WorkflowTurnEvidenceV1): Promise<void> {
-  const capture = evidence.adapterCaptures[0];
-  if (!evidence.outboundId || !capture) return;
-  await recordDeliveryReportFn({
-    outbound_id: evidence.outboundId,
-    trace_id: evidence.traceId,
-    status: 'delivered',
-    botpress_message_id: capture.providerMessageId,
-    replayed: false,
-    error_code: null,
-    delivery_attempt: 1,
-    delivered_at: new Date().toISOString(),
-  });
+  for (const target of deliveryAcknowledgementTargetsV1(evidence.adapterCaptures)) {
+    await recordDeliveryReportFn({
+      outbound_id: target.outboundId,
+      trace_id: evidence.traceId,
+      status: 'delivered',
+      botpress_message_id: target.providerMessageId,
+      replayed: false,
+      error_code: null,
+      delivery_attempt: 1,
+      delivered_at: new Date().toISOString(),
+    });
+  }
 }
 
 async function promotionEvidence(externalConversationId: string): Promise<PromotionEvidenceV1> {

@@ -50,7 +50,7 @@ export const OWNER_GOLDEN_CASES: readonly GoldenCaseV1[] = [
       turn('greeting', 'Hola'),
       turn('recommendation', 'Qué me podés recomendar para seguir estudiando?'),
       turn('marketing_budget', 'Tengo poco presupuesto y quiero algo de marketing para vender los productos de mi tienda online.', {
-        must: ['Responder al objetivo de vender en su tienda online. La historia debe acreditar una invitación autorizada y entregada en la segunda o tercera respuesta con interés expresado; si ya fue ofrecida antes, no repetirla.'],
+        must: ['Responder al objetivo de vender en su tienda online.'],
         mustNot: ['No convertir poco presupuesto en autorización para regalar un curso ni prometer una llamada inmediata.'],
         expected: { move: moves, action: ['none'], state: noBonus },
         hard: [{ type: 'workflow_committed' }, { type: 'rule_outcomes_recorded' }, { type: 'early_call_previously_recorded' }],

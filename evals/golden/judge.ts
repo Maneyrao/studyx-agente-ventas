@@ -314,6 +314,8 @@ export function evaluateHardRules(
     if (rule.type === 'course_bonus_preconditions') {
       const bonus = observation.courseBonus;
       const objection = observation.priceObjectionMemory;
+      const instantPromotionAuthorized = turn.authority.some(reference => reference.file === 'AGENTS.md'
+        && reference.start <= 66 && reference.end >= 66 && reference.contains === 'Promo instantánea');
       if (!bonus || bonus.enabled === null || bonus.maxBonusCourses === null || !objection) {
         add(evaluatorErrors, 'BONUS_PRECONDITION_EVIDENCE_MISSING',
           'Falta evidencia del capability course_bonus o de la objeción de precio previa.');
@@ -327,7 +329,8 @@ export function evaluateHardRules(
             `max_bonus_courses esperado 3; real ${String(bonus.maxBonusCourses)}.`);
         }
         const currentRule = observation.negotiationFacts?.ladder?.required_price_objection_count === 2;
-        if (currentRule ? objection.sourceMessageIds.length === 0 : objection.priorSourceMessageIds.length === 0) {
+        if (!instantPromotionAuthorized
+          && (currentRule ? objection.sourceMessageIds.length === 0 : objection.priorSourceMessageIds.length === 0)) {
           add(failures, 'BONUS_PRIOR_PRICE_OBJECTION_MISSING',
             currentRule ? 'No existe price_objection registrada, incluida la del turno actual.'
               : 'No existe price_objection registrada en un turno anterior.');

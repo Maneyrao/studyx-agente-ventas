@@ -11,9 +11,21 @@ import {
   extractContextEvidenceV1,
   extractModelAttemptsV1,
   normalizePromotionStatusV1,
+  deliveryAcknowledgementTargetsV1,
 } from './runner-support';
 
 describe('golden live runner evidence extraction', () => {
+  it('acknowledges every distinct outbound in a multi-bubble turn', () => {
+    expect(deliveryAcknowledgementTargetsV1([
+      { outboundId: 'outbound-1', providerMessageId: 'provider-1' },
+      { outboundId: 'outbound-2', providerMessageId: 'provider-2' },
+      { outboundId: 'outbound-1', providerMessageId: 'provider-1-duplicate' },
+      { outboundId: null, providerMessageId: 'provider-without-outbound' },
+    ])).toEqual([
+      { outboundId: 'outbound-1', providerMessageId: 'provider-1' },
+      { outboundId: 'outbound-2', providerMessageId: 'provider-2' },
+    ]);
+  });
   it('observes the final fixed outcome correlated to the committed proposal and preserves earlier events', () => {
     const first = { event: 'studyx.turn.deterministic_rules', turn_id: 't1', trace_id: 'trace1',
       rule_a: 'not_applicable', rule_a_bonus_code: null, rule_b: 'not_applicable' };

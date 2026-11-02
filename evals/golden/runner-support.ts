@@ -9,6 +9,27 @@ interface ExchangeLikeV1 {
   readonly error: string | null;
 }
 
+interface DeliveryCaptureLikeV1 {
+  readonly outboundId: string | null;
+  readonly providerMessageId: string;
+}
+
+/** Every physical bubble has its own outbound id. A multi-bubble golden turn
+ * must confirm all of them; otherwise the offer bubble can remain pending and
+ * the following turn observes a package that was never delivered. */
+export function deliveryAcknowledgementTargetsV1(
+  captures: readonly DeliveryCaptureLikeV1[],
+): readonly { readonly outboundId: string; readonly providerMessageId: string }[] {
+  const seen = new Set<string>();
+  const targets: Array<{ outboundId: string; providerMessageId: string }> = [];
+  for (const capture of captures) {
+    if (!capture.outboundId || seen.has(capture.outboundId)) continue;
+    seen.add(capture.outboundId);
+    targets.push({ outboundId: capture.outboundId, providerMessageId: capture.providerMessageId });
+  }
+  return targets;
+}
+
 export function extractFinalBackendDecisionErrorV1(
   exchanges: readonly ExchangeLikeV1[],
 ): string | null {
