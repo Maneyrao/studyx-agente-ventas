@@ -184,10 +184,29 @@ describe('plannerless Agent A authority', () => {
         response:{messages:['Excel Integral puede servirte.']},course_mentions:[{offering_code:'excel_integral',role:'paid'}]})});
     expect(result).toMatchObject({ok:true,transition:{selected_offering_code:'excel_integral'}});
   });
+  it.each(['payment_plan', 'payment_confirmation', 'contact_details'] as const)(
+    'rejects a model-proposed bonus and proactive invitation during checkout even if both capabilities are permissive: %s', awaiting => {
+      const cap = { enabled: true, max_bonus_courses: 3 as const, may_offer_bonus: true, status: 'checkin_available' as const,
+        may_schedule_checkin: false, may_request_review: false, may_accept_offer: false, may_send_promoted_payment: false,
+        promotion_code: null, interest_offering_code: 'redes_informaticas', bonus_offerings: [],
+        rule_bonus: { paid_offering_code: 'redes_informaticas', paid_display_name: 'Redes Informáticas',
+          bonus_offering_code: 'excel_integral', display_name: 'Excel Integral', position: 1 },
+        ladder: deriveCourseBonusLadderV1({ observed_price_objection_count: 2, call_invitation_status: 'not_offered', call_offer_count: 0, may_offer_call: true }) };
+      const current = state({ selected_offering_code: 'redes_informaticas', awaiting_reply: awaiting });
+      const bonusResult = authorize({ state: current, courseBonus: cap, proposal: proposal({
+        proposed_action: { type: 'offer_course_bonus', interest_offering_code: 'redes_informaticas', bonus_offering_code: 'excel_integral' },
+        response: { messages: ['Te sumo Excel Integral.'] }, course_mentions: [{ offering_code: 'excel_integral', role: 'bonus' }] }) });
+      expect(bonusResult).toMatchObject({ ok: false,
+        rejection_subjects: ['forbidden_promise', 'direct_bonus:sale_already_closed'] });
+      const callResult = authorize({ state: current, mayOfferCall: true, proposal: proposal({
+        response: { messages: ['Te cuento las opciones.'], call_offer: 'Si querés, podemos verlo en una llamada corta. Te sirve?' } }) });
+      expect(callResult).toMatchObject({ ok: false, reasons: expect.arrayContaining(['CALL_OFFER_NOT_AUTHORIZED']) });
+    });
+
   it('uses the paid identity of a validated bonus effect without inventing a purchase selection',()=>{
     const result=authorize({state:state(),courseBonus:{enabled:true,max_bonus_courses:3,may_offer_bonus:true,status:'checkin_available',
       may_schedule_checkin:false,may_request_review:false,may_accept_offer:false,may_send_promoted_payment:false,promotion_code:null,
-      interest_offering_code:'redes_informaticas',bonus_offerings:[],ladder:deriveCourseBonusLadderV1({observed_price_objection_count:3,call_invitation_status:'offered',call_offer_count:1,may_offer_call:true})},
+      interest_offering_code:'redes_informaticas',bonus_offerings:[],rule_bonus:{paid_offering_code:'redes_informaticas',paid_display_name:'Redes Informáticas',bonus_offering_code:'excel_integral',display_name:'Excel Integral',position:1},ladder:deriveCourseBonusLadderV1({observed_price_objection_count:3,call_invitation_status:'offered',call_offer_count:1,may_offer_call:true})},
       proposal:proposal({response:{messages:['Redes Informáticas e Excel Integral pueden servirte.']},
         course_mentions:[{offering_code:'redes_informaticas',role:'paid'},{offering_code:'excel_integral',role:'bonus'}],
         proposed_action:{type:'offer_course_bonus',interest_offering_code:'redes_informaticas',bonus_offering_code:'excel_integral'}})});
@@ -574,30 +593,58 @@ describe('plannerless Agent A authority', () => {
       ladder: deriveCourseBonusLadderV1({observed_price_objection_count:3,call_invitation_status:'offered',call_offer_count:1,may_offer_call:true}),
       may_offer_bonus: true, may_schedule_checkin: false, may_request_review: false,
       may_accept_offer: false, may_send_promoted_payment: false, promotion_code: null,
-      interest_offering_code: 'redes_informaticas', bonus_offerings: [] } as const;
+      interest_offering_code: 'redes_informaticas', bonus_offerings: [], rule_bonus:{paid_offering_code:'redes_informaticas',paid_display_name:'Redes Informáticas',bonus_offering_code:'excel_integral',display_name:'Excel Integral',position:1}, } as const;
     expect(authorize({ proposal: p, state: state({selected_offering_code:'redes_informaticas'}),
       courseBonus: cap })).toMatchObject({ok:true, action:p.proposed_action});
+    // Regla A: sin curso de la tabla calculado por el backend no hay bonificación.
     expect(authorize({ proposal:p, state:state({selected_offering_code:'redes_informaticas'}),
-      courseBonus:{...cap,may_offer_bonus:false}, actionRejections:'structured' }))
+      courseBonus:{...cap,rule_bonus:null}, actionRejections:'structured' }))
       .toMatchObject({ok:false, reasons:['COMMERCIAL_TRUTH_VIOLATION'],
         rejection_subjects:['forbidden_promise','direct_bonus:bonus_disabled']});
+    // Regla A: un curso distinto del siguiente de la tabla se rechaza.
+    expect(authorize({ proposal:p, state:state({selected_offering_code:'redes_informaticas'}),
+      courseBonus:{...cap,rule_bonus:{...cap.rule_bonus,bonus_offering_code:'camaras_seguridad',display_name:'Cámaras'}} }))
+      .toMatchObject({ok:false, rejection_subjects:['forbidden_promise','direct_bonus:invalid_offering']});
   });
-  it.each([
-    {count:2,status:'offered' as const,missing:'recorded_price_objections'},
-    {count:3,status:'not_offered' as const,missing:'call_invitation'},
-  ])('rejects a claimed gift when rule 10 still lacks $missing', ({count,status,missing}) => {
-    const ladder=deriveCourseBonusLadderV1({observed_price_objection_count:count,
-      call_invitation_status:status,call_offer_count:status==='offered'?1:0,may_offer_call:true});
-    const result=authorize({state:state({selected_offering_code:'redes_informaticas'}),
-      proposal:proposal({proposed_action:{type:'offer_course_bonus',interest_offering_code:'redes_informaticas',bonus_offering_code:'excel_integral'}}),
-      courseBonus:{status:'checkin_available',enabled:true,max_bonus_courses:2,may_offer_bonus:false,ladder,
-        may_schedule_checkin:false,may_request_review:false,may_accept_offer:false,may_send_promoted_payment:false,
-        promotion_code:null,interest_offering_code:'redes_informaticas',bonus_offerings:[]}});
+  // Regla A del dueño (2026-11-02) reemplaza la regla 10.
+  const ruleCap=(count:number,extra:Record<string,unknown>={})=>({status:'checkin_available' as const,enabled:true,max_bonus_courses:2 as const,may_offer_bonus:false,
+    ladder:deriveCourseBonusLadderV1({observed_price_objection_count:count,call_invitation_status:'not_offered',call_offer_count:0,may_offer_call:true}),
+    may_schedule_checkin:false,may_request_review:false,may_accept_offer:false,may_send_promoted_payment:false,
+    promotion_code:null,interest_offering_code:'redes_informaticas',bonus_offerings:[],rule_bonus:{paid_offering_code:'redes_informaticas',paid_display_name:'Redes Informáticas',bonus_offering_code:'excel_integral',display_name:'Excel Integral',position:1},...extra});
+  const bonusProposal=(memory:Array<{type:string;key:string;value:string;source_quote:string;confidence:number}>=[])=>proposal({
+    response:{messages:['Te sumo Excel Integral sin costo; el precio de Redes Informáticas sigue igual. Avanzamos?']},
+    course_mentions:[{offering_code:'redes_informaticas',role:'paid'},{offering_code:'excel_integral',role:'bonus'}],
+    proposed_action:{type:'offer_course_bonus',interest_offering_code:'redes_informaticas',bonus_offering_code:'excel_integral'},
+    memory_candidates:memory as never});
+  const objection={type:'objection',key:'price_objection',value:'caro',source_quote:'me sigue pareciendo caro',confidence:1};
+  it('Rule A: one prior objection alone is pending, without any call prerequisite', () => {
+    const result=authorize({state:state({selected_offering_code:'redes_informaticas'}),customerText:'ok',
+      proposal:bonusProposal(),courseBonus:ruleCap(1)});
     expect(result).toMatchObject({ok:false,reasons:['COMMERCIAL_TRUTH_VIOLATION']});
     expect(result).toHaveProperty('rejection_subjects',expect.arrayContaining([
-      'direct_bonus:ladder_step_pending',`bonus_ladder:missing:${missing}`,
-      `bonus_ladder:recorded_price_objections:${count}:required:3`,
-    ]));
+      'direct_bonus:ladder_step_pending','bonus_ladder:missing:recorded_price_objections',
+      'bonus_ladder:recorded_price_objections:1:required:2']));
+    expect(result).not.toHaveProperty('rejection_subjects',expect.arrayContaining(['bonus_ladder:missing:call_invitation']));
+  });
+  it('Rule A: the second objection recorded in this turn (literal quote) authorizes the table course', () => {
+    expect(authorize({state:state({selected_offering_code:'redes_informaticas'}),customerText:'me sigue pareciendo caro',
+      proposal:bonusProposal([objection]),courseBonus:ruleCap(1)})).toMatchObject({ok:true,action:{type:'offer_course_bonus'}});
+  });
+  it('Rule A: a quote that is not in the customer text does not count', () => {
+    expect(authorize({state:state({selected_offering_code:'redes_informaticas'}),customerText:'ok',
+      proposal:bonusProposal([objection]),courseBonus:ruleCap(1)})).toMatchObject({ok:false});
+  });
+  it('Rule A: a confirmed price-only barrier authorizes on the first objection', () => {
+    expect(authorize({state:state({selected_offering_code:'redes_informaticas'}),customerText:'si, solo el precio',
+      proposal:bonusProposal([{type:'constraint',key:'price_only_barrier',value:'confirmed',source_quote:'solo el precio',confidence:1}]),
+      courseBonus:ruleCap(0)})).toMatchObject({ok:true});
+  });
+  it('Rule A: escalation after a delivered offer needs a new objection in this reply', () => {
+    const delivered={bonus_offerings:[{code:'camaras_seguridad',display_name:'Cámaras',position:1}],
+      status:'offer_available',package_status:'offered',promotion_code:'p'};
+    expect(authorize({state:state({selected_offering_code:'redes_informaticas'}),customerText:'ok',
+      proposal:bonusProposal(),courseBonus:ruleCap(3,delivered) as never})).toMatchObject({ok:false,
+      rejection_subjects:expect.arrayContaining(['direct_bonus:ladder_step_pending'])});
   });
   it('replaces a stale course before handing an exact current course to the call', () => {
     const result = authorizeAgentTurnV2({

@@ -1,3 +1,4 @@
+import { BONUS_FALLBACK_PAUSE_MS_V1 } from '@/shared/conversation/deterministic-sales-rules';
 import { courseBonusLadderRejectionSubjectsV1 } from '@/shared/conversation/bonus-ladder-rejection';
 import { backendReleaseSha } from './turn-evidence.service';
 import type { ConversationChannel } from '@/lib/contracts/channel';
@@ -218,6 +219,9 @@ export interface CommitDecisionResult {
     authorized_egress: AuthorizedEgressV1;
     part_index: number;
     part_count: number;
+    /** Backend-persisted Rule A delivery timing, also returned on replay. */
+    minimum_delay_before_ms?: number;
+    not_before?: string;
   }>;
   /**
    * Present exactly when this decision reserved a call. On replay it carries
@@ -306,6 +310,8 @@ interface PersistedOutboundPartRow {
   delivery_attempt: number | null;
   authorized_egress: unknown;
   part_index: number;
+  minimum_delay_before_ms: number | null;
+  submitted_at: Date | null;
 }
 
 const AGENT_DECISION_TURN_UNIQUE_CONSTRAINT = 'agent_decisions_turn_id_uq';
@@ -351,7 +357,9 @@ async function loadDecisionOutbounds(
       delivery.state AS delivery_state,
       delivery.attempt_count AS delivery_attempt,
       message.metadata -> 'authorized_egress' AS authorized_egress,
-      part.part_index::integer AS part_index
+      part.part_index::integer AS part_index,
+      (message.metadata ->> 'rule_a_minimum_delay_before_ms')::integer AS minimum_delay_before_ms,
+      delivery.submitted_at
     FROM agent_decision_outbound_parts AS part
     JOIN messages AS message ON message.id = part.message_id
     LEFT JOIN outbound_deliveries AS delivery ON delivery.message_id = message.id
@@ -370,15 +378,20 @@ async function loadDecisionOutbounds(
       part_count: 1,
     }];
   }
-  return rows.map((row) => ({
-    id: row.id,
-    content: row.content,
-    status: mapDeliveryState(row.delivery_state),
-    delivery_attempt: Number(row.delivery_attempt ?? 1),
-    authorized_egress: verifyPersistedEgress(row.content, row.authorized_egress),
-    part_index: Number(row.part_index),
-    part_count: rows.length,
-  }));
+  return rows.map((row) => {
+    const previous = rows.find(part => Number(part.part_index) === Number(row.part_index) - 1);
+    const fixedPause = row.minimum_delay_before_ms === BONUS_FALLBACK_PAUSE_MS_V1;
+    return {
+      id: row.id, content: row.content, status: mapDeliveryState(row.delivery_state),
+      delivery_attempt: Number(row.delivery_attempt ?? 1),
+      authorized_egress: verifyPersistedEgress(row.content, row.authorized_egress),
+      part_index: Number(row.part_index), part_count: rows.length,
+      ...(fixedPause ? { minimum_delay_before_ms: BONUS_FALLBACK_PAUSE_MS_V1,
+        ...(previous?.submitted_at ? { not_before: new Date(new Date(previous.submitted_at).getTime()
+          + BONUS_FALLBACK_PAUSE_MS_V1).toISOString() } : {}),
+      } : {}),
+    };
+  });
 }
 
 async function loadDecisionCommercialFollowups(
@@ -1127,6 +1140,23 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
         throw new DecisionPolicyError('AGENT_TURN_V2_REJECTED:ACTION_NOT_AUTHORIZED');
       }
 
+      // Rule A automatic acceptance (owner 2026-11-02): the offered direct package
+      // is accepted in this same transaction before the link is reserved, so the
+      // link carries the exact sealed package without a model accept_promotion.
+      if (preparedAgentTurn?.auto_accept_promotion && canonicalWorkspaceId && action.offering_sku && courseBonusCapability?.promotion_code
+        && courseBonusCapability.promotion_cycle_id && courseBonusCapability.package_status === 'offered') {
+        const accepted = await acceptDirectCourseBonusV1(db, {
+          workspace_id: canonicalWorkspaceId, contact_id: turn.contact_id, conversation_id: turn.conversation_id,
+          paid_offering_code: action.offering_sku, source_turn_id: turn.id,
+          expected_offer_version: courseBonusCapability.offer_version ?? 0,
+          promotion_code: courseBonusCapability.promotion_code,
+          promotion_cycle_id: courseBonusCapability.promotion_cycle_id,
+        });
+        if (!accepted.ok) throw new DecisionPolicyError('AGENT_TURN_V2_REJECTED:COMMERCIAL_TRUTH_VIOLATION',
+          ['forbidden_promise', `direct_bonus:${accepted.reason}`]);
+        courseBonusCapability = { ...courseBonusCapability, package_status: 'accepted', status: 'accepted' };
+      }
+
       // Revalidation above must happen before this dedupe read. Otherwise a
       // mismatched SKU or a current veto could obtain a friendly acknowledgement
       // merely because an older valid link existed in the same conversation.
@@ -1740,9 +1770,24 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
         final_response: finalResponse,
         authored_messages: preparedAgentTurn?.response_messages ?? null,
         enabled: validatedInput.supports_multi_outbound === true,
-        force_single_message: committedBusinessAction?.type === 'offer_course_bonus'
-          || (committedBusinessAction?.type === 'send_payment_link' && authorizedUrls.length > 0),
+        force_single_message: committedBusinessAction?.type === 'send_payment_link' && authorizedUrls.length > 0,
       });
+      // Rule A (owner 2026-11-02): a bonus reply may span bubbles. The offer is
+      // bound to the first bubble naming the bonus course exactly; deterministic
+      // across replays. The other bubbles are ordinary parts of the same decision.
+      let bonusPartIndex = -1;
+      if (committedBusinessAction?.type === 'offer_course_bonus') {
+        const [bonusCourse] = await db<Array<{ display_name: string }>>`
+          SELECT o.display_name FROM offerings o JOIN workspaces w ON w.id=o.workspace_id
+          WHERE w.slug=${workspaceSlug} AND o.code=${committedBusinessAction.bonus_offering_code} LIMIT 1`;
+        const visible = (value: string) => value.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase();
+        const named = bonusCourse ? partTexts.findIndex(text => visible(text).includes(visible(bonusCourse.display_name))) : -1;
+        bonusPartIndex = named >= 0 ? named : partTexts.length - 1;
+      }
+      // Timing metadata is derived only after backend authorization of the
+      // bonus effect and exact owner fallback opening. It is never a caller grant.
+      const ruleAFixedFallback = committedBusinessAction?.type === 'offer_course_bonus'
+        && partTexts.length >= 2 && partTexts[0] === 'Dejame revisar qué te puedo ofrecer, dame un segundo.';
       const profileRequests = preparedAgentTurn && validatedInput.agent_turn_v2
         ? contactProfileRequestsForPartsV1({
             authored_messages: validatedInput.agent_turn_v2.proposal.response.messages,
@@ -1763,7 +1808,7 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
         });
         let message: Message;
         try {
-          if (committedBusinessAction?.type === 'offer_course_bonus') {
+          if (committedBusinessAction?.type === 'offer_course_bonus' && partIndex === bonusPartIndex) {
             const workspace = await db<Array<{id:string}>>`SELECT id FROM workspaces WHERE slug=${workspaceSlug}`;
             canonicalWorkspaceId = workspace[0]?.id ?? null;
             if (!canonicalWorkspaceId) throw new DecisionPolicyError('AGENT_TURN_V2_CONTEXT_NOT_FOUND');
@@ -1773,7 +1818,7 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
               expected_offer_version:courseBonusCapability?.offer_version ?? 0,
               promotion_code:courseBonusCapability?.promotion_code,promotion_cycle_id:courseBonusCapability?.promotion_cycle_id,
               bonus_offering_codes:[committedBusinessAction.bonus_offering_code],
-              outbound:{id:randomUUID(),content,provider:turn.provider,integration_id:turn.integration_id,
+              outbound:{id:randomUUID(),content,part_index:partIndex,provider:turn.provider,integration_id:turn.integration_id,
                 channel:turn.channel,destination:turn.phone,
                 idempotency_key:validatedInput.supports_multi_outbound ? `outbound:${decisionId}:part:${partIndex}` : `outbound:${decisionId}`},
             });
@@ -1783,6 +1828,7 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
             const rows = await db<Message[]>`UPDATE messages SET metadata=${jsonbParam(db,{
               decision_id:decisionId,response_type:decision.response_type,model:validatedInput.model,
               part_index:partIndex,part_count:partTexts.length,authorized_egress:partManifest,
+              ...(ruleAFixedFallback && partIndex === 1 ? { rule_a_minimum_delay_before_ms: BONUS_FALLBACK_PAUSE_MS_V1 } : {}),
               ...(profileRequests[partIndex]?.length ? {contact_profile_requests_v1:profileRequests[partIndex]} : {}),
             })} WHERE id=${result.outbound_message_id}::uuid RETURNING *`;
             message = rows[0]!;
@@ -1804,6 +1850,7 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
               model: validatedInput.model,
               part_index: partIndex,
               part_count: partTexts.length,
+              ...(ruleAFixedFallback && partIndex === 1 ? { rule_a_minimum_delay_before_ms: BONUS_FALLBACK_PAUSE_MS_V1 } : {}),
               authorized_egress: partManifest,
               ...(profileRequests[partIndex]?.length ? { contact_profile_requests_v1: profileRequests[partIndex] } : {}),
             },
@@ -1902,6 +1949,7 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
           authorized_egress: manifest,
           part_index: partIndex,
           part_count: persistedParts.length,
+          ...(ruleAFixedFallback && partIndex === 1 ? { minimum_delay_before_ms: BONUS_FALLBACK_PAUSE_MS_V1 } : {}),
         });
       }
 

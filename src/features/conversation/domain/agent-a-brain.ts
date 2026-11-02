@@ -146,6 +146,7 @@ export interface AgentAContextV1 {
       readonly accepted_at?: string | null;
       readonly package_status?: 'pending_review' | 'offered' | 'accepted' | 'cancelled' | 'expired' | 'attached' | null;
       readonly delivered_bonus_offerings?: ReadonlyArray<{ readonly code: string; readonly display_name: string; readonly position: number }>;
+      readonly rule_bonus?: { readonly paid_offering_code: string; readonly paid_display_name: string; readonly bonus_offering_code: string; readonly display_name: string; readonly position: number } | null;
       readonly max_bonus_courses?: CourseBonusMaxCoursesV1;
       readonly status: 'unavailable' | 'needs_interest' | 'not_eligible' | 'checkin_available'
         | 'review_available' | 'review_pending' | 'offer_available' | 'accepted';

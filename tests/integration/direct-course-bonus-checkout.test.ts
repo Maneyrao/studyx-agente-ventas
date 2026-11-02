@@ -1,4 +1,4 @@
-import { seedPriorModelNegotiation } from '../helpers/record-model-negotiation-facts';
+import { recordModelPriceObjection, seedPriorModelNegotiation } from '../helpers/record-model-negotiation-facts';
 import { randomUUID } from 'node:crypto';
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { openIndependentLocalTestDatabases, openLocalTestDatabase } from '../helpers/db';
@@ -31,12 +31,14 @@ async function fixture(count = 1, accepted = true) {
   await db!`INSERT INTO workspace_contacts(workspace_id,contact_id,source_channel) VALUES (${w.id},${c.id},'whatsapp')`;
   const [v] = await db!`INSERT INTO conversations(contact_id,channel) VALUES (${c.id},'whatsapp') RETURNING id`;
   const courses = await db!`INSERT INTO offerings(workspace_id,code,display_name,offering_type,status,description,price_type,price_amount,currency,billing_interval)
-    SELECT ${w.id}, ${key} || n,'Course ' || n,'course','active','Course','fixed',360,'USD','annual' FROM generate_series(0,4) n RETURNING id,code`;
+    SELECT ${w.id}, (ARRAY['introduccion_ecommerce','fotografia_celulares_tiendas_online','publicidad_redes_sociales','instagram_emprendedores','ingles_1'])[n+1],'Course ' || n,'course','active','Course','fixed',360,'USD','annual' FROM generate_series(0,4) n RETURNING id,code`;
   await db!`INSERT INTO conversation_sales_context_states_v1(workspace_id,conversation_id,contact_id,selected_offering_code)
     VALUES (${w.id},${v.id},${c.id},${courses[0].code})`;
   async function inbound(prior = false) {
     const [m] = await db!`INSERT INTO messages(conversation_id,contact_id,direction,content,created_at)
       VALUES (${v.id},${c.id},'inbound','Customer',now() - ${prior ? 10 : 0} * interval '1 second') RETURNING id`;
+    // Model-recorded current reply supports Rule A escalation; text alone does not.
+    if (!prior) await recordModelPriceObjection(db!, m.id);
     return m.id as string;
   }
   await seedPriorModelNegotiation(db!,{workspace_id:w.id,contact_id:c.id,conversation_id:v.id});
@@ -75,6 +77,47 @@ async function fixture(count = 1, accepted = true) {
 }
 
 run('direct bonus checkout exact accepted package',()=>{
+  it('PASO 1a: global switch extends and accepts for any contact with both canary lists empty', async () => {
+    const f = await fixture(1, false);
+    vi.stubEnv('CENTRAL_CARGA_BONUS_ENABLED', 'true');
+    vi.stubEnv('COURSE_BONUS_FLOW_MODE', 'direct');
+    vi.stubEnv('COURSE_BONUS_MAX_COURSES', '3');
+    vi.stubEnv('CENTRAL_CARGA_BONUS_CANARY_CONTACT_IDS', '');
+    vi.stubEnv('CENTRAL_CARGA_BONUS_CANARY_PHONE_E164S', '');
+    const id = randomUUID();
+    const extended = await offerDirectCourseBonusV1(db!, { ...f.identity,
+      source_turn_id: await f.inbound(), expected_offer_version: 1,
+      promotion_code: f.offer.promotion_code, promotion_cycle_id: f.offer.promotion_cycle_id,
+      bonus_offering_codes: [f.courses[2].code], outbound: { id, content: 'Second bonus', provider: 'test',
+        integration_id: 'test', channel: 'whatsapp', destination: 'test', idempotency_key: id } });
+    expect(extended).toMatchObject({ ok: true, offer_version: 2 });
+    await db!`UPDATE outbound_deliveries SET state='leased' WHERE message_id=${id}`;
+    await db!`UPDATE outbound_deliveries SET state='submitted',submitted_at=now() WHERE message_id=${id}`;
+    await db!`UPDATE outbound_deliveries SET state='delivered',delivered_at=now() WHERE message_id=${id}`;
+    expect(await acceptDirectCourseBonusV1(db!, { ...f.identity, promotion_code: f.offer.promotion_code,
+      promotion_cycle_id: f.offer.promotion_cycle_id, source_turn_id: await f.inbound(), expected_offer_version: 2 }))
+      .toMatchObject({ ok: true, offer_version: 2 });
+  });
+  it('extends and accepts a delivered package with a phone-scoped permission and the global switch off', async () => {
+    const f = await fixture(1, false);
+    const [contact] = await db!`SELECT phone FROM contacts WHERE id=${f.identity.contact_id}`;
+    vi.stubEnv('CENTRAL_CARGA_BONUS_ENABLED', 'false');
+    vi.stubEnv('CENTRAL_CARGA_BONUS_CANARY_CONTACT_IDS', '');
+    vi.stubEnv('CENTRAL_CARGA_BONUS_CANARY_PHONE_E164S', contact.phone);
+    const id = randomUUID();
+    const extended = await offerDirectCourseBonusV1(db!, { ...f.identity,
+      source_turn_id: await f.inbound(), expected_offer_version: 1,
+      promotion_code: f.offer.promotion_code, promotion_cycle_id: f.offer.promotion_cycle_id,
+      bonus_offering_codes: [f.courses[2].code], outbound: { id, content: 'Second bonus', provider: 'test',
+        integration_id: 'test', channel: 'whatsapp', destination: 'test', idempotency_key: id } });
+    expect(extended).toMatchObject({ ok: true, offer_version: 2 });
+    await db!`UPDATE outbound_deliveries SET state='leased' WHERE message_id=${id}`;
+    await db!`UPDATE outbound_deliveries SET state='submitted',submitted_at=now() WHERE message_id=${id}`;
+    await db!`UPDATE outbound_deliveries SET state='delivered',delivered_at=now() WHERE message_id=${id}`;
+    expect(await acceptDirectCourseBonusV1(db!, { ...f.identity, promotion_code: f.offer.promotion_code,
+      promotion_cycle_id: f.offer.promotion_cycle_id, source_turn_id: await f.inbound(), expected_offer_version: 2 }))
+      .toMatchObject({ ok: true, offer_version: 2 });
+  });
   it.each(['persisted_selection','combined_return'] as const)('commits exact accepted checkout after review rollback (%s)',async scenario=>{
     vi.stubEnv('PAYMENT_LINK_CONTADO','https://buy.stripe.com/test_bonus');
     const f=await seedConversationForAgentTurn({selected_offering_code:'entrenamiento_funcional',intake_complete:true});
@@ -84,7 +127,7 @@ run('direct bonus checkout exact accepted package',()=>{
       VALUES (${f.contact_id},${f.conversation_id},${prior.id},'active','objection','price_objection','expensive','Expensive',0.9,${'a'.repeat(64)})`;
     await seedPriorModelNegotiation(db!,f);
     const id=randomUUID();const identity={workspace_id:f.workspace_id,contact_id:f.contact_id,conversation_id:f.conversation_id,paid_offering_code:'entrenamiento_funcional'};
-    const offer=await offerDirectCourseBonusV1(db!,{...identity,source_turn_id:f.turn_id,expected_offer_version:0,bonus_offering_codes:['ingles_1'],
+    const offer=await offerDirectCourseBonusV1(db!,{...identity,source_turn_id:f.turn_id,expected_offer_version:0,bonus_offering_codes:['nutricion_alimentacion'],
       outbound:{id,content:'Bonus',provider:'test',integration_id:'test',channel:'whatsapp',destination:'test',idempotency_key:id}});
     if(!offer.ok) throw new Error(offer.reason);
     await db!`UPDATE outbound_deliveries SET state='leased' WHERE message_id=${id}`;
@@ -126,7 +169,7 @@ run('direct bonus checkout exact accepted package',()=>{
     expect(payment).toMatchObject({promotion_cycle_id:offer.promotion_cycle_id,accepted_offer_version:1});
     expect(payment.promotion_offer_id).toBe(offer.offer_id);
     expect(await db!`SELECT promotion_code_snapshot,offering_code_snapshot,position FROM payment_bonus_offerings WHERE payment_id=${payment.id}`)
-      .toEqual([{promotion_code_snapshot:offer.promotion_code,offering_code_snapshot:'ingles_1',position:1}]);
+      .toEqual([{promotion_code_snapshot:offer.promotion_code,offering_code_snapshot:'nutricion_alimentacion',position:1}]);
     const [afterCheckout]=await db!`SELECT version,selected_offering_code FROM conversation_sales_context_states_v1 WHERE conversation_id=${f.conversation_id}`;
     expect(afterCheckout.selected_offering_code).toBe('entrenamiento_funcional');
     expect(Number(afterCheckout.version)).toBe(Number(beforeCheckout.version)+1);

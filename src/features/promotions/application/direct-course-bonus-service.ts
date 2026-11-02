@@ -5,6 +5,7 @@ import { getPostgresError, type DbClient } from '@/lib/db/types';
 import { loadCentralCargaBonusConfig } from '@/features/fulfillment/central-carga/config';
 import { isCentralCargaBonusEnabledForStoredContact } from '@/features/fulfillment/central-carga/bonus-contact-permission';
 import { loadCourseBonusFlowConfig } from './course-bonus-flow-config';
+import { nextRuleBonusCodeV1, isBonusCheckoutStateV1 } from '@/shared/conversation/deterministic-sales-rules';
 
 export type DirectCourseBonusRejectionV1 = 'bonus_disabled' | 'no_price_objection' | 'invalid_offering'
   | 'same_as_paid_course' | 'duplicate_bonus' | 'bonus_limit_reached' | 'multiple_bonus_in_turn'
@@ -24,6 +25,8 @@ export interface OfferDirectCourseBonusInputV1 extends Identity {
   readonly outbound: {
     readonly id: string;
     readonly content: string;
+    /** Position of this bubble in a multi-part reply (Rule A fixed fallback). */
+    readonly part_index?: number;
     readonly provider: string;
     readonly integration_id: string;
     readonly channel: string;
@@ -123,8 +126,8 @@ async function validateExistingPackage(tx: DbClient, offer: OfferRow): Promise<v
   if (!snapshot.valid) reject('stale_offer_version');
 }
 async function lockIdentity(tx: DbClient, input: Identity) {
-  const [context] = await tx<Array<{stage: string; selected_offering_code: string | null; paid_id: string; paid_status: string; paid_type: string}>>`
-    SELECT s.stage,s.selected_offering_code,paid.id AS paid_id,paid.status AS paid_status,paid.offering_type AS paid_type
+  const [context] = await tx<Array<{stage: string; awaiting_reply: string; payment_link_request: {status?: string}|null; selected_offering_code: string | null; paid_id: string; paid_status: string; paid_type: string}>>`
+    SELECT s.stage,s.awaiting_reply,s.payment_link_request,s.selected_offering_code,paid.id AS paid_id,paid.status AS paid_status,paid.offering_type AS paid_type
     FROM conversation_sales_context_states_v1 s
     JOIN conversations c ON c.id=s.conversation_id AND c.contact_id=s.contact_id
     JOIN workspace_contacts wc ON wc.workspace_id=s.workspace_id AND wc.contact_id=s.contact_id
@@ -245,6 +248,8 @@ export async function offerDirectCourseBonusV1(db: DbClient, input: OfferDirectC
       // Explicit first-cycle identity is supported only for an existing authorized promotion below.
       if (input.expected_offer_version!==0) reject('stale_offer_version');
     }
+    if (isBonusCheckoutStateV1({ stage: context.stage, awaiting_reply: context.awaiting_reply,
+      payment_link_request_pending: context.payment_link_request?.status === 'pending' })) reject('sale_already_closed');
     await validateOpen(tx,input,context,offer);
     if (input.bonus_offering_codes[0]===input.paid_offering_code) reject('same_as_paid_course');
     const [bonus]=await tx`SELECT id FROM offerings WHERE workspace_id=${input.workspace_id}::uuid
@@ -252,7 +257,17 @@ export async function offerDirectCourseBonusV1(db: DbClient, input: OfferDirectC
     if (!bonus) reject('invalid_offering');
     const ladder=await readCourseBonusLadderV1({...input,selected_offering_code:context.selected_offering_code},tx);
     if (!ladder?.eligible) throw new Rejection('ladder_step_pending',ladder ?? undefined);
+    // Rule A escalation: a new price objection recorded in this customer reply.
+    if (offer && offer.offer_version>0 && ladder.current_turn_price_objection!==true) throw new Rejection('ladder_step_pending',ladder);
     if (offer && offer.offer_version>=limit) reject('bonus_limit_reached');
+    // Rule A course: exactly the next course of the fixed table.
+    const active=await tx<Array<{code:string}>>`SELECT code FROM offerings WHERE workspace_id=${input.workspace_id}::uuid
+      AND status='active' AND offering_type='course'`;
+    const offered=offer ? await tx<Array<{code:string}>>`SELECT offering_code_snapshot code FROM promotion_offer_bonus_offerings
+      WHERE offer_id=${offer.id}::uuid ORDER BY position` : [];
+    if (nextRuleBonusCodeV1({paid_code:input.paid_offering_code,active_codes:active.map(row=>row.code),
+      delivered_codes:offered.map(row=>row.code),max_bonus_courses:limit})!==input.bonus_offering_codes[0]
+      && !offered.some(row=>row.code===input.bonus_offering_codes[0])) reject('invalid_offering');
     if (offer) {
       if ((await tx`SELECT id FROM promotion_offer_bonus_offerings WHERE offer_id=${offer.id}::uuid AND offering_id=${bonus.id}::uuid`).length) reject('duplicate_bonus');
     } else {
@@ -268,8 +283,8 @@ export async function offerDirectCourseBonusV1(db: DbClient, input: OfferDirectC
       offer={...created,promotion_code:code};
       await validateOpen(tx,input,context,offer);
     }
-    await tx`INSERT INTO messages(id,conversation_id,contact_id,direction,content,in_reply_to)
-      VALUES (${input.outbound.id}::uuid,${input.conversation_id}::uuid,${input.contact_id}::uuid,'outbound',${input.outbound.content},${input.source_turn_id}::uuid)`;
+    await tx`INSERT INTO messages(id,conversation_id,contact_id,direction,content,in_reply_to,part_index)
+      VALUES (${input.outbound.id}::uuid,${input.conversation_id}::uuid,${input.contact_id}::uuid,'outbound',${input.outbound.content},${input.source_turn_id}::uuid,${input.outbound.part_index ?? 0})`;
     await tx`INSERT INTO outbound_deliveries(message_id,conversation_id,contact_id,provider,integration_id,channel,destination,idempotency_key)
       VALUES (${input.outbound.id}::uuid,${input.conversation_id}::uuid,${input.contact_id}::uuid,${input.outbound.provider},${input.outbound.integration_id},${input.outbound.channel},${input.outbound.destination},${input.outbound.idempotency_key})`;
     const [result]=await tx<Array<{version:number}>>`SELECT append_direct_course_bonus(${offer.id}::uuid,${bonus.id}::uuid,${input.source_turn_id}::uuid,${input.outbound.id}::uuid,${input.expected_offer_version}) AS version`;

@@ -41,7 +41,7 @@ describe('Botpress course bonus ladder contract', () => {
       call_offer_count: 1, may_offer_call: false,
     });
     for (const invalid of [
-      { required_price_objection_count: 2 },
+      { required_price_objection_count: 3 },
       { observed_price_objection_count: -1 },
       { observed_price_objection_count: 1.5 },
       { call_offer_count: -1 },

@@ -57,7 +57,7 @@ run('mandatory course role commit boundary (authority prompt:123,129; spec:59-71
     const f=await seedConversationForAgentTurn({selected_offering_code:'entrenamiento_funcional',intake_complete:true});
     await seedPriorModelNegotiation(db!,f);
     const id=randomUUID();const offer=await offerDirectCourseBonusV1(db!,{...f,paid_offering_code:'entrenamiento_funcional',source_turn_id:f.turn_id,expected_offer_version:0,
-      bonus_offering_codes:['ingles_1'],outbound:{id,content:'Paquete autorizado',provider:'test',integration_id:'test',channel:'whatsapp',destination:'test',idempotency_key:id}});
+      bonus_offering_codes:['nutricion_alimentacion'],outbound:{id,content:'Paquete autorizado',provider:'test',integration_id:'test',channel:'whatsapp',destination:'test',idempotency_key:id}});
     if(!offer.ok) throw new Error(offer.reason);
     if(status==='delivered') {
       await db!`UPDATE outbound_deliveries SET state='leased' WHERE message_id=${id}`;
@@ -66,7 +66,7 @@ run('mandatory course role commit boundary (authority prompt:123,129; spec:59-71
     }
     if(status==='cancelled') await db!`UPDATE promotion_offers SET status='cancelled',cancel_reason='COURSE_CHANGED' WHERE id=${offer.offer_id}`;
     await db!`UPDATE messages SET created_at=clock_timestamp(),metadata=metadata-'occurred_at_trusted' WHERE id=${f.second_turn_id}`;
-    const request=input(f,{response:{messages:['Entrenamiento Funcional incluye Inglés 1.'],call_offer:null},course_mentions:[{offering_code:'ingles_1',role:'bonus'}]},f.second_turn_id);
+    const request=input(f,{response:{messages:['Entrenamiento Funcional incluye Nutrición y Alimentación Saludable.'],call_offer:null},course_mentions:[{offering_code:'nutricion_alimentacion',role:'bonus'}]},f.second_turn_id);
     if(status==='delivered') expect((await commitAgentDecision(request)).status).toBe('committed');
     else {await expect(commitAgentDecision(request)).rejects.toMatchObject({code:'DECISION_REJECTED',reason:'AGENT_TURN_V2_REJECTED:COMMERCIAL_TRUTH_VIOLATION',subjects:expect.arrayContaining(['forbidden_promise'])});await noEffects(f,f.second_turn_id);}
   });

@@ -642,6 +642,7 @@ export const ClaimedTurnSchema = z.object({
     accepted_at: z.string().nullable().optional(),
     package_status: z.enum(['pending_review','offered','accepted','cancelled','expired','attached']).nullable().optional(),
     delivered_bonus_offerings: z.array(z.object({code:z.string().trim().min(1),display_name:z.string().trim().min(1).max(240),position:z.number().int().min(1).max(3)}).strict()).max(3).optional(),
+    rule_bonus: z.object({paid_offering_code:z.string().trim().min(1),paid_display_name:z.string().trim().min(1).max(240),bonus_offering_code:z.string().trim().min(1),display_name:z.string().trim().min(1).max(240),position:z.number().int().min(1).max(3)}).strict().nullable().optional(),
     max_bonus_courses: z.union([z.literal(1), z.literal(2), z.literal(3)]).optional(),
     status: z.enum([
       'unavailable', 'needs_interest', 'not_eligible', 'checkin_available',
@@ -907,6 +908,8 @@ export const CommitDecisionResponseSchema = z.object({
   outbounds: z.array(CommittedOutboundSchema.extend({
     part_index: z.number().int().min(0).max(2),
     part_count: z.number().int().min(1).max(3),
+    minimum_delay_before_ms: z.literal(20000).optional(),
+    not_before: z.string().datetime().optional(),
   })).max(3).default([]),
   // Presente exactamente cuando la decisión reservó una llamada. En replay
   // trae el mismo call_id de la primera reserva; el workflow despacha por

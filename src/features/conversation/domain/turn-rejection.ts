@@ -24,6 +24,7 @@ export const TURN_REJECTION_CODES_V1 = [
   /** Tercera oferta de llamada. */
   'CALL_BUDGET_EXHAUSTED',
   'CALL_OFFER_REQUIRED',
+  'BONUS_OFFER_REQUIRED',
   /** La invitación inicial debe ser el segundo outbound separado. */
   'CALL_OFFER_MESSAGE_BOUNDARY_INVALID',
   'PROPOSAL_SCHEMA_INVALID',

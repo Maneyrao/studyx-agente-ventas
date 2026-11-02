@@ -9,7 +9,7 @@
 
 ## Decisiones cerradas
 - Identidad: "Soy Emma, asesora de Studyx". Emma es fijo (AGENT_A_ADVISOR_NAME=Emma). Nunca "administrativa".
-- Llamadas: según la sección "Llamadas" del prompt (las pide el cliente, duda compleja o escalón 4). El backend no obliga a ofrecerla. Se mantienen: máximo 2, consentimiento, datos completos, may_offer_call.
+- Llamadas: según la sección "Llamadas" del prompt (las pide el cliente, duda compleja o escalón 4), más la Regla B del dueño (2026-11-02, abajo), que sí obliga a ofrecerla en la 2.ª o 3.ª respuesta. Se mantienen: máximo 2, consentimiento, datos completos, may_offer_call.
 - Precio: se permite presentar la cuota de USD 30 y el plan de 12 como el más accesible. El total USD 360 nunca cambia; sin descuentos.
 - Tono: copiar tú/vos del cliente.
 - Certificado: usar el texto del prompt como dato autorizado.
@@ -25,24 +25,40 @@
 - Traducir la spec al contrato real AgentATurnProposalV1 (no existe move "negotiate"; proposed_action es un objeto).
 - accept_promotion lleva la identidad completa del contexto (promotion_code, interest_offering_code, promotion_cycle_id, offer_version).
 - Ante el rechazo de una bonificación (`ladder_step_pending` o `forbidden_promise`), la reparación no menciona ni sugiere bonificaciones, tampoco genéricas, condicionales o en preguntas. Se conservan en el estado los cursos ya entregados; no se borran ni se vuelven a ofrecer. Se realiza el escalón pendiente identificado por hechos, sin inventar pasos completos ni deducirlos sólo del contador (prompt :106-123 y :129; spec :71).
-- La price_objection que habilita la bonificación debe estar registrada en un turno anterior.
+- La price_objection que habilita la bonificación es la memoria del modelo (Regla A): cuentan los turnos anteriores y la del turno actual con cita literal del cliente.
 - Temarios y texto del certificado llegan al modelo como datos autorizados (fact_id).
 - Formato de llamada (autorización explícita del usuario del 2026-11-01): en la reparación por escalera pendiente, la invitación va sólo en `response.call_offer`. Para la entrega se quitan de `messages` únicamente burbujas completas exactamente iguales a ese campo, conservándolo íntegro. La propuesta original y los índices de `profile_requests` permanecen intactos para validación y auditoría; el mapeo a la entrega conserva la metadata por texto exacto. Nunca recortar una frase dentro de una burbuja ni deduplicar por significado.
 - El contrato técnico `course_mentions` declara cada curso nombrado con su rol real (`paid`, `bonus`, `paid_complement` o `alternative`). El backend detecta nombres canónicos exactos del catálogo y rechaza cursos distintos del pago vigente sin declaración con `COURSE_ROLE_UNDECLARED`. No infiere roles de frases ni cambia la redacción. La compatibilidad con propuestas antiguas usa una lista vacía, sin omitir la validación.
-- Identidad `paid` (corrección autorizada del 2026-11-01): si falta una selección persistida vigente, la mención puede usar el foco conversacional que el servidor deriva con el mismo proyector del contexto de generación, desde catálogo y mensajes de la sesión. No tomar ese código del modelo ni de un snapshot enviado por el cliente. La selección vigente o un cambio validado prevalecen. Este foco sólo valida la mención: no persiste selección ni autoriza pagos, paquetes o bonificados; sus identidades y las reglas 9+10 conservan su fuente anterior.
-- Declarar `bonus` no autoriza un regalo: exige `offer_course_bonus` autorizado en el mismo turno por las 9 reglas y la regla 10, o pertenecer al paquete vigente ya entregado. Las reservas pendientes y los paquetes cancelados/expirados no cuentan. Se conservan recapitulaciones y complementos pagos legítimos (prompt :122-124 y :131-133; spec :36-38 y :59-73; decisión explícita del usuario del 2026-11-01).
+- Identidad `paid` (corrección autorizada del 2026-11-01): si falta una selección persistida vigente, la mención puede usar el foco conversacional que el servidor deriva con el mismo proyector del contexto de generación, desde catálogo y mensajes de la sesión. No tomar ese código del modelo ni de un snapshot enviado por el cliente. La selección vigente o un cambio validado prevalecen. Este foco sólo valida la mención: no persiste selección ni autoriza pagos, paquetes o bonificados; sus identidades y las 9 reglas y la Regla A conservan su fuente anterior. Con una sola referencia positiva (2026-11-02) a un curso que el agente acaba de nombrar, ese curso es el foco de la mención con el mismo alcance.
+- Declarar `bonus` no autoriza un regalo: exige `offer_course_bonus` autorizado en el mismo turno por las 9 reglas y la Regla A, o pertenecer al paquete vigente ya entregado. Las reservas pendientes y los paquetes cancelados/expirados no cuentan. Se conservan recapitulaciones y complementos pagos legítimos (prompt :122-124 y :131-133; spec :36-38 y :59-73; decisión explícita del usuario del 2026-11-01).
 
 ## Responsabilidades
 - El Agente A interpreta, elige la estrategia y redacta.
-- El backend valida SÓLO hechos y efectos: cursos y planes existentes, precio, links, datos de contacto, consentimiento de llamada, pago verificado, las 9 reglas de la spec, la regla 10 autorizada abajo, idempotencia y alta.
-- Prohibido agregar regex o validadores que decidan si una respuesta "vende", "avanza", "cierra bien" o "aplaza".
+- El backend valida SÓLO hechos y efectos: cursos y planes existentes, precio, links, datos de contacto, consentimiento de llamada, pago verificado, las 9 reglas de la spec, las reglas A y B de abajo, idempotencia y alta.
+- Prohibido agregar regex o validadores que decidan si una respuesta "vende", "avanza", "cierra bien" o "aplaza". Las reglas A y B (abajo) son la única excepción, autorizada por el dueño: comprueban hechos (efecto propuesto, nombre exacto del curso, campo `call_offer`), no la calidad de la venta.
 
-## Bonificación — regla 10 autorizada (2026-11-01)
-- Autoridad: docs/authority/prompt-agente-a-studyx-v2.md:106-120 y decisión explícita del usuario del 2026-11-01: la escalera también se protege en el backend con hechos registrados.
-- `offer_course_bonus` sólo se autoriza con al menos 3 objeciones de precio registradas en turnos anteriores de la conversación por el modelo (`memory_candidates` de tipo `objection`, clave `price_objection`, de decisiones finales comprometidas). Nunca inferirlas con regex, acciones comerciales ni borradores rechazados. Deduplicar el mismo turno.
-- Además, la invitación a llamada debe estar ofrecida o rechazada, o no estar autorizada (`may_offer_call=false` o tope de 2 invitaciones alcanzado). Una invitación incluida en el borrador actual no cuenta como un hecho anterior.
-- Si falta un requisito, rechazar con `ladder_step_pending` e informar al modelo el conteo observado/requerido y los requisitos pendientes, sin texto prescrito. Revalidar dentro de la transacción antes del efecto.
-- Esta regla no agrega condiciones comerciales distintas, no invalida replays exactos ni la aceptación/alta de bonificaciones previamente entregadas, ni reemplaza las garantías de las otras 9 reglas.
+## Reglas del backend — decisión determinista, redacción del modelo, respaldo fijo (decisión del dueño, 2026-11-02)
+Excepción explícita a la autoridad de Gabi (`docs/authority/prompt-agente-a-studyx-v2.md:106-133` y sección Llamadas): el backend decide CUÁNDO y CUÁL; el modelo redacta todo el turno; un respaldo fijo reemplaza el turno sólo si el modelo no presenta el efecto decidido después de una reescritura. Código: `src/shared/conversation/deterministic-sales-rules.ts`.
+
+Detección de objeción de precio: la memoria del modelo `type=objection`, `key=price_objection`, con `source_quote` literal del mensaje del cliente. Las expresiones de precio («caro», «costoso», «no me alcanza», «mucha plata», «es un montón», «no tengo presupuesto», etc.) se pasan al modelo como pista y se registran; NUNCA disparan por sí solas una bonificación. Las preguntas («es caro?») y las negaciones («no es caro») no cuentan.
+
+### REGLA A — bonificación (reemplaza la regla 10)
+- Disparador: 2.ª objeción de precio registrada (turnos anteriores + la del turno actual), o el cliente confirma que el precio es lo único que lo frena (`constraint/price_only_barrier=confirmed`). No exige llamada ofrecida.
+- Curso: TABLA FIJA `BONUS_AFFINITY_TABLE_V1`, derivada del mapa de afinidades de Gabi (por curso pago: 1.º, 2.º y 3.º bonificado; sólo cursos activos; si no hay afinidad, puentes universales del mapa). El backend rechaza un código distinto del siguiente de la tabla.
+- Ejecución: el backend ejecuta `offer_course_bonus` con las 9 reglas de la spec.
+- Redacción: si el borrador del modelo no presenta esa oferta, UNA reescritura informándole el curso exacto, que el precio no cambia y que cierre en el mismo mensaje. El modelo redacta TODO el turno.
+- Respaldo: si la reescritura falla, se reemplaza el turno COMPLETO (nunca se agregan burbujas a un texto del modelo) por dos burbujas fijas con 20 s de pausa entre ambas: «Dejame revisar qué te puedo ofrecer, dame un segundo.» / «Te puedo sumar {curso_bonificado} sin costo; el precio de {curso_pago} sigue igual. Avanzamos?»
+- Escalada: una nueva objeción de precio en una respuesta del cliente posterior a la oferta → siguiente bonificado de la tabla, máximo 3. Respaldo de recapitulación: «Te sumo también {curso_nuevo}. Te quedan {curso_pago} + {bonificados} sin costo extra, al mismo precio. Avanzamos?»
+- Aceptación automática: con una oferta vigente, si el cliente avanza a la compra, el link incluye el paquete ofrecido sin depender de que el modelo proponga `accept_promotion`.
+- Nunca durante checkout, ni después de pagar, ni con la bonificación deshabilitada.
+- Si el modelo menciona un regalo distinto del ejecutado por el backend → rechazo (`course_mentions`).
+
+Cada turno registra, por regla, si se cumplió con texto del modelo (`model`), con reescritura (`rewrite`) o con respaldo fijo (`fixed`), o `not_applicable` con su motivo.
+
+## Bonificación global — configuración (decisión del dueño, 2026-11-02)
+- La bonificación está habilitada para TODOS los contactos: `CENTRAL_CARGA_BONUS_ENABLED=true`, `COURSE_BONUS_FLOW_MODE=direct`, `COURSE_BONUS_MAX_COURSES=3`. El modo global no depende de listas: `isCentralCargaBonusEnabledForContact` devuelve `true` antes de consultar cualquier lista.
+- `CENTRAL_CARGA_BONUS_CANARY_PHONE_E164S` y `CENTRAL_CARGA_BONUS_CANARY_CONTACT_IDS` quedan sólo como mecanismo de canary con el interruptor global apagado.
+- Configuración de producción para el handoff: las tres variables de arriba con esos valores, `CENTRAL_CARGA_BONUS_FULFILLMENT_PAUSED=false` y las dos listas de canary vacías.
 
 ## No romper
 Llamadas y traspaso al Agente B, recolección de datos, link de pago y prueba de USD 0,50, verificación de pago,
@@ -61,12 +77,6 @@ seguimientos, audios, no ejecutar dos veces la misma acción.
 - Se informa: SHA, versión del prompt, versión del brain y tabla aprobado/fallido con evidencia.
 - Un test con respuestas del modelo escritas a mano no prueba comportamiento.
 - Nunca digas "listo" sin esa tabla.
-
-## Bonificación global — configuración (decisión del dueño, 2026-11-02)
-- La bonificación está habilitada para TODOS los contactos: `CENTRAL_CARGA_BONUS_ENABLED=true`, `COURSE_BONUS_FLOW_MODE=direct`, `COURSE_BONUS_MAX_COURSES=3`. El modo global no depende de listas: `isCentralCargaBonusEnabledForContact` devuelve `true` antes de consultar cualquier lista.
-- `CENTRAL_CARGA_BONUS_CANARY_PHONE_E164S` y `CENTRAL_CARGA_BONUS_CANARY_CONTACT_IDS` quedan sólo como mecanismo de canary con el interruptor global apagado.
-- Configuración de producción para el handoff: las tres variables de arriba con esos valores, `CENTRAL_CARGA_BONUS_FULFILLMENT_PAUSED=false` y las dos listas de canary vacías.
-
 
 ## Identidad de contactos de prueba — decisión del dueño (2026-11-02)
 - La habilitación de bonificaciones de prueba se configura por teléfono internacional normalizado en `CENTRAL_CARGA_BONUS_CANARY_PHONE_E164S`, contrastado exclusivamente con `contacts.phone` y pertenencia al workspace. No usar teléfono declarado, perfil, mensaje ni salida del modelo para conceder el permiso.

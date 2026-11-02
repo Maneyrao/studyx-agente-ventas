@@ -2228,6 +2228,7 @@ export function decideRepairLevelV1(input: {
     || reason.code === 'MISSING_INTAKE'
     || reason.code === 'REPEATED_AGENT_REPLY'
     || reason.code === 'CALL_OFFER_REQUIRED'
+    || reason.code === 'BONUS_OFFER_REQUIRED'
     || reason.code === 'CALL_OFFER_MESSAGE_BOUNDARY_INVALID'
     || reason.code === 'CHANNEL_PREFERENCE_NOT_SUPPORTED'
   ))

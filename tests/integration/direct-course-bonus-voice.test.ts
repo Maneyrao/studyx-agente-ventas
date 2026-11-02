@@ -1,4 +1,4 @@
-import { seedPriorModelNegotiation } from '../helpers/record-model-negotiation-facts';
+import { recordModelPriceObjection, seedPriorModelNegotiation } from '../helpers/record-model-negotiation-facts';
 import { randomUUID } from 'node:crypto';
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { openLocalTestDatabase } from '../helpers/db';
@@ -25,12 +25,14 @@ async function fixture() {
   await db!`INSERT INTO workspace_contacts(workspace_id,contact_id) VALUES (${w.id},${c.id})`;
   const [v] = await db!`INSERT INTO conversations(contact_id,channel) VALUES (${c.id},'whatsapp') RETURNING id`;
   const courses = await db!`INSERT INTO offerings(workspace_id,code,display_name,offering_type,status,description,price_type,price_amount,currency,billing_interval)
-    SELECT ${w.id}, ${slug} || n,'Course ' || n,'course','active','Course','fixed',360,'USD','one_time' FROM generate_series(0,3) n RETURNING id,code`;
+    SELECT ${w.id}, (ARRAY['introduccion_ecommerce','fotografia_celulares_tiendas_online','publicidad_redes_sociales','instagram_emprendedores','ingles_1'])[n+1],'Course ' || n,'course','active','Course','fixed',360,'USD','one_time' FROM generate_series(0,3) n RETURNING id,code`;
   await db!`INSERT INTO conversation_sales_context_states_v1(workspace_id,conversation_id,contact_id,selected_offering_code,selected_payment_plan)
     VALUES (${w.id},${v.id},${c.id},${courses[0].code},'one_time')`;
   async function inbound(prior = false) {
     const [m] = await db!`INSERT INTO messages(conversation_id,contact_id,direction,content,created_at)
       VALUES (${v.id},${c.id},'inbound','Customer',clock_timestamp() - ${prior ? 10 : 0} * interval '1 second') RETURNING id`;
+    // Model-recorded current reply supports Rule A escalation; text alone does not.
+    if (!prior) await recordModelPriceObjection(db!, m.id);
     return m.id as string;
   }
   await seedPriorModelNegotiation(db!,{workspace_id:w.id,contact_id:c.id,conversation_id:v.id});

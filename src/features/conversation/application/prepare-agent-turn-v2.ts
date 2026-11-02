@@ -1,3 +1,4 @@
+import { priceObservationQuoteInBatchV1 } from '@/shared/conversation/deterministic-sales-rules';
 import type { BusinessContextView, CatalogIndexView } from '@/features/orchestration/domain/business-context';
 import type { DecisionV4 } from '@/features/orchestration/domain/decision-v4';
 import type { ProtectedFactRef } from '@/features/orchestration/domain/egress-guard';
@@ -243,6 +244,8 @@ export async function prepareAgentTurnV2(input: {
   readonly discussed_offering_code: string | null;
   readonly commercial_interest_offering_code: string | null;
   readonly records_price_objection: boolean;
+  /** Rule A: accept the offered direct package before reserving the link. */
+  readonly auto_accept_promotion: boolean;
   /** A terminal sale followed by generic catalog browsing starts without the old promotion focus. */
   readonly resets_promotion_context: boolean;
   /** Explicit course switch retires open packages and prior unpaid intents. */
@@ -381,8 +384,12 @@ export async function prepareAgentTurnV2(input: {
   if (input.requested_action !== undefined && input.conversation_only !== true) {
     throw new AgentTurnV2RejectedError(['ACTION_NOT_AUTHORIZED']);
   }
-  const effectiveProposal = input.requested_action === undefined ? input.proposal
+  const requestedProposal = input.requested_action === undefined ? input.proposal
     : { ...input.proposal, proposed_action: input.requested_action };
+  const effectiveProposal = { ...requestedProposal, memory_candidates: requestedProposal.memory_candidates.filter(candidate =>
+    !(candidate.type === 'objection' && candidate.key === 'price_objection'
+      || candidate.type === 'constraint' && candidate.key === 'price_only_barrier' && candidate.value === 'confirmed')
+    || priceObservationQuoteInBatchV1(candidate.source_quote, currentCustomerMessages)) };
   const authority = authorize(effectiveProposal);
   let actionRejection: AgentActionRejectionV1 | null = null;
 
@@ -530,6 +537,7 @@ export async function prepareAgentTurnV2(input: {
     discussed_offering_code: authority.discussed_offering_code,
     commercial_interest_offering_code: commercialInterestOfferingCode,
     records_price_objection: recordsPriceObjection,
+    auto_accept_promotion: authority.auto_accept_promotion === true,
     resets_promotion_context: resetsPromotionContext,
     abandons_course_bonus_offer: abandonsCourseBonusOffer,
   };

@@ -1,4 +1,5 @@
 import { readCourseBonusLadderV1 } from './read-course-bonus-ladder';
+import { nextRuleBonusCodeV1 } from '@/shared/conversation/deterministic-sales-rules';
 import type { CourseBonusLadderV1 } from '@/shared/conversation/bonus-ladder';
 import type { DbClient } from '@/lib/db/types';
 import { loadCourseBonusFlowConfig } from './course-bonus-flow-config';
@@ -28,6 +29,8 @@ export interface CourseBonusCapabilityV1 {
   readonly accepted_at?: string | null;
   readonly package_status?: CourseBonusOfferProjectionV1['status'] | null;
   readonly delivered_bonus_offerings?: Array<{readonly code:string; readonly display_name:string; readonly position:number}>;
+  /** Rule A (owner 2026-11-02): next course of the fixed table when a direct offer may be extended. */
+  readonly rule_bonus?: { readonly paid_offering_code: string; readonly paid_display_name: string; readonly bonus_offering_code: string; readonly display_name: string; readonly position: number } | null;
   readonly status: CourseBonusCapabilityStatus;
   readonly may_schedule_checkin: boolean;
   readonly may_request_review: boolean;
@@ -370,6 +373,8 @@ export function deriveDirectCourseBonusCapabilityV1(input: {
     readonly later_reply: boolean;
     readonly payment_superseded?: boolean;
   } | null;
+  /** Active catalog courses for the fixed Rule A table. Absent: no rule course. */
+  readonly active_courses?: ReadonlyArray<{ readonly code: string; readonly display_name: string }>;
 }): CourseBonusCapabilityV1 {
   const offer = input.package;
   const expiresAt = timestamp(offer?.expires_at ?? null);
@@ -394,7 +399,20 @@ export function deriveDirectCourseBonusCapabilityV1(input: {
     bonus_selection_mode: 'any_active_course',
     bonus_offerings: offer?.courses ?? [],
     delivered_bonus_offerings: [...(offer?.delivered_courses ?? (offer?.delivered ? offer.courses : []))],
+    rule_bonus: ruleBonus(input, open && ready),
   };
+}
+
+function ruleBonus(input: Parameters<typeof deriveDirectCourseBonusCapabilityV1>[0], extendable: boolean): CourseBonusCapabilityV1['rule_bonus'] {
+  const courses = input.active_courses ?? [];
+  const paid = courses.find(course => course.code === input.interest_offering_code);
+  if (!extendable || !paid) return null;
+  const offered = (input.package?.courses ?? []).map(course => course.code);
+  const code = nextRuleBonusCodeV1({ paid_code: paid.code, active_codes: courses.map(course => course.code),
+    delivered_codes: offered, max_bonus_courses: input.max_bonus_courses });
+  const bonus = code ? courses.find(course => course.code === code) : undefined;
+  return bonus ? { paid_offering_code: paid.code, paid_display_name: paid.display_name,
+    bonus_offering_code: bonus.code, display_name: bonus.display_name, position: offered.length + 1 } : null;
 }
 
 async function readDirectCapability(input: {
@@ -469,7 +487,11 @@ async function readDirectCapability(input: {
   `;
   if (!row) return {...hidden('unavailable'),enabled:false,max_bonus_courses:max};
   const ladder=await readCourseBonusLadderV1(input,db);
+  const activeCourses=await db<Array<{code:string;display_name:string}>>`
+    SELECT o.code,o.display_name FROM offerings o JOIN workspaces w ON w.id=o.workspace_id
+    WHERE w.slug=${input.workspace_slug} AND o.status='active' AND o.offering_type='course'`;
   return deriveDirectCourseBonusCapabilityV1({interest_offering_code:input.selected_offering_code!,
+    active_courses:activeCourses,
     ...(ladder ? {ladder} : {}),
     max_bonus_courses:max,prior_price_objection:row.prior_price_objection,
     package:row.promotion_code ? {...row,promotion_code:row.promotion_code} : null});

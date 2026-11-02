@@ -85,6 +85,7 @@ import {
 } from '../lib/conversation/agent-a-attempt'
 import { resolveAgentAProposalV1 } from '../lib/conversation/resolve-agent-a-proposal'
 import { resolveAgentAPlannerlessProposalV2 } from '../lib/conversation/resolve-agent-a-plannerless'
+import { resolveDeterministicRulesTurnV1 } from '../lib/conversation/deterministic-rules-turn'
 import { authorizedPromotionActionsV1, continueAgentAAfterActionFeedbackV1, fencedAgentARequestV1, plannerlessActionFeedbackV1 } from '../lib/conversation/agent-a-action-feedback'
 import { evaluateCallOfferTurnPolicyV1 } from '../lib/conversation/call-offer-turn-policy'
 import type { AgentATurnProposalV1 } from '../schemas/agent-a-brain'
@@ -1432,14 +1433,7 @@ export const processInboundTurn = new Workflow({
               ...generated,
               proposal: { ...generated.proposal, move: authoritativeMove },
             }
-            const resolved = await resolveAgentAPlannerlessProposalV2({
-              observe: journal.capture,
-              initial: authoritativeGenerated,
-              context: agentABrainContext,
-              repair_enabled: repairEnabled,
-              semantic_rejections: 'advisory',
-              rejection_id: randomUUID(),
-              repair: async (rejection) => {
+            const plannerlessRepair = async (rejection: TurnRejectionV1) => {
                 if (agentAGenerationAttempts >= 3) {
                   throw new Error('PLANNERLESS_PROPOSAL_REJECTED:ACTION_NOT_AUTHORIZED:generation_budget')
                 }
@@ -1476,8 +1470,28 @@ export const processInboundTurn = new Workflow({
                   agentAContinuationFailure = continuationError
                   throw continuationError
                 }
-              },
+            }
+            const resolvePlannerless = (candidate: typeof authoritativeGenerated, repairNow: boolean, rejectionId: string = randomUUID()) =>
+              resolveAgentAPlannerlessProposalV2({
+                observe: journal.capture,
+                initial: candidate,
+                context: agentABrainContext,
+                repair_enabled: repairNow,
+                semantic_rejections: 'advisory',
+                rejection_id: rejectionId,
+                repair: plannerlessRepair,
+              })
+            const rulesTurn = await resolveDeterministicRulesTurnV1({
+              context: agentABrainContext, initial: authoritativeGenerated,
+              repair_enabled: repairEnabled, rejection_id: randomUUID,
+              resolve: resolvePlannerless, repair: plannerlessRepair, observe: journal.capture,
+              on_failure: (stage, error) => safeLog(`studyx.turn.rule_${stage}_failed`, {
+                trace_id: input.trace_id, turn_id: owned.turn_id, error_code: errorCode(error),
+              }),
             })
+            journal.capture({ ...rulesTurn.record })
+            safeLog('studyx.turn.deterministic_rules', { trace_id: input.trace_id, turn_id: owned.turn_id, ...rulesTurn.record })
+            const resolved = rulesTurn.resolved
             journal.capture({ kind: 'proposal_resolution', rejection: resolved.rejection, action_rejection: resolved.action_rejection, evidence: resolved.evidence })
             await journal.flush()
             let effectiveGenerated = resolved.effective
@@ -3174,14 +3188,16 @@ export const processInboundTurn = new Workflow({
           if (outboundPart.part_index === 0) {
             await waitForNaturalWhatsAppReply(outboundPart.id)
           }
-          // Preserve the model-authored bubbles exactly, while avoiding the
-          // machine-like effect of submitting every part in the same instant.
-          // A replay resumes immediately from its first unfinished part: the
-          // previous visible bubble was already sent in an earlier workflow.
-          if (submittedPartsThisRun > 0) {
-            await new Promise<void>((resolve) => {
-              setTimeout(resolve, interBubbleDelayMs(outboundPart.id))
-            })
+          // Rule A timing comes from the committed backend part, including
+          // replays where part 0 was submitted by a previous workflow. ADK sleep
+          // is durable; the ownership check after waking still fences the send.
+          if (outboundPart.minimum_delay_before_ms) {
+            const delay = outboundPart.not_before
+              ? Math.max(0, Date.parse(outboundPart.not_before) - Date.now())
+              : outboundPart.minimum_delay_before_ms
+            if (delay > 0) await step.sleep(`rule-a-bonus-pause-${outboundPart.id}`, delay)
+          } else if (submittedPartsThisRun > 0) {
+            await new Promise<void>(resolve => { setTimeout(resolve, interBubbleDelayMs(outboundPart.id)) })
           }
           delivery = await submitWithOwnership(
             `submit-outbound-to-botpress-part-${outboundPart.part_index}`,

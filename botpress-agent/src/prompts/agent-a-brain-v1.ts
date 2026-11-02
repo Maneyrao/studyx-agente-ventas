@@ -1,3 +1,4 @@
+import { priceExpressionHintV1 } from '../../../src/shared/conversation/deterministic-sales-rules';
 import type { AgentAContextV1 } from '../schemas/agent-a-brain';
 import {
   STUDYX_AGENT_A_CANONICAL_PROMPT,
@@ -129,6 +130,13 @@ Continue naturally with the paid course and the factually identified pending ste
 ${callStepRepair}
 When no pending step is identified, use only verified value or installment facts and a natural closing question; do not invent which step is missing.
 Do not claim a discount, promotion, gift, approval, income or result. Preserve the rest of the response only when its facts and effects remain authorized.` : '';
+  // Owner rules A/B (AGENTS.md, 2026-11-02): the backend decided the effect;
+  // the model writes the whole turn presenting it.
+  const ruleBonus = context.capabilities.course_bonus?.rule_bonus;
+  const ruleBonusRepair = rejection.rejections.some(reason => reason.code === 'BONUS_OFFER_REQUIRED') && ruleBonus ? `
+The backend executes offer_course_bonus this turn: bonus_offering_code=${ruleBonus.bonus_offering_code} (${ruleBonus.display_name}), interest_offering_code=${ruleBonus.paid_offering_code} (${ruleBonus.paid_display_name}).
+Rewrite the whole turn presenting exactly that course: name ${ruleBonus.display_name} literally, state that the price of ${ruleBonus.paid_display_name} does not change, and close in the same message.
+Use proposed_action offer_course_bonus with those two codes. Declare ${ruleBonus.paid_offering_code} as paid and ${ruleBonus.bonus_offering_code} as bonus in course_mentions${(context.capabilities.course_bonus?.delivered_bonus_offerings?.length ?? 0) > 0 ? ', keep the delivered bonus courses declared as bonus and recap the full package' : ''}. Mention no other gift.` : '';
   return `
 <mandatory_repair attempt="1" rejection_id="${rejection.rejection_id}">
 Use repair_of with this rejection_id and attempt 1. This is the only rewrite.
@@ -139,6 +147,7 @@ ${courseDeclarationRepair}
 ${offeringRepair}
 ${courseLogisticsRepair}
 ${forbiddenPromiseRepair}
+${ruleBonusRepair}
 If an action did not occur, do not claim it; continue naturally from the permitted facts and effects.
 Do not repeat confirmed data or an earlier opening or question. Ask only for truly missing information.
 Keep prose and metadata consistent. Preserve accepted observations. Never expose validation to the customer.
@@ -253,6 +262,11 @@ ${INTERNAL_CONTACT_PROFILE_CONTRACT}
 <authorized_context>
 ${inertJson(context)}
 </authorized_context>
+
+<price_expression_hint>
+${JSON.stringify({ detected: context.turn.batch_messages.some(message => priceExpressionHintV1(message.text)) })}
+This lexical hint is diagnostic only. Interpret the customer's actual statement. Record price_objection only for an actual objection with a literal source_quote; questions such as "es caro?" and negations such as "no es caro" are not objections. The hint itself never grants a bonus or confirms price_only_barrier.
+</price_expression_hint>
 
 ${currentCatalogResolutionDirectiveV1(context)}
 

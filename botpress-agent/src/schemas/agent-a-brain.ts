@@ -17,11 +17,13 @@ import {
 export const CourseBonusLadderV1Schema = z.object({
   eligible: z.boolean(),
   observed_price_objection_count: z.number().int().nonnegative(),
-  required_price_objection_count: z.literal(3),
+  required_price_objection_count: z.literal(2),
   call_invitation_status: z.enum(['not_offered', 'offered', 'accepted', 'declined']),
   call_offer_count: z.number().int().nonnegative(),
   may_offer_call: z.boolean(),
   missing_steps: z.array(z.enum(['recorded_price_objections', 'call_invitation'])).readonly(),
+  price_only_barrier_confirmed: z.boolean().optional(),
+  current_turn_price_objection: z.boolean().optional(),
 }).strict();
 
 // Zui uses Zod 3; construct the ADK mirror locally from the portable constants.
@@ -310,6 +312,7 @@ export const AgentAContextV1Schema = z.object({
       accepted_at: z.string().nullable().optional(),
       package_status: z.enum(['pending_review','offered','accepted','cancelled','expired','attached']).nullable().optional(),
       delivered_bonus_offerings: z.array(z.object({code:IdentifierSchema,display_name:z.string().trim().min(1).max(240),position:z.number().int().min(1).max(3)}).strict()).max(3).optional(),
+      rule_bonus: z.object({paid_offering_code:IdentifierSchema,paid_display_name:z.string().trim().min(1).max(240),bonus_offering_code:IdentifierSchema,display_name:z.string().trim().min(1).max(240),position:z.number().int().min(1).max(3)}).strict().nullable().optional(),
       max_bonus_courses: z.union([z.literal(1), z.literal(2), z.literal(3)]).optional(),
       status: z.enum([
         'unavailable', 'needs_interest', 'not_eligible', 'checkin_available',

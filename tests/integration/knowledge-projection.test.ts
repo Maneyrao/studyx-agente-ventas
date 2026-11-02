@@ -20,7 +20,10 @@ async function drain(
   deps: { sql: NonNullable<typeof db>; embed: (text: string) => Promise<number[]> }
 ): Promise<ProjectionWorkerResult> {
   const total: ProjectionWorkerResult = { claimed: 0, completed: 0, failed: 0, skipped: 0 };
-  for (let i = 0; i < 50; i++) {
+  // The production worker clamps each invocation to two jobs, even when limit=20.
+  // Canonical seeds exceed100 sources: drain to an observed empty claim instead
+  // of silently abandoning the backlog after the historical50 invocations.
+  for (let i = 0; i < 1000; i++) {
     const result = await runKnowledgeProjectionWorker({ worker_id: workerId, limit: 20 }, deps);
     total.claimed += result.claimed;
     total.completed += result.completed;
@@ -28,7 +31,7 @@ async function drain(
     total.skipped += result.skipped;
     if (result.claimed === 0) return total;
   }
-  return total;
+  throw new Error('KNOWLEDGE_TEST_BACKLOG_DRAIN_EXHAUSTED: no empty claim after1000 invocations');
 }
 
 async function workspaceFixture() {

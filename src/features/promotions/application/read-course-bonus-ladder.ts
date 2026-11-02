@@ -1,3 +1,4 @@
+import { priceObservationQuoteInBatchV1 } from '@/shared/conversation/deterministic-sales-rules';
 import { loadConversationSessionConfig } from '@/lib/config';
 import { effectiveConversationStateV1 } from '@/features/conversation/domain/conversation-planner';
 import { reconcileTerminalCallStateV1, customerResumesCommercialFlowAfterCallV1, type CallLifecycleFactsV1 } from '@/features/conversation/domain/call-lifecycle-reconciliation';
@@ -68,8 +69,27 @@ export async function readCourseBonusLadderV1(input: {
   },{current_customer_signal:signal.type,current_customer_resumes_commercial_flow:customerResumesCommercialFlowAfterCallV1(row.customer_messages)});
   const count = Math.max(state.call_offer_count, Math.min(2, row.prior_invitation_count));
   const status = state.call_offer_status === 'not_offered' && row.prior_invitation ? 'offered' : state.call_offer_status;
-  return deriveCourseBonusLadderV1({ observed_price_objection_count: facts.price_objection_count,
+  // Rule A counts this turn's committed model memory too. Before the decision is
+  // persisted (context time) nothing matches; at offer time the same transaction
+  // already holds it. The quote must be literal customer text of this batch.
+  const [current] = await db<Array<{ candidates: Array<{type:string;key:string;source_quote:string}> | null; price_only: boolean }>>`
+    SELECT
+      (SELECT d.memory_candidates FROM agent_decisions d
+        WHERE d.turn_id=${row.source_turn_id}::uuid AND d.decision_kind='reply' LIMIT 1) candidates,
+      EXISTS(SELECT 1 FROM agent_decisions d CROSS JOIN LATERAL jsonb_array_elements(
+          CASE WHEN jsonb_typeof(d.negotiation_observations)='array' THEN d.negotiation_observations ELSE '[]'::jsonb END) observation
+        WHERE d.turn_id=${row.source_turn_id}::uuid AND d.decision_kind='reply'
+          AND observation->>'status'='confirmed'
+          AND (observation->>'offering_code') IS NOT DISTINCT FROM ${input.selected_offering_code}) price_only
+  `;
+  const currentObjection = current?.candidates?.some(candidate => candidate.type === 'objection'
+    && candidate.key === 'price_objection' && priceObservationQuoteInBatchV1(candidate.source_quote, row.customer_messages)) === true;
+  const priorObjectionIsCurrent = facts.latest_price_objection_source_turn_ids.includes(row.source_turn_id);
+  return { ...deriveCourseBonusLadderV1({
+    observed_price_objection_count: facts.price_objection_count + (currentObjection && !priorObjectionIsCurrent ? 1 : 0),
+    price_only_barrier_confirmed: facts.price_only_barrier.status === 'confirmed' || current?.price_only === true,
     call_invitation_status: status, call_offer_count: count,
     may_offer_call: mayOfferCallV1({ ...row,stage:state.stage,call_preference:state.call_preference,
-      payment_reported:state.payment_reported_at!==null,call_offer_count:count,call_offer_status:status }) });
+      payment_reported:state.payment_reported_at!==null,call_offer_count:count,call_offer_status:status }) }),
+    current_turn_price_objection: currentObjection };
 }

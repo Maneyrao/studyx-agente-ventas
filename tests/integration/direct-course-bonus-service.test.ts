@@ -19,7 +19,7 @@ beforeEach(() => {
 });
 afterEach(() => vi.unstubAllEnvs());
 
-async function fixture(objectionCount=3) {
+async function fixture(objectionCount=2) {
   const key = randomUUID();
   const [w] = await db!`INSERT INTO workspaces(slug,display_name) VALUES (${key},'Service') RETURNING id`;
   const [c] = await db!`INSERT INTO contacts(phone,channel_origin,status) VALUES
@@ -27,7 +27,7 @@ async function fixture(objectionCount=3) {
   await db!`INSERT INTO workspace_contacts(workspace_id,contact_id,source_channel) VALUES (${w.id},${c.id},'whatsapp')`;
   const [v] = await db!`INSERT INTO conversations(contact_id,channel) VALUES (${c.id},'whatsapp') RETURNING id`;
   const courses = await db!`INSERT INTO offerings(workspace_id,code,display_name,offering_type,status,description,price_type,price_amount,currency,billing_interval)
-    SELECT ${w.id}, ${key} || n,'Course ' || n,'course','active','Course','fixed',360,'USD','annual' FROM generate_series(0,4) n RETURNING id,code`;
+    SELECT ${w.id}, (ARRAY['introduccion_ecommerce','fotografia_celulares_tiendas_online','publicidad_redes_sociales','instagram_emprendedores','ingles_1'])[n+1],'Course ' || n,'course','active','Course','fixed',360,'USD','annual' FROM generate_series(0,4) n RETURNING id,code`;
   await db!`INSERT INTO conversation_sales_context_states_v1(workspace_id,conversation_id,contact_id,selected_offering_code)
     VALUES (${w.id},${v.id},${c.id},${courses[0].code})`;
   await db!`INSERT INTO promotions(workspace_id,promotion_code,paid_offering_id,channels,active)
@@ -35,6 +35,8 @@ async function fixture(objectionCount=3) {
   async function inbound(offset: number) {
     const [m] = await db!`INSERT INTO messages(conversation_id,contact_id,direction,content,created_at)
       VALUES (${v.id},${c.id},'inbound','Customer',now() + ${Math.min(0,offset)} * interval '1 second') RETURNING id`;
+    // Later price replies are committed model observations for Rule A escalation.
+    if (offset > 0) await recordModelPriceObjection(db!, m.id);
     return m.id as string;
   }
   const prior = await inbound(-10);
@@ -58,23 +60,22 @@ async function fixture(objectionCount=3) {
 }
 
 run('atomic direct bonus service', () => {
-  it.each([0,2,3])('uses exactly prior committed model facts (%s objections)',async count=>{
+  it.each([0,1,2])('uses exactly prior committed model facts (%s objections)',async count=>{
     const f=await fixture(count);
     const cap=await readCourseBonusCapabilityV1({workspace_slug:f.w.slug ?? f.identity.promotion_code,
       contact_id:f.c.id,conversation_id:f.v.id,channel:'text',selected_offering_code:f.courses[0].code,
       source_turn_id:f.source},{db:db!});
-    expect(cap).toMatchObject({may_offer_bonus:count>=3,ladder:{observed_price_objection_count:count,eligible:count>=3}});
+    expect(cap).toMatchObject({may_offer_bonus:count>=2,ladder:{observed_price_objection_count:count,eligible:count>=2}});
     const result=await offerDirectCourseBonusV1(db!,f.input());
-    expect(result).toMatchObject(count>=3?{ok:true}:{ok:false,reason:'ladder_step_pending',ladder:{observed_price_objection_count:count}});
+    expect(result).toMatchObject(count>=2?{ok:true}:{ok:false,reason:'ladder_step_pending',ladder:{observed_price_objection_count:count}});
   });
-  it('does not count the current third objection or duplicate legacy memory',async()=>{
-    const f=await fixture(2);
+  it('counts the current second committed objection without counting duplicate legacy memory',async()=>{
+    const f=await fixture(1);
     await recordModelPriceObjection(db!,f.source);
-    expect(await offerDirectCourseBonusV1(db!,f.input())).toMatchObject({ok:false,reason:'ladder_step_pending',
-      ladder:{observed_price_objection_count:2,missing_steps:['recorded_price_objections']}});
+    expect(await offerDirectCourseBonusV1(db!,f.input())).toMatchObject({ok:true,offer_version:1});
   });
   it('does not count action-only review/checkin records or future objections',async()=>{
-    const f=await fixture(2);
+    const f=await fixture(1);
     const actionTurn=await f.inbound(0);
     await recordModelPriceObjection(db!,actionTurn,{memory:false,action:'schedule_price_objection_checkin'});
     const reviewTurn=await f.inbound(0);
@@ -83,7 +84,7 @@ run('atomic direct bonus service', () => {
     const future=await f.inbound(0);
     await recordModelPriceObjection(db!,future);
     expect(await offerDirectCourseBonusV1(db!,f.input(current))).toMatchObject({ok:false,reason:'ladder_step_pending',
-      ladder:{observed_price_objection_count:2}});
+      ladder:{observed_price_objection_count:1}});
   });
   it('uses the durable prior call invitation when a later state cycle reset it',async()=>{
     const f=await fixture();
@@ -92,10 +93,10 @@ run('atomic direct bonus service', () => {
     await db!`UPDATE conversation_sales_context_states_v1 SET call_offer_status='not_offered',call_offer_count=0 WHERE conversation_id=${f.v.id}`;
     expect(await offerDirectCourseBonusV1(db!,f.input(current))).toMatchObject({ok:true});
   });
-  it('does not treat a call invitation in the current response as prior evidence',async()=>{
+  it('does not require a prior call invitation under Rule A',async()=>{
     const f=await fixture();await db!`UPDATE conversation_sales_context_states_v1 SET call_offer_status='not_offered',call_offer_count=0 WHERE conversation_id=${f.v.id}`;
     const input=f.input();input.outbound.content='Si querés, podemos hablar por teléfono. Te regalo el curso.';
-    expect(await offerDirectCourseBonusV1(db!,input)).toMatchObject({ok:false,reason:'ladder_step_pending',ladder:{missing_steps:['call_invitation']}});
+    expect(await offerDirectCourseBonusV1(db!,input)).toMatchObject({ok:true});
   });
   it('requires literal provenance even when invalid model candidates were committed before async memory validation',async()=>{
     const f=await fixture(0);
@@ -105,7 +106,7 @@ run('atomic direct bonus service', () => {
     const current=await f.inbound(0);
     expect(await offerDirectCourseBonusV1(db!,f.input(current))).toMatchObject({ok:false,reason:'ladder_step_pending',ladder:{observed_price_objection_count:0}});
   });
-  it.each(['terminal_call','expired_session'] as const)('reconciles effective call authorization before Rule 10 (%s)',async kind=>{
+  it.each(['terminal_call','expired_session'] as const)('does not reopen a bonus while persisted state remains in handoff (%s)',async kind=>{
     const f=await fixture();
     await db!`UPDATE conversation_sales_context_states_v1 SET call_preference='call',call_offer_status='accepted',call_offer_count=0,
       stage='handoff',awaiting_reply='none',updated_at=${kind==='expired_session'?new Date(Date.now()-25*60*60*1000):new Date()}
@@ -116,8 +117,7 @@ run('atomic direct bonus service', () => {
         VALUES (${f.w.id},${f.objectionTurns[0]},${f.c.id},${f.v.id},'telegram_sandbox',${randomUUID()},'completed',
           ${f.objectionTurns[0]},'{}'::jsonb,decode(repeat('00',32),'hex'),'fixture',now())`;
     }
-    expect(await offerDirectCourseBonusV1(db!,f.input())).toMatchObject({ok:false,reason:'ladder_step_pending',
-      ladder:{observed_price_objection_count:3,call_invitation_status:'not_offered',may_offer_call:true,missing_steps:['call_invitation']}});
+    expect(await offerDirectCourseBonusV1(db!,f.input())).toEqual({ok:false,reason:'sale_already_closed'});
   });
   it('keeps blocked-contact safety ahead of call-unavailable ladder eligibility without writing effects',async()=>{
     const f=await fixture();const input=f.input();
@@ -127,13 +127,12 @@ run('atomic direct bonus service', () => {
     expect(await db!`SELECT id FROM promotion_offer_bonus_offerings WHERE source_turn_id=${f.source}`).toHaveLength(0);
     expect(await db!`SELECT id FROM messages WHERE id=${input.outbound.id}`).toHaveLength(0);
   });
-  it.each(['offered','declined','not_offered','limit','unavailable'] as const)('reads live call prerequisite: %s',async status=>{
+  it.each(['offered','declined','not_offered','limit','unavailable'] as const)('does not use call status as a Rule A prerequisite: %s',async status=>{
     const f=await fixture();
     await db!`UPDATE conversation_sales_context_states_v1 SET call_offer_status=${status==='offered'||status==='declined'?status:'not_offered'},
       call_offer_count=${status==='limit'?2:status==='offered'?1:0},call_preference=${status==='unavailable'?'call':'unknown'}
       WHERE conversation_id=${f.v.id}`;
-    expect(await offerDirectCourseBonusV1(db!,f.input())).toMatchObject(status==='not_offered'
-      ?{ok:false,reason:'ladder_step_pending',ladder:{missing_steps:['call_invitation']}}:{ok:true});
+    expect(await offerDirectCourseBonusV1(db!,f.input())).toMatchObject({ok:true});
   });
   it('preserves exact replay even after call eligibility and observations change',async()=>{
     const f=await fixture();const input=f.input();const result=await offerDirectCourseBonusV1(db!,input);
@@ -200,7 +199,7 @@ run('atomic direct bonus service', () => {
     await seedPriorModelNegotiation(db!,f);
     const identity={workspace_id:f.workspace_id,contact_id:f.contact_id,conversation_id:f.conversation_id,paid_offering_code:'entrenamiento_funcional'};
     const id=randomUUID();
-    const offer=await offerDirectCourseBonusV1(db!,{...identity,source_turn_id:f.turn_id,expected_offer_version:0,bonus_offering_codes:['ingles_1'],
+    const offer=await offerDirectCourseBonusV1(db!,{...identity,source_turn_id:f.turn_id,expected_offer_version:0,bonus_offering_codes:['nutricion_alimentacion'],
       outbound:{id,content:'Bonus',provider:'test',integration_id:'test',channel:'whatsapp',destination:'test',idempotency_key:id}});
     if(!offer.ok) throw new Error(offer.reason);
     await db!`UPDATE outbound_deliveries SET state='leased' WHERE message_id=${id}`;
@@ -212,8 +211,8 @@ run('atomic direct bonus service', () => {
     vi.stubEnv('COURSE_BONUS_FLOW_MODE',mode==='call'?'direct':mode);
     const question=await commitAgentDecision({turn_id:f.second_turn_id,trace_id:f.trace_id,supports_multi_outbound:true,
       agent_turn_v2:{schema_version:2,proposal:{...f.proposalWithCallOfferAndFalsePrice,
-        move:{schema_version:1,move:mode==='call'?'request_call':'ask_course_information',secondary_moves:[],vetoes:[],confidence:1,course_reference:'ingles_1'},
-        course_mentions:[{offering_code:'ingles_1',role:'bonus'}],response:{messages:['Podemos revisar el contenido de Inglés 1.'],call_offer:null},proposed_action:{type:'none'},memory_candidates:[]} as never},
+        move:{schema_version:1,move:mode==='call'?'request_call':'ask_course_information',secondary_moves:[],vetoes:[],confidence:1,course_reference:'nutricion_alimentacion'},
+        course_mentions:[{offering_code:'nutricion_alimentacion',role:'bonus'}],response:{messages:['Podemos revisar el contenido de Nutrición y Alimentación Saludable.'],call_offer:null},proposed_action:{type:'none'},memory_candidates:[]} as never},
       decision:f.placeholderDecision as never,model:f.model as never});
     expect(question.status).toBe('committed');
     expect((await db!`SELECT status FROM promotion_offers WHERE id=${offer.offer_id}`)[0].status).toBe('offered');
@@ -237,28 +236,28 @@ run('atomic direct bonus service', () => {
     const unrelated=await readCourseBonusCapabilityV1({workspace_slug:'studyx',contact_id:f.contact_id,conversation_id:f.conversation_id,
       channel:'text',selected_offering_code:null,source_turn_id:later.id},{db:db!});
     expect(unrelated.promotion_cycle_id ?? null).toBeNull();
-    // Rule 10 counts the whole conversation; changing course does not reset facts.
+    // Rule A counts the whole conversation; changing course does not reset facts.
     expect(unrelated.may_offer_bonus===true).toBe(mode!=='review');
     const unrelatedId=randomUUID();
     if(mode==='review') {
       expect(await offerDirectCourseBonusV1(db!,{...identity,paid_offering_code:'ingles_2',source_turn_id:later.id,
-        expected_offer_version:0,bonus_offering_codes:['excel_integral'],outbound:{id:unrelatedId,content:'Bonus',
+        expected_offer_version:0,bonus_offering_codes:['ingles_3'],outbound:{id:unrelatedId,content:'Bonus',
           provider:'test',integration_id:'test',channel:'whatsapp',destination:'test',idempotency_key:unrelatedId}}))
         .toMatchObject({ok:false,reason:'bonus_disabled'});
     } else {
-      const probe=new Error('ROLLBACK_OTHER_COURSE_RULE10_PROBE');
+      const probe=new Error('ROLLBACK_OTHER_COURSE_RULE_A_PROBE');
       await expect(db!.begin(async tx=>{
         expect(await offerDirectCourseBonusV1(tx,{...identity,paid_offering_code:'ingles_2',source_turn_id:later.id,
-          expected_offer_version:0,bonus_offering_codes:['excel_integral'],outbound:{id:unrelatedId,content:'Bonus',
+          expected_offer_version:0,bonus_offering_codes:['ingles_3'],outbound:{id:unrelatedId,content:'Bonus',
             provider:'test',integration_id:'test',channel:'whatsapp',destination:'test',idempotency_key:unrelatedId}})).toMatchObject({ok:true});
         throw probe;
       })).rejects.toBe(probe);
     }
-    await recordPromotionConversationContextV1(db!,{...identity,discussed_offering_code:'ingles_1',source_turn_id:f.second_turn_id,records_price_objection:false});
+    await recordPromotionConversationContextV1(db!,{...identity,discussed_offering_code:'nutricion_alimentacion',source_turn_id:f.second_turn_id,records_price_objection:false});
     const accepted=await commitAgentDecision({turn_id:later.id,trace_id:randomUUID(),supports_multi_outbound:true,
       agent_turn_v2:{schema_version:2,proposal:{...f.proposalWithCallOfferAndFalsePrice,
-        move:{schema_version:1,move:'select_course',secondary_moves:[],vetoes:[],confidence:1,course_reference:'ingles_1'},
-        course_mentions:[{offering_code:'ingles_1',role:'bonus'}],response:{messages:['Entrenamiento Funcional incluye Inglés 1 de regalo.'],call_offer:null},
+        move:{schema_version:1,move:'select_course',secondary_moves:[],vetoes:[],confidence:1,course_reference:'nutricion_alimentacion'},
+        course_mentions:[{offering_code:'nutricion_alimentacion',role:'bonus'}],response:{messages:['Entrenamiento Funcional incluye Nutrición y Alimentación Saludable de regalo.'],call_offer:null},
         proposed_action:{type:'accept_promotion',promotion_code:offer.promotion_code,promotion_cycle_id:offer.promotion_cycle_id,
           interest_offering_code:'entrenamiento_funcional',offer_version:1},memory_candidates:[]} as never},
       decision:f.placeholderDecision as never,model:f.model as never});
@@ -289,7 +288,7 @@ run('atomic direct bonus service', () => {
     const f=await fixture();const first=f.input();const offer=await offerDirectCourseBonusV1(db!,first);
     expect(offer.ok).toBe(true);if(!offer.ok) throw new Error('missing offer');
     await f.deliver(first.outbound.id);
-    const second=f.input(await f.inbound(0),2,1);
+    const second=f.input(await f.inbound(2),2,1);
     expect(await offerDirectCourseBonusV1(db!,second)).toMatchObject({ok:true,offer_version:2});
     await f.deliver(second.outbound.id);
     vi.stubEnv('COURSE_BONUS_FLOW_MODE','review');vi.stubEnv('COURSE_BONUS_MAX_COURSES','1');
@@ -323,8 +322,9 @@ run('atomic direct bonus service', () => {
     expect(cap.may_offer_bonus).toBe(false);
     const id=randomUUID();
     expect(await offerDirectCourseBonusV1(db!,{workspace_id:f.workspace_id,contact_id:f.contact_id,conversation_id:f.conversation_id,
-      paid_offering_code:course,source_turn_id:f.second_turn_id,expected_offer_version:0,bonus_offering_codes:['ingles_1'],
-      outbound:{id,content:'Te regalo Inglés 1.',provider:'test',integration_id:'test',channel:'whatsapp',destination:'test',idempotency_key:id}}))
+      paid_offering_code:course,source_turn_id:f.second_turn_id,expected_offer_version:0,
+      bonus_offering_codes:[course==='ingles_2'?'ingles_3':'nutricion_alimentacion'],
+      outbound:{id,content:'Te sumo el curso complementario.',provider:'test',integration_id:'test',channel:'whatsapp',destination:'test',idempotency_key:id}}))
       .toMatchObject({ok:false});
     expect(await db!`SELECT id FROM promotion_offers WHERE conversation_id=${f.conversation_id}`).toHaveLength(0);
   });
@@ -352,7 +352,7 @@ run('atomic direct bonus service', () => {
     const independent=openLocalTestDatabase();
     try {await db!.begin(async tx=>{
       expect(await offerDirectCourseBonusV1(tx,{workspace_id:f.workspace_id,contact_id:f.contact_id,conversation_id:f.conversation_id,
-        paid_offering_code:'ingles_2',source_turn_id:current.id,expected_offer_version:0,bonus_offering_codes:['ingles_1'],
+        paid_offering_code:'ingles_2',source_turn_id:current.id,expected_offer_version:0,bonus_offering_codes:['ingles_3'],
         outbound:{id,content:'Te regalo Inglés 1.',provider:'test',integration_id:'test',channel:'whatsapp',destination:'test',idempotency_key:id}}))
         .toMatchObject({ok:true});
       await expect(independent.begin(async race=>{
@@ -387,7 +387,7 @@ run('atomic direct bonus service', () => {
     expect(cap.may_offer_bonus).not.toBe(true);
     const id=randomUUID();
     expect(await offerDirectCourseBonusV1(db!,{workspace_id:f.workspace_id,contact_id:contact,conversation_id:f.conversation_id,
-      paid_offering_code:'entrenamiento_funcional',source_turn_id:source,expected_offer_version:0,bonus_offering_codes:['ingles_1'],
+      paid_offering_code:'entrenamiento_funcional',source_turn_id:source,expected_offer_version:0,bonus_offering_codes:['nutricion_alimentacion'],
       outbound:{id,content:'Te regalo Inglés 1.',provider:'test',integration_id:'test',channel:'whatsapp',destination:'test',idempotency_key:id}}))
       .toMatchObject({ok:false,reason:kind==='current_objection'?'ladder_step_pending':'invalid_offering'});
     expect(await db!`SELECT id FROM promotion_offers WHERE conversation_id=${f.conversation_id}`).toHaveLength(0);
@@ -409,7 +409,7 @@ run('atomic direct bonus service', () => {
     try {
       await db!.begin(async tx=>{
         expect(await offerDirectCourseBonusV1(tx,{workspace_id:f.workspace_id,contact_id:f.contact_id,conversation_id:f.conversation_id,
-          paid_offering_code:'entrenamiento_funcional',source_turn_id:f.second_turn_id,expected_offer_version:0,bonus_offering_codes:['ingles_1'],
+          paid_offering_code:'entrenamiento_funcional',source_turn_id:f.second_turn_id,expected_offer_version:0,bonus_offering_codes:['nutricion_alimentacion'],
           outbound:{id,content:'Te regalo Inglés 1.',provider:'test',integration_id:'test',channel:'whatsapp',destination:'test',idempotency_key:id}}))
           .toMatchObject({ok:true,offer_version:1});
         await expect(independent.begin(async race=>{
@@ -434,6 +434,13 @@ run('atomic direct bonus service', () => {
       expect((await tx`SELECT count(*)::int AS n FROM messages WHERE id=${second.outbound.id}`)[0].n).toBe(0);
       expect((await tx`SELECT count(*)::int AS n FROM promotion_offer_bonus_offerings WHERE offer_id=${result.offer_id}`)[0].n).toBe(1);
     });
+  });
+
+  it('rejects an active gift outside the next fixed-table position before writing effects',async()=>{
+    const f=await fixture();const input=f.input(f.source,2);
+    expect(await offerDirectCourseBonusV1(db!,input)).toEqual({ok:false,reason:'invalid_offering'});
+    expect(await db!`SELECT id FROM promotion_offers WHERE conversation_id=${f.v.id}`).toHaveLength(0);
+    expect(await db!`SELECT id FROM messages WHERE id=${input.outbound.id}`).toHaveLength(0);
   });
 
   it('rejects an empty reply without persisting an offer',async()=>{
@@ -593,7 +600,7 @@ run('atomic direct bonus service', () => {
     expect(await offerDirectCourseBonusV1(db!,f.input(turn,1,1))).toEqual({ok:false,reason:'duplicate_bonus'});
     const independent=openLocalTestDatabase();
     try {
-      const results=await Promise.all([offerDirectCourseBonusV1(db!,f.input(turn,2,1)),offerDirectCourseBonusV1(independent,f.input(turn,3,1))]);
+      const results=await Promise.all([offerDirectCourseBonusV1(db!,f.input(turn,2,1)),offerDirectCourseBonusV1(independent,f.input(turn,2,1))]);
       expect(results.filter(r=>r.ok), JSON.stringify(results)).toHaveLength(1);
       expect(results.filter(r=>!r.ok)).toEqual([{ok:false,reason:'stale_offer_version'}]);
       const success=results.find(r=>r.ok)!;if(!success.ok) throw new Error('missing result');

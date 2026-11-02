@@ -168,6 +168,7 @@ export const AgentAContextV1Schema = z.object({
       accepted_at: z.string().nullable().optional(),
       package_status: z.enum(['pending_review','offered','accepted','cancelled','expired','attached']).nullable().optional(),
       delivered_bonus_offerings: z.array(z.object({code:IdentifierSchema,display_name:z.string().trim().min(1).max(240),position:z.number().int().min(1).max(3)}).strict()).max(3).optional(),
+      rule_bonus: z.object({paid_offering_code:IdentifierSchema,paid_display_name:z.string().trim().min(1).max(240),bonus_offering_code:IdentifierSchema,display_name:z.string().trim().min(1).max(240),position:z.number().int().min(1).max(3)}).strict().nullable().optional(),
       max_bonus_courses: z.union([z.literal(1), z.literal(2), z.literal(3)]).optional(),
       status: z.enum([
         'unavailable', 'needs_interest', 'not_eligible', 'checkin_available',

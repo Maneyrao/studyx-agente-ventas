@@ -78,6 +78,15 @@ function courseBonusEffectContract(instructions: string): string {
 }
 
 describe('Agent A Brain prompt', () => {
+  it.each([['me parece caro', true], ['es caro?', false], ['no es caro', false]] as const)(
+    'passes the price hint before generation without authorizing effects: %s', (text, detected) => {
+      const current = context();
+      current.turn.batch_messages = [{ id: 'current', text }];
+      const instructions = buildAgentABrainInstructionsV1(current);
+      expect(instructions).toContain(JSON.stringify({ detected }));
+      expect(instructions).toContain('The hint itself never grants a bonus');
+      expect(current.capabilities.course_bonus).toBeUndefined();
+    });
   it('requires model-declared course roles while keeping metadata separate from authorization',()=>{
     const instructions=buildAgentABrainInstructionsV1(context());
     const contract=instructions.split('<course_mentions_contract>')[1]?.split('</course_mentions_contract>')[0]??'';
@@ -479,7 +488,7 @@ describe('Agent A Brain prompt', () => {
     current.capabilities.course_bonus={enabled:true,max_bonus_courses:3,may_offer_bonus:false,status:'not_eligible',
       may_schedule_checkin:false,may_request_review:false,may_accept_offer:false,may_send_promoted_payment:false,
       promotion_code:null,interest_offering_code:'redes-informaticas',bonus_offerings:[],ladder:{eligible:false,
-        observed_price_objection_count:count,required_price_objection_count:3,call_invitation_status:'not_offered',
+        observed_price_objection_count:count,required_price_objection_count:2,call_invitation_status:'not_offered',
         call_offer_count:0,may_offer_call:true,missing_steps:['recorded_price_objections','call_invitation']}};
     current.turn_rejection={schema_version:1,rejection_id:'r',attempt:1,
       rejections:[{code:'FACT_VALUE_MISMATCH',subject:'direct_bonus:ladder_step_pending'}],
@@ -508,7 +517,7 @@ describe('Agent A Brain prompt', () => {
     const current=context();current.capabilities.course_bonus={enabled:true,max_bonus_courses:3,may_offer_bonus:false,
       status:'not_eligible',may_schedule_checkin:false,may_request_review:false,may_accept_offer:false,may_send_promoted_payment:false,
       promotion_code:null,interest_offering_code:'redes-informaticas',bonus_offerings:[],ladder:{eligible:false,
-        observed_price_objection_count:2,required_price_objection_count:3,call_invitation_status:'not_offered',
+        observed_price_objection_count:2,required_price_objection_count:2,call_invitation_status:'not_offered',
         call_offer_count:0,may_offer_call:true,missing_steps:['call_invitation','recorded_price_objections']}};
     const feedback=['bonus_ladder:call_invitation:offered','bonus_ladder:missing:recorded_price_objections'];
     current.turn_rejection={schema_version:1,rejection_id:'r',attempt:1,

@@ -1,3 +1,5 @@
+import { deriveCourseBonusLadderV1 } from '@/shared/conversation/bonus-ladder';
+import { draftConfirmsPriceOnlyBarrierV1, draftRecordsPriceObjectionV1, isCheckoutV1 } from '@/shared/conversation/deterministic-sales-rules';
 import { validateCourseMentionsV1 } from '@/shared/conversation/course-mentions';
 import { messagesWithoutExactCallOfferV1 } from '@/shared/conversation/call-offer-format';
 import { courseBonusLadderRejectionSubjectsV1 } from '@/shared/conversation/bonus-ladder-rejection';
@@ -70,6 +72,8 @@ export type AgentTurnAuthorityResultV2 = {
   /** Exact catalog course referenced by Agent A this turn. It is interest,
    * not purchase selection, and is persisted separately by the commit layer. */
   readonly discussed_offering_code: string | null;
+  /** Rule A: the link carries the offered package, accepted in the same commit. */
+  readonly auto_accept_promotion?: boolean;
   /** Present when semantic checks run as diagnostics instead of a copy veto. */
   readonly advisory_reasons?: readonly AgentTurnRejectionReasonV2[];
   readonly rejection_subjects?: readonly string[];
@@ -244,8 +248,14 @@ export function authorizeAgentTurnV2(input: {
   const offeredPromotionNeedsAcceptance = input.course_bonus?.status === 'offer_available'
     && input.course_bonus.may_accept_offer === true
     && (selectedOfferingBelongsToPresentedPackage || requestedOfferingBelongsToPresentedPackage);
+  // Rule A automatic acceptance (owner 2026-11-02): with a live direct offer,
+  // moving to purchase accepts the offered package; no accept_promotion needed.
+  const autoAcceptsOfferedPackage = offeredPromotionNeedsAcceptance
+    && Boolean(input.course_bonus?.promotion_cycle_id) && (input.course_bonus?.offer_version ?? 0) >= 1
+    && promotionMatchesSelectedPurchase && promotionMatchesCurrentInterest;
   const authorizedPromotionCode = promotionEligibleForPurchase
     ? input.course_bonus.promotion_code
+    : autoAcceptsOfferedPackage ? input.course_bonus?.promotion_code ?? null
     : null;
   const factOffering = moves.has('ask_course_information') && requestedOffering !== null
     ? requestedOffering
@@ -482,7 +492,7 @@ export function authorizeAgentTurnV2(input: {
     const matchesPromotion = proposal.proposed_action.promotion_code === undefined
       || authorizedPromotionCode === proposal.proposed_action.promotion_code;
     if (!paymentLinkRequested || !matchesState || !matchesPromotion
-      || offeredPromotionNeedsAcceptance
+      || (offeredPromotionNeedsAcceptance && !autoAcceptsOfferedPackage)
       || (promotionEligibleForPurchase && authorizedPromotionCode === null)
       || proposal.move.vetoes.includes('payment_link')
       || proposal.move.vetoes.includes('purchase')) {
@@ -554,9 +564,26 @@ export function authorizeAgentTurnV2(input: {
   if (proposal.proposed_action.type === 'offer_course_bonus') {
     const proposed = proposal.proposed_action;
     const cap = input.course_bonus;
+    // Rule A (AGENTS.md, owner 2026-11-02): this turn's model memory, bound to
+    // literal customer text, completes the trigger; the course is the table's next one.
+    const batch = input.current_customer_messages ?? [];
+    const draftEvidence = { response: proposal.response, proposed_action: proposal.proposed_action,
+      move: proposal.move, memory_candidates: proposal.memory_candidates };
+    const currentObjection = draftRecordsPriceObjectionV1(draftEvidence, batch);
+    const ladder = cap?.ladder ? deriveCourseBonusLadderV1({ ...cap.ladder,
+      observed_price_objection_count: cap.ladder.observed_price_objection_count + (currentObjection ? 1 : 0),
+      price_only_barrier_confirmed: cap.ladder.price_only_barrier_confirmed === true
+        || draftConfirmsPriceOnlyBarrierV1(draftEvidence, batch) }) : undefined;
+    const escalationWithoutNewObjection = (cap?.bonus_offerings.length ?? 0) > 0 && !currentObjection;
+    const checkout = isCheckoutV1({ stage: state.stage, awaiting_reply: state.awaiting_reply,
+      payment_link_request_pending: state.payment_link_request?.status === 'pending' }, draftEvidence);
     const reason = cap?.enabled !== true ? 'bonus_disabled'
-      : cap.ladder?.eligible !== true ? 'ladder_step_pending'
-      : cap.may_offer_bonus !== true ? 'bonus_disabled'
+      : checkout ? 'sale_already_closed'
+      : ladder?.eligible !== true || escalationWithoutNewObjection ? 'ladder_step_pending'
+      : !cap.rule_bonus ? ((cap.bonus_offerings.length >= (cap.max_bonus_courses ?? 0)) ? 'bonus_limit_reached' : 'bonus_disabled')
+      : proposed.bonus_offering_code !== cap.rule_bonus.bonus_offering_code
+        && !cap.bonus_offerings.some(o => o.code === proposed.bonus_offering_code)
+        && proposed.bonus_offering_code !== capabilityInterestOffering ? 'invalid_offering'
       : proposed.interest_offering_code !== capabilityInterestOffering || !promotionMatchesCurrentInterest
         || !input.offerings.some(o => o.code === proposed.bonus_offering_code) ? 'invalid_offering'
       : proposed.bonus_offering_code === capabilityInterestOffering ? 'same_as_paid_course'
@@ -564,7 +591,7 @@ export function authorizeAgentTurnV2(input: {
       : cap.bonus_offerings.length >= (cap.max_bonus_courses ?? 0) ? 'bonus_limit_reached' : null;
     if (reason) return {ok:false,reasons:['COMMERCIAL_TRUTH_VIOLATION'],
       rejection_subjects:reason === 'ladder_step_pending'
-        ? courseBonusLadderRejectionSubjectsV1(cap?.ladder)
+        ? courseBonusLadderRejectionSubjectsV1(ladder ?? cap?.ladder)
         : ['forbidden_promise',`direct_bonus:${reason}`]};
     action = proposed;
   }
@@ -576,7 +603,7 @@ export function authorizeAgentTurnV2(input: {
     && !proposal.move.vetoes.includes('payment_link')
     && !proposal.move.vetoes.includes('purchase')
     && paymentLinkAuthorized
-    && !offeredPromotionNeedsAcceptance
+    && (!offeredPromotionNeedsAcceptance || autoAcceptsOfferedPackage)
     // Completing intake preserves the customer's pending request, but it must
     // not make the backend invent a checkout behind an Agent A confirmation
     // question. An explicit proposed action can still consume the request.
@@ -831,6 +858,7 @@ export function authorizeAgentTurnV2(input: {
     action,
     authorized_fact_ids: unique(authorizedFactIds),
     state_facts: stateFacts,
+    auto_accept_promotion: autoAcceptsOfferedPackage && action.type === 'send_payment_link',
     discussed_offering_code: acceptsPresentedPromotion
       ? capabilityInterestOffering
       : requestedOffering,

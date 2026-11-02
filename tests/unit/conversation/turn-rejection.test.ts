@@ -18,6 +18,8 @@ describe('TurnRejectionV1', () => {
   it('expone todos los códigos de la especificación', () => {
     expect([...TURN_REJECTION_CODES_V1].sort()).toEqual([
       'ACTION_NOT_AUTHORIZED',
+      // Regla A del dueño (2026-11-02): el backend decidió la bonificación.
+      'BONUS_OFFER_REQUIRED',
       'CALL_BUDGET_EXHAUSTED',
       'CALL_OFFER_MESSAGE_BOUNDARY_INVALID',
       'CALL_OFFER_REQUIRED',

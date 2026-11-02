@@ -172,7 +172,9 @@ describe('prepareAgentTurnV2', () => {
       course_bonus_capability:{status:'checkin_available',enabled:true,max_bonus_courses:2,may_offer_bonus:true,
         ladder:deriveCourseBonusLadderV1({observed_price_objection_count:3,call_invitation_status:'offered',call_offer_count:1,may_offer_call:true}),
         may_schedule_checkin:false,may_request_review:false,may_accept_offer:false,may_send_promoted_payment:false,
-        promotion_code:null,interest_offering_code:'redes_informaticas',bonus_offerings:[]},
+        promotion_code:null,interest_offering_code:'redes_informaticas',bonus_offerings:[],
+        // Regla A: el curso lo fija la tabla del backend.
+        rule_bonus:{paid_offering_code:'redes_informaticas',paid_display_name:'Redes Informáticas',bonus_offering_code:'excel_integral',display_name:'Excel Integral',position:1}},
     },{state_store:store(state({selected_offering_code:'redes_informaticas'})),contact_intake:completeIntake});
     expect(prepared.decision.business_action).toEqual(action);
   });
