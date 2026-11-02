@@ -4082,6 +4082,42 @@ describe('processInboundTurn hot path', () => {
       errorCode: 'OUTBOUND_SUBMISSION_AMBIGUOUS', needsOperator: true });
   });
 
+  it.each([false, true])('records the provider status and Error ID of an ambiguous send in evidence and log (multipart=%s)', async multipart => {
+    // Shape and text observed live on 2026-11-02 (Botpress → WhatsApp integration 502).
+    const providerError = Object.assign(new Error('[Create Message] Received error response when sending scheduled message to integration '
+      + '"8a7bb148-c95c-4527-a75f-611b4255f53c": [Internal] Request failed with status code 502 (Error ID: err_20261102095847xE9BC49AA)'),
+    { isApiError: true, code: 500, type: 'Runtime', id: 'err_20261102095847xE9BC49AA' });
+    const createMessage = vi.fn(async () => { throw providerError; });
+    const events: Array<{ kind: string; data: Record<string, unknown> }> = [];
+    vi.spyOn(evidencePersistence, 'persistTurnEvidence').mockImplementation(async (_subject, event) => {
+      events.push(event);
+    });
+    const logs = vi.spyOn(console, 'info').mockImplementation(() => undefined);
+    const state = processingState();
+    const part = { id: UUID, content: 'Contenido autorizado', status: 'pending', delivery_attempt: 1,
+      authorized_egress: { schema_version: 1,
+        content_hash: 'e2dee359447348131358a63664853c018f5db0fcb31835e30a0aac56badab6bd',
+        authorized_urls: [], protected_facts: [] },
+      part_index: 0, part_count: 1 };
+    await expect(runCommittedOutbound(part, {}, { createMessage, state,
+      ...(multipart ? { outbounds: [part] } : {}) })).rejects.toBe(DELIVERY_SUSPENSION);
+
+    const expected = { api_type: 'Runtime', api_code: 500, upstream_type: 'Internal', upstream_status: 502,
+      error_id: 'err_20261102095847xE9BC49AA' };
+    // Captured before the durable suspension; flushed on the next run (live: 07:03:49).
+    const ambiguous = [...events, ...((state as { pendingEvidence?: typeof events }).pendingEvidence ?? [])]
+      .find(event => event.kind === 'provider_send_ambiguous');
+    expect(ambiguous?.data).toMatchObject({ provider_error: expected });
+    const logged = logs.mock.calls.map(([line]) => { try { return JSON.parse(String(line)); } catch { return null; } })
+      .find(line => line?.event === 'studyx.turn.delivery_submission_ambiguous');
+    expect(logged).toMatchObject({ provider_error: { upstream_status: 502, error_id: 'err_20261102095847xE9BC49AA' } });
+    expect(JSON.stringify(logged)).not.toContain('Request failed');
+    // Behaviour unchanged: still ambiguous, held for an operator, never reported as failed.
+    expect(actionSpies.delivery).not.toHaveBeenCalled();
+    expect(state).toMatchObject({ phase: 'retry_pending', deliveryStatus: null,
+      errorCode: 'OUTBOUND_SUBMISSION_AMBIGUOUS', needsOperator: true });
+  });
+
   it('holds a committed start with its HTTP response lost for review without invoking the provider', async () => {
     const saved = new Map<string, unknown>();
     const suspension = { [Symbol.for('StepSignal')]: true };

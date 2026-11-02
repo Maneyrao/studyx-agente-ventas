@@ -1,5 +1,6 @@
 import { claimsUnverifiedCallProgressV1 } from '../../../src/shared/conversation/call-progress-claim'
 import { createTurnEvidenceJournal, isTurnEvidencePersistenceError, TurnEvidencePersistenceError } from '../lib/observability/turn-evidence'
+import { summarizeProviderError } from '../lib/observability/provider-error-summary'
 import { persistTurnEvidence } from '../lib/observability/persist-turn-evidence'
 import { getOrCreateEvidenceWorkflow } from '../lib/observability/evidence-workflow'
 import { commitDecisionWithRejectionReceiptV1, backendDecisionRejectionReason, backendDecisionRejectionSubjects } from '../lib/delivery/commit-decision-receipt'
@@ -1101,7 +1102,8 @@ export const processInboundTurn = new Workflow({
         return receipt
       } catch (error) {
       if (isTurnEvidencePersistenceError(error)) throw error
-        journal.capture({ kind: 'provider_send_ambiguous', code: errorCode(error) })
+        journal.capture({ kind: 'provider_send_ambiguous', code: errorCode(error),
+          provider_error: summarizeProviderError(error) })
         throw error
       }
     }
@@ -3233,6 +3235,7 @@ export const processInboundTurn = new Workflow({
             state.errorCode = 'OUTBOUND_SUBMISSION_AMBIGUOUS'
             safeLog('studyx.turn.delivery_submission_ambiguous', {
               trace_id: input.trace_id, outbound_id: outboundPart.id, error_code: errorCode(error),
+              provider_error: summarizeProviderError(error),
             })
             emitTimings()
             delivery = await holdAmbiguousSubmission(outboundPart)
@@ -3478,6 +3481,7 @@ export const processInboundTurn = new Workflow({
         state.errorCode = 'OUTBOUND_SUBMISSION_AMBIGUOUS'
         safeLog('studyx.turn.delivery_submission_ambiguous', {
           trace_id: input.trace_id, outbound_id: committed.outbound.id, error_code: errorCode(error),
+          provider_error: summarizeProviderError(error),
         })
         emitTimings()
         delivery = await holdAmbiguousSubmission(committed.outbound)
