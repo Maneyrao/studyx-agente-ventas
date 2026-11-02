@@ -1,10 +1,10 @@
 import { createHash } from 'node:crypto';
 
 export const OWNER_RESET_SCOPE = Object.freeze({
-  phone: '+5491169004497', contactId: 'd9812585-d1a6-4d18-8bed-46704d5b1bc1',
+  phone: '+5491169004497', contactId: '59a93e00-0c24-4ce0-adbf-5567068cedaa',
   workspaceId: 'b0000000-0000-4000-8000-000000000001',
-  conversationId: 'a488c417-50e4-478d-97c7-f99cc2b886a0',
-  botpressConversationId: 'conv_01M6EZ91NRJKEKVSY04ZGJYDTW',
+  conversationId: 'c7079a9f-4201-47d2-9876-0166943ebe87',
+  botpressConversationId: 'conv_01M6F3E2FJFZJZ9JZXYF2ZZ4SW',
   botId: '0d7c9ecb-4781-4c65-913d-f7e947fa14d4',
   botpressWorkspaceId: 'wkspace_01M4XEBZNC10HX2KDHKY36T6R0',
   botPhoneNumberId: '1300545066485709', profile: 'studyx-detmaneyro', databaseRef: 'eqspozrpzgzvtpowwprg',
