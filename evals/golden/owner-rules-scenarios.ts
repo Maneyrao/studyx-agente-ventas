@@ -159,7 +159,7 @@ const englishTurn = (id: string, customer: string, override: Partial<GoldenTurnV
   hard: [{ type: 'workflow_committed' }, ...noContingency],
   ...override,
 });
-export const OWNER_PROMOTION_MODE_REPLAY_CASES: readonly GoldenCaseV1[] = [{
+const OWNER_PROMOTION_MODE_REPLAY_CASES_MUTABLE: GoldenCaseV1[] = [{
   id: '20_owner_promotion_mode_replay_20261102_1730',
   title: 'Replay 2/11 17:30–17:34: Inglés desde cero → pedido de promo por precio → escalada con recapitulación, sin contingencia',
   turns: [
@@ -192,3 +192,29 @@ export const OWNER_PROMOTION_MODE_REPLAY_CASES: readonly GoldenCaseV1[] = [{
     }),
   ],
 }];
+
+/** Owner conversation of 2026-11-02 18:43–18:45 (-03:00), after the reset:
+ * "ingles" without a level, then a promo request with a price objection. */
+OWNER_PROMOTION_MODE_REPLAY_CASES_MUTABLE.push({
+  id: '21_owner_promotion_mode_replay_20261102_1843',
+  title: 'Replay 2/11 18:43: «ingles» sin nivel → pedido de promo por precio → oferta Inglés 1 + Inglés 2, sin contingencia',
+  turns: [
+    englishTurn('greeting', 'buenas\ncomo estas?'),
+    englishTurn('english_price', 'ingles\nquiero saber el precio'),
+    englishTurn('promo_because_expensive', 'noo\nquiero saber si hay alguna promo\nme parece caro el precio', {
+      must: ['Modo promoción, primera oferta: reconocer el freno del precio, decir que se lo puede resolver, presentar una promoción exclusiva (si avanza con Inglés 1, le bonifica Inglés 2) y cerrar con la alternativa de 12 cuotas de USD 30 o 6 de USD 60.'],
+      mustNot: ['No volver sólo a las cuotas, no preguntar de nuevo si el precio es lo único que lo frena, no comparar con gastos, no más de una pregunta.'],
+      authority: [promotionMode, ruleA],
+      expected: { move: replayMoves, action: ['offer_course_bonus'], state: {
+        promotion: { status: ['offer_available'], bonusCount: [1], paidCourse: ['ingles_1'] } } },
+      hard: [{ type: 'workflow_committed' }, { type: 'rule_outcomes_recorded' }, { type: 'action_bonus_in', values: ['ingles_2'] },
+        { type: 'question_count_at_most', value: 1 }, ...noContingency],
+    }),
+    englishTurn('only_price', 'solo el precio', {
+      must: ['Responder conservando el paquete vigente y avanzar al cierre; si el backend decide una escalada, presentarla con recapitulación.'],
+      hard: [{ type: 'workflow_committed' }, { type: 'promotion_bonus_count_at_most', value: 3 }, ...noContingency],
+    }),
+  ],
+});
+
+export const OWNER_PROMOTION_MODE_REPLAY_CASES: readonly GoldenCaseV1[] = OWNER_PROMOTION_MODE_REPLAY_CASES_MUTABLE;

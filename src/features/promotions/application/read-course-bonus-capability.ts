@@ -1,6 +1,6 @@
 import { readCourseBonusLadderV1 } from './read-course-bonus-ladder';
 import { deriveCourseBonusLadderV1 } from '@/shared/conversation/bonus-ladder';
-import { nextRuleBonusCodeV1, promoRequestV1 } from '@/shared/conversation/deterministic-sales-rules';
+import { confirmsPriceProbeV1, nextRuleBonusCodeV1, priceExpressionHintV1, promoRequestV1 } from '@/shared/conversation/deterministic-sales-rules';
 import { currentFactualCourseReferencesV1 } from '@/features/orchestration/domain/course-focus';
 import type { CourseBonusLadderV1 } from '@/shared/conversation/bonus-ladder';
 import type { DbClient } from '@/lib/db/types';
@@ -439,11 +439,32 @@ async function promoRequestedThisTurn(input: { contact_id: string; conversation_
   return (await currentBatchTexts(input, db)).some(promoRequestV1);
 }
 
+/** A leveled family ("Inglés 1/2/3") referenced without a level resolves to
+ * its entry level; anything else must be a single course. */
+function singleOrEntryLevelV1(codes: readonly string[]): string | null {
+  const unique = [...new Set(codes)];
+  if (unique.length === 1) return unique[0]!;
+  const levels = unique.map(code => /^(.+)_(\d+)$/u.exec(code));
+  if (unique.length < 2 || levels.some(match => match === null)) return null;
+  if (new Set(levels.map(match => match![1])).size !== 1) return null;
+  return [...unique].sort((a, b) => Number(/_(\d+)$/u.exec(a)![1]) - Number(/_(\d+)$/u.exec(b)![1]))[0]!;
+}
+
+/** Owner promotion mode (2026-11-02): only on a literal Rule A trigger this
+ * turn (promo request, price objection, or confirming the price-only question),
+ * the promotion interest is the course the customer referenced this turn or,
+ * failing that, most recently in the session. Interest only: no selection. */
 async function promoRequestedCourseThisTurn(input: {
   workspace_slug: string; contact_id: string; conversation_id: string; source_turn_id?: string;
 }, db: DbClient): Promise<string | null> {
   const texts = await currentBatchTexts(input, db);
-  if (!texts.some(promoRequestV1)) return null;
+  const previousAgent = input.source_turn_id ? (await db<Array<{ content: string }>>`
+    SELECT prior.content FROM messages prior JOIN messages current ON current.id=${input.source_turn_id}::uuid
+    WHERE prior.conversation_id=current.conversation_id AND prior.contact_id=current.contact_id
+      AND prior.direction='outbound' AND prior.created_at < current.created_at
+    ORDER BY prior.created_at DESC LIMIT 3`).map(row => row.content) : [];
+  const trigger = texts.some(promoRequestV1) || texts.some(priceExpressionHintV1) || confirmsPriceProbeV1(texts, previousAgent);
+  if (!trigger) return null;
   const offerings = await db<Array<{ code: string; display_name: string; aliases: string[] | null }>>`
     SELECT o.code, o.display_name, ARRAY(SELECT jsonb_array_elements_text(CASE WHEN jsonb_typeof(o.metadata->'aliases')='array'
       THEN o.metadata->'aliases' ELSE '[]'::jsonb END)) aliases
@@ -453,24 +474,62 @@ async function promoRequestedCourseThisTurn(input: {
     offerings_total: offerings.length, injection_suspected_count: 0,
     offerings: offerings.map(offering => ({ code: offering.code, display_name: offering.display_name,
       aliases: offering.aliases ?? [], academy: null })) }, []);
-  if (references.length === 1) return references[0].offeringCode;
-  // "Me interesa Introducción al Ecommerce ... mi tienda online": a partial term
-  // can also hit another course; the full canonical name the customer wrote wins.
+  const index = { as_of: new Date().toISOString(), offerings_total: offerings.length, injection_suspected_count: 0,
+    offerings: offerings.map(offering => ({ code: offering.code, display_name: offering.display_name,
+      aliases: offering.aliases ?? [], academy: null })) };
   const visible = (value: string) => value.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase()
     .replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
-  const text = ` ${visible(texts.join(' '))} `;
-  const fullNames = references.filter(reference => {
-    const offering = offerings.find(candidate => candidate.code === reference.offeringCode);
-    return offering !== undefined && text.includes(` ${visible(offering.display_name)} `);
-  });
-  return fullNames.length === 1 ? fullNames[0].offeringCode : null;
+  const resolve = (batch: readonly string[], found: ReturnType<typeof currentFactualCourseReferencesV1>): string | null => {
+    if (found.length === 0) return null;
+    // "Me interesa Introducción al Ecommerce ... mi tienda online": a partial term
+    // can also hit another course; the full canonical name the customer wrote wins.
+    const text = ` ${visible(batch.join(' '))} `;
+    const fullNames = found.filter(reference => {
+      const offering = offerings.find(candidate => candidate.code === reference.offeringCode);
+      return offering !== undefined && text.includes(` ${visible(offering.display_name)} `);
+    });
+    if (fullNames.length === 1) return fullNames[0].offeringCode;
+    return singleOrEntryLevelV1(found.map(reference => reference.offeringCode));
+  };
+  // "ingles" names a leveled family the shared detector treats as ambiguous.
+  const familyEntry = (batch: readonly string[]): string | null => {
+    const tokens = ` ${visible(batch.join(' '))} `;
+    const families = new Map<string, string[]>();
+    for (const offering of offerings) {
+      const level = /^(.+)_(\d+)$/u.exec(offering.code);
+      const term = visible(offering.display_name).replace(/\s+\d+$/u, '');
+      if (level && term.length >= 3 && term !== visible(offering.display_name)) {
+        families.set(term, [...(families.get(term) ?? []), offering.code]);
+      }
+    }
+    const hits = [...families].filter(([term, codes]) => codes.length > 1 && tokens.includes(` ${term} `));
+    return hits.length === 1 ? singleOrEntryLevelV1(hits[0]![1]) : null;
+  };
+  const current = resolve(texts, references);
+  if (current || references.length > 0) return current;
+  const currentFamily = familyEntry(texts);
+  if (currentFamily) return currentFamily;
+  if (!input.source_turn_id) return null;
+  const earlier = await db<Array<{ content: string }>>`
+    SELECT prior.content FROM messages prior JOIN messages current ON current.id=${input.source_turn_id}::uuid
+    WHERE prior.conversation_id=current.conversation_id AND prior.contact_id=current.contact_id
+      AND prior.direction='inbound' AND prior.created_at < current.created_at
+      AND prior.created_at > current.created_at - interval '6 hours'
+    ORDER BY prior.created_at DESC, prior.conversation_seq DESC LIMIT 12`;
+  for (const message of earlier) {
+    const found = currentFactualCourseReferencesV1([message.content], index, []);
+    if (found.length) return resolve([message.content], found);
+    const family = familyEntry([message.content]);
+    if (family) return family;
+  }
+  return null;
 }
 
 async function readDirectCapability(input: {
   workspace_slug: string; contact_id: string; conversation_id: string;
   selected_offering_code: string | null; source_turn_id?: string;
 }, db: DbClient, max: CourseBonusMaxCoursesV1): Promise<CourseBonusCapabilityV1> {
-  let sameTurn = false;
+
   if (!input.selected_offering_code) {
     // Interest is commercial state, not a purchase selection. Resolve only the
     // durable, scoped projection with a correlated source no later than this turn.
@@ -501,7 +560,7 @@ async function readDirectCapability(input: {
     const sameTurnCourse = interest ? null : await promoRequestedCourseThisTurn(input, db);
     if (!interest && !sameTurnCourse) return {...hidden('needs_interest'), enabled:true,max_bonus_courses:max};
     input={...input,selected_offering_code:interest?.interest_offering_code ?? sameTurnCourse};
-    sameTurn = !interest && sameTurnCourse !== null;
+
   }
   const [row] = await db<Array<{
     promotion_code: string | null; promotion_cycle_id: string; offer_version: number;
@@ -543,7 +602,7 @@ async function readDirectCapability(input: {
   // First message of a conversation: no sales state yet, so no ladder. A promo
   // request naming the course in this very message is the verified instant trigger.
   const ladder=await readCourseBonusLadderV1(input,db)
-    ?? (sameTurn || await promoRequestedThisTurn(input, db) ? { ...deriveCourseBonusLadderV1({ observed_price_objection_count: 0, call_invitation_status: 'not_offered',
+    ?? (await promoRequestedThisTurn(input, db) ? { ...deriveCourseBonusLadderV1({ observed_price_objection_count: 0, call_invitation_status: 'not_offered',
       call_offer_count: 0, may_offer_call: false }), eligible: true, missing_steps: [], current_turn_price_objection: true,
       instant_trigger: true } : null);
   const activeCourses=await db<Array<{code:string;display_name:string}>>`

@@ -458,3 +458,14 @@ describe('Modo promoción — toma de datos interrumpida (dueño 2026-11-02)', (
       draft({ memory: [] }))).toMatchObject({ kind: 'none', reason: 'checkout' });
   });
 });
+
+describe('pregunta de precio parafraseada por el modelo (en vivo 2026-11-02 18:45)', () => {
+  it('«solo el precio» confirma también una pregunta propia del agente', async () => {
+    const { confirmsPriceProbeV1, agentAskedPriceOnlyV1 } = await import('@/shared/conversation/deterministic-sales-rules');
+    const asked = ['Contame, el precio es lo único que te frena o hay algo más que querés saber antes de decidir?'];
+    expect(agentAskedPriceOnlyV1(asked)).toBe(true);
+    expect(confirmsPriceProbeV1(['solo el precio'], asked)).toBe(true);
+    expect(agentAskedPriceOnlyV1(['El precio son USD 360. Te sirve?'])).toBe(false);
+    expect(confirmsPriceProbeV1(['solo el precio'], ['Qué curso te interesa?'])).toBe(false);
+  });
+});

@@ -43,6 +43,57 @@ function proposal(): AgentATurnProposalV1 {
 
 run('owner rules at the actual commit and transactional boundaries', () => {
   it.each([
+    ['promo_and_objection', 'El precio es el único inconveniente? Puedo revisar una promoción.',
+      'noo\nquiero saber si hay alguna promo\nme parece caro el precio'],
+    ['paraphrased_probe_confirmed', 'Contame, el precio es lo único que te frena o hay algo más que querés saber?',
+      'solo el precio'],
+  ] as const)('live 2026-11-02 18:43: "ingles" without level resolves the promotion to Inglés 1 (%s)', async (_kind, agentAsked, customerReply) => {
+    const f = await seedConversationForAgentTurn({ selected_offering_code: null, first_message: 'ingles\nquiero saber el precio' });
+    const first = proposal();
+    first.move = { schema_version: 1, move: 'ask_course_information', secondary_moves: [], vetoes: [], confidence: 1 };
+    first.response = { messages: ['Inglés tenemos del nivel 1 al 3.', agentAsked], call_offer: null };
+    first.proposed_action = { type: 'none' };
+    first.course_mentions = [];
+    first.used_fact_ids = [];
+    first.memory_candidates = [];
+    const firstCommit = await commitAgentDecision({ turn_id: f.turn_id, trace_id: f.trace_id,
+      supports_multi_outbound: true, agent_turn_v2: { schema_version: 2 as const, proposal: first },
+      decision: f.placeholderDecision as never, model: f.model as never });
+    expect(firstCommit.status).toBe('committed');
+    await db!`UPDATE messages SET content=${customerReply},created_at=clock_timestamp(),
+      metadata=metadata-'occurred_at_trusted' WHERE id=${f.second_turn_id}::uuid`;
+    const capability = await readCourseBonusCapabilityV1({ workspace_slug: 'studyx', contact_id: f.contact_id,
+      conversation_id: f.conversation_id, channel: 'text', selected_offering_code: null,
+      source_turn_id: f.second_turn_id }, { db: db! });
+    expect(capability).toMatchObject({ enabled: true, interest_offering_code: 'ingles_1',
+      ladder: { eligible: true, instant_trigger: true }, rule_bonus: { bonus_offering_code: 'ingles_2' } });
+    const offer = proposal();
+    offer.move = { ...offer.move, move: 'defer_payment', course_reference: 'ingles_1' };
+    offer.response = { messages: ['Te lo puedo resolver: si avanzás con Inglés 1, te bonifico Inglés 2. Arrancamos en 12 cuotas de USD 30?'], call_offer: null };
+    offer.proposed_action = { type: 'offer_course_bonus', interest_offering_code: 'ingles_1', bonus_offering_code: 'ingles_2' };
+    offer.course_mentions = [{ offering_code: 'ingles_1', role: 'paid' }, { offering_code: 'ingles_2', role: 'bonus' }];
+    offer.used_fact_ids = ['offering:ingles_1:name:v1', 'offering:ingles_2:name:v1', 'payment-workspace:monthly_12:label:v1'];
+    offer.memory_candidates = [];
+    const committed = await commitAgentDecision({ turn_id: f.second_turn_id, trace_id: randomUUID(),
+      supports_multi_outbound: true, agent_turn_v2: { schema_version: 2 as const, proposal: offer },
+      decision: f.placeholderDecision as never, model: f.model as never });
+    expect(committed.status).toBe('committed');
+    const gifts = await db!<Array<{ code: string }>>`SELECT b.offering_code_snapshot code FROM promotion_offer_bonus_offerings b
+      JOIN promotion_offers o ON o.id=b.offer_id WHERE o.conversation_id=${f.conversation_id}::uuid`;
+    expect(gifts.map(gift => gift.code)).toEqual(['ingles_2']);
+  });
+
+  it('a first literal objection alone (no promo, no probe) does not resolve a session interest into an offer', async () => {
+    const f = await seedConversationForAgentTurn({ selected_offering_code: null, first_message: 'ingles' });
+    await db!`UPDATE messages SET content='me parece caro',created_at=clock_timestamp(),
+      metadata=metadata-'occurred_at_trusted' WHERE id=${f.second_turn_id}::uuid`;
+    const capability = await readCourseBonusCapabilityV1({ workspace_slug: 'studyx', contact_id: f.contact_id,
+      conversation_id: f.conversation_id, channel: 'text', selected_offering_code: null,
+      source_turn_id: f.second_turn_id }, { db: db! });
+    expect(capability.may_offer_bonus).not.toBe(true);
+  });
+
+  it.each([
     ['price_probe_confirmation', 'No me alcanza, ahora mismo estoy muy justo.'],
     ['instant_discount_request', 'No me hacés un descuento? USD 360 me parece caro.'],
   ] as const)('keeps the interest-only course identity through the final bonus commit (%s)', async (_kind, customerReply) => {
