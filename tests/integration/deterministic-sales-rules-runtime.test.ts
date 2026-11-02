@@ -79,14 +79,15 @@ run('owner rules at the actual commit and transactional boundaries', () => {
     bonus.move = { ...bonus.move, move: 'defer_payment', course_reference: marketing };
     bonus.response = { messages: [
       'El precio de Marketing Digital sigue igual y te sumo Publicidad en Redes Sociales sin costo extra. Avanzamos?',
-    ], call_offer: null };
+    ], call_offer: 'Si querés, te llamo un momento y lo vemos juntos.' };
     bonus.proposed_action = { type: 'offer_course_bonus', interest_offering_code: marketing,
       bonus_offering_code: advertising };
     bonus.course_mentions = [{ offering_code: marketing, role: 'paid' },
       { offering_code: advertising, role: 'bonus' }];
     bonus.used_fact_ids = [`offering:${marketing}:name:v1`, `offering:${advertising}:name:v1`];
-    bonus.memory_candidates = [{ type: 'objection', key: 'price_objection', value: 'precio',
-      source_quote: customerReply, confidence: 1 }];
+    // The owner's instant-promo and probe-confirmation paths do not depend on
+    // the model also recording a price objection in this turn.
+    bonus.memory_candidates = [];
     const committed = await commitAgentDecision({ turn_id: f.second_turn_id, trace_id: randomUUID(),
       supports_multi_outbound: true, agent_turn_v2: { schema_version: 2 as const, proposal: bonus },
       decision: f.placeholderDecision as never, model: f.model as never });
@@ -286,6 +287,52 @@ run('owner rules at the actual commit and transactional boundaries', () => {
         conversation_id: f.conversation_id, source_turn_id: next, selected_offering_code: paid }, db!);
       expect(ladder?.instant_trigger === true).toBe(instant);
     });
+
+  it('commits the next bonus when this reply newly confirms price is the only barrier', async () => {
+    const f = await seedConversationForAgentTurn({ selected_offering_code: paid, first_message: 'Tenés alguna promo?' });
+    const firstOutbound = randomUUID();
+    const first = await offerDirectCourseBonusV1(db!, { workspace_id: f.workspace_id, contact_id: f.contact_id,
+      conversation_id: f.conversation_id, paid_offering_code: paid, source_turn_id: f.turn_id,
+      expected_offer_version: 0, bonus_offering_codes: [bonus], outbound: { id: firstOutbound, content: fixed[1],
+        provider: 'test', integration_id: 'test', channel: 'whatsapp', destination: 'test', idempotency_key: firstOutbound } });
+    expect(first).toMatchObject({ ok: true, offer_version: 1 });
+    await db!`UPDATE outbound_deliveries SET state='leased',leased_by='price-only-test',lease_until=clock_timestamp()+interval '1 minute'
+      WHERE message_id=${firstOutbound}::uuid`;
+    await db!`UPDATE outbound_deliveries SET state='submitted',submitted_at=clock_timestamp(),
+      provider_message_id=${`bp-price-only-${randomUUID()}`} WHERE message_id=${firstOutbound}::uuid`;
+    await db!`UPDATE outbound_deliveries SET state='delivered',delivered_at=clock_timestamp()
+      WHERE message_id=${firstOutbound}::uuid`;
+    const customer = 'Sí, el precio es el único freno.';
+    await db!`UPDATE messages SET content=${customer},created_at=clock_timestamp(),
+      metadata=metadata-'occurred_at_trusted' WHERE id=${f.second_turn_id}::uuid`;
+
+    const nextCode = 'publicidad_redes_sociales';
+    const next = proposal();
+    next.move = { ...next.move, move: 'defer_payment', course_reference: paid };
+    next.response = { messages: [
+      'Te quedan Introducción al Ecommerce + Fotografía con Celulares para Tiendas Online + Publicidad en Redes Sociales sin costo extra, al mismo precio. Avanzamos?',
+    ], call_offer: null };
+    next.proposed_action = { type: 'offer_course_bonus', interest_offering_code: paid, bonus_offering_code: nextCode };
+    next.course_mentions = [{ offering_code: paid, role: 'paid' }, { offering_code: bonus, role: 'bonus' },
+      { offering_code: nextCode, role: 'bonus' }];
+    next.used_fact_ids = [`offering:${paid}:name:v1`, `offering:${bonus}:name:v1`, `offering:${nextCode}:name:v1`];
+    next.memory_candidates = [{ type: 'constraint', key: 'price_only_barrier', value: 'confirmed',
+      source_quote: 'el precio es el único freno', confidence: 1 }];
+    const capability = await readCourseBonusCapabilityV1({ workspace_slug: 'studyx', contact_id: f.contact_id,
+      conversation_id: f.conversation_id, channel: 'text', selected_offering_code: paid,
+      source_turn_id: f.second_turn_id }, { db: db! });
+    expect(capability).toMatchObject({ enabled: true, package_status: 'offered', offer_version: 1,
+      rule_bonus: { bonus_offering_code: nextCode } });
+    const committed = await commitAgentDecision({ turn_id: f.second_turn_id, trace_id: randomUUID(),
+      supports_multi_outbound: true, agent_turn_v2: { schema_version: 2 as const, proposal: next },
+      decision: f.placeholderDecision as never, model: f.model as never });
+    expect(committed.status).toBe('committed');
+    const [offer] = await db!`SELECT offer_version FROM promotion_offers WHERE id=${first.ok ? first.offer_id : null}::uuid`;
+    expect(offer.offer_version).toBe(2);
+    const gifts = await db!<Array<{code:string}>>`SELECT offering_code_snapshot code FROM promotion_offer_bonus_offerings
+      WHERE offer_id=${first.ok ? first.offer_id : null}::uuid ORDER BY position`;
+    expect(gifts.map(gift => gift.code)).toEqual([bonus, nextCode]);
+  });
 
   it.each(['persisted_selection', 'interest_only'] as const)(
     'automatically seals a delivered offered package in the actual payment-link commit, without accept_promotion (%s)', async identityKind => {

@@ -59,7 +59,6 @@ export async function readCourseBonusLadderV1(input: {
   `;
   if (!row) return null;
   const facts = await readNegotiationFactsV1({ ...input, workspace_slug: row.workspace_slug, source_turn_id: row.source_turn_id }, { db });
-  if (!facts) return null;
   const { PostgresConversationStateStoreV1 } = await import('@/features/conversation/adapters/postgres-conversation-state-store');
   const loaded=await new PostgresConversationStateStoreV1(db).load(row.workspace_slug,input.conversation_id,input.contact_id);
   if (!loaded) return null;
@@ -85,7 +84,8 @@ export async function readCourseBonusLadderV1(input: {
   `;
   const currentObjection = current?.candidates?.some(candidate => candidate.type === 'objection'
     && candidate.key === 'price_objection' && priceObservationQuoteInBatchV1(candidate.source_quote, row.customer_messages)) === true;
-  const priorObjectionIsCurrent = facts.latest_price_objection_source_turn_ids.includes(row.source_turn_id);
+  const currentPriceOnly = current?.price_only === true;
+  const priorObjectionIsCurrent = facts?.latest_price_objection_source_turn_ids.includes(row.source_turn_id) === true;
   // Owner rule (2026-11-02, second revision): any promo/discount request, or a
   // confirmation of the "precio es el único inconveniente?" question, enables
   // the offer instantly and counts as a new objection for escalation.
@@ -102,13 +102,19 @@ export async function readCourseBonusLadderV1(input: {
   const instantTrigger = !inCheckout && (row.customer_messages.some(promoRequestV1)
     || (liveOffer?.live === true && row.customer_messages.some(priceExpressionHintV1)))
     || !inCheckout && confirmsPriceProbeV1(row.customer_messages, previousAgent.map(message => message.content));
+  // The locked scope above is authoritative for this turn. A first-turn promo
+  // or a current committed price-only observation is valid even when there is
+  // no prior negotiation history to project yet. An invalid scope still exits
+  // at `row`, `loaded` or the current decision lookup; history alone never
+  // becomes a fresh escalation trigger.
+  if (!facts && !instantTrigger && !currentPriceOnly) return null;
   const ladder = deriveCourseBonusLadderV1({
-    observed_price_objection_count: facts.price_objection_count + (currentObjection && !priorObjectionIsCurrent ? 1 : 0),
-    price_only_barrier_confirmed: facts.price_only_barrier.status === 'confirmed' || current?.price_only === true,
+    observed_price_objection_count: (facts?.price_objection_count ?? 0) + (currentObjection && !priorObjectionIsCurrent ? 1 : 0),
+    price_only_barrier_confirmed: facts?.price_only_barrier.status === 'confirmed' || currentPriceOnly,
     call_invitation_status: status, call_offer_count: count,
     may_offer_call: mayOfferCallV1({ ...row,stage:state.stage,call_preference:state.call_preference,
       payment_reported:state.payment_reported_at!==null,call_offer_count:count,call_offer_status:status }) });
   return instantTrigger
     ? { ...ladder, eligible: true, missing_steps: [], current_turn_price_objection: true, instant_trigger: true }
-    : { ...ladder, current_turn_price_objection: currentObjection };
+    : { ...ladder, current_turn_price_objection: currentObjection || currentPriceOnly };
 }

@@ -21,7 +21,7 @@ export interface CourseBonusLadderV1 {
   /** `call_invitation` is retained in the wire enum for old snapshots; Rule A never emits it. */
   readonly missing_steps: readonly ('recorded_price_objections' | 'call_invitation')[];
   readonly price_only_barrier_confirmed?: boolean;
-  /** This turn's committed model memory recorded a price objection (escalation needs it). */
+  /** This turn recorded a price objection or a new price-only confirmation (escalation needs a current trigger). */
   readonly current_turn_price_objection?: boolean;
   /** Promo/discount request or confirmed price probe this turn (owner 2026-11-02). */
   readonly instant_trigger?: boolean;

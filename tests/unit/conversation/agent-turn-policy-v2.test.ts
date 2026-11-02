@@ -655,6 +655,15 @@ describe('plannerless Agent A authority', () => {
       proposal:bonusProposal(),courseBonus:ruleCap(3,delivered) as never})).toMatchObject({ok:false,
       rejection_subjects:expect.arrayContaining(['direct_bonus:ladder_step_pending'])});
   });
+  it('Rule A: a current price-only confirmation authorizes escalation after a delivered offer', () => {
+    const delivered={bonus_offerings:[{code:'camaras_seguridad',display_name:'Cámaras',position:1}],
+      status:'offer_available',package_status:'offered',promotion_code:'p'};
+    const current={type:'constraint',key:'price_only_barrier',value:'confirmed',
+      source_quote:'el precio es el único freno',confidence:1};
+    expect(authorize({state:state({selected_offering_code:'redes_informaticas'}),
+      customerText:'Sí, el precio es el único freno.', proposal:bonusProposal([current]),
+      courseBonus:ruleCap(3,delivered) as never})).toMatchObject({ok:true,action:{type:'offer_course_bonus'}});
+  });
   it('replaces a stale course before handing an exact current course to the call', () => {
     const result = authorizeAgentTurnV2({
       state: state({

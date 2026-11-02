@@ -354,6 +354,7 @@ export function decideBonusRuleV1(context: RuleContextV1, draft: RuleDraftV1): B
   if (isCheckoutV1(context, draft)) return { kind: 'none', reason: 'checkout' };
   if (context.package_status === 'accepted' || context.package_status === 'attached') return { kind: 'none', reason: 'package_accepted' };
   const currentObjection = draftRecordsPriceObjectionV1(draft, context.batch_texts);
+  const currentPriceOnly = draftConfirmsPriceOnlyBarrierV1(draft, context.batch_texts);
   const promoRequest = context.batch_texts.some(promoRequestV1);
   const probeConfirmed = confirmsPriceProbeV1(context.batch_texts, context.previous_agent_messages ?? []);
   const delivered = context.package_status === 'offered' ? context.delivered_bonus : [];
@@ -363,7 +364,9 @@ export function decideBonusRuleV1(context: RuleContextV1, draft: RuleDraftV1): B
     // Owner: ANY price objection escalates after an offer; a literal objection
     // (questions and negations excluded) counts even if the model missed it.
     const literalObjection = context.batch_texts.some(priceExpressionHintV1);
-    if (!currentObjection && !promoRequest && !probeConfirmed && !literalObjection) return { kind: 'none', reason: 'no_new_price_objection' };
+    if (!currentObjection && !currentPriceOnly && !promoRequest && !probeConfirmed && !literalObjection) {
+      return { kind: 'none', reason: 'no_new_price_objection' };
+    }
     trigger = 'escalation';
   } else if (promoRequest) {
     trigger = 'promo_request';
@@ -371,7 +374,7 @@ export function decideBonusRuleV1(context: RuleContextV1, draft: RuleDraftV1): B
     trigger = 'price_probe_confirmed';
   } else if (context.prior_price_objection_count + (currentObjection ? 1 : 0) >= 2) {
     trigger = 'second_price_objection';
-  } else if (context.price_only_confirmed || draftConfirmsPriceOnlyBarrierV1(draft, context.batch_texts)) {
+  } else if (context.price_only_confirmed || currentPriceOnly) {
     trigger = 'price_only_barrier';
   } else return { kind: 'none', reason: 'trigger_not_met' };
   const rule = context.rule_bonus;

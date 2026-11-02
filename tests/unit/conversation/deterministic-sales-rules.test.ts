@@ -138,6 +138,22 @@ describe('Regla A — escalada', () => {
     expect(decideBonusRuleV1(ctx({ package_status: 'offered', delivered_bonus: delivered, batch_texts: ['ok'] }), draft({ memory: [] })))
       .toMatchObject({ kind: 'none', reason: 'no_new_price_objection' });
   });
+  it('una confirmación actual de que el precio es el único freno escala el paquete ya ofrecido', () => {
+    const decision = decideBonusRuleV1(ctx({ package_status: 'offered', delivered_bonus: delivered,
+      batch_texts: ['Sí, el precio es el único freno.'],
+      rule_bonus: ruleFor('introduccion_ecommerce', delivered.map(course => course.code)) }), draft({
+      memory: [{ type: 'constraint', key: 'price_only_barrier', value: 'confirmed',
+        source_quote: 'el precio es el único freno' }],
+    }));
+    expect(decision).toMatchObject({ kind: 'offer', trigger: 'escalation',
+      bonus_code: 'publicidad_redes_sociales', position: 2 });
+  });
+  it('una confirmación histórica de precio único no escala ante una respuesta neutral', () => {
+    expect(decideBonusRuleV1(ctx({ package_status: 'offered', delivered_bonus: delivered,
+      price_only_confirmed: true, batch_texts: ['ok'],
+      rule_bonus: ruleFor('introduccion_ecommerce', delivered.map(course => course.code)) }), draft({ memory: [] })))
+      .toMatchObject({ kind: 'none', reason: 'no_new_price_objection' });
+  });
   it('máximo 3', () => {
     const three = ['fotografia_celulares_tiendas_online', 'publicidad_redes_sociales', 'instagram_emprendedores']
       .map(code => ({ code, display_name: catalog.find(c => c.code === code)!.display_name }));

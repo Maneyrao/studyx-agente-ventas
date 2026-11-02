@@ -572,15 +572,17 @@ export function authorizeAgentTurnV2(input: {
     const draftEvidence = { response: proposal.response, proposed_action: proposal.proposed_action,
       move: proposal.move, memory_candidates: proposal.memory_candidates };
     const currentObjection = draftRecordsPriceObjectionV1(draftEvidence, batch);
+    const currentPriceOnly = draftConfirmsPriceOnlyBarrierV1(draftEvidence, batch);
     const ladder = cap?.ladder ? deriveCourseBonusLadderV1({ ...cap.ladder,
       observed_price_objection_count: cap.ladder.observed_price_objection_count + (currentObjection ? 1 : 0),
       price_only_barrier_confirmed: cap.ladder.price_only_barrier_confirmed === true
-        || draftConfirmsPriceOnlyBarrierV1(draftEvidence, batch) }) : undefined;
+        || currentPriceOnly }) : undefined;
     // Owner rule (2026-11-02, second revision): a promo/discount request or a
     // confirmed price probe enables the offer instantly and allows escalation.
     // Only the backend-computed trigger (checkout, payment and negation exclusions applied).
     const instant = cap?.ladder?.instant_trigger === true;
-    const escalationWithoutNewObjection = (cap?.bonus_offerings.length ?? 0) > 0 && !currentObjection && !instant;
+    const escalationWithoutNewObjection = (cap?.bonus_offerings.length ?? 0) > 0
+      && !currentObjection && !currentPriceOnly && !instant;
     const checkout = isCheckoutV1({ stage: state.stage, awaiting_reply: state.awaiting_reply,
       payment_link_request_pending: state.payment_link_request?.status === 'pending' }, draftEvidence);
     const reason = cap?.enabled !== true ? 'bonus_disabled'
