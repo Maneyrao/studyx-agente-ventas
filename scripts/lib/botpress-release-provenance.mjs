@@ -3,7 +3,7 @@ import { readFileSync, readdirSync, readlinkSync } from 'node:fs';
 import path from 'node:path';
 import ts from 'typescript';
 
-export const BOT_RELEASE_BASE_SHA = '29f906cf4c7310545628294090ec73a2819a9b7c';
+export const BOT_RELEASE_BASE_SHA = '8879c8b02f393007ebecf566f2f27adf59e4dfe6';
 export const BOT_RELEASE_INSTRUMENTATION_VERSION = 'studyx-release-provenance-v1';
 export const BOT_RELEASE_SOURCE_PATHS = Object.freeze([
   'botpress-agent/src/lib/observability/persist-turn-evidence.ts',
@@ -12,7 +12,7 @@ export const BOT_RELEASE_SOURCE_PATHS = Object.freeze([
 ]);
 const REVIEWED_SOURCE_HASHES = Object.freeze({
   [BOT_RELEASE_SOURCE_PATHS[0]]: 'c1a85e1d95000cd56f885e02d3cf900d7900ea5102b08ed51910500387c2de93',
-  [BOT_RELEASE_SOURCE_PATHS[1]]: '98f3ee3e3d34633de92a3ba3ff9e26b934af4b06e8bb1e218126892c0fe68a1e',
+  [BOT_RELEASE_SOURCE_PATHS[1]]: 'a0ef3f00bcb8a0a6481605a6b959e05b2fdb525aa65cad5abb4eb6e3301a93d8',
   [BOT_RELEASE_SOURCE_PATHS[2]]: '77809dcfbf8e605affe2eeb746f56bcf5ce91ca07ef05726ec5fe20111c07fd2',
 });
 const GENERATED_PATH = 'botpress-agent/src/lib/observability/release-provenance.generated.ts';
