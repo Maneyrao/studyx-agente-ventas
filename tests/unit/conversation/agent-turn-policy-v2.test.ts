@@ -617,6 +617,15 @@ describe('plannerless Agent A authority', () => {
     proposed_action:{type:'offer_course_bonus',interest_offering_code:'redes_informaticas',bonus_offering_code:'excel_integral'},
     memory_candidates:memory as never});
   const objection={type:'objection',key:'price_objection',value:'caro',source_quote:'me sigue pareciendo caro',confidence:1};
+  it('owner instant promo: only the backend-computed instant_trigger authorizes, never the policy reading text', () => {
+    const instantCap = ruleCap(0);
+    const withTrigger = { ...instantCap, ladder: { ...instantCap.ladder, instant_trigger: true, eligible: true, missing_steps: [] } };
+    expect(authorize({state:state({selected_offering_code:'redes_informaticas'}),customerText:'me hacés un descuento?',
+      proposal:bonusProposal(),courseBonus:withTrigger as never})).toMatchObject({ok:true,action:{type:'offer_course_bonus'}});
+    expect(authorize({state:state({selected_offering_code:'redes_informaticas'}),customerText:'me hacés un descuento?',
+      proposal:bonusProposal(),courseBonus:ruleCap(0)})).toMatchObject({ok:false,
+      rejection_subjects:expect.arrayContaining(['direct_bonus:ladder_step_pending'])});
+  });
   it('Rule A: one prior objection alone is pending, without any call prerequisite', () => {
     const result=authorize({state:state({selected_offering_code:'redes_informaticas'}),customerText:'ok',
       proposal:bonusProposal(),courseBonus:ruleCap(1)});

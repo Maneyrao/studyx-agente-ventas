@@ -1,5 +1,5 @@
 import { deriveCourseBonusLadderV1 } from '@/shared/conversation/bonus-ladder';
-import { promoRequestV1, draftConfirmsPriceOnlyBarrierV1, draftRecordsPriceObjectionV1, isCheckoutV1 } from '@/shared/conversation/deterministic-sales-rules';
+import { draftConfirmsPriceOnlyBarrierV1, draftRecordsPriceObjectionV1, isCheckoutV1 } from '@/shared/conversation/deterministic-sales-rules';
 import { validateCourseMentionsV1 } from '@/shared/conversation/course-mentions';
 import { messagesWithoutExactCallOfferV1 } from '@/shared/conversation/call-offer-format';
 import { courseBonusLadderRejectionSubjectsV1 } from '@/shared/conversation/bonus-ladder-rejection';
@@ -578,7 +578,8 @@ export function authorizeAgentTurnV2(input: {
         || draftConfirmsPriceOnlyBarrierV1(draftEvidence, batch) }) : undefined;
     // Owner rule (2026-11-02, second revision): a promo/discount request or a
     // confirmed price probe enables the offer instantly and allows escalation.
-    const instant = cap?.ladder?.instant_trigger === true || batch.some(promoRequestV1);
+    // Only the backend-computed trigger (checkout, payment and negation exclusions applied).
+    const instant = cap?.ladder?.instant_trigger === true;
     const escalationWithoutNewObjection = (cap?.bonus_offerings.length ?? 0) > 0 && !currentObjection && !instant;
     const checkout = isCheckoutV1({ stage: state.stage, awaiting_reply: state.awaiting_reply,
       payment_link_request_pending: state.payment_link_request?.status === 'pending' }, draftEvidence);

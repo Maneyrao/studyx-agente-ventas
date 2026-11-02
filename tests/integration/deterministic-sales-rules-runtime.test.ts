@@ -163,6 +163,18 @@ run('owner rules at the actual commit and transactional boundaries', () => {
       delivery_attempt: committed.outbounds[1].delivery_attempt })).toMatchObject({ outcome: 'superseded' });
   });
 
+  it.each([['me hacés un descuento?', true], ['no quiero descuento, sólo info', false]] as const)(
+    'owner instant promo at the transactional ladder: "%s" → offer %s', async (text, allowed) => {
+      const f = await seedConversationForAgentTurn({ selected_offering_code: paid, first_message: text });
+      const outbound = randomUUID();
+      const result = await offerDirectCourseBonusV1(db!, { workspace_id: f.workspace_id, contact_id: f.contact_id,
+        conversation_id: f.conversation_id, paid_offering_code: paid, source_turn_id: f.turn_id,
+        expected_offer_version: 0, bonus_offering_codes: [bonus], outbound: { id: outbound, content: fixed[1],
+          provider: 'test', integration_id: 'test', channel: 'whatsapp', destination: 'test', idempotency_key: outbound } });
+      expect(result.ok).toBe(allowed);
+      if (!allowed) expect(result).toMatchObject({ reason: 'ladder_step_pending' });
+    });
+
   it.each(['persisted_selection', 'interest_only'] as const)(
     'automatically seals a delivered offered package in the actual payment-link commit, without accept_promotion (%s)', async identityKind => {
       vi.stubEnv('PAYMENT_LINK_CONTADO', 'https://buy.stripe.com/test_rule_a_auto');
