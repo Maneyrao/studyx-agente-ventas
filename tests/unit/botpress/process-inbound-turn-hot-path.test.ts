@@ -1751,6 +1751,7 @@ describe('processInboundTurn hot path', () => {
 
   it('asks Agent A for one final fenced correction after a twice-rejected backend commit', async () => {
     const claimed = claimedResponse() as unknown as ClaimedTurn;
+    claimed.context.batch_messages[0].content = 'Me frena esto';
     claimed.features = {
       agent_loop_v3_mode: 'off',
       conversation_pipeline_v1_enabled: false,
@@ -1787,7 +1788,10 @@ describe('processInboundTurn hot path', () => {
           },
           response: { messages: ['Te cuento los detalles del curso.'], call_offer: null },
           proposed_action: { type: 'none' },
-          used_fact_ids: [], used_memory_ids: [], memory_candidates: [], repair_of: null,
+          used_fact_ids: [], used_memory_ids: [], memory_candidates: [{
+            type: 'objection', key: 'price_objection', value: 'precio',
+            source_quote: 'Me frena esto', confidence: 1,
+          }], repair_of: null,
         },
         provider: 'deepseek-direct', model: 'deepseek-v4-flash', latency_ms: 180, attempt_count: 1,
       })
@@ -1881,6 +1885,7 @@ describe('processInboundTurn hot path', () => {
         proposal: {
           response: { messages: ['Dime qué te interesa saber y lo vemos con la información confirmada.'] },
           proposed_action: { type: 'none' },
+          memory_candidates: [{ type: 'objection', key: 'price_objection', source_quote: 'Me frena esto' }],
         },
       },
       turn_diagnostics: { generation_attempts: 3, failure_stage: 'backend_commit', action_status: 'none' },

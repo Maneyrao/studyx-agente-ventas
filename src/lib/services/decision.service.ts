@@ -1373,12 +1373,21 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
       });
       const proposedDirectBonusCode = committedBusinessAction?.type === 'offer_course_bonus'
         ? committedBusinessAction.bonus_offering_code : null;
+      // An offer may still be the conversational focus without being a
+      // persisted purchase selection. The direct-bonus transaction already
+      // authorizes its paid-course identity explicitly; reuse that server-
+      // validated identity only for the egress fact check. This must not turn
+      // the recommendation into a stored selection or authorize checkout.
+      const commercialTruthPaidOfferingCode = effectiveAuthorizedOfferingCode
+        ?? (committedBusinessAction?.type === 'offer_course_bonus'
+          ? committedBusinessAction.interest_offering_code
+          : null);
       const inspectCommercialText = (content: string) => enforceCommercialTruthV1({
         content,
         authorized_urls: authorizedUrls,
         canonical: {
           ...canonicalTruth,
-          paid_offering_names: offerings.filter(o => o.code === effectiveAuthorizedOfferingCode).map(o => o.display_name),
+          paid_offering_names: offerings.filter(o => o.code === commercialTruthPaidOfferingCode).map(o => o.display_name),
           authorized_bonus_names: [
             ...(courseBonusCapability?.delivered_bonus_offerings ??
               (courseBonusCapability?.enabled ? [] : courseBonusCapability?.bonus_offerings ?? []))

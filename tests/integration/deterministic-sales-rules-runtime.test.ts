@@ -42,6 +42,65 @@ function proposal(): AgentATurnProposalV1 {
 }
 
 run('owner rules at the actual commit and transactional boundaries', () => {
+  it.each([
+    ['price_probe_confirmation', 'No me alcanza, ahora mismo estoy muy justo.'],
+    ['instant_discount_request', 'No me hacés un descuento? USD 360 me parece caro.'],
+  ] as const)('keeps the interest-only course identity through the final bonus commit (%s)', async (_kind, customerReply) => {
+    const f = await seedConversationForAgentTurn({ selected_offering_code: null,
+      first_message: 'Quiero Marketing Digital para mejorar las ventas de mi emprendimiento. Cuánto cuesta?' });
+    const marketing = 'marketing_digital';
+    const advertising = 'publicidad_redes_sociales';
+    const first = proposal();
+    first.move = { ...first.move, move: 'ask_course_information', course_reference: marketing };
+    first.response = { messages: [
+      'Marketing Digital te sirve para trabajar las ventas de tu emprendimiento.',
+      'El precio es el único inconveniente? Puedo revisar una promoción.',
+    ], call_offer: null };
+    first.proposed_action = { type: 'none' };
+    first.course_mentions = [{ offering_code: marketing, role: 'paid' }];
+    first.used_fact_ids = [`offering:${marketing}:name:v1`];
+    first.memory_candidates = [];
+    const firstCommit = await commitAgentDecision({ turn_id: f.turn_id, trace_id: f.trace_id,
+      supports_multi_outbound: true, agent_turn_v2: { schema_version: 2 as const, proposal: first },
+      decision: f.placeholderDecision as never, model: f.model as never });
+    expect(firstCommit.status).toBe('committed');
+
+    await db!`UPDATE messages SET content=${customerReply},created_at=clock_timestamp(),
+      metadata=metadata-'occurred_at_trusted'
+      WHERE id=${f.second_turn_id}::uuid`;
+    const before = await readCourseBonusCapabilityV1({ workspace_slug: 'studyx', contact_id: f.contact_id,
+      conversation_id: f.conversation_id, channel: 'text', selected_offering_code: null,
+      source_turn_id: f.second_turn_id }, { db: db! });
+    expect(before).toMatchObject({ enabled: true, interest_offering_code: marketing,
+      ladder: { eligible: true, instant_trigger: true },
+      rule_bonus: { bonus_offering_code: advertising } });
+
+    const bonus = proposal();
+    bonus.move = { ...bonus.move, move: 'defer_payment', course_reference: marketing };
+    bonus.response = { messages: [
+      'El precio de Marketing Digital sigue igual y te sumo Publicidad en Redes Sociales sin costo extra. Avanzamos?',
+    ], call_offer: null };
+    bonus.proposed_action = { type: 'offer_course_bonus', interest_offering_code: marketing,
+      bonus_offering_code: advertising };
+    bonus.course_mentions = [{ offering_code: marketing, role: 'paid' },
+      { offering_code: advertising, role: 'bonus' }];
+    bonus.used_fact_ids = [`offering:${marketing}:name:v1`, `offering:${advertising}:name:v1`];
+    bonus.memory_candidates = [{ type: 'objection', key: 'price_objection', value: 'precio',
+      source_quote: customerReply, confidence: 1 }];
+    const committed = await commitAgentDecision({ turn_id: f.second_turn_id, trace_id: randomUUID(),
+      supports_multi_outbound: true, agent_turn_v2: { schema_version: 2 as const, proposal: bonus },
+      decision: f.placeholderDecision as never, model: f.model as never });
+    expect(committed.status).toBe('committed');
+    const [offer] = await db!`SELECT paid.code paid_code,o.status,count(gift.id)::int bonus_count
+      FROM promotion_offers o JOIN offerings paid ON paid.id=o.paid_offering_id
+      JOIN promotion_offer_bonus_offerings gift ON gift.offer_id=o.id
+      WHERE o.conversation_id=${f.conversation_id}::uuid GROUP BY paid.code,o.status`;
+    expect(offer).toMatchObject({ paid_code: marketing, status: 'offered', bonus_count: 1 });
+    const [state] = await db!`SELECT selected_offering_code FROM conversation_sales_context_states_v1
+      WHERE conversation_id=${f.conversation_id}::uuid`;
+    expect(state.selected_offering_code).toBeNull();
+  });
+
   it.each(['continue_by_chat', 'decline_call', 'request_call'] as const)('accounts once for the delivered A+B invitation after a prose rewrite invents %s and vetoes call', async invented => {
     const text = 'Sólo el precio me frena, me parece caro. Ofreceme esa promoción para sumar un curso sin costo.';
     const f = await seedConversationForAgentTurn({ selected_offering_code: paid, first_message: text });

@@ -85,7 +85,7 @@ import {
 } from '../lib/conversation/agent-a-attempt'
 import { resolveAgentAProposalV1 } from '../lib/conversation/resolve-agent-a-proposal'
 import { resolveAgentAPlannerlessProposalV2 } from '../lib/conversation/resolve-agent-a-plannerless'
-import { decideDeterministicRulesV1, finalizeDeterministicRulesCandidateV1, resolveDeterministicRulesTurnV1, type DeterministicRulesDecisionV1, type RuleOutcomeRecordV1 } from '../lib/conversation/deterministic-rules-turn'
+import { decideDeterministicRulesV1, finalizeDeterministicRulesCandidateV1, preserveRuleTriggerEvidenceV1, resolveDeterministicRulesTurnV1, type DeterministicRulesDecisionV1, type RuleOutcomeRecordV1 } from '../lib/conversation/deterministic-rules-turn'
 import { bindCustomerCallInterpretationV1, type CustomerCallInterpretationV1 } from '../lib/conversation/customer-call-interpretation'
 import { authorizedPromotionActionsV1, continueAgentAAfterActionFeedbackV1, fencedAgentARequestV1, plannerlessActionFeedbackV1 } from '../lib/conversation/agent-a-action-feedback'
 import { evaluateCallOfferTurnPolicyV1 } from '../lib/conversation/call-offer-turn-policy'
@@ -2487,6 +2487,16 @@ export const processInboundTurn = new Workflow({
           provider: decisionProvider,
           model: decisionModel,
         }]
+        const preserveBackendRuleEvidence = (proposal: AgentATurnProposalV1): AgentATurnProposalV1 => (
+          modelAuthoredCommitCandidates.reduce(
+            (current, authored) => preserveRuleTriggerEvidenceV1(
+              authored.proposal,
+              current,
+              repairContext.turn.batch_messages.map((message) => message.text),
+            ),
+            proposal,
+          )
+        )
         let rejectionCodes = [...new Set(
           rejection.rejections.map((item) => item.code),
         )].slice(0, 8)
@@ -2550,18 +2560,19 @@ export const processInboundTurn = new Workflow({
               },
             })
             const effectiveRepair = resolvedRepair.effective
+            const effectiveRepairProposal = preserveBackendRuleEvidence(effectiveRepair.proposal)
             modelAuthoredCommitCandidates.push({
-              proposal: effectiveRepair.proposal,
+              proposal: effectiveRepairProposal,
               provider: effectiveRepair.provider,
               model: effectiveRepair.model,
             })
             agentTurnV2Commit = {
               schema_version: 2,
-              proposal: effectiveRepair.proposal,
+              proposal: effectiveRepairProposal,
               ...(repairEffectsAllowed ? {} : fencedAgentARequestV1()),
             }
             pipelineCommit = null
-            pipelineMemoryCandidates = effectiveRepair.proposal.memory_candidates
+            pipelineMemoryCandidates = effectiveRepairProposal.memory_candidates
             decision = pipelinePlaceholder(pipelineMemoryCandidates)
             decisionProvider = effectiveRepair.provider
             decisionModel = effectiveRepair.model
@@ -2571,7 +2582,7 @@ export const processInboundTurn = new Workflow({
               generation_attempts: agentAGenerationAttempts,
               failure_stage: 'backend_commit',
               failure_codes: rejectionCodes,
-              action_status: effectiveRepair.proposal.proposed_action.type === 'none'
+              action_status: effectiveRepairProposal.proposed_action.type === 'none'
                 ? 'none'
                 : 'authorized',
             }
@@ -2581,7 +2592,7 @@ export const processInboundTurn = new Workflow({
               turn_id: owned.turn_id,
               rejection_id: currentBackendRejection.rejection_id,
               rejection_codes: rejectionCodes,
-              repaired_action_type: effectiveRepair.proposal.proposed_action.type,
+              repaired_action_type: effectiveRepairProposal.proposed_action.type,
             })
           } catch (repairError) {
       if (isTurnEvidencePersistenceError(repairError)) throw repairError
@@ -2638,18 +2649,19 @@ export const processInboundTurn = new Workflow({
               { maxAttempts: 1 },
             )
             await persistProfileProposal(finalContinuation.proposal, currentBackendRejection)
+            const finalContinuationProposal = preserveBackendRuleEvidence(finalContinuation.proposal)
             modelAuthoredCommitCandidates.push({
-              proposal: finalContinuation.proposal,
+              proposal: finalContinuationProposal,
               provider: finalContinuation.provider,
               model: finalContinuation.model,
             })
             agentTurnV2Commit = {
               schema_version: 2,
-              proposal: finalContinuation.proposal,
+              proposal: finalContinuationProposal,
               ...(repairEffectsAllowed ? {} : fencedAgentARequestV1()),
             }
             pipelineCommit = null
-            pipelineMemoryCandidates = finalContinuation.proposal.memory_candidates
+            pipelineMemoryCandidates = finalContinuationProposal.memory_candidates
             decision = pipelinePlaceholder(pipelineMemoryCandidates)
             decisionProvider = finalContinuation.provider
             decisionModel = finalContinuation.model
@@ -2659,7 +2671,7 @@ export const processInboundTurn = new Workflow({
               generation_attempts: 3,
               failure_stage: 'backend_commit',
               failure_codes: rejectionCodes,
-              action_status: finalContinuation.proposal.proposed_action.type === 'none'
+              action_status: finalContinuationProposal.proposed_action.type === 'none'
                 ? 'none'
                 : 'authorized',
             }
