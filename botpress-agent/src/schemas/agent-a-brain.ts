@@ -270,7 +270,7 @@ export const AgentAContextV1Schema = z.object({
       display_name: z.string().trim().min(1).max(240),
       area_code: IdentifierSchema.nullable(),
       facts: z.array(AgentAFactSchema).max(4).optional(),
-      reference: z.object({ source: z.literal('prior_agent_named_candidate'),
+      reference: z.object({ source: z.enum(['prior_agent_named_candidate', 'current_customer_named_course']),
         matched_terms: z.array(z.string().min(3)).min(1).max(8) }).strict().optional(),
     }).strict()).max(3),
     // Resolver output is evidence, not a conversational instruction. It lets

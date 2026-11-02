@@ -481,7 +481,7 @@ export function buildAgentAContextV1(
   const state = claimed.conversation_state_v1;
   if (!state) return null;
   const index = claimed.catalog_index?.offerings ?? [];
-  const factualReferences = claimed.catalog_resolution.kind === 'no_catalog_intent'
+  const factualReferences = claimed.catalog_resolution.kind === 'no_catalog_intent' || claimed.catalog_resolution.kind === 'not_found'
     ? currentFactualCourseReferencesV1(claimed.context.batch_messages.map(message => message.content),
       claimed.catalog_index, latestAgentTurnMessages(claimed.context.logical_recent_turns ?? claimed.context.recent_turns)) : [];
   // Persisted conversation state remains authoritative across turns. An exact
@@ -546,7 +546,7 @@ export function buildAgentAContextV1(
       display_name: offering.display_name,
       area_code: areaCode(offering.academy),
       ...(factualReferences.some(reference => reference.offeringCode === offering.code) ? {
-        reference: { source: 'prior_agent_named_candidate' as const,
+        reference: { source: factualReferences.find(reference => reference.offeringCode === offering.code)!.source,
           matched_terms: factualReferences.find(reference => reference.offeringCode === offering.code)!.matchedTerms },
       } : {}),
       // Keep candidate detail bounded to the three visible courses. Payment

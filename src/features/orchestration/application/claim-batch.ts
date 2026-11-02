@@ -907,7 +907,7 @@ export async function claimBatch(
       ? currentSelection.offering_code ?? persistedDetailOffering
       : null;
 
-  const factualReferences = catalog_resolution.kind === 'no_catalog_intent'
+  const factualReferences = catalog_resolution.kind === 'no_catalog_intent' || catalog_resolution.kind === 'not_found'
     ? currentFactualCourseReferencesV1(currentMessageTexts, catalog_index, latestAgentTurnMessages(logicalRecentTurns)) : [];
   const detailOfferingCodes = [...new Set([
     ...(resolvedDetailOfferingCode ? [resolvedDetailOfferingCode] : []),

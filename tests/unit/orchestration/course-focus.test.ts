@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { activeSessionRecentTurnsV1, deriveConversationCourseFocusV1, type CourseFocusTurnV1 } from '@/features/orchestration/domain/course-focus';
+import { activeSessionRecentTurnsV1, currentFactualCourseReferencesV1, deriveConversationCourseFocusV1, type CourseFocusTurnV1 } from '@/features/orchestration/domain/course-focus';
 import type { CatalogIndexView } from '@/features/orchestration/domain/business-context';
 
 const catalog:CatalogIndexView={as_of:'2026-11-01T12:00:00.000Z',offerings_total:3,injection_suspected_count:0,offerings:[
@@ -37,5 +37,45 @@ describe('server dialogue course focus shared by claim and paid mention validati
     ],[{created_at:'2026-11-01T12:00:00.000Z'}],30*60*1000);
     expect(scoped).toEqual([{direction:'inbound',content:'Cuánto dura?',created_at:'2026-11-01T11:59:00.000Z'}]);
     expect(focus('Cuánto dura?',scoped)).toEqual({offering_code:null,course_of_interest:null});
+  });
+});
+
+
+const factualCatalog: CatalogIndexView = { as_of: '2026-11-02T13:00:00.000Z', offerings_total: 4, injection_suspected_count: 0,
+  offerings: [
+    { code: 'introduccion_ecommerce', display_name: 'Introducción al Ecommerce', academy: 'Marketing', aliases: ['tienda web'] },
+    { code: 'community_manager', display_name: 'Community Manager', academy: 'Marketing', aliases: ['redes sociales'] },
+    { code: 'publicidad_redes_sociales', display_name: 'Publicidad en Redes Sociales', academy: 'Marketing', aliases: ['redes sociales'] },
+    { code: 'marketing_digital', display_name: 'Marketing Digital', academy: 'Marketing', aliases: [] },
+  ] };
+describe('current explicit factual references from the complete active catalog', () => {
+  it.each(['Ecommerce me gusta', 'Introducción al Ecommerce me gusta', 'introduccion_ecommerce me gusta', 'tienda web me gusta'])(
+    'retrieves the named course even when the assistant did not name it: %s', text => {
+      expect(currentFactualCourseReferencesV1([text], factualCatalog, ['Tenemos Marketing Digital y Publicidad en Redes Sociales.']))
+        .toEqual([expect.objectContaining({ offeringCode: 'introduccion_ecommerce', source: 'current_customer_named_course' })]);
+      expect(focus(text, [], factualCatalog).offering_code).toBe('introduccion_ecommerce');
+    });
+  it('keeps the customer order for two positive names and does not create a purchase selection', () => {
+    expect(currentFactualCourseReferencesV1(['Community y ecommerce me gustan'], factualCatalog, []))
+      .toEqual([expect.objectContaining({ offeringCode: 'community_manager' }), expect.objectContaining({ offeringCode: 'introduccion_ecommerce' })]);
+    expect(focus('Community y ecommerce me gustan', [], factualCatalog).offering_code).toBeNull();
+  });
+  it.each(['no me gusta ecommerce', 'nada de ecommerce', 'ecommerce no', 'introducción me gusta', 'curso me gusta', 'redes sociales me gusta', 'marketing me gusta'])(
+    'does not turn a negation, generic fragment or homonymous alias into one factual course: %s', text => {
+      expect(currentFactualCourseReferencesV1([text], factualCatalog, [])).toEqual([]);
+    });
+  it('excludes a rejected course while preserving a distinct positive named course', () => {
+    expect(currentFactualCourseReferencesV1(['ecommerce no, prefiero Community'], factualCatalog, []))
+      .toEqual([expect.objectContaining({ offeringCode: 'community_manager' })]);
+  });
+  it.each([{ prior: [] }, { prior: ['Tenemos Introducción al Ecommerce y Community Manager.'] }])(
+    'does not revive a subterm of a negated full course name, including prior-menu references: $prior', ({ prior }) => {
+      expect(currentFactualCourseReferencesV1(['no quiero estudiar Introducción al Ecommerce'], factualCatalog, prior)).toEqual([]);
+      expect(currentFactualCourseReferencesV1(['no quiero estudiar Introducción al Ecommerce y Community me gusta'], factualCatalog, prior))
+        .toEqual([expect.objectContaining({ offeringCode: 'community_manager' })]);
+    });
+  it('fails closed when the canonical index is missing or truncated', () => {
+    expect(currentFactualCourseReferencesV1(['ecommerce me gusta'], null, [])).toEqual([]);
+    expect(currentFactualCourseReferencesV1(['ecommerce me gusta'], { ...factualCatalog, offerings_total: 5 }, [])).toEqual([]);
   });
 });

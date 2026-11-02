@@ -160,6 +160,11 @@ Use authorized fact values or omit unsupported claims.
 
 function currentCatalogResolutionDirectiveV1(context: AgentAContextV1): string {
   if (context.catalog.resolution !== 'not_found') return '';
+  const factual = context.catalog.candidate_offerings.filter(offering => offering.reference !== undefined);
+  if (factual.length) return `<current_catalog_resolution>
+The selection resolver did not choose a purchase course, but the current literal course reference is grounded in the complete active catalog: ${JSON.stringify(factual.map(offering => offering.code))}.
+Use those candidate_offerings and their authorized facts to answer the current question. Do not claim those courses are nonexistent or unavailable merely because resolution is not_found. This factual reference does not persist a selection or authorize a payment or bonus effect.
+</current_catalog_resolution>`;
   return `<current_catalog_resolution>
 The customer's current wording did not resolve to a canonical StudyX offering.
 Never invent or present the unresolved offering as available. Any offering identity you mention must come from catalog.selected_offering, catalog.candidate_offerings or catalog.available_offerings.

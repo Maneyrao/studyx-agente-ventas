@@ -1820,6 +1820,8 @@ describe('buildAgentAContextV1', () => {
 
   it('limits navigation to three candidates and rejects an unavailable conversation state', () => {
     const claimed = claimedTurn();
+    // Navigation has no current explicit course; exact references have their own tests.
+    claimed.context.batch_messages[0]!.content = '¿Qué opciones tienen?';
     claimed.conversation_state_v1 = {
       ...claimed.conversation_state_v1!,
       selected_offering_code: null,

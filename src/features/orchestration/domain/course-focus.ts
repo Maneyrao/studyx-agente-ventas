@@ -29,13 +29,14 @@ export function latestAgentTurnMessages(recentTurns: readonly CourseFocusTurnV1[
 
 export interface FactualCourseReferenceV1 {
   readonly offeringCode: string;
-  readonly source: 'prior_agent_named_candidate';
+  readonly source: 'prior_agent_named_candidate' | 'current_customer_named_course';
   readonly matchedTerms: readonly string[];
 }
 
-/** Retrieve facts for an option the agent actually named and the customer
- * refers to literally. A partial reference is not a selection or an alias.
- * Identity/selection resolution deliberately keeps its stricter contract.
+/** Retrieve current literal course references from the complete active index.
+ * Full names/owner aliases/codes and unambiguous code+name terms retrieve facts
+ * only. They do not become aliases, purchase selections or effect permissions.
+ * Prior named options retain their existing bounded-reference compatibility.
  */
 export function currentFactualCourseReferencesV1(
   texts: readonly string[], index: CatalogIndexView | null, previousAgentMessages: readonly string[],
@@ -44,30 +45,90 @@ export function currentFactualCourseReferencesV1(
   const normalized = (value: string) => value.normalize('NFD').replace(/\p{Diacritic}/gu, '')
     .toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim().replace(/\s+/gu, ' ');
   const previous = ` ${normalized(previousAgentMessages.join(' '))} `;
-  // A rejected option is still a literal mention, never a reference to hydrate:
-  // "no me gusta ecommerce", "nada de ecommerce", "ecommerce no, prefiero X".
   const clauses = texts.flatMap(text => text.split(/[,.;:!?\n]+|\b(?:pero|prefiero|mejor|aunque)\b/iu))
     .map(clause => normalized(clause).split(' ').filter(Boolean)).filter(clause => clause.length > 0);
-  const negated = (clause: readonly string[], at: number) =>
-    clause.slice(Math.max(0, at - 4), at).some(word => NEGATION_WORDS.has(word)) || clause[at + 1] === 'no';
-  const positiveTerms = new Map<string, number>();
+  const genericTerms = new Set(['curso', 'cursos', 'diplomado', 'diplomados', 'introduccion', 'especialista',
+    'formacion', 'capacitacion', 'programa', 'profesional', 'integral', 'digital', 'sociales',
+    ...index.offerings.flatMap(offering => normalized(offering.academy ?? '').split(' '))]);
+  const references = new Map<string, Set<string>>();
+  const addReference = (value: string, code: string) => {
+    const key = normalized(value);
+    if (key.length < 3) return;
+    const codes = references.get(key) ?? new Set<string>();
+    codes.add(code);
+    references.set(key, codes);
+  };
+  for (const offering of index.offerings) {
+    addReference(offering.display_name, offering.code);
+    addReference(offering.code, offering.code);
+    for (const alias of offering.aliases ?? []) addReference(alias, offering.code);
+    const nameTerms = new Set(normalized(offering.display_name).split(' '));
+    for (const term of new Set(normalized(offering.code).split(' '))) {
+      if (term.length >= 3 && !genericTerms.has(term) && nameTerms.has(term)) addReference(term, offering.code);
+    }
+  }
+  const result = new Map<string, FactualCourseReferenceV1 & { position: number }>();
+  const negatedPositions = new Map<string, Set<number>>();
   let offset = 0;
   for (const clause of clauses) {
+    const hits: Array<{ key: string; codes: Set<string>; start: number; end: number }> = [];
+    for (const [key, codes] of references) {
+      const words = key.split(' ');
+      for (let start = 0; start + words.length <= clause.length; start += 1) {
+        if (!words.every((word, part) => clause[start + part] === word)) continue;
+        hits.push({ key, codes, start, end: start + words.length });
+      }
+    }
+    const ambiguous = hits.filter(hit => hit.codes.size > 1);
+    const negated = hits.filter(hit => clause.slice(Math.max(0, hit.start - 4), hit.start)
+      .some(word => NEGATION_WORDS.has(word)) || clause[hit.end] === 'no');
+    // A complete negated name vetoes its own shorter terms as well. Otherwise
+    // the final token could escape the prefix window and revive that course.
+    for (const hit of negated) for (const code of hit.codes) {
+      const blocked = negatedPositions.get(code) ?? new Set<number>();
+      for (let at = hit.start; at < hit.end; at += 1) blocked.add(offset + at);
+      negatedPositions.set(code, blocked);
+    }
+    for (const hit of hits.sort((a, b) => a.start - b.start || (b.end - b.start) - (a.end - a.start))) {
+      if (hit.codes.size !== 1 || ambiguous.some(other => hit.start >= other.start && hit.end <= other.end)) continue;
+      const code = [...hit.codes][0]!;
+      if (negated.some(other => other.codes.has(code) && hit.start >= other.start && hit.end <= other.end)) continue;
+      if (result.has(code)) continue;
+      const offering = index.offerings.find(course => course.code === code)!;
+      const priorNamed = previous.includes(` ${normalized(offering.display_name)} `);
+      const matchedTerms = hit.key.split(' ').filter(term => term.length >= 3).slice(0, 8);
+      if (!matchedTerms.length) continue;
+      result.set(code, { offeringCode: code,
+        source: priorNamed ? 'prior_agent_named_candidate' : 'current_customer_named_course',
+        matchedTerms, position: offset + hit.start });
+    }
+    offset += clause.length;
+  }
+  // Existing prior-menu references may use a shared short term. Keep their
+  // bounded multi-candidate semantics; they still cannot choose a purchase.
+  const positiveTerms = new Map<string, number[]>();
+  offset = 0;
+  for (const clause of clauses) {
     clause.forEach((word, at) => {
-      if (!negated(clause, at) && !positiveTerms.has(word)) positiveTerms.set(word, offset + at);
+      if (!clause.slice(Math.max(0, at - 4), at).some(term => NEGATION_WORDS.has(term))
+        && clause[at + 1] !== 'no') positiveTerms.set(word, [...(positiveTerms.get(word) ?? []), offset + at]);
     });
     offset += clause.length;
   }
-  return index.offerings.flatMap(offering => {
-    const name = normalized(offering.display_name);
-    if (!name || previous.indexOf(` ${name} `) < 0) return [];
-    const nameTerms = new Set(name.split(' '));
-    const matchedTerms = [...new Set(normalized(offering.code).split(' '))]
-      .filter(term => term.length >= 3 && nameTerms.has(term) && positiveTerms.has(term));
-    const position = Math.min(...matchedTerms.map(term => positiveTerms.get(term)!));
-    return matchedTerms.length ? [{ offeringCode: offering.code,
-      source: 'prior_agent_named_candidate' as const, matchedTerms: matchedTerms.slice(0, 8), position }] : [];
-  }).sort((a, b) => a.position - b.position).slice(0, 3)
+  for (const offering of index.offerings) {
+    if (result.has(offering.code) || !previous.includes(` ${normalized(offering.display_name)} `)) continue;
+    const nameTerms = new Set(normalized(offering.display_name).split(' '));
+    const matches = [...new Set(normalized(offering.code).split(' '))]
+      .filter(term => term.length >= 3 && nameTerms.has(term))
+      .flatMap(term => {
+        const position = positiveTerms.get(term)?.find(at => !negatedPositions.get(offering.code)?.has(at));
+        return position === undefined ? [] : [{ term, position }];
+      });
+    if (matches.length) result.set(offering.code, { offeringCode: offering.code,
+      source: 'prior_agent_named_candidate', matchedTerms: matches.map(match => match.term).slice(0, 8),
+      position: Math.min(...matches.map(match => match.position)) });
+  }
+  return [...result.values()].sort((a, b) => a.position - b.position).slice(0, 3)
     .map(({ offeringCode, source, matchedTerms }) => ({ offeringCode, source, matchedTerms }));
 }
 
@@ -168,9 +229,9 @@ export function deriveConversationCourseFocusV1(input: {
   const previousAgentMessages = latestAgentTurnMessages(input.recentTurns);
   const current = resolveCatalogFromSnapshot(input.currentMessageTexts, input.catalogIndex, previousAgentMessages);
   const focus = deriveCourseSelection({ ...input, current });
-  if (focus.offering_code !== null || current.kind !== 'no_catalog_intent') return focus;
+  if (focus.offering_code !== null || !['no_catalog_intent', 'not_found'].includes(current.kind)) return focus;
   // Same projector as the generation context: a single positive reference to a
-  // course the agent just named is the course under discussion for mention
+  // current literal course reference is the course under discussion for mention
   // validation only. It never persists a selection or authorizes effects.
   const references = currentFactualCourseReferencesV1(input.currentMessageTexts, input.catalogIndex, previousAgentMessages);
   const only = references.length === 1

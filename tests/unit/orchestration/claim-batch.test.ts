@@ -34,7 +34,7 @@ describe('default retrieval thresholds', () => {
     const ecommerce = { ...businessOffering('introduccion_ecommerce', 'Introducción al Ecommerce', 'Marketing'),
       description: 'Creá y gestioná tu tienda online.', classes: 8, modality: 'Online' };
     const generic = businessContextView({ offerings: [marketing, community, ads] });
-    const menu = 'Tenemos Marketing Digital, Community Manager, Publicidad en Redes Sociales e Introducción al Ecommerce.';
+    const menu = 'Tenemos Marketing Digital, Community Manager y Publicidad en Redes Sociales.';
     const result = await claimBatch(input, { ...buildDeps({
       factsResult: facts({ recent_turns: [{ direction: 'outbound', content: menu, created_at: '2026-08-11T11:59:00.000Z' }] }),
       messagesResult: [
@@ -57,6 +57,7 @@ describe('default retrieval thresholds', () => {
       call_preference: 'unknown', call_offer_status: 'not_offered', call_offer_count: 0, awaiting_reply: 'none', version: 0 };
     const context = buildAgentAContextV1(wire, 'Emma')!;
     expect(context.catalog.candidate_offerings.map(x => x.code)).toEqual(['introduccion_ecommerce']);
+    expect(context.catalog.candidate_offerings[0].reference?.source).toBe('current_customer_named_course');
     expect(context.catalog.candidate_offerings[0].facts).toEqual(expect.arrayContaining([
       expect.objectContaining({ kind: 'offering_duration', value: '8 clases' }),
       expect.objectContaining({ kind: 'offering_modality', value: 'Online' }),
@@ -2806,13 +2807,14 @@ it('does not bootstrap Info from a different conversation on the same contact', 
 });
 
 // PASO 0 — bordes del contexto factual de Ecommerce (2026-11-02).
-async function marketingMenuTurn(texts: readonly string[], selectedOfferingCode: string | null = null) {
+async function marketingMenuTurn(texts: readonly string[], selectedOfferingCode: string | null = null,
+  priorMenu?: string) {
   const marketing = { ...businessOffering('marketing_digital', 'Marketing Digital', 'Marketing'), classes: 12, modality: 'Online' };
   const community = { ...businessOffering('community_manager', 'Community Manager', 'Marketing'), classes: 10, modality: 'Online' };
   const specialist = businessOffering('especialista_marketing', 'Especialista en Marketing', 'Marketing');
   const ecommerce = { ...businessOffering('introduccion_ecommerce', 'Introducción al Ecommerce', 'Marketing'), classes: 8, modality: 'Online' };
   const all = [marketing, community, specialist, ecommerce];
-  const menu = 'Tenemos Marketing Digital, Community Manager, Especialista en Marketing e Introducción al Ecommerce.';
+  const menu = priorMenu ?? 'Tenemos Marketing Digital, Community Manager, Especialista en Marketing e Introducción al Ecommerce.';
   const syllabus = vi.fn(async ({ offering_code }: { offering_code: string }) => [{
     source_uri: `knowledge-source:${offering_code}`, title: `Temario ${offering_code}`,
     content: `Temario de ${offering_code}.`, offering_code, similarity: 1 }]);
@@ -2835,6 +2837,39 @@ async function marketingMenuTurn(texts: readonly string[], selectedOfferingCode:
 }
 
 describe('PASO 0 — contexto factual de cursos nombrados (bordes)', () => {
+  it('hydrates a current course absent from the preceding menu while preserving a different stored selection', async () => {
+    const { result, context } = await marketingMenuTurn(['Ecommerce me gusta. Cuántas clases son?'], 'marketing_digital',
+      'Tenemos Marketing Digital y Community Manager.');
+    expect(result.business_context?.offerings.find(course => course.code === 'introduccion_ecommerce')?.classes).toBe(8);
+    expect(context.catalog.candidate_offerings).toEqual([expect.objectContaining({ code: 'introduccion_ecommerce',
+      reference: expect.objectContaining({ source: 'current_customer_named_course' }),
+      facts: expect.arrayContaining([expect.objectContaining({ kind: 'offering_duration', value: '8 clases' })]) })]);
+    expect(context.commercial_state.selected_offering_code).toBe('marketing_digital');
+    expect(context.catalog.selected_offering?.facts.map(fact => fact.kind)).toEqual(['offering_name']);
+    expect(context.capabilities.may_send_payment_link).toBe(false);
+  });
+
+  it('grounds a current explicit study request despite technical not_found, without choosing a purchase', async () => {
+    const { result, context } = await marketingMenuTurn(['Quiero estudiar Ecommerce'], null, 'Tenemos Marketing Digital.');
+    expect(result.catalog_resolution.kind).toBe('not_found');
+    expect(context.catalog.candidate_offerings).toEqual([expect.objectContaining({ code: 'introduccion_ecommerce',
+      reference: expect.objectContaining({ source: 'current_customer_named_course' }),
+      facts: expect.arrayContaining([expect.objectContaining({ kind: 'offering_duration', value: '8 clases' })]) })]);
+    expect(context.commercial_state.selected_offering_code).toBeNull();
+    expect(context.capabilities.may_send_payment_link).toBe(false);
+    const { buildAgentABrainInstructionsV1 } = await import('../../../botpress-agent/src/prompts/agent-a-brain-v1');
+    const instruction = buildAgentABrainInstructionsV1(context).split('<current_catalog_resolution>')[1]?.split('</current_catalog_resolution>')[0] ?? '';
+    expect(instruction).toContain('current literal course reference is grounded');
+    expect(instruction).not.toContain('Never invent or present the unresolved offering as available');
+    const { deriveConversationCourseFocusV1 } = await import('@/features/orchestration/domain/course-focus');
+    const { validateCourseMentionsV1 } = await import('@/shared/conversation/course-mentions');
+    const focus = deriveConversationCourseFocusV1({ currentMessageTexts: ['Quiero estudiar Ecommerce'],
+      recentTurns: [{ direction: 'outbound', content: 'Tenemos Marketing Digital.' }], catalogIndex: result.catalog_index });
+    expect(validateCourseMentionsV1({ messages: ['Introducción al Ecommerce tiene 8 clases.'],
+      catalog: result.catalog_index!.offerings, course_mentions: [{ offering_code: 'introduccion_ecommerce', role: 'paid' }],
+      paid_offering_code: null, paid_mention_offering_code: focus.offering_code, delivered_bonus_offering_codes: [] }).violations).toEqual([]);
+  });
+
   it('ambiguo: "marketing" no hidrata Ecommerce ni elige curso', async () => {
     const { result, context } = await marketingMenuTurn(['quiero marketing']);
     expect(result.catalog_resolution.kind).toBe('ambiguous');
@@ -2870,6 +2905,12 @@ describe('PASO 1b — defectos corregidos del contexto factual', () => {
     }
   });
 
+  it.each(['Tenemos Introducción al Ecommerce y Community Manager.', 'Tenemos Marketing Digital.'])(
+    'never hydrates a negated full-name subterm while preserving another positive course (%s)', async prior => {
+      const { context } = await marketingMenuTurn(['no quiero estudiar Introducción al Ecommerce y Community me gusta'], null, prior);
+      expect(context.catalog.candidate_offerings.map(course => course.code)).toEqual(['community_manager']);
+      expect(context.commercial_state.selected_offering_code).toBeNull();
+    });
   it('rechazo y preferencia en la misma frase: sólo hidrata el curso preferido', async () => {
     const { context } = await marketingMenuTurn(['ecommerce no, prefiero community']);
     expect(context.catalog.candidate_offerings.map(x => x.code)).toEqual(['community_manager']);
@@ -2886,7 +2927,7 @@ describe('PASO 1b — defectos corregidos del contexto factual', () => {
     const o = (code: string, display_name: string) => ({ code, display_name, aliases: [], academy: 'Marketing' });
     const catalog = [o('marketing_digital', 'Marketing Digital'), o('introduccion_ecommerce', 'Introducción al Ecommerce')];
     const focus = deriveConversationCourseFocusV1({ currentMessageTexts: ['ecommerce me gusta', 'cuánto es el total?'],
-      recentTurns: [{ direction: 'outbound', content: 'Tenemos Marketing Digital e Introducción al Ecommerce.',
+      recentTurns: [{ direction: 'outbound', content: 'Tenemos Marketing Digital.',
         created_at: '2026-08-11T11:59:00.000Z' }] as never,
       catalogIndex: { as_of: 'x', offerings_total: 2, offerings: catalog, injection_suspected_count: 0 } as never });
     const { violations } = validateCourseMentionsV1({ messages: ['Introducción al Ecommerce son 8 clases online.'],
