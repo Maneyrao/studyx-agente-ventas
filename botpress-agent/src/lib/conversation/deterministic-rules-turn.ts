@@ -56,8 +56,7 @@ export function decideDeterministicRulesV1(context: AgentAContextV1, draft: Agen
   const bonus = decideBonusRuleV1(ruleContext, draft)
   return {
     bonus,
-    // Rule B activation is recorded in the following commit; common pure support is shared.
-    call: { kind: 'none', reason: 'rule_b_not_wired' },
+    call: decideCallRuleV1(ruleContext, draft, bonus),
     price_expression_hint: ruleContext.batch_texts.some(priceExpressionHintV1),
   }
 }

@@ -106,9 +106,13 @@ export async function continueAgentAAfterActionFeedbackV1(input: {
     ...input.rejection,
     authorized_alternatives: { ...input.rejection.authorized_alternatives, actions: allowedActions },
   } }
+  // Rule B authorizes invitation copy only, never a call dispatch or payment.
+  const allowCallOffer = input.rejection.rejections.some(reason => reason.code === 'CALL_OFFER_REQUIRED')
+    && continuationCallOfferAuthorizedV1(context)
   const generated = await (input.generate ?? generateDeepSeekAgentATurnProposalV1)({
     context, apiKey: input.apiKey, signal: input.signal, model: input.model,
     conversation_only: input.effects_allowed !== true,
+    ...(allowCallOffer ? { allow_call_offer: true } : {}),
     on_provider_request: input.on_provider_request,
   })
   const proposedAction = generated.proposal.proposed_action.type

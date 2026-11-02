@@ -3988,6 +3988,23 @@ describe('processInboundTurn hot path', () => {
     return { createMessage, result };
   }
 
+  it.each([false, true])('honors the backend Rule A pause on a new run and after part 0 was submitted (replay=%s)', async replay => {
+    vi.spyOn(Date, 'now').mockReturnValue(Date.parse(NOW));
+    const first = { id: UUID, content: 'Primero', status: replay ? 'submitted_to_botpress' : 'pending', delivery_attempt: 1,
+      authorized_egress: buildAuthorizedEgress({ content: 'Primero', authorized_urls: [], protected_facts: [] }),
+      part_index: 0, part_count: 2 };
+    const second = { id: '28a823e8-27c2-4279-9956-058f45f33cd6', content: 'Segundo', status: 'pending', delivery_attempt: 1,
+      authorized_egress: buildAuthorizedEgress({ content: 'Segundo', authorized_urls: [], protected_facts: [] }),
+      part_index: 1, part_count: 2, minimum_delay_before_ms: 20000,
+      ...(replay ? { not_before: new Date(Date.parse(NOW) + 7000).toISOString() } : {}) };
+    const step = Object.assign(async (_name: string, run: () => Promise<unknown>) => run(),
+      { sleep: vi.fn(async () => undefined) });
+    const { createMessage, result } = await runCommittedOutbound(first, {}, { outbounds: [first, second], step });
+    expect(step.sleep).toHaveBeenCalledWith(`rule-a-bonus-pause-${second.id}`, replay ? 7000 : 20000);
+    expect(createMessage.mock.calls.map(([input]) => input.payload.text)).toEqual(replay ? ['Segundo'] : ['Primero', 'Segundo']);
+    expect(result).toMatchObject({ status: 'completed' });
+  });
+
   it.each([
     { multipart: false, continuation: 'authorized', authorizationOutage: false, expected: ['Primero'], status: 'completed' },
     { multipart: true, continuation: 'authorized', authorizationOutage: false, expected: ['Primero', 'Segundo'], status: 'completed' },

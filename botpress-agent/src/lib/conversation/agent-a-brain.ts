@@ -223,6 +223,8 @@ export async function generateDeepSeekAgentATurnProposalV1(input: {
   readonly model?: string;
   readonly timeout_ms?: number;
   readonly conversation_only?: boolean;
+  /** Rule B may authorize invitation copy while all physical actions stay fenced. */
+  readonly allow_call_offer?: boolean;
   readonly on_provider_request?: () => void;
 }): Promise<GeneratedAgentATurnProposalV1> {
   const model = resolveAgentADeepSeekModelV1(input.model);
@@ -259,7 +261,7 @@ export async function generateDeepSeekAgentATurnProposalV1(input: {
           body: JSON.stringify({
             model,
             instructions: buildAgentABrainInstructionsV1(input.context)
-              + (input.conversation_only ? '\nThe requested operation was not executed. This is a conversation-only continuation from the structured turn_rejection. Answer the customer in your own usual voice using the actual context and explain or ask for the relevant missing information. Do not claim an effect succeeded, repeat an action, invent a provider cause, or ask the customer to repeat a message that is already in context. Preserve the customer intent with the accurate structured move; never use unknown merely because the physical action is fenced. Use proposed_action none and no call_offer. These are internal effect boundaries, not wording instructions.' : ''),
+              + (input.conversation_only ? `\nThe requested operation was not executed. This is a conversation-only continuation from the structured turn_rejection. Answer the customer in your own usual voice using the actual context and explain or ask for the relevant missing information. Do not claim an effect succeeded, repeat an action, invent a provider cause, or ask the customer to repeat a message that is already in context. Preserve the customer intent with the accurate structured move; never use unknown merely because the physical action is fenced. Use proposed_action none. ${input.allow_call_offer ? 'The structured Rule B correction permits response.call_offer only; never request or claim an immediate call.' : 'Use no call_offer.'} These are internal effect boundaries, not wording instructions.` : ''),
             input: `Current customer messages: ${JSON.stringify(input.context.turn.batch_messages.map((message) => message.text))}\nAnswer these messages and return only the single AgentATurnProposalV1 JSON object.${retryDiagnostic ? `\nThe previous output failed validation at ${retryDiagnostic}. Return a corrected full object. ${naturalnessRepairDirectiveV1(input.context)}${retryProfileEvidence}` : ''}`,
             reasoning: { effort: 'none' },
             temperature: 0.2,
@@ -269,7 +271,7 @@ export async function generateDeepSeekAgentATurnProposalV1(input: {
               format: {
                 type: 'json_schema',
                 name: 'studyx_agent_a_turn_proposal_v1',
-                schema: proposalJsonSchema(input.context, input.conversation_only),
+                schema: proposalJsonSchema(input.context, input.conversation_only, input.allow_call_offer),
               },
             },
           }),
@@ -498,7 +500,7 @@ function closedObject(properties: Record<string, unknown>) {
   return { type: 'object', properties, required: Object.keys(properties), additionalProperties: false };
 }
 
-function proposalJsonSchema(context: AgentAContextV1, conversationOnly = false): unknown {
+function proposalJsonSchema(context: AgentAContextV1, conversationOnly = false, allowCallOffer = false): unknown {
   const nullableString = { anyOf: [{ type: 'string' }, { type: 'null' }] };
   const profileFields = {
     type: 'array', minItems: 1, maxItems: 4, uniqueItems: true,
@@ -633,7 +635,7 @@ function proposalJsonSchema(context: AgentAContextV1, conversationOnly = false):
         description: 'One coherent reply split into one or two messages only. Answer the complete logical customer intervention before advancing once.',
       },
       call_offer: {
-        anyOf: conversationOnly ? [{ type: 'null' }] : [{ type: 'string', maxLength: 2_000 }, { type: 'null' }],
+        anyOf: conversationOnly && !allowCallOffer ? [{ type: 'null' }] : [{ type: 'string', maxLength: 2_000 }, { type: 'null' }],
         description: 'Optional short and natural call invitation. Follow the call policy in the instructions; a natural question is allowed.',
       },
     }),

@@ -357,6 +357,8 @@ export function authorizeAgentTurnV2(input: {
     ? null
     : dropUnsupportedStateAssertionsV1(authoredCallOffer, stateFacts);
   const mayDeliverCallOffer = input.call_policy.may_offer_call
+    && !isCheckoutV1({ stage: effectiveStage, awaiting_reply: effectiveAwaitingReply,
+      payment_link_request_pending: !startsFreshSalesCycle && state.payment_link_request?.status === 'pending' }, proposal)
     && effectiveCallOfferCount < 2
     && effectiveCallPreference !== 'call'
     && effectiveCallOfferStatus !== 'accepted'

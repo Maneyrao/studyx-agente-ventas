@@ -137,6 +137,8 @@ Do not claim a discount, promotion, gift, approval, income or result. Preserve t
 The backend executes offer_course_bonus this turn: bonus_offering_code=${ruleBonus.bonus_offering_code} (${ruleBonus.display_name}), interest_offering_code=${ruleBonus.paid_offering_code} (${ruleBonus.paid_display_name}).
 Rewrite the whole turn presenting exactly that course: name ${ruleBonus.display_name} literally, state that the price of ${ruleBonus.paid_display_name} does not change, and close in the same message.
 Use proposed_action offer_course_bonus with those two codes. Declare ${ruleBonus.paid_offering_code} as paid and ${ruleBonus.bonus_offering_code} as bonus in course_mentions${(context.capabilities.course_bonus?.delivered_bonus_offerings?.length ?? 0) > 0 ? ', keep the delivered bonus courses declared as bonus and recap the full package' : ''}. Mention no other gift.` : '';
+  const ruleCallRepair = rejection.rejections.some(reason => reason.code === 'CALL_OFFER_REQUIRED' && reason.subject === 'rule_b:call_offer') ? `
+The backend requires a call invitation this turn. Keep your reply in response.messages and put one brief invitation with a concrete reason in response.call_offer only. ${ruleBonusRepair ? 'Keep the independently authorized offer_course_bonus action required by Rule A.' : 'Use proposed_action=none.'} Do not claim a call was placed.` : '';
   return `
 <mandatory_repair attempt="1" rejection_id="${rejection.rejection_id}">
 Use repair_of with this rejection_id and attempt 1. This is the only rewrite.
@@ -148,6 +150,7 @@ ${offeringRepair}
 ${courseLogisticsRepair}
 ${forbiddenPromiseRepair}
 ${ruleBonusRepair}
+${ruleCallRepair}
 If an action did not occur, do not claim it; continue naturally from the permitted facts and effects.
 Do not repeat confirmed data or an earlier opening or question. Ask only for truly missing information.
 Keep prose and metadata consistent. Preserve accepted observations. Never expose validation to the customer.

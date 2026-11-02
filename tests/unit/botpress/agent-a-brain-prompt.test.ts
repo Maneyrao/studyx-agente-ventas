@@ -87,6 +87,24 @@ describe('Agent A Brain prompt', () => {
       expect(instructions).toContain('The hint itself never grants a bonus');
       expect(current.capabilities.course_bonus).toBeUndefined();
     });
+  it('keeps one authorized action when Rule A and Rule B require the same rewrite', () => {
+    const current = context();
+    current.capabilities.course_bonus = { status: 'checkin_available', enabled: true, max_bonus_courses: 3,
+      may_offer_bonus: true, may_schedule_checkin: false, may_request_review: false,
+      may_accept_offer: false, may_send_promoted_payment: false, promotion_code: null,
+      interest_offering_code: 'redes-informaticas', bonus_offerings: [],
+      rule_bonus: { paid_offering_code: 'redes-informaticas', paid_display_name: 'Redes Informáticas',
+        bonus_offering_code: 'excel_integral', display_name: 'Excel Integral', position: 1 } };
+    current.turn_rejection = { schema_version: 1, rejection_id: '00000000-0000-4000-8000-000000000009', attempt: 1,
+      rejections: [{ code: 'BONUS_OFFER_REQUIRED', subject: 'rule_a:bonus:excel_integral' },
+        { code: 'CALL_OFFER_REQUIRED', subject: 'rule_b:call_offer' }],
+      authorized_alternatives: { fact_ids: [], actions: ['offer_course_bonus'], missing_information: [] } };
+    const repair = buildAgentABrainInstructionsV1(current).split('<mandatory_repair')[1]?.split('</mandatory_repair>')[0] ?? '';
+    expect(repair).toContain('Use proposed_action offer_course_bonus');
+    expect(repair).toContain('Keep the independently authorized offer_course_bonus action required by Rule A.');
+    expect(repair).not.toContain('Use proposed_action=none');
+    expect(repair).toContain('response.call_offer only');
+  });
   it('requires model-declared course roles while keeping metadata separate from authorization',()=>{
     const instructions=buildAgentABrainInstructionsV1(context());
     const contract=instructions.split('<course_mentions_contract>')[1]?.split('</course_mentions_contract>')[0]??'';

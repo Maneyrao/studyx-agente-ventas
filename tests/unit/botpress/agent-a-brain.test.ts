@@ -96,6 +96,25 @@ afterEach(() => {
 });
 
 describe('Agent A Brain V1', () => {
+  it.each([false, true])('keeps actions fenced while exposing only the Rule B invitation field in the actual provider schema (allow=%s)', async allow => {
+    const current = context();
+    current.turn_rejection = { schema_version: 1, rejection_id: '00000000-0000-4000-8000-000000000009', attempt: 1,
+      rejections: [{ code: 'CALL_OFFER_REQUIRED', subject: 'rule_b:call_offer' }],
+      authorized_alternatives: { fact_ids: [], actions: ['none'], missing_information: [] } };
+    const authored = proposal({ response: { messages: ['Te cuento las opciones.'], call_offer: allow ? 'Si querés, podemos verlo en una llamada corta. Te sirve?' : null },
+      repair_of: { rejection_id: current.turn_rejection.rejection_id, attempt: 1 } });
+    const fetcher = vi.fn(async () => providerResponse(200, responsesSuccessBody(authored)));
+    vi.stubGlobal('fetch', fetcher);
+    await generateDeepSeekAgentATurnProposalV1({ context: current, apiKey: 'fixture', signal: new AbortController().signal,
+      conversation_only: true, allow_call_offer: allow });
+    const body = JSON.parse(String((fetcher.mock.calls as unknown as Array<[string, RequestInit]>)[0][1].body));
+    expect(body.text.format.schema.properties.proposed_action.anyOf).toEqual([
+      { type: 'object', properties: { type: { type: 'string', enum: ['none'] } }, required: ['type'], additionalProperties: false },
+    ]);
+    expect(body.text.format.schema.properties.response.properties.call_offer.anyOf)
+      .toEqual(allow ? [{ type: 'string', maxLength: 2000 }, { type: 'null' }] : [{ type: 'null' }]);
+    expect(body.instructions).toContain(allow ? 'The structured Rule B correction permits response.call_offer only' : 'Use no call_offer.');
+  });
   it('preserves explicit course roles through parser and both wire schemas without inferring legacy roles',()=>{
     const mentions=[{offering_code:'redes-informaticas',role:'paid'}];
     const raw=proposal({course_mentions:mentions,response:{messages:['Redes Informáticas.']}});

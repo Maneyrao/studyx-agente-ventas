@@ -53,6 +53,12 @@ Detección de objeción de precio: la memoria del modelo `type=objection`, `key=
 - Nunca durante checkout, ni después de pagar, ni con la bonificación deshabilitada.
 - Si el modelo menciona un regalo distinto del ejecutado por el backend → rechazo (`course_mentions`).
 
+### REGLA B — llamada
+- Disparador: 2.ª o 3.ª respuesta del agente (las respuestas idénticas reenviadas cuentan una vez), con el cliente que ya expresó qué busca (área, curso u objetivo), `may_offer_call=true` y la llamada sin ofrecer.
+- Redacción: si el borrador no la incluye en `response.call_offer`, UNA reescritura pidiéndola con un motivo concreto.
+- Respaldo: si falla, `response.call_offer` fijo: «Si querés, coordinamos una llamada corta para verlo juntos. Te sirve?»
+- Nunca durante checkout, ni tras un pedido de seguir por chat, opt-out o rechazo de llamada. Máximo 2 invitaciones; nunca duplicada en el mismo turno. Nunca prometer una llamada inmediata sin la acción ejecutada.
+
 Cada turno registra, por regla, si se cumplió con texto del modelo (`model`), con reescritura (`rewrite`) o con respaldo fijo (`fixed`), o `not_applicable` con su motivo.
 
 ## Bonificación global — configuración (decisión del dueño, 2026-11-02)
