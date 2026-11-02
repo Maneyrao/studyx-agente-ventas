@@ -9,9 +9,9 @@ import type { TurnRejectionV1 } from '../../schemas/turn-rejection'
 import { removeUnsupportedCourseLogisticsAssertionsV1 } from './agent-a-brain'
 import {
   CALL_FALLBACK_OFFER_V1, bonusFallbackMessagesV1, decideBonusRuleV1, decideCallRuleV1, decidePriceProbeRuleV1,
-  draftPresentsBonusV1, draftPresentsCallV1, messagesContainPriceProbeV1, passiveClosingSentencesV1, passiveRuleAppliesV1,
+  draftFulfillsPromotionTaskV1, draftPresentsCallV1, messagesContainPriceProbeV1, passiveClosingSentencesV1, passiveRuleAppliesV1,
   PRICE_PROBE_V1, priceExpressionHintV1, priceObservationQuoteInBatchV1, withPriceProbeV1, withoutPassiveClosingV1,
-  type BonusRuleDecisionV1, type CallRuleDecisionV1, type PriceProbeRuleDecisionV1, type RuleContextV1, type RuleOutcomeV1,
+  type BonusRuleDecisionV1, type CallRuleDecisionV1, type PromotionTaskDataV1, type PriceProbeRuleDecisionV1, type RuleContextV1, type RuleOutcomeV1,
 } from '../../../../src/shared/conversation/deterministic-sales-rules'
 import { latestAgentTurnMessages } from '../../../../src/features/orchestration/domain/course-focus'
 
@@ -127,8 +127,16 @@ export function ruleRejectionV1(input: {
   return null
 }
 
-export function draftSatisfiesRulesV1(draft: AgentATurnProposalV1, decision: DeterministicRulesDecisionV1): boolean {
-  return (decision.bonus.kind !== 'offer' || draftPresentsBonusV1(draft, decision.bonus))
+/** Real data for the owner's promotion task: configured plans and the
+ * customer's own goal from durable memory. */
+export function promotionTaskDataV1(context: AgentAContextV1): PromotionTaskDataV1 {
+  const goal = context.customer.memories.find(memory => memory.type === 'study_goal')?.value ?? null
+  return { plan_codes: context.catalog.payment_plans.map(plan => plan.code), customer_goal: goal }
+}
+
+export function draftSatisfiesRulesV1(draft: AgentATurnProposalV1, decision: DeterministicRulesDecisionV1,
+  context: AgentAContextV1): boolean {
+  return (decision.bonus.kind !== 'offer' || draftFulfillsPromotionTaskV1(draft, decision.bonus, promotionTaskDataV1(context)))
     && (decision.call.kind !== 'offer' || draftPresentsCallV1(draft))
     && (decision.probe.kind !== 'ask' || messagesContainPriceProbeV1(draft.response.messages))
     && (!decision.passive_forbidden || passiveClosingSentencesV1(draft.response.messages).length === 0)
@@ -149,7 +157,7 @@ function offeringFactId(context: AgentAContextV1, code: string): string[] {
   return fact ? [fact] : []
 }
 
-/** Rule A fallback: the WHOLE turn is replaced by the two fixed bubbles. Only the
+/** Rule A fallback: the WHOLE turn is replaced by the owner's fixed message. Only the
  * model's interpretation metadata (memory) is kept, because it is the evidence
  * the backend revalidates for the trigger; no model prose survives. */
 export function bonusFallbackProposalV1(input: {
@@ -166,14 +174,17 @@ export function bonusFallbackProposalV1(input: {
   return {
     schema_version: 1,
     move: input.draft.move,
-    response: { messages: bonusFallbackMessagesV1(decision), call_offer: null },
+    response: { messages: bonusFallbackMessagesV1(decision, promotionTaskDataV1(context)), call_offer: null },
     proposed_action: { type: 'offer_course_bonus', bonus_offering_code: decision.bonus_code, interest_offering_code: decision.paid_code },
     course_mentions: mentions,
     confirmed_phone: null,
     profile_updates: [],
     profile_requests: [],
     used_fact_ids: [...new Set([decision.paid_code, decision.bonus_code, ...decision.prior_bonus.map(course => course.code)]
-      .flatMap(code => offeringFactId(context, code)))],
+      .flatMap(code => offeringFactId(context, code))),
+      // The fixed copy names the configured installment plans.
+      ...context.catalog.payment_plans.filter(plan => plan.code === 'monthly_12' || plan.code === 'monthly_6')
+        .map(plan => plan.fact_id)],
     used_memory_ids: [],
     repair_of: input.draft.repair_of,
     memory_candidates: input.draft.memory_candidates,
@@ -301,7 +312,7 @@ export async function resolveDeterministicRulesTurnV1(input: {
   const validate = async (draft: GeneratedAgentATurnProposalV1, rejectionId?: string) => {
     decision = { ...decision, call: decideDeterministicRulesV1(input.context, draft.proposal, callObligation).call }
     const result = await input.resolve(draft, false, rejectionId)
-    return result.action_rejection === null && draftSatisfiesRulesV1(result.effective.proposal, decision) ? result : null
+    return result.action_rejection === null && draftSatisfiesRulesV1(result.effective.proposal, decision, input.context) ? result : null
   }
   try { resolved = await validate(candidate) }
   catch (error) {
@@ -391,7 +402,7 @@ export async function finalizeDeterministicRulesCandidateV1(input: {
   readonly authored_outcome?: RuleOutcomeV1 | { readonly rule_a: RuleOutcomeV1; readonly rule_b: RuleOutcomeV1 }
 }): Promise<{ resolved: PlannerlessResolutionV2<GeneratedAgentATurnProposalV1> | null; record: RuleOutcomeRecordV1 }> {
   const decision = decideDeterministicRulesV1(input.context, input.initial.proposal, input.call_obligation)
-  if (draftSatisfiesRulesV1(input.initial.proposal, decision)) return { resolved: null,
+  if (draftSatisfiesRulesV1(input.initial.proposal, decision, input.context)) return { resolved: null,
     record: ruleOutcomeRecordV1(decision, input.authored_outcome ?? 'model') }
   return resolveDeterministicRulesTurnV1({ ...input, repair_enabled: false,
     repair: async () => { throw new Error('FINAL_RULE_CANDIDATE_GENERATION_NOT_ALLOWED') } })

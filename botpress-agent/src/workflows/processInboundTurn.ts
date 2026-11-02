@@ -3112,6 +3112,28 @@ export const processInboundTurn = new Workflow({
       },
     })
 
+    // The WhatsApp channel sends no delivery webhook to this bot, so no
+    // outbound ever left `submitted`, and bonus escalation, package identity
+    // and acceptance (all gated on a confirmed delivery) never worked live.
+    // createMessage resolving means the channel provider accepted the bubble;
+    // record that as the delivery receipt. Never fatal: the bubble is out.
+    const reportChannelAcceptance = async (name: string, outboundId: string,
+      botpressMessageId: string, deliveryAttempt: number | null) => {
+      try {
+        await step(name, () => reportDelivery.execute({ client, input: {
+          outbound_id: outboundId, trace_id: input.trace_id, status: 'delivered',
+          botpress_message_id: botpressMessageId, replayed: false, error_code: null,
+          delivery_attempt: deliveryAttempt, delivered_at: new Date().toISOString(),
+        } }), { maxAttempts: 1 })
+      } catch (error) {
+        if (isTurnEvidencePersistenceError(error)) throw error
+        if (!(error instanceof Error)) throw error
+        safeLog('studyx.turn.delivery_acceptance_report_failed', {
+          trace_id: input.trace_id, turn_id: owned.turn_id, outbound_id: outboundId, error_code: errorCode(error),
+        })
+      }
+    }
+
     type Submission = { message: { id: string } } | { continuationOutcome: 'superseded' }
     type AuthorizationRetry = { authorizationRetry: { code: string; retryable: boolean } }
     const waitForNaturalWhatsAppReply = async (outboundId: string): Promise<void> => {
@@ -3411,6 +3433,8 @@ export const processInboundTurn = new Workflow({
               },
             }),
           )
+        await reportChannelAcceptance(`report-channel-acceptance-part-${outboundPart.part_index}`,
+          outboundPart.id, delivery.message.id, outboundPart.delivery_attempt)
         lastBotpressMessageId = delivery.message.id
         submittedPartsThisRun += 1
       }
@@ -3654,6 +3678,8 @@ export const processInboundTurn = new Workflow({
             },
           }),
       )
+    await reportChannelAcceptance('report-channel-acceptance', committed.outbound.id,
+      delivery.message.id, committed.outbound.delivery_attempt)
       timings.delivery_report_ms = Date.now() - reportStartedAt
 
     await dispatchAcknowledgedCall()

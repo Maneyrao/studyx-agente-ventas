@@ -441,8 +441,7 @@ describe('processInboundTurn hot path', () => {
     const final = actionSpies.commit.mock.calls[1][0].input.agent_turn_v2.proposal;
     expect(final.proposed_action).toEqual({ type: 'offer_course_bonus', interest_offering_code: paid, bonus_offering_code: next });
     expect(final.response.messages).toEqual(complete ? [completeText] : [
-      'Dejame revisar qué te puedo ofrecer, dame un segundo.',
-      `Te sumo también Publicidad en Redes Sociales. Te quedan Introducción al Ecommerce + ${priorName} y Publicidad en Redes Sociales sin costo extra, al mismo precio. Avanzamos?`,
+      `Hagamos algo más: además de ${priorName}, te sumo Publicidad en Redes Sociales. Te quedan Introducción al Ecommerce + ${priorName} y Publicidad en Redes Sociales por el mismo valor. Avanzamos?`,
     ]);
     const records = vi.mocked(console.info).mock.calls.flatMap(([line]) => {
       try { const event = JSON.parse(String(line)); return event.event === 'studyx.turn.deterministic_rules' ? [event] : []; }
@@ -1993,7 +1992,8 @@ describe('processInboundTurn hot path', () => {
       conversation_only: true, proposal: { proposed_action: { type: 'none' } },
     });
     expect(createMessage).toHaveBeenCalledTimes(1);
-    expect(actionSpies.delivery).toHaveBeenCalledTimes(1);
+    // submission + channel acceptance receipt (2026-11-02)
+    expect(actionSpies.delivery.mock.calls.map(([call]) => call.input.status)).toEqual(['submitted_to_botpress', 'delivered']);
     expect(result).toMatchObject({ status: 'waiting_user', delivery_status: 'submitted_to_botpress', error_code: null });
   });
 
@@ -2015,7 +2015,8 @@ describe('processInboundTurn hot path', () => {
     expect(actionSpies.commit.mock.calls[0]![0].input.agent_turn_v2)
       .not.toHaveProperty('conversation_only');
     expect(createMessage).toHaveBeenCalledTimes(1);
-    expect(actionSpies.delivery).toHaveBeenCalledTimes(1);
+    // submission + channel acceptance receipt (2026-11-02)
+    expect(actionSpies.delivery.mock.calls.map(([call]) => call.input.status)).toEqual(['submitted_to_botpress', 'delivered']);
     expect(actionSpies.recovery).not.toHaveBeenCalled();
     expect(result).toMatchObject({ status: 'waiting_user', delivery_status: 'submitted_to_botpress',
       error_code: null });
@@ -4400,7 +4401,8 @@ describe('processInboundTurn hot path', () => {
     }, {}, { step, state, createMessage, callRequest: { call_id: UUID, status: 'requested' } }))
       .rejects.toBe(suspension);
     expect(createMessage).toHaveBeenCalledTimes(1);
-    expect(actionSpies.delivery).toHaveBeenCalledTimes(1);
+    // submission + channel acceptance receipt (2026-11-02)
+    expect(actionSpies.delivery.mock.calls.map(([call]) => call.input.status)).toEqual(['submitted_to_botpress', 'delivered']);
     expect(actionSpies.dispatch).not.toHaveBeenCalled();
     expect(actionSpies.flush).not.toHaveBeenCalled();
     expect(state).toMatchObject({ phase: 'decision_committed', errorCode: null });
@@ -4482,7 +4484,9 @@ describe('processInboundTurn hot path', () => {
     expect(createMessage.mock.calls.map(([input]) => input.payload.text)).toEqual(['Primero', 'Segundo']);
     expect(actionSpies.delivery.mock.calls.map(([call]) => call.input)).toEqual([
       expect.objectContaining({ outbound_id: UUID, status: 'submitted_to_botpress', botpress_message_id: 'bp-part-1' }),
+      expect.objectContaining({ outbound_id: UUID, status: 'delivered', botpress_message_id: 'bp-part-1' }),
       expect.objectContaining({ outbound_id: '28a823e8-27c2-4279-9956-058f45f33cd6', status: 'submitted_to_botpress', botpress_message_id: 'bp-part-2' }),
+      expect.objectContaining({ outbound_id: '28a823e8-27c2-4279-9956-058f45f33cd6', status: 'delivered', botpress_message_id: 'bp-part-2' }),
     ]);
     expect(result).toMatchObject({ status: 'completed', delivery_status: 'submitted_to_botpress' });
   });
@@ -4535,7 +4539,7 @@ describe('processInboundTurn hot path', () => {
 
     expect(createMessage).toHaveBeenCalledTimes(2);
     expect(actionSpies.delivery.mock.calls.map(([call]) => call.input.status)).toEqual([
-      'submitted_to_botpress',
+      'submitted_to_botpress', 'delivered',
     ]);
     expect(state).toMatchObject({ phase: 'retry_pending', deliveryStatus: null,
       errorCode: 'OUTBOUND_SUBMISSION_AMBIGUOUS', needsOperator: true });
@@ -4627,7 +4631,8 @@ describe('processInboundTurn hot path', () => {
     });
 
     expect(createMessage).toHaveBeenCalledTimes(1);
-    expect(actionSpies.delivery).toHaveBeenCalledTimes(1);
+    // submission + channel acceptance receipt (2026-11-02)
+    expect(actionSpies.delivery.mock.calls.map(([call]) => call.input.status)).toEqual(['submitted_to_botpress', 'delivered']);
     expect(actionSpies.delivery.mock.calls[0]?.[0]?.input).toMatchObject({
       status: 'submitted_to_botpress',
       botpress_message_id: 'bp-message-1',

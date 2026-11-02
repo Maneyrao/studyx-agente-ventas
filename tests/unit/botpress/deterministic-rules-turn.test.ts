@@ -217,9 +217,9 @@ describe('live Rule A/B orchestration, bounded rewrite and validated fallback', 
       repair_enabled: true, rejection_id: () => rejectionId, resolve, repair });
     expect(repair).toHaveBeenCalledOnce();
     expect(result.record).toMatchObject({ rule_a: 'fixed', rule_b: 'fixed' });
+    // Owner "modo promoción" fixed copy (no payment plans in this context).
     expect(result.resolved.effective.proposal.response.messages).toEqual([
-      'Dejame revisar qué te puedo ofrecer, dame un segundo.',
-      `Te puedo sumar ${bonusName} sin costo; el precio de Introducción al Ecommerce sigue igual. Avanzamos?`,
+      `Te lo puedo resolver. Tengo una promoción para vos: si avanzás con Introducción al Ecommerce, te bonifico ${bonusName}, así seguís avanzando sin pagar otro curso. Avanzamos?`,
     ]);
     expect(result.resolved.effective.proposal.response.call_offer).toBeTruthy();
     expect(result.resolved.effective.proposal.memory_candidates).toEqual(draft().proposal.memory_candidates);
@@ -283,7 +283,7 @@ describe('live Rule A/B orchestration, bounded rewrite and validated fallback', 
     const text = result.resolved.effective.proposal.response.messages.join(' ');
     for (const name of ['Introducción al Ecommerce', ...prior.map(course => course.display_name), next.display_name]) expect(text).toContain(name);
     expect(result.resolved.effective.proposal.proposed_action).toEqual(original.proposal.proposed_action);
-    if (!repaired) expect(result.resolved.effective.proposal.response.messages[1])
+    if (!repaired) expect(result.resolved.effective.proposal.response.messages[0])
       .toContain(`Te quedan Introducción al Ecommerce + ${[...prior, next].map(course => course.display_name).join(priorCount === 1 ? ' y ' : ', ').replace(', Instagram', ' y Instagram')}`);
   });
 

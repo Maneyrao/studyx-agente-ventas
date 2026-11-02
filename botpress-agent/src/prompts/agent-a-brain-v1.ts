@@ -1,5 +1,5 @@
-import { PRICE_PROBE_V1, decideBonusRuleV1, decidePriceProbeRuleV1, passiveRuleAppliesV1, priceExpressionHintV1 } from '../../../src/shared/conversation/deterministic-sales-rules';
-import { ruleContextFromAgentAContextV1 } from '../lib/conversation/deterministic-rules-turn';
+import { PRICE_PROBE_V1, decideBonusRuleV1, decidePriceProbeRuleV1, passiveRuleAppliesV1, priceExpressionHintV1, promotionTaskV1, type BonusRuleDecisionV1 } from '../../../src/shared/conversation/deterministic-sales-rules';
+import { promotionTaskDataV1, ruleContextFromAgentAContextV1 } from '../lib/conversation/deterministic-rules-turn';
 import type { AgentAContextV1 } from '../schemas/agent-a-brain';
 import {
   STUDYX_AGENT_A_CANONICAL_PROMPT,
@@ -7,7 +7,7 @@ import {
 } from './studyx-agent-a-canonical.generated';
 import { resolveCanonicalPromptIdentityV1 } from './agent-a-identity';
 
-export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v152' as const;
+export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v153' as const;
 
 /**
  * Runtime contract only. The sales behavior lives in the canonical prompt so
@@ -167,7 +167,7 @@ Do not claim a discount, promotion, gift, approval, income or result. Preserve t
   const deliveredRuleBonus = context.capabilities.course_bonus?.delivered_bonus_offerings ?? [];
   const ruleBonusRepair = rejection.rejections.some(reason => reason.code === 'BONUS_OFFER_REQUIRED') && ruleBonus ? `
 The backend executes offer_course_bonus this turn: bonus_offering_code=${ruleBonus.bonus_offering_code} (${ruleBonus.display_name}), interest_offering_code=${ruleBonus.paid_offering_code} (${ruleBonus.paid_display_name}).
-Rewrite the whole turn presenting exactly that course: name ${ruleBonus.display_name} literally, state that the price of ${ruleBonus.paid_display_name} does not change, and close in the same message.${deliveredRuleBonus.length ? `\nThis escalation must recap the complete backend-owned package. Name the paid course ${ruleBonus.paid_display_name}, EVERY previously delivered bonus (${deliveredRuleBonus.map(course => course.display_name).join('; ')}), and the new bonus ${ruleBonus.display_name}. Keep all of these identities included; never omit or negate an already delivered course.` : ''}
+Rewrite the whole turn presenting exactly that course, following <tarea_del_turno> at the end of these instructions: name ${ruleBonus.display_name} literally and close in the same message.${deliveredRuleBonus.length ? `\nThis escalation must recap the complete backend-owned package. Name the paid course ${ruleBonus.paid_display_name}, EVERY previously delivered bonus (${deliveredRuleBonus.map(course => course.display_name).join('; ')}), and the new bonus ${ruleBonus.display_name}. Keep all of these identities included; never omit or negate an already delivered course.` : ''}
 Use proposed_action offer_course_bonus with those two codes. Declare ${ruleBonus.paid_offering_code} as paid and ${ruleBonus.bonus_offering_code} as bonus in course_mentions${(context.capabilities.course_bonus?.delivered_bonus_offerings?.length ?? 0) > 0 ? ', keep the delivered bonus courses declared as bonus and recap the full package' : ''}. Mention no other gift.` : '';
   const ruleCallRepair = rejection.rejections.some(reason => reason.code === 'CALL_OFFER_REQUIRED' && reason.subject === 'rule_b:call_offer') ? `
 The backend requires a call invitation this turn. Keep your reply in response.messages and put one brief invitation with a concrete reason in response.call_offer only. ${ruleBonusRepair ? 'Keep the independently authorized offer_course_bonus action required by Rule A.' : 'Use proposed_action=none.'} Do not claim a call was placed.` : '';
@@ -291,6 +291,33 @@ Before returning AgentATurnProposalV1, make response, move, profile metadata and
 
 /** Owner rules (AGENTS.md, 2026-11-02 second revision). Backend-decided; the
  * model writes. Kept technical: what must appear, not how to sell. */
+/** Owner "modo promoción" (2026-11-02): the backend decided a Rule A offer
+ * for this turn (literal trigger before generation, or BONUS_OFFER_REQUIRED on
+ * the rewrite). The model gets ONE short task, last in its instructions. */
+export function promotionTaskDecisionV1(context: AgentAContextV1): Extract<BonusRuleDecisionV1, { kind: 'offer' }> | null {
+  const stub = { response: { messages: ['.'] }, proposed_action: { type: 'none' },
+    move: { move: 'unknown', secondary_moves: [] }, memory_candidates: [] }
+  const decided = decideBonusRuleV1(ruleContextFromAgentAContextV1(context), stub)
+  if (decided.kind === 'offer') return decided
+  const rule = context.capabilities.course_bonus?.rule_bonus
+  const required = context.turn_rejection?.rejections.some(reason => reason.code === 'BONUS_OFFER_REQUIRED')
+  if (!rule || !required) return null
+  const bonus = context.capabilities.course_bonus
+  return { kind: 'offer', trigger: 'second_price_objection', paid_code: rule.paid_offering_code, paid_name: rule.paid_display_name,
+    bonus_code: rule.bonus_offering_code, bonus_name: rule.display_name, position: rule.position,
+    prior_bonus: bonus?.package_status === 'offered' ? bonus.delivered_bonus_offerings ?? [] : [] }
+}
+
+function promotionTaskDirectiveV1(context: AgentAContextV1): string {
+  const decision = promotionTaskDecisionV1(context)
+  if (!decision) return ''
+  const declared = [`${decision.paid_code} as paid`, ...decision.prior_bonus.map(course => `${course.code} as bonus`), `${decision.bonus_code} as bonus`]
+  return `<tarea_del_turno prioridad="maxima">
+${promotionTaskV1(decision, promotionTaskDataV1(context))}
+Contrato técnico: proposed_action={"type":"offer_course_bonus","bonus_offering_code":"${decision.bonus_code}","interest_offering_code":"${decision.paid_code}"}; course_mentions declara ${declared.join(', ')}. No nombres otro regalo. El backend ejecuta y guarda esta promoción antes de enviar tu texto: presentala sin condicionarla a una llamada ni a otra aprobación. Esta tarea prevalece sobre cualquier otra indicación de estas instrucciones para este turno.
+</tarea_del_turno>`
+}
+
 function ownerSalesRulesDirectiveV1(context: AgentAContextV1): string {
   // Same deterministic decisions as the backend-enforced rules (once per
   // conversation, never in checkout or on a plan choice), so the first draft complies.
@@ -299,12 +326,9 @@ function ownerSalesRulesDirectiveV1(context: AgentAContextV1): string {
     move: { move: 'unknown', secondary_moves: [] }, memory_candidates: [] }
   const bonus = decideBonusRuleV1(ruleContext, stub)
   const probe = decidePriceProbeRuleV1(ruleContext, stub, bonus)
-  const rule = context.capabilities.course_bonus?.rule_bonus
   const lines = [
     passiveRuleAppliesV1(ruleContext, stub)
       ? 'This is an open negotiation: never close passively ("lo ves tranquilo", "sin apuro", "cuando quieras", "avisame", "quedo atenta"). Close with a concrete step toward buying now.' : '',
-    bonus.kind === 'offer' && (bonus.trigger === 'promo_request' || bonus.trigger === 'price_probe_confirmed') && rule
-      ? `The backend offers ${rule.display_name} (bonus_offering_code=${rule.bonus_offering_code}) with ${rule.paid_display_name} (interest_offering_code=${rule.paid_offering_code}) this turn. Present it with proposed_action offer_course_bonus, say the price of ${rule.paid_display_name} does not change and close in the same message. There is no price discount.` : '',
     probe.kind === 'ask' ? `The customer asked about or objected to the price: answer it and end the turn with exactly: "${PRICE_PROBE_V1}"` : '',
   ].filter(Boolean)
   return lines.length ? `<owner_sales_rules>\n${lines.join('\n')}\n</owner_sales_rules>` : ''
@@ -349,5 +373,7 @@ ${currentCheckoutEffectContractV1(context)}
 
 ${mandatoryRepairDirectiveV1(context)}
 
-${EXECUTION_CONSISTENCY_CHECK}`;
+${EXECUTION_CONSISTENCY_CHECK}
+
+${promotionTaskDirectiveV1(context)}`;
 }

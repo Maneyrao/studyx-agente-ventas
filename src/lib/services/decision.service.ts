@@ -2373,6 +2373,9 @@ export class OutboundNotFoundError extends Error {
   }
 }
 
+/** Tolerated clock difference between Botpress and this server for a receipt. */
+const DELIVERY_RECEIPT_CLOCK_SKEW_MS = 5 * 60_000;
+
 export async function recordDeliveryReport(input: DeliveryReportInput): Promise<DeliveryReportResult> {
   const semanticPayload = {
     outbound_id: input.outbound_id,
@@ -2500,9 +2503,17 @@ export async function recordDeliveryReport(input: DeliveryReportInput): Promise<
       const deliveredAt = input.delivered_at ? Date.parse(input.delivered_at) : NaN;
       if (delivery.state !== 'submitted' || !input.botpress_message_id || input.error_code
         || delivery.provider_message_id !== input.botpress_message_id || !Number.isFinite(deliveredAt)
-        || delivery.submitted_at === null || deliveredAt < new Date(delivery.submitted_at).getTime()
-        || deliveredAt > Date.now()) throw new DeliveryReportConflictError('Invalid confirmed delivery report');
-      await db`UPDATE outbound_deliveries SET state='delivered',delivered_at=${input.delivered_at!}::timestamptz
+        || delivery.submitted_at === null
+        || deliveredAt < new Date(delivery.submitted_at).getTime() - DELIVERY_RECEIPT_CLOCK_SKEW_MS
+        || deliveredAt > Date.now() + DELIVERY_RECEIPT_CLOCK_SKEW_MS) throw new DeliveryReportConflictError('Invalid confirmed delivery report');
+      // Channel acceptance is reported by Botpress right after createMessage
+      // resolves (its provider errors surface synchronously). Clocks differ
+      // between Botpress and this server: within a bounded skew, clamp the
+      // receipt to [submitted_at, now] so a later customer reply is always
+      // ordered after the confirmed delivery. Absurd timestamps stay rejected.
+      await db`UPDATE outbound_deliveries
+        SET state='delivered',
+          delivered_at=GREATEST(submitted_at, LEAST(${input.delivered_at!}::timestamptz, now()))
         WHERE id=${delivery.id}::uuid AND attempt_count=${reportedAttempt}`;
     } else if (input.status === 'submitted_to_botpress') {
       if (!input.botpress_message_id || input.error_code) throw new DeliveryReportConflictError('Invalid submitted report');

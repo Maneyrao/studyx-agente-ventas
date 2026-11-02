@@ -147,7 +147,8 @@ run('owner rules at the actual commit and transactional boundaries', () => {
     const repair = vi.fn(async () => {
       const repaired = proposal();
       repaired.move = { ...repaired.move, move: invented, secondary_moves: ['continue_by_chat'], vetoes: ['call'] };
-      repaired.response = { messages: [fixed[1]], call_offer: invitation };
+      // A rewrite that follows the owner's promotion task (2026-11-02).
+      repaired.response = { messages: ['Te lo puedo resolver: si avanzás con Introducción al Ecommerce, te bonifico Fotografía con Celulares para Tiendas Online. Avanzamos?'], call_offer: invitation };
       return generated(repaired);
     });
     const resolved = await resolveDeterministicRulesTurnV1({ context: current, initial: generated(initial), repair_enabled: true,

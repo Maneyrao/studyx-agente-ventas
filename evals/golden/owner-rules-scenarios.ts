@@ -144,3 +144,49 @@ export const OWNER_REPLAY_CASES: readonly GoldenCaseV1[] = [{
     });
   }),
 }];
+
+/** Owner conversation of 2026-11-02 17:30–17:34 (-03:00), customer inputs only,
+ * read from the owner's own test contact. Live failures: the escalation turn
+ * fell into the technical contingency and the next objection never escalated. */
+const noContingency = [{ type: 'not_contains', value: 'Qué dato o qué curso revisamos' } as const,
+  { type: 'not_contains', value: 'Qué dos cursos comparamos' } as const];
+const promotionMode = owner(66, 66, 'Promo instantánea');
+const englishTurn = (id: string, customer: string, override: Partial<GoldenTurnV1> = {}) => turn(id, customer, {
+  must: ['Responder sin silencio ni contingencia al mensaje real de este turno, conservando la intención y los hechos.'],
+  expected: { move: moves, action: allActions, state: {} },
+  hard: [{ type: 'workflow_committed' }, ...noContingency],
+  ...override,
+});
+export const OWNER_PROMOTION_MODE_REPLAY_CASES: readonly GoldenCaseV1[] = [{
+  id: '20_owner_promotion_mode_replay_20261102_1730',
+  title: 'Replay 2/11 17:30–17:34: Inglés desde cero → pedido de promo por precio → escalada con recapitulación, sin contingencia',
+  turns: [
+    englishTurn('greeting_marketing_or_english', 'buenas\nquiero info\nrespecto a los cursos de marketing o ingles'),
+    englishTurn('english_from_zero', 'para aprender idioma de cero'),
+    englishTurn('wants_to_pay', 'nono, quiero directamente pagar'),
+    englishTurn('course_and_payment', 'como son los cursos y el tema del pago'),
+    englishTurn('promo_because_expensive', 'hay bonificaciones?\no algun tipo de promocion\nporque me parece caro', {
+      must: ['Modo promoción, primera oferta: reconocer el freno del precio, decir que se lo puede resolver, presentar una promoción exclusiva (si avanza con Inglés 1, le bonifica Inglés 2) explicando por qué le suma a aprender desde cero, y cerrar con la alternativa de 12 cuotas de USD 30 o 6 de USD 60.'],
+      mustNot: ['No abrir con el precio ni con «el precio no cambia», no volver sólo a las cuotas, no comparar con gastos (comida, salidas, café), no usar frases defensivas, no más de 2 mensajes ni más de una pregunta.'],
+      authority: [promotionMode, ruleA],
+      expected: { move: moves, action: ['offer_course_bonus'], state: {
+        promotion: { status: ['offer_available'], bonusCount: [1], paidCourse: ['ingles_1'] } } },
+      hard: [{ type: 'workflow_committed' }, { type: 'rule_outcomes_recorded' }, { type: 'action_bonus_in', values: ['ingles_2'] },
+        { type: 'question_count_at_most', value: 1 }, ...noContingency],
+    }),
+    englishTurn('still_expensive_escalation', 'nono me parece caro', {
+      must: ['Modo promoción, escalada: sin repetir la pregunta del precio ni volver sólo a cuotas, sumar Inglés 3 además de Inglés 2 explicando qué le agrega, recapitular Inglés 1 + Inglés 2 + Inglés 3 por el mismo valor y cerrar con alternativa de plan.'],
+      mustNot: ['No caer en una respuesta de contingencia, no comparar con gastos, no más de una pregunta.'],
+      authority: [promotionMode, ruleA],
+      expected: { move: moves, action: ['offer_course_bonus'], state: {
+        promotion: { status: ['offer_available'], bonusCount: [2], paidCourse: ['ingles_1'] } } },
+      hard: [{ type: 'workflow_committed' }, { type: 'rule_outcomes_recorded' }, { type: 'action_bonus_in', values: ['ingles_3'] },
+        { type: 'response_mentions_all_promotions' }, { type: 'question_count_at_most', value: 1 }, ...noContingency],
+    }),
+    englishTurn('english_again', 'ignles\ningles'),
+    englishTurn('but_expensive', 'pero es caro', {
+      must: ['Responder a la nueva objeción conservando el paquete vigente; si el backend decide otra escalada, presentarla con recapitulación.'],
+      hard: [{ type: 'workflow_committed' }, { type: 'promotion_bonus_count_at_most', value: 3 }, ...noContingency],
+    }),
+  ],
+}];

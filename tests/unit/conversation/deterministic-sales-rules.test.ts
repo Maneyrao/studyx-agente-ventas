@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   BONUS_AFFINITY_TABLE_V1, agentResponseOrdinalV1, bonusFallbackMessagesV1, bonusSequenceForPaidCourseV1,
-  decideBonusRuleV1, decideCallRuleV1, draftPresentsBonusV1, nextRuleBonusCodeV1, priceExpressionHintV1,
+  decideBonusRuleV1, decideCallRuleV1, draftFulfillsPromotionTaskV1, draftPresentsBonusV1, promotionTaskV1, nextRuleBonusCodeV1, priceExpressionHintV1,
   type RuleContextV1, type RuleDraftV1,
 } from '@/shared/conversation/deterministic-sales-rules';
 
@@ -131,8 +131,13 @@ describe('Regla A — escalada', () => {
       rule_bonus: ruleFor('introduccion_ecommerce', delivered.map(c => c.code)) }), draft());
     expect(decision).toMatchObject({ kind: 'offer', trigger: 'escalation', bonus_code: 'publicidad_redes_sociales', position: 2 });
     if (decision.kind !== 'offer') throw new Error();
-    expect(bonusFallbackMessagesV1(decision)[1]).toBe('Te sumo también Publicidad en Redes Sociales. Te quedan Introducción al Ecommerce + '
-      + 'Fotografía con Celulares para Tiendas Online y Publicidad en Redes Sociales sin costo extra, al mismo precio. Avanzamos?');
+    expect(bonusFallbackMessagesV1(decision)).toEqual(['Hagamos algo más: además de Fotografía con Celulares para Tiendas Online, '
+      + 'te sumo Publicidad en Redes Sociales. Te quedan Introducción al Ecommerce + Fotografía con Celulares para Tiendas Online '
+      + 'y Publicidad en Redes Sociales por el mismo valor. Lo arrancamos en 12 cuotas de USD 30?']);
+    const data = { plan_codes: ['monthly_12', 'monthly_6', 'one_time'], customer_goal: null };
+    const fixed = draft({ proposed_action: { type: 'offer_course_bonus', bonus_offering_code: decision.bonus_code,
+      interest_offering_code: decision.paid_code }, response: { messages: bonusFallbackMessagesV1(decision, data) } });
+    expect(draftFulfillsPromotionTaskV1(fixed, decision, data)).toBe(true);
   });
   it('sin objeción nueva no escala', () => {
     expect(decideBonusRuleV1(ctx({ package_status: 'offered', delivered_bonus: delivered, batch_texts: ['ok'] }), draft({ memory: [] })))
@@ -196,11 +201,49 @@ describe('Regla A — redacción y respaldo', () => {
       interest_offering_code: rule.paid_code }, response: { messages: [`Te quedan ${rule.paid_name} + Inglés 10 + ${rule.bonus_name}.`] } });
     expect(draftPresentsBonusV1(presented, rule)).toBe(false);
   });
-  it('respaldo fijo: dos burbujas con el texto del dueño', () => {
+  it('respaldo fijo: un mensaje con el texto del dueño (modo promoción)', () => {
     expect(bonusFallbackMessagesV1(decision)).toEqual([
-      'Dejame revisar qué te puedo ofrecer, dame un segundo.',
-      'Te puedo sumar Fotografía con Celulares para Tiendas Online sin costo; el precio de Introducción al Ecommerce sigue igual. Avanzamos?',
+      'Te lo puedo resolver. Tengo una promoción para vos: si avanzás con Introducción al Ecommerce, te bonifico '
+      + 'Fotografía con Celulares para Tiendas Online, así seguís avanzando sin pagar otro curso. '
+      + 'Lo arrancamos en 12 cuotas de USD 30 o en 6 de USD 60?',
     ]);
+  });
+  const data = { plan_codes: ['monthly_12', 'monthly_6', 'one_time'], customer_goal: 'vender en su tienda online' };
+  const action = { type: 'offer_course_bonus', bonus_offering_code: decision.bonus_code, interest_offering_code: decision.paid_code };
+  const said = (...messages: string[]) => draft({ proposed_action: action, response: { messages } });
+  it('tarea del turno: primera oferta con datos reales y prohibiciones', () => {
+    const task = promotionTaskV1(decision, data);
+    expect(task).toContain('PROMOCIÓN EXCLUSIVA');
+    expect(task).toContain('si avanza con Introducción al Ecommerce, le bonificás Fotografía con Celulares para Tiendas Online');
+    expect(task).toContain('(vender en su tienda online)');
+    expect(task).toContain('12 cuotas de USD 30 o 6 de USD 60');
+    expect(task).toContain('Máximo 2 mensajes y una sola pregunta');
+  });
+  it('tarea del turno: escalada recapitula el paquete completo', () => {
+    const prior = [{ code: 'fotografia_celulares_tiendas_online', display_name: 'Fotografía con Celulares para Tiendas Online' }];
+    const up = decideBonusRuleV1(ctx({ package_status: 'offered', delivered_bonus: prior,
+      rule_bonus: ruleFor('introduccion_ecommerce', prior.map(course => course.code)) }), draft());
+    if (up.kind !== 'offer') throw new Error('expected escalation');
+    const task = promotionTaskV1(up, data);
+    expect(task).toContain('Ya le ofreciste Fotografía con Celulares para Tiendas Online con Introducción al Ecommerce');
+    expect(task).toContain('le sumás Publicidad en Redes Sociales');
+    expect(task).toContain('Introducción al Ecommerce + Fotografía con Celulares para Tiendas Online y Publicidad en Redes Sociales por el mismo valor');
+  });
+  it('cumplimiento: acepta la redacción que sigue la tarea', () => {
+    expect(draftFulfillsPromotionTaskV1(said('Es una inversión importante y está bien que lo mires así. Te lo puedo resolver.',
+      'Tengo una promoción exclusiva para vos: si avanzás con Introducción al Ecommerce, te bonifico Fotografía con Celulares para Tiendas Online, '
+      + 'así tus productos se ven mejor en tu tienda. Lo arrancamos en 12 cuotas de USD 30 o en 6 de USD 60?'), decision, data)).toBe(true);
+  });
+  it.each([
+    ['abre con el precio', ['El precio de Introducción al Ecommerce no cambia, pero te sumo Fotografía con Celulares para Tiendas Online. Arrancamos en 12 cuotas?']],
+    ['abre con te entiendo', ['Te entiendo. Te sumo Fotografía con Celulares para Tiendas Online. Arrancamos en 12 cuotas?']],
+    ['compara con gastos', ['Te sumo Fotografía con Celulares para Tiendas Online, son 12 cuotas de USD 30, menos que una salida a comer. Arrancamos?']],
+    ['dos preguntas', ['Te sumo Fotografía con Celulares para Tiendas Online. Te suma? Arrancamos en 12 cuotas?']],
+    ['tres mensajes', ['Te lo resuelvo.', 'Te sumo Fotografía con Celulares para Tiendas Online.', 'Arrancamos en 12 cuotas?']],
+    ['sin alternativa de plan', ['Te lo resuelvo: te sumo Fotografía con Celulares para Tiendas Online. Avanzamos?']],
+    ['frase defensiva', ['Es lo que hay, pero te sumo Fotografía con Celulares para Tiendas Online. Arrancamos en 12 cuotas?']],
+  ])('cumplimiento: rechaza %s', (_label, messages) => {
+    expect(draftFulfillsPromotionTaskV1(said(...messages), decision, data)).toBe(false);
   });
 });
 

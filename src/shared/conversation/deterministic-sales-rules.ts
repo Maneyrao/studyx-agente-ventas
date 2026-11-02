@@ -422,17 +422,87 @@ export function draftPresentsBonusV1(draft: RuleDraftV1, decision: Extract<Bonus
 
 export const BONUS_FALLBACK_PAUSE_MS_V1 = 20_000;
 
-/** Fixed fallback bubbles (owner wording, 2026-11-02). Replace the whole turn. */
-export function bonusFallbackMessagesV1(decision: Extract<BonusRuleDecisionV1, { kind: 'offer' }>): [string, string] {
-  if (decision.prior_bonus.length === 0) return [
-    'Dejame revisar qué te puedo ofrecer, dame un segundo.',
-    `Te puedo sumar ${decision.bonus_name} sin costo; el precio de ${decision.paid_name} sigue igual. Avanzamos?`,
-  ];
-  const bonuses = [...decision.prior_bonus.map(course => course.display_name), decision.bonus_name];
-  const list = bonuses.length === 1 ? bonuses[0] : `${bonuses.slice(0, -1).join(', ')} y ${bonuses[bonuses.length - 1]}`;
+/** Owner "modo promoción" (2026-11-02, third revision). In a Rule A turn the
+ * model receives one short, concrete task at the end of its instructions
+ * instead of competing with the whole guide. Data come from the backend. */
+export interface PromotionTaskDataV1 {
+  /** Configured payment plan codes (monthly_12, monthly_6, one_time). */
+  readonly plan_codes: readonly string[];
+  /** Customer's own goal from durable memory, if any. */
+  readonly customer_goal: string | null;
+}
+
+function joinNamesV1(names: readonly string[]): string {
+  return names.length <= 1 ? (names[0] ?? '') : `${names.slice(0, -1).join(', ')} y ${names[names.length - 1]}`;
+}
+
+function planAlternativeV1(plans: readonly string[]): string | null {
+  if (plans.includes('monthly_12') && plans.includes('monthly_6')) return '12 cuotas de USD 30 o 6 de USD 60';
+  if (plans.includes('monthly_12')) return '12 cuotas de USD 30';
+  return null;
+}
+
+const PROMOTION_TASK_PROHIBITIONS_V1 = 'Prohibido: abrir con el precio o con «el precio no cambia», volver sólo a las cuotas, comparaciones con gastos (comida, salidas, café), frases defensivas. Máximo 2 mensajes y una sola pregunta.';
+
+export function promotionTaskV1(decision: Extract<BonusRuleDecisionV1, { kind: 'offer' }>, data: PromotionTaskDataV1): string {
+  const plans = planAlternativeV1(data.plan_codes);
+  const close = plans ? `Cerrá con alternativa de plan: ${plans}.` : 'Cerrá con una alternativa concreta para avanzar.';
+  if (decision.prior_bonus.length === 0) {
+    const goal = data.customer_goal ?? 'lo que el cliente te contó que busca';
+    return [
+      'El cliente te dijo que el precio es su freno. En este turno:',
+      '1) Reconocelo en una frase, con empatía y seguridad (sin «te entiendo» de muletilla, sin defenderte).',
+      '2) Decile que se lo podés resolver.',
+      `3) Presentale una PROMOCIÓN EXCLUSIVA para él: si avanza con ${decision.paid_name}, le bonificás ${decision.bonus_name}. Explicá en una frase por qué le suma a su objetivo (${goal}).`,
+      `4) ${close}`,
+      PROMOTION_TASK_PROHIBITIONS_V1,
+    ].join('\n');
+  }
+  const prior = joinNamesV1(decision.prior_bonus.map(course => course.display_name));
+  const all = joinNamesV1([...decision.prior_bonus.map(course => course.display_name), decision.bonus_name]);
   return [
-    'Dejame revisar qué te puedo ofrecer, dame un segundo.',
-    `Te sumo también ${decision.bonus_name}. Te quedan ${decision.paid_name} + ${list} sin costo extra, al mismo precio. Avanzamos?`,
+    `Ya le ofreciste ${prior} con ${decision.paid_name} y el precio lo sigue frenando. En este turno:`,
+    '1) No repitas la pregunta del precio ni vuelvas sólo a cuotas.',
+    `2) Subí la apuesta: además de ${prior}, le sumás ${decision.bonus_name}, y explicá en una frase qué le agrega.`,
+    `3) Recapitulá el paquete completo: ${decision.paid_name} + ${all} por el mismo valor.`,
+    `4) ${close}`,
+    `Mismas prohibiciones: ${PROMOTION_TASK_PROHIBITIONS_V1}`,
+  ].join('\n');
+}
+
+/** Safety net only (owner): the task, not this list, is the solution. */
+const EXPENSE_COMPARISON = /\b(?:salida|salidas|salir a comer|comida|comidas|comer afuera|cafe|cafes|cafecito|pizza|cerveza|birra|netflix|delivery|almuerzo|cena|gaseosa|golosina)\b/u;
+const DEFENSIVE = /\b(?:no te (?:lo )?puedo (?:bajar|rebajar|ofrecer|hacer)|es lo que hay|no (?:te )?(?:lo )?voy a inventar|no hay descuento|no puedo bajar)\b/u;
+const PRICE_OPENING = /^\W*(?:el (?:precio|valor|costo|total|monto)|los usd|son (?:usd|u\$s|\d)|usd|\d)/u;
+const PRICE_UNCHANGED = /\b(?:precio|valor|total)\b[^.!?]*\b(?:no cambia|sigue igual|sigue siendo|no baja|se mantiene)\b/u;
+
+/** Literal check of the owner's task: the decided effect and identities, at
+ * most 2 messages and one question, a plan alternative, and none of the
+ * forbidden openings/comparisons/defensive phrases. */
+export function draftFulfillsPromotionTaskV1(draft: RuleDraftV1, decision: Extract<BonusRuleDecisionV1, { kind: 'offer' }>,
+  data: PromotionTaskDataV1): boolean {
+  if (!draftPresentsBonusV1(draft, decision)) return false;
+  const messages = draft.response.messages;
+  if (messages.length === 0 || messages.length > 2) return false;
+  const text = normalizedVisible(messages.join(' '));
+  if ((text.match(/\?/gu) ?? []).length > 1) return false;
+  const opening = normalizedVisible(messages[0]!).split(/(?<=[.!?])\s+|\n+/u)[0] ?? '';
+  if (/^\W*te entiendo\b/u.test(opening) || PRICE_OPENING.test(opening) || PRICE_UNCHANGED.test(opening)) return false;
+  if (EXPENSE_COMPARISON.test(text) || DEFENSIVE.test(text)) return false;
+  return planAlternativeV1(data.plan_codes) === null || /\bcuotas?\b/u.test(text);
+}
+
+/** Fixed fallback (owner wording, 2026-11-02 third revision). Replaces the whole turn. */
+export function bonusFallbackMessagesV1(decision: Extract<BonusRuleDecisionV1, { kind: 'offer' }>,
+  data: PromotionTaskDataV1 = { plan_codes: ['monthly_12', 'monthly_6'], customer_goal: null }): [string] {
+  const plans = planAlternativeV1(data.plan_codes);
+  if (decision.prior_bonus.length === 0) return [
+    `Te lo puedo resolver. Tengo una promoción para vos: si avanzás con ${decision.paid_name}, te bonifico ${decision.bonus_name}, así seguís avanzando sin pagar otro curso. ${plans ? `Lo arrancamos en ${plans.replace(' o 6 ', ' o en 6 ')}?` : 'Avanzamos?'}`,
+  ];
+  const prior = joinNamesV1(decision.prior_bonus.map(course => course.display_name));
+  const all = joinNamesV1([...decision.prior_bonus.map(course => course.display_name), decision.bonus_name]);
+  return [
+    `Hagamos algo más: además de ${prior}, te sumo ${decision.bonus_name}. Te quedan ${decision.paid_name} + ${all} por el mismo valor. ${data.plan_codes.includes('monthly_12') ? 'Lo arrancamos en 12 cuotas de USD 30?' : 'Avanzamos?'}`,
   ];
 }
 

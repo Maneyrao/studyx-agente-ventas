@@ -51,7 +51,7 @@ import {
 } from './runner-support';
 import { GOLDEN_BASE_SHA, GOLDEN_CASES, type GoldenCaseV1 } from './scenarios';
 import { selectGoldenCasesV1 } from './run-config.mjs';
-import { OWNER_GOLDEN_CASES, OWNER_REPLAY_CASES } from './owner-rules-scenarios';
+import { OWNER_GOLDEN_CASES, OWNER_PROMOTION_MODE_REPLAY_CASES, OWNER_REPLAY_CASES } from './owner-rules-scenarios';
 
 const live = process.env.STUDYX_GOLDEN_LIVE === 'true' ? describe : describe.skip;
 const databaseUrl = process.env.TEST_DATABASE_URL ?? '';
@@ -62,7 +62,7 @@ const providerBaseUrl = process.env.STUDYX_GOLDEN_PROVIDER_BASE_URL ?? 'https://
 const providerModel = process.env.STUDYX_GOLDEN_PROVIDER_MODEL ?? model;
 const judgeModel = process.env.STUDYX_GOLDEN_JUDGE_MODEL ?? 'deepseek-v4-flash';
 const selectedCases = process.env.STUDYX_GOLDEN_CASE_IDS === undefined ? GOLDEN_CASES
-  : selectGoldenCasesV1(process.env.STUDYX_GOLDEN_CASE_IDS, [...GOLDEN_CASES, ...OWNER_GOLDEN_CASES, ...OWNER_REPLAY_CASES]);
+  : selectGoldenCasesV1(process.env.STUDYX_GOLDEN_CASE_IDS, [...GOLDEN_CASES, ...OWNER_GOLDEN_CASES, ...OWNER_REPLAY_CASES, ...OWNER_PROMOTION_MODE_REPLAY_CASES]);
 const isFullSuite = selectedCases.length === GOLDEN_CASES.length
   && selectedCases.every(scenario => GOLDEN_CASES.some(original => original.id === scenario.id));
 const expectedTurns = selectedCases.reduce((count, scenario) => count + scenario.turns.length, 0);
@@ -178,8 +178,16 @@ function identity(caseId: string) {
   };
 }
 
+/** The workflow itself reports channel acceptance as the delivery receipt
+ * (2026-11-02). The harness only fills a gap for a bubble the workflow left
+ * `submitted` (for example a stopped turn); it never overwrites a receipt, so
+ * the live path is what later turns observe. */
 async function acknowledgeDelivery(evidence: WorkflowTurnEvidenceV1): Promise<void> {
   for (const target of deliveryAcknowledgementTargetsV1(evidence.adapterCaptures)) {
+    const [current] = await db<Array<{ state: string }>>`
+      SELECT state FROM outbound_deliveries WHERE message_id=${target.outboundId}::uuid`;
+    if (current?.state !== 'submitted') continue;
+    console.warn(`[golden] workflow left outbound ${target.outboundId} submitted; harness acknowledged it`);
     await recordDeliveryReportFn({
       outbound_id: target.outboundId,
       trace_id: evidence.traceId,
