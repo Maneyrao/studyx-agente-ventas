@@ -111,7 +111,10 @@ describe('Regla A — disparador', () => {
     expect(decideBonusRuleV1(ctx({ bonus_enabled: false }), draft())).toMatchObject({ reason: 'bonus_disabled' });
     expect(decideBonusRuleV1(ctx({ payment_paid: true }), draft())).toMatchObject({ reason: 'paid' });
     expect(decideBonusRuleV1(ctx({ stage: 'payment_link_sent' }), draft())).toMatchObject({ reason: 'checkout' });
-    expect(decideBonusRuleV1(ctx({ awaiting_reply: 'contact_details' }), draft())).toMatchObject({ reason: 'checkout' });
+    // Data collection stays checkout unless this message interrupts it with a price/promo (owner, 2026-11-02).
+    expect(decideBonusRuleV1(ctx({ awaiting_reply: 'contact_details', batch_texts: ['Ana Pérez, ana@mail.com'] }), draft()))
+      .toMatchObject({ reason: 'checkout' });
+    expect(decideBonusRuleV1(ctx({ awaiting_reply: 'payment_plan' }), draft())).toMatchObject({ reason: 'checkout' });
     expect(decideBonusRuleV1(ctx(), draft({ proposed_action: { type: 'send_payment_link' } }))).toMatchObject({ reason: 'checkout' });
     expect(decideBonusRuleV1(ctx({ package_status: 'accepted' }), draft())).toMatchObject({ reason: 'package_accepted' });
   });
@@ -234,7 +237,12 @@ describe('Regla A — redacción y respaldo', () => {
       'Tengo una promoción exclusiva para vos: si avanzás con Introducción al Ecommerce, te bonifico Fotografía con Celulares para Tiendas Online, '
       + 'así tus productos se ven mejor en tu tienda. Lo arrancamos en 12 cuotas de USD 30 o en 6 de USD 60?'), decision, data)).toBe(true);
   });
+  it('cumplimiento: «salida laboral», «12 pagos de USD 30» y «no solo X» no son fallas', () => {
+    expect(draftFulfillsPromotionTaskV1(said('Te lo puedo resolver: si avanzás con Introducción al Ecommerce te bonifico '
+      + 'Fotografía con Celulares para Tiendas Online, que te abre otra salida laboral. Arrancamos en 12 pagos de USD 30?'), decision, data)).toBe(true);
+  });
   it.each([
+    ['inventa un descuento', ['Te hago un 20% de descuento y te sumo Fotografía con Celulares para Tiendas Online. Arrancamos en 12 cuotas?']],
     ['abre con el precio', ['El precio de Introducción al Ecommerce no cambia, pero te sumo Fotografía con Celulares para Tiendas Online. Arrancamos en 12 cuotas?']],
     ['abre con te entiendo', ['Te entiendo. Te sumo Fotografía con Celulares para Tiendas Online. Arrancamos en 12 cuotas?']],
     ['compara con gastos', ['Te sumo Fotografía con Celulares para Tiendas Online, son 12 cuotas de USD 30, menos que una salida a comer. Arrancamos?']],
@@ -308,7 +316,7 @@ describe('dueño — promo o descuento habilita la oferta al instante', () => {
       .toMatchObject({ kind: 'offer', trigger: 'escalation', bonus_code: 'publicidad_redes_sociales' });
   });
   it('nunca con la bonificación deshabilitada, pagado o en checkout', () => {
-    for (const patch of [{ bonus_enabled: false }, { payment_paid: true }, { awaiting_reply: 'contact_details' }])
+    for (const patch of [{ bonus_enabled: false }, { payment_paid: true }, { awaiting_reply: 'payment_plan' }])
       expect(decideBonusRuleV1(ctx({ ...patch, batch_texts: ['descuento?'] }), draft({ memory: [] })).kind).toBe('none');
   });
 });
@@ -423,5 +431,30 @@ describe('dueño — objeción literal después de una oferta escala (golden rea
   it('una pregunta o una negación no escalan', () => {
     for (const t of ['es caro?', 'no es caro'])
       expect(decideBonusRuleV1(offered(t), draft({ memory: [] })).kind).toBe('none');
+  });
+});
+
+describe('Modo promoción — toma de datos interrumpida (dueño 2026-11-02)', () => {
+  const collecting = { stage: 'course_selected', awaiting_reply: 'contact_details', payment_link_request_pending: true };
+  it('un pedido de promo por precio durante la toma de datos dispara la oferta', () => {
+    const decision = decideBonusRuleV1(ctx({ ...collecting,
+      batch_texts: ['hay bonificaciones?', 'o algun tipo de promocion', 'porque me parece caro'] }), draft({ memory: [] }));
+    expect(decision).toMatchObject({ kind: 'offer', trigger: 'promo_request' });
+  });
+  it.each([
+    ['dato de contacto', ['me llamo Ana Pérez, ana@mail.com']],
+    ['intención de compra', ['es caro pero dale, pasame el link']],
+    ['elección de plan', ['me parece caro, voy con 12 cuotas']],
+  ])('%s mantiene el checkout', (_label, batch_texts) => {
+    expect(decideBonusRuleV1(ctx({ ...collecting, batch_texts }), draft({ memory: [] })))
+      .toMatchObject({ kind: 'none' });
+  });
+  it.each(['payment_plan', 'payment_confirmation'])('no interrumpe %s', awaiting_reply => {
+    expect(decideBonusRuleV1(ctx({ ...collecting, awaiting_reply, batch_texts: ['tenés alguna promo? me parece caro'] }),
+      draft({ memory: [] }))).toMatchObject({ kind: 'none', reason: 'checkout' });
+  });
+  it('no interrumpe con el link ya enviado', () => {
+    expect(decideBonusRuleV1(ctx({ ...collecting, stage: 'payment_link_sent', batch_texts: ['hay promo? es caro'] }),
+      draft({ memory: [] }))).toMatchObject({ kind: 'none', reason: 'checkout' });
   });
 });

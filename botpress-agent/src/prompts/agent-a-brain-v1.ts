@@ -1,4 +1,4 @@
-import { PRICE_PROBE_V1, decideBonusRuleV1, decidePriceProbeRuleV1, passiveRuleAppliesV1, priceExpressionHintV1, promotionTaskV1, type BonusRuleDecisionV1 } from '../../../src/shared/conversation/deterministic-sales-rules';
+import { PRICE_PROBE_V1, decideBonusRuleV1, decidePriceProbeRuleV1, passiveRuleAppliesV1, planChoiceV1, priceExpressionHintV1, promotionTaskV1, purchaseIntentV1, type BonusRuleDecisionV1 } from '../../../src/shared/conversation/deterministic-sales-rules';
 import { promotionTaskDataV1, ruleContextFromAgentAContextV1 } from '../lib/conversation/deterministic-rules-turn';
 import type { AgentAContextV1 } from '../schemas/agent-a-brain';
 import {
@@ -295,6 +295,9 @@ Before returning AgentATurnProposalV1, make response, move, profile metadata and
  * for this turn (literal trigger before generation, or BONUS_OFFER_REQUIRED on
  * the rewrite). The model gets ONE short task, last in its instructions. */
 export function promotionTaskDecisionV1(context: AgentAContextV1): Extract<BonusRuleDecisionV1, { kind: 'offer' }> | null {
+  // A purchase intent or plan choice goes to checkout (the live offer is
+  // attached automatically); never push an escalation over it.
+  if (context.turn.batch_messages.some(message => purchaseIntentV1(message.text) || planChoiceV1(message.text))) return null
   const stub = { response: { messages: ['.'] }, proposed_action: { type: 'none' },
     move: { move: 'unknown', secondary_moves: [] }, memory_candidates: [] }
   const decided = decideBonusRuleV1(ruleContextFromAgentAContextV1(context), stub)

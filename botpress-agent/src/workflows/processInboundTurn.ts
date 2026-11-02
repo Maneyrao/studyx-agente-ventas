@@ -3123,8 +3123,9 @@ export const processInboundTurn = new Workflow({
         await step(name, () => reportDelivery.execute({ client, input: {
           outbound_id: outboundId, trace_id: input.trace_id, status: 'delivered',
           botpress_message_id: botpressMessageId, replayed: false, error_code: null,
-          delivery_attempt: deliveryAttempt, delivered_at: new Date().toISOString(),
-        } }), { maxAttempts: 1 })
+          // No timestamp: the backend stamps submitted_at, so a retry is an exact replay.
+          delivery_attempt: deliveryAttempt, delivered_at: null,
+        } }), { maxAttempts: 3 })
       } catch (error) {
         if (isTurnEvidencePersistenceError(error)) throw error
         if (!(error instanceof Error)) throw error
@@ -3297,6 +3298,8 @@ export const processInboundTurn = new Workflow({
         }
 
         let delivery: Submission
+        // createMessage threw: never treat that bubble as accepted by the channel.
+        let heldAmbiguousPart = false
         try {
           if (outboundPart.part_index === 0) {
             await waitForNaturalWhatsAppReply(outboundPart.id)
@@ -3368,6 +3371,7 @@ export const processInboundTurn = new Workflow({
             })
             emitTimings()
             delivery = await holdAmbiguousSubmission(outboundPart)
+            heldAmbiguousPart = true
           } else {
           state.deliveryStatus = 'failed'
           try {
@@ -3433,7 +3437,7 @@ export const processInboundTurn = new Workflow({
               },
             }),
           )
-        await reportChannelAcceptance(`report-channel-acceptance-part-${outboundPart.part_index}`,
+        if (!heldAmbiguousPart) await reportChannelAcceptance(`report-channel-acceptance-part-${outboundPart.part_index}`,
           outboundPart.id, delivery.message.id, outboundPart.delivery_attempt)
         lastBotpressMessageId = delivery.message.id
         submittedPartsThisRun += 1
@@ -3537,6 +3541,7 @@ export const processInboundTurn = new Workflow({
 
     // ---- Paso 11: un único envío físico ----------------------------------
     let delivery: Submission
+    let heldAmbiguousSingle = false
     const sendStartedAt = Date.now()
     try {
       await waitForNaturalWhatsAppReply(committed.outbound.id)
@@ -3616,6 +3621,7 @@ export const processInboundTurn = new Workflow({
         })
         emitTimings()
         delivery = await holdAmbiguousSubmission(committed.outbound)
+        heldAmbiguousSingle = true
       } else {
       state.deliveryStatus = 'failed'
 
@@ -3678,7 +3684,7 @@ export const processInboundTurn = new Workflow({
             },
           }),
       )
-    await reportChannelAcceptance('report-channel-acceptance', committed.outbound.id,
+    if (!heldAmbiguousSingle) await reportChannelAcceptance('report-channel-acceptance', committed.outbound.id,
       delivery.message.id, committed.outbound.delivery_attempt)
       timings.delivery_report_ms = Date.now() - reportStartedAt
 

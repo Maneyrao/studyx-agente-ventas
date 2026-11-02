@@ -2500,12 +2500,17 @@ export async function recordDeliveryReport(input: DeliveryReportInput): Promise<
     }
 
     if (input.status === 'delivered') {
-      const deliveredAt = input.delivered_at ? Date.parse(input.delivered_at) : NaN;
+      // A channel-acceptance receipt (Botpress, right after createMessage)
+      // carries no time: it is stamped with submitted_at, so retries keep the
+      // same payload and a fast customer reply stays ordered after it.
+      const acceptance = input.delivered_at == null;
+      const deliveredAt = acceptance ? NaN : Date.parse(input.delivered_at!);
       if (delivery.state !== 'submitted' || !input.botpress_message_id || input.error_code
-        || delivery.provider_message_id !== input.botpress_message_id || !Number.isFinite(deliveredAt)
+        || delivery.provider_message_id !== input.botpress_message_id
         || delivery.submitted_at === null
-        || deliveredAt < new Date(delivery.submitted_at).getTime() - DELIVERY_RECEIPT_CLOCK_SKEW_MS
-        || deliveredAt > Date.now() + DELIVERY_RECEIPT_CLOCK_SKEW_MS) throw new DeliveryReportConflictError('Invalid confirmed delivery report');
+        || (!acceptance && (!Number.isFinite(deliveredAt)
+          || deliveredAt < new Date(delivery.submitted_at).getTime() - DELIVERY_RECEIPT_CLOCK_SKEW_MS
+          || deliveredAt > Date.now() + DELIVERY_RECEIPT_CLOCK_SKEW_MS))) throw new DeliveryReportConflictError('Invalid confirmed delivery report');
       // Channel acceptance is reported by Botpress right after createMessage
       // resolves (its provider errors surface synchronously). Clocks differ
       // between Botpress and this server: within a bounded skew, clamp the
@@ -2513,7 +2518,7 @@ export async function recordDeliveryReport(input: DeliveryReportInput): Promise<
       // ordered after the confirmed delivery. Absurd timestamps stay rejected.
       await db`UPDATE outbound_deliveries
         SET state='delivered',
-          delivered_at=GREATEST(submitted_at, LEAST(${input.delivered_at!}::timestamptz, now()))
+          delivered_at=GREATEST(submitted_at, LEAST(COALESCE(${input.delivered_at ?? null}::timestamptz, submitted_at), now()))
         WHERE id=${delivery.id}::uuid AND attempt_count=${reportedAttempt}`;
     } else if (input.status === 'submitted_to_botpress') {
       if (!input.botpress_message_id || input.error_code) throw new DeliveryReportConflictError('Invalid submitted report');

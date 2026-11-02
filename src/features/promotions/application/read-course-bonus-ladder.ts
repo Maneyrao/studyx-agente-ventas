@@ -95,7 +95,7 @@ export async function readCourseBonusLadderV1(input: {
       AND prior.direction='outbound' AND prior.created_at < current.created_at
     ORDER BY prior.created_at DESC LIMIT 3`;
   const inCheckout = isBonusCheckoutStateV1({ stage: state.stage, awaiting_reply: state.awaiting_reply,
-    payment_link_request_pending: false }) || state.payment_reported_at !== null || row.payment_reported;
+    payment_link_request_pending: false }, row.customer_messages) || state.payment_reported_at !== null || row.payment_reported;
   const [liveOffer] = await db<Array<{ live: boolean }>>`
     SELECT EXISTS(SELECT 1 FROM promotion_offers o WHERE o.conversation_id=${input.conversation_id}::uuid
       AND o.contact_id=${input.contact_id}::uuid AND o.package_mode='direct' AND o.status='offered') live`;

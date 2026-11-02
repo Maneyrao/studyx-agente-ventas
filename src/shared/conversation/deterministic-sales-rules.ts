@@ -326,15 +326,37 @@ export function draftConfirmsPriceOnlyBarrierV1(draft: RuleDraftV1, batch: reado
     && candidate.key === 'price_only_barrier' && candidate.value === 'confirmed' && priceObservationQuoteInBatchV1(candidate.source_quote, batch));
 }
 
+/** Owner (2026-11-02, promotion mode): while the agent is only collecting
+ * contact data (no link sent, no plan chosen), a literal promo request or price
+ * objection in this customer message interrupts that checkout for Rule A. A
+ * purchase intent or plan choice in the same message keeps checkout. */
+export function bonusInterruptsDataCollectionV1(context: {
+  readonly stage: string; readonly awaiting_reply: string;
+}, batch: readonly string[] | undefined): boolean {
+  if (!batch?.length || ['payment_link_sent', 'closed', 'handoff'].includes(context.stage)) return false;
+  if (context.awaiting_reply !== 'contact_details' && context.awaiting_reply !== 'none') return false;
+  if (batch.some(text => purchaseIntentV1(text) || planChoiceV1(text))) return false;
+  return batch.some(text => promoRequestV1(text) || priceExpressionHintV1(text));
+}
+
 export function isBonusCheckoutStateV1(context: {
   readonly stage: string; readonly awaiting_reply: string; readonly payment_link_request_pending: boolean;
-}): boolean {
+}, batch?: readonly string[]): boolean {
+  if (bonusInterruptsDataCollectionV1(context, batch)) return false;
   return ['payment_link_sent', 'closed', 'handoff'].includes(context.stage)
     || context.payment_link_request_pending || CHECKOUT_AWAITING.has(context.awaiting_reply);
 }
 
-export function isCheckoutV1(context: Pick<RuleContextV1, 'stage' | 'awaiting_reply' | 'payment_link_request_pending'>, draft?: RuleDraftV1): boolean {
-  if (isBonusCheckoutStateV1(context)) return true;
+export function isCheckoutV1(context: Pick<RuleContextV1, 'stage' | 'awaiting_reply' | 'payment_link_request_pending'>, draft?: RuleDraftV1,
+  bonusBatch?: readonly string[]): boolean {
+  const interrupted = bonusInterruptsDataCollectionV1(context, bonusBatch);
+  if (isBonusCheckoutStateV1(context, bonusBatch)) return true;
+  if (interrupted && draft) {
+    // Collecting data is interrupted; only an actual link/plan/payment effect is checkout.
+    const moves = draftMoves(draft);
+    return [...moves].some(move => CHECKOUT_MOVES.has(move) && move !== 'provide_contact_details')
+      || ['send_payment_link', 'send_test_payment_link', 'accept_promotion'].includes(draft.proposed_action.type);
+  }
   if (!draft) return false;
   const moves = draftMoves(draft);
   return [...moves].some(move => CHECKOUT_MOVES.has(move))
@@ -351,7 +373,7 @@ export type BonusRuleDecisionV1 =
 export function decideBonusRuleV1(context: RuleContextV1, draft: RuleDraftV1): BonusRuleDecisionV1 {
   if (!context.bonus_enabled) return { kind: 'none', reason: 'bonus_disabled' };
   if (context.payment_paid) return { kind: 'none', reason: 'paid' };
-  if (isCheckoutV1(context, draft)) return { kind: 'none', reason: 'checkout' };
+  if (isCheckoutV1(context, draft, context.batch_texts)) return { kind: 'none', reason: 'checkout' };
   if (context.package_status === 'accepted' || context.package_status === 'attached') return { kind: 'none', reason: 'package_accepted' };
   const currentObjection = draftRecordsPriceObjectionV1(draft, context.batch_texts);
   const currentPriceOnly = draftConfirmsPriceOnlyBarrierV1(draft, context.batch_texts);
@@ -398,7 +420,9 @@ function positivelyNamesCourse(messages: readonly string[], name: string): boole
     for (let start = 0; start + course.length <= tokens.length; start += 1) {
       if (!course.every((word, part) => word === tokens[start + part])) continue;
       const prefix = tokens.slice(Math.max(0, start - 4), start);
-      const negatedBefore = prefix.some((word, position) => ['no', 'ni', 'nunca', 'tampoco', 'excepto'].includes(word)
+      const negatedBefore = prefix.some((word, position) => (['no', 'ni', 'nunca', 'tampoco', 'excepto'].includes(word)
+        // "no solo X, también Y" keeps X included.
+        && !(word === 'no' && ['solo', 'solamente', 'unicamente'].includes(prefix[position + 1] ?? '')))
         || word === 'sin' && !['costo', 'coste', 'cargo'].includes(prefix[position + 1] ?? ''));
       const after = tokens.slice(start + course.length);
       const negatedAfter = after[0] === 'no' && (after.length === 1 || ['esta', 'va', 'entra', 'queda', 'se'].includes(after[1]));
@@ -471,7 +495,8 @@ export function promotionTaskV1(decision: Extract<BonusRuleDecisionV1, { kind: '
 }
 
 /** Safety net only (owner): the task, not this list, is the solution. */
-const EXPENSE_COMPARISON = /\b(?:salida|salidas|salir a comer|comida|comidas|comer afuera|cafe|cafes|cafecito|pizza|cerveza|birra|netflix|delivery|almuerzo|cena|gaseosa|golosina)\b/u;
+const EXPENSE_COMPARISON = /\b(?:(?:una|un par de|dos) salidas?|salida a comer|salir a comer|comer afuera|una comida|una cena|un almuerzo|un cafe|cafes|cafecito|pizza|cerveza|birra|netflix|delivery|gaseosa|golosina)\b/u;
+const DISCOUNT_CLAIM = /(?:\b(?:descuento|descontamos|rebaja|rebajado|precio especial|mas barato)\b|\d\s?%)/u;
 const DEFENSIVE = /\b(?:no te (?:lo )?puedo (?:bajar|rebajar|ofrecer|hacer)|es lo que hay|no (?:te )?(?:lo )?voy a inventar|no hay descuento|no puedo bajar)\b/u;
 const PRICE_OPENING = /^\W*(?:el (?:precio|valor|costo|total|monto)|los usd|son (?:usd|u\$s|\d)|usd|\d)/u;
 const PRICE_UNCHANGED = /\b(?:precio|valor|total)\b[^.!?]*\b(?:no cambia|sigue igual|sigue siendo|no baja|se mantiene)\b/u;
@@ -488,8 +513,8 @@ export function draftFulfillsPromotionTaskV1(draft: RuleDraftV1, decision: Extra
   if ((text.match(/\?/gu) ?? []).length > 1) return false;
   const opening = normalizedVisible(messages[0]!).split(/(?<=[.!?])\s+|\n+/u)[0] ?? '';
   if (/^\W*te entiendo\b/u.test(opening) || PRICE_OPENING.test(opening) || PRICE_UNCHANGED.test(opening)) return false;
-  if (EXPENSE_COMPARISON.test(text) || DEFENSIVE.test(text)) return false;
-  return planAlternativeV1(data.plan_codes) === null || /\bcuotas?\b/u.test(text);
+  if (EXPENSE_COMPARISON.test(text) || DEFENSIVE.test(text) || DISCOUNT_CLAIM.test(text)) return false;
+  return planAlternativeV1(data.plan_codes) === null || /\b(?:cuotas?|pagos? (?:mensuales|de usd))\b/u.test(text);
 }
 
 /** Fixed fallback (owner wording, 2026-11-02 third revision). Replaces the whole turn. */

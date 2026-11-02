@@ -584,7 +584,8 @@ export function authorizeAgentTurnV2(input: {
     const escalationWithoutNewObjection = (cap?.bonus_offerings.length ?? 0) > 0
       && !currentObjection && !currentPriceOnly && !instant;
     const checkout = isCheckoutV1({ stage: state.stage, awaiting_reply: state.awaiting_reply,
-      payment_link_request_pending: state.payment_link_request?.status === 'pending' }, draftEvidence);
+      payment_link_request_pending: state.payment_link_request?.status === 'pending' }, draftEvidence,
+      input.current_customer_messages);
     const reason = cap?.enabled !== true ? 'bonus_disabled'
       : checkout ? 'sale_already_closed'
       : (ladder?.eligible !== true && !instant) || escalationWithoutNewObjection ? 'ladder_step_pending'

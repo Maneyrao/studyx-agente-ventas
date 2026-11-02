@@ -72,8 +72,9 @@ run('direct decision atomic repair', () => {
     await expect(recordDeliveryReport({...report,status:'delivered',delivered_at:new Date().toISOString()}))
       .rejects.toMatchObject({code:'DELIVERY_REPORT_CONFLICT'});
     await recordDeliveryReport(report);
+    // A receipt without time is now the channel-acceptance format (stamped
+    // with submitted_at, 2026-11-02); it is covered in channel-acceptance-receipt.test.ts.
     for (const invalid of [
-      {...report,status:'delivered' as const},
       {...report,status:'delivered' as const,delivered_at:'2000-01-01T00:00:00.000Z'},
       {...report,status:'delivered' as const,delivered_at:new Date().toISOString(),botpress_message_id:'wrong-provider-id'},
     ]) await expect(recordDeliveryReport(invalid)).rejects.toMatchObject({code:'DELIVERY_REPORT_CONFLICT'});

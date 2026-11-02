@@ -52,6 +52,8 @@ run('channel acceptance receipt', () => {
       botpress_message_id: botpressMessageId, replayed: false, error_code: null, delivery_attempt: 1, delivered_at: lagging };
     await recordDeliveryReport(report);
     expect(await recordDeliveryReport(report)).toMatchObject({ status: 'duplicate' });
+    await expect(recordDeliveryReport({ ...report, delivered_at: '2000-01-01T00:00:00.000Z' }))
+      .rejects.toMatchObject({ code: 'DELIVERY_REPORT_CONFLICT' });
 
     const [delivery] = await db!<Array<{ state: string; ordered: boolean }>>`
       SELECT state, delivered_at >= submitted_at AND delivered_at <= now() AS ordered
@@ -69,6 +71,28 @@ run('channel acceptance receipt', () => {
       source_turn_id: f.second_turn_id }, { db: db! });
     expect(capability).toMatchObject({ package_status: 'offered',
       delivered_bonus_offerings: [{ code: bonus }], rule_bonus: { bonus_offering_code: 'publicidad_redes_sociales', position: 2 } });
+  });
+
+  it('stamps a timeless acceptance receipt with submitted_at and replays it exactly', async () => {
+    const f = await seedConversationForAgentTurn({ selected_offering_code: paid, first_message: 'Tenés alguna promo?' });
+    const outbound = randomUUID();
+    const offer = await offerDirectCourseBonusV1(db!, { workspace_id: f.workspace_id, contact_id: f.contact_id,
+      conversation_id: f.conversation_id, paid_offering_code: paid, source_turn_id: f.turn_id,
+      expected_offer_version: 0, bonus_offering_codes: [bonus], outbound: { id: outbound, content: 'oferta',
+        provider: 'test', integration_id: 'test', channel: 'whatsapp', destination: 'test', idempotency_key: outbound } });
+    expect(offer.ok).toBe(true);
+    await withOutbox(outbound);
+    const botpressMessageId = `bp-${randomUUID()}`;
+    const trace = randomUUID();
+    await recordDeliveryReport({ outbound_id: outbound, trace_id: trace, status: 'submitted_to_botpress',
+      botpress_message_id: botpressMessageId, replayed: false, error_code: null, delivery_attempt: 1 });
+    const acceptance = { outbound_id: outbound, trace_id: trace, status: 'delivered' as const,
+      botpress_message_id: botpressMessageId, replayed: false, error_code: null, delivery_attempt: 1, delivered_at: null };
+    expect(await recordDeliveryReport(acceptance)).toMatchObject({ status: 'recorded' });
+    expect(await recordDeliveryReport(acceptance)).toMatchObject({ status: 'duplicate' });
+    const [row] = await db!<Array<{ state: string; same: boolean }>>`
+      SELECT state, delivered_at = submitted_at AS same FROM outbound_deliveries WHERE message_id=${outbound}::uuid`;
+    expect(row).toEqual({ state: 'delivered', same: true });
   });
 
   it('still rejects a receipt for a bubble that was never submitted', async () => {

@@ -248,8 +248,15 @@ export async function offerDirectCourseBonusV1(db: DbClient, input: OfferDirectC
       // Explicit first-cycle identity is supported only for an existing authorized promotion below.
       if (input.expected_offer_version!==0) reject('stale_offer_version');
     }
+    const currentBatch = (await tx<Array<{ content: string }>>`
+      SELECT fragment.content FROM messages current JOIN messages fragment
+        ON fragment.conversation_id=current.conversation_id AND fragment.contact_id=current.contact_id
+        AND fragment.direction='inbound' AND (fragment.id=current.id OR (fragment.batch_id=current.batch_id AND current.batch_id IS NOT NULL))
+      WHERE current.id=${input.source_turn_id}::uuid AND current.conversation_id=${input.conversation_id}::uuid
+        AND current.contact_id=${input.contact_id}::uuid
+      ORDER BY fragment.conversation_seq`).map(row => row.content);
     if (isBonusCheckoutStateV1({ stage: context.stage, awaiting_reply: context.awaiting_reply,
-      payment_link_request_pending: context.payment_link_request?.status === 'pending' })) reject('sale_already_closed');
+      payment_link_request_pending: context.payment_link_request?.status === 'pending' }, currentBatch)) reject('sale_already_closed');
     await validateOpen(tx,input,context,offer);
     if (input.bonus_offering_codes[0]===input.paid_offering_code) reject('same_as_paid_course');
     const [bonus]=await tx`SELECT id FROM offerings WHERE workspace_id=${input.workspace_id}::uuid
