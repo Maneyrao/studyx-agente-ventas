@@ -1,0 +1,84 @@
+{
+  "at": "2026-11-01T23:57:20.900Z",
+  "profile": "studyx-detmaneyro",
+  "adkVersion": "2.0.8",
+  "botId": "0d7c9ecb-4781-4c65-913d-f7e947fa14d4",
+  "workspaceId": "wkspace_01M4XEBZNC10HX2KDHKY36T6R0",
+  "bundleSha256": "3718b45ff81a1981c88c58ef213330d828029c5ec4d15839ab3ed7042754e4a5",
+  "remoteCodeEvidence": {
+    "status": "unavailable",
+    "type": "undefined",
+    "byteLength": null,
+    "matches": null
+  },
+  "integrationCount": 15,
+  "pluginCount": 2,
+  "aliasesPreserved": [
+    {
+      "alias": "anthropic",
+      "cloudAlias": "anthropic"
+    },
+    {
+      "alias": "browser",
+      "cloudAlias": "browser"
+    },
+    {
+      "alias": "cerebras",
+      "cloudAlias": "cerebras"
+    },
+    {
+      "alias": "charts",
+      "cloudAlias": "charts"
+    },
+    {
+      "alias": "chat",
+      "cloudAlias": "chat"
+    },
+    {
+      "alias": "fireworks-ai",
+      "cloudAlias": "fireworks-ai"
+    },
+    {
+      "alias": "google-ai",
+      "cloudAlias": "google-ai"
+    },
+    {
+      "alias": "groq",
+      "cloudAlias": "groq"
+    },
+    {
+      "alias": "improvement",
+      "cloudAlias": "improvement"
+    },
+    {
+      "alias": "notion-kb",
+      "cloudAlias": "notion-kb"
+    },
+    {
+      "alias": "openai",
+      "cloudAlias": "openai"
+    },
+    {
+      "alias": "pdf-generator",
+      "cloudAlias": "pdf-generator"
+    },
+    {
+      "alias": "telegram",
+      "cloudAlias": "telegram"
+    },
+    {
+      "alias": "webchat",
+      "cloudAlias": "webchat"
+    },
+    {
+      "alias": "whatsapp",
+      "cloudAlias": "whatsapp"
+    }
+  ],
+  "contractsMatch": true,
+  "additiveEventKeys": [],
+  "additiveConversationTagKeys": [],
+  "reviewedActionKeys": [],
+  "publicationMode": "code-only",
+  "publish": false
+}

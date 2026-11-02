@@ -1,0 +1,66 @@
+{
+  "projectId": "prj_Ns9LbXPT6UF6yvKR0rUcrwJAsFYM",
+  "scope": "maneyraos-projects",
+  "ownerVerified": "maneyrao",
+  "environments": [
+    "production",
+    "preview"
+  ],
+  "deploymentTriggered": false,
+  "variables": [
+    {
+      "name": "POST_SALE_CAMPUS_URL",
+      "type": "config",
+      "exitCode": 0,
+      "prepared": true
+    },
+    {
+      "name": "POST_SALE_OFFICIAL_WHATSAPP",
+      "type": "config",
+      "exitCode": 0,
+      "prepared": true
+    },
+    {
+      "name": "POST_SALE_STUDENT_SUPPORT_PHONE",
+      "type": "config",
+      "exitCode": 0,
+      "prepared": true
+    },
+    {
+      "name": "POST_SALE_ADMIN_EMAIL",
+      "type": "config",
+      "exitCode": 0,
+      "prepared": true
+    },
+    {
+      "name": "POST_SALE_TEACHERS_EMAIL",
+      "type": "config",
+      "exitCode": 0,
+      "prepared": true
+    },
+    {
+      "name": "CENTRAL_CARGA_INITIAL_PASSWORD",
+      "type": "secret",
+      "exitCode": 0,
+      "prepared": true
+    }
+  ],
+  "verifiedNamesPresent": {
+    "production": {
+      "POST_SALE_CAMPUS_URL": true,
+      "POST_SALE_OFFICIAL_WHATSAPP": true,
+      "POST_SALE_STUDENT_SUPPORT_PHONE": true,
+      "POST_SALE_ADMIN_EMAIL": true,
+      "POST_SALE_TEACHERS_EMAIL": true,
+      "CENTRAL_CARGA_INITIAL_PASSWORD": true
+    },
+    "preview": {
+      "POST_SALE_CAMPUS_URL": true,
+      "POST_SALE_OFFICIAL_WHATSAPP": true,
+      "POST_SALE_STUDENT_SUPPORT_PHONE": true,
+      "POST_SALE_ADMIN_EMAIL": true,
+      "POST_SALE_TEACHERS_EMAIL": true,
+      "CENTRAL_CARGA_INITIAL_PASSWORD": true
+    }
+  }
+}
