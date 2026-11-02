@@ -55,3 +55,28 @@ La corrida completa previa sobre el clon A envejecido produjo **982 aprobadas y 
 La base B es `127.0.0.1:55434/studyx_verify_20261102_codex_b`. Se creó desde esquema sin datos de `studyx_test`, mediante `template0`, y se cargó únicamente `supabase/seed.sql`. **La integración completa fue la primera prueba ejecutada allí**. No se reseteó la base original ni el clon A, ni se terminaron sesiones; el manifiesto es `post-livefix-fresh-db-b-manifest.json`.
 
 `docs/authority/` y `evals/golden/comparison.ts` permanecen sin cambios. Los hashes del runtime y las pruebas verificadas están en `post-livefix-final-source-manifest.json`. Esta ola no ejecutó proveedores externos, commits, push ni despliegues. La repetición de los golden reales y la publicación corresponden al cierre posterior, con su propio SHA y evidencia; las pruebas locales no reemplazan ese criterio formal.
+
+## Compatibilidad de entrada Claim para el despliegue escalonado
+
+Se añadió un decoder exclusivamente en `botpress-agent/src/schemas/contracts.ts`, en el campo de entrada `course_bonus_capability.ladder`. Permite publicar el bot compatible antes del backend nuevo sin convertir un snapshot antiguo en un error de parseo silencioso.
+
+- Un snapshot actual con `required_price_objection_count=2` conserva todos sus valores y sus campos opcionales.
+- Un snapshot antiguo con el literal `3` debe cumplir exactamente el esquema estricto de siete campos del backend anterior (`b839dca`). Sólo entonces sus hechos pasan por `deriveCourseBonusLadderV1` para obtener la única regla canónica vigente, con umbral `2`.
+- `enabled`, `may_offer_bonus` y `rule_bonus` son campos hermanos: el decoder no los recibe, no los cambia y no fabrica ninguno. Si faltan evidencias antiguas de `price_only_barrier_confirmed` o `current_turn_price_objection`, siguen ausentes, incluso en lugar de insertar `false`.
+- El literal `4`, datos malformados y campos adicionales en el esquema antiguo se rechazan. La definición de `AgentAContextV1Schema` y la regla del backend siguen aceptando únicamente el literal `2`; no se introdujo una segunda regla comercial.
+
+Pruebas nuevas: `tests/unit/botpress/claim-legacy-ladder-contract.test.ts`, **18 casos**. Incluyen el recorrido completo `ClaimResponseSchema.parse(raw)` seguido de `ClaimedTurnSchema.parse(decoded)`, la conservación exacta del snapshot actual, ausencia de permisos/evidencias fabricados, incapacidad de activar A sin `rule_bonus`, y rechazo de `3` en el contexto canónico del brain.
+
+Verificación: **150/150 aprobadas** en tres archivos (18 nuevos, contrato de ladder y contexto), inicio **14:58:52 UTC**; TypeScript raíz y Botpress, lint y `git diff --check` aprobados. ADK check aprobado: `valid=true`, sin errores ni avisos, 10 acciones y 5 workflows registrados, assets y tipos válidos. Evidencia privada: `transport-legacy-ladder-final.log`, `transport-compiler-lint-status.json`, `transport-typecheck-root-final.log`, `transport-lint-final.log` y `transport-adk-check.log`, dentro de la carpeta de verificación ya indicada.
+
+La revisión estática del architect aprobó este alcance de transporte. No se modificaron otros cuerpos API, el helper, el workflow, la autoridad de Gabi ni el contrato comercial canónico desde esta tarea de compatibilidad. No se ejecutaron commits, proveedores externos, cambios remotos ni despliegues desde esta verificación.
+
+## Cierre unitario independiente del candidato de llamadas y transporte
+
+Con las fuentes quietas, se ejecutó una única suite unitaria completa después de las últimas reparaciones de control de llamadas y del decoder de Claim: **5.157 aprobadas, 17 omitidas y 7 `todo`; 273 archivos aprobados y 2 omitidos**. Inicio **15:02:23 UTC** (12:02:23−03:00); duración **51,44 s**. Comando: `npx vitest run --config vitest.config.mts --no-file-parallelism --maxWorkers=1`. Se conservaron los límites originales, incluido el de 5 s de los tests que lo tienen, y no se ejecutaron builds ADK pesados en paralelo.
+
+Evidencia privada: `final-candidate-unit-full-serial.log` y `final-candidate-verification-summary.json`. Esta corrida incluye los controles de consentimiento, feedback de acciones, reparaciones del workflow y los 18 casos de compatibilidad de transporte. Los resultados no se suman a las corridas históricas porque hay solapamiento.
+
+No se repitió la suite completa de integración: el backend no cambió desde las **984 aprobadas y 1 omitida** de la base prístina B, y el runtime tuvo además **19 casos focalizados helper + commit real aprobados** según la evidencia del agente de implementación. TypeScript raíz/Botpress, lint y ADK check del transporte también quedaron aprobados en esta etapa. La revisión estática aprobó condicionalmente el candidato y sus deltas de transporte y llamadas.
+
+Este cierre habilita la preparación de los commits locales autorizados y la repetición posterior de los golden reales. No certifica por sí solo esos golden ni una publicación remota. Esta verificación no ejecutó proveedores externos, commits, push ni despliegues. El informe queda cerrado, sin más ediciones hasta una nueva fase coordinada.

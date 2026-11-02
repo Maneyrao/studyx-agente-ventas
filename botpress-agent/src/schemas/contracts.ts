@@ -3,6 +3,7 @@ import { z } from '@botpress/runtime'
 import { ConversationPipelineCommitV1Schema } from './conversation-pipeline'
 import { AgentATurnCommitV2Schema } from './agent-turn-v2'
 import { TurnRejectionCodeSchema } from './turn-rejection'
+import { deriveCourseBonusLadderV1 } from '../../../src/shared/conversation/bonus-ladder'
 
 export const SourceSchema = z.literal('botpress')
 export const ChannelSchema = z.enum(['emulator', 'whatsapp', 'telegram'])
@@ -581,6 +582,39 @@ export const CatalogIndexSchema = z.object({
   injection_suspected_count: z.number().int().nonnegative().default(0),
 }).strict().nullable().default(null)
 
+// Claim transport compatibility for a bot-first rollout. The previous backend
+// sends exactly these legacy facts; Rule A remains the sole canonical rule (2).
+// Neither the canonical brain schema nor any permission is relaxed here.
+const LegacyClaimCourseBonusLadderV1Schema = CourseBonusLadderV1Schema
+  .omit({ price_only_barrier_confirmed: true, current_turn_price_objection: true })
+  .extend({ required_price_objection_count: z.literal(3) })
+  .strict()
+
+const IncomingClaimCourseBonusLadderV1Schema = z.preprocess((raw) => {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)
+    || (raw as { required_price_objection_count?: unknown }).required_price_objection_count !== 3) return raw
+  const legacy = LegacyClaimCourseBonusLadderV1Schema.safeParse(raw)
+  if (!legacy.success) return raw // The strict canonical parser rejects malformed legacy input.
+  const normalized = deriveCourseBonusLadderV1({
+    observed_price_objection_count: legacy.data.observed_price_objection_count,
+    call_invitation_status: legacy.data.call_invitation_status,
+    call_offer_count: legacy.data.call_offer_count,
+    may_offer_call: legacy.data.may_offer_call,
+  })
+  // Absent legacy evidence stays absent; deriving Rule A must not invent even
+  // false price-only/current-turn observations. Sibling capability flags and
+  // rule_bonus never enter this normalizer.
+  return {
+    eligible: normalized.eligible,
+    observed_price_objection_count: normalized.observed_price_objection_count,
+    required_price_objection_count: normalized.required_price_objection_count,
+    call_invitation_status: normalized.call_invitation_status,
+    call_offer_count: normalized.call_offer_count,
+    may_offer_call: normalized.may_offer_call,
+    missing_steps: normalized.missing_steps,
+  }
+}, CourseBonusLadderV1Schema)
+
 export const ClaimedTurnSchema = z.object({
   outcome: z.literal('claimed'),
   trace_id: z.string().uuid(),
@@ -634,7 +668,7 @@ export const ClaimedTurnSchema = z.object({
   }).strict().nullable().optional(),
   negotiation_facts: RecordedNegotiationFactsV1Schema.nullable().optional(),
   course_bonus_capability: z.object({
-    ladder: CourseBonusLadderV1Schema.optional(),
+    ladder: IncomingClaimCourseBonusLadderV1Schema.optional(),
     enabled: z.boolean().optional(),
     may_offer_bonus: z.boolean().optional(),
     promotion_cycle_id: z.string().uuid().nullable().optional(),
