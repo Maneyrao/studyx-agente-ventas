@@ -151,9 +151,11 @@ export const OWNER_REPLAY_CASES: readonly GoldenCaseV1[] = [{
 const noContingency = [{ type: 'not_contains', value: 'Qué dato o qué curso revisamos' } as const,
   { type: 'not_contains', value: 'Qué dos cursos comparamos' } as const];
 const promotionMode = owner(66, 66, 'Promo instantánea');
+// The customer says "quiero directamente pagar": checkout moves are valid here.
+const replayMoves = [...moves, 'request_payment_link', 'provide_contact_details'];
 const englishTurn = (id: string, customer: string, override: Partial<GoldenTurnV1> = {}) => turn(id, customer, {
   must: ['Responder sin silencio ni contingencia al mensaje real de este turno, conservando la intención y los hechos.'],
-  expected: { move: moves, action: allActions, state: {} },
+  expected: { move: replayMoves, action: allActions, state: {} },
   hard: [{ type: 'workflow_committed' }, ...noContingency],
   ...override,
 });
