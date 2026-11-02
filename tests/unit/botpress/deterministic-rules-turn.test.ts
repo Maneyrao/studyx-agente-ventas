@@ -426,4 +426,48 @@ describe('dueño — nunca silencio', () => {
     expect(result.resolved.effective.proposal.response.messages.length).toBeGreaterThan(0);
     expect(result.record).toMatchObject({ rule_c: 'unmet' });
   });
+
+  it('conserva la duración autorizada y quita sólo la logística inventada antes del último recurso', async () => {
+    const current = context(true);
+    current.turn.batch_messages = [{ id: 'current', text: 'Cuánto dura el curso?' }];
+    current.catalog.selected_offering = {
+      code: paid,
+      display_name: 'Introducción al Ecommerce',
+      area_code: 'marketing',
+      facts: [
+        { id: `offering:${paid}:name:v1`, kind: 'offering_name', value: 'Introducción al Ecommerce' },
+        { id: `offering:${paid}:duration:v1`, kind: 'offering_duration', value: '8 clases' },
+        { id: `offering:${paid}:modality:v1`, kind: 'offering_modality', value: 'online' },
+      ],
+    };
+    const unsafe = draft({
+      response: {
+        messages: ['Son 8 clases online, así que podés avanzar a tu ritmo y repasar cuando quieras.'],
+        call_offer: null,
+      },
+      used_fact_ids: [`offering:${paid}:duration:v1`, `offering:${paid}:modality:v1`],
+      memory_candidates: [],
+    });
+    const rewritten = draft({
+      response: {
+        messages: ['Introducción al Ecommerce son 8 clases online, así que vas a poder avanzar a tu ritmo.'],
+        call_offer: invitation,
+      },
+      used_fact_ids: [`offering:${paid}:duration:v1`, `offering:${paid}:modality:v1`],
+      memory_candidates: [],
+      repair_of: { rejection_id: rejectionId, attempt: 1 },
+    });
+    const result = await resolveDeterministicRulesTurnV1({
+      context: current,
+      initial: unsafe,
+      repair_enabled: true,
+      rejection_id: () => rejectionId,
+      resolve: resolver(current),
+      repair: vi.fn(async () => rewritten),
+    });
+    expect(result.resolved.effective.proposal.response.messages.join(' ')).toContain('8 clases online');
+    expect(result.resolved.effective.proposal.response.messages.join(' ')).not.toContain('a tu ritmo');
+    expect(result.resolved.effective.proposal.response.call_offer).toContain('llamada corta');
+    expect(result.record).toMatchObject({ rule_b: 'unmet' });
+  });
 });

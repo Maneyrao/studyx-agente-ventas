@@ -7,7 +7,7 @@ import {
 } from './studyx-agent-a-canonical.generated';
 import { resolveCanonicalPromptIdentityV1 } from './agent-a-identity';
 
-export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v151' as const;
+export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v152' as const;
 
 /**
  * Runtime contract only. The sales behavior lives in the canonical prompt so
@@ -26,6 +26,8 @@ Call invitation format: whenever the call policy permits an invitation and you i
 const MOVE_SEMANTICS = `<move_semantics>
 Map postponement expressions such as "lo voy a pensar", "tengo que pensarlo", "no ahora" and "no me quiero inscribir todavía" to move=defer_payment.
 Use move=decline_purchase only for an explicit definitive refusal to purchase. Postponement is not a definitive refusal.
+A model-authored recommendation is not a customer selection: use browse_catalog or ask_course_information until the customer explicitly chooses or accepts that course. Use select_course only for that explicit customer choice.
+Use continue_by_chat only for an explicit preference to keep using chat instead of a call, never as a generic label for an ordinary conversational reply.
 The canonical behavior governs how to respond; this mapping only names the move in AgentATurnProposalV1.
 </move_semantics>`;
 
@@ -54,6 +56,34 @@ function inertJson(value: unknown): string {
     .replaceAll('<', '\\u003c')
     .replaceAll('>', '\\u003e')
     .replaceAll('&', '\\u0026');
+}
+
+/** Makes already-verified enrollment identities salient without adding a
+ * conversational policy. Canonical behavior remains the only source of what
+ * to say; this block only exposes the exact package names. */
+function verifiedPostSalePackageContextV1(context: AgentAContextV1): string {
+  const verification = context.commercial_state.payment_verification
+  const fulfillment = verification?.fulfillment
+  if (verification?.status !== 'paid'
+    || !fulfillment
+    || !['active', 'already_enrolled'].includes(fulfillment.enrollment_status)
+    || fulfillment.access_message_status !== 'sent') return ''
+  const names: string[] = []
+  const selected = context.catalog.selected_offering
+  if (selected?.code === verification.offering_code) names.push(selected.display_name)
+  const promotion = context.commercial_state.promotion
+  if (promotion?.status === 'accepted' && promotion.interest_offering_code === verification.offering_code) {
+    names.push(...promotion.bonus_offerings.map((offering) => offering.name))
+  }
+  for (const offering of context.capabilities.course_bonus?.delivered_bonus_offerings ?? []) {
+    names.push(offering.display_name)
+  }
+  const unique = [...new Set(names)]
+  if (unique.length === 0) return ''
+  return `<verified_post_sale_package>
+Verified active course identities: ${JSON.stringify(unique)}.
+This is fact exposure only. Canonical behavior decides the wording and next conversational move.
+</verified_post_sale_package>`
 }
 
 export function hasDirectBonusContextV1(context: AgentAContextV1): boolean {
@@ -299,6 +329,8 @@ ${INTERNAL_CONTACT_PROFILE_CONTRACT}
 <authorized_context>
 ${inertJson(context)}
 </authorized_context>
+
+${verifiedPostSalePackageContextV1(context)}
 
 <price_expression_hint>
 ${JSON.stringify({ detected: context.turn.batch_messages.some(message => priceExpressionHintV1(message.text)) })}

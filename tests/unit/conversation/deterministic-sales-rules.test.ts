@@ -232,6 +232,12 @@ describe('dueño — promo o descuento habilita la oferta al instante', () => {
     'me regalás un curso gratis?', 'hay beca?', 'precio especial?'])('"%s" es pedido de promo', t => {
     expect(promoRequestV1(t)).toBe(true);
   });
+  it('"no me hacés un descuento?" es un pedido cortés, no una negación de la promo', () => {
+    const text = 'No me hacés un descuento? USD 360 me parece caro.';
+    expect(promoRequestV1(text)).toBe(true);
+    expect(decideBonusRuleV1(ctx({ prior_price_objection_count: 0, batch_texts: [text] }), draft({ memory: [] })))
+      .toMatchObject({ kind: 'offer', trigger: 'promo_request', bonus_code: 'fotografia_celulares_tiendas_online' });
+  });
   it('sin objeción previa, el pedido de promo ofrece el 1.º de la tabla', () => {
     expect(decideBonusRuleV1(ctx({ prior_price_objection_count: 0, batch_texts: ['me hacés un descuento?'] }), draft({ memory: [] })))
       .toMatchObject({ kind: 'offer', trigger: 'promo_request', bonus_code: 'fotografia_celulares_tiendas_online' });

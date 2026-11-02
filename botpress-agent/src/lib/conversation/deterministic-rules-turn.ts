@@ -6,6 +6,7 @@ import type { PlannerlessResolutionV2 } from './resolve-agent-a-plannerless'
 import { isTurnEvidencePersistenceError } from '../observability/turn-evidence'
 import type { ModelObservation } from '../observability/turn-evidence'
 import type { TurnRejectionV1 } from '../../schemas/turn-rejection'
+import { removeUnsupportedCourseLogisticsAssertionsV1 } from './agent-a-brain'
 import {
   CALL_FALLBACK_OFFER_V1, bonusFallbackMessagesV1, decideBonusRuleV1, decideCallRuleV1, decidePriceProbeRuleV1,
   draftPresentsBonusV1, draftPresentsCallV1, messagesContainPriceProbeV1, passiveClosingSentencesV1, passiveRuleAppliesV1,
@@ -184,6 +185,27 @@ export function withFixedCallOfferV1(draft: AgentATurnProposalV1): AgentATurnPro
   return { ...draft, response: { ...draft.response, call_offer: CALL_FALLBACK_OFFER_V1 } }
 }
 
+/** Fact-only never-silence repair. It does not author sales prose or infer the
+ * customer's phase: it removes only logistics assertions detected by the same
+ * validator when no selected-course fact authorizes them. */
+function withoutUnsupportedCourseLogisticsV1(
+  context: AgentAContextV1,
+  source: GeneratedAgentATurnProposalV1,
+): GeneratedAgentATurnProposalV1 | null {
+  const authorizedValues = [
+    ...(context.catalog.selected_offering?.facts ?? []).map((fact) => fact.value),
+    ...context.catalog.candidate_offerings.flatMap((offering) => (offering.facts ?? []).map((fact) => fact.value)),
+  ]
+  const messages = source.proposal.response.messages
+    .flatMap((message) => removeUnsupportedCourseLogisticsAssertionsV1(message, authorizedValues))
+    .map((message) => message.trim())
+    .filter(Boolean)
+  if (messages.length === 0 || messages.join('\n') === source.proposal.response.messages.join('\n')) return null
+  return { ...source, proposal: { ...source.proposal,
+    response: { ...source.proposal.response, messages: messages as [string, ...string[]] },
+    profile_requests: [] } }
+}
+
 export interface RuleOutcomeRecordV1 {
   readonly kind: 'deterministic_rules'
   readonly rule_a: RuleOutcomeV1
@@ -332,10 +354,16 @@ export async function resolveDeterministicRulesTurnV1(input: {
     // Best valid model candidate, then the initial draft, then the owner's probe.
     const unmet = { rule_a: decision.bonus.kind === 'offer' ? 'unmet' as const : outcomes.rule_a,
       rule_b: decision.call.kind === 'offer' ? 'unmet' as const : outcomes.rule_b, rule_c: 'unmet' as const, rule_d: 'unmet' as const }
+    const factSafeFixed = withoutUnsupportedCourseLogisticsV1(input.context, { ...candidate, proposal: fixed })
+    const factSafeCandidate = withoutUnsupportedCourseLogisticsV1(input.context, candidate)
+    const factSafeInitial = withoutUnsupportedCourseLogisticsV1(input.context, initial)
     const lastResort: GeneratedAgentATurnProposalV1 = { ...initial, proposal: { ...initial.proposal,
       response: { messages: [PRICE_PROBE_V1], call_offer: null }, proposed_action: { type: 'none' },
       course_mentions: [], used_fact_ids: [], used_memory_ids: [], profile_updates: [], profile_requests: [] } }
-    for (const option of [candidate, initial, ...(input.context.capabilities.course_bonus?.enabled === true ? [lastResort] : [])]) {
+    for (const option of [factSafeFixed, factSafeCandidate, candidate, factSafeInitial, initial,
+      ...(input.context.capabilities.course_bonus?.enabled === true ? [lastResort] : [])].filter(
+      (value): value is GeneratedAgentATurnProposalV1 => value !== null,
+    )) {
       try {
         const plain = await input.resolve(option, false)
         return { resolved: plain, record: ruleOutcomeRecordV1(decision, unmet, passiveApplied) }

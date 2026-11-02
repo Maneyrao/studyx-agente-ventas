@@ -439,7 +439,33 @@ describe('Agent A Brain prompt', () => {
     expect(JSON.parse(encoded)).toEqual(current);
     expect(instructions).not.toContain('<current_turn_guidance>');
     expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v101');
-    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v151');
+    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v152');
+  });
+
+  it('maps recommendations and generic continuation without persisting a customer choice', () => {
+    const technicalOnly = buildAgentABrainInstructionsV1(context())
+      .replace(STUDYX_AGENT_A_CANONICAL_PROMPT, '');
+    expect(technicalOnly).toContain('A model-authored recommendation is not a customer selection');
+    expect(technicalOnly).toContain('continue_by_chat only for an explicit preference to keep using chat instead of a call');
+  });
+
+  it('surfaces the verified post-sale package identities without adding sales behavior', () => {
+    const current = context();
+    current.commercial_state.payment_verification = {
+      status: 'paid', offering_code: 'redes-informaticas', plan_code: 'monthly_12', paid_at: '2026-11-02T12:00:00.000Z',
+      fulfillment: { enrollment_status: 'active', access_message_status: 'sent', access_sent_at: '2026-11-02T12:01:00.000Z' },
+    };
+    current.commercial_state.promotion = {
+      promotion_code: 'course_bonus', promotion_cycle_id: 'cycle-1', offer_version: 1,
+      interest_offering_code: 'redes-informaticas', status: 'accepted', accepted_at: '2026-11-02T11:59:00.000Z',
+      bonus_offerings: [{ offering_code: 'excel-integral', name: 'Excel Integral', offered_at: '2026-11-02T11:58:00.000Z', position: 1 }],
+    };
+    const instructions = buildAgentABrainInstructionsV1(current);
+    const block = instructions.split('<verified_post_sale_package>')[1]?.split('</verified_post_sale_package>')[0] ?? '';
+    expect(block).toContain('Redes Informáticas');
+    expect(block).toContain('Excel Integral');
+    expect(block).toContain('fact exposure only');
+    expect(buildAgentABrainInstructionsV1(context())).not.toContain('<verified_post_sale_package>');
   });
 
   it('restores the technical call_offer field contract removed in 08f8e649 without commercial wording', () => {

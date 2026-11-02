@@ -117,7 +117,15 @@ function clausesOf(text: string): string[] {
 export function promoRequestV1(text: string): boolean {
   return clausesOf(text).some(clause => [...clause.matchAll(PROMO_REQUEST)].some(match => {
     const before = clause.slice(0, match.index).split(/\s+/u).filter(Boolean).slice(-4);
-    return !before.some(word => NEGATION_WORDS.has(word));
+    const hasNegation = before.some(word => NEGATION_WORDS.has(word));
+    if (!hasNegation) return true;
+    // In Rioplatense Spanish, “no me hacés/podés dar un descuento?” is a
+    // polite request, not a refusal. Keep real refusals (“no quiero”, “no
+    // necesito”, “ni promo”) excluded while accepting that interrogative
+    // construction and “no hay promo?”.
+    const prefix = before.join(' ');
+    return /\bno\s+(?:me\s+)?(?:haces|podes|podrias|darias|das|ofreces|conseguis|aplicas|hay|tienen|tenes|existe)\b/u
+      .test(prefix);
   }));
 }
 

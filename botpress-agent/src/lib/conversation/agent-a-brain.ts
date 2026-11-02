@@ -1119,7 +1119,10 @@ export function removeUnsupportedCourseLogisticsAssertionsV1(
 ): string[] {
   const authorized = new Set(authorizedValues.flatMap(courseLogisticsInV1));
   return message
-    .split(/(?<=[.!?\n])/u)
+    // The model often joins a verified duration to an invented logistics
+    // promise with “, así que…”. Split that dependent clause so the factual
+    // answer survives while only the unsupported assertion is removed.
+    .split(/(?<=[.!?\n])|,\s+(?=(?:as[ií]\s+que)\b)|\s+(?=y\s+(?:pod[eé]s|vas\s+a\s+poder)\b)/iu)
     .map((sentence) => sentence.trim())
     .filter((sentence) => courseLogisticsInV1(sentence)
       .every((fact) => authorized.has(fact)));
