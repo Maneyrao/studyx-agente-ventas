@@ -7,7 +7,12 @@ export interface NegotiationTurnEvidenceV1 {
   readonly maxBonusChallenge?:boolean;
   readonly turnId: string; readonly response: string; readonly customer: string;
   readonly currentTurnId?: string; readonly priorPriceSourceIds?: readonly string[];
-  readonly ladder?: {readonly observed_price_objection_count:number;readonly required_price_objection_count:3;
+  readonly currentPriceObjectionQuoted?:boolean;
+  readonly currentPriceObjectionPersisted?:boolean;
+  readonly currentPriceOnlyBarrierQuoted?:boolean;
+  readonly priceOnlyBarrierConfirmed?:boolean;
+  readonly ladder?: {readonly observed_price_objection_count:number;readonly required_price_objection_count:2|3;
+    readonly price_only_barrier_confirmed?:boolean;
     readonly call_invitation_status:string;readonly call_offer_count:number;readonly may_offer_call:boolean;
     readonly missing_steps:readonly string[];readonly eligible:boolean} | null;
   readonly action: string | null;
@@ -18,7 +23,7 @@ export interface NegotiationTurnEvidenceV1 {
 }
 export interface InvariantCheckV1 {readonly id:string;readonly status:InvariantStatusV1;readonly authority:string;readonly evidence:readonly string[];readonly failedTurnIds:readonly string[];readonly indeterminateTurnIds:readonly string[]}
 export const NEGOTIATION_AUTHORITY_V1 = {
-  ladder:'AGENTS.md:regla 10; docs/authority/prompt-agente-a-studyx-v2.md:106-129',
+  ladder:'AGENTS.md:45-54 (Regla A, reemplaza regla 10); docs/authority/prompt-agente-a-studyx-v2.md:87,106-129',
   package:'docs/authority/spec-backend-bonificacion.md:39-40,59-71',
   semantics:'docs/authority/prompt-agente-a-studyx-v2.md:106-129',
 } as const;
@@ -60,12 +65,27 @@ export function evaluateNegotiationInvariantsV1(caseCode:string, turns:readonly 
     if(t.action==='offer_course_bonus'){
       offered++;
       const l=t.ladder;
+      if(l?.required_price_objection_count===2){
+        // Owner rule A: the current quoted, committed objection counts. A lexical
+        // price hint, eligible=true or an unquoted model memory is never evidence.
+        const current=t.currentPriceObjectionQuoted===true&&t.currentPriceObjectionPersisted===true;
+        const prior=t.priorPriceSourceIds;
+        const confirmed=t.priceOnlyBarrierConfirmed===true||l.price_only_barrier_confirmed===true;
+        record('prior_ladder',!Number.isInteger(l.observed_price_objection_count)?'INDETERMINATE'
+          :l.observed_price_objection_count+(current?1:0)>=2||confirmed?'PASS':'FAIL',`${t.turnId}:${JSON.stringify(l)};current_quoted_persisted=${current};price_only=${confirmed}`);
+        if(!t.currentTurnId||!prior)record('prior_sources','INDETERMINATE',`${t.turnId}:missing source IDs`);
+        else if(prior.includes(t.currentTurnId))record('prior_sources','FAIL',`${t.turnId}:current source mislabeled as prior`);
+        else record('prior_sources',new Set(prior).size+(current?1:0)>=(confirmed?1:2)?'PASS':'FAIL',`${t.turnId}:prior=${prior.join(',')};current=${current};price_only=${confirmed}`);
+        // A prior call is intentionally no longer a bonus precondition (owner A).
+        // Call policy and early-offer rule B remain separately measured.
+      }else{
       record('prior_ladder',!l||!Number.isInteger(l.observed_price_objection_count)?'INDETERMINATE':l.observed_price_objection_count<3?'FAIL':'PASS',`${t.turnId}:${JSON.stringify(l??null)}`);
       if(t.currentTurnId&&t.priorPriceSourceIds){
         record('prior_sources',t.priorPriceSourceIds.includes(t.currentTurnId)?'FAIL':new Set(t.priorPriceSourceIds).size<3?'INDETERMINATE':'PASS',`${t.turnId}:current=${t.currentTurnId};prior=${t.priorPriceSourceIds.join(',')}`);
       }else record('prior_sources','INDETERMINATE',`${t.turnId}:missing committed source IDs`);
       if(l)record('prior_call',['offered','declined'].includes(l.call_invitation_status)||l.may_offer_call===false||l.call_offer_count>=2?'PASS':l.may_offer_call===undefined||l.call_invitation_status===undefined?'INDETERMINATE':'FAIL',`${t.turnId}:${l.call_invitation_status};may_offer=${l.may_offer_call};count=${l.call_offer_count}`);
       else record('prior_call','INDETERMINATE',t.turnId);
+      }
       const old=previous?.promotion.paidCourse===t.promotion.paidCourse?previous.promotion.bonusCourses:[];
       const added=t.promotion.bonusCourses.filter(c=>!old.includes(c));
       record('one_distinct_addition',added.length===1&&new Set(t.promotion.bonusCourses).size===t.promotion.bonusCount&&added[0]===t.proposedAction?.bonus_offering_code&&old.every(c=>t.promotion.bonusCourses.includes(c))?'PASS':'FAIL',`${t.turnId}:new=${added.join(',')};prior=${old.join(',')}`);
@@ -88,7 +108,7 @@ export function evaluateNegotiationInvariantsV1(caseCode:string, turns:readonly 
   }
   if(caseCode.startsWith('14')&&!cancelExercised)record('course_change_cancellation','NOT_EXERCISED','No paid-course change with a nonempty cancellable package.');
   record('objective_facts',factStatus,'Original nonpositional hard facts retained.');
-  record('commercial_semantics',semanticStatus,'Value → installments → isolation/conditional close → appropriate call → affinity, closure and no unauthorized explicit or implicit bonus. Requires semantic evidence; never inferred from text patterns.');
+  record('commercial_semantics',semanticStatus,'Personalized value, authorized installments, affinity, closure and no unauthorized explicit or implicit bonus. Owner A/B override bonus timing and early call; evidence is semantic, never inferred from text patterns.');
   const authorityFor=(id:string)=>{
     if(id==='never_silence'||id==='effect_matches_proposal')return 'docs/authority/prompt-agente-a-studyx-v2.md:236';
     if(id==='package_recap')return 'docs/authority/prompt-agente-a-studyx-v2.md:124';

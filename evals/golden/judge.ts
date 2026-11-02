@@ -16,6 +16,9 @@ export interface GoldenModelAttemptV1 {
 }
 
 export interface GoldenTurnObservationV1 {
+  readonly callOffer?: string | null;
+  readonly recordedCallOfferCount?: number;
+  readonly ruleOutcomes?: { readonly rule_a: unknown; readonly rule_b: unknown } | null;
   readonly negotiationFacts?: GenerationNegotiationFactsV1;
   readonly response: string;
   readonly move: string | null;
@@ -194,6 +197,27 @@ export function evaluateHardRules(
   }
 
   for (const rule of turn.hard ?? []) {
+    if (rule.type === 'workflow_committed' && (!observation.workflow?.commitSucceeded
+      || observation.workflow.errorCode || observation.workflow.finalBackendDecisionError)) {
+      add(failures, 'WORKFLOW_COMMIT_FAILED', JSON.stringify(observation.workflow ?? null));
+    }
+    if (rule.type === 'call_offer_recorded' && (!observation.callOffer?.trim()
+      || !observation.response.includes(observation.callOffer) || !(observation.recordedCallOfferCount! > 0))) {
+      add(failures, 'EARLY_CALL_OFFER_NOT_RECORDED', 'Falta call_offer entregado con transición persistida de invitación.');
+    }
+    if (rule.type === 'rule_outcomes_recorded') {
+      const outcomes = observation.ruleOutcomes;
+      const allowed = ['model', 'rewrite', 'fixed', 'not_applicable'];
+      if (!outcomes || !allowed.includes(String(outcomes.rule_a)) || !allowed.includes(String(outcomes.rule_b))) {
+        add(failures, 'RULE_OUTCOMES_NOT_RECORDED', 'Falta registro por turno de ambas reglas A/B.');
+      }
+    }
+    if (rule.type === 'current_course_facts_present') {
+      const facts = observation.authorizedFacts.filter(fact => fact.id.includes(`offering:${rule.value}:`));
+      if (!facts.some(fact => /duration/iu.test(`${fact.id} ${fact.kind}`))) {
+        add(failures, 'CURRENT_COURSE_FACTS_MISSING', `Falta duración autorizada de ${rule.value} en el contexto de generación de este turno.`);
+      }
+    }
     if (rule.type === 'contains' && !includesText(observation.response, rule.value)) {
       add(failures, 'TEXT_REQUIRED_MISSING', `Falta ${JSON.stringify(rule.value)}.`);
     }
@@ -280,9 +304,11 @@ export function evaluateHardRules(
           add(failures, 'BONUS_MAX_COURSES_CONFIG_MISMATCH',
             `max_bonus_courses esperado 3; real ${String(bonus.maxBonusCourses)}.`);
         }
-        if (objection.priorSourceMessageIds.length === 0) {
+        const currentRule = observation.negotiationFacts?.ladder?.required_price_objection_count === 2;
+        if (currentRule ? objection.sourceMessageIds.length === 0 : objection.priorSourceMessageIds.length === 0) {
           add(failures, 'BONUS_PRIOR_PRICE_OBJECTION_MISSING',
-            'No existe price_objection registrada en un turno anterior.');
+            currentRule ? 'No existe price_objection registrada, incluida la del turno actual.'
+              : 'No existe price_objection registrada en un turno anterior.');
         }
       }
     }
@@ -807,7 +833,7 @@ export async function judgeCaseSemantically(input: {
       continue;
     }
     verdicts.push(await judgeTurnSemantically({
-      apiKey: input.apiKey, model: input.model, turn:input.scenario.evaluationMode==='negotiation_invariants'?negotiationSemanticTurnV1(turn,index===input.scenario.turns.length-1):turn, observation,
+      apiKey: input.apiKey, model: input.model, turn:input.scenario.evaluationMode==='negotiation_invariants'?negotiationSemanticTurnV1(turn,index===input.scenario.turns.length-1,observation.negotiationFacts?.ladder?.required_price_objection_count===2):turn, observation,
       ...(input.scenario.evaluationMode==='negotiation_invariants'?{negotiationHistory:input.scenario.turns.slice(0,index+1).map((t,i)=>negotiationEvidenceV1(t,input.observations[i]!))}:{}),
       previousObservation: input.observations[index - 1] ?? null,
     }));

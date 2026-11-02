@@ -9,6 +9,25 @@ function turn(count=3, codes=['extra']): NegotiationTurnEvidenceV1 {
     offerings:[{code:'paid',displayName:'Curso pago'},{code:'extra',displayName:'Extra'},{code:'two',displayName:'Dos'},{code:'three',displayName:'Tres'}] };
 }
 describe('negotiation invariants (authority:106-129; spec:39-40,59-71)',()=>{
+  it('counts a quoted and persisted current objection for owner rule A without requiring a prior call', () => {
+    const current: NegotiationTurnEvidenceV1 = { ...turn(1), priorPriceSourceIds: ['p1'],
+      currentPriceObjectionQuoted: true, currentPriceObjectionPersisted: true,
+      ladder: { ...turn(1).ladder!, required_price_objection_count: 2, call_invitation_status: 'not_offered', call_offer_count: 0 } };
+    expect(evaluateNegotiationInvariantsV1('17', [current], 'PASS').status).toBe('PASS');
+    expect(evaluateNegotiationInvariantsV1('17', [{ ...current, currentPriceObjectionQuoted: false }], 'PASS').status).toBe('FAIL');
+    expect(evaluateNegotiationInvariantsV1('17', [{ ...current, currentPriceObjectionPersisted: false }], 'PASS').status).toBe('FAIL');
+    expect(evaluateNegotiationInvariantsV1('17', [{ ...current, priorPriceSourceIds: ['current'] }], 'PASS').status).toBe('FAIL');
+  });
+
+  it('accepts the confirmed price-only exception with recorded objection evidence, never a cached eligible bit alone', () => {
+    const current: NegotiationTurnEvidenceV1 = { ...turn(0), priorPriceSourceIds: [],
+      currentPriceObjectionQuoted: true, currentPriceObjectionPersisted: true,
+      priceOnlyBarrierConfirmed: true,
+      ladder: { ...turn(0).ladder!, required_price_objection_count: 2, call_invitation_status: 'not_offered', call_offer_count: 0 } };
+    expect(evaluateNegotiationInvariantsV1('18', [current], 'PASS').status).toBe('PASS');
+    expect(evaluateNegotiationInvariantsV1('18', [{ ...current, priceOnlyBarrierConfirmed: false }], 'PASS').status).toBe('FAIL');
+    expect(evaluateNegotiationInvariantsV1('18', [{ ...current, currentPriceObjectionPersisted: false }], 'PASS').status).toBe('FAIL');
+  });
   it('rejects premature effects and same-turn objections without interpreting prose',()=>{
     expect(evaluateNegotiationInvariantsV1('06',[turn(2)],'PASS').status).toBe('FAIL');
     expect(evaluateNegotiationInvariantsV1('06',[{...turn(),priorPriceSourceIds:['p1','p2','current']}],'PASS').status).toBe('FAIL');

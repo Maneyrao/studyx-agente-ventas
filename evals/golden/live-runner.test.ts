@@ -40,12 +40,15 @@ import {
   extractBackendRejectionsV1,
   extractContextEvidenceV1,
   extractFinalBackendDecisionErrorV1,
-  extractLastProposalV1,
+  extractCommittedProposalV1,
+  proposalEvidenceV1,
+  quotedCurrentPriceEvidenceV1,
   extractModelAttemptsV1,
   normalizePromotionStatusV1,
 } from './runner-support';
 import { GOLDEN_BASE_SHA, GOLDEN_CASES, type GoldenCaseV1 } from './scenarios';
 import { selectGoldenCasesV1 } from './run-config.mjs';
+import { OWNER_GOLDEN_CASES, OWNER_REPLAY_CASES } from './owner-rules-scenarios';
 
 const live = process.env.STUDYX_GOLDEN_LIVE === 'true' ? describe : describe.skip;
 const databaseUrl = process.env.TEST_DATABASE_URL ?? '';
@@ -55,8 +58,10 @@ const providerName = process.env.STUDYX_GOLDEN_PROVIDER ?? 'deepseek';
 const providerBaseUrl = process.env.STUDYX_GOLDEN_PROVIDER_BASE_URL ?? 'https://api.deepseek.com';
 const providerModel = process.env.STUDYX_GOLDEN_PROVIDER_MODEL ?? model;
 const judgeModel = process.env.STUDYX_GOLDEN_JUDGE_MODEL ?? 'deepseek-v4-flash';
-const selectedCases = selectGoldenCasesV1(process.env.STUDYX_GOLDEN_CASE_IDS, GOLDEN_CASES);
-const isFullSuite = selectedCases.length === GOLDEN_CASES.length;
+const selectedCases = process.env.STUDYX_GOLDEN_CASE_IDS === undefined ? GOLDEN_CASES
+  : selectGoldenCasesV1(process.env.STUDYX_GOLDEN_CASE_IDS, [...GOLDEN_CASES, ...OWNER_GOLDEN_CASES, ...OWNER_REPLAY_CASES]);
+const isFullSuite = selectedCases.length === GOLDEN_CASES.length
+  && selectedCases.every(scenario => GOLDEN_CASES.some(original => original.id === scenario.id));
 const expectedTurns = selectedCases.reduce((count, scenario) => count + scenario.turns.length, 0);
 const resultsDirectory = path.resolve(process.cwd(), 'evals/golden/results');
 const reuseObservations = process.env.STUDYX_GOLDEN_REUSE_OBSERVATIONS === 'true';
@@ -289,14 +294,26 @@ async function observeTurn(input: {
     externalConversationId: input.externalConversationId,
     adapterCaptures: input.accumulatedCaptures,
   });
-  const proposal = extractLastProposalV1(input.evidence.httpExchanges);
+  const committedProposal = extractCommittedProposalV1(input.evidence.httpExchanges);
+  const proposal = proposalEvidenceV1(committedProposal);
   const context = extractContextEvidenceV1(input.evidence.httpExchanges);
   const generationContext = input.evidence.httpExchanges.filter(e=>e.boundary==='deepseek').map(e=>extractAuthorizedContextV1(e.requestBody)).filter(Boolean).at(-1) as AgentAContextV1|null|undefined;
   const promotion = await promotionEvidence(input.externalConversationId);
   const activeCourseEvidence = await activatedCourseEvidence(input.externalConversationId);
   const decision = persisted.decisions.find((item) => item.turnId === input.evidence.turnId);
+  const priceMemory = await priceObjectionMemoryEvidence(input.externalConversationId, input.evidence.turnId);
+  const currentPriceEvidence = quotedCurrentPriceEvidenceV1(generationContext as Record<string, unknown> | null, committedProposal);
+  const ruleEvent = input.evidence.workflowEvents.find(event => event.event === 'studyx.turn.deterministic_rules');
   return {
-    negotiationFacts:{currentTurnId:input.evidence.turnId,ladder:generationContext?.capabilities.course_bonus?.ladder,priorPriceSourceIds:generationContext?.commercial_state.negotiation?.price_objections.latest_source_turn_ids},
+    negotiationFacts:{currentTurnId:input.evidence.turnId,ladder:generationContext?.capabilities.course_bonus?.ladder,
+      priorPriceSourceIds:generationContext?.commercial_state.negotiation?.price_objections.latest_source_turn_ids,
+      ...currentPriceEvidence,
+      currentPriceObjectionPersisted: input.evidence.turnId !== null && priceMemory.sourceMessageIds.includes(input.evidence.turnId),
+      priceOnlyBarrierConfirmed: generationContext?.commercial_state.negotiation?.price_only_barrier.status === 'confirmed'
+        || currentPriceEvidence.currentPriceOnlyBarrierQuoted},
+    callOffer: proposal.callOffer,
+    recordedCallOfferCount: persisted.state?.callOfferCount ?? 0,
+    ruleOutcomes: ruleEvent ? { rule_a: ruleEvent.rule_a, rule_b: ruleEvent.rule_b } : null,
     response: input.evidence.authorizedMessages.join('\n'),
     move: proposal.move,
     secondaryMoves: proposal.secondaryMoves,
@@ -323,10 +340,7 @@ async function observeTurn(input: {
     activeCourseNames: activeCourseEvidence.names,
     mayOfferCall: context.mayOfferCall,
     courseBonus: context.courseBonus,
-    priceObjectionMemory: await priceObjectionMemoryEvidence(
-      input.externalConversationId,
-      input.evidence.turnId,
-    ),
+    priceObjectionMemory: priceMemory,
     workflow: {
       commitSucceeded: input.evidence.commitSucceeded,
       status: input.evidence.status,
@@ -957,8 +971,8 @@ live('authority-only Agent A golden baseline through the real workflow', () => {
           approved: executionStatus === 'executed' ? failures.length === 0 : null,
           execution_status: executionStatus,
           authority: primaryCitation ? [primaryCitation] : [],
-          must: pending.scenario.evaluationMode==='negotiation_invariants'?negotiationSemanticTurnV1(turn,index===pending.scenario.turns.length-1).must:turn.must,
-          must_not: pending.scenario.evaluationMode==='negotiation_invariants'?negotiationSemanticTurnV1(turn,index===pending.scenario.turns.length-1).mustNot:turn.mustNot,
+          must: pending.scenario.evaluationMode==='negotiation_invariants'?negotiationSemanticTurnV1(turn,index===pending.scenario.turns.length-1,observation.negotiationFacts?.ladder?.required_price_objection_count===2).must:turn.must,
+          must_not: pending.scenario.evaluationMode==='negotiation_invariants'?negotiationSemanticTurnV1(turn,index===pending.scenario.turns.length-1,observation.negotiationFacts?.ladder?.required_price_objection_count===2).mustNot:turn.mustNot,
           response_real: observation.response,
           move: observation.move,
           proposed_action: observation.proposedAction,

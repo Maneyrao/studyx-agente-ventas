@@ -2,6 +2,9 @@ import { describe, expect, it } from 'vitest';
 
 import {
   extractAuthorizedContextV1,
+  extractCommittedProposalV1,
+  proposalEvidenceV1,
+  quotedCurrentPriceEvidenceV1,
   extractFinalBackendDecisionErrorV1,
   extractContextEvidenceV1,
   extractModelAttemptsV1,
@@ -9,6 +12,34 @@ import {
 } from './runner-support';
 
 describe('golden live runner evidence extraction', () => {
+  it('measures the committed fixed fallback separately from the unchanged raw model draft', () => {
+    const model = { move: { move: 'unknown', secondary_moves: [] }, response: { messages: ['Modelo sin oferta'] }, proposed_action: { type: 'none' } };
+    const fallback = { ...model, response: { messages: ['Pausa', 'Te sumo Fotografía sin costo'] },
+      proposed_action: { type: 'offer_course_bonus', bonus_offering_code: 'foto' } };
+    const exchanges = [
+      { boundary: 'deepseek' as const, status: 200, error: null, requestBody: {}, responseBody: { output_text: JSON.stringify(model) } },
+      { boundary: 'backend' as const, url: 'http://127.0.0.1:3217/turns/t1/decision', status: 422,
+        error: null, requestBody: { agent_turn_v2: { proposal: model } }, responseBody: { status: 'rejected' } },
+      { boundary: 'backend' as const, url: 'http://127.0.0.1:3217/turns/t1/decision', status: 200,
+        error: null, requestBody: { agent_turn_v2: { proposal: fallback } }, responseBody: { status: 'committed' } },
+    ];
+    expect(extractCommittedProposalV1(exchanges)).toEqual(fallback);
+    expect(proposalEvidenceV1(extractCommittedProposalV1(exchanges)).proposedAction).toEqual(fallback.proposed_action);
+    expect(extractModelAttemptsV1(exchanges)[0]?.response).toBe('Modelo sin oferta');
+    expect(extractCommittedProposalV1(exchanges.slice(0, 2))).toBeNull();
+    expect(extractCommittedProposalV1([{ ...exchanges[2]!, responseBody: { status: 'pending' } }])).toBeNull();
+  });
+
+  it('binds rule-A interpretation evidence to literal messages in the current batch', () => {
+    const context = { turn: { batch_messages: [{ text: 'Sólo el precio me frena, me parece caro.' }] } };
+    const proposal = { memory_candidates: [
+      { type: 'objection', key: 'price_objection', source_quote: 'me parece caro' },
+      { type: 'constraint', key: 'price_only_barrier', value: 'confirmed', source_quote: 'Sólo el precio me frena' },
+    ] };
+    expect(quotedCurrentPriceEvidenceV1(context, proposal)).toEqual({ currentPriceObjectionQuoted: true, currentPriceOnlyBarrierQuoted: true });
+    expect(quotedCurrentPriceEvidenceV1(context, { memory_candidates: proposal.memory_candidates.map(candidate => ({ ...candidate, source_quote: 'inventado' })) }))
+      .toEqual({ currentPriceObjectionQuoted: false, currentPriceOnlyBarrierQuoted: false });
+  });
   it('keeps rejected and repaired model attempts instead of hiding the first proposal', () => {
     const exchanges = [
       {

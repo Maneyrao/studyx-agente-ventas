@@ -69,6 +69,58 @@ function proposalResponse(proposal: Record<string, unknown> | null): string | nu
   return texts.length > 0 ? texts.join('\n') : null;
 }
 
+/** Only a successful decision receipt establishes which proposal was committed.
+ * The last model draft can differ from the whole-turn Rule A fixed fallback. */
+export function extractCommittedProposalV1(exchanges: readonly ExchangeLikeV1[]): Record<string, unknown> | null {
+  for (const exchange of exchanges.toReversed()) {
+    if (exchange.boundary !== 'backend' || !exchange.url?.endsWith('/decision')
+      || exchange.status === null || exchange.status < 200 || exchange.status >= 300 || exchange.error) continue;
+    const receipt = record(exchange.responseBody);
+    if (!['committed', 'duplicate'].includes(String(receipt?.status))) continue;
+    const request = record(exchange.requestBody);
+    const proposal = record(record(request?.agent_turn_v2)?.proposal);
+    if (proposal) return proposal;
+  }
+  return null;
+}
+
+export function proposalEvidenceV1(proposal: Record<string, unknown> | null) {
+  const move = record(proposal?.move);
+  const profileRequests = Array.isArray(proposal?.profile_requests) ? proposal.profile_requests : [];
+  return {
+    response: proposalResponse(proposal),
+    move: typeof move?.move === 'string' ? move.move : null,
+    secondaryMoves: Array.isArray(move?.secondary_moves)
+      ? move.secondary_moves.filter((value): value is string => typeof value === 'string') : [],
+    proposedAction: record(proposal?.proposed_action),
+    usedFactIds: Array.isArray(proposal?.used_fact_ids)
+      ? proposal.used_fact_ids.filter((value): value is string => typeof value === 'string') : [],
+    profileRequestedFields: profileRequests.flatMap((request) => {
+      const fields = record(request)?.fields;
+      return Array.isArray(fields) ? fields.filter((value): value is string => typeof value === 'string') : [];
+    }),
+    callOffer: typeof record(proposal?.response)?.call_offer === 'string'
+      ? String(record(proposal?.response)?.call_offer) : null,
+  };
+}
+
+/** Interpretation evidence is accepted only with a literal current-message quote. */
+export function quotedCurrentPriceEvidenceV1(context: Record<string, unknown> | null,
+  proposal: Record<string, unknown> | null) {
+  const messages = record(context?.turn)?.batch_messages;
+  const texts = Array.isArray(messages) ? messages.map(message => record(message)?.text)
+    .filter((value): value is string => typeof value === 'string') : [];
+  const memories = Array.isArray(proposal?.memory_candidates) ? proposal.memory_candidates : [];
+  const quoted = memories.map(record).filter(candidate => typeof candidate?.source_quote === 'string'
+    && candidate.source_quote.trim().length > 0
+    && texts.some(text => text.includes(String(candidate.source_quote).trim())));
+  return {
+    currentPriceObjectionQuoted: quoted.some(candidate => candidate?.type === 'objection' && candidate.key === 'price_objection'),
+    currentPriceOnlyBarrierQuoted: quoted.some(candidate => candidate?.type === 'constraint'
+      && candidate.key === 'price_only_barrier' && candidate.value === 'confirmed'),
+  };
+}
+
 export function extractModelAttemptsV1(
   exchanges: readonly ExchangeLikeV1[],
 ): readonly GoldenModelAttemptV1[] {

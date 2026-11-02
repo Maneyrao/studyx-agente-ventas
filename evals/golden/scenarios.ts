@@ -49,6 +49,10 @@ export type HardRuleV1 =
   | { readonly type: 'access_lists_all_activated_courses' }
   | { readonly type: 'course_bonus_preconditions' }
   | { readonly type: 'current_price_objection_recorded' }
+  | { readonly type: 'workflow_committed' }
+  | { readonly type: 'call_offer_recorded' }
+  | { readonly type: 'rule_outcomes_recorded' }
+  | { readonly type: 'current_course_facts_present'; readonly value: string }
   | { readonly type: 'selected_course_equals'; readonly value: string };
 
 export interface GoldenTurnV1 {
@@ -482,7 +486,7 @@ export const GOLDEN_CASES: readonly GoldenCaseV1[] = [
         id: 'syllabus', customer: 'Pasame el temario de Fotografía Profesional.',
         must: ['Responder con el temario real de Fotografía Profesional recibido como dato autorizado y mantener la respuesta útil.'],
         mustNot: ['No negar que existe si llegó al contexto, no inventar módulos y no responder sólo con generalidades.'],
-        authority: [ref(ROOT, 22, 22, 'Temarios'), ref(PROMPT, 50, 50, 'Contenido, duración, modalidad'), ref(PROMPT, 236, 236, 'Cita sólo lo usado')],
+        authority: [ref(ROOT, 29, 29, 'Temarios'), ref(PROMPT, 50, 50, 'Contenido, duración, modalidad'), ref(PROMPT, 236, 236, 'Cita sólo lo usado')],
         expected: { move: ['ask_course_information'], action: ['none'], state: state() },
         hard: [{ type: 'response_uses_authorized_syllabus' }],
       },
@@ -609,10 +613,10 @@ export const GOLDEN_CASES: readonly GoldenCaseV1[] = [
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 
-export async function validateGoldenAuthorityReferences(): Promise<string[]> {
+export async function validateGoldenAuthorityReferences(cases: readonly GoldenCaseV1[] = GOLDEN_CASES): Promise<string[]> {
   const failures: string[] = [];
   const cache = new Map<AuthorityFile, string[]>();
-  for (const scenario of GOLDEN_CASES) {
+  for (const scenario of cases) {
     for (const turn of scenario.turns) {
       for (const authority of turn.authority) {
         let lines = cache.get(authority.file);
