@@ -1,3 +1,7 @@
+import { resolveDeterministicRulesTurnV1 } from '../../botpress-agent/src/lib/conversation/deterministic-rules-turn';
+import { resolveAgentAPlannerlessProposalV2 } from '../../botpress-agent/src/lib/conversation/resolve-agent-a-plannerless';
+import type { AgentAContextV1 } from '../../botpress-agent/src/schemas/agent-a-brain';
+import { deriveCourseBonusLadderV1 } from '@/shared/conversation/bonus-ladder';
 import { processInboundMessage } from '@/lib/services/ingestion.service';
 import { recordPromotionConversationContextV1, readCourseBonusCapabilityV1 } from '@/features/promotions/application/read-course-bonus-capability';
 import { randomUUID } from 'node:crypto';
@@ -8,7 +12,7 @@ import { recordModelPriceObjection, seedPriorModelNegotiation } from '../helpers
 import { commitAgentDecision } from '@/lib/services/decision.service';
 import { offerDirectCourseBonusV1 } from '@/features/promotions/application/direct-course-bonus-service';
 import { readNegotiationFactsV1 } from '@/features/conversation/application/read-negotiation-facts';
-import type { AgentATurnProposalV1 } from '@/features/conversation/domain/agent-a-brain';
+import type { AgentATurnProposalV1 } from '../../botpress-agent/src/schemas/agent-a-brain';
 
 const run = process.env.TEST_DATABASE_URL ? describe : describe.skip;
 const db = process.env.TEST_DATABASE_URL ? openLocalTestDatabase() : null;
@@ -38,6 +42,64 @@ function proposal(): AgentATurnProposalV1 {
 }
 
 run('owner rules at the actual commit and transactional boundaries', () => {
+  it.each(['continue_by_chat', 'decline_call', 'request_call'] as const)('accounts once for the delivered A+B invitation after a prose rewrite invents %s and vetoes call', async invented => {
+    const text = 'Sólo el precio me frena, me parece caro. Ofreceme esa promoción para sumar un curso sin costo.';
+    const f = await seedConversationForAgentTurn({ selected_offering_code: paid, first_message: text });
+    const current: AgentAContextV1 = {
+      schema_version: 1, identity: null, customer: { display_name: null, memories: [] },
+      turn: { batch_messages: [{ id: f.turn_id, text }], recent_turns: [{ id: 'previous', direction: 'outbound', content: 'Qué te frena?' }] },
+      commercial_state: { selected_offering_code: paid, selected_payment_plan: null, stage: 'course_selected',
+        call_preference: 'unknown', call_offer_status: 'not_offered', call_offer_count: 0, awaiting_reply: 'none', payment_reported: false },
+      catalog: { selected_offering: { code: paid, display_name: 'Introducción al Ecommerce', area_code: 'marketing',
+        facts: [{ id: `offering:${paid}:name:v1`, kind: 'offering_name', value: 'Introducción al Ecommerce' }] },
+        available_offerings: [ { code: paid, display_name: 'Introducción al Ecommerce', area_code: 'marketing', fact_id: `offering:${paid}:name:v1` },
+          { code: bonus, display_name: 'Fotografía con Celulares para Tiendas Online', area_code: 'marketing', fact_id: `offering:${bonus}:name:v1` } ],
+        candidate_offerings: [], areas: [], payment_plans: [] },
+      capabilities: { may_reply: true, may_offer_call: true, may_request_call_now: false, may_present_payment_options: false,
+        may_send_payment_link: false, authorized_payment_plan: null, intake_status: 'unknown', intake_missing: [],
+        course_bonus: { status: 'checkin_available', enabled: true, max_bonus_courses: 3, may_offer_bonus: false,
+          may_schedule_checkin: false, may_request_review: false, may_accept_offer: false, may_send_promoted_payment: false,
+          package_status: null, promotion_code: null, interest_offering_code: paid, bonus_offerings: [],
+          ladder: deriveCourseBonusLadderV1({ observed_price_objection_count: 0, call_invitation_status: 'not_offered', call_offer_count: 0, may_offer_call: true }),
+          rule_bonus: { paid_offering_code: paid, paid_display_name: 'Introducción al Ecommerce', bonus_offering_code: bonus,
+            display_name: 'Fotografía con Celulares para Tiendas Online', position: 1 } } },
+    };
+    const initial = proposal();
+    initial.move.move = 'defer_payment';
+    initial.proposed_action = { type: 'none' };
+    initial.response = { messages: ['Te cuento las opciones.'], call_offer: null };
+    initial.memory_candidates.push({ type: 'constraint', key: 'price_only_barrier', value: 'confirmed',
+      source_quote: 'Sólo el precio me frena', confidence: 1 });
+    const generated = (draft: typeof initial) => ({ proposal: draft, provider: 'deepseek-direct' as const,
+      model: 'deepseek-v4-flash', latency_ms: 1, attempt_count: 1 as const });
+    const invitation = 'Si querés, podemos verlo en una llamada corta. Te sirve?';
+    const repair = vi.fn(async () => {
+      const repaired = proposal();
+      repaired.move = { ...repaired.move, move: invented, secondary_moves: ['continue_by_chat'], vetoes: ['call'] };
+      repaired.response = { messages: [fixed[1]], call_offer: invitation };
+      return generated(repaired);
+    });
+    const resolved = await resolveDeterministicRulesTurnV1({ context: current, initial: generated(initial), repair_enabled: true,
+      rejection_id: randomUUID, repair, resolve: (candidate, enabled, rejection = randomUUID()) => resolveAgentAPlannerlessProposalV2({
+        context: current, initial: candidate, repair_enabled: enabled, rejection_id: rejection, semantic_rejections: 'advisory',
+        repair: async () => { throw new Error('NO_EXTRA_GENERATION'); } }) });
+    expect(repair).toHaveBeenCalledOnce();
+    expect(resolved.record).toMatchObject({ rule_a: 'rewrite', rule_b: 'rewrite' });
+    expect(resolved.resolved.effective.proposal.move).toMatchObject({ move: 'defer_payment', secondary_moves: [], vetoes: [] });
+    const input = { turn_id: f.turn_id, trace_id: f.trace_id, supports_multi_outbound: true,
+      agent_turn_v2: { schema_version: 2 as const, proposal: resolved.resolved.effective.proposal },
+      decision: f.placeholderDecision as never, model: f.model as never };
+    const committed = await commitAgentDecision(input);
+    expect(committed.outbounds.map(part => part.content).join(' ')).toContain(invitation);
+    const [state] = await db!`SELECT call_offer_count,call_offer_status,call_preference FROM conversation_sales_context_states_v1 WHERE conversation_id=${f.conversation_id}`;
+    expect(state).toMatchObject({ call_offer_count: 1, call_offer_status: 'offered', call_preference: 'unknown' });
+    const replay = await commitAgentDecision(input);
+    expect(replay.replayed).toBe(true);
+    expect(replay.outbounds.map(part => part.id)).toEqual(committed.outbounds.map(part => part.id));
+    const [after] = await db!`SELECT call_offer_count FROM conversation_sales_context_states_v1 WHERE conversation_id=${f.conversation_id}`;
+    expect(after.call_offer_count).toBe(1);
+  });
+
   it('commits both fixed bubbles once and preserves the 20s timing authority on replay', async () => {
     const f = await seedConversationForAgentTurn({ selected_offering_code: paid, first_message: 'me sigue pareciendo caro' });
     await seedPriorModelNegotiation(db!, f, 1);

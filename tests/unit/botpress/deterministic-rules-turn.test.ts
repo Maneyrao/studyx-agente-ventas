@@ -1,3 +1,7 @@
+import { bindCustomerCallInterpretationV1 } from '../../../botpress-agent/src/lib/conversation/customer-call-interpretation';
+import { continueAgentAAfterActionFeedbackV1 } from '../../../botpress-agent/src/lib/conversation/agent-a-action-feedback';
+import { authorizeAgentTurnV2 } from '@/features/conversation/domain/agent-turn-policy-v2';
+import { createDefaultConversationStateV1 } from '@/features/conversation/domain/conversation-planner';
 import type { TurnRejectionV1 } from '../../../botpress-agent/src/schemas/turn-rejection';
 import { describe, expect, it, vi } from 'vitest';
 import type { AgentAContextV1, AgentATurnProposalV1 } from '../../../botpress-agent/src/schemas/agent-a-brain';
@@ -69,6 +73,89 @@ function resolver(current: AgentAContextV1) {
 }
 
 describe('live Rule A/B orchestration, bounded rewrite and validated fallback', () => {
+  it('permits a model correction unknown → request_call grounded in the current explicit request, leaving backend permissions intact', async () => {
+    const current = context(true);
+    current.turn.batch_messages = [{ id: 'current', text: 'Por favor llamame ahora' }];
+    current.capabilities.may_request_call_now = true;
+    current.capabilities.intake_status = 'known';
+    const initial = draft({ memory_candidates: [] });
+    initial.proposal.move.move = 'unknown';
+    const corrected = draft({ memory_candidates: [], proposed_action: { type: 'request_call_now', reason: 'direct_request' } });
+    corrected.proposal.move.move = 'request_call';
+    const repair = vi.fn(async () => corrected);
+    const rejection: TurnRejectionV1 = { schema_version: 1, rejection_id: rejectionId, attempt: 1,
+      rejections: [{ code: 'ACTION_NOT_AUTHORIZED', subject: 'request_call_now' }],
+      authorized_alternatives: { actions: ['none', 'request_call_now'], fact_ids: [], missing_information: [] } };
+    const continued = await continueAgentAAfterActionFeedbackV1({ context: current, rejection,
+      customer_call_interpretation: initial.proposal.move, effects_allowed: true,
+      apiKey: 'fixture', signal: new AbortController().signal, model: 'deepseek-v4-flash', generate: repair });
+    expect(repair).toHaveBeenCalledOnce();
+    expect(continued.proposal.move.move).toBe('request_call');
+    const bound = bindCustomerCallInterpretationV1(initial.proposal.move, continued.proposal, current);
+    const authorize = (allowed: boolean) => authorizeAgentTurnV2({ proposal: bound,
+      state: { ...createDefaultConversationStateV1({ workspace_id: rejectionId, conversation_id: rejectionId, contact_id: rejectionId }),
+        selected_offering_code: paid, stage: 'course_selected' },
+      offerings: [{ code: paid, display_name: 'Introducción al Ecommerce' }], facts: [],
+      current_customer_messages: ['Por favor llamame ahora'],
+      contact_intake: { nombre: 'Ana', apellido: 'Pérez', correo: 'ana@example.com', telefono: '+5491112345678' },
+      call_policy: { may_offer_call: true, may_request_call_now: allowed } });
+    expect(authorize(true)).toMatchObject({ ok: true, action: { type: 'request_call_now' } });
+    expect(authorize(false)).toMatchObject({ ok: false });
+    const finalized = await finalizeDeterministicRulesCandidateV1({ context: current, initial: continued,
+      customer_call_interpretation: initial.proposal.move, call_obligation: { kind: 'offer', response_ordinal: 2 },
+      rejection_id: () => rejectionId, resolve: resolver(current) });
+    expect(finalized.record).toMatchObject({ rule_b: 'not_applicable', rule_b_reason: 'current_call_request' });
+    expect(finalized.resolved).toBeNull();
+    expect(continued.proposal.response.call_offer).toBeNull();
+  });
+
+  it.each(['continue_by_chat', 'decline_call', 'request_call'] as const)('keeps original A+B obligations when the single rewrite invents %s and a call veto', async invented => {
+    const current = context(true);
+    const initial = draft();
+    initial.proposal.move.move = 'defer_payment';
+    const rewritten = offered(true);
+    rewritten.proposal.move = { ...rewritten.proposal.move, move: invented,
+      secondary_moves: ['continue_by_chat'], vetoes: ['call'], course_reference: 'Ecommerce' };
+    const repair = vi.fn(async () => rewritten);
+    const result = await resolveDeterministicRulesTurnV1({ context: current, initial,
+      repair_enabled: true, rejection_id: () => rejectionId, resolve: resolver(current), repair });
+    expect(repair).toHaveBeenCalledOnce();
+    expect(result.record).toMatchObject({ rule_a: 'rewrite', rule_b: 'rewrite' });
+    expect(result.resolved.effective.proposal.move).toMatchObject({ move: 'defer_payment',
+      secondary_moves: [], vetoes: [], course_reference: 'Ecommerce' });
+    expect(result.resolved.effective.proposal.response.call_offer).toBe(invitation);
+  });
+
+  it.each(['continue_by_chat', 'decline_call', 'request_call', 'veto'] as const)('preserves an original customer call control (%s) through a bonus rewrite', async control => {
+    const current = context(true);
+    const initial = draft();
+    if (control === 'veto') initial.proposal.move.vetoes = ['call'];
+    else initial.proposal.move.move = control;
+    const result = await resolveDeterministicRulesTurnV1({ context: current, initial,
+      repair_enabled: true, rejection_id: () => rejectionId, resolve: resolver(current), repair: async () => offered() });
+    expect(result.record.rule_b).toBe('not_applicable');
+    const move = result.resolved.effective.proposal.move;
+    if (control === 'veto') expect(move.vetoes).toContain('call');
+    else expect([move.move, ...move.secondary_moves]).toContain(control);
+    expect(result.resolved.effective.proposal.response.call_offer).toBeNull();
+  });
+
+  it.each(['permission', 'budget', 'checkout', 'actual_chat'] as const)('revokes a frozen call obligation when current authoritative conditions change (%s)', async revoked => {
+    const current = context(true);
+    const repair = vi.fn(async () => {
+      if (revoked === 'permission') current.capabilities.may_offer_call = false;
+      if (revoked === 'budget') current.commercial_state.call_offer_count = 2;
+      if (revoked === 'checkout') current.commercial_state.stage = 'payment_link_sent';
+      if (revoked === 'actual_chat') current.turn.batch_messages = [{ id: 'current', text: 'caro, prefiero seguir por chat' }];
+      return offered();
+    });
+    const result = await resolveDeterministicRulesTurnV1({ context: current, initial: draft(),
+      repair_enabled: true, rejection_id: () => rejectionId, resolve: resolver(current), repair });
+    expect(repair).toHaveBeenCalledOnce();
+    expect(result.record.rule_b).toBe('not_applicable');
+    expect(result.resolved.effective.proposal.response.call_offer).toBeNull();
+  });
+
   it('does not treat three generic navigation candidates as expressed customer interest for Rule B', () => {
     const current = context(true);
     current.turn.batch_messages = [{ id: 'current', text: '¿Qué opciones tienen?' }];

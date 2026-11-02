@@ -109,7 +109,7 @@ export type RuleOutcomeV1 = 'not_applicable' | 'model' | 'rewrite' | 'fixed';
 export interface RuleDraftV1 {
   readonly response: { readonly messages: readonly string[]; readonly call_offer?: string | null };
   readonly proposed_action: { readonly type: string; readonly [key: string]: unknown };
-  readonly move: { readonly move: string; readonly secondary_moves: readonly string[] };
+  readonly move: { readonly move: string; readonly secondary_moves: readonly string[]; readonly vetoes?: readonly string[] };
   readonly memory_candidates: readonly { readonly type: string; readonly key: string; readonly value: string; readonly source_quote: string }[];
 }
 
@@ -300,7 +300,7 @@ export function decideCallRuleV1(context: RuleContextV1, draft: RuleDraftV1, bon
   if (context.call_preference === 'chat' || context.call_preference === 'declined') return { kind: 'none', reason: 'chat_preference' };
   if (isCheckoutV1(context, draft)) return { kind: 'none', reason: 'checkout' };
   const moves = draftMoves(draft);
-  if (moves.has('request_call') || moves.has('decline_call') || moves.has('continue_by_chat')) return { kind: 'none', reason: 'call_move' };
+  if (draft.move.vetoes?.includes('call') || moves.has('request_call') || moves.has('decline_call') || moves.has('continue_by_chat')) return { kind: 'none', reason: 'call_move' };
   const ordinal = agentResponseOrdinalV1(context.recent_turns);
   if (!context.recent_turns_complete || (ordinal !== 2 && ordinal !== 3)) return { kind: 'none', reason: 'outside_window' };
   if (!context.customer_expressed_interest && !draft.memory_candidates.some(candidate => candidate.type === 'study_goal'))

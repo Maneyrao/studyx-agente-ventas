@@ -85,7 +85,8 @@ import {
 } from '../lib/conversation/agent-a-attempt'
 import { resolveAgentAProposalV1 } from '../lib/conversation/resolve-agent-a-proposal'
 import { resolveAgentAPlannerlessProposalV2 } from '../lib/conversation/resolve-agent-a-plannerless'
-import { finalizeDeterministicRulesCandidateV1, resolveDeterministicRulesTurnV1, type RuleOutcomeRecordV1 } from '../lib/conversation/deterministic-rules-turn'
+import { decideDeterministicRulesV1, finalizeDeterministicRulesCandidateV1, resolveDeterministicRulesTurnV1, type DeterministicRulesDecisionV1, type RuleOutcomeRecordV1 } from '../lib/conversation/deterministic-rules-turn'
+import { bindCustomerCallInterpretationV1, type CustomerCallInterpretationV1 } from '../lib/conversation/customer-call-interpretation'
 import { authorizedPromotionActionsV1, continueAgentAAfterActionFeedbackV1, fencedAgentARequestV1, plannerlessActionFeedbackV1 } from '../lib/conversation/agent-a-action-feedback'
 import { evaluateCallOfferTurnPolicyV1 } from '../lib/conversation/call-offer-turn-policy'
 import type { AgentATurnProposalV1 } from '../schemas/agent-a-brain'
@@ -1081,14 +1082,15 @@ export const processInboundTurn = new Workflow({
       const request = args as Parameters<typeof commitDecisionUnobserved.execute>[0] & { input: { agent_turn_v2?: AgentATurnCommitV2 | null;
         model: { provider: GeneratedAgentATurnProposalV1['provider'] | 'botpress'; model: string }; [key: string]: unknown };
         [key: string]: unknown }
-      const candidate = request.input.agent_turn_v2
+      let candidate = request.input.agent_turn_v2
       if (plannerlessV2Enabled && agentABrainContext && candidate && request.input.model.provider !== 'botpress') {
         const receiptForbidsBonus = latestRejection != null
           && !latestRejection.authorized_alternatives.actions.includes('offer_course_bonus')
         const finalContext = { ...agentABrainContext,
           ...(latestRejection ? { turn_rejection: latestRejection } : {}),
           capabilities: { ...agentABrainContext.capabilities,
-            ...(latestRejection?.rejections.some(reason => reason.code === 'CALL_BUDGET_EXHAUSTED')
+            ...(candidate.operational_continuity === 'call_consent_revoked'
+              || latestRejection?.rejections.some(reason => reason.code === 'CALL_BUDGET_EXHAUSTED' || reason.subject === 'call_consent_revoked')
               ? { may_offer_call: false } : {}),
             ...(agentABrainContext.capabilities.course_bonus ? { course_bonus: {
               ...agentABrainContext.capabilities.course_bonus,
@@ -1096,7 +1098,19 @@ export const processInboundTurn = new Workflow({
             } } : {}),
           },
         }
+        const originalOutcome = rulesOutcomeByProposal.get(candidate.proposal)
+        const boundProposal = customerCallInterpretation && candidate.operational_continuity !== 'call_consent_revoked'
+          ? bindCustomerCallInterpretationV1(customerCallInterpretation, candidate.proposal, finalContext) : candidate.proposal
+        if (boundProposal !== candidate.proposal) {
+          candidate = { ...candidate, proposal: boundProposal }
+          agentTurnV2Commit = candidate
+          pipelineMemoryCandidates = boundProposal.memory_candidates
+          args = { ...request, input: { ...request.input, agent_turn_v2: candidate } }
+          if (originalOutcome) rulesOutcomeByProposal.set(boundProposal, originalOutcome)
+        }
         const finalRules = await finalizeDeterministicRulesCandidateV1({
+          customer_call_interpretation: customerCallInterpretation,
+          call_obligation: requiredCallObligation,
           context: finalContext,
           initial: { proposal: candidate.proposal, provider: request.input.model.provider,
             model: request.input.model.model, latency_ms: 0, attempt_count: 1 },
@@ -1213,6 +1227,8 @@ export const processInboundTurn = new Workflow({
     let pipelinePromptVersion = `${CONVERSATION_INTERPRETER_PROMPT_VERSION}+${CONVERSATION_COMPOSER_PROMPT_VERSION}+${STUDYX_SALES_BEHAVIOR_VERSION}`
     let pipelineMemoryCandidates: Decision['memory_candidates'] = []
     const rulesOutcomeByProposal = new WeakMap<AgentATurnProposalV1, RuleOutcomeRecordV1>()
+    let customerCallInterpretation: CustomerCallInterpretationV1 | undefined
+    let requiredCallObligation: Extract<DeterministicRulesDecisionV1['call'], { kind: 'offer' }> | undefined
     const precommitModelAuthoredCandidates: GeneratedAgentATurnProposalV1[] = []
     let turnDiagnostics: TurnDiagnosticsV1 | null = null
     let agentAGenerationAttempts: 0 | 1 | 2 | 3 = 0
@@ -1438,6 +1454,7 @@ export const processInboundTurn = new Workflow({
           action_status: 'none',
         }
         let generated = generatedAttempt.value
+        if (plannerlessV2Enabled) customerCallInterpretation ??= generated.proposal.move
         precommitModelAuthoredCandidates.push(generated)
         await persistProfileProposal(generated.proposal)
         assertCallNarrative(generated.proposal)
@@ -1498,6 +1515,7 @@ export const processInboundTurn = new Workflow({
                 const repaired = await step(
                   'repair-agent-a-turn-proposal-v2',
                   () => continueAgentAAfterActionFeedbackV1({
+                    customer_call_interpretation: customerCallInterpretation,
                     context: agentABrainContext,
                     on_provider_request: accountAgentAPrecommitRepairRequest,
                     rejection,
@@ -1530,7 +1548,10 @@ export const processInboundTurn = new Workflow({
                 rejection_id: rejectionId,
                 repair: plannerlessRepair,
               })
+            const initialCallDecision = decideDeterministicRulesV1(agentABrainContext, authoritativeGenerated.proposal).call
+            if (initialCallDecision.kind === 'offer') requiredCallObligation ??= initialCallDecision
             const rulesTurn = await resolveDeterministicRulesTurnV1({
+              customer_call_interpretation: customerCallInterpretation, call_obligation: requiredCallObligation,
               context: agentABrainContext, initial: authoritativeGenerated,
               repair_enabled: repairEnabled, rejection_id: randomUUID,
               resolve: resolvePlannerless, repair: plannerlessRepair, observe: journal.capture,
@@ -1538,6 +1559,8 @@ export const processInboundTurn = new Workflow({
                 trace_id: input.trace_id, turn_id: owned.turn_id, error_code: errorCode(error),
               }),
             })
+            const effectiveCallDecision = decideDeterministicRulesV1(agentABrainContext, rulesTurn.resolved.effective.proposal).call
+            if (effectiveCallDecision.kind === 'offer') requiredCallObligation ??= effectiveCallDecision
             rulesOutcomeByProposal.set(rulesTurn.resolved.effective.proposal, rulesTurn.record)
             journal.capture({ ...rulesTurn.record })
             safeLog('studyx.turn.deterministic_rules', { trace_id: input.trace_id, turn_id: owned.turn_id, ...rulesTurn.record })
@@ -1553,6 +1576,7 @@ export const processInboundTurn = new Workflow({
               try {
               effectiveGenerated = await step('continue-agent-a-after-authorization-result-v2',
                 () => continueAgentAAfterActionFeedbackV1({
+                    customer_call_interpretation: customerCallInterpretation,
                   context: agentABrainContext, rejection: resolved.rejection!,
                   on_provider_request: accountAgentAPrecommitRepairRequest,
                   apiKey: secrets.DEEPSEEK_API_KEY as string, signal,
@@ -1849,6 +1873,7 @@ export const processInboundTurn = new Workflow({
                   .some((action) => action !== 'none')
                 const continuation = await step('continue-agent-a-after-action-feedback-v1',
                   () => continueAgentAAfterActionFeedbackV1({
+                    customer_call_interpretation: customerCallInterpretation,
                     context: agentABrainContext,
                     on_provider_request: accountAgentAProviderRequest,
                     rejection: profileRejection,
@@ -2498,6 +2523,7 @@ export const processInboundTurn = new Workflow({
             const repaired = await step(
               'repair-agent-a-turn-after-backend-rejection-v1',
               () => continueAgentAAfterActionFeedbackV1({
+                    customer_call_interpretation: customerCallInterpretation,
                 context: repairContext,
                 on_provider_request: accountAgentAProviderRequest,
                 rejection: currentBackendRejection,
@@ -2597,6 +2623,7 @@ export const processInboundTurn = new Workflow({
             const finalContinuation = await step(
               'final-agent-a-turn-after-backend-rejection-v1',
               () => continueAgentAAfterActionFeedbackV1({
+                    customer_call_interpretation: customerCallInterpretation,
                 context: repairContext,
                 on_provider_request: accountAgentAProviderRequest,
                 rejection: currentBackendRejection,

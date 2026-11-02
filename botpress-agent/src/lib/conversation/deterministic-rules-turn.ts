@@ -1,3 +1,5 @@
+import { bindCustomerCallInterpretationV1, type CustomerCallInterpretationV1 } from './customer-call-interpretation'
+import { supportsCallRequestV1, supportsChatPreferenceV1 } from './channel-preference-evidence'
 import type { AgentAContextV1, AgentATurnProposalV1 } from '../../schemas/agent-a-brain'
 import type { GeneratedAgentATurnProposalV1 } from './agent-a-brain'
 import type { PlannerlessResolutionV2 } from './resolve-agent-a-plannerless'
@@ -51,12 +53,23 @@ export interface DeterministicRulesDecisionV1 {
   readonly price_expression_hint: boolean
 }
 
-export function decideDeterministicRulesV1(context: AgentAContextV1, draft: AgentATurnProposalV1): DeterministicRulesDecisionV1 {
+export function decideDeterministicRulesV1(context: AgentAContextV1, draft: AgentATurnProposalV1,
+  obligation?: Extract<CallRuleDecisionV1, { kind: 'offer' }>): DeterministicRulesDecisionV1 {
   const ruleContext = ruleContextFromAgentAContextV1(context)
   const bonus = decideBonusRuleV1(ruleContext, draft)
+  // Once B was required for this intervention, a prose rewrite cannot invent
+  // checkout/channel intent to erase it. Recheck authoritative lifecycle and
+  // consent instead; no persisted permission is bypassed.
+  const eligibilityDraft = obligation ? { ...draft, proposed_action: { type: 'none' },
+    move: { move: 'unknown', secondary_moves: [] } } : draft
+  const call = supportsChatPreferenceV1(ruleContext.batch_texts.join('\n'), ruleContext.awaiting_reply === 'call_or_chat')
+    ? { kind: 'none' as const, reason: 'chat_preference' }
+    : supportsCallRequestV1(ruleContext.batch_texts.join('\n'), ruleContext.awaiting_reply === 'call_or_chat')
+      ? { kind: 'none' as const, reason: 'current_call_request' }
+      : decideCallRuleV1(obligation ? { ...ruleContext, customer_expressed_interest: true } : ruleContext, eligibilityDraft, bonus)
   return {
     bonus,
-    call: decideCallRuleV1(ruleContext, draft, bonus),
+    call: call.kind === 'offer' && obligation ? obligation : call,
     price_expression_hint: ruleContext.batch_texts.some(priceExpressionHintV1),
   }
 }
@@ -184,6 +197,8 @@ export async function resolveDeterministicRulesTurnV1(input: {
   readonly context: AgentAContextV1
   readonly initial: GeneratedAgentATurnProposalV1
   readonly repair_enabled: boolean
+  readonly customer_call_interpretation?: CustomerCallInterpretationV1
+  readonly call_obligation?: Extract<CallRuleDecisionV1, { kind: 'offer' }>
   readonly rejection_id: () => string
   readonly resolve: (candidate: GeneratedAgentATurnProposalV1, repair: boolean,
     rejectionId?: string) => Promise<PlannerlessResolutionV2<GeneratedAgentATurnProposalV1>>
@@ -191,28 +206,34 @@ export async function resolveDeterministicRulesTurnV1(input: {
   readonly observe?: (event: ModelObservation) => void
   readonly on_failure?: (stage: 'validation' | 'rewrite' | 'fixed', error: unknown) => void
 }): Promise<{ resolved: PlannerlessResolutionV2<GeneratedAgentATurnProposalV1>; record: RuleOutcomeRecordV1 }> {
-  const decision = decideDeterministicRulesV1(input.context, input.initial.proposal)
+  const interpretation = input.customer_call_interpretation ?? input.initial.proposal.move
+  const initial = { ...input.initial, proposal: bindCustomerCallInterpretationV1(interpretation, input.initial.proposal, input.context) }
+  let decision = decideDeterministicRulesV1(input.context, initial.proposal, input.call_obligation)
+  const callObligation = input.call_obligation ?? (decision.call.kind === 'offer' ? decision.call : undefined)
   const applies = decision.bonus.kind === 'offer' || decision.call.kind === 'offer'
   if (!applies) {
-    const resolved = await input.resolve(input.initial, input.repair_enabled)
-    const effectiveDecision = decideDeterministicRulesV1(input.context, resolved.effective.proposal)
+    const resolved = await input.resolve(initial, input.repair_enabled)
+    const boundEffective = { ...resolved.effective, proposal: bindCustomerCallInterpretationV1(interpretation, resolved.effective.proposal, input.context) }
+    const effectiveDecision = decideDeterministicRulesV1(input.context, boundEffective.proposal, callObligation)
     if (effectiveDecision.bonus.kind === 'offer' || effectiveDecision.call.kind === 'offer') {
       // A generic repair can introduce literal model evidence and a new rule
       // obligation. Its generation already consumed the rewrite: finalize with
       // validation/fixed copy only, never another provider request.
-      const finalized = await resolveDeterministicRulesTurnV1({ ...input, initial: resolved.effective, repair_enabled: false })
+      const finalized = await resolveDeterministicRulesTurnV1({ ...input, initial: boundEffective, repair_enabled: false,
+        customer_call_interpretation: interpretation, call_obligation: callObligation })
       if (!resolved.evidence.repair_attempted) return finalized
       return { ...finalized, record: { ...finalized.record,
         rule_a: finalized.record.rule_a === 'model' ? 'rewrite' : finalized.record.rule_a,
         rule_b: finalized.record.rule_b === 'model' ? 'rewrite' : finalized.record.rule_b } }
     }
-    return { resolved, record: ruleOutcomeRecordV1(effectiveDecision, 'not_applicable') }
+    return { resolved: { ...resolved, effective: boundEffective }, record: ruleOutcomeRecordV1(effectiveDecision, 'not_applicable') }
   }
   if (decision.bonus.kind === 'offer') authorizeRuleBonusInContextV1(input.context)
   let resolved: PlannerlessResolutionV2<GeneratedAgentATurnProposalV1> | null = null
-  let candidate = input.initial
+  let candidate = initial
   let authored: 'model' | 'rewrite' = 'model'
   const validate = async (draft: GeneratedAgentATurnProposalV1, rejectionId?: string) => {
+    decision = { ...decision, call: decideDeterministicRulesV1(input.context, draft.proposal, callObligation).call }
     const result = await input.resolve(draft, false, rejectionId)
     return result.action_rejection === null && draftSatisfiesRulesV1(result.effective.proposal, decision) ? result : null
   }
@@ -227,8 +248,9 @@ export async function resolveDeterministicRulesTurnV1(input: {
   try {
     if (!input.repair_enabled) throw new Error('RULE_REWRITE_DISABLED')
     const rewritten = await input.repair(rejection)
-    candidate = { ...rewritten, proposal: preserveRuleTriggerEvidenceV1(input.initial.proposal,
-      rewritten.proposal, input.context.turn.batch_messages.map(message => message.text)) }
+    candidate = { ...rewritten, proposal: preserveRuleTriggerEvidenceV1(initial.proposal,
+      bindCustomerCallInterpretationV1(interpretation, rewritten.proposal, input.context),
+      input.context.turn.batch_messages.map(message => message.text)) }
     authored = 'rewrite'
     resolved = await validate(candidate, rejection.rejection_id)
   } catch (error) {
@@ -239,7 +261,7 @@ export async function resolveDeterministicRulesTurnV1(input: {
   const outcomes = { rule_a: authored as RuleOutcomeV1, rule_b: authored as RuleOutcomeV1 }
   let fixed = candidate.proposal
   if (decision.bonus.kind === 'offer') {
-    fixed = bonusFallbackProposalV1({ context: input.context, draft: { ...input.initial.proposal,
+    fixed = bonusFallbackProposalV1({ context: input.context, draft: { ...initial.proposal,
       repair_of: fixed.repair_of }, decision: decision.bonus })
     outcomes.rule_a = 'fixed'
   }
@@ -269,9 +291,11 @@ export async function finalizeDeterministicRulesCandidateV1(input: {
   readonly rejection_id: () => string
   readonly resolve: Parameters<typeof resolveDeterministicRulesTurnV1>[0]['resolve']
   readonly observe?: (event: ModelObservation) => void
+  readonly customer_call_interpretation?: CustomerCallInterpretationV1
+  readonly call_obligation?: Extract<CallRuleDecisionV1, { kind: 'offer' }>
   readonly authored_outcome?: RuleOutcomeV1 | { readonly rule_a: RuleOutcomeV1; readonly rule_b: RuleOutcomeV1 }
 }): Promise<{ resolved: PlannerlessResolutionV2<GeneratedAgentATurnProposalV1> | null; record: RuleOutcomeRecordV1 }> {
-  const decision = decideDeterministicRulesV1(input.context, input.initial.proposal)
+  const decision = decideDeterministicRulesV1(input.context, input.initial.proposal, input.call_obligation)
   if (draftSatisfiesRulesV1(input.initial.proposal, decision)) return { resolved: null,
     record: ruleOutcomeRecordV1(decision, input.authored_outcome ?? 'model') }
   return resolveDeterministicRulesTurnV1({ ...input, repair_enabled: false,
