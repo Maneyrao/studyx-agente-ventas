@@ -1,0 +1,11 @@
+{
+  "notification_id": "827038e8-9f94-4311-adb7-e7bf6430a0af",
+  "conversation_id": "conv_01M5QRRX93Z50DJE80XZR7289E",
+  "created_at": "2026-11-02T01:12:47.404Z",
+  "event_type": "studyxPostSale",
+  "notification_did_not_exist": true,
+  "expected_outcome": "not_claimed",
+  "expected_model_calls": 0,
+  "expected_customer_messages": 0,
+  "event_id": "evt_01M6CX1TQXRY3JG940CBWF43RC"
+}

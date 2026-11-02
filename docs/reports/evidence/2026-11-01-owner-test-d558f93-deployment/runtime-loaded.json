@@ -1,0 +1,16 @@
+{
+  "checked_at": "2026-11-02T01:13:17.514Z",
+  "bot_id": "0d7c9ecb-4781-4c65-913d-f7e947fa14d4",
+  "since": "2026-11-02T01:09:15.859Z",
+  "events": [
+    {
+      "timestamp": "2026-11-02T01:12:55.246Z",
+      "source_base_sha": "d558f938f849422d2adc12797e4773bf95b29a0d",
+      "instrumentation_version": "studyx-release-provenance-v1",
+      "instrumentation_sha256": "28e43d66df4e5aa65594696d73640b6105794342f462bcf9c152c9143a748769",
+      "brain_version": "studyx-agent-a-brain-v149",
+      "prompt_version": "studyx-agent-a-canonical-v101"
+    }
+  ],
+  "more": false
+}

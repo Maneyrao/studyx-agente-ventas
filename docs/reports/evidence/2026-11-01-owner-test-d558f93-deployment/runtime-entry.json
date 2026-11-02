@@ -1,0 +1,21 @@
+{
+  "bot_id": "0d7c9ecb-4781-4c65-913d-f7e947fa14d4",
+  "events": [
+    {
+      "timestamp": "2026-11-02T01:12:57.045Z",
+      "event": "studyx.release.entry",
+      "source_base_sha": "d558f938f849422d2adc12797e4773bf95b29a0d",
+      "instrumentation_version": "studyx-release-provenance-v1",
+      "instrumentation_sha256": "28e43d66df4e5aa65594696d73640b6105794342f462bcf9c152c9143a748769",
+      "brain_version": "studyx-agent-a-brain-v149",
+      "prompt_version": "studyx-agent-a-canonical-v101",
+      "subject_type": "post_sale",
+      "trace_id": null,
+      "external_message_id": null,
+      "conversation_id": "conv_01M5QRRX93Z50DJE80XZR7289E",
+      "notification_id": "827038e8-9f94-4311-adb7-e7bf6430a0af",
+      "workflow_id": "wrkflow_01M6CX23303JYD7Q413WHKZXAS"
+    }
+  ],
+  "more": false
+}

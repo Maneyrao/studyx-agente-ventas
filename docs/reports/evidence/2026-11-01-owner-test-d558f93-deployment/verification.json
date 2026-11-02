@@ -1,0 +1,30 @@
+{
+  "base_sha": "d558f938f849422d2adc12797e4773bf95b29a0d",
+  "instrumentation_sha256": "28e43d66df4e5aa65594696d73640b6105794342f462bcf9c152c9143a748769",
+  "artifact_sha256": "3d4803677e855bce013ac74fa42d070007abe09742c1f9fac3f79e9a7c51413b",
+  "unit_tests_passed": 4997,
+  "typescript": "passed",
+  "lint": "passed",
+  "provenance_tests": 14,
+  "reset_tests": 21,
+  "architect_review": "approved",
+  "operator_model_calls": 0,
+  "operator_customer_messages_sent": 0,
+  "formal_golden_acceptance": {
+    "passed": 35,
+    "total": 48,
+    "criterion_changed": false,
+    "owner_accepted_for_development": true
+  },
+  "migration": {
+    "version": "20261031010001",
+    "column_ready": true,
+    "function_ready": true,
+    "history_recorded": true,
+    "seeds_changed": false,
+    "vault_changed": false
+  },
+  "reset_phase": "ready_for_first_inbound",
+  "new_conversation_created": false,
+  "new_conversation_routing_validation": "pending_first_real_inbound"
+}

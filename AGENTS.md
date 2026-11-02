@@ -49,6 +49,12 @@ Llamadas y traspaso al Agente B, recolección de datos, link de pago y prueba de
 alta en Central (pago + bonificados), postventa, memoria (vectorial y base de datos), registro de leads, opt-out,
 seguimientos, audios, no ejecutar dos veces la misma acción.
 
+## Despliegue de pruebas — excepción operativa del dueño (2026-11-01)
+- El dueño acepta 35/48 como riesgo conocido (escalera de negociación incompleta) para desplegar la base `d558f93` exclusivamente en su entorno de pruebas autorizado. El criterio formal documentado de aceptación no se cambia ni se considera cumplido por esta excepción.
+- Aclaración posterior del dueño: «por ahora en mi vercel, usamos botpress vertice porque seguimos desarrollando». Quedan autorizados el proyecto personal Vercel `prj_Ns9LbXPT6UF6yvKR0rUcrwJAsFYM` (`maneyraos-projects`, alias `studyx-agente-ventas.vercel.app`) y el bot STUDYX `0d7c9ecb-4781-4c65-913d-f7e947fa14d4` del workspace `wkspace_01M4XEBZNC10HX2KDHKY36T6R0` llamado Vertice, mediante la cuenta `tmaneyro@gmail.com` y perfil explícito `studyx-detmaneyro`. No se autoriza otro proyecto de Lucas ni la cuenta/bot De Fazio. Esta aclaración resuelve la exclusión nominal previa de Vertice para estos dos recursos de desarrollo; verificar sus IDs y conexiones antes de cada publicación.
+- La instrumentación de versión debe distinguir SHA base de aplicación, versión/hash del procedimiento de instrumentación y hash del artefacto final. No presentar un artefacto instrumentado como fuente sin modificaciones de `d558f93`.
+- El reinicio autorizado corresponde sólo al número de prueba `1169004497`, en el entorno autorizado. Preservar pagos, matrículas, Central y trazabilidad; verificar que no regresen historiales, memorias ni tareas pendientes previas.
+
 ## Terminado
 - Pasan evals/golden contra DeepSeek real en staging.
 - Pasan los tests de todas las funciones de "No romper".

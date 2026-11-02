@@ -1,0 +1,14 @@
+{
+  "source_base_sha": "d558f938f849422d2adc12797e4773bf95b29a0d",
+  "instrumentation_sha256": "28e43d66df4e5aa65594696d73640b6105794342f462bcf9c152c9143a748769",
+  "artifact_sha256": "3d4803677e855bce013ac74fa42d070007abe09742c1f9fac3f79e9a7c51413b",
+  "artifact_bytes": 24538705,
+  "build_command": "bun scripts/publish-botpress-code-preserving-connections.mjs (read-only)",
+  "build_cwd": "/private/tmp/studyx-instrumented-d558-source-20261101-2154/botpress-agent",
+  "build_finished_at": "2026-11-02T00:55:11.879Z",
+  "build_exit_code": 0,
+  "contracts_match": true,
+  "integrations": 15,
+  "plugins": 2,
+  "published": false
+}
