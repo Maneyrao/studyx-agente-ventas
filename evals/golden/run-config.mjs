@@ -1,4 +1,4 @@
-import { constants, copyFileSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { constants, copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
 const RESULT_STEM_V1 = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,160}$/u;
@@ -47,4 +47,21 @@ export function copyGoldenReuseObservationsV1(directory, sourceStem, targetStem)
     throw error;
   }
   return target;
+}
+
+/** Preserve the SHA that actually produced immutable reused observations. */
+export function readGoldenReuseEvaluatedShaV1(directory, sourceStem) {
+  if (!RESULT_STEM_V1.test(sourceStem)) throw new Error('GOLDEN_RESULT_STEM_INVALID');
+  const source = path.join(directory, `${sourceStem}-observations.partial.json`);
+  if (!existsSync(source)) throw new Error(`GOLDEN_REUSE_OBSERVATIONS_MISSING:${sourceStem}`);
+  let payload;
+  try {
+    payload = JSON.parse(readFileSync(source, 'utf8'));
+  } catch {
+    throw new Error('GOLDEN_REUSE_OBSERVATIONS_INVALID');
+  }
+  if (typeof payload?.base_sha !== 'string' || !/^[a-f0-9]{40}$/u.test(payload.base_sha)) {
+    throw new Error('GOLDEN_REUSE_BASE_SHA_INVALID');
+  }
+  return payload.base_sha;
 }

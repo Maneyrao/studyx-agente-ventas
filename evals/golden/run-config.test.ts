@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { GOLDEN_CASES } from './scenarios';
-import { copyGoldenReuseObservationsV1, reserveGoldenRunV1, selectGoldenCasesV1 } from './run-config.mjs';
+import { copyGoldenReuseObservationsV1, readGoldenReuseEvaluatedShaV1, reserveGoldenRunV1, selectGoldenCasesV1 } from './run-config.mjs';
 
 describe('focused golden execution configuration', () => {
   it('selects exactly the requested existing scenarios and leaves criteria/ordering untouched', () => {
@@ -37,11 +37,15 @@ describe('focused golden execution configuration', () => {
     const directory = mkdtempSync(path.join(tmpdir(), 'golden-reuse-'));
     try {
       const source = path.join(directory, 'source-observations.partial.json');
-      writeFileSync(source, '{"base_sha":"abc","cases":[]}\n');
+      const sourceSha = 'a'.repeat(40);
+      writeFileSync(source, `${JSON.stringify({ base_sha: sourceSha, cases: [] })}\n`);
+      expect(readGoldenReuseEvaluatedShaV1(directory, 'source')).toBe(sourceSha);
       const target = copyGoldenReuseObservationsV1(directory, 'source', 'reclassified');
-      expect(readFileSync(target, 'utf8')).toBe('{"base_sha":"abc","cases":[]}\n');
+      expect(JSON.parse(readFileSync(target, 'utf8')).base_sha).toBe(sourceSha);
       expect(() => copyGoldenReuseObservationsV1(directory, 'source', 'reclassified')).toThrow('ALREADY_EXISTS');
       expect(() => copyGoldenReuseObservationsV1(directory, '../source', 'other')).toThrow('RESULT_STEM');
+      writeFileSync(path.join(directory, 'invalid-observations.partial.json'), '{"base_sha":"abc"}\n');
+      expect(() => readGoldenReuseEvaluatedShaV1(directory, 'invalid')).toThrow('GOLDEN_REUSE_BASE_SHA_INVALID');
     } finally { rmSync(directory, { recursive: true, force: true }); }
   });
 });

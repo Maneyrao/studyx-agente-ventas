@@ -725,7 +725,10 @@ async function fingerprintHarness(): Promise<void> {
 
 beforeAll(async () => {
   const head = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
-  expect(evaluatedSha).toBe(head);
+  if (reuseObservations) {
+    expect(evaluatedSha).toMatch(/^[a-f0-9]{40}$/u);
+    expect(() => execFileSync('git', ['cat-file', '-e', `${evaluatedSha}^{commit}`])).not.toThrow();
+  } else expect(evaluatedSha).toBe(head);
   await fingerprintHarness();
   expect(harnessFingerprint).toMatch(/^[a-f0-9]{64}$/u);
   expect(() => execFileSync('git', ['merge-base', '--is-ancestor', GOLDEN_BASE_SHA, head]))
