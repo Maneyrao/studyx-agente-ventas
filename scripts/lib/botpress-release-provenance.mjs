@@ -3,7 +3,7 @@ import { readFileSync, readdirSync, readlinkSync } from 'node:fs';
 import path from 'node:path';
 import ts from 'typescript';
 
-export const BOT_RELEASE_BASE_SHA = '8879c8b02f393007ebecf566f2f27adf59e4dfe6';
+export const BOT_RELEASE_BASE_SHA = 'fdbe4e54e6bd0b942964a5ea90884f430ca6c168';
 export const BOT_RELEASE_INSTRUMENTATION_VERSION = 'studyx-release-provenance-v1';
 export const BOT_RELEASE_SOURCE_PATHS = Object.freeze([
   'botpress-agent/src/lib/observability/persist-turn-evidence.ts',
