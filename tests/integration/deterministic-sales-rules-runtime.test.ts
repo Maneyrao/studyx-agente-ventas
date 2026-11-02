@@ -125,6 +125,25 @@ run('owner rules at the actual commit and transactional boundaries', () => {
     expect(count.count).toBe(1);
   });
 
+  it('never cancels the fixed bubble that carries the committed offer when the customer writes during the 20s pause', async () => {
+    const f = await seedConversationForAgentTurn({ selected_offering_code: paid, first_message: 'me sigue pareciendo caro' });
+    await seedPriorModelNegotiation(db!, f, 1);
+    const committed = await commitAgentDecision({ turn_id: f.turn_id, trace_id: f.trace_id, supports_multi_outbound: true,
+      supports_send_fencing: true, agent_turn_v2: { schema_version: 2 as const, proposal: proposal() },
+      decision: f.placeholderDecision as never, model: f.model as never });
+    expect(committed.outbounds.map(part => part.content)).toEqual(fixed);
+    await db!`UPDATE outbound_deliveries SET state='submitted',submitted_at=now(),provider_message_id=${`bp-pause-${randomUUID()}`}
+      WHERE message_id=${committed.outbounds[0].id}`;
+    await db!`INSERT INTO messages(id,conversation_id,contact_id,direction,content,created_at,conversation_seq)
+      VALUES (${randomUUID()}::uuid,${f.conversation_id}::uuid,${f.contact_id}::uuid,'inbound','dale',now()+interval '1 second',
+        (SELECT coalesce(max(conversation_seq),0)+1 FROM messages WHERE conversation_id=${f.conversation_id}::uuid))`;
+    const { authorizeDeliveryContinuation } = await import('@/lib/services/delivery-continuation.service');
+    expect(await authorizeDeliveryContinuation({ outbound_id: committed.outbounds[1].id, trace_id: f.trace_id,
+      delivery_attempt: committed.outbounds[1].delivery_attempt })).toMatchObject({ outcome: 'authorized' });
+    const [delivery] = await db!`SELECT state FROM outbound_deliveries WHERE message_id=${committed.outbounds[1].id}`;
+    expect(delivery.state).not.toBe('cancelled');
+  });
+
   it.each(['persisted_selection', 'interest_only'] as const)(
     'automatically seals a delivered offered package in the actual payment-link commit, without accept_promotion (%s)', async identityKind => {
       vi.stubEnv('PAYMENT_LINK_CONTADO', 'https://buy.stripe.com/test_rule_a_auto');

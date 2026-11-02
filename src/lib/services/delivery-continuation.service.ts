@@ -55,7 +55,13 @@ export async function authorizeDeliveryContinuation(input: DeliveryContinuationI
           ORDER BY message_occurrence_v1(prior.metadata, prior.created_at) DESC, prior.conversation_seq DESC LIMIT 1
         ) LIMIT 1
     `;
-    if (newer) {
+    // Rule A (owner 2026-11-02): the bubble that carries a committed direct
+    // bonus offer is the effect itself. Cancelling it after "dame un segundo"
+    // would leave the offer undelivered and the package cycle stuck.
+    const [carriesCommittedOffer] = newer ? await db`
+      SELECT 1 FROM promotion_offer_bonus_offerings
+      WHERE offered_outbound_message_id = ${input.outbound_id}::uuid LIMIT 1` : [];
+    if (newer && !carriesCommittedOffer) {
       await db`UPDATE outbound_deliveries SET state = 'cancelled', lease_until = NULL, leased_by = NULL,
         last_error_code = 'DELIVERY_CONTINUATION_SUPERSEDED', updated_at = now() WHERE id = ${delivery.id}::uuid`;
       await db`UPDATE outbox_events SET state = 'cancelled', lease_until = NULL, leased_by = NULL,
