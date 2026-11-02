@@ -55,8 +55,10 @@ describe('owner-rule supplementary golden campaign', () => {
     const scenario = OWNER_GOLDEN_CASES[1]!;
     expect(scenario.turns[1]!.hard).toContainEqual({ type: 'call_offer_recorded' });
     expect(scenario.turns[1]!.expected.action).toEqual(['offer_course_bonus']);
+    // Owner second revision (2026-11-02): the promo request itself offers the first bonus.
+    expect(scenario.turns[0]!.expected).toMatchObject({ action: ['offer_course_bonus'], state: { promotion: { bonusCount: [1] } } });
     for (const id of ['negated_price', 'price_question']) {
-      expect(scenario.turns.find(turn => turn.id === id)?.expected).toMatchObject({ action: ['none'], state: { promotion: { bonusCount: [1] } } });
+      expect(scenario.turns.find(turn => turn.id === id)?.expected).toMatchObject({ action: ['none'], state: { promotion: { bonusCount: [2] } } });
     }
   });
 

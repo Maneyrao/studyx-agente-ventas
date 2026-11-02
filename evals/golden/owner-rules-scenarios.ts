@@ -10,6 +10,7 @@ const owner = (start: number, end: number, contains: string): AuthorityReference
 });
 const ruleA = owner(45, 54, '2.ª objeción');
 const ruleB = owner(56, 62, '2.ª o 3.ª respuesta');
+const ownerPromo = owner(66, 66, 'Promo instantánea');
 const baseAuthority = [gabi(38, 44, 'Una recomendación no es elección'), gabi(68, 89, 'price_objection')];
 const moves = ['greeting', 'browse_catalog', 'select_course', 'ask_course_information', 'ask_payment_options',
   'unknown', 'continue_by_chat', 'defer_payment', 'request_call', 'decline_purchase'];
@@ -79,37 +80,36 @@ export const OWNER_GOLDEN_CASES: readonly GoldenCaseV1[] = [
   },
   {
     id: '18_explicit_promotion_request',
-    title: 'Pedido explícito de promoción no sustituye la objeción registrada ni habilita descuentos',
+    title: 'Pedido de promoción: oferta instantánea de la tabla, escalada por pedido u objeción, sin descuento de precio',
     turns: [
-      turn('request_without_objection', 'Me interesa Introducción al Ecommerce para vender los productos de mi tienda online. Tenés alguna promoción para sumar un curso gratuito?', {
-        must: ['Responder comercialmente al pedido sin presentar una bonificación aún: no existe una objeción de precio registrada.'],
-        mustNot: ['No inventar descuentos ni negar de forma defensiva toda posibilidad de promoción. No ejecutar offer_course_bonus sólo por pedirlo.'],
-        authority: [ruleA, gabi(17, 20, 'frases defensivas'), gabi(118, 125, 'Una consulta de precio no la habilita')],
-        expected: { move: moves, action: ['none'], state: noBonus },
-        hard: [{ type: 'workflow_committed' }, { type: 'promotion_bonus_count_at_most', value: 0 }],
-      }),
       (() => {
-        const bonus = bonusTurn('price_only_and_early_call', 'Sólo el precio me frena, me parece caro. Ofreceme esa promoción para sumar un curso sin costo.', 1);
-        return { ...bonus,
-          must: [...bonus.must, 'Al coincidir las Reglas A y B en la segunda respuesta, presentar la bonificación y conservar la invitación de llamada en response.call_offer, sin duplicarla.'],
+        const bonus = bonusTurn('request_without_objection', 'Me interesa Introducción al Ecommerce para vender los productos de mi tienda online. Tenés alguna promoción para sumar un curso gratuito?', 1);
+        return { ...bonus, authority: [ownerPromo, ...bonus.authority],
+          must: ['Regla del dueño (segunda revisión): el pedido de promoción habilita la oferta en este turno sin objeción previa. Ofrecer el primer bonificado de la tabla para Ecommerce, mantener el precio y cerrar.'],
+          mustNot: [...bonus.mustNot, 'No inventar un descuento de precio.'] };
+      })(),
+      (() => {
+        const bonus = bonusTurn('price_only_and_early_call', 'Sólo el precio me frena, me parece caro. Ofreceme esa promoción para sumar un curso sin costo.', 2);
+        return { ...bonus, authority: [ownerPromo, ...bonus.authority],
+          must: [...bonus.must, 'Al coincidir la escalada y la Regla B en la segunda respuesta, presentar el paquete y conservar la invitación de llamada en response.call_offer, sin duplicarla.'],
           hard: [...(bonus.hard ?? []), { type: 'call_offer_recorded' } as const],
         };
       })(),
-      turn('negated_price', 'Prefiero seguir por chat. No es caro, sólo quiero saber si hay otra promoción.', {
-        must: ['Respetar chat y conservar el paquete con un bonificado: “no es caro” no es una nueva objeción.'],
-        mustNot: ['No usar la palabra aislada caro como evidencia de objeción ni escalar a un segundo curso.'],
-        authority: [ruleA, owner(40, 43, 'Las preguntas'), ruleB],
-        expected: { move: moves, action: ['none'], state: { promotion: { status: ['offer_available'], bonusCount: [1] } } },
-        hard: [{ type: 'workflow_committed' }, { type: 'promotion_bonus_count_at_most', value: 1 }],
+      turn('negated_price', 'Prefiero seguir por chat. No es caro y no necesito otra promo, sólo quería saber cómo sigue.', {
+        must: ['Respetar chat y conservar el paquete con dos bonificados: una negación no es objeción ni pedido de promoción.'],
+        mustNot: ['No usar las palabras aisladas caro o promo, negadas, como evidencia para escalar.'],
+        authority: [ownerPromo, ruleA, owner(40, 43, 'Las preguntas'), ruleB],
+        expected: { move: moves, action: ['none'], state: { promotion: { status: ['offer_available'], bonusCount: [2] } } },
+        hard: [{ type: 'workflow_committed' }, { type: 'promotion_bonus_count_at_most', value: 2 }],
       }),
       turn('price_question', 'Es caro? Te pregunto, no estoy diciendo que me parezca caro.', {
         must: ['Responder a la pregunta sin convertirla en una nueva objeción de precio ni ampliar el paquete.'],
-        mustNot: ['No ofrecer un segundo bonificado por una pregunta o por una cita parcial de caro.'],
-        authority: [ruleA, owner(40, 43, 'Las preguntas')],
-        expected: { move: moves, action: ['none'], state: { promotion: { status: ['offer_available'], bonusCount: [1] } } },
-        hard: [{ type: 'workflow_committed' }, { type: 'promotion_bonus_count_at_most', value: 1 }],
+        mustNot: ['No ofrecer un tercer bonificado por una pregunta o por una cita parcial de caro.'],
+        authority: [ownerPromo, ruleA, owner(40, 43, 'Las preguntas')],
+        expected: { move: moves, action: ['none'], state: { promotion: { status: ['offer_available'], bonusCount: [2] } } },
+        hard: [{ type: 'workflow_committed' }, { type: 'promotion_bonus_count_at_most', value: 2 }],
       }),
-      bonusTurn('new_objection_after_offer', 'Ahora sí, el precio me sigue pareciendo caro y no me alcanza.', 2),
+      bonusTurn('new_objection_after_offer', 'Ahora sí, el precio me sigue pareciendo caro y no me alcanza.', 3),
     ],
   },
 ];
