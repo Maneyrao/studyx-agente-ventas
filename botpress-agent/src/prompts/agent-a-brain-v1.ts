@@ -1,4 +1,5 @@
-import { PRICE_PROBE_V1, priceConcernTextV1, priceExpressionHintV1, promoRequestV1 } from '../../../src/shared/conversation/deterministic-sales-rules';
+import { PRICE_PROBE_V1, decideBonusRuleV1, decidePriceProbeRuleV1, passiveRuleAppliesV1, priceExpressionHintV1 } from '../../../src/shared/conversation/deterministic-sales-rules';
+import { ruleContextFromAgentAContextV1 } from '../lib/conversation/deterministic-rules-turn';
 import type { AgentAContextV1 } from '../schemas/agent-a-brain';
 import {
   STUDYX_AGENT_A_CANONICAL_PROMPT,
@@ -261,18 +262,22 @@ Before returning AgentATurnProposalV1, make response, move, profile metadata and
 /** Owner rules (AGENTS.md, 2026-11-02 second revision). Backend-decided; the
  * model writes. Kept technical: what must appear, not how to sell. */
 function ownerSalesRulesDirectiveV1(context: AgentAContextV1): string {
-  const texts = context.turn.batch_messages.map(message => message.text)
+  // Same deterministic decisions as the backend-enforced rules (once per
+  // conversation, never in checkout or on a plan choice), so the first draft complies.
+  const ruleContext = ruleContextFromAgentAContextV1(context)
+  const stub = { response: { messages: ['.'] }, proposed_action: { type: 'none' },
+    move: { move: 'unknown', secondary_moves: [] }, memory_candidates: [] }
+  const bonus = decideBonusRuleV1(ruleContext, stub)
+  const probe = decidePriceProbeRuleV1(ruleContext, stub, bonus)
   const rule = context.capabilities.course_bonus?.rule_bonus
-  const enabled = context.capabilities.course_bonus?.enabled === true
-  const promo = enabled && texts.some(promoRequestV1)
-  const priceConcern = enabled && !promo && texts.some(priceConcernTextV1)
   const lines = [
-    'Never close passively ("lo ves tranquilo", "sin apuro", "cuando quieras", "avisame", "quedo atenta"). Every reply moves the customer to buy now.',
-    promo && rule ? `The customer asked for a promotion or discount: the backend offers ${rule.display_name} (bonus_offering_code=${rule.bonus_offering_code}) with ${rule.paid_display_name} (interest_offering_code=${rule.paid_offering_code}) this turn. Present it with proposed_action offer_course_bonus, say the price of ${rule.paid_display_name} does not change and close in the same message. There is no price discount.` : '',
-    promo && !rule ? 'The customer asked for a promotion or discount: recommend and confirm the paid course now so the backend can add the promotion; there is no price discount.' : '',
-    priceConcern ? `The customer asked about or objected to the price: answer it and end the turn with exactly: "${PRICE_PROBE_V1}"` : '',
+    passiveRuleAppliesV1(ruleContext, stub)
+      ? 'This is an open negotiation: never close passively ("lo ves tranquilo", "sin apuro", "cuando quieras", "avisame", "quedo atenta"). Close with a concrete step toward buying now.' : '',
+    bonus.kind === 'offer' && (bonus.trigger === 'promo_request' || bonus.trigger === 'price_probe_confirmed') && rule
+      ? `The backend offers ${rule.display_name} (bonus_offering_code=${rule.bonus_offering_code}) with ${rule.paid_display_name} (interest_offering_code=${rule.paid_offering_code}) this turn. Present it with proposed_action offer_course_bonus, say the price of ${rule.paid_display_name} does not change and close in the same message. There is no price discount.` : '',
+    probe.kind === 'ask' ? `The customer asked about or objected to the price: answer it and end the turn with exactly: "${PRICE_PROBE_V1}"` : '',
   ].filter(Boolean)
-  return `<owner_sales_rules>\n${lines.join('\n')}\n</owner_sales_rules>`
+  return lines.length ? `<owner_sales_rules>\n${lines.join('\n')}\n</owner_sales_rules>` : ''
 }
 
 export function buildAgentABrainInstructionsV1(context: AgentAContextV1): string {

@@ -1812,6 +1812,14 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
             const workspace = await db<Array<{id:string}>>`SELECT id FROM workspaces WHERE slug=${workspaceSlug}`;
             canonicalWorkspaceId = workspace[0]?.id ?? null;
             if (!canonicalWorkspaceId) throw new DecisionPolicyError('AGENT_TURN_V2_CONTEXT_NOT_FOUND');
+            // Owner instant promo: the paid course may be named in this same turn.
+            // Record that interest first (no objection counted) so the offer's
+            // identity lock sees it; the regular record below stays unchanged.
+            await recordPromotionConversationContextV1(db, {
+              workspace_id: canonicalWorkspaceId, contact_id: turn.contact_id, conversation_id: turn.conversation_id,
+              source_turn_id: turn.id, discussed_offering_code: committedBusinessAction.interest_offering_code,
+              records_price_objection: false,
+            });
             const result = await offerDirectCourseBonusV1(db,{
               workspace_id:canonicalWorkspaceId,contact_id:turn.contact_id,conversation_id:turn.conversation_id,
               paid_offering_code:committedBusinessAction.interest_offering_code,source_turn_id:turn.id,

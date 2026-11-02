@@ -1,5 +1,6 @@
 import { readCourseBonusLadderV1 } from './read-course-bonus-ladder';
-import { nextRuleBonusCodeV1 } from '@/shared/conversation/deterministic-sales-rules';
+import { nextRuleBonusCodeV1, promoRequestV1 } from '@/shared/conversation/deterministic-sales-rules';
+import { currentFactualCourseReferencesV1 } from '@/features/orchestration/domain/course-focus';
 import type { CourseBonusLadderV1 } from '@/shared/conversation/bonus-ladder';
 import type { DbClient } from '@/lib/db/types';
 import { loadCourseBonusFlowConfig } from './course-bonus-flow-config';
@@ -415,6 +416,34 @@ function ruleBonus(input: Parameters<typeof deriveDirectCourseBonusCapabilityV1>
     bonus_offering_code: bonus.code, display_name: bonus.display_name, position: offered.length + 1 } : null;
 }
 
+/** Owner instant promo (2026-11-02): "me interesa X, tenés promo?" names the
+ * paid course in the same message. Only a single, unambiguous, active course
+ * named by the customer this turn, and only alongside a promo request. */
+async function promoRequestedCourseThisTurn(input: {
+  workspace_slug: string; contact_id: string; conversation_id: string; source_turn_id?: string;
+}, db: DbClient): Promise<string | null> {
+  if (!input.source_turn_id) return null;
+  const batch = await db<Array<{ content: string }>>`
+    SELECT fragment.content FROM messages current JOIN messages fragment
+      ON fragment.conversation_id=current.conversation_id AND fragment.contact_id=current.contact_id
+      AND fragment.direction='inbound' AND (fragment.id=current.id OR (fragment.batch_id=current.batch_id AND current.batch_id IS NOT NULL))
+    WHERE current.id=${input.source_turn_id}::uuid AND current.conversation_id=${input.conversation_id}::uuid
+      AND current.contact_id=${input.contact_id}::uuid
+    ORDER BY fragment.conversation_seq`;
+  const texts = batch.map(row => row.content);
+  if (!texts.some(promoRequestV1)) return null;
+  const offerings = await db<Array<{ code: string; display_name: string; aliases: string[] | null }>>`
+    SELECT o.code, o.display_name, ARRAY(SELECT jsonb_array_elements_text(CASE WHEN jsonb_typeof(o.metadata->'aliases')='array'
+      THEN o.metadata->'aliases' ELSE '[]'::jsonb END)) aliases
+    FROM offerings o JOIN workspaces w ON w.id=o.workspace_id
+    WHERE w.slug=${input.workspace_slug} AND o.status='active' AND o.offering_type='course'`;
+  const references = currentFactualCourseReferencesV1(texts, { as_of: new Date().toISOString(),
+    offerings_total: offerings.length, injection_suspected_count: 0,
+    offerings: offerings.map(offering => ({ code: offering.code, display_name: offering.display_name,
+      aliases: offering.aliases ?? [], academy: null })) }, []);
+  return references.length === 1 ? references[0].offeringCode : null;
+}
+
 async function readDirectCapability(input: {
   workspace_slug: string; contact_id: string; conversation_id: string;
   selected_offering_code: string | null; source_turn_id?: string;
@@ -446,8 +475,9 @@ async function readDirectCapability(input: {
         AND s.selected_offering_code IS NULL
         AND message_occurrence_v1(source.metadata,source.created_at)<=message_occurrence_v1(current.metadata,current.created_at)
     `;
-    if (!interest) return {...hidden('needs_interest'), enabled:true,max_bonus_courses:max};
-    input={...input,selected_offering_code:interest.interest_offering_code};
+    const sameTurnCourse = interest ? null : await promoRequestedCourseThisTurn(input, db);
+    if (!interest && !sameTurnCourse) return {...hidden('needs_interest'), enabled:true,max_bonus_courses:max};
+    input={...input,selected_offering_code:interest?.interest_offering_code ?? sameTurnCourse};
   }
   const [row] = await db<Array<{
     promotion_code: string | null; promotion_cycle_id: string; offer_version: number;

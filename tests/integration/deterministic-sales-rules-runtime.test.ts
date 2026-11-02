@@ -175,6 +175,22 @@ run('owner rules at the actual commit and transactional boundaries', () => {
       if (!allowed) expect(result).toMatchObject({ reason: 'ladder_step_pending' });
     });
 
+  it('owner instant promo names the paid course in the same message: capability and commit offer it at once', async () => {
+    const text = 'Me interesa Introducción al Ecommerce para mi tienda. Tenés alguna promoción para sumar un curso gratuito?';
+    const f = await seedConversationForAgentTurn({ selected_offering_code: null, first_message: text });
+    const capability = await readCourseBonusCapabilityV1({ workspace_slug: 'studyx', contact_id: f.contact_id,
+      conversation_id: f.conversation_id, channel: 'text', selected_offering_code: null, source_turn_id: f.turn_id }, { db: db! });
+    expect(capability).toMatchObject({ interest_offering_code: paid, rule_bonus: { bonus_offering_code: bonus } });
+    expect(capability.ladder).toMatchObject({ instant_trigger: true, eligible: true });
+    const committed = await commitAgentDecision({ turn_id: f.turn_id, trace_id: f.trace_id, supports_multi_outbound: true,
+      agent_turn_v2: { schema_version: 2 as const, proposal: { ...proposal(), memory_candidates: [],
+        move: { ...proposal().move, move: 'select_course', course_reference: paid } } },
+      decision: f.placeholderDecision as never, model: f.model as never });
+    expect(committed.status).toBe('committed');
+    const [count] = await db!`SELECT count(*)::int count FROM promotion_offer_bonus_offerings WHERE source_turn_id=${f.turn_id}`;
+    expect(count.count).toBe(1);
+  });
+
   it.each(['persisted_selection', 'interest_only'] as const)(
     'automatically seals a delivered offered package in the actual payment-link commit, without accept_promotion (%s)', async identityKind => {
       vi.stubEnv('PAYMENT_LINK_CONTADO', 'https://buy.stripe.com/test_rule_a_auto');
