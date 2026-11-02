@@ -36,6 +36,7 @@ export class Conversation<TDefinition extends ConversationDefinition = Conversat
 
 /** Records workflow definitions so orchestration behavior can run in unit tests. */
 export class Workflow<TDefinition extends WorkflowDefinition = WorkflowDefinition> {
+  static async get(id: string): Promise<{ id: string }> { return { id }; }
   definition: TDefinition;
   constructor(definition: TDefinition & WorkflowDefinition) {
     this.definition = definition;
@@ -46,6 +47,14 @@ export class Workflow<TDefinition extends WorkflowDefinition = WorkflowDefinitio
     return { id: 'test-workflow-id' };
   }
 }
+
+export const client = {
+  async getOrCreateWorkflow(_input: unknown): Promise<{ workflow: { id: string; status: 'pending'; tags: Record<string, string> } }> {
+    void _input;
+    throw new Error('UNEXPECTED_WORKFLOW_CLIENT_CALL');
+  },
+  async deleteWorkflow(_input: unknown): Promise<unknown> { void _input; return {}; },
+};
 
 /** Records trigger definitions so event handlers can run in unit tests. */
 export class Trigger<TDefinition extends TriggerDefinition = TriggerDefinition> {

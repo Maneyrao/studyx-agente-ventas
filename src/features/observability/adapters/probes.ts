@@ -81,6 +81,7 @@ const REQUIRED_AGENT_LOOP_DELIVERY_COLUMNS = [
   'deferred_patch_applied_on',
   'deferred_lead_projection',
   'deferred_lead_projection_applied_on',
+  'turn_evidence_append',
 ] as const;
 
 /**
@@ -116,7 +117,13 @@ export async function probeAgentLoopSchema(db: DbClient = sql): Promise<Dependen
           WHERE table_schema = 'public'
             AND table_name = 'outbound_deliveries'
             AND column_name = 'deferred_lead_projection_applied_on'
-        ) AS deferred_lead_projection_applied_on
+        ) AS deferred_lead_projection_applied_on,
+        COALESCE(
+          has_schema_privilege(current_user, to_regnamespace('studyx_private'), 'USAGE')
+          AND has_function_privilege(current_user,
+            to_regprocedure('studyx_private.append_turn_evidence_atomic(text,jsonb,text)'), 'EXECUTE'),
+          false
+        ) AS turn_evidence_append
     `);
     const schema = rows[0] ?? {};
     const missing = REQUIRED_AGENT_LOOP_DELIVERY_COLUMNS.filter(

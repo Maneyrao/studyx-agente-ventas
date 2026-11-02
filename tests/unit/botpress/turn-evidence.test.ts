@@ -1,9 +1,46 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { createTurnEvidenceJournal, isTurnEvidencePersistenceError, TurnEvidencePersistenceError } from '../../../botpress-agent/src/lib/observability/turn-evidence';
 import { runAgentADeepSeekAttemptV1 } from '../../../botpress-agent/src/lib/conversation/agent-a-attempt';
-import { evidenceAwareWorkflow } from '../../../botpress-agent/src/lib/observability/evidence-workflow';
+import { evidenceAwareWorkflow, getOrCreateEvidenceWorkflow, hydrateWorkflowCallback } from '../../../botpress-agent/src/lib/observability/evidence-workflow';
 
 describe('durable turn evidence', () => {
+  it.each([{ error_code: 'TURN_EVIDENCE_UNAVAILABLE' }, { error_code: 'TURN_EVIDENCE_RECOVERED_REQUIRES_REVIEW' },
+    { outcome: 'evidence_review_required' }])('preserves terminal output even when late tags failed: %j', async output => {
+    const original = { workflow: { id: 'original', status: 'completed', output, tags: {} } };
+    const load = vi.fn(async () => original);
+    expect(await evidenceAwareWorkflow(load)).toBe(original);
+    expect(load).toHaveBeenCalledOnce();
+  });
+  it('joins via the public client without loading any ADK state and preserves the keyed input', async () => {
+    const getOrCreateWorkflow = vi.fn(async () => ({ workflow: { id: 'raw', status: 'pending', tags: {} } }));
+    const deleteWorkflow = vi.fn();
+    const args = { name: 'processInboundTurn', input: { trace_id: 'trace' }, tags: { key: 'turn:key' },
+      discriminateByTags: ['key'], conversationId: 'conversation', timeoutAt: '2026-11-02T03:00:00Z' };
+    expect(await getOrCreateEvidenceWorkflow({ getOrCreateWorkflow, deleteWorkflow } as never, args)).toMatchObject({ id: 'raw' });
+    expect(getOrCreateWorkflow).toHaveBeenCalledExactlyOnceWith({ ...args, status: 'pending' });
+    expect(deleteWorkflow).not.toHaveBeenCalled();
+  });
+  it.each(['timedout', 'cancelled', 'completed', 'failed'])('retains pending evidence on %s without deleting a workflow', async status => {
+    const original = { id: 'original', status, tags: { studyxEvidenceReview: 'true' } };
+    const getOrCreateWorkflow = vi.fn(async () => ({ workflow: original }));
+    const deleteWorkflow = vi.fn();
+    expect(await getOrCreateEvidenceWorkflow({ getOrCreateWorkflow, deleteWorkflow } as never,
+      { name: 'processInboundTurn', input: {}, tags: { key: 'original' }, discriminateByTags: ['key'] })).toBe(original);
+    expect(deleteWorkflow).not.toHaveBeenCalled();
+  });
+  it('awaits callback state hydration before the router can finish', async () => {
+    let release!: () => void;
+    const hydrate = vi.fn(() => new Promise<void>(resolve => { release = resolve; }));
+    let returned = false;
+    const pending = hydrateWorkflowCallback('workflow_callback', { workflow: { id: 'worker' } }, hydrate)
+      .then(result => { returned = true; return result; });
+    await Promise.resolve();
+    expect(hydrate).toHaveBeenCalledWith('worker');
+    expect(returned).toBe(false);
+    release();
+    expect(await pending).toBe(true);
+    expect(await hydrateWorkflowCallback('message', undefined, hydrate)).toBe(false);
+  });
   it.each([true, false])('preserves terminal evidence but permits ordinary release recovery (evidence=%s)', async evidence => {
     let created = 0;
     const terminal = { workflow: { status: 'completed' }, tags: { studyxEvidenceReview: evidence ? 'true' : undefined }, id: 'original' };

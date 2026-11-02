@@ -1,6 +1,7 @@
 import { claimsUnverifiedCallProgressV1 } from '../../../src/shared/conversation/call-progress-claim'
 import { createTurnEvidenceJournal, isTurnEvidencePersistenceError, TurnEvidencePersistenceError } from '../lib/observability/turn-evidence'
 import { persistTurnEvidence } from '../lib/observability/persist-turn-evidence'
+import { getOrCreateEvidenceWorkflow } from '../lib/observability/evidence-workflow'
 import { commitDecisionWithRejectionReceiptV1, backendDecisionRejectionReason, backendDecisionRejectionSubjects } from '../lib/delivery/commit-decision-receipt'
 import { eligibleContactRequestFieldsV1 } from '../lib/conversation/contact-profile-request-policy'
 import { scheduleTurnRecovery } from '../actions/scheduleTurnRecovery'
@@ -600,7 +601,9 @@ export const processInboundTurn = new Workflow({
       if (state.errorCode?.startsWith('TURN_EVIDENCE_')) {
         state.evidenceReview = { workflow_id: workflow.id, subject_id: state.turnId ?? input.external_message_id,
           reason: state.errorCode, evidence_location: 'workflow state.pendingEvidence and cached generation steps' }
-        workflow.tags = { ...workflow.tags, studyxEvidenceReview: 'true' }
+        // Await while in_progress: ADK's deferred tag save runs after completed.
+        try { await client.updateWorkflow({ id: workflow.id, tags: { studyxEvidenceReview: 'true' } }) }
+        catch { safeLog('studyx.turn.evidence_review_tag_failed', { workflow_id: workflow.id }) }
         safeLog('studyx.turn.evidence_review_required', state.evidenceReview)
       }
       return resultFromState(state, input.trace_id)
@@ -2264,8 +2267,11 @@ export const processInboundTurn = new Workflow({
         })
         if (recovery.outcome === 'scheduled') {
           await step.sleep(`rejected-turn-recovery-wait-${recovery.attempt}`, recovery.delay_ms)
-          await step('start-rejected-turn-recovery-v1', () => processInboundTurn.getOrCreate({
-            key: `recovery:${owned.batch.id}:${recovery.attempt}`,
+          await step('start-rejected-turn-recovery-v1', () => getOrCreateEvidenceWorkflow(client, {
+            name: 'processInboundTurn',
+            tags: { key: `recovery:${owned.batch.id}:${recovery.attempt}` }, discriminateByTags: ['key'],
+            parentWorkflowId: workflow.id, conversationId: input.botpress_conversation_id,
+            timeoutAt: new Date(Date.now() + 15 * 60_000).toISOString(),
             input: {
               ...input,
               preingested: null,

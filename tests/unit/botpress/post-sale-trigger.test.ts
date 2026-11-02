@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const requestStudyxJson = vi.hoisted(() => vi.fn());
 vi.mock('../../../botpress-agent/src/utils/http', () => ({ requestStudyxJson }));
-import { configuration, secrets } from '../../helpers/botpress-runtime-stub';
+import { configuration, secrets, client } from '../../helpers/botpress-runtime-stub';
 import postSaleTrigger from '../../../botpress-agent/src/triggers/postSale';
 import { processPostSale } from '../../../botpress-agent/src/workflows/processPostSale';
 import * as evidencePersistence from '../../../botpress-agent/src/lib/observability/persist-turn-evidence';
@@ -16,6 +16,7 @@ const handler = (processPostSale as unknown as { definition: {
 } }).definition.handler;
 const args = () => ({ input: { notification_id: notificationId, conversation_id: 'botpress-conversation' },
   state: { trace_id: null }, step: async (_key: string, run: () => Promise<unknown>) => run(),
+  client: { updateWorkflow: vi.fn(async () => ({})) },
   workflow: { id: 'post-sale-test', tags: {} } });
 
 beforeEach(() => {
@@ -53,14 +54,17 @@ describe('post-sale deterministic access delivery — owner exception 2026-11-01
 
   it('retains trigger workflow idempotency and dispatches the deterministic access path', async () => {
     const modelFetch = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('NO_MODEL'));
-    const getWorkflow = vi.spyOn(processPostSale, 'getOrCreate').mockImplementation(async (input) => {
+    const getWorkflow = vi.fn(async (input) => {
       await handler({ ...args(), input: (input as { input: unknown }).input });
-      return { id: 'post-sale-workflow' } as never;
+      return { workflow: { id: 'post-sale-workflow', status: 'pending' as const, tags: {} } };
     });
+    vi.spyOn(client, 'getOrCreateWorkflow').mockImplementation(getWorkflow);
     requestStudyxJson.mockResolvedValueOnce(claim).mockResolvedValueOnce({ outcome: 'sent' });
     const triggerHandler = (postSaleTrigger as unknown as { definition: { handler: (args: unknown) => Promise<void> } }).definition.handler;
-    await triggerHandler({ event: { payload: { notification_id: notificationId }, conversationId: 'botpress-conversation' } });
-    expect(getWorkflow).toHaveBeenCalledWith(expect.objectContaining({ key: `studyx-post-sale:${notificationId}` }));
+    await triggerHandler({ event: { payload: { notification_id: notificationId }, conversationId: 'botpress-conversation' },
+      client: { getOrCreateWorkflow: getWorkflow, deleteWorkflow: vi.fn() } });
+    expect(getWorkflow).toHaveBeenCalledWith(expect.objectContaining({ tags: { key: `studyx-post-sale:${notificationId}` },
+      discriminateByTags: ['key'], conversationId: 'botpress-conversation', name: 'processPostSale' }));
     expect(modelFetch).not.toHaveBeenCalled();
   });
 

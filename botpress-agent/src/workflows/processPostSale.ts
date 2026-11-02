@@ -37,15 +37,16 @@ export const processPostSale = new Workflow({
   state: z.object({ trace_id: z.string().uuid().nullable().default(null),
     evidence_review: z.unknown().nullable().default(null) }) as any,
   timeout: '24h',
-  handler: async ({ input, state, step, workflow }) => {
+  handler: async ({ input, state, step, workflow, client }) => {
     const id = input.notification_id
     const conversationId = input.conversation_id
     const traceId = state.trace_id ?? crypto.randomUUID()
     state.trace_id = traceId
-    const requireEvidenceReview = (evidence_location = 'cached generate-post-sale step output.events and output.narrative') => {
+    const requireEvidenceReview = async (evidence_location = 'cached generate-post-sale step output.events and output.narrative') => {
       state.evidence_review = { workflow_id: workflow.id, notification_id: id,
         reason: 'TURN_EVIDENCE_UNAVAILABLE', evidence_location }
-      workflow.tags = { ...workflow.tags, studyxEvidenceReview: 'true' }
+      try { await client.updateWorkflow({ id: workflow.id, tags: { studyxEvidenceReview: 'true' } }) }
+      catch { console.info(JSON.stringify({ event: 'studyx.post_sale.evidence_review_tag_failed', workflow_id: workflow.id })) }
       return { outcome: 'evidence_review_required', workflow_id: workflow.id, evidence_location }
     }
     const claimed = await step('claim-post-sale', () => requestStudyxJson({ path: `/api/agent/post-sale/${id}/claim`,

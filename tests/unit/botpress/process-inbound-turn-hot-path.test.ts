@@ -368,11 +368,11 @@ describe('processInboundTurn hot path', () => {
     actionSpies.claim.mockResolvedValue(claimed);
     configuration.agentAPlannerlessV2Enabled = true;
     actionSpies.commit.mockRejectedValue(new StudyxHttpError('INTERNAL_ERROR',true,500,3));
-    vi.spyOn(processInboundTurn,'getOrCreate').mockResolvedValue({id:'serialization-recovery'});
+    const getOrCreateWorkflow = vi.fn(async () => ({ workflow: { id: 'serialization-recovery', status: 'pending', tags: {} } }));
     const step = Object.assign(async (_name:string,run:()=>Promise<unknown>)=>run(),{sleep:vi.fn(async()=>undefined)});
     const result = await (processInboundTurn as unknown as {
       definition:{handler:(args:Record<string,unknown>)=>Promise<unknown>};
-    }).definition.handler({input:workflowInput(),state:processingState(),step,execute:vi.fn(),client:{},
+    }).definition.handler({input:workflowInput(),state:processingState(),step,execute:vi.fn(),client:{ getOrCreateWorkflow },
       signal:new AbortController().signal,workflow:{id:'serialization-test'}});
     expect(result).toMatchObject({status:'retry_pending',delivery_status:null});
     expect(actionSpies.recovery).toHaveBeenCalledTimes(1);
@@ -3249,7 +3249,8 @@ describe('processInboundTurn hot path', () => {
     }).definition.handler;
 
     const result = await handler({
-      input: workflowInput(), state: processingState(), step, execute, client: {},
+      input: workflowInput(), state: processingState(), step, execute,
+      client: { getOrCreateWorkflow: vi.fn(async () => ({ workflow: { id: 'planner-recovery', status: 'pending', tags: {} } })) },
       signal: new AbortController().signal, workflow: { id: 'workflow-test' },
     });
 
@@ -5928,7 +5929,7 @@ describe('processInboundTurn — decision provider selection', () => {
     }
   });
 
-  function invokeHandler(execute: ReturnType<typeof vi.fn>, workflow = { id: 'workflow-test', tags: {} }) {
+  function invokeHandler(execute: ReturnType<typeof vi.fn>, workflow = { id: 'workflow-test', tags: {} }, client = {}) {
     const step = Object.assign(
       async (_name: string, run: () => Promise<unknown>) => run(),
       { sleep: vi.fn(async () => undefined) },
@@ -5942,7 +5943,7 @@ describe('processInboundTurn — decision provider selection', () => {
       state: processingState(),
       step,
       execute,
-      client: {},
+      client,
       signal: new AbortController().signal,
       workflow,
     });
@@ -5954,9 +5955,11 @@ describe('processInboundTurn — decision provider selection', () => {
     actionSpies.geminiDecision.mockResolvedValue({});
     vi.spyOn(evidencePersistence, 'persistTurnEvidence').mockRejectedValue(new Error('DB_UNAVAILABLE'));
     const workflow = { id: 'legacy-evidence-review', tags: {} };
-    const result = await invokeHandler(vi.fn(), workflow);
+    const updateWorkflow = vi.fn(async () => ({}));
+    const result = await invokeHandler(vi.fn(), workflow, { updateWorkflow });
     expect(result).toMatchObject({ error_code: 'TURN_EVIDENCE_UNAVAILABLE' });
-    expect(workflow.tags).toMatchObject({ studyxEvidenceReview: 'true' });
+    expect(updateWorkflow).toHaveBeenCalledWith({ id: workflow.id, tags: { studyxEvidenceReview: 'true' } });
+    expect(workflow.tags).toEqual({});
     expect(actionSpies.geminiDecision).toHaveBeenCalledTimes(1);
     expect(actionSpies.commit).not.toHaveBeenCalled();
   });
