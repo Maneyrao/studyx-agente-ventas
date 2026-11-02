@@ -135,7 +135,7 @@ describe('Regla A — escalada', () => {
       + 'Fotografía con Celulares para Tiendas Online y Publicidad en Redes Sociales sin costo extra, al mismo precio. Avanzamos?');
   });
   it('sin objeción nueva no escala', () => {
-    expect(decideBonusRuleV1(ctx({ package_status: 'offered', delivered_bonus: delivered }), draft({ memory: [] })))
+    expect(decideBonusRuleV1(ctx({ package_status: 'offered', delivered_bonus: delivered, batch_texts: ['ok'] }), draft({ memory: [] })))
       .toMatchObject({ kind: 'none', reason: 'no_new_price_objection' });
   });
   it('máximo 3', () => {
@@ -344,5 +344,19 @@ describe('dueño — negación lejana de "caro" no es objeción (golden real 999
   });
   it('una objeción afirmativa sigue contando', () => {
     expect(decideBonusRuleV1(ctx({ prior_price_objection_count: 1, batch_texts: ['me sigue pareciendo caro'] }), draft()).kind).toBe('offer');
+  });
+});
+
+describe('dueño — objeción literal después de una oferta escala (golden real b1ac82d/18)', () => {
+  const delivered = [{ code: 'fotografia_celulares_tiendas_online', display_name: 'Fotografía con Celulares para Tiendas Online' }];
+  const offered = (text: string) => ctx({ package_status: 'offered', delivered_bonus: delivered, batch_texts: [text],
+    rule_bonus: ruleFor('introduccion_ecommerce', delivered.map(c => c.code)) });
+  it('"me sigue pareciendo caro y no me alcanza" escala aunque el modelo no registre la objeción', () => {
+    expect(decideBonusRuleV1(offered('Ahora sí, el precio me sigue pareciendo caro y no me alcanza.'), draft({ memory: [] })))
+      .toMatchObject({ kind: 'offer', trigger: 'escalation', bonus_code: 'publicidad_redes_sociales' });
+  });
+  it('una pregunta o una negación no escalan', () => {
+    for (const t of ['es caro?', 'no es caro'])
+      expect(decideBonusRuleV1(offered(t), draft({ memory: [] })).kind).toBe('none');
   });
 });

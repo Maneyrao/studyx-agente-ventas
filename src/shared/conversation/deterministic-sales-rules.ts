@@ -352,7 +352,10 @@ export function decideBonusRuleV1(context: RuleContextV1, draft: RuleDraftV1): B
   let trigger: Extract<BonusRuleDecisionV1, { kind: 'offer' }>['trigger'];
   if (delivered.length > 0) {
     // Escalation: a new price objection or promo request in a reply after a delivered offer.
-    if (!currentObjection && !promoRequest && !probeConfirmed) return { kind: 'none', reason: 'no_new_price_objection' };
+    // Owner: ANY price objection escalates after an offer; a literal objection
+    // (questions and negations excluded) counts even if the model missed it.
+    const literalObjection = context.batch_texts.some(priceExpressionHintV1);
+    if (!currentObjection && !promoRequest && !probeConfirmed && !literalObjection) return { kind: 'none', reason: 'no_new_price_objection' };
     trigger = 'escalation';
   } else if (promoRequest) {
     trigger = 'promo_request';

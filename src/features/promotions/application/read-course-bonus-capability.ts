@@ -453,7 +453,17 @@ async function promoRequestedCourseThisTurn(input: {
     offerings_total: offerings.length, injection_suspected_count: 0,
     offerings: offerings.map(offering => ({ code: offering.code, display_name: offering.display_name,
       aliases: offering.aliases ?? [], academy: null })) }, []);
-  return references.length === 1 ? references[0].offeringCode : null;
+  if (references.length === 1) return references[0].offeringCode;
+  // "Me interesa Introducción al Ecommerce ... mi tienda online": a partial term
+  // can also hit another course; the full canonical name the customer wrote wins.
+  const visible = (value: string) => value.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+  const text = ` ${visible(texts.join(' '))} `;
+  const fullNames = references.filter(reference => {
+    const offering = offerings.find(candidate => candidate.code === reference.offeringCode);
+    return offering !== undefined && text.includes(` ${visible(offering.display_name)} `);
+  });
+  return fullNames.length === 1 ? fullNames[0].offeringCode : null;
 }
 
 async function readDirectCapability(input: {

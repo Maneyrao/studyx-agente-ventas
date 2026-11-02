@@ -6,7 +6,7 @@ import { classifyBatchSalesSignal } from '@/features/orchestration/domain/sales-
 import type { DbClient } from '@/lib/db/types';
 import { CALL_START_TIMEOUT_SECONDS } from '@/features/calls/domain/call-timeouts';
 import { readNegotiationFactsV1 } from '@/features/conversation/application/read-negotiation-facts';
-import { confirmsPriceProbeV1, isBonusCheckoutStateV1, promoRequestV1 } from '@/shared/conversation/deterministic-sales-rules';
+import { confirmsPriceProbeV1, isBonusCheckoutStateV1, priceExpressionHintV1, promoRequestV1 } from '@/shared/conversation/deterministic-sales-rules';
 import { deriveCourseBonusLadderV1, mayOfferCallV1, type CourseBonusLadderV1 } from '@/shared/conversation/bonus-ladder';
 
 /** Caller owns the state lock when authorizing an effect. Claims/proposals are never inputs. */
@@ -96,7 +96,11 @@ export async function readCourseBonusLadderV1(input: {
     ORDER BY prior.created_at DESC LIMIT 3`;
   const inCheckout = isBonusCheckoutStateV1({ stage: state.stage, awaiting_reply: state.awaiting_reply,
     payment_link_request_pending: false }) || state.payment_reported_at !== null || row.payment_reported;
-  const instantTrigger = !inCheckout && row.customer_messages.some(promoRequestV1)
+  const [liveOffer] = await db<Array<{ live: boolean }>>`
+    SELECT EXISTS(SELECT 1 FROM promotion_offers o WHERE o.conversation_id=${input.conversation_id}::uuid
+      AND o.contact_id=${input.contact_id}::uuid AND o.package_mode='direct' AND o.status='offered') live`;
+  const instantTrigger = !inCheckout && (row.customer_messages.some(promoRequestV1)
+    || (liveOffer?.live === true && row.customer_messages.some(priceExpressionHintV1)))
     || !inCheckout && confirmsPriceProbeV1(row.customer_messages, previousAgent.map(message => message.content));
   const ladder = deriveCourseBonusLadderV1({
     observed_price_objection_count: facts.price_objection_count + (currentObjection && !priorObjectionIsCurrent ? 1 : 0),

@@ -176,7 +176,8 @@ run('owner rules at the actual commit and transactional boundaries', () => {
     });
 
   it.each(['with_state', 'first_message_without_state'] as const)('owner instant promo names the paid course in the same message: capability and commit offer it at once (%s)', async variant => {
-    const text = 'Me interesa Introducción al Ecommerce para mi tienda. Tenés alguna promoción para sumar un curso gratuito?';
+    // Literal golden text: 'tienda online' also hits Fotografía con Celulares para Tiendas Online.
+    const text = 'Me interesa Introducción al Ecommerce para vender los productos de mi tienda online. Tenés alguna promoción para sumar un curso gratuito?';
     const f = await seedConversationForAgentTurn({ selected_offering_code: null, first_message: text });
     if (variant === 'first_message_without_state') {
       await db!`DELETE FROM conversation_sales_context_state_events_v1 WHERE conversation_id=${f.conversation_id}::uuid`;
@@ -190,6 +191,10 @@ run('owner rules at the actual commit and transactional boundaries', () => {
       // Live golden 76c6447/18: at commit time the model's select_course already names the course.
       const atCommit = await readCourseBonusCapabilityV1({ workspace_slug: 'studyx', contact_id: f.contact_id,
         conversation_id: f.conversation_id, channel: 'text', selected_offering_code: paid, source_turn_id: f.turn_id }, { db: db! });
+      // Live commit path: no persisted selection yet (checkoutOfferingCode null).
+      const atCommitNoSelection = await readCourseBonusCapabilityV1({ workspace_slug: 'studyx', contact_id: f.contact_id,
+        conversation_id: f.conversation_id, channel: 'text', selected_offering_code: null, source_turn_id: f.turn_id }, { db: db! });
+      expect(atCommitNoSelection).toMatchObject({ interest_offering_code: paid, ladder: { instant_trigger: true } });
       expect(atCommit.ladder).toMatchObject({ instant_trigger: true, eligible: true });
       expect(atCommit.rule_bonus).toMatchObject({ bonus_offering_code: bonus });
     }
@@ -203,6 +208,25 @@ run('owner rules at the actual commit and transactional boundaries', () => {
     const [state] = await db!`SELECT selected_offering_code, source_turn_id FROM conversation_sales_context_states_v1 WHERE conversation_id=${f.conversation_id}::uuid`;
     expect(state).toMatchObject({ selected_offering_code: paid, source_turn_id: f.turn_id });
   });
+
+  it.each([['Ahora sí, el precio me sigue pareciendo caro y no me alcanza.', true], ['Es caro? Te pregunto.', false]] as const)(
+    'with a live offer, a literal price objection is the backend escalation trigger: "%s" → %s', async (text, instant) => {
+      const f = await seedConversationForAgentTurn({ selected_offering_code: paid, first_message: 'tenés alguna promo?' });
+      const outbound = randomUUID();
+      const offer = await offerDirectCourseBonusV1(db!, { workspace_id: f.workspace_id, contact_id: f.contact_id,
+        conversation_id: f.conversation_id, paid_offering_code: paid, source_turn_id: f.turn_id,
+        expected_offer_version: 0, bonus_offering_codes: [bonus], outbound: { id: outbound, content: fixed[1],
+          provider: 'test', integration_id: 'test', channel: 'whatsapp', destination: 'test', idempotency_key: outbound } });
+      expect(offer.ok).toBe(true);
+      const next = randomUUID();
+      await db!`INSERT INTO messages(id,conversation_id,contact_id,direction,content,created_at,conversation_seq)
+        VALUES (${next}::uuid,${f.conversation_id}::uuid,${f.contact_id}::uuid,'inbound',${text},now()+interval '2 seconds',
+          (SELECT coalesce(max(conversation_seq),0)+1 FROM messages WHERE conversation_id=${f.conversation_id}::uuid))`;
+      const { readCourseBonusLadderV1 } = await import('@/features/promotions/application/read-course-bonus-ladder');
+      const ladder = await readCourseBonusLadderV1({ workspace_id: f.workspace_id, contact_id: f.contact_id,
+        conversation_id: f.conversation_id, source_turn_id: next, selected_offering_code: paid }, db!);
+      expect(ladder?.instant_trigger === true).toBe(instant);
+    });
 
   it.each(['persisted_selection', 'interest_only'] as const)(
     'automatically seals a delivered offered package in the actual payment-link commit, without accept_promotion (%s)', async identityKind => {
