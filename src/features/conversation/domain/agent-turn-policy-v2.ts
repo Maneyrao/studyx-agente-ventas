@@ -589,9 +589,10 @@ export function authorizeAgentTurnV2(input: {
     // Owner 2026-11-03: naming the course the customer chose as gift (or the gift
     // it replaces) is the subject of the request, not a course change.
     const chosen = cap?.rule_bonus?.source === 'customer_request' ? cap.rule_bonus : null;
-    const customerChoiceReference = chosen !== null && proposed.bonus_offering_code === chosen.bonus_offering_code
-      && (requestedOffering === chosen.bonus_offering_code || requestedOffering === chosen.replaces_offering_code
-        || requestedOfferingIsPresentedBonus);
+    const customerChoiceReference = chosen !== null && !changesCourse && !startsFreshSalesCycle
+      && proposed.bonus_offering_code === chosen.bonus_offering_code
+      && (requestedOffering === chosen.bonus_offering_code
+        || (chosen.replaces_offering_code !== undefined && requestedOffering === chosen.replaces_offering_code));
     const reason = cap?.enabled !== true ? 'bonus_disabled'
       : checkout ? 'sale_already_closed'
       : (ladder?.eligible !== true && !instant) || escalationWithoutNewObjection ? 'ladder_step_pending'
