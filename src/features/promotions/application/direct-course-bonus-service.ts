@@ -297,7 +297,7 @@ export async function offerDirectCourseBonusV1(db: DbClient, input: OfferDirectC
     // Owner 2026-11-03: a literal customer choice of this exact course (same detector as the capability).
     const request=await customerBonusRequestThisTurnV1({...input,selected_offering_code:input.paid_offering_code},tx,active,
       offer?.status==='offered' ? offered.map(row=>row.code) : [],limit);
-    const chosen=request?.bonus_offering_code===input.bonus_offering_codes[0] ? request : null;
+    const chosen=request?.request?.bonus_offering_code===input.bonus_offering_codes[0] ? request.request : null;
     const swap=chosen?.kind==='swap' && offer?.status==='offered' && offer.offer_version===1 && offered.length===1
       && offered[0]!.code===chosen.replaced_offering_code ? chosen : null;
     if (chosen?.kind==='swap' && !swap) reject('stale_offer_version');

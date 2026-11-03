@@ -234,7 +234,7 @@ function paymentOfferingClarification(): Decision {
     schema_version: 4,
     intent: 'commercial',
     kind: 'clarify',
-    response: 'Perfecto. ¿Para qué curso querés elegir ese plan?',
+    response: 'Perfecto. ¿Para qué curso quieres elegir ese plan?',
     response_type: 'clarification',
     confidence: 1,
     reason_code: 'OFFERING_REQUIRED',
@@ -363,7 +363,7 @@ function unavailableCatalogRoute(
     claimed,
     'catalog_unavailable',
     reason,
-    'No puedo confirmar el catálogo ahora. ¿Querés que lo revisemos más tarde?',
+    'No puedo confirmar el catálogo ahora. ¿Quieres que lo revisemos más tarde?',
     'catalog_availability',
   )
 }
@@ -450,7 +450,7 @@ function routeCatalogResolution(claimed: ClaimedTurn): CommercialRouteResult | n
       claimed,
       'catalog_ambiguous',
       'DETERMINISTIC_CATALOG_AMBIGUOUS',
-      `Encontré varias opciones: ${labels.join(', ')}. ¿Cuál querés revisar?`,
+      `Encontré varias opciones: ${labels.join(', ')}. ¿Cuál quieres revisar?`,
       resolution.clarification === 'choose_area' ? 'catalog_area_choice' : 'catalog_offering_choice',
     )
   }
@@ -478,7 +478,7 @@ function routeCatalogResolution(claimed: ClaimedTurn): CommercialRouteResult | n
       claimed,
       'catalog_not_found',
       'DETERMINISTIC_CATALOG_NOT_FOUND',
-      'No pude verificar ese curso. ¿Querés que te muestre opciones de esa área?',
+      'No pude verificar ese curso. ¿Quieres que te muestre opciones de esa área?',
       'catalog_alternative',
     )
   }

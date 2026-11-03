@@ -25,6 +25,7 @@ import {
   type PaymentReportProjectionSubjectV1,
 } from '@/features/payments/domain/payment-report-projection';
 import { auditLog } from '@/lib/audit/logger';
+import { recordSalesFlowMarkersV1 } from '@/features/promotions/application/sales-flow-markers';
 import { resolveAgentTurnOfferingReferenceV2 } from '@/features/conversation/domain/agent-turn-policy-v2';
 import {
   config,
@@ -2030,6 +2031,12 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
           discussed_offering_code: preparedAgentTurn.commercial_interest_offering_code,
           records_price_objection: preparedAgentTurn.records_price_objection,
           reset_context: preparedAgentTurn.resets_promotion_context,
+        });
+        // Owner promo flow (2026-11-03): persisted price question / answer / retention / gift request.
+        await recordSalesFlowMarkersV1(db, {
+          conversation_id: turn.conversation_id, turn_id: turn.id, outbound_texts: partTexts,
+          gift_request_code: courseBonusCapability?.sales_flow?.gift_request_pending_probe?.code ?? null,
+          correlation_id: validatedInput.trace_id,
         });
       }
       if (preparedAgentTurn && canonicalWorkspaceId && committedBusinessAction

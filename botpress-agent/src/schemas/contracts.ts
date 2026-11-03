@@ -676,6 +676,7 @@ export const ClaimedTurnSchema = z.object({
     accepted_at: z.string().nullable().optional(),
     package_status: z.enum(['pending_review','offered','accepted','cancelled','expired','attached']).nullable().optional(),
     delivered_bonus_offerings: z.array(z.object({code:z.string().trim().min(1),display_name:z.string().trim().min(1).max(240),position:z.number().int().min(1).max(3)}).strict()).max(3).optional(),
+    sales_flow: z.object({price_probe:z.enum(['not_asked','asked','yes','no']),retention_used:z.boolean(),promo_expires_at:z.string().nullable(),gift_request_pending_probe:z.object({code:z.string().trim().min(1),display_name:z.string().trim().min(1).max(240)}).strict().nullable()}).strict().optional(),
     rule_bonus: z.object({paid_offering_code:z.string().trim().min(1),paid_display_name:z.string().trim().min(1).max(240),bonus_offering_code:z.string().trim().min(1),display_name:z.string().trim().min(1).max(240),position:z.number().int().min(1).max(3),source:z.literal('customer_request').optional(),replaces_offering_code:z.string().trim().min(1).optional(),replaces_display_name:z.string().trim().min(1).max(240).optional()}).strict().nullable().optional(),
     max_bonus_courses: z.union([z.literal(1), z.literal(2), z.literal(3)]).optional(),
     status: z.enum([

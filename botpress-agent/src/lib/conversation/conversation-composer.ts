@@ -73,35 +73,35 @@ function fallbackCopy(goal: TurnPlanV1['response_goal']): ComposedNarrativeV1['n
     case 'greet_and_discover':
       return { opening: '¡Hola! Te ayudo a encontrar una opción adecuada.', explanation: null, next_question: '¿Qué te gustaría aprender?' }
     case 'guide_area_choice':
-      return { opening: 'Podemos empezar por el área que más te interese.', explanation: null, next_question: '¿Cuál querés explorar?' }
+      return { opening: 'Podemos empezar por el área que más te interese.', explanation: null, next_question: '¿Cuál quieres explorar?' }
     case 'guide_course_choice':
-      return { opening: 'Estas son algunas opciones para avanzar.', explanation: null, next_question: '¿Cuál querés conocer mejor?' }
+      return { opening: 'Estas son algunas opciones para avanzar.', explanation: null, next_question: '¿Cuál quieres conocer mejor?' }
     case 'explain_selected_course':
-      return { opening: 'Te comparto la información disponible.', explanation: null, next_question: '¿Qué aspecto querés conocer mejor?' }
+      return { opening: 'Te comparto la información disponible.', explanation: null, next_question: '¿Qué aspecto quieres conocer mejor?' }
     case 'continue_course_advice':
-      return { opening: 'Sigamos por escrito.', explanation: 'Puedo continuar orientándote sobre la opción elegida.', next_question: '¿Qué aspecto querés profundizar?' }
+      return { opening: 'Sigamos por escrito.', explanation: 'Puedo continuar orientándote sobre la opción elegida.', next_question: '¿Qué aspecto quieres profundizar?' }
     case 'acknowledge_chat_preference':
-      return { opening: 'Perfecto, seguimos por chat.', explanation: 'Puedo acompañarte por este medio.', next_question: '¿Qué querés consultar ahora?' }
+      return { opening: 'Perfecto, seguimos por chat.', explanation: 'Puedo acompañarte por este medio.', next_question: '¿Qué quieres consultar ahora?' }
     case 'acknowledge_call_decline':
-      return { opening: 'Entendido, continuamos por escrito.', explanation: null, next_question: '¿Qué aspecto querés revisar?' }
+      return { opening: 'Entendido, continuamos por escrito.', explanation: null, next_question: '¿Qué aspecto quieres revisar?' }
     case 'confirm_call_availability':
-      return { opening: 'Perfecto.', explanation: null, next_question: '¿Podés atender si te llamamos ahora?' }
+      return { opening: 'Perfecto.', explanation: null, next_question: '¿Puedes atender si te llamamos ahora?' }
     case 'confirm_call_request':
       return { opening: 'Entendido, registré tu solicitud de llamada.', explanation: null, next_question: null }
     case 'present_payment_options':
       return { opening: 'Estas son las opciones de pago disponibles.', explanation: null, next_question: '¿Cuál te resulta más conveniente?' }
     case 'confirm_selected_plan':
-      return { opening: 'Quedó seleccionado ese plan.', explanation: null, next_question: '¿Querés avanzar ahora?' }
+      return { opening: 'Quedó seleccionado ese plan.', explanation: null, next_question: '¿Quieres avanzar ahora?' }
     case 'acknowledge_payment_deferral':
       return { opening: 'De acuerdo, conservamos la elección para más adelante.', explanation: null, next_question: null }
     case 'confirm_payment_link':
-      return { opening: 'Perfecto, podés avanzar con el enlace autorizado.', explanation: null, next_question: null }
+      return { opening: 'Perfecto, puedes avanzar con el enlace autorizado.', explanation: null, next_question: null }
     case 'acknowledge_purchase_decline':
       return { opening: 'Entendido, no avanzaremos con la compra.', explanation: null, next_question: null }
     case 'catalog_temporarily_unavailable':
       return { opening: 'No puedo consultar el catálogo en este momento.', explanation: 'Podemos retomar tu objetivo sin perder el hilo.', next_question: '¿Qué te gustaría aprender?' }
     default:
-      return { opening: 'Quiero asegurarme de entenderte bien.', explanation: null, next_question: '¿Podés indicarme cómo querés continuar?' }
+      return { opening: 'Quiero asegurarme de entenderte bien.', explanation: null, next_question: '¿Puedes indicarme cómo quieres continuar?' }
   }
 }
 

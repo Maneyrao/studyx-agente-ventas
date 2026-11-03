@@ -1,3 +1,4 @@
+import { readSalesFlowFlagsV1 } from './sales-flow-markers';
 import { priceObservationQuoteInBatchV1 } from '@/shared/conversation/deterministic-sales-rules';
 import { loadConversationSessionConfig } from '@/lib/config';
 import { effectiveConversationStateV1 } from '@/features/conversation/domain/conversation-planner';
@@ -6,7 +7,7 @@ import { classifyBatchSalesSignal } from '@/features/orchestration/domain/sales-
 import type { DbClient } from '@/lib/db/types';
 import { CALL_START_TIMEOUT_SECONDS } from '@/features/calls/domain/call-timeouts';
 import { readNegotiationFactsV1 } from '@/features/conversation/application/read-negotiation-facts';
-import { confirmsPriceProbeV1, isBonusCheckoutStateV1, priceExpressionHintV1, promoRequestV1 } from '@/shared/conversation/deterministic-sales-rules';
+import { confirmsPriceProbeV1, isBonusCheckoutStateV1, literalDeclineV1, priceExpressionHintV1, promoRequestV1 } from '@/shared/conversation/deterministic-sales-rules';
 import { deriveCourseBonusLadderV1, mayOfferCallV1, type CourseBonusLadderV1 } from '@/shared/conversation/bonus-ladder';
 
 /** Caller owns the state lock when authorizing an effect. Claims/proposals are never inputs. */
@@ -99,7 +100,18 @@ export async function readCourseBonusLadderV1(input: {
   const [liveOffer] = await db<Array<{ live: boolean }>>`
     SELECT EXISTS(SELECT 1 FROM promotion_offers o WHERE o.conversation_id=${input.conversation_id}::uuid
       AND o.contact_id=${input.contact_id}::uuid AND o.package_mode='direct' AND o.status='offered') live`;
-  const instantTrigger = !inCheckout && (row.customer_messages.some(promoRequestV1)
+  // Owner 2026-11-03 flow, from persisted markers: after a "no" to the price
+  // question a new complaint offers directly; the first literal decline with
+  // fewer than 3 gifts and unused retention offers the next gift once.
+  const flow = await readSalesFlowFlagsV1(db, input.conversation_id);
+  const [gifts] = await db<Array<{ n: number }>>`SELECT count(b.*)::int n FROM promotion_offers o
+    JOIN promotion_offer_bonus_offerings b ON b.offer_id=o.id
+    WHERE o.conversation_id=${input.conversation_id}::uuid AND o.contact_id=${input.contact_id}::uuid
+      AND o.package_mode='direct' AND o.status='offered'`;
+  const flowTrigger = !inCheckout && (
+    (flow.price_probe === 'no' && row.customer_messages.some(priceExpressionHintV1))
+    || (!flow.retention_used && flow.price_probe !== 'asked' && (gifts?.n ?? 0) < 3 && literalDeclineV1(row.customer_messages)));
+  const instantTrigger = flowTrigger || !inCheckout && (row.customer_messages.some(promoRequestV1)
     || (liveOffer?.live === true && row.customer_messages.some(priceExpressionHintV1)))
     || !inCheckout && confirmsPriceProbeV1(row.customer_messages, previousAgent.map(message => message.content));
   // The locked scope above is authoritative for this turn. A first-turn promo

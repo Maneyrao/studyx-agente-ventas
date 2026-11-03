@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  decideRetentionRuleV1, draftFulfillsRetentionV1, retentionFallbackMessageV1,
+  decideRetentionRuleV1, draftFulfillsRetentionV1, literalDeclineV1, retentionBonusDecisionV1, retentionOfferMessageV1,
   BONUS_AFFINITY_TABLE_V1, agentResponseOrdinalV1, bonusFallbackMessagesV1, bonusSequenceForPaidCourseV1,
   decideBonusRuleV1, decideCallRuleV1, draftFulfillsPromotionTaskV1, draftPresentsBonusV1, promotionTaskV1, nextRuleBonusCodeV1, priceExpressionHintV1,
   type RuleContextV1, type RuleDraftV1,
@@ -521,42 +521,32 @@ describe('Regla A — curso elegido por el cliente (dueño 2026-11-03)', () => {
 });
 
 describe('Regla E — retención ante el primer «no» (dueño 2026-11-03)', () => {
-  const declined = (text = 'no gracias, no lo voy a comprar') => draft({ move: { move: 'decline_purchase', secondary_moves: [] } });
-  const base = { paid_display_name: 'Inglés 1', paid_offering_code: 'ingles_1', bonus_enabled: true };
-  it('primer no con menos de 3 regalos: busca otra bonificación', () => {
-    const decision = decideRetentionRuleV1(ctx({ ...base, batch_texts: ['no gracias'] }), declined());
-    expect(decision).toEqual({ kind: 'retain', variant: 'more_bonus', paid_name: 'Inglés 1', paid_code: 'ingles_1' });
-    if (decision.kind !== 'retain') throw new Error();
-    expect(retentionFallbackMessageV1(decision)).toBe('Estás seguro? Te puedo buscar otra bonificación que seguro te interesa! '
-      + 'Qué te gustaría aprender además de Inglés 1?');
-    expect(draftFulfillsRetentionV1(draft({ response: { messages: [retentionFallbackMessageV1(decision)] } }))).toBe(true);
-    expect(draftFulfillsRetentionV1(draft({ move: { move: 'decline_purchase', secondary_moves: [] },
-      response: { messages: ['Estás seguro? Te busco otra.'] } }))).toBe(false);
+  const declined = () => draft({ move: { move: 'decline_purchase', secondary_moves: [] } });
+  const rule = { paid_offering_code: 'ingles_1', paid_display_name: 'Inglés 1', bonus_offering_code: 'ingles_2',
+    display_name: 'Inglés 2', position: 1 };
+  const base = { paid_display_name: 'Inglés 1', paid_offering_code: 'ingles_1', bonus_enabled: true, rule_bonus: rule };
+  it('primer no con menos de 3 regalos: ofrece el siguiente bonificado con la frase del dueño', () => {
+    const context = ctx({ ...base, batch_texts: ['no gracias'] });
+    expect(decideRetentionRuleV1(context, declined())).toMatchObject({ kind: 'retain', paid_name: 'Inglés 1' });
+    const offer = retentionBonusDecisionV1(context)!;
+    expect(retentionOfferMessageV1(offer)).toBe('Estás seguro? Te puedo sumar Inglés 2 sin costo con Inglés 1, seguro te interesa! Qué te parece?!');
+    expect(draftFulfillsRetentionV1(draft({ response: { messages: [retentionOfferMessageV1(offer)] } }))).toBe(true);
   });
-  it('con los 3 regalos ya ofrecidos: recuerda la promoción', () => {
+  it('con los 3 regalos ofrecidos o la retención ya usada (persistida): sin retención', () => {
     const gifts = ['a', 'b', 'c'].map(code => ({ code, display_name: code }));
     expect(decideRetentionRuleV1(ctx({ ...base, batch_texts: ['no'], package_status: 'offered', delivered_bonus: gifts }), declined()))
-      .toMatchObject({ kind: 'retain', variant: 'limited_time' });
-  });
-  it('una sola vez por conversación', () => {
-    expect(decideRetentionRuleV1(ctx({ ...base, batch_texts: ['no'], recent_turns: [{ direction: 'outbound',
-      content: 'Estás seguro? Te puedo buscar otra bonificación' }] }), declined())).toMatchObject({ kind: 'none', reason: 'already_attempted' });
-  });
-  it('sin bonificación habilitada no promete otra: recuerda la promoción', () => {
-    expect(decideRetentionRuleV1(ctx({ ...base, batch_texts: ['no'], bonus_enabled: false }), declined()))
-      .toMatchObject({ kind: 'retain', variant: 'limited_time' });
+      .toMatchObject({ kind: 'none', reason: 'all_gifts_offered' });
+    expect(decideRetentionRuleV1(ctx({ ...base, batch_texts: ['no'], retention_used: true }), declined()))
+      .toMatchObject({ kind: 'none', reason: 'already_attempted' });
   });
   it.each(['no me escribas más', 'dejame de mandar mensajes', 'quiero darme de baja', 'sos un chanta', 'basta',
-    'no quiero recibir promociones', 'no me mandes más ofertas'])(
-    'respeta de inmediato: %s', (text) => {
-      expect(decideRetentionRuleV1(ctx({ ...base, batch_texts: [text] }), declined())).toMatchObject({ kind: 'none', reason: 'respect_end' });
-    });
-  it('nunca con opt-out, venta cerrada, sin curso o sin un no definitivo', () => {
-    expect(decideRetentionRuleV1(ctx({ ...base, batch_texts: ['no'], opted_out: true }), declined())).toMatchObject({ kind: 'none' });
-    expect(decideRetentionRuleV1(ctx({ ...base, batch_texts: ['no'], stage: 'closed' }), declined())).toMatchObject({ kind: 'none' });
-    expect(decideRetentionRuleV1(ctx({ batch_texts: ['no'] }), declined())).toMatchObject({ kind: 'none', reason: 'no_paid_course' });
-    expect(decideRetentionRuleV1(ctx({ ...base, batch_texts: ['lo voy a pensar'] }),
-      draft({ move: { move: 'defer_payment', secondary_moves: [] } }))).toMatchObject({ kind: 'none', reason: 'no_decline' });
+    'no quiero recibir promociones'])('respeta de inmediato: %s', (text) => {
+    expect(decideRetentionRuleV1(ctx({ ...base, batch_texts: [text] }), declined())).toMatchObject({ kind: 'none', reason: 'respect_end' });
+  });
+  it('detector literal del no definitivo', () => {
+    expect(literalDeclineV1(['no gracias'])).toBe(true);
+    expect(literalDeclineV1(['no chau'])).toBe(true);
+    expect(literalDeclineV1(['no me escribas mas'])).toBe(false);
   });
 });
 

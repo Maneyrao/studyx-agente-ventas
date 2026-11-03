@@ -1269,7 +1269,7 @@ function citesOnlyAuthorizedValues(
 function transactionalFallback(responseGoal: TurnPlanV1['response_goal']): string | null {
   switch (responseGoal) {
     case 'confirm_selected_plan':
-      return 'Queda registrada tu elección. Avisame cuando quieras avanzar.';
+      return 'Queda registrada tu elección. Avísame cuando quieras avanzar.';
     // `confirm_payment_link` tenía acá una cadena que pedía tres campos
     // fuera del contrato comercial y fusionaba nombre con apellido. Quién
     // pide los datos es el modelo; cuáles faltan lo dice `intake_missing`,
@@ -1288,9 +1288,9 @@ function safeContextualOpening(
 ): string {
   switch (responseGoal) {
     case 'greet_and_discover':
-      return '¿Ya tenés un curso en mente o querés que veamos opciones por área?';
+      return '¿Ya tienes un curso en mente o quieres que veamos opciones por área?';
     case 'guide_area_choice':
-      return 'Contame qué área te interesa y te ayudo a ordenar las opciones.';
+      return 'Cuéntame qué área te interesa y te ayudo a ordenar las opciones.';
     case 'guide_course_choice':
       return 'Elegí una de las opciones disponibles y seguimos desde ahí.';
     case 'explain_selected_course':
@@ -1300,9 +1300,9 @@ function safeContextualOpening(
         'Seguimos con los datos confirmados de la formación elegida.',
       ][callOfferCount]!;
     case 'continue_course_advice':
-      return 'Seguimos por chat con la información que necesitás.';
+      return 'Seguimos por chat con la información que necesitas.';
     case 'offer_call_or_chat':
-      return 'Podés elegir cómo preferís continuar.';
+      return 'Puedes elegir cómo prefieres continuar.';
     case 'acknowledge_chat_preference':
       return 'Perfecto, seguimos por chat.';
     case 'acknowledge_call_decline':
@@ -1314,7 +1314,7 @@ function safeContextualOpening(
     case 'present_payment_options':
       return 'Estas son las opciones disponibles para que elijas cómo avanzar.';
     case 'confirm_selected_plan':
-      return 'Queda registrada tu elección. Avisame cuando quieras avanzar.';
+      return 'Queda registrada tu elección. Avísame cuando quieras avanzar.';
     case 'acknowledge_payment_deferral':
       return 'De acuerdo, lo dejamos para más adelante.';
     case 'confirm_payment_link':
@@ -1326,11 +1326,11 @@ function safeContextualOpening(
     case 'confirm_current_state':
       return 'Te confirmo en qué punto quedamos.';
     case 'acknowledge_purchase_decline':
-      return 'Entendido. Si querés, podemos seguir revisando tus opciones.';
+      return 'Entendido. Si quieres, podemos seguir revisando tus opciones.';
     case 'catalog_temporarily_unavailable':
       return 'Ahora no puedo consultar las opciones confirmadas. Podemos retomar tu objetivo apenas estén disponibles.';
     case 'clarify_current_step':
-      return 'Decime cómo preferís continuar y te acompaño desde este punto.';
+      return 'Dime cómo prefieres continuar y te acompaño desde este punto.';
   }
 }
 

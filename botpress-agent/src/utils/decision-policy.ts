@@ -441,8 +441,8 @@ function advisorySensitiveFallback(
     intent: 'commercial',
     kind: responseType === 'clarification' ? 'clarify' : 'reply',
     response: action === 'send_payment_link'
-      ? 'Para enviarte el enlace correcto, confirmame qué curso y cuál de las tres opciones de pago elegís.'
-      : 'Puedo seguir asesorándote por acá. Si querés que gestionemos una llamada, pedímela de forma directa.',
+      ? 'Para enviarte el enlace correcto, confírmame qué curso y cuál de las tres opciones de pago eliges.'
+      : 'Puedo seguir asesorándote por acá. Si quieres que gestionemos una llamada, pídemela de forma directa.',
     response_type: responseType,
     business_action: null,
     memory_candidates: [],
@@ -494,7 +494,7 @@ function paymentPlanClarification(claimed: ClaimedTurn, reasonCode: string): Dec
     intent: 'commercial',
     kind: 'clarify',
     response:
-      'Para enviarte el link de pago necesito que me confirmes cuál de las tres opciones preferís: 12 cuotas mensuales, 6 cuotas mensuales o un pago único. ¿Con cuál avanzamos?',
+      'Para enviarte el link de pago necesito que me confirmes cuál de las tres opciones prefieres: 12 cuotas mensuales, 6 cuotas mensuales o un pago único. ¿Con cuál avanzamos?',
     response_type: 'clarification',
     business_action: null,
     memory_candidates: [],
@@ -514,7 +514,7 @@ function paymentCourseClarification(claimed: ClaimedTurn): Decision {
     schema_version: 4,
     intent: 'commercial',
     kind: 'clarify',
-    response: 'Antes de enviarte el link, confirmame por favor qué curso querés comprar.',
+    response: 'Antes de enviarte el link, confírmame por favor qué curso quieres comprar.',
     response_type: 'clarification',
     business_action: null,
     memory_candidates: [],
