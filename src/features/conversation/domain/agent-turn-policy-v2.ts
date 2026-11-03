@@ -1,5 +1,6 @@
 import { deriveCourseBonusLadderV1 } from '@/shared/conversation/bonus-ladder';
 import { draftConfirmsPriceOnlyBarrierV1, draftDeclinesPurchaseV1, draftRecordsPriceObjectionV1, isCheckoutV1 } from '@/shared/conversation/deterministic-sales-rules';
+import { inspectCourseBonusClaimsV1 } from '@/shared/conversation/course-bonus-claim';
 import { validateCourseMentionsV1 } from '@/shared/conversation/course-mentions';
 import { messagesWithoutExactCallOfferV1 } from '@/shared/conversation/call-offer-format';
 import { courseBonusLadderRejectionSubjectsV1 } from '@/shared/conversation/bonus-ladder-rejection';
@@ -599,11 +600,26 @@ export function authorizeAgentTurnV2(input: {
         || !input.offerings.some(o => o.code === proposed.bonus_offering_code) ? 'invalid_offering'
       : cap.bonus_offerings.some(o => o.code === proposed.bonus_offering_code) && !swap ? 'duplicate_bonus'
       : !swap && cap.bonus_offerings.length >= (cap.max_bonus_courses ?? 0) ? 'bonus_limit_reached' : null;
-    if (reason) return {ok:false,reasons:['COMMERCIAL_TRUTH_VIOLATION'],
+    // A rejected effect rejects only the effect: the copy is kept and the
+    // action stays `none`, unless the copy itself names the gift as a bonus
+    // (that wording is the false claim and goes back for repair/removal).
+    const namesGiftAsBonus = reason !== null && (
+      proposal.course_mentions?.some(mention => mention.role === 'bonus'
+        && mention.offering_code === proposed.bonus_offering_code) === true
+      || inspectCourseBonusClaimsV1({
+        content: [...proposal.response.messages,
+          ...(proposal.response.call_offer ? [proposal.response.call_offer] : [])].join('\n'),
+        authorized_bonus_names: [],
+        known_offering_names: input.offerings.map(offering => offering.display_name),
+        paid_offering_names: input.offerings
+          .filter(offering => offering.code === proposed.interest_offering_code)
+          .map(offering => offering.display_name),
+      }).has_unauthorized_claim);
+    if (reason && namesGiftAsBonus) return {ok:false,reasons:['COMMERCIAL_TRUTH_VIOLATION'],
       rejection_subjects:reason === 'ladder_step_pending'
         ? courseBonusLadderRejectionSubjectsV1(ladder ?? cap?.ladder)
         : ['forbidden_promise',`direct_bonus:${reason}`]};
-    action = proposed;
+    if (!reason) action = proposed;
   }
   if (
     proposal.proposed_action.type === 'none'

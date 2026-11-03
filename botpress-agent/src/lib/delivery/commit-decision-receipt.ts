@@ -29,6 +29,22 @@ export function backendDecisionRejectionSubjects(error: unknown): readonly strin
   ))
 }
 
+/** Violating sentences returned by the backend truth guard (never shown to the customer). */
+export function backendDecisionRejectionSentences(error: unknown): readonly string[] {
+  if (!(error instanceof StudyxHttpError)
+    || error.code !== 'DECISION_REJECTED'
+    || error.status !== 422
+    || error.payload === null
+    || typeof error.payload !== 'object'
+    || !('violations' in error.payload)
+    || !Array.isArray(error.payload.violations)) return []
+  return error.payload.violations.flatMap((violation: unknown) => (
+    violation !== null && typeof violation === 'object' && 'sentence' in violation
+      && typeof violation.sentence === 'string' && violation.sentence.length > 0
+      ? [violation.sentence.slice(0, 600)] : []
+  )).slice(0, 16)
+}
+
 /** Preserve a domain rejection through ADK JSON persistence without caching an exception. */
 export async function commitDecisionWithRejectionReceiptV1(input: {
   name: string
@@ -43,6 +59,7 @@ export async function commitDecisionWithRejectionReceiptV1(input: {
       if (reason === null) throw error
       return { studyx_decision_rejection_v1: {
         reason, subjects: [...backendDecisionRejectionSubjects(error)].slice(0, 32),
+        sentences: [...backendDecisionRejectionSentences(error)],
       } }
     }
   }, { maxAttempts: 1 })
@@ -51,6 +68,9 @@ export async function commitDecisionWithRejectionReceiptV1(input: {
   if ('studyx_decision_rejection_v1' in receipt) {
     throw new StudyxHttpError('DECISION_REJECTED', false, 422, 1, {
       error: 'DECISION_REJECTED', ...receipt.studyx_decision_rejection_v1,
+      // The receipt stores bare sentences; the wire shape is a violations list.
+      violations: ((receipt.studyx_decision_rejection_v1 as { sentences?: string[] }).sentences ?? [])
+        .map((sentence) => ({ sentence })),
     })
   }
   return receipt

@@ -407,6 +407,21 @@ const MemoryCandidateSchema = z.object({
   confidence: z.number().min(0).max(1),
 }).strict();
 
+/**
+ * Internal reasoning of the turn. Never sent to the customer, never validated
+ * beyond shape/size and never used by any rule: it exists only as evidence.
+ */
+export const TURN_REASONING_NEXT_STEPS_V1 = [
+  'discover', 'value', 'objection', 'close', 'promo', 'call', 'checkout', 'post_sale', 'other',
+] as const;
+export const TurnReasoningV1Schema = z.object({
+  phase: z.string().max(120),
+  customer_now: z.string().max(400),
+  already_said: z.string().max(400),
+  customer_goal: z.string().max(400),
+  next_step: z.enum(TURN_REASONING_NEXT_STEPS_V1),
+}).strict();
+
 export const AgentATurnProposalV1Schema = z.object({
   schema_version: z.literal(1),
   move: ConversationMoveV1Schema,
@@ -443,6 +458,7 @@ export const AgentATurnProposalV1Schema = z.object({
     attempt: z.literal(1),
   }).strict().nullable().default(null),
   memory_candidates: z.array(MemoryCandidateSchema).max(10),
+  turn_reasoning: TurnReasoningV1Schema.optional(),
 }).strict().superRefine((value, context) => {
   for (const [index, request] of (value.profile_requests ?? []).entries()) {
     if (request.message_index >= value.response.messages.length) {

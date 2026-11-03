@@ -233,6 +233,15 @@ export interface AgentATurnProposalV1 {
     readonly rejection_id: string;
     readonly attempt: 1;
   } | null;
+  /** Internal evidence only; never customer-visible and never used by any rule. */
+  readonly turn_reasoning?: {
+    readonly phase: string;
+    readonly customer_now: string;
+    readonly already_said: string;
+    readonly customer_goal: string;
+    readonly next_step: 'discover' | 'value' | 'objection' | 'close' | 'promo' | 'call'
+      | 'checkout' | 'post_sale' | 'other';
+  };
   readonly memory_candidates: ReadonlyArray<{
     readonly type: AgentAMemoryTypeV1;
     readonly key: string;

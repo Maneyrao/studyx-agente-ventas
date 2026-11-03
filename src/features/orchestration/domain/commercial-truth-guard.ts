@@ -1,4 +1,5 @@
 import { courseLogisticsInV1 as courseLogisticsIn, type CourseLogisticsFactV1 } from '../../../shared/conversation/course-logistics';
+import { hardClaimKindsInSentenceV1 } from '../../../shared/conversation/hard-claims';
 import { inspectCourseBonusClaimsV1 } from '../../../shared/conversation/course-bonus-claim';
 
 /**
@@ -51,7 +52,8 @@ export type CommercialTruthViolationCodeV1 =
   | 'CERTIFICATION_CONTRADICTS_CANONICAL'
   | 'OFFERING_NOT_CANONICAL'
   | 'LOGISTICS_NOT_CANONICAL'
-  | 'FORBIDDEN_PROMISE';
+  | 'FORBIDDEN_PROMISE'
+  | 'HARD_CLAIM';
 
 export interface CommercialTruthViolationV1 {
   readonly code: CommercialTruthViolationCodeV1;
@@ -443,6 +445,10 @@ function sentenceViolations(
 
   if (containsUnknownOffering(sentence, canonical.offering_names ?? [], canonical.area_names ?? [])) {
     violations.push({ code: 'OFFERING_NOT_CANONICAL', value: 'offering' });
+  }
+
+  for (const kind of hardClaimKindsInSentenceV1(sentence)) {
+    violations.push({ code: 'HARD_CLAIM', value: kind });
   }
 
   const authorizedLogistics = new Set(canonical.course_logistics ?? []);

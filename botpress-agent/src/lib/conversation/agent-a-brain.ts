@@ -6,8 +6,10 @@ import { inspectCourseBonusClaimsV1 } from '../../../../src/shared/conversation/
 import { eligibleContactRequestFieldsV1 } from './contact-profile-request-policy';
 import { supportsChatPreferenceV1 } from './channel-preference-evidence';
 import type { TurnRejectionV1 } from '../../schemas/turn-rejection'
+import { hardClaimKindsInTextV1 } from '../../../../src/shared/conversation/hard-claims';
 import {
   AgentATurnProposalV1Schema,
+  TURN_REASONING_NEXT_STEPS_V1,
   ContactProfileUpdateV1Schema,
   ContactProfileRequestV1Schema,
   type AgentAContextV1,
@@ -108,6 +110,7 @@ const DEEPSEEK_PROPOSAL_ROOT_FIELDS = new Set([
   'used_memory_ids',
   'memory_candidates',
   'repair_of',
+  'turn_reasoning',
 ]);
 
 function stripDeepSeekRootMetadata(value: unknown): unknown {
@@ -680,6 +683,16 @@ function proposalJsonSchema(context: AgentAContextV1, conversationOnly = false):
         attempt: { type: 'integer', enum: [1] },
       })
       : { type: 'null' },
+    turn_reasoning: {
+      ...closedObject({
+        phase: { type: 'string', maxLength: 120 },
+        customer_now: { type: 'string', maxLength: 400, description: 'What the customer wants or doubts right now.' },
+        already_said: { type: 'string', maxLength: 400, description: 'What you already said and must not repeat.' },
+        customer_goal: { type: 'string', maxLength: 400 },
+        next_step: { type: 'string', enum: [...TURN_REASONING_NEXT_STEPS_V1] },
+      }),
+      description: 'Internal short reasoning, filled before the reply. Never sent to the customer.',
+    },
     used_fact_ids: { type: 'array', maxItems: 60, items: { type: 'string' } },
     used_memory_ids: { type: 'array', maxItems: 5, items: { type: 'string' } },
     memory_candidates: {
@@ -877,6 +890,19 @@ function normalizeStrictProposal(value: unknown, context: AgentAContextV1): unkn
     // Presentation separators do not change the asserted number. Preserve
     // every digit and let the canonical schema reject local/ambiguous values.
     normalizedProposal.confirmed_phone = proposal.confirmed_phone.replace(/[\s()-]/gu, '');
+  }
+  // turn_reasoning is never allowed to fail a turn: clamp it or drop it.
+  if ('turn_reasoning' in proposal) {
+    const reasoning = proposal.turn_reasoning;
+    const clamp = (value: unknown, max: number) => (typeof value === 'string' ? value.slice(0, max) : '');
+    if (reasoning && typeof reasoning === 'object' && !Array.isArray(reasoning)) {
+      const raw = reasoning as Record<string, unknown>;
+      normalizedProposal.turn_reasoning = {
+        phase: clamp(raw.phase, 120), customer_now: clamp(raw.customer_now, 400),
+        already_said: clamp(raw.already_said, 400), customer_goal: clamp(raw.customer_goal, 400),
+        next_step: (TURN_REASONING_NEXT_STEPS_V1 as readonly unknown[]).includes(raw.next_step) ? raw.next_step : 'other',
+      };
+    } else delete normalizedProposal.turn_reasoning;
   }
   const response = proposal.response;
   if (response && typeof response === 'object' && !Array.isArray(response)) {
@@ -1904,6 +1930,11 @@ export function validateAgentATurnProposalV1(input: {
   }
   for (const kind of unauthorizedKinds) {
     rejections.push({ code: 'FACT_VALUE_MISMATCH', subject: kind });
+  }
+  // Hard factual controls: official title, guaranteed work/income, state
+  // license, invented quota/discount/deadline, 699, beca. Claim validation only.
+  for (const kind of new Set(authoredNarrative.flatMap(hardClaimKindsInTextV1))) {
+    rejections.push({ code: 'FACT_VALUE_MISMATCH', subject: `hard_claim.${kind}` });
   }
 
   // V4 — la acción y sus precondiciones.

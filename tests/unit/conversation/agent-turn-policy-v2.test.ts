@@ -598,11 +598,16 @@ describe('plannerless Agent A authority', () => {
       courseBonus: cap })).toMatchObject({ok:true, action:p.proposed_action});
     expect(authorize({ proposal:p, state:state({selected_offering_code:'redes_informaticas'}),
       courseBonus:{...cap,enabled:false}, actionRejections:'structured' }))
+      .toMatchObject({ok:true, action:{type:'none'}});
+    // A rejected effect rejects only the effect: the copy that names the gift as a bonus is the false claim.
+    expect(authorize({ proposal:{...p, course_mentions:[{offering_code:'excel_integral',role:'bonus'}]},
+      state:state({selected_offering_code:'redes_informaticas'}),
+      courseBonus:{...cap,enabled:false}, actionRejections:'structured' }))
       .toMatchObject({ok:false, rejection_subjects:['forbidden_promise','direct_bonus:bonus_disabled']});
     // A course outside the authorized set (affinity row, bridges, named literally) is rejected.
     expect(authorize({ proposal:p, state:state({selected_offering_code:'redes_informaticas'}),
       courseBonus:{...cap,bonus_candidates:[{code:'camaras_seguridad',display_name:'Cámaras'}]} }))
-      .toMatchObject({ok:false, rejection_subjects:['forbidden_promise','direct_bonus:invalid_offering']});
+      .toMatchObject({ok:true, action:{type:'none'}});
   });
   // Model-owned bonus (AGENTS.md "Venta interpretada por el modelo"): the model proposes, the backend validates.
   const ruleCap=(evidence:boolean,extra:Record<string,unknown>={})=>({status:'checkin_available' as const,enabled:true,max_bonus_courses:2 as const,may_offer_bonus:true,
@@ -660,7 +665,7 @@ describe('plannerless Agent A authority', () => {
       courseBonus:ruleCap(true,{bonus_candidates:[]})})).toMatchObject(rejectedBy('invalid_offering'));
     expect(authorize({state:selected(),customerText:'ok',proposal:bonusProposal(),courseBonus:ruleCap(true)})).toMatchObject({ok:true});
     const paid=proposal({proposed_action:{type:'offer_course_bonus',interest_offering_code:'redes_informaticas',bonus_offering_code:'redes_informaticas'}});
-    expect(authorize({state:selected(),customerText:'ok',proposal:paid,courseBonus:ruleCap(true)})).toMatchObject(rejectedBy('same_as_paid_course'));
+    expect(authorize({state:selected(),customerText:'ok',proposal:paid,courseBonus:ruleCap(true)})).toMatchObject({ok:true,action:{type:'none'}});
   });
   it('limits: max reached and repeated course', () => {
     const one={bonus_offerings:[{code:'camaras_seguridad',display_name:'Cámaras',position:1}],status:'offer_available',package_status:'offered',promotion_code:'p'};

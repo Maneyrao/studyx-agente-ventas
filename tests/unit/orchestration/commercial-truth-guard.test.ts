@@ -370,9 +370,10 @@ describe('restricciones comerciales firmes', () => {
     expect(verdict.violations.map((violation) => violation.code)).toContain('FORBIDDEN_PROMISE');
   });
 
-  it('conserva la negación explícita de becas y descuentos', () => {
-    const content = 'No ofrecemos becas ni descuentos. El total es USD 360.';
+  it('conserva la negación explícita de descuentos; la palabra «beca» nunca se menciona', () => {
+    const content = 'No ofrecemos descuentos. El total es USD 360.';
     expect(enforce(content).content).toBe(content);
+    expect(enforce('No ofrecemos becas ni descuentos. El total es USD 360.').content).toBe('El total es USD 360.');
   });
 
   it('treats a natural discount refusal as a denial, not an unauthorized benefit', () => {
@@ -706,7 +707,6 @@ describe('discount topic is not an affirmative benefit', () => {
     'Sobre descuentos, no tengo información confirmada.',
     'Sobre descuentos, no puedo confirmarte ninguno.',
     'No tengo confirmado si hay un descuento por ser alumno.',
-    'No puedo confirmarte si existe alguna beca vigente.',
     'No me consta que haya un descuento para alumnos.',
   ])('preserves the real denied-benefit reply: %s', content => {
     expect(enforce(content).violations).not.toContainEqual(expect.objectContaining({ code: 'FORBIDDEN_PROMISE' }));
@@ -734,5 +734,23 @@ describe('discount topic is not an affirmative benefit', () => {
     'No puedo confirmarte si hay descuento, pero te damos uno.',
   ])('still rejects an affirmative or referential benefit: %s', content => {
     expect(enforce(content).violations).toContainEqual(expect.objectContaining({ code: 'FORBIDDEN_PROMISE' }));
+  });
+});
+
+describe('hard factual claims share one detector with the Botpress brain', () => {
+  it.each([
+    ['Recibís un título oficial.', 'official_title'],
+    ['El diplomado de electricidad reemplaza la licencia.', 'license_claim'],
+    ['Antes costaba USD 699.', 'forbidden_price'],
+    ['Tenemos una Beca Studyx.', 'scholarship'],
+  ])('rejects %s', (sentence, kind) => {
+    const verdict = enforce(`El total es USD 360. ${sentence}`);
+    expect(verdict.violations).toContainEqual({ code: 'HARD_CLAIM', value: kind });
+    expect(verdict.removed.join(' ')).toContain(sentence);
+  });
+
+  it('lets correct negations through', () => {
+    const content = 'No es un título oficial. El diplomado no reemplaza la licencia de electricista.';
+    expect(enforce(content).violations).toEqual([]);
   });
 });

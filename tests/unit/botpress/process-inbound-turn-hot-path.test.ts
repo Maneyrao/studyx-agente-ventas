@@ -1978,9 +1978,10 @@ describe('processInboundTurn hot path', () => {
     ['rejects the complete draft instead of cutting off a call-dispatch claim',
       ['Entiendo, el total sigue en USD 360.\nTe llamo ahora.'],
       null],
-    ['rejects the complete draft instead of selecting its later bubble',
+    // A rejected effect removes only the bubble that claims it.
+    ['removes only the bubble that claims the rejected call and keeps the later bubble',
       ['Te llamo ahora.', 'El total sigue en USD 360.'],
-      null],
+      ['El total sigue en USD 360.']],
     ['rejects the complete draft instead of selecting its later sentence',
       ['Te llamo ahora. El total sigue en USD 360.'],
       null],
@@ -1989,6 +1990,10 @@ describe('processInboundTurn hot path', () => {
       ['El total sigue en USD 360.', 'Podemos seguir por acá.'],
       ['El total sigue en USD 360.', 'Podemos seguir por acá.']],
   ])('%s', async (_case, modelMessages, expectedCommittedMessages) => {
+    const evidenceEvents: Array<{ kind: string; data: Record<string, unknown> }> = [];
+    vi.spyOn(evidencePersistence, 'persistTurnEvidence').mockImplementation(async (_subject, event) => {
+      evidenceEvents.push(event);
+    });
     const claimed = claimedResponse() as unknown as ClaimedTurn;
     claimed.features = {
       agent_loop_v3_mode: 'off', conversation_pipeline_v1_enabled: false,
@@ -2022,6 +2027,8 @@ describe('processInboundTurn hot path', () => {
           response: { messages: modelMessages, call_offer: null },
           proposed_action: { type: 'request_call_now', reason: 'accepted_offer' },
           used_fact_ids: [], used_memory_ids: [], memory_candidates: [], repair_of: null,
+          turn_reasoning: { phase: 'REASONING_MARK', customer_now: 'quiere llamada', already_said: '-',
+            customer_goal: 'info', next_step: 'call' },
         },
         provider: 'deepseek-direct', model: 'deepseek-v4-flash', latency_ms: 180, attempt_count: 1,
       })
@@ -2087,6 +2094,12 @@ describe('processInboundTurn hot path', () => {
     expect(actionSpies.agentABrainDeepSeek).toHaveBeenCalledTimes(2);
     if (_case === 'persists revoked consent when repair is unavailable') expect(actionSpies.commit.mock.calls.at(-1)![0].input.agent_turn_v2)
       .toMatchObject({ operational_continuity: 'call_consent_revoked', proposal: { move: { move: 'decline_call' } } });
+    // turn_reasoning is persisted as turn evidence and never reaches the customer.
+    if (_case !== 'persists revoked consent when repair is unavailable') {
+      expect(evidenceEvents.find(event => event.kind === 'turn_reasoning')?.data)
+        .toMatchObject({ turn_reasoning: { phase: 'REASONING_MARK', next_step: 'call' } });
+      expect(JSON.stringify(createMessage.mock.calls)).not.toContain('REASONING_MARK');
+    }
     if (expectedCommittedMessages === null) {
       expect(actionSpies.commit).toHaveBeenCalledTimes(_case === 'persists revoked consent when repair is unavailable' ? 3 : 2);
       expect(actionSpies.commit.mock.calls.at(-1)![0].input).toMatchObject({
@@ -2115,7 +2128,7 @@ describe('processInboundTurn hot path', () => {
     }
   });
 
-  it('never cuts the bonus bubble out of a rejected complete draft', async () => {
+  it('removes only the bonus bubble of a rejected draft and commits the safe bubble', async () => {
     const claimed = claimedResponse() as unknown as ClaimedTurn;
     claimed.features = {
       agent_loop_v3_mode: 'off', conversation_pipeline_v1_enabled: false,
@@ -2198,16 +2211,16 @@ describe('processInboundTurn hot path', () => {
     });
 
     expect(actionSpies.commit).toHaveBeenCalledTimes(2);
-    expect(actionSpies.commit.mock.calls[1]![0].input.agent_turn_v2).toBeNull();
-    expect(actionSpies.commit.mock.calls[1]![0].input.decision.response)
-      .toBe('Perdón, no te entendí bien, a qué te refieres?');
+    // Only the bubble that names the rejected gift is removed; the safe bubble is committed.
+    expect(actionSpies.commit.mock.calls[1]![0].input.agent_turn_v2.proposal.response.messages).toEqual([safeText]);
+    expect(actionSpies.commit.mock.calls[1]![0].input.agent_turn_v2.proposal.proposed_action).toEqual({ type: 'none' });
     expect(JSON.stringify(actionSpies.commit.mock.calls[1]![0].input)).not.toContain(rejectedBonusText);
     expect(result).toMatchObject({ status: 'waiting_user', delivery_status: 'submitted_to_botpress',
       error_code: null });
     expect(createMessage).toHaveBeenCalledTimes(1);
   });
 
-  it('keeps the full response boundary when precommit repair never removes a bonus promise', async () => {
+  it('removes only the bonus bubble when precommit repair never removes a bonus promise', async () => {
     const claimed = claimedResponse() as unknown as ClaimedTurn;
     claimed.features = {
       agent_loop_v3_mode: 'off', conversation_pipeline_v1_enabled: false,
@@ -2287,9 +2300,8 @@ describe('processInboundTurn hot path', () => {
     // Authority prompt line 236: el rechazo de una acción no puede cortar la venta.
     expect(actionSpies.agentABrainDeepSeek).toHaveBeenCalledTimes(3);
     expect(actionSpies.commit).toHaveBeenCalledTimes(1);
-    expect(actionSpies.commit.mock.calls[0]![0].input.agent_turn_v2).toBeNull();
-    expect(actionSpies.commit.mock.calls[0]![0].input.decision.response)
-      .toBe('Perdón, no te entendí bien, a qué te refieres?');
+    expect(actionSpies.commit.mock.calls[0]![0].input.agent_turn_v2.proposal.response.messages).toEqual([safeText]);
+    expect(actionSpies.commit.mock.calls[0]![0].input.agent_turn_v2.proposal.proposed_action).toEqual({ type: 'none' });
     expect(JSON.stringify(actionSpies.commit.mock.calls[0]![0].input)).not.toContain(rejectedBonusText);
     expect(actionSpies.recovery).not.toHaveBeenCalled();
     expect(client.createMessage).toHaveBeenCalledTimes(1);

@@ -251,6 +251,8 @@ export class DecisionPolicyError extends Error {
   constructor(
     public readonly reason: string,
     public readonly subjects: readonly string[] = [],
+    /** Violating values and sentences, so the author can repair only that claim. */
+    public readonly violations: readonly { code: string; value: string; sentence: string }[] = [],
   ) {
     super(reason);
     this.name = 'DecisionPolicyError';
@@ -478,8 +480,13 @@ function decisionPayload(input: CommitDecisionInput) {
     ...(input.conversation_pipeline_v1
       ? { conversation_pipeline_v1: input.conversation_pipeline_v1 }
       : {}),
+    // turn_reasoning is internal evidence, never part of the idempotency identity.
     ...(input.agent_turn_v2
-      ? { agent_turn_v2: input.agent_turn_v2 }
+      ? { agent_turn_v2: {
+          ...input.agent_turn_v2,
+          proposal: Object.fromEntries(Object.entries(input.agent_turn_v2.proposal)
+            .filter(([key]) => key !== 'turn_reasoning')) as typeof input.agent_turn_v2.proposal,
+        } }
       : {}),
     ...(input.supports_multi_outbound ? { supports_multi_outbound: true } : {}),
     ...(input.supports_turn_supersession ? { supports_turn_supersession: true } : {}),
@@ -1424,6 +1431,16 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
         throw new DecisionPolicyError(
           'AGENT_TURN_V2_REJECTED:COMMERCIAL_TRUTH_VIOLATION',
           subjects,
+          // Violating values and the sentences that carry them, so Agent A can
+          // repair that claim only. The backend itself never prunes.
+          [
+            ...verdict.violations.slice(0, 16).map((violation) => ({
+              code: violation.code.toLowerCase(), value: violation.value.slice(0, 80), sentence: '',
+            })),
+            ...verdict.removed.slice(0, 16).map((sentence) => ({
+              code: 'sentence', value: '', sentence: sentence.trim().slice(0, 600),
+            })),
+          ],
         );
       }
       // Un efecto ya comprometido no puede quedar sin respuesta que lo

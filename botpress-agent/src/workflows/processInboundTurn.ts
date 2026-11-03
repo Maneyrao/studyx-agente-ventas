@@ -3,7 +3,8 @@ import { createTurnEvidenceJournal, isTurnEvidencePersistenceError, TurnEvidence
 import { summarizeProviderError } from '../lib/observability/provider-error-summary'
 import { persistTurnEvidence } from '../lib/observability/persist-turn-evidence'
 import { getOrCreateEvidenceWorkflow } from '../lib/observability/evidence-workflow'
-import { commitDecisionWithRejectionReceiptV1, backendDecisionRejectionReason, backendDecisionRejectionSubjects } from '../lib/delivery/commit-decision-receipt'
+import { commitDecisionWithRejectionReceiptV1, backendDecisionRejectionReason, backendDecisionRejectionSubjects, backendDecisionRejectionSentences } from '../lib/delivery/commit-decision-receipt'
+import { removeEffectClaimBubblesV1, salvageFactClaimsV1 } from '../lib/conversation/agent-a-claim-repair'
 import { eligibleContactRequestFieldsV1 } from '../lib/conversation/contact-profile-request-policy'
 import { scheduleTurnRecovery } from '../actions/scheduleTurnRecovery'
 import { bindRecoveryFeedbackV1 } from '../lib/conversation/recovery-feedback'
@@ -1107,6 +1108,11 @@ export const processInboundTurn = new Workflow({
         }
       }
       const wire = (args as { input: Record<string, unknown> }).input
+      // Internal reasoning is evidence only: it is recorded here and never
+      // reaches the customer, the backend decision or any rule.
+      const committedReasoning = (wire.agent_turn_v2 as { proposal?: { turn_reasoning?: unknown } } | null | undefined)
+        ?.proposal?.turn_reasoning
+      if (committedReasoning !== undefined) journal.capture({ kind: 'turn_reasoning', turn_reasoning: committedReasoning })
       journal.capture({ kind: 'commit_proposed', proposal: wire.agent_turn_v2 ?? null,
         fallback_decision: wire.decision, model: wire.model })
       await journal.flush()
@@ -1881,7 +1887,14 @@ export const processInboundTurn = new Workflow({
             }
             if (pipelineFailureDecision?.reason_code === 'AGENT_A_CONTINUATION_REJECTED') {
               candidateLoop: for (const candidate of [...precommitModelAuthoredCandidates].reverse()) {
-                for (const candidateProposal of completeConversationProposals(candidate.proposal)) {
+                for (const originalCandidateProposal of completeConversationProposals(candidate.proposal)) {
+                  // Only the bubbles that name the unauthorized gift are removed.
+                  const candidateProposal = removeEffectClaimBubblesV1({
+                    proposal: originalCandidateProposal,
+                    context: agentABrainContext,
+                    bonus_offering_code: originalCandidateProposal.proposed_action.type === 'offer_course_bonus'
+                      ? originalCandidateProposal.proposed_action.bonus_offering_code : null,
+                  }) ?? originalCandidateProposal
                   const candidateCopy = [
                     ...candidateProposal.response.messages,
                     candidateProposal.response.call_offer ?? '',
@@ -2439,6 +2452,7 @@ export const processInboundTurn = new Workflow({
       })
         latestRejection = rejection
         let currentBackendRejection = rejection
+        let backendViolationSentences: readonly string[] = backendDecisionRejectionSentences(initialCommitError)
         // Keep only proposals that already crossed the local authority
         // boundary. If their business effect becomes stale at commit time,
         // one of these can still provide Agent A's own conversational reply
@@ -2565,6 +2579,7 @@ export const processInboundTurn = new Workflow({
             if (!(repairError instanceof Error)) throw repairError
             continuationFailure = classifyAgentAAttemptFailure(repairError)
             if (continuationFailure.stage === 'backend_rejected' && agentTurnV2Commit !== null) {
+              backendViolationSentences = backendDecisionRejectionSentences(repairError)
               const renewedRejection = backendCommitTurnRejectionV1({
                 error: repairError,
                 proposal: agentTurnV2Commit.proposal,
@@ -2654,6 +2669,7 @@ export const processInboundTurn = new Workflow({
             if (!(finalError instanceof Error)) throw finalError
             continuationFailure = classifyAgentAAttemptFailure(finalError)
             if (continuationFailure.stage === 'backend_rejected' && agentTurnV2Commit !== null) {
+              backendViolationSentences = backendDecisionRejectionSentences(finalError)
               const renewedRejection = backendCommitTurnRejectionV1({
                 error: finalError,
                 proposal: agentTurnV2Commit.proposal,
@@ -2689,14 +2705,35 @@ export const processInboundTurn = new Workflow({
           // el link" therefore cannot survive after their effect is removed.
           let floorCandidateIndex = 0
           candidateLoop: for (const candidate of [...modelAuthoredCommitCandidates].reverse()) {
-            for (const candidateProposal of completeConversationProposals(candidate.proposal)) {
+            for (const originalCandidateProposal of completeConversationProposals(candidate.proposal)) {
               const candidateIndex = floorCandidateIndex
               floorCandidateIndex += 1
-              const candidateAction = candidateProposal.proposed_action.type
+              const candidateAction = originalCandidateProposal.proposed_action.type
               const retainAuthorizedEffect = rejectedEffectRemainsAuthorized(
-                candidateProposal,
+                originalCandidateProposal,
                 currentBackendRejection,
               )
+              // Reject the claim, not the conversation: drop only the bubbles
+              // that claim a rejected effect and only the sentences that state
+              // a wrong fact (canonical plans are appended for a wrong price).
+              let candidateProposal = originalCandidateProposal
+              if (!retainAuthorizedEffect) {
+                const withoutEffectClaims = removeEffectClaimBubblesV1({
+                  proposal: candidateProposal,
+                  context: repairContext,
+                  bonus_offering_code: candidateProposal.proposed_action.type === 'offer_course_bonus'
+                    ? candidateProposal.proposed_action.bonus_offering_code : null,
+                })
+                if (withoutEffectClaims !== null) candidateProposal = withoutEffectClaims
+              }
+              if (currentBackendRejection.rejections.some((reason) => reason.code === 'FACT_VALUE_MISMATCH')) {
+                const withoutWrongFacts = salvageFactClaimsV1({
+                  proposal: candidateProposal,
+                  context: repairContext,
+                  backend_sentences: backendViolationSentences,
+                })
+                if (withoutWrongFacts !== null) candidateProposal = withoutWrongFacts
+              }
               const rejectedCallEffect = currentBackendRejection.rejections.some((reason) => (
                 reason.subject === 'request_call_now' || reason.subject.startsWith('call')
               ))
@@ -2792,7 +2829,8 @@ export const processInboundTurn = new Workflow({
                   })
                   continue
                 }
-                const floorRejection = backendCommitTurnRejectionV1({
+                backendViolationSentences = backendDecisionRejectionSentences(floorError)
+              const floorRejection = backendCommitTurnRejectionV1({
                   error: floorError,
                   proposal: conversationCandidate.proposal,
                   context: repairContext,

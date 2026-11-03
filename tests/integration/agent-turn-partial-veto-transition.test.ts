@@ -61,7 +61,7 @@ run('commercial-truth boundary', () => {
       label: 'an unsupported employment guarantee',
       messages: ['Te aseguramos empleo al terminar.'],
       call_offer: 'Si querés, puedo llamarte para asesorarte.',
-      subjects: ['forbidden_promise'],
+      subjects: ['forbidden_promise', 'hard_claim'],
     },
   ])('rejects $label without persisting an answer or its transition', async ({ messages, call_offer, subjects }) => {
     const seeded = await seedConversationForAgentTurn({
