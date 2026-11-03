@@ -234,14 +234,14 @@ export async function offerDirectCourseBonusV1(db: DbClient, input: OfferDirectC
     // Owner 2026-11-03 swap replay: the new cycle created by this exact reply.
     const [swapReplay]=await tx<Array<OfferRow & {replay_version:number;exact:boolean}>>`
       SELECT o.*,p.promotion_code,b.offer_version AS replay_version,
-        (b.offering_code_snapshot=${input.bonus_offering_codes[0]} AND m.content=${input.outbound.content}
+        (b.offering_code_snapshot=${input.bonus_offering_codes[0]} AND m.id=${input.outbound.id}::uuid AND m.content=${input.outbound.content}
           AND d.provider=${input.outbound.provider} AND d.integration_id=${input.outbound.integration_id}
           AND d.channel=${input.outbound.channel} AND d.destination=${input.outbound.destination}
           AND d.idempotency_key=${input.outbound.idempotency_key}) AS exact
       FROM promotion_offer_bonus_offerings b JOIN promotion_offers o ON o.id=b.offer_id
       JOIN promotions p ON p.id=o.promotion_id JOIN messages m ON m.id=b.offered_outbound_message_id
       JOIN outbound_deliveries d ON d.message_id=m.id
-      WHERE b.offered_outbound_message_id=${input.outbound.id}::uuid AND b.source_turn_id=${input.source_turn_id}::uuid
+      WHERE b.source_turn_id=${input.source_turn_id}::uuid AND d.idempotency_key=${input.outbound.idempotency_key}
         AND o.conversation_id=${input.conversation_id}::uuid AND o.contact_id=${input.contact_id}::uuid
         AND o.package_mode='direct' AND o.id IS DISTINCT FROM ${offer?.id ?? null}::uuid`;
     if (swapReplay) {
