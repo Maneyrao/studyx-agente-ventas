@@ -320,4 +320,29 @@ OWNER_PROMOTION_MODE_REPLAY_CASES_MUTABLE.push({
   ],
 });
 
+/** Owner live test of 2026-11-03 13:21 (yes-only promo): the price question
+ * appeared twice (model paraphrase + fixed bubble) and "si me sirve el precio si"
+ * next to a promo request was not read as the yes. */
+const onePriceQuestion = { type: 'not_contains', value: 'Te puedo buscar una promoción que se adapte si es el caso' } as const;
+OWNER_PROMOTION_MODE_REPLAY_CASES_MUTABLE.push({
+  id: '26_owner_yes_only_promo_20261103_1321',
+  title: 'Replay 3/11 13:21: pedido de promo → una sola pregunta del precio → «sí» junto al pedido → promo',
+  turns: [
+    englishTurn('course_and_price', 'me interesa decoracion de interiores para ambientar propiedades\ncuanto sale?', {
+      authority: [emmaSells], hard: [{ type: 'workflow_committed' }, ...valueRegister],
+    }),
+    englishTurn('promo_request', 'y la promo, cuál me podes ofrecer?', {
+      must: ['No dar la promo todavía: volver con naturalidad a la pregunta de si el precio es lo único que lo frena, una sola vez en el turno.'],
+      authority: [emmaSells], hard: [{ type: 'workflow_committed' }, { type: 'question_count_at_most', value: 1 }, ...valueRegister],
+    }),
+    englishTurn('yes_with_promo_request', 'quiero ver, qué me podes ofrecer\nsi me sirve el precio si', {
+      must: ['Tomarlo como el «sí» y presentar la promoción en este turno (Decoración de Interiores con un bonificado afín), con valor y una sola pregunta de cierre, sin muletillas ni repetir la descripción del curso.'],
+      authority: [emmaSells, ruleA],
+      expected: { move: replayMoves, action: ['offer_course_bonus'], state: {
+        promotion: { status: ['offer_available'], bonusCount: [1], paidCourse: ['decoracion_de_interiores'] } } },
+      hard: [{ type: 'workflow_committed' }, { type: 'question_count_at_most', value: 1 }, onePriceQuestion, ...valueRegister],
+    }),
+  ],
+});
+
 export const OWNER_PROMOTION_MODE_REPLAY_CASES: readonly GoldenCaseV1[] = OWNER_PROMOTION_MODE_REPLAY_CASES_MUTABLE;

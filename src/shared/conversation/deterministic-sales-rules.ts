@@ -191,13 +191,21 @@ const AFFIRMATIVE = /^(?:si|sii+|sip|claro|obvio|exacto|correcto|asi es|totalmen
  * or its own ("el precio es lo único que te frena…?", 2026-11-02 live). */
 export function agentAskedPriceOnlyV1(messages: readonly string[]): boolean {
   if (messagesContainPriceProbeV1(messages)) return true;
-  return messages.some(message => normalizedVisible(message).split(/(?<=\?)/u).some(question => question.trim().endsWith('?')
-    && /\bprecio\b/u.test(question) && /\b(?:unico|unica|lo unico|solo|solamente)\b/u.test(question)));
+  if (messages.some(message => normalizedVisible(message).split(/(?<=\?)/u).some(question => question.trim().endsWith('?')
+    && /\bprecio\b/u.test(question) && /\b(?:unico|unica|lo unico|solo|solamente)\b/u.test(question)))) return true;
+  // Owner live test 2026-11-03 13:21: "necesito saber si el precio es lo único
+  // que te frena" asks it without a question mark.
+  return messages.some(message => /\b(?:saber|contame|cuentame|dime|decime|confirmame|confirmarme)\b[^.!?]*\bsi el precio es (?:lo unico|el unico|la unica)\b/u
+    .test(normalizedVisible(message)));
 }
 
 /** Only an affirmation answering THAT question, or a new price objection. */
 export function confirmsPriceProbeV1(batch: readonly string[], previousAgentMessages: readonly string[]): boolean {
   if (!agentAskedPriceOnlyV1(previousAgentMessages)) return false;
+  // Owner live test 2026-11-03 13:22: "quiero ver, qué me podés ofrecer" + "si me
+  // sirve el precio si" right after the question is an explicit yes.
+  const affirmative = (text: string) => AFFIRMATIVE.test(normalizedVisible(text).replace(/[^\p{L}\p{N}\s]+/gu, ' ').trim());
+  if (batch.some(promoRequestV1) && batch.some(affirmative)) return true;
   if (batch.some(text => purchaseIntentV1(text) || planChoiceV1(text))) return false;
   return batch.some(text => {
     const normalized = normalizedVisible(text).replace(/[^\p{L}\p{N}\s]+/gu, ' ').trim();
@@ -266,7 +274,7 @@ export function decidePriceProbeRuleV1(context: RuleContextV1, draft: RuleDraftV
 
 /** Rule C fallback: the model's answer bubble plus the fixed probe bubble. */
 export function withPriceProbeV1(messages: readonly string[]): [string, string] | [string] {
-  const answer = messages.find(message => !messagesContainPriceProbeV1([message]));
+  const answer = messages.find(message => !agentAskedPriceOnlyV1([message]));
   return answer ? [answer, PRICE_PROBE_V1] : [PRICE_PROBE_V1];
 }
 

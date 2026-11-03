@@ -9,7 +9,7 @@ import type { TurnRejectionV1 } from '../../schemas/turn-rejection'
 import { removeUnsupportedCourseLogisticsAssertionsV1 } from './agent-a-brain'
 import {
   CALL_FALLBACK_OFFER_V1, bonusFallbackMessagesV1, decideBonusRuleV1, decideCallRuleV1, decidePriceProbeRuleV1,
-  draftFulfillsPromotionTaskV1, draftPresentsCallV1, messagesContainPriceProbeV1, passiveClosingSentencesV1, passiveRuleAppliesV1,
+  agentAskedPriceOnlyV1, draftFulfillsPromotionTaskV1, draftPresentsCallV1, passiveClosingSentencesV1, passiveRuleAppliesV1,
   PRICE_PROBE_V1, priceExpressionHintV1, priceObservationQuoteInBatchV1, withPriceProbeV1, withoutPassiveClosingV1,
   decideRetentionRuleV1, draftFulfillsRetentionV1, retentionBonusDecisionV1, type RetentionRuleDecisionV1,
   type BonusRuleDecisionV1, type CallRuleDecisionV1, type PromotionTaskDataV1, type PriceProbeRuleDecisionV1, type RuleContextV1, type RuleOutcomeV1,
@@ -136,7 +136,7 @@ export function ruleRejectionV1(input: {
     code: 'BONUS_OFFER_REQUIRED', subject: `rule_a:bonus:${input.decision.bonus.bonus_code}`,
   })
   if (input.decision.call.kind === 'offer') rejections.push({ code: 'CALL_OFFER_REQUIRED', subject: 'rule_b:call_offer' })
-  if (input.decision.probe.kind === 'ask' && !(input.draft && messagesContainPriceProbeV1(input.draft.response.messages)))
+  if (input.decision.probe.kind === 'ask' && !(input.draft && agentAskedPriceOnlyV1(input.draft.response.messages)))
     rejections.push({ code: 'PRICE_PROBE_REQUIRED', subject: 'rule_c:price_probe' })
   if (input.decision.passive_forbidden && (!input.draft || passiveClosingSentencesV1(input.draft.response.messages).length > 0)) rejections.push({ code: 'PASSIVE_CLOSING_FORBIDDEN', subject: 'rule_d:passive_closing' })
   if (input.decision.retention?.kind === 'retain' && !(input.draft && draftFulfillsRetentionV1(input.draft)))
@@ -160,7 +160,7 @@ export function draftSatisfiesRulesV1(draft: AgentATurnProposalV1, decision: Det
   context: AgentAContextV1): boolean {
   return (decision.bonus.kind !== 'offer' || draftFulfillsPromotionTaskV1(draft, decision.bonus, promotionTaskDataV1(context)))
     && (decision.call.kind !== 'offer' || draftPresentsCallV1(draft))
-    && (decision.probe.kind !== 'ask' || messagesContainPriceProbeV1(draft.response.messages))
+    && (decision.probe.kind !== 'ask' || agentAskedPriceOnlyV1(draft.response.messages))
     && (!decision.passive_forbidden || passiveClosingSentencesV1(draft.response.messages).length === 0)
     && (decision.retention?.kind !== 'retain' || draftFulfillsRetentionV1(draft))
 }
@@ -169,7 +169,7 @@ export function draftSatisfiesRulesV1(draft: AgentATurnProposalV1, decision: Det
  * with the owner's probe bubble. Profile requests keep only unchanged bubbles. */
 export function withFixedPriceRulesV1(draft: AgentATurnProposalV1, decision: DeterministicRulesDecisionV1): AgentATurnProposalV1 {
   let messages: string[] = decision.passive_forbidden ? withoutPassiveClosingV1(draft.response.messages) : [...draft.response.messages]
-  if (decision.probe.kind === 'ask' && !messagesContainPriceProbeV1(messages)) messages = withPriceProbeV1(messages)
+  if (decision.probe.kind === 'ask' && !agentAskedPriceOnlyV1(messages)) messages = withPriceProbeV1(messages)
   const unchanged = (index: number) => messages[index] !== undefined && messages[index] === draft.response.messages[index]
   return { ...draft, response: { ...draft.response, messages: messages as [string, ...string[]] },
     profile_requests: (draft.profile_requests ?? []).filter(request => unchanged(request.message_index)) }

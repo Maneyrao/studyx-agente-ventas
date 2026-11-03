@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  agentAskedPriceOnlyV1,
   decideRetentionRuleV1, draftFulfillsRetentionV1, literalDeclineV1, retentionBonusDecisionV1, retentionOfferMessageV1,
   BONUS_AFFINITY_TABLE_V1, agentResponseOrdinalV1, bonusFallbackMessagesV1, bonusSequenceForPaidCourseV1,
   decideBonusRuleV1, decideCallRuleV1, draftFulfillsPromotionTaskV1, draftPresentsBonusV1, promotionTaskV1, nextRuleBonusCodeV1, priceExpressionHintV1,
@@ -556,6 +557,19 @@ describe('Regla E — retención ante el primer «no» (dueño 2026-11-03)', () 
     expect(literalDeclineV1(['no gracias'])).toBe(true);
     expect(literalDeclineV1(['no chau'])).toBe(true);
     expect(literalDeclineV1(['no me escribas mas'])).toBe(false);
+  });
+});
+
+describe('prueba en vivo del dueño 2026-11-03 13:21 (naturalidad)', () => {
+  const asked = ['Te busco algo. Pero antes necesito saber si el precio es lo único que te frena, porque si hay otra cosa la resolvemos primero.'];
+  it('reconoce la pregunta del precio parafraseada sin signo de pregunta (no se repite la frase fija)', () => {
+    // The bot appends the fixed bubble only when this is false (withFixedPriceRulesV1).
+    expect(agentAskedPriceOnlyV1(asked)).toBe(true);
+    expect(agentAskedPriceOnlyV1(['Te busco algo! Contame qué curso te interesa.'])).toBe(false);
+  });
+  it('«quiero ver, qué me podés ofrecer» + «si me sirve el precio si» después de la pregunta es un sí explícito', () => {
+    expect(confirmsPriceProbeV1(['quiero ver, qué me podes ofrecer', 'si me sirve el precio si'], [PRICE_PROBE_V1])).toBe(true);
+    expect(confirmsPriceProbeV1(['quiero ver, qué me podes ofrecer'], [PRICE_PROBE_V1])).toBe(false);
   });
 });
 
