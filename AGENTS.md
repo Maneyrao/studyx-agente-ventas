@@ -144,3 +144,4 @@ Prueba en vivo del 03/11 07:31–07:42: contingencia por caída del proveedor, n
 - La primera oferta sale sólo con un «sí» explícito a la pregunta del precio, o tras una segunda queja de precio (o una queja después de un «no»). Con un bonificado ya ofrecido, cada nuevo pedido de promo o queja de precio pasa al siguiente.
 - «Me bonificas X?» sin paquete: sin el «sí» previo, primero la pregunta del precio; con el «sí», bonifica X.
 - Prompt de autoridad: canónico v103. Brain v156.
+- **Una sola pregunta por turno (2026-11-03):** reemplaza «A y B pueden coincidir en el mismo turno» (2026-11-02). Un turno que ofrece un bonificado o hace la pregunta del precio no lleva la invitación a llamada de la Regla B; la invitación pasa a la respuesta siguiente. La respuesta a la pregunta del precio se lee contra todas las burbujas del último turno del agente.

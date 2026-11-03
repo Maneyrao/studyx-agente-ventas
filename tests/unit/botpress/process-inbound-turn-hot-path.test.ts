@@ -509,7 +509,7 @@ describe('processInboundTurn hot path', () => {
       try { const event = JSON.parse(String(line)); return event.event === 'studyx.turn.deterministic_rules' ? [event] : []; }
       catch { return []; }
     });
-    expect(records.at(-1)).toMatchObject({ rule_a: 'rewrite', rule_b: 'rewrite', phase: 'final_candidate' });
+    expect(records.at(-1)).toMatchObject({ rule_a: 'rewrite', rule_b: 'not_applicable', phase: 'final_candidate' });
   });
 
   it('uses a stable 8–14 second WhatsApp reply target', () => {

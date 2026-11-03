@@ -72,6 +72,7 @@ function resolver(current: AgentAContextV1) {
       repair: async () => { throw new Error('unexpected generic repair'); } });
 }
 
+// Owner 2026-11-03: one question per turn; a gift turn carries no Rule B invitation.
 describe('live Rule A/B orchestration, bounded rewrite and validated fallback', () => {
   it('permits a model correction unknown → request_call grounded in the current explicit request, leaving backend permissions intact', async () => {
     const current = context(true);
@@ -120,7 +121,7 @@ describe('live Rule A/B orchestration, bounded rewrite and validated fallback', 
     const result = await resolveDeterministicRulesTurnV1({ context: current, initial,
       repair_enabled: true, rejection_id: () => rejectionId, resolve: resolver(current), repair });
     expect(repair).toHaveBeenCalledOnce();
-    expect(result.record).toMatchObject({ rule_a: 'rewrite', rule_b: 'rewrite' });
+    expect(result.record).toMatchObject({ rule_a: 'rewrite', rule_b: 'not_applicable' });
     expect(result.resolved.effective.proposal.move).toMatchObject({ move: 'defer_payment',
       secondary_moves: [], vetoes: [], course_reference: 'Ecommerce' });
     expect(result.resolved.effective.proposal.response.call_offer).toBe(invitation);
@@ -197,8 +198,8 @@ describe('live Rule A/B orchestration, bounded rewrite and validated fallback', 
     const result = await resolveDeterministicRulesTurnV1({ context: current, initial,
       repair_enabled: true, rejection_id: () => rejectionId, resolve: resolver(current), repair });
     expect(repair).toHaveBeenCalledOnce();
-    expect(repair.mock.calls[0]?.[0].rejections.map(reason => reason.code)).toEqual(['BONUS_OFFER_REQUIRED', 'CALL_OFFER_REQUIRED']);
-    expect(result.record).toMatchObject({ rule_a: 'rewrite', rule_b: 'rewrite' });
+    expect(repair.mock.calls[0]?.[0].rejections.map(reason => reason.code)).toEqual(['BONUS_OFFER_REQUIRED']);
+    expect(result.record).toMatchObject({ rule_a: 'rewrite', rule_b: 'not_applicable' });
     expect(result.resolved.effective.proposal.response.call_offer).toBe(invitation);
     expect(result.resolved.effective.proposal.memory_candidates).toEqual(initial.proposal.memory_candidates);
     expect(result.resolved.effective.proposal.proposed_action.type).toBe('offer_course_bonus');
@@ -216,12 +217,12 @@ describe('live Rule A/B orchestration, bounded rewrite and validated fallback', 
     const result = await resolveDeterministicRulesTurnV1({ context: current, initial: offered(),
       repair_enabled: true, rejection_id: () => rejectionId, resolve, repair });
     expect(repair).toHaveBeenCalledOnce();
-    expect(result.record).toMatchObject({ rule_a: 'fixed', rule_b: 'fixed' });
+    expect(result.record).toMatchObject({ rule_a: 'fixed', rule_b: 'not_applicable' });
     // Owner "modo promoción" fixed copy (no payment plans in this context).
     expect(result.resolved.effective.proposal.response.messages).toEqual([
       `Te lo puedo resolver! Tengo una promoción exclusiva para ti: si avanzas con Introducción al Ecommerce, te bonifico ${bonusName}, así te llevas dos cursos al precio de uno. Lo hacemos?!`,
     ]);
-    expect(result.resolved.effective.proposal.response.call_offer).toBeTruthy();
+    expect(result.resolved.effective.proposal.response.call_offer).toBeNull();
     expect(result.resolved.effective.proposal.memory_candidates).toEqual(draft().proposal.memory_candidates);
   });
 
@@ -242,9 +243,10 @@ describe('live Rule A/B orchestration, bounded rewrite and validated fallback', 
     const repair = vi.fn(async () => { throw new Error('provider timeout'); });
     const result = await resolveDeterministicRulesTurnV1({ context: current, initial,
       repair_enabled: true, rejection_id: () => rejectionId, resolve: resolver(current), repair });
-    expect(result.record.rule_b).toBe('fixed');
+    // One question per turn (owner 2026-11-03): a gift turn carries no invitation.
+    expect(result.record.rule_b).toBe(bonusApplies ? 'not_applicable' : 'fixed');
     expect(result.resolved.effective.proposal.response.call_offer)
-      .toBe('Si quieres, coordinamos una llamada corta para verlo juntos. Te sirve?');
+      .toBe(bonusApplies ? null : 'Si quieres, coordinamos una llamada corta para verlo juntos. Te sirve?');
     expect(result.resolved.action_rejection).toBeNull();
     expect(repair).toHaveBeenCalledOnce();
   });

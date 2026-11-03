@@ -249,7 +249,11 @@ const valueRegister = [
   { type: 'not_contains', value: 'sigue siendo USD' } as const, { type: 'not_contains', value: 'precio no cambia' } as const,
   { type: 'not_contains', value: 'Qué dato o qué curso' } as const, ...noContingency];
 const emmaSells = owner(114, 114, 'Emma vende');
-const setupPackage = englishTurn('setup_live_package', 'me interesa ingles 1, desde cero\ntenés alguna promo? me parece caro', {
+// Owner 2026-11-03 third revision: the first offer needs the explicit "sí" to the price question.
+const setupPriceQuestion = englishTurn('setup_price_question', 'me interesa ingles 1, desde cero\ncuanto sale? me parece caro', {
+  authority: [emmaSells], hard: [{ type: 'workflow_committed' }, ...valueRegister],
+});
+const setupPackage = englishTurn('setup_live_package', 'si, es solo el precio', {
   must: ['Presentar la promoción exclusiva: Inglés 1 con Inglés 2 bonificado, con valor y cierre de plan.'],
   authority: [promotionMode, ruleA],
   expected: { move: replayMoves, action: ['offer_course_bonus'], state: {
@@ -267,6 +271,7 @@ OWNER_PROMOTION_MODE_REPLAY_CASES_MUTABLE.push({
     }),
     englishTurn('not_defined_yet', 'no lo he definido aun', { authority: [emmaSells],
       hard: [{ type: 'workflow_committed' }, ...valueRegister] }),
+    setupPriceQuestion,
     setupPackage,
     englishTurn('bonify_one_of_two', 'y si yo tengo el curso de ingles 1 y armado y reparacion de pc, me bonificas uno de los dos?', {
       must: ['Decir que sí: sumar Armado y Reparación de PC de regalo y recapitular el paquete como ganancia (tres cursos al precio de uno), cerrando con una sola pregunta con energía.'],
@@ -283,6 +288,7 @@ OWNER_PROMOTION_MODE_REPLAY_CASES_MUTABLE.push({
   id: '24_owner_emma_vende_swap_20261103_0741',
   title: 'Replay 3/11 07:41: «no puedo cambiar Inglés 2 por Reparación de PC?» → se cambia el único bonificado',
   turns: [
+    setupPriceQuestion,
     setupPackage,
     englishTurn('swap_only_bonus', 'osea no puedo cambiar ingles 2 por armado y reparacion de pc?', {
       must: ['Decir que sí y cambiarlo: Inglés 1 + Armado y Reparación de PC de regalo, dos cursos al precio de uno, con cierre de una sola pregunta.'],

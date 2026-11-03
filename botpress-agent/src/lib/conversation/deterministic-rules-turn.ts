@@ -48,7 +48,9 @@ export function ruleContextFromAgentAContextV1(context: AgentAContextV1): RuleCo
       || context.catalog.candidate_offerings.some(candidate => candidate.reference !== undefined)
       || context.catalog.resolution === 'exact' || context.catalog.resolution === 'ambiguous'
       || context.customer.memories.some(memory => memory.type === 'study_goal'),
-    previous_agent_messages: latestAgentTurnMessages(context.turn.recent_turns),
+    // Every bubble of the last agent turn: the price question may not be the last one
+    // (owner live test 2026-11-03: question first, call invitation after it).
+    previous_agent_messages: lastAgentTurnBubblesV1(context.turn.recent_turns),
     payment_reported: state.payment_reported,
     active_call: state.active_call != null,
     opted_out: !context.capabilities.may_reply,
@@ -58,6 +60,16 @@ export function ruleContextFromAgentAContextV1(context: AgentAContextV1): RuleCo
     promo_expires_at: bonus?.sales_flow?.promo_expires_at ?? null,
     ...paidCourseV1(context),
   }
+}
+
+function lastAgentTurnBubblesV1(turns: AgentAContextV1['turn']['recent_turns']): string[] {
+  const bubbles: string[] = []
+  for (let index = turns.length - 1; index >= 0; index -= 1) {
+    const turn = turns[index]!
+    if (turn.direction === 'outbound') bubbles.unshift(turn.content)
+    else if (bubbles.length > 0) break
+  }
+  return bubbles.length > 0 ? bubbles : latestAgentTurnMessages(turns)
 }
 
 function paidCourseV1(context: AgentAContextV1): { paid_offering_code: string | null; paid_display_name: string | null } {
@@ -96,10 +108,14 @@ export function decideDeterministicRulesV1(context: AgentAContextV1, draft: Agen
     : supportsCallRequestV1(ruleContext.batch_texts.join('\n'), ruleContext.awaiting_reply === 'call_or_chat')
       ? { kind: 'none' as const, reason: 'current_call_request' }
       : decideCallRuleV1(obligation ? { ...ruleContext, customer_expressed_interest: true } : ruleContext, eligibilityDraft, bonus)
+  const probe = decidePriceProbeRuleV1(ruleContext, draft, bonus)
+  // Owner 2026-11-03: one question per turn. A turn that offers a gift or asks
+  // the price question carries no call invitation; Rule B moves to the next reply.
+  const oneQuestion = !obligation && call.kind === 'offer' && (bonus.kind === 'offer' || probe.kind === 'ask')
   return {
     bonus,
-    call: call.kind === 'offer' && obligation ? obligation : call,
-    probe: decidePriceProbeRuleV1(ruleContext, draft, bonus),
+    call: oneQuestion ? { kind: 'none' as const, reason: 'one_question_per_turn' } : call.kind === 'offer' && obligation ? obligation : call,
+    probe,
     passive_forbidden: passiveRuleAppliesV1(ruleContext, draft),
     price_expression_hint: ruleContext.batch_texts.some(priceExpressionHintV1),
     retention,
