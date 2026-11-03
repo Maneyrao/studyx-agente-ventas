@@ -45,7 +45,7 @@ export function technicalFallback(
     kind: 'reply',
     // Last-resort continuity only. Never expose a provider failure. Owner
     // wording (2026-11-03): a short, human clarification request.
-    response: 'Perdón, no te entendí, a qué te referís?',
+    response: 'Perdón, no te entendí bien, a qué te refieres?',
     response_type: responseType,
     business_action: null,
     memory_candidates: [],
@@ -159,7 +159,7 @@ export function validationExhaustedNotice(
     kind: 'reply',
     response: comparisonIsAmbiguous
       ? 'Qué dos cursos comparamos?'
-      : 'Perdón, no te entendí, a qué te referís?',
+      : 'Perdón, no te entendí bien, a qué te refieres?',
     response_type: responseType === 'technical_fallback' ? 'commercial_reply' : responseType,
     business_action: null,
     memory_candidates: [],
@@ -309,6 +309,31 @@ export function modelUnavailableFallback(
       : /\b(?:como estas|todo bien|como va)\b/u.test(latest)
         ? `Bien, gracias! 😊 Qué te gustaría aprender o consultar?`
         : null
+  // Owner P0 (2026-11-03): a price or payment question is answered with the
+  // canonical price and plans, never with a clarification. Only backend values.
+  const priceQuestion = /\b(?:cuanto\s+(?:sale|cuesta|vale|es)|precio|costo|valor|pago|pagar|cuotas?|forma\s+de\s+pago)\b/u
+    .test(currentBatch)
+  const priceAnswer = priceQuestion ? canonicalPriceLineV1(claimed) : null
+  if (priceAnswer) {
+    return {
+      schema_version: 4,
+      intent: 'commercial',
+      kind: 'reply',
+      response: course
+        ? `${course}: ${priceAnswer} Con cuál plan te gustaría avanzar?`
+        : `${priceAnswer} Qué curso te interesa? Así te cuento todo sobre ese.`,
+      response_type: 'commercial_reply',
+      business_action: null,
+      memory_candidates: [],
+      missing_information: [],
+      next_state: 'waiting_user',
+      reason_code: brainFailureReason
+        ? `BRAIN_FALLBACK_${brainFailureReason.toUpperCase()}`
+        : 'MODEL_UNAVAILABLE',
+      confidence: 1,
+      retrieval_used: null,
+    }
+  }
   const genericInformationRequest = /^(?:(?:quiero|necesito|busco|dame|pasame)\s+)?(?:toda\s+la\s+)?(?:informacion|info|detalles?)$/u.test(currentBatch)
   const response = socialResponse
     ?? (genericInformationRequest
@@ -324,7 +349,7 @@ export function modelUnavailableFallback(
         ? 'Puedo ayudarte a ordenar la consulta según tu presupuesto. Qué te preocupa del precio?'
         : course
           ? `Sigo con ${course}. Qué aspecto quieres confirmar?`
-          : 'Puedo seguir ayudándote por aquí. Puedes contarme la consulta en una frase?')
+          : 'Perdón, no te entendí bien, a qué te refieres?')
   return {
     schema_version: 4,
     intent: 'commercial',
@@ -341,6 +366,21 @@ export function modelUnavailableFallback(
     confidence: 1,
     retrieval_used: null,
   }
+}
+
+/** "El valor es USD 360 y lo puedes pagar en ..." from the backend snapshot only. */
+function canonicalPriceLineV1(claimed: ClaimedTurn): string | null {
+  const context = claimed.business_context
+  if (!context?.prices_assertable) return null
+  const options = context.workspace.payment_options
+  if (options.length === 0) return null
+  const amount = (value: string) => value.replace(/\.00$/u, '')
+  const total = options[0]!.total
+  const parts = options.map((option) => option.installments > 1
+    ? `${option.installments} cuotas de ${option.total.currency} ${amount(option.installment_amount)}`
+    : `un pago único de ${option.total.currency} ${amount(option.total.amount)}`)
+  const list = parts.length === 1 ? parts[0] : `${parts.slice(0, -1).join(', ')} o ${parts.at(-1)}`
+  return `El valor es ${total.currency} ${amount(total.amount)} y lo puedes pagar en ${list}.`
 }
 
 function allowedTextFallback(claimed: ClaimedTurn, reasonCode: string): Decision {

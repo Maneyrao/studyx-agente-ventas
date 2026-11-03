@@ -37,6 +37,7 @@ function claimedTurn(overrides: {
   offering_code?: string | null;
   selected_payment_plan?: ClaimedTurn['sales_context']['selected_payment_plan'];
   catalog_resolution?: ClaimedTurn['catalog_resolution'];
+  payment_options?: NonNullable<ClaimedTurn['business_context']>['workspace']['payment_options'];
 } = {}): ClaimedTurn {
   return {
     outcome: 'claimed',
@@ -122,7 +123,8 @@ function claimedTurn(overrides: {
       as_of: NOW,
       prices_assertable: true,
       workspace: { slug: 'studyx', display_name: 'StudyX', environment: 'sandbox',
-        default_locale: 'es-AR', timezone: 'America/Argentina/Buenos_Aires', payment_options: [] },
+        default_locale: 'es-AR', timezone: 'America/Argentina/Buenos_Aires',
+        payment_options: overrides.payment_options ?? [] },
       offerings: overrides.offering_names.map((display_name, index) => ({
         code: `course_${index}`, display_name,
         academy: overrides.offering_areas?.[index] ?? null,
@@ -296,7 +298,7 @@ describe('applyDecisionPolicy — provider parity', () => {
     });
 
     expect(decision.response).toBe(
-      'Perdón, no te entendí, a qué te referís?',
+      'Perdón, no te entendí bien, a qué te refieres?',
     );
     expect(decision.response_type).toBe('commercial_reply');
   });
@@ -879,5 +881,40 @@ describe('applyDecisionPolicy — provider parity', () => {
       key: 'target_course',
       value: 'Introducción al Catering',
     }));
+  });
+
+  describe('owner P0 (2026-11-03): price question during a provider outage', () => {
+    const plans = [
+      { code: 'monthly_12' as const, label: '12 cuotas', total: { amount: '360.00' as const, currency: 'USD' as const },
+        installments: 12, installment_amount: '30.00' as const, payment_link: 'https://pay.example/12' },
+      { code: 'monthly_6' as const, label: '6 cuotas', total: { amount: '360.00' as const, currency: 'USD' as const },
+        installments: 6, installment_amount: '60.00' as const, payment_link: 'https://pay.example/6' },
+      { code: 'one_time' as const, label: 'Contado', total: { amount: '360.00' as const, currency: 'USD' as const },
+        installments: 1, installment_amount: '360.00' as const, payment_link: 'https://pay.example/1' },
+    ];
+
+    it('answers the canonical price and plans and asks for the course when none is chosen', () => {
+      const fallback = modelUnavailableFallback(claimedTurn({
+        batch_message_content: 'quiero saber como es el tema del pago',
+        offering_names: ['Inglés 1'], payment_options: plans,
+      }));
+      expect(fallback.response).toBe('El valor es USD 360 y lo puedes pagar en 12 cuotas de USD 30, '
+        + '6 cuotas de USD 60 o un pago único de USD 360. Qué curso te interesa? Así te cuento todo sobre ese.');
+      expect(fallback.response).not.toMatch(/Qué dato o qué curso|no te entendí|https?:/u);
+    });
+
+    it('never asserts a price the backend did not authorize', () => {
+      const fallback = modelUnavailableFallback(claimedTurn({
+        batch_message_content: 'cuanto sale?', offering_names: ['Inglés 1'], payment_options: [],
+      }));
+      expect(fallback.response).not.toMatch(/USD|\d/u);
+    });
+
+    it('uses the natural clarification only for an unclassifiable message', () => {
+      const fallback = modelUnavailableFallback(claimedTurn({
+        batch_message_content: 'mmm', offering_names: ['Inglés 1'], payment_options: plans,
+      }));
+      expect(fallback.response).toBe('Perdón, no te entendí bien, a qué te refieres?');
+    });
   });
 });

@@ -1984,7 +1984,9 @@ export const processInboundTurn = new Workflow({
               })
             }
           } else {
-            pipelineFailureDecision = technicalContinuityFallback(owned)
+            // Owner P0 (2026-11-03): a provider outage answers from canonical
+            // facts (price, plans, catalog), never with the generic clarification.
+            pipelineFailureDecision = customerVisibleModelFallback(owned, brainFailureReason)
           }
         }
       }

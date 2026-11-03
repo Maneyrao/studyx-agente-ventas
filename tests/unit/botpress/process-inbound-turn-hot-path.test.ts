@@ -2267,7 +2267,7 @@ describe('processInboundTurn hot path', () => {
     expect(actionSpies.commit).toHaveBeenCalledTimes(2);
     expect(actionSpies.commit.mock.calls[1]![0].input.agent_turn_v2).toBeNull();
     expect(actionSpies.commit.mock.calls[1]![0].input.decision.response)
-      .toBe('Perdón, no te entendí, a qué te referís?');
+      .toBe('Perdón, no te entendí bien, a qué te refieres?');
     expect(JSON.stringify(actionSpies.commit.mock.calls[1]![0].input)).not.toContain(rejectedBonusText);
     expect(result).toMatchObject({ status: 'waiting_user', delivery_status: 'submitted_to_botpress',
       error_code: null });
@@ -2356,7 +2356,7 @@ describe('processInboundTurn hot path', () => {
     expect(actionSpies.commit).toHaveBeenCalledTimes(1);
     expect(actionSpies.commit.mock.calls[0]![0].input.agent_turn_v2).toBeNull();
     expect(actionSpies.commit.mock.calls[0]![0].input.decision.response)
-      .toBe('Perdón, no te entendí, a qué te referís?');
+      .toBe('Perdón, no te entendí bien, a qué te refieres?');
     expect(JSON.stringify(actionSpies.commit.mock.calls[0]![0].input)).not.toContain(rejectedBonusText);
     expect(actionSpies.recovery).not.toHaveBeenCalled();
     expect(client.createMessage).toHaveBeenCalledTimes(1);

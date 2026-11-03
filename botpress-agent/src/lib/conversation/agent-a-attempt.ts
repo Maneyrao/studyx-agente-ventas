@@ -60,9 +60,14 @@ export function classifyAgentAAttemptFailure(error: unknown): AgentAAttemptFailu
   return { stage: 'unknown', code, retryable: false }
 }
 
+/** Pause before the single provider retry (CLAUDE.md: retry with backoff). A
+ * fast 5xx usually clears within seconds; a timeout already waited its deadline. */
+export const AGENT_A_PROVIDER_RETRY_BACKOFF_MS = 2_500
+
 export async function runAgentADeepSeekAttemptV1<T>(input: {
   readonly generate: () => Promise<T>
   readonly onRetry: (failure: AgentAAttemptFailureV1) => void
+  readonly wait?: (ms: number) => Promise<void>
 }): Promise<{ value: T; attempts: 1 | 2 }> {
   try {
     return { value: await input.generate(), attempts: 1 }
@@ -70,6 +75,10 @@ export async function runAgentADeepSeekAttemptV1<T>(input: {
     const failure = classifyAgentAAttemptFailure(firstError)
     if (!failure.retryable) throw firstError
     input.onRetry(failure)
+    if (failure.code !== 'BRAIN_DEEPSEEK_TIMEOUT' && failure.code !== 'BRAIN_TIMEOUT') {
+      await (input.wait ?? ((ms) => new Promise<void>((resolve) => setTimeout(resolve, ms))))(
+        AGENT_A_PROVIDER_RETRY_BACKOFF_MS)
+    }
     return { value: await input.generate(), attempts: 2 }
   }
 }
