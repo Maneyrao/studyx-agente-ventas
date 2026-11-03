@@ -512,6 +512,8 @@ describe('Regla A — curso elegido por el cliente (dueño 2026-11-03)', () => {
     expect(task).toContain('«compra aparte»');
     const action = { type: 'offer_course_bonus', bonus_offering_code: 'armado_reparacion_pc', interest_offering_code: 'ingles_1' };
     expect(draftFulfillsPromotionTaskV1(draft({ proposed_action: action, response: { messages: [fixed] } }), decision, data)).toBe(true);
+    expect(draftFulfillsPromotionTaskV1(draft({ proposed_action: action, response: { messages: [fixed] },
+      move: { move: 'select_course', secondary_moves: [] } }), decision, data)).toBe(false);
   });
   it('nunca en checkout ni con el paquete aceptado', () => {
     expect(decideBonusRuleV1(ctx({ package_status: 'accepted', rule_bonus: chosen() }), draft())).toMatchObject({ kind: 'none' });

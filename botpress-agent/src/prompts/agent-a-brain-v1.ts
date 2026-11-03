@@ -323,7 +323,7 @@ function promotionTaskDirectiveV1(context: AgentAContextV1): string {
   const declared = [`${decision.paid_code} as paid`, ...decision.prior_bonus.map(course => `${course.code} as bonus`), `${decision.bonus_code} as bonus`]
   return `<tarea_del_turno prioridad="maxima">
 ${promotionTaskV1(decision, promotionTaskDataV1(context))}
-Contrato técnico: proposed_action={"type":"offer_course_bonus","bonus_offering_code":"${decision.bonus_code}","interest_offering_code":"${decision.paid_code}"}; course_mentions declara ${declared.join(', ')}${decision.replaces ? ` y, si nombras ${decision.replaces.display_name}, ${decision.replaces.code} as alternative (ya no es regalo)` : ''}. No nombres otro regalo. El backend ejecuta y guarda esta promoción antes de enviar tu texto: presentala sin condicionarla a una llamada ni a otra aprobación. Esta tarea prevalece sobre cualquier otra indicación de estas instrucciones para este turno.
+${decision.trigger === 'customer_request' ? `El curso pago sigue siendo ${decision.paid_name}: no uses move=select_course; usa move=ask_course_information con course_reference=${decision.paid_code}.\n` : ''}Contrato técnico: proposed_action={"type":"offer_course_bonus","bonus_offering_code":"${decision.bonus_code}","interest_offering_code":"${decision.paid_code}"}; course_mentions declara ${declared.join(', ')}${decision.replaces ? ` y, si nombras ${decision.replaces.display_name}, ${decision.replaces.code} as alternative (ya no es regalo)` : ''}. No nombres otro regalo. El backend ejecuta y guarda esta promoción antes de enviar tu texto: presentala sin condicionarla a una llamada ni a otra aprobación. Esta tarea prevalece sobre cualquier otra indicación de estas instrucciones para este turno.
 </tarea_del_turno>`
 }
 

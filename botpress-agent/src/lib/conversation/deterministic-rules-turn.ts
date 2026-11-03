@@ -200,10 +200,17 @@ export function bonusFallbackProposalV1(input: {
     { offering_code: decision.paid_code, role: 'paid' as const },
     ...decision.prior_bonus.map(course => ({ offering_code: course.code, role: 'bonus' as const })),
     { offering_code: decision.bonus_code, role: 'bonus' as const },
+    // The swap copy names the replaced course: it is no longer a gift.
+    ...(decision.replaces ? [{ offering_code: decision.replaces.code, role: 'alternative' as const }] : []),
   ]
+  // A customer-chosen gift keeps the paid course: never a select_course on the gift.
+  const move = decision.trigger === 'customer_request'
+    ? { schema_version: 1 as const, move: 'ask_course_information' as const, course_reference: decision.paid_code,
+      secondary_moves: [], vetoes: [], confidence: input.draft.move.confidence }
+    : input.draft.move
   return {
     schema_version: 1,
-    move: input.draft.move,
+    move,
     response: { messages: bonusFallbackMessagesV1(decision, promotionTaskDataV1(context)), call_offer: null },
     proposed_action: { type: 'offer_course_bonus', bonus_offering_code: decision.bonus_code, interest_offering_code: decision.paid_code },
     course_mentions: mentions,

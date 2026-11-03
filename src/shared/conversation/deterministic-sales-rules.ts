@@ -556,6 +556,8 @@ const DRY_BONUS_OPENING = /^\W*la bonificacion ya (?:esta|quedo) aplicada\b/u;
 export function draftFulfillsPromotionTaskV1(draft: RuleDraftV1, decision: Extract<BonusRuleDecisionV1, { kind: 'offer' }>,
   data: PromotionTaskDataV1): boolean {
   if (!draftPresentsBonusV1(draft, decision)) return false;
+  // A chosen gift keeps the paid course; select_course would read as a course change.
+  if (decision.trigger === 'customer_request' && draftMoves(draft).has('select_course')) return false;
   const messages = draft.response.messages;
   if (messages.length === 0 || messages.length > 2) return false;
   const text = normalizedVisible(messages.join(' '));
