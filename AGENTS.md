@@ -144,3 +144,24 @@ Prueba en vivo del 03/11 07:31–07:42: contingencia por caída del proveedor, n
 - La primera oferta sale sólo con un «sí» explícito a la pregunta del precio, o tras una segunda queja de precio (o una queja después de un «no»). Con un bonificado ya ofrecido, cada nuevo pedido de promo o queja de precio pasa al siguiente.
 - «Me bonificas X?» sin paquete: sin el «sí» previo, primero la pregunta del precio; con el «sí», bonifica X.
 - Prompt de autoridad: canónico v103. Brain v156.
+
+## Venta interpretada por el modelo (decisión del dueño, 2026-11-03, rama claude/agent-a-model-owned-sales)
+
+Reemplaza en el runtime las Reglas B, C, D y E, la promo instantánea, la tarea y el chequeo de promoción y todos los respaldos fijos comerciales de las secciones del 2026-11-02 y 2026-11-03. Las reglas comerciales siguen como guía del modelo en `docs/authority/prompt-agente-a-studyx-v2.md`, que no se modifica.
+- El modelo interpreta, identifica la fase, decide la estrategia (descubrimiento, valor, objeciones, cierre, momento de llamada y de promoción, curso bonificado) y redacta. Ningún regex del backend decide si una respuesta vende, avanza, insiste, cierra bien o debe ofrecer una llamada.
+- Prompt :120 («el backend decide el momento y el curso»): se lee como «el backend valida el permiso». El modelo propone `offer_course_bonus`; el backend valida:
+  1. bonificación habilitada;
+  2. evidencia de precio (spec :60): memoria `objection/price_objection` o `constraint/price_only_barrier` persistida, o del turno actual con `source_quote` literal presente en el lote;
+  3. curso activo y distinto del pago;
+  4. no repetido;
+  5. máximo 3, uno por turno;
+  6. oferta anterior entregada y respondida;
+  7. sin aceptar ni pagar;
+  8. fuera del checkout (por estado);
+  9. afinidad como pertenencia al conjunto: fila del curso pago, puentes universales o curso nombrado literalmente por el cliente.
+
+  El «sí» a la pregunta del precio es guía del prompt, no un permiso.
+- Retención: un rechazo de compra declarado por el modelo, con cita literal en el lote, habilita UNA bonificación de retención por conversación aunque no haya objeción de precio. Redacta el modelo; sin texto fijo.
+- Respuesta y efectos independientes: un efecto no permitido se rechaza solo (se poda la acción). Si el texto afirma el efecto: una reparación y, si falla, se quitan las burbujas que lo afirman. Un hecho incorrecto: una reparación; si falla, se quita sólo la oración afectada (excepción a la regla de no recortar dentro de una burbuja de «Adaptaciones técnicas»), se agrega el hecho canónico y se revalida contra la guarda del backend. Nunca sale el dato incorrecto; nunca silencio, salvo opt-out, supresión o manipulación detectada por el egreso.
+- Estado comercial estructurado para el modelo (`commercial_state.sales_profile`), proyectado desde datos persistidos (memorias de `agent_decisions`, estado de venta, promoción), nunca desde frases del agente ni desde audit_log.
+- Se conservan: límites y transacciones de bonificación, paquete, cambio de bonificado, aceptación automática en el link, permisos y consentimiento de llamada (máximo 2), checkout, pago, alta y todo «No romper».
