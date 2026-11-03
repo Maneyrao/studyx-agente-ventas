@@ -346,10 +346,14 @@ describe('dueño — pedido de promo (tercera revisión 2026-11-03: sólo con «
 });
 
 describe('dueño — precio → "El precio es el único inconveniente? Puedo revisar una promoción."', () => {
-  it.each(['cuánto sale?', 'es caro', 'qué precio tiene', 'no me alcanza', 'cuánto es la cuota?'])('"%s" exige la pregunta', t => {
-    expect(priceConcernTextV1(t)).toBe(true);
+  it.each(['es caro', 'me parece caro', 'no me alcanza', 'no tengo presupuesto', 'me parece caro, cuánto sale?'])('una queja "%s" exige la pregunta', t => {
     expect(decidePriceProbeRuleV1(ctx({ prior_price_objection_count: 0, batch_texts: [t] }), draft({ memory: [] }),
       { kind: 'none', reason: 'x' })).toEqual({ kind: 'ask' });
+  });
+  // Owner 2026-11-03 (live 16:44): a plain price question gets the price only, no promo mention.
+  it.each(['cuánto sale?', 'qué precio tiene', 'cuánto es la cuota?', 'y el precio?', 'es caro?'])('una consulta "%s" no la exige', t => {
+    expect(decidePriceProbeRuleV1(ctx({ prior_price_objection_count: 0, batch_texts: [t] }), draft({ memory: [] }),
+      { kind: 'none', reason: 'x' })).toMatchObject({ kind: 'none' });
   });
   it('sin mención de precio no la exige; en un turno de oferta tampoco', () => {
     expect(decidePriceProbeRuleV1(ctx({ batch_texts: ['me gusta ecommerce'] }), draft({ memory: [] }), { kind: 'none', reason: 'x' }).kind).toBe('none');

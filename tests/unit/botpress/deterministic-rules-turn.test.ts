@@ -375,7 +375,7 @@ describe('dueño 2026-11-02 (segunda revisión): promo instantánea, pregunta de
     expect(result.resolved.effective.proposal.response.messages.at(-1)).toBe(probe);
   });
   it('una pregunta de precio sin la frase: una reescritura y, si falla, burbuja fija al final', async () => {
-    const current = priceContext('cuánto sale?');
+    const current = priceContext('me parece caro');
     const repair = vi.fn(async () => { throw new Error('provider timeout'); });
     const result = await resolveDeterministicRulesTurnV1({ context: current,
       initial: draft({ memory_candidates: [], response: { messages: ['Tenés varias formas de pago.'], call_offer: null } }),
@@ -385,7 +385,7 @@ describe('dueño 2026-11-02 (segunda revisión): promo instantánea, pregunta de
     expect(result.resolved.effective.proposal.response.messages).toEqual(['Tenés varias formas de pago.', probe]);
   });
   it('el modelo que ya incluye la frase cumple sin reescritura', async () => {
-    const current = priceContext('cuánto sale?');
+    const current = priceContext('me parece caro');
     const repair = vi.fn();
     const result = await resolveDeterministicRulesTurnV1({ context: current,
       initial: draft({ memory_candidates: [], response: { messages: ['Tenés varias formas de pago.', probe], call_offer: null } }),
@@ -413,7 +413,7 @@ describe('dueño 2026-11-02 (segunda revisión): promo instantánea, pregunta de
 describe('dueño — nunca silencio', () => {
   it('un respaldo fijo inválido nunca lanza: sale el mejor candidato válido', async () => {
     const current = context(false);
-    current.turn.batch_messages = [{ id: 'current', text: 'cuánto sale?' }];
+    current.turn.batch_messages = [{ id: 'current', text: 'me parece caro' }];
     current.capabilities.course_bonus!.ladder = deriveCourseBonusLadderV1({ observed_price_objection_count: 0,
       call_invitation_status: 'not_offered', call_offer_count: 0, may_offer_call: false });
     const real = resolver(current);

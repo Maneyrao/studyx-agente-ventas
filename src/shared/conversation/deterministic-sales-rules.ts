@@ -152,6 +152,21 @@ const WEAK_PRICE_WORDS = /\b(?:precio|precios|valor|costo|coste|cuotas?)\b/u;
 const OBJECTION_WORDS = /\b(?:caro|cara|caros|costoso|costosa)\b/u;
 
 /** A price question or objection this turn (owner rule C). A plan choice is not one. */
+/** Comma/sentence fragments that are not questions ("me parece caro, cuánto sale?" keeps the first). */
+function statementFragmentsV1(text: string): string[] {
+  return text.split(/(?<=[,;.!?])\s*/u).filter(fragment => fragment.trim() && !fragment.includes('?') && !fragment.includes('¿'));
+}
+
+/** "caro/costoso" outside a question or a negation: a complaint, not a price question. */
+function priceObjectionWordV1(text: string): boolean {
+  // Sentence-level: "es caro?" is a question even after clause splitting drops the "?".
+  const statements = statementFragmentsV1(text).join('. ');
+  return clausesOf(statements).some(clause => {
+    const match = OBJECTION_WORDS.exec(clause);
+    return match !== null && !clause.slice(0, match.index).split(/\s+/u).filter(Boolean).slice(-3).some(word => NEGATION_WORDS.has(word));
+  });
+}
+
 export function priceConcernTextV1(text: string): boolean {
   const objection = priceExpressionHintV1(text) || clausesOf(text).some(clause => {
     const match = OBJECTION_WORDS.exec(clause);
@@ -266,7 +281,11 @@ export function decidePriceProbeRuleV1(context: RuleContextV1, draft: RuleDraftV
   }
   if (!context.recent_turns_complete) return { kind: 'none', reason: 'history_truncated' };
   if (context.batch_texts.some(text => planChoiceV1(text) || purchaseIntentV1(text))) return { kind: 'none', reason: 'plan_choice' };
-  const concern = context.batch_texts.some(priceConcernTextV1) || draftRecordsPriceObjectionV1(draft, context.batch_texts)
+  // Owner 2026-11-03 (live 16:44): a plain price question ("y el precio?") is
+  // answered with the price only; the question that mentions the promotion
+  // needs an actual complaint, a promo request or a gift request.
+  const complaint = context.batch_texts.some(text => statementFragmentsV1(text).some(priceExpressionHintV1) || priceObjectionWordV1(text))
+  const concern = complaint || draftRecordsPriceObjectionV1(draft, context.batch_texts)
     // "Me bonificás X?" before the question: ask it first (owner 4e).
     || context.gift_request_pending_probe === true || promoWithoutYes;
   return concern ? { kind: 'ask' } : { kind: 'none', reason: 'no_price_concern' };
