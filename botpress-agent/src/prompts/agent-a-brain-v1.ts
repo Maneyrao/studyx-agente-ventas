@@ -7,7 +7,7 @@ import {
 } from './studyx-agent-a-canonical.generated';
 import { resolveCanonicalPromptIdentityV1 } from './agent-a-identity';
 
-export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v157' as const;
+export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v158' as const;
 
 /**
  * Runtime contract only. The sales behavior lives in the canonical prompt so
@@ -379,6 +379,7 @@ Sin curso elegido: cuenta como posibilidad (no como hecho) que puedes bonificarl
 ${promoExpiryLineV1(context)}
 Primer «no» definitivo con menos de 3 bonificados: el backend decide la retención (un único intento, ofreciendo el siguiente bonificado). Al segundo «no», o con los 3 ya ofrecidos, despídete con calidez y deja la puerta abierta. Ante opt-out, insultos o pedido de terminar, respeta de inmediato sin ofrecer nada.
 Si el cliente pregunta el precio, dalo siempre (USD 360 y los planes) antes de cualquier pregunta sobre el precio o la promo.
+Una consulta de precio sola («qué precio tiene?», «el total son 360?») se responde con el precio y los planes: no ofrezcas, no insinúes y no recuerdes la promoción ni el bonificado en ese turno, aunque ya exista el paquete. La promo sólo aparece cuando el cliente se queja del precio, la pide o confirma con «sí» que el precio es lo único que lo frena.
 Naturalidad (prueba del dueño 2026-11-03): mensajes cortos tipo WhatsApp; no repitas lo que ya contaste del curso (clases, temas, cuotas) si ya lo dijiste en la conversación; nada de muletillas como «tranquilo» o «con el precio resuelto»; la pregunta del precio va una sola vez por turno, con tus palabras o las del dueño, nunca las dos. Cuando el cliente dice que sí, ve directo a la promo sin parafrasear su respuesta.
 Usa siempre tú, nunca voseo.
 </premisa_de_venta>`
