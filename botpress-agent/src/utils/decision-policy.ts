@@ -43,11 +43,9 @@ export function technicalFallback(
     schema_version: 3,
     intent: 'unknown',
     kind: 'reply',
-    // Last-resort continuity only. Never expose a provider failure or ask the
-    // customer to repeat the exact message that the system already received.
-    // Ask for the smallest useful clarification so the conversation keeps
-    // moving even while the model path is unavailable.
-    response: 'Qué dato o qué curso revisamos?',
+    // Last-resort continuity only. Never expose a provider failure. Owner
+    // wording (2026-11-03): a short, human clarification request.
+    response: 'Perdón, no te entendí, a qué te referís?',
     response_type: responseType,
     business_action: null,
     memory_candidates: [],
@@ -161,7 +159,7 @@ export function validationExhaustedNotice(
     kind: 'reply',
     response: comparisonIsAmbiguous
       ? 'Qué dos cursos comparamos?'
-      : 'Qué dato o qué curso revisamos?',
+      : 'Perdón, no te entendí, a qué te referís?',
     response_type: responseType === 'technical_fallback' ? 'commercial_reply' : responseType,
     business_action: null,
     memory_candidates: [],

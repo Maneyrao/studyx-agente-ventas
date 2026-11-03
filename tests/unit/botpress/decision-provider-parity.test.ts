@@ -296,7 +296,7 @@ describe('applyDecisionPolicy — provider parity', () => {
     });
 
     expect(decision.response).toBe(
-      'Qué dato o qué curso revisamos?',
+      'Perdón, no te entendí, a qué te referís?',
     );
     expect(decision.response_type).toBe('commercial_reply');
   });

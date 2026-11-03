@@ -148,7 +148,7 @@ export const OWNER_REPLAY_CASES: readonly GoldenCaseV1[] = [{
 /** Owner conversation of 2026-11-02 17:30–17:34 (-03:00), customer inputs only,
  * read from the owner's own test contact. Live failures: the escalation turn
  * fell into the technical contingency and the next objection never escalated. */
-const noContingency = [{ type: 'not_contains', value: 'Qué dato o qué curso revisamos' } as const,
+const noContingency = [{ type: 'not_contains', value: 'no te entendí, a qué te referís' } as const,
   { type: 'not_contains', value: 'Qué dos cursos comparamos' } as const];
 const promotionMode = owner(66, 66, 'Promo instantánea');
 // The customer says "quiero directamente pagar": checkout moves are valid here.

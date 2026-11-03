@@ -3391,7 +3391,7 @@ describe('la conversación sobre candidatos no se confunde con autoridad comerci
 
   // Changed 2026-11-02 (owner: never the technical contingency): after the one
   // rewrite fails, a reply rejected ONLY for an unsupported prerequisite claim
-  // is sent without that claim instead of "Qué dato o qué curso revisamos?".
+  // is sent without that claim instead of "Perdón, no te entendí, a qué te referís?".
   it('si la reparación falla, envía la respuesta sin la afirmación de requisitos (nunca contingencia)', async () => {
     const initial = generated(proposal({
       response: {
