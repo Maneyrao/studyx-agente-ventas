@@ -474,19 +474,30 @@ function planAlternativeV1(plans: readonly string[]): string | null {
   return null;
 }
 
-const PROMOTION_TASK_PROHIBITIONS_V1 = 'Prohibido: abrir con el precio o con «el precio no cambia», volver sólo a las cuotas, comparaciones con gastos (comida, salidas, café), frases defensivas. Máximo 2 mensajes y una sola pregunta.';
+const PROMOTION_TASK_PROHIBITIONS_V1 = 'Prohibido: abrir con el precio, «el precio sigue siendo», «el precio no cambia», «se mantiene el precio», «la bonificación ya está aplicada» como frase seca, «compra aparte», «no es un cambio», «no incluye descuento», volver sólo a las cuotas, comparaciones con gastos (comida, salidas, café), frases defensivas, montos de ahorro inventados. Máximo 2 mensajes y una sola pregunta. Usa tú, con «!» y sin «¡».';
+
+const COUNT_WORDS_V1 = ['', 'un', 'dos', 'tres', 'cuatro'] as const;
+
+/** "dos cursos al precio de uno" from the package this offer persists. */
+export function packageValuePhraseV1(decision: Extract<BonusRuleDecisionV1, { kind: 'offer' }>): string {
+  return `${COUNT_WORDS_V1[decision.prior_bonus.length + 2]} cursos al precio de uno`;
+}
 
 export function promotionTaskV1(decision: Extract<BonusRuleDecisionV1, { kind: 'offer' }>, data: PromotionTaskDataV1): string {
   const plans = planAlternativeV1(data.plan_codes);
-  const close = plans ? `Cerrá con alternativa de plan: ${plans}.` : 'Cerrá con una alternativa concreta para avanzar.';
+  const close = plans
+    ? `Cierra con energía y una sola pregunta que ofrezca el plan: ${plans} (por ejemplo «Lo arrancamos en ${plans}?!»).`
+    : 'Cierra con energía y una sola pregunta para avanzar (por ejemplo «Lo hacemos?!»).';
+  const value = `Vende el beneficio antes que el precio: «te llevas ${packageValuePhraseV1(decision)}».`;
   if (decision.prior_bonus.length === 0) {
     const goal = data.customer_goal ?? 'lo que el cliente te contó que busca';
     return [
       'El cliente te dijo que el precio es su freno. En este turno:',
-      '1) Reconocelo en una frase, con empatía y seguridad (sin «te entiendo» de muletilla, sin defenderte).',
-      '2) Decile que se lo podés resolver.',
-      `3) Presentale una PROMOCIÓN EXCLUSIVA para él: si avanza con ${decision.paid_name}, le bonificás ${decision.bonus_name}. Explicá en una frase por qué le suma a su objetivo (${goal}).`,
-      `4) ${close}`,
+      '1) Reconócelo en una frase, con empatía y seguridad (sin «te entiendo» de muletilla, sin defenderte).',
+      '2) Dile que se lo puedes resolver.',
+      `3) Preséntale una PROMOCIÓN EXCLUSIVA: si avanza con ${decision.paid_name}, le bonificas ${decision.bonus_name}. Explica en una frase por qué le suma a su objetivo (${goal}).`,
+      `4) ${value}`,
+      `5) ${close}`,
       PROMOTION_TASK_PROHIBITIONS_V1,
     ].join('\n');
   }
@@ -495,8 +506,8 @@ export function promotionTaskV1(decision: Extract<BonusRuleDecisionV1, { kind: '
   return [
     `Ya le ofreciste ${prior} con ${decision.paid_name} y el precio lo sigue frenando. En este turno:`,
     '1) No repitas la pregunta del precio ni vuelvas sólo a cuotas.',
-    `2) Subí la apuesta: además de ${prior}, le sumás ${decision.bonus_name}, y explicá en una frase qué le agrega.`,
-    `3) Recapitulá el paquete completo: ${decision.paid_name} + ${all} por el mismo valor.`,
+    `2) Sube la apuesta: además de ${prior}, le sumas ${decision.bonus_name}, y explica en una frase qué le agrega.`,
+    `3) Recapitula el paquete completo como ganancia: ${decision.paid_name} + ${all}, ${packageValuePhraseV1(decision)}.`,
     `4) ${close}`,
     `Mismas prohibiciones: ${PROMOTION_TASK_PROHIBITIONS_V1}`,
   ].join('\n');
@@ -508,6 +519,9 @@ const DISCOUNT_CLAIM = /(?:\b(?:descuento|descontamos|rebaja|rebajado|precio esp
 const DEFENSIVE = /\b(?:no te (?:lo )?puedo (?:bajar|rebajar|ofrecer|hacer)|es lo que hay|no (?:te )?(?:lo )?voy a inventar|no hay descuento|no puedo bajar)\b/u;
 const PRICE_OPENING = /^\W*(?:el (?:precio|valor|costo|total|monto)|los usd|son (?:usd|u\$s|\d)|usd|\d)/u;
 const PRICE_UNCHANGED = /\b(?:precio|valor|total)\b[^.!?]*\b(?:no cambia|sigue igual|sigue siendo|no baja|se mantiene)\b/u;
+/** Owner value register (2026-11-03): sounds like a procedure or a limit, not a benefit. */
+export const ADMINISTRATIVE_REGISTER_V1 = /\b(?:(?:seria|es) una compra aparte|compra aparte|se cursa aparte|no es un cambio|no incluye (?:ningun )?descuento|no es posible|no se puede|no puedo)\b/u;
+const DRY_BONUS_OPENING = /^\W*la bonificacion ya (?:esta|quedo) aplicada\b/u;
 
 /** Literal check of the owner's task: the decided effect and identities, at
  * most 2 messages and one question, a plan alternative, and none of the
@@ -520,22 +534,24 @@ export function draftFulfillsPromotionTaskV1(draft: RuleDraftV1, decision: Extra
   const text = normalizedVisible(messages.join(' '));
   if ((text.match(/\?/gu) ?? []).length > 1) return false;
   const opening = normalizedVisible(messages[0]!).split(/(?<=[.!?])\s+|\n+/u)[0] ?? '';
-  if (/^\W*te entiendo\b/u.test(opening) || PRICE_OPENING.test(opening) || PRICE_UNCHANGED.test(opening)) return false;
-  if (EXPENSE_COMPARISON.test(text) || DEFENSIVE.test(text) || DISCOUNT_CLAIM.test(text)) return false;
+  if (/^\W*te entiendo\b/u.test(opening) || PRICE_OPENING.test(opening) || DRY_BONUS_OPENING.test(opening)) return false;
+  if (EXPENSE_COMPARISON.test(text) || DEFENSIVE.test(text) || DISCOUNT_CLAIM.test(text)
+    || PRICE_UNCHANGED.test(text) || ADMINISTRATIVE_REGISTER_V1.test(text)) return false;
   return planAlternativeV1(data.plan_codes) === null || /\b(?:cuotas?|pagos? (?:mensuales|de usd))\b/u.test(text);
 }
 
-/** Fixed fallback (owner wording, 2026-11-02 third revision). Replaces the whole turn. */
+/** Fixed fallback (owner wording 2026-11-02, value register and tú 2026-11-03). Replaces the whole turn. */
 export function bonusFallbackMessagesV1(decision: Extract<BonusRuleDecisionV1, { kind: 'offer' }>,
   data: PromotionTaskDataV1 = { plan_codes: ['monthly_12', 'monthly_6'], customer_goal: null }): [string] {
   const plans = planAlternativeV1(data.plan_codes);
+  const value = packageValuePhraseV1(decision);
   if (decision.prior_bonus.length === 0) return [
-    `Te lo puedo resolver. Tengo una promoción para vos: si avanzás con ${decision.paid_name}, te bonifico ${decision.bonus_name}, así seguís avanzando sin pagar otro curso. ${plans ? `Lo arrancamos en ${plans.replace(' o 6 ', ' o en 6 ')}?` : 'Avanzamos?'}`,
+    `Te lo puedo resolver! Tengo una promoción exclusiva para ti: si avanzas con ${decision.paid_name}, te bonifico ${decision.bonus_name}, así te llevas ${value}. ${plans ? `Lo arrancamos en ${plans.replace(' o 6 ', ' o en 6 ')}?!` : 'Lo hacemos?!'}`,
   ];
   const prior = joinNamesV1(decision.prior_bonus.map(course => course.display_name));
   const all = joinNamesV1([...decision.prior_bonus.map(course => course.display_name), decision.bonus_name]);
   return [
-    `Hagamos algo más: además de ${prior}, te sumo ${decision.bonus_name}. Te quedan ${decision.paid_name} + ${all} por el mismo valor. ${data.plan_codes.includes('monthly_12') ? 'Lo arrancamos en 12 cuotas de USD 30?' : 'Avanzamos?'}`,
+    `Hagamos algo más! Además de ${prior}, te sumo ${decision.bonus_name}: te llevas ${decision.paid_name} + ${all}, ${value}. ${data.plan_codes.includes('monthly_12') ? 'Lo arrancamos en 12 cuotas de USD 30?!' : 'Qué te parece?!'}`,
   ];
 }
 

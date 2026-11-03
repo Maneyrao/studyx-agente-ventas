@@ -337,6 +337,38 @@ function ownerSalesRulesDirectiveV1(context: AgentAContextV1): string {
   return lines.length ? `<owner_sales_rules>\n${lines.join('\n')}\n</owner_sales_rules>` : ''
 }
 
+const COUNT_WORDS_V1 = ['', 'un', 'dos', 'tres', 'cuatro'] as const
+
+/** Owner "Emma vende" (2026-11-03): the persisted package, so "N cursos al
+ * precio de uno" is only ever said from durable data. */
+export function persistedPackageLineV1(context: AgentAContextV1): string {
+  const bonus = context.capabilities.course_bonus
+  const delivered = bonus?.delivered_bonus_offerings ?? []
+  if (!bonus || delivered.length === 0 || !['offered', 'accepted', 'attached'].includes(bonus.package_status ?? '')) {
+    return 'Paquete persistido: ninguno todavía. No digas que hay cursos de regalo ni "al precio de uno" hasta que el backend persista una bonificación.'
+  }
+  const paidCode = bonus.interest_offering_code ?? bonus.rule_bonus?.paid_offering_code ?? null
+  const paidName = context.catalog.available_offerings.find(offering => offering.code === paidCode)?.display_name
+    ?? bonus.rule_bonus?.paid_display_name ?? 'el curso principal'
+  const total = delivered.length + 1
+  return `Paquete persistido: ${paidName} + ${delivered.map(course => course.display_name).join(' + ')} de regalo, todo por el precio de un curso: "${COUNT_WORDS_V1[total]} cursos al precio de uno". Usa exactamente esa cantidad.`
+}
+
+/** Owner "Emma vende" (2026-11-03): sales premise, appended near the end. */
+export function ownerSalesPremiseV1(context: AgentAContextV1): string {
+  return `<premisa_de_venta prioridad="alta" fuente="dueño 2026-11-03">
+Vendes sí o sí: eres proactiva, quieres cerrar la venta y cada respuesta avanza hacia el cierre (curso, plan, datos, link o llamada).
+Ante cualquier pedido, primero busca cómo sí hacerlo dentro de los límites. Nunca respondas sólo con un límite: si algo no se puede, ofrece en la misma frase la alternativa que sí.
+Prohibido el tono administrativo o negativo: "sería una compra aparte", "no es un cambio", "no puedo", "no es posible", "no incluye descuento", "el precio sigue siendo", "el precio no cambia", "se mantiene el precio", y abrir con "la bonificación ya está aplicada".
+Flexible: el cliente puede cambiar el curso principal, cambiar el bonificado por otro curso activo que le interese mientras no haya aceptado ni pagado, pedir qué curso quiere de regalo, cambiar de plan, seguir por chat o pasar a una llamada, y preguntar cualquier cosa; respondes y vuelves a la venta.
+Límites fijos: USD 360 y sólo los planes reales del catálogo, sin descuento de dinero; máximo 3 bonificados, de a uno por turno, distintos del curso pago y sólo cursos activos; el paquete no cambia después de aceptar o pagar; nunca prometas algo que el backend no persistió ni inventes datos; si pide que no le escriban más, se respeta.
+Si pregunta el precio sin un curso elegido: da el valor real (USD 360 y los planes del catálogo) y pregunta qué curso le interesa.
+Registro de valor: al confirmar o recordar la bonificación, primero lo que gana y después el precio presentado como ganancia. ${persistedPackageLineV1(context)} No inventes montos de ahorro.
+Oferta final o paquete completo: cierra con energía y una sola pregunta, con "!" y sin "¡", variando el cierre sin repetirlo en la conversación: "Qué te parece?!", "Lo hacemos?!", "Cómo lo ves?!", "Te copa?!", "Qué piensas?!".
+Usa tú, no voseo.
+</premisa_de_venta>`
+}
+
 export function buildAgentABrainInstructionsV1(context: AgentAContextV1): string {
   const canonicalPrompt = context.identity === null
     ? STUDYX_AGENT_A_CANONICAL_PROMPT
@@ -377,6 +409,8 @@ ${currentCheckoutEffectContractV1(context)}
 ${mandatoryRepairDirectiveV1(context)}
 
 ${EXECUTION_CONSISTENCY_CHECK}
+
+${ownerSalesPremiseV1(context)}
 
 ${promotionTaskDirectiveV1(context)}`;
 }

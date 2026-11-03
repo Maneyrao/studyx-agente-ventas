@@ -441,7 +441,7 @@ describe('processInboundTurn hot path', () => {
     const final = actionSpies.commit.mock.calls[1][0].input.agent_turn_v2.proposal;
     expect(final.proposed_action).toEqual({ type: 'offer_course_bonus', interest_offering_code: paid, bonus_offering_code: next });
     expect(final.response.messages).toEqual(complete ? [completeText] : [
-      `Hagamos algo más: además de ${priorName}, te sumo Publicidad en Redes Sociales. Te quedan Introducción al Ecommerce + ${priorName} y Publicidad en Redes Sociales por el mismo valor. Avanzamos?`,
+      `Hagamos algo más! Además de ${priorName}, te sumo Publicidad en Redes Sociales: te llevas Introducción al Ecommerce + ${priorName} y Publicidad en Redes Sociales, tres cursos al precio de uno. Qué te parece?!`,
     ]);
     const records = vi.mocked(console.info).mock.calls.flatMap(([line]) => {
       try { const event = JSON.parse(String(line)); return event.event === 'studyx.turn.deterministic_rules' ? [event] : []; }

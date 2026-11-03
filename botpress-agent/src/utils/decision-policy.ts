@@ -313,7 +313,13 @@ export function modelUnavailableFallback(
   // canonical price and plans, never with a clarification. Only backend values.
   const priceQuestion = /\b(?:cuanto\s+(?:sale|cuesta|vale|es)|precio|costo|valor|pago|pagar|cuotas?|forma\s+de\s+pago)\b/u
     .test(currentBatch)
-  const priceAnswer = priceQuestion ? canonicalPriceLineV1(claimed) : null
+  // A payment report, inability to pay or a post-checkout state is not a price
+  // question: no sales pitch there (architect review 2026-11-03).
+  const paymentReport = /\b(?:ya\s+(?:pague|abone|transferi|hice\s+el\s+pago|realice\s+el\s+pago)|hice\s+el\s+pago|pague|no\s+puedo\s+pagar|comprobante|me\s+cobr\w*|reembolso|devolucion)\b/u
+    .test(currentBatch)
+  const stage = claimed.conversation_state_v1?.stage
+  const postCheckout = stage === 'payment_link_sent' || stage === 'handoff' || stage === 'closed'
+  const priceAnswer = priceQuestion && !paymentReport && !postCheckout ? canonicalPriceLineV1(claimed) : null
   if (priceAnswer) {
     return {
       schema_version: 4,

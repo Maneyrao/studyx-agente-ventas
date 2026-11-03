@@ -134,9 +134,9 @@ describe('Regla A — escalada', () => {
       rule_bonus: ruleFor('introduccion_ecommerce', delivered.map(c => c.code)) }), draft());
     expect(decision).toMatchObject({ kind: 'offer', trigger: 'escalation', bonus_code: 'publicidad_redes_sociales', position: 2 });
     if (decision.kind !== 'offer') throw new Error();
-    expect(bonusFallbackMessagesV1(decision)).toEqual(['Hagamos algo más: además de Fotografía con Celulares para Tiendas Online, '
-      + 'te sumo Publicidad en Redes Sociales. Te quedan Introducción al Ecommerce + Fotografía con Celulares para Tiendas Online '
-      + 'y Publicidad en Redes Sociales por el mismo valor. Lo arrancamos en 12 cuotas de USD 30?']);
+    expect(bonusFallbackMessagesV1(decision)).toEqual(['Hagamos algo más! Además de Fotografía con Celulares para Tiendas Online, '
+      + 'te sumo Publicidad en Redes Sociales: te llevas Introducción al Ecommerce + Fotografía con Celulares para Tiendas Online '
+      + 'y Publicidad en Redes Sociales, tres cursos al precio de uno. Lo arrancamos en 12 cuotas de USD 30?!']);
     const data = { plan_codes: ['monthly_12', 'monthly_6', 'one_time'], customer_goal: null };
     const fixed = draft({ proposed_action: { type: 'offer_course_bonus', bonus_offering_code: decision.bonus_code,
       interest_offering_code: decision.paid_code }, response: { messages: bonusFallbackMessagesV1(decision, data) } });
@@ -206,9 +206,9 @@ describe('Regla A — redacción y respaldo', () => {
   });
   it('respaldo fijo: un mensaje con el texto del dueño (modo promoción)', () => {
     expect(bonusFallbackMessagesV1(decision)).toEqual([
-      'Te lo puedo resolver. Tengo una promoción para vos: si avanzás con Introducción al Ecommerce, te bonifico '
-      + 'Fotografía con Celulares para Tiendas Online, así seguís avanzando sin pagar otro curso. '
-      + 'Lo arrancamos en 12 cuotas de USD 30 o en 6 de USD 60?',
+      'Te lo puedo resolver! Tengo una promoción exclusiva para ti: si avanzas con Introducción al Ecommerce, te bonifico '
+      + 'Fotografía con Celulares para Tiendas Online, así te llevas dos cursos al precio de uno. '
+      + 'Lo arrancamos en 12 cuotas de USD 30 o en 6 de USD 60?!',
     ]);
   });
   const data = { plan_codes: ['monthly_12', 'monthly_6', 'one_time'], customer_goal: 'vender en su tienda online' };
@@ -217,10 +217,12 @@ describe('Regla A — redacción y respaldo', () => {
   it('tarea del turno: primera oferta con datos reales y prohibiciones', () => {
     const task = promotionTaskV1(decision, data);
     expect(task).toContain('PROMOCIÓN EXCLUSIVA');
-    expect(task).toContain('si avanza con Introducción al Ecommerce, le bonificás Fotografía con Celulares para Tiendas Online');
+    expect(task).toContain('si avanza con Introducción al Ecommerce, le bonificas Fotografía con Celulares para Tiendas Online');
     expect(task).toContain('(vender en su tienda online)');
     expect(task).toContain('12 cuotas de USD 30 o 6 de USD 60');
     expect(task).toContain('Máximo 2 mensajes y una sola pregunta');
+    expect(task).toContain('«te llevas dos cursos al precio de uno»');
+    expect(task).toContain('«el precio sigue siendo»');
   });
   it('tarea del turno: escalada recapitula el paquete completo', () => {
     const prior = [{ code: 'fotografia_celulares_tiendas_online', display_name: 'Fotografía con Celulares para Tiendas Online' }];
@@ -229,8 +231,8 @@ describe('Regla A — redacción y respaldo', () => {
     if (up.kind !== 'offer') throw new Error('expected escalation');
     const task = promotionTaskV1(up, data);
     expect(task).toContain('Ya le ofreciste Fotografía con Celulares para Tiendas Online con Introducción al Ecommerce');
-    expect(task).toContain('le sumás Publicidad en Redes Sociales');
-    expect(task).toContain('Introducción al Ecommerce + Fotografía con Celulares para Tiendas Online y Publicidad en Redes Sociales por el mismo valor');
+    expect(task).toContain('le sumas Publicidad en Redes Sociales');
+    expect(task).toContain('Introducción al Ecommerce + Fotografía con Celulares para Tiendas Online y Publicidad en Redes Sociales, tres cursos al precio de uno');
   });
   it('cumplimiento: acepta la redacción que sigue la tarea', () => {
     expect(draftFulfillsPromotionTaskV1(said('Es una inversión importante y está bien que lo mires así. Te lo puedo resolver.',
@@ -250,8 +252,20 @@ describe('Regla A — redacción y respaldo', () => {
     ['tres mensajes', ['Te lo resuelvo.', 'Te sumo Fotografía con Celulares para Tiendas Online.', 'Arrancamos en 12 cuotas?']],
     ['sin alternativa de plan', ['Te lo resuelvo: te sumo Fotografía con Celulares para Tiendas Online. Avanzamos?']],
     ['frase defensiva', ['Es lo que hay, pero te sumo Fotografía con Celulares para Tiendas Online. Arrancamos en 12 cuotas?']],
+    ['precio que sigue siendo (registro de valor)', ['Te sumo Fotografía con Celulares para Tiendas Online y el precio sigue siendo USD 360. Arrancamos en 12 cuotas?']],
+    ['bonificación ya aplicada como apertura seca', ['La bonificación ya está aplicada: te sumo Fotografía con Celulares para Tiendas Online. Arrancamos en 12 cuotas?']],
+    ['compra aparte', ['Te sumo Fotografía con Celulares para Tiendas Online; otro curso sería una compra aparte. Arrancamos en 12 cuotas?']],
+    ['no es un cambio', ['No es un cambio, te sumo Fotografía con Celulares para Tiendas Online. Arrancamos en 12 cuotas?']],
   ])('cumplimiento: rechaza %s', (_label, messages) => {
     expect(draftFulfillsPromotionTaskV1(said(...messages), decision, data)).toBe(false);
+  });
+  it('cumplimiento: acepta el registro de valor del dueño («dos cursos al precio de uno», «de regalo»)', () => {
+    expect(draftFulfillsPromotionTaskV1(said('Listo! Te sumo Fotografía con Celulares para Tiendas Online de regalo con Introducción al Ecommerce: '
+      + 'te llevas dos cursos al precio de uno! Lo arrancamos en 12 cuotas de USD 30?!'), decision, data)).toBe(true);
+  });
+  it('el respaldo fijo cumple su propia tarea', () => {
+    const [fixed] = bonusFallbackMessagesV1(decision, data);
+    expect(draftFulfillsPromotionTaskV1(said(fixed), decision, data)).toBe(true);
   });
 });
 

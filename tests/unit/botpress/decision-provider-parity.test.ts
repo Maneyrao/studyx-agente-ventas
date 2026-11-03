@@ -910,6 +910,14 @@ describe('applyDecisionPolicy — provider parity', () => {
       expect(fallback.response).not.toMatch(/USD|\d/u);
     });
 
+    it.each(['ya pagué y no me llegó nada', 'no puedo pagar ahora', 'te mandé el comprobante del pago'])(
+      'never answers a payment report with the price pitch: %s', (text) => {
+        const fallback = modelUnavailableFallback(claimedTurn({
+          batch_message_content: text, offering_names: ['Inglés 1'], payment_options: plans,
+        }));
+        expect(fallback.response).not.toMatch(/USD/u);
+      });
+
     it('uses the natural clarification only for an unclassifiable message', () => {
       const fallback = modelUnavailableFallback(claimedTurn({
         batch_message_content: 'mmm', offering_names: ['Inglés 1'], payment_options: plans,

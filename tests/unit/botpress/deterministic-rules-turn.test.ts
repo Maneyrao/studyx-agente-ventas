@@ -219,7 +219,7 @@ describe('live Rule A/B orchestration, bounded rewrite and validated fallback', 
     expect(result.record).toMatchObject({ rule_a: 'fixed', rule_b: 'fixed' });
     // Owner "modo promoción" fixed copy (no payment plans in this context).
     expect(result.resolved.effective.proposal.response.messages).toEqual([
-      `Te lo puedo resolver. Tengo una promoción para vos: si avanzás con Introducción al Ecommerce, te bonifico ${bonusName}, así seguís avanzando sin pagar otro curso. Avanzamos?`,
+      `Te lo puedo resolver! Tengo una promoción exclusiva para ti: si avanzas con Introducción al Ecommerce, te bonifico ${bonusName}, así te llevas dos cursos al precio de uno. Lo hacemos?!`,
     ]);
     expect(result.resolved.effective.proposal.response.call_offer).toBeTruthy();
     expect(result.resolved.effective.proposal.memory_candidates).toEqual(draft().proposal.memory_candidates);
@@ -284,7 +284,7 @@ describe('live Rule A/B orchestration, bounded rewrite and validated fallback', 
     for (const name of ['Introducción al Ecommerce', ...prior.map(course => course.display_name), next.display_name]) expect(text).toContain(name);
     expect(result.resolved.effective.proposal.proposed_action).toEqual(original.proposal.proposed_action);
     if (!repaired) expect(result.resolved.effective.proposal.response.messages[0])
-      .toContain(`Te quedan Introducción al Ecommerce + ${[...prior, next].map(course => course.display_name).join(priorCount === 1 ? ' y ' : ', ').replace(', Instagram', ' y Instagram')}`);
+      .toContain(`te llevas Introducción al Ecommerce + ${[...prior, next].map(course => course.display_name).join(priorCount === 1 ? ' y ' : ', ').replace(', Instagram', ' y Instagram')}`);
   });
 
   it.each([false, true])('reevaluates a generic repair introducing the trigger without another generation, preserving its origin (complete=%s)', async complete => {
