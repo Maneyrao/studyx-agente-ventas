@@ -1,19 +1,22 @@
 import { currentFactualCourseReferencesV1 } from '@/features/orchestration/domain/course-focus';
 
 /**
- * Owner "Emma vende" (2026-11-03): the customer may choose the bonus course
- * ("me bonificás Reparación de PC?") or swap it ("cambiar Inglés 2 por
- * Reparación de PC") while the package is open. One shared literal detector
- * for the backend capability, the turn policy and the durable service, so
- * the three never disagree. It never infers a course: exactly one active,
- * literally named course that is neither the paid course nor already gifted.
+ * Owner "Emma vende" (2026-11-03): while the package is open the customer may
+ * swap the single offered bonus ("cambiar Inglés 2 por Reparación de PC"). One
+ * shared literal detector for the backend capability, the turn policy and the
+ * durable service, so the three never disagree. It never infers a course:
+ * exactly one active, literally named course that is neither the paid course
+ * nor already gifted.
+ *
+ * Adding a gift is not detected here any more (owner 2026-11-03, model-owned
+ * sales): the model proposes it and a course the customer names literally only
+ * widens the authorized set (`courseCodesNamedInBatchV1`).
  *
  * A swap is supported only for a package with exactly one bonus (architect
  * review 2026-11-03): cancel that cycle and open a new one with the chosen
  * course, without bypassing the append-only bonus triggers.
  */
 export type CustomerBonusRequestV1 =
-  | { readonly kind: 'add'; readonly bonus_offering_code: string }
   | { readonly kind: 'swap'; readonly replaced_offering_code: string; readonly bonus_offering_code: string };
 
 export interface CustomerBonusRequestInputV1 {
@@ -27,20 +30,13 @@ export interface CustomerBonusRequestInputV1 {
 }
 
 const normalized = (value: string) => value.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase();
-// "Qué incluye X?" or "X suma horas?" is a question, never a gift request
-// (architect review): adding verbs count only addressed to the customer.
-const GIFT_VERB = /\b(?:bonific\w*|regal\w*|(?:me|nos)\s+(?:lo\s+|la\s+)?(?:sum|inclu|agreg)(?:as|is|es|arias|irias|ias)|(?:sumar|incluir|agregar)(?:me|nos)(?:lo|la)?)\b/u;
-/** The agent's own retention question invites a bare course name as the answer. */
-const RETENTION_INVITE = /\bestas segur[oa]\b.*\bbonificacion\b/u;
 const SWAP_VERB = /\b(?:cambi\w*|reemplaz\w*|en vez de|en lugar de)\b/u;
 const REFUSAL = /\bno\s+(?:me\s+)?(?:quiero|interesa|hace falta|bonifiques|sumes|agregues|cambies|regales)\b/u;
 
 export function customerBonusRequestV1(input: CustomerBonusRequestInputV1): CustomerBonusRequestV1 | null {
   const text = normalized(input.batch_texts.join(' '));
   if (REFUSAL.test(text)) return null;
-  const swap = SWAP_VERB.test(text);
-  const invited = (input.previous_agent_messages ?? []).slice(0, 2).some(message => RETENTION_INVITE.test(normalized(message)));
-  if (!swap && !GIFT_VERB.test(text) && !invited) return null;
+  if (!SWAP_VERB.test(text)) return null;
   const index = { as_of: new Date(0).toISOString(), offerings_total: input.offerings.length, injection_suspected_count: 0,
     offerings: input.offerings.map(offering => ({ code: offering.code, display_name: offering.display_name,
       aliases: [...(offering.aliases ?? [])], academy: null })) };
@@ -49,16 +45,12 @@ export function customerBonusRequestV1(input: CustomerBonusRequestInputV1): Cust
   const candidates = referenced.filter(code => code !== input.paid_offering_code && !input.offered_bonus_codes.includes(code));
   if (candidates.length !== 1) return null;
   const bonus = candidates[0]!;
-  if (swap) {
-    // "En vez de Inglés 1 tomo X" names the paid course: that is a course change, not a gift.
-    if (referenced.includes(input.paid_offering_code) || input.offered_bonus_codes.length !== 1) return null;
-    const replaced = input.offered_bonus_codes[0]!;
-    const words = (value: string) => ` ${normalized(value).replace(/[^\p{L}\p{N}]+/gu, ' ').trim()} `;
-    const replacedName = input.offerings.find(offering => offering.code === replaced)?.display_name ?? replaced;
-    if (!referenced.includes(replaced) && !words(text).includes(words(replacedName))
-      && !/\b(?:bonific\w*|regal\w*|gratis|sin costo)\b/u.test(text)) return null;
-    return { kind: 'swap', replaced_offering_code: replaced, bonus_offering_code: bonus };
-  }
-  if (input.offered_bonus_codes.length >= input.max_bonus_courses) return null;
-  return { kind: 'add', bonus_offering_code: bonus };
+  // "En vez de Inglés 1 tomo X" names the paid course: that is a course change, not a gift.
+  if (referenced.includes(input.paid_offering_code) || input.offered_bonus_codes.length !== 1) return null;
+  const replaced = input.offered_bonus_codes[0]!;
+  const words = (value: string) => ` ${normalized(value).replace(/[^\p{L}\p{N}]+/gu, ' ').trim()} `;
+  const replacedName = input.offerings.find(offering => offering.code === replaced)?.display_name ?? replaced;
+  if (!referenced.includes(replaced) && !words(text).includes(words(replacedName))
+    && !/\b(?:bonific\w*|regal\w*|gratis|sin costo)\b/u.test(text)) return null;
+  return { kind: 'swap', replaced_offering_code: replaced, bonus_offering_code: bonus };
 }

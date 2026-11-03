@@ -5,6 +5,7 @@ import { seedConversationForAgentTurn } from '../helpers/agent-turn-fixtures';
 import { recordDeliveryReport } from '@/lib/services/decision.service';
 import { offerDirectCourseBonusV1 } from '@/features/promotions/application/direct-course-bonus-service';
 import { readCourseBonusCapabilityV1 } from '@/features/promotions/application/read-course-bonus-capability';
+import { recordModelPriceObjection } from '../helpers/record-model-negotiation-facts';
 
 /** 2026-11-02: the WhatsApp channel sends no delivery webhook, so every live
  * outbound stayed `submitted` and Rule A escalation (gated on a confirmed
@@ -33,8 +34,9 @@ async function withOutbox(outbound: string): Promise<void> {
 }
 
 run('channel acceptance receipt', () => {
-  it('accepts a lagging receipt bounded to submitted_at and unlocks the next table bonus', async () => {
-    const f = await seedConversationForAgentTurn({ selected_offering_code: paid, first_message: 'Tenés alguna promo?' });
+  it('accepts a lagging receipt bounded to submitted_at and unlocks the next bonus', async () => {
+    const f = await seedConversationForAgentTurn({ selected_offering_code: paid, first_message: 'Me parece caro' });
+    await recordModelPriceObjection(db!, f.turn_id, { source_quote: 'Me parece caro' });
     const outbound = randomUUID();
     const offer = await offerDirectCourseBonusV1(db!, { workspace_id: f.workspace_id, contact_id: f.contact_id,
       conversation_id: f.conversation_id, paid_offering_code: paid, source_turn_id: f.turn_id,
@@ -69,12 +71,16 @@ run('channel acceptance receipt', () => {
     const capability = await readCourseBonusCapabilityV1({ workspace_slug: 'studyx', contact_id: f.contact_id,
       conversation_id: f.conversation_id, channel: 'text', selected_offering_code: paid,
       source_turn_id: f.second_turn_id }, { db: db! });
-    expect(capability).toMatchObject({ package_status: 'offered',
-      delivered_bonus_offerings: [{ code: bonus }], rule_bonus: { bonus_offering_code: 'publicidad_redes_sociales', position: 2 } });
+    // The delivered, answered first bonus unlocks the next one; the model picks among the candidates.
+    expect(capability).toMatchObject({ package_status: 'offered', may_offer_bonus: true,
+      delivered_bonus_offerings: [{ code: bonus }] });
+    expect(capability.bonus_candidates?.map(course => course.code)).toContain('publicidad_redes_sociales');
+    expect(capability.bonus_candidates?.map(course => course.code)).not.toContain(bonus);
   });
 
   it('stamps a timeless acceptance receipt with submitted_at and replays it exactly', async () => {
-    const f = await seedConversationForAgentTurn({ selected_offering_code: paid, first_message: 'Tenés alguna promo?' });
+    const f = await seedConversationForAgentTurn({ selected_offering_code: paid, first_message: 'Me parece caro' });
+    await recordModelPriceObjection(db!, f.turn_id, { source_quote: 'Me parece caro' });
     const outbound = randomUUID();
     const offer = await offerDirectCourseBonusV1(db!, { workspace_id: f.workspace_id, contact_id: f.contact_id,
       conversation_id: f.conversation_id, paid_offering_code: paid, source_turn_id: f.turn_id,
@@ -96,7 +102,8 @@ run('channel acceptance receipt', () => {
   });
 
   it('still rejects a receipt for a bubble that was never submitted', async () => {
-    const f = await seedConversationForAgentTurn({ selected_offering_code: paid, first_message: 'Tenés alguna promo?' });
+    const f = await seedConversationForAgentTurn({ selected_offering_code: paid, first_message: 'Me parece caro' });
+    await recordModelPriceObjection(db!, f.turn_id, { source_quote: 'Me parece caro' });
     const outbound = randomUUID();
     const offer = await offerDirectCourseBonusV1(db!, { workspace_id: f.workspace_id, contact_id: f.contact_id,
       conversation_id: f.conversation_id, paid_offering_code: paid, source_turn_id: f.turn_id,

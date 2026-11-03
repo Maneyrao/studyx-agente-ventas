@@ -72,8 +72,7 @@ describe('canonical course roles (authority prompt:123,129; bonus spec:59-71)',(
       {...base,course_mentions:[{offering_code:'invalid/code',role:'alternative' as const}]},
       {...base,course_mentions:[{offering_code:'short',role:'not_a_role' as never}]},
       {...base,messages:['Community Manager'],course_mentions:[{offering_code:'short',role:'bonus' as const}],ladder:{eligible:false,
-        observed_price_objection_count:2,required_price_objection_count:2 as const,call_invitation_status:'not_offered' as const,
-        call_offer_count:0,may_offer_call:true,missing_steps:['recorded_price_objections','call_invitation'] as const}},
+        price_evidence:false,retention_decline:false,retention_used:false,missing_steps:['price_evidence'] as const}},
     ];
     for(const value of inputs) {
       const rejections=validateCourseMentionsV1(value).violations;
@@ -87,8 +86,8 @@ describe('canonical course roles (authority prompt:123,129; bonus spec:59-71)',(
   });
   it('returns factual ladder metadata when an effectless bonus skips missing prerequisites',()=>{
     const result=validateCourseMentionsV1({...base,messages:['Community Manager'],course_mentions:[{offering_code:'short',role:'bonus'}],
-      ladder:{eligible:false,observed_price_objection_count:2,required_price_objection_count:2,call_invitation_status:'not_offered',call_offer_count:0,may_offer_call:true,missing_steps:['recorded_price_objections','call_invitation']}});
+      ladder:{eligible:false,price_evidence:false,retention_decline:false,retention_used:false,missing_steps:['price_evidence']}});
     expect(result.violations.map(v=>v.subject)).toContain('direct_bonus:ladder_step_pending');
-    expect(result.violations.map(v=>v.subject)).toContain('bonus_ladder:missing:call_invitation');
+    expect(result.violations.map(v=>v.subject)).toContain('bonus_ladder:missing:price_evidence');
   });
 });

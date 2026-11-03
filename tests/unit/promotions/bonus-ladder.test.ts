@@ -1,16 +1,19 @@
 import { describe,it,expect } from 'vitest';
 import { deriveCourseBonusLadderV1,mayOfferCallV1 } from '@/shared/conversation/bonus-ladder';
-const base={observed_price_objection_count:3,call_invitation_status:'not_offered' as const,call_offer_count:0,may_offer_call:true};
-describe('factual bonus ladder (authority:106-120)',()=>{
-  // Regla A del dueño (2026-11-02) reemplaza la regla 10: 2 objeciones o precio único; sin requisito de llamada.
-  it('Rule A: two recorded objections or a confirmed price-only barrier, no call prerequisite',()=>{
-    expect(deriveCourseBonusLadderV1({...base,observed_price_objection_count:1})).toMatchObject({eligible:false,
-      missing_steps:['recorded_price_objections'],required_price_objection_count:2});
-    expect(deriveCourseBonusLadderV1({...base,observed_price_objection_count:2})).toMatchObject({eligible:true,missing_steps:[]});
-    expect(deriveCourseBonusLadderV1({...base,observed_price_objection_count:0,price_only_barrier_confirmed:true}).eligible).toBe(true);
-    for(const status of ['not_offered','offered','declined'] as const)
-      expect(deriveCourseBonusLadderV1({...base,observed_price_objection_count:2,call_invitation_status:status}).eligible).toBe(true);
-    expect(deriveCourseBonusLadderV1({...base,observed_price_objection_count:1.5}).eligible).toBe(false);
+describe('bonus permission evidence (AGENTS.md "Venta interpretada por el modelo")',()=>{
+  it('price evidence alone makes the permission eligible; no objection count, no instant trigger',()=>{
+    expect(deriveCourseBonusLadderV1({price_evidence:true,retention_used:false})).toEqual({eligible:true,price_evidence:true,
+      retention_decline:false,retention_used:false,missing_steps:[]});
+    expect(deriveCourseBonusLadderV1({price_evidence:false,retention_used:false})).toMatchObject({eligible:false,missing_steps:['price_evidence']});
+  });
+  it('a quoted purchase decline is eligible once per conversation',()=>{
+    expect(deriveCourseBonusLadderV1({price_evidence:false,retention_decline:true,retention_used:false}))
+      .toMatchObject({eligible:true,retention_decline:true,missing_steps:[]});
+    expect(deriveCourseBonusLadderV1({price_evidence:false,retention_decline:true,retention_used:true}))
+      .toMatchObject({eligible:false,retention_decline:false,retention_used:true,missing_steps:['price_evidence']});
+  });
+  it('a used retention does not remove price evidence',()=>{
+    expect(deriveCourseBonusLadderV1({price_evidence:true,retention_decline:true,retention_used:true}).eligible).toBe(true);
   });
   it('keeps the established call authorization expression',()=>{
     const call={may_respond:true,blocked:false,active_call:null,call_preference:'unknown',call_offer_status:'not_offered',stage:'exploring',payment_reported:false,call_offer_count:0};

@@ -1,7 +1,3 @@
-import { resolveDeterministicRulesTurnV1 } from '../../botpress-agent/src/lib/conversation/deterministic-rules-turn';
-import { resolveAgentAPlannerlessProposalV2 } from '../../botpress-agent/src/lib/conversation/resolve-agent-a-plannerless';
-import type { AgentAContextV1 } from '../../botpress-agent/src/schemas/agent-a-brain';
-import { deriveCourseBonusLadderV1 } from '@/shared/conversation/bonus-ladder';
 import { processInboundMessage } from '@/lib/services/ingestion.service';
 import { recordPromotionConversationContextV1, readCourseBonusCapabilityV1 } from '@/features/promotions/application/read-course-bonus-capability';
 import { randomUUID } from 'node:crypto';
@@ -26,7 +22,7 @@ afterEach(() => vi.unstubAllEnvs());
 
 const paid = 'introduccion_ecommerce';
 const bonus = 'fotografia_celulares_tiendas_online';
-const fixed = ['Dejame revisar qué te puedo ofrecer, dame un segundo.',
+const fixed = ['Mirá, con Introducción al Ecommerce armás tu tienda desde cero.',
   'Te puedo sumar Fotografía con Celulares para Tiendas Online sin costo; el precio de Introducción al Ecommerce sigue igual. Avanzamos?'];
 
 function proposal(): AgentATurnProposalV1 {
@@ -41,13 +37,15 @@ function proposal(): AgentATurnProposalV1 {
     confirmed_phone: null, profile_updates: [], profile_requests: [], repair_of: null };
 }
 
-run('owner rules at the actual commit and transactional boundaries', () => {
+run('model-owned bonus at the actual commit and transactional boundaries', () => {
   it.each([
-    ['promo_and_objection', 'El precio es el único inconveniente? Puedo revisar una promoción.',
-      'noo\nquiero saber si hay alguna promo\nme parece caro el precio'],
-    ['paraphrased_probe_confirmed', 'Contame, el precio es lo único que te frena o hay algo más que querés saber?',
-      'solo el precio'],
-  ] as const)('live 2026-11-02 18:43: "ingles" without level resolves the promotion to Inglés 1 (%s)', async (_kind, agentAsked, customerReply) => {
+    ['promo_and_objection', 'Contame, qué es lo que más te frena para avanzar?',
+      'noo\nquiero saber si hay alguna promo\nme parece caro el precio',
+      { type: 'objection', key: 'price_objection', value: 'caro', source_quote: 'me parece caro el precio', confidence: 1 }],
+    ['paraphrased_barrier_confirmed', 'Contame, el precio es lo único que te frena o hay algo más que querés saber?',
+      'solo el precio',
+      { type: 'constraint', key: 'price_only_barrier', value: 'confirmed', source_quote: 'solo el precio', confidence: 1 }],
+  ] as const)('live 2026-11-02 18:43: "ingles" without level resolves the promotion to Inglés 1 (%s)', async (_kind, agentAsked, customerReply, evidence) => {
     const f = await seedConversationForAgentTurn({ selected_offering_code: null, first_message: 'ingles\nquiero saber el precio' });
     const first = proposal();
     first.move = { schema_version: 1, move: 'ask_course_information', secondary_moves: [], vetoes: [], confidence: 1 };
@@ -66,14 +64,16 @@ run('owner rules at the actual commit and transactional boundaries', () => {
       conversation_id: f.conversation_id, channel: 'text', selected_offering_code: null,
       source_turn_id: f.second_turn_id }, { db: db! });
     expect(capability).toMatchObject({ enabled: true, interest_offering_code: 'ingles_1',
-      ladder: { eligible: true, instant_trigger: true }, rule_bonus: { bonus_offering_code: 'ingles_2' } });
+      // No regex decides: only the model's own memory (recorded below) is price evidence.
+      ladder: { eligible: false, price_evidence: false } });
+    expect(capability.bonus_candidates?.map(course => course.code)).toContain('ingles_2');
     const offer = proposal();
     offer.move = { ...offer.move, move: 'defer_payment', course_reference: 'ingles_1' };
     offer.response = { messages: ['Te lo puedo resolver: si avanzás con Inglés 1, te bonifico Inglés 2. Arrancamos en 12 cuotas de USD 30?'], call_offer: null };
     offer.proposed_action = { type: 'offer_course_bonus', interest_offering_code: 'ingles_1', bonus_offering_code: 'ingles_2' };
     offer.course_mentions = [{ offering_code: 'ingles_1', role: 'paid' }, { offering_code: 'ingles_2', role: 'bonus' }];
     offer.used_fact_ids = ['offering:ingles_1:name:v1', 'offering:ingles_2:name:v1', 'payment-workspace:monthly_12:label:v1'];
-    offer.memory_candidates = [];
+    offer.memory_candidates = [{ ...evidence }];
     const committed = await commitAgentDecision({ turn_id: f.second_turn_id, trace_id: randomUUID(),
       supports_multi_outbound: true, agent_turn_v2: { schema_version: 2 as const, proposal: offer },
       decision: f.placeholderDecision as never, model: f.model as never });
@@ -83,20 +83,20 @@ run('owner rules at the actual commit and transactional boundaries', () => {
     expect(gifts.map(gift => gift.code)).toEqual(['ingles_2']);
   });
 
-  it('a first literal objection alone (no promo, no probe) does not resolve a session interest into an offer', async () => {
+  it('a first literal objection with no model memory grants no permission, whatever the wording', async () => {
     const f = await seedConversationForAgentTurn({ selected_offering_code: null, first_message: 'ingles' });
     await db!`UPDATE messages SET content='me parece caro',created_at=clock_timestamp(),
       metadata=metadata-'occurred_at_trusted' WHERE id=${f.second_turn_id}::uuid`;
     const capability = await readCourseBonusCapabilityV1({ workspace_slug: 'studyx', contact_id: f.contact_id,
       conversation_id: f.conversation_id, channel: 'text', selected_offering_code: null,
       source_turn_id: f.second_turn_id }, { db: db! });
-    expect(capability.may_offer_bonus).not.toBe(true);
+    expect(capability.ladder).toMatchObject({ eligible: false, price_evidence: false });
   });
 
   it.each([
-    ['price_probe_confirmation', 'No me alcanza, ahora mismo estoy muy justo.'],
-    ['instant_discount_request', 'No me hacés un descuento? USD 360 me parece caro.'],
-  ] as const)('keeps the interest-only course identity through the final bonus commit (%s)', async (_kind, customerReply) => {
+    ['no_alcanza', 'No me alcanza, ahora mismo estoy muy justo.', 'No me alcanza'],
+    ['discount_wording', 'No me hacés un descuento? USD 360 me parece caro.', 'USD 360 me parece caro'],
+  ] as const)('keeps the interest-only course identity through the final bonus commit (%s)', async (_kind, customerReply, quote) => {
     const f = await seedConversationForAgentTurn({ selected_offering_code: null,
       first_message: 'Quiero Marketing Digital para mejorar las ventas de mi emprendimiento. Cuánto cuesta?' });
     const marketing = 'marketing_digital';
@@ -105,7 +105,7 @@ run('owner rules at the actual commit and transactional boundaries', () => {
     first.move = { ...first.move, move: 'ask_course_information', course_reference: marketing };
     first.response = { messages: [
       'Marketing Digital te sirve para trabajar las ventas de tu emprendimiento.',
-      'El precio es el único inconveniente? Puedo revisar una promoción.',
+      'Qué te gustaría lograr con el curso?',
     ], call_offer: null };
     first.proposed_action = { type: 'none' };
     first.course_mentions = [{ offering_code: marketing, role: 'paid' }];
@@ -133,9 +133,9 @@ run('owner rules at the actual commit and transactional boundaries', () => {
     const before = await readCourseBonusCapabilityV1({ workspace_slug: 'studyx', contact_id: f.contact_id,
       conversation_id: f.conversation_id, channel: 'text', selected_offering_code: null,
       source_turn_id: f.second_turn_id }, { db: db! });
-    expect(before).toMatchObject({ enabled: true, interest_offering_code: marketing,
-      ladder: { eligible: true, instant_trigger: true },
-      rule_bonus: { bonus_offering_code: advertising } });
+    expect(before).toMatchObject({ enabled: true, interest_offering_code: marketing, may_offer_bonus: true,
+      ladder: { eligible: false, price_evidence: false } });
+    expect(before.bonus_candidates?.map(course => course.code)).toContain(advertising);
 
     const bonus = proposal();
     bonus.move = { ...bonus.move, move: 'defer_payment', course_reference: marketing };
@@ -147,9 +147,8 @@ run('owner rules at the actual commit and transactional boundaries', () => {
     bonus.course_mentions = [{ offering_code: marketing, role: 'paid' },
       { offering_code: advertising, role: 'bonus' }];
     bonus.used_fact_ids = [`offering:${marketing}:name:v1`, `offering:${advertising}:name:v1`];
-    // The owner's instant-promo and probe-confirmation paths do not depend on
-    // the model also recording a price objection in this turn.
-    bonus.memory_candidates = [];
+    // The model's own memory, quoted from this turn, is the price evidence.
+    bonus.memory_candidates = [{ type: 'objection', key: 'price_objection', value: 'caro', source_quote: quote, confidence: 1 }];
     const committed = await commitAgentDecision({ turn_id: f.second_turn_id, trace_id: randomUUID(),
       supports_multi_outbound: true, agent_turn_v2: { schema_version: 2 as const, proposal: bonus },
       decision: f.placeholderDecision as never, model: f.model as never });
@@ -164,97 +163,14 @@ run('owner rules at the actual commit and transactional boundaries', () => {
     expect(state.selected_offering_code).toBeNull();
   });
 
-  it.each(['continue_by_chat', 'decline_call', 'request_call'] as const)('accounts once for the delivered A+B invitation after a prose rewrite invents %s and vetoes call', async invented => {
-    const text = 'Sólo el precio me frena, me parece caro. Ofreceme esa promoción para sumar un curso sin costo.';
-    const f = await seedConversationForAgentTurn({ selected_offering_code: paid, first_message: text });
-    const current: AgentAContextV1 = {
-      schema_version: 1, identity: null, customer: { display_name: null, memories: [] },
-      turn: { batch_messages: [{ id: f.turn_id, text }], recent_turns: [{ id: 'previous', direction: 'outbound', content: 'Qué te frena?' }] },
-      commercial_state: { selected_offering_code: paid, selected_payment_plan: null, stage: 'course_selected',
-        call_preference: 'unknown', call_offer_status: 'not_offered', call_offer_count: 0, awaiting_reply: 'none', payment_reported: false },
-      catalog: { selected_offering: { code: paid, display_name: 'Introducción al Ecommerce', area_code: 'marketing',
-        facts: [{ id: `offering:${paid}:name:v1`, kind: 'offering_name', value: 'Introducción al Ecommerce' }] },
-        available_offerings: [ { code: paid, display_name: 'Introducción al Ecommerce', area_code: 'marketing', fact_id: `offering:${paid}:name:v1` },
-          { code: bonus, display_name: 'Fotografía con Celulares para Tiendas Online', area_code: 'marketing', fact_id: `offering:${bonus}:name:v1` } ],
-        candidate_offerings: [], areas: [], payment_plans: [] },
-      capabilities: { may_reply: true, may_offer_call: true, may_request_call_now: false, may_present_payment_options: false,
-        may_send_payment_link: false, authorized_payment_plan: null, intake_status: 'unknown', intake_missing: [],
-        course_bonus: { status: 'checkin_available', enabled: true, max_bonus_courses: 3, may_offer_bonus: false,
-          may_schedule_checkin: false, may_request_review: false, may_accept_offer: false, may_send_promoted_payment: false,
-          package_status: null, promotion_code: null, interest_offering_code: paid, bonus_offerings: [],
-          ladder: deriveCourseBonusLadderV1({ observed_price_objection_count: 0, call_invitation_status: 'not_offered', call_offer_count: 0, may_offer_call: true }),
-          rule_bonus: { paid_offering_code: paid, paid_display_name: 'Introducción al Ecommerce', bonus_offering_code: bonus,
-            display_name: 'Fotografía con Celulares para Tiendas Online', position: 1 } } },
-    };
-    const initial = proposal();
-    initial.move.move = 'defer_payment';
-    initial.proposed_action = { type: 'none' };
-    initial.response = { messages: ['Te cuento las opciones.'], call_offer: null };
-    initial.memory_candidates.push({ type: 'constraint', key: 'price_only_barrier', value: 'confirmed',
-      source_quote: 'Sólo el precio me frena', confidence: 1 });
-    const generated = (draft: typeof initial) => ({ proposal: draft, provider: 'deepseek-direct' as const,
-      model: 'deepseek-v4-flash', latency_ms: 1, attempt_count: 1 as const });
-    const invitation = 'Si querés, podemos verlo en una llamada corta. Te sirve?';
-    const repair = vi.fn(async () => {
-      const repaired = proposal();
-      repaired.move = { ...repaired.move, move: invented, secondary_moves: ['continue_by_chat'], vetoes: ['call'] };
-      // A rewrite that follows the owner's promotion task (2026-11-02).
-      repaired.response = { messages: ['Te lo puedo resolver: si avanzás con Introducción al Ecommerce, te bonifico Fotografía con Celulares para Tiendas Online. Avanzamos?'], call_offer: invitation };
-      return generated(repaired);
-    });
-    const resolved = await resolveDeterministicRulesTurnV1({ context: current, initial: generated(initial), repair_enabled: true,
-      rejection_id: randomUUID, repair, resolve: (candidate, enabled, rejection = randomUUID()) => resolveAgentAPlannerlessProposalV2({
-        context: current, initial: candidate, repair_enabled: enabled, rejection_id: rejection, semantic_rejections: 'advisory',
-        repair: async () => { throw new Error('NO_EXTRA_GENERATION'); } }) });
-    expect(repair).toHaveBeenCalledOnce();
-    expect(resolved.record).toMatchObject({ rule_a: 'rewrite', rule_b: 'rewrite' });
-    expect(resolved.resolved.effective.proposal.move).toMatchObject({ move: 'defer_payment', secondary_moves: [], vetoes: [] });
-    const input = { turn_id: f.turn_id, trace_id: f.trace_id, supports_multi_outbound: true,
-      agent_turn_v2: { schema_version: 2 as const, proposal: resolved.resolved.effective.proposal },
-      decision: f.placeholderDecision as never, model: f.model as never };
-    const committed = await commitAgentDecision(input);
-    expect(committed.outbounds.map(part => part.content).join(' ')).toContain(invitation);
-    const [state] = await db!`SELECT call_offer_count,call_offer_status,call_preference FROM conversation_sales_context_states_v1 WHERE conversation_id=${f.conversation_id}`;
-    expect(state).toMatchObject({ call_offer_count: 1, call_offer_status: 'offered', call_preference: 'unknown' });
-    const replay = await commitAgentDecision(input);
-    expect(replay.replayed).toBe(true);
-    expect(replay.outbounds.map(part => part.id)).toEqual(committed.outbounds.map(part => part.id));
-    const [after] = await db!`SELECT call_offer_count FROM conversation_sales_context_states_v1 WHERE conversation_id=${f.conversation_id}`;
-    expect(after.call_offer_count).toBe(1);
-  });
-
-  it('commits both fixed bubbles once and preserves the 20s timing authority on replay', async () => {
-    const f = await seedConversationForAgentTurn({ selected_offering_code: paid, first_message: 'me sigue pareciendo caro' });
-    await seedPriorModelNegotiation(db!, f, 1);
-    const input = { turn_id: f.turn_id, trace_id: f.trace_id, supports_multi_outbound: true,
-      agent_turn_v2: { schema_version: 2 as const, proposal: proposal() },
-      decision: f.placeholderDecision as never, model: f.model as never };
-    const committed = await commitAgentDecision(input);
-    expect(committed.status).toBe('committed');
-    expect(committed.outbounds.map(part => part.content)).toEqual(fixed);
-    expect(committed.outbounds[1]).toMatchObject({ part_index: 1, minimum_delay_before_ms: 20000 });
-    const [part] = await db!`SELECT metadata FROM messages WHERE id=${committed.outbounds[1].id}`;
-    expect(part.metadata.rule_a_minimum_delay_before_ms).toBe(20000);
-    const submittedAt = new Date(Date.now() - 7000);
-    await db!`UPDATE outbound_deliveries SET state='submitted',submitted_at=${submittedAt},provider_message_id=${`bp-runtime-rule-a-${randomUUID()}`}
-      WHERE message_id=${committed.outbounds[0].id}`;
-    const replayed = await commitAgentDecision(input);
-    expect(replayed.replayed).toBe(true);
-    expect(replayed.outbounds.map(part => part.id)).toEqual(committed.outbounds.map(part => part.id));
-    expect(replayed.outbounds[0].status).toBe('submitted_to_botpress');
-    expect(replayed.outbounds[1]).toMatchObject({ minimum_delay_before_ms: 20000,
-      not_before: new Date(submittedAt.getTime() + 20000).toISOString() });
-    const [count] = await db!`SELECT count(*)::int count FROM promotion_offer_bonus_offerings WHERE source_turn_id=${f.turn_id}`;
-    expect(count.count).toBe(1);
-  });
-
-  it('never cancels the fixed bubble that carries the committed offer when the customer writes during the 20s pause', async () => {
+  it('never cancels the bubble that carries the committed offer when the customer writes between bubbles', async () => {
     const f = await seedConversationForAgentTurn({ selected_offering_code: paid, first_message: 'me sigue pareciendo caro' });
     await seedPriorModelNegotiation(db!, f, 1);
     const committed = await commitAgentDecision({ turn_id: f.turn_id, trace_id: f.trace_id, supports_multi_outbound: true,
       supports_send_fencing: true, agent_turn_v2: { schema_version: 2 as const, proposal: proposal() },
       decision: f.placeholderDecision as never, model: f.model as never });
     expect(committed.outbounds.map(part => part.content)).toEqual(fixed);
+    expect(committed.outbounds[1]).not.toHaveProperty('minimum_delay_before_ms');
     await db!`UPDATE outbound_deliveries SET state='submitted',submitted_at=now(),provider_message_id=${`bp-pause-${randomUUID()}`}
       WHERE message_id=${committed.outbounds[0].id}`;
     await db!`INSERT INTO messages(id,conversation_id,contact_id,direction,content,created_at,conversation_seq)
@@ -267,7 +183,7 @@ run('owner rules at the actual commit and transactional boundaries', () => {
     expect(delivery.state).not.toBe('cancelled');
   });
 
-  it('still cancels the committed offer bubble when the customer opted out during the pause', async () => {
+  it('still cancels the committed offer bubble when the customer opted out between bubbles', async () => {
     const f = await seedConversationForAgentTurn({ selected_offering_code: paid, first_message: 'me sigue pareciendo caro' });
     await seedPriorModelNegotiation(db!, f, 1);
     const committed = await commitAgentDecision({ turn_id: f.turn_id, trace_id: f.trace_id, supports_multi_outbound: true,
@@ -286,73 +202,9 @@ run('owner rules at the actual commit and transactional boundaries', () => {
       delivery_attempt: committed.outbounds[1].delivery_attempt })).toMatchObject({ outcome: 'superseded' });
   });
 
-  it.each([['me hacés un descuento?', true], ['no quiero descuento, sólo info', false]] as const)(
-    'owner instant promo at the transactional ladder: "%s" → offer %s', async (text, allowed) => {
-      const f = await seedConversationForAgentTurn({ selected_offering_code: paid, first_message: text });
-      const outbound = randomUUID();
-      const result = await offerDirectCourseBonusV1(db!, { workspace_id: f.workspace_id, contact_id: f.contact_id,
-        conversation_id: f.conversation_id, paid_offering_code: paid, source_turn_id: f.turn_id,
-        expected_offer_version: 0, bonus_offering_codes: [bonus], outbound: { id: outbound, content: fixed[1],
-          provider: 'test', integration_id: 'test', channel: 'whatsapp', destination: 'test', idempotency_key: outbound } });
-      expect(result.ok).toBe(allowed);
-      if (!allowed) expect(result).toMatchObject({ reason: 'ladder_step_pending' });
-    });
-
-  it.each(['with_state', 'first_message_without_state'] as const)('owner instant promo names the paid course in the same message: capability and commit offer it at once (%s)', async variant => {
-    // Literal golden text: 'tienda online' also hits Fotografía con Celulares para Tiendas Online.
-    const text = 'Me interesa Introducción al Ecommerce para vender los productos de mi tienda online. Tenés alguna promoción para sumar un curso gratuito?';
-    const f = await seedConversationForAgentTurn({ selected_offering_code: null, first_message: text });
-    if (variant === 'first_message_without_state') {
-      await db!`DELETE FROM conversation_sales_context_state_events_v1 WHERE conversation_id=${f.conversation_id}::uuid`;
-      await db!`DELETE FROM conversation_sales_context_states_v1 WHERE conversation_id=${f.conversation_id}::uuid`;
-    }
-    const capability = await readCourseBonusCapabilityV1({ workspace_slug: 'studyx', contact_id: f.contact_id,
-      conversation_id: f.conversation_id, channel: 'text', selected_offering_code: null, source_turn_id: f.turn_id }, { db: db! });
-    expect(capability).toMatchObject({ interest_offering_code: paid, rule_bonus: { bonus_offering_code: bonus } });
-    expect(capability.ladder).toMatchObject({ instant_trigger: true, eligible: true });
-    if (variant === 'first_message_without_state') {
-      // Live golden 76c6447/18: at commit time the model's select_course already names the course.
-      const atCommit = await readCourseBonusCapabilityV1({ workspace_slug: 'studyx', contact_id: f.contact_id,
-        conversation_id: f.conversation_id, channel: 'text', selected_offering_code: paid, source_turn_id: f.turn_id }, { db: db! });
-      // Live commit path: no persisted selection yet (checkoutOfferingCode null).
-      const atCommitNoSelection = await readCourseBonusCapabilityV1({ workspace_slug: 'studyx', contact_id: f.contact_id,
-        conversation_id: f.conversation_id, channel: 'text', selected_offering_code: null, source_turn_id: f.turn_id }, { db: db! });
-      expect(atCommitNoSelection).toMatchObject({ interest_offering_code: paid, ladder: { instant_trigger: true } });
-      expect(atCommit.ladder).toMatchObject({ instant_trigger: true, eligible: true });
-      expect(atCommit.rule_bonus).toMatchObject({ bonus_offering_code: bonus });
-    }
-    const committed = await commitAgentDecision({ turn_id: f.turn_id, trace_id: f.trace_id, supports_multi_outbound: true,
-      agent_turn_v2: { schema_version: 2 as const, proposal: { ...proposal(), memory_candidates: [],
-        move: { ...proposal().move, move: 'select_course', course_reference: paid } } },
-      decision: f.placeholderDecision as never, model: f.model as never });
-    expect(committed.status).toBe('committed');
-    const [count] = await db!`SELECT count(*)::int count FROM promotion_offer_bonus_offerings WHERE source_turn_id=${f.turn_id}`;
-    expect(count.count).toBe(1);
-    const [state] = await db!`SELECT selected_offering_code, source_turn_id FROM conversation_sales_context_states_v1 WHERE conversation_id=${f.conversation_id}::uuid`;
-    expect(state).toMatchObject({ selected_offering_code: paid, source_turn_id: f.turn_id });
-  });
-
-  it.each([['Ahora sí, el precio me sigue pareciendo caro y no me alcanza.', true], ['Es caro? Te pregunto.', false]] as const)(
-    'with a live offer, a literal price objection is the backend escalation trigger: "%s" → %s', async (text, instant) => {
-      const f = await seedConversationForAgentTurn({ selected_offering_code: paid, first_message: 'tenés alguna promo?' });
-      const outbound = randomUUID();
-      const offer = await offerDirectCourseBonusV1(db!, { workspace_id: f.workspace_id, contact_id: f.contact_id,
-        conversation_id: f.conversation_id, paid_offering_code: paid, source_turn_id: f.turn_id,
-        expected_offer_version: 0, bonus_offering_codes: [bonus], outbound: { id: outbound, content: fixed[1],
-          provider: 'test', integration_id: 'test', channel: 'whatsapp', destination: 'test', idempotency_key: outbound } });
-      expect(offer.ok).toBe(true);
-      const next = randomUUID();
-      await db!`INSERT INTO messages(id,conversation_id,contact_id,direction,content,created_at,conversation_seq)
-        VALUES (${next}::uuid,${f.conversation_id}::uuid,${f.contact_id}::uuid,'inbound',${text},now()+interval '2 seconds',
-          (SELECT coalesce(max(conversation_seq),0)+1 FROM messages WHERE conversation_id=${f.conversation_id}::uuid))`;
-      const { readCourseBonusLadderV1 } = await import('@/features/promotions/application/read-course-bonus-ladder');
-      const ladder = await readCourseBonusLadderV1({ workspace_id: f.workspace_id, contact_id: f.contact_id,
-        conversation_id: f.conversation_id, source_turn_id: next, selected_offering_code: paid }, db!);
-      expect(ladder?.instant_trigger === true).toBe(instant);
-    });
-
   it('commits the next bonus when this reply newly confirms price is the only barrier', async () => {
     const f = await seedConversationForAgentTurn({ selected_offering_code: paid, first_message: 'Tenés alguna promo?' });
+    await seedPriorModelNegotiation(db!, f, 1);
     const firstOutbound = randomUUID();
     const first = await offerDirectCourseBonusV1(db!, { workspace_id: f.workspace_id, contact_id: f.contact_id,
       conversation_id: f.conversation_id, paid_offering_code: paid, source_turn_id: f.turn_id,
@@ -384,8 +236,8 @@ run('owner rules at the actual commit and transactional boundaries', () => {
     const capability = await readCourseBonusCapabilityV1({ workspace_slug: 'studyx', contact_id: f.contact_id,
       conversation_id: f.conversation_id, channel: 'text', selected_offering_code: paid,
       source_turn_id: f.second_turn_id }, { db: db! });
-    expect(capability).toMatchObject({ enabled: true, package_status: 'offered', offer_version: 1,
-      rule_bonus: { bonus_offering_code: nextCode } });
+    expect(capability).toMatchObject({ enabled: true, package_status: 'offered', offer_version: 1 });
+    expect(capability.bonus_candidates?.map(course => course.code)).toContain(nextCode);
     const committed = await commitAgentDecision({ turn_id: f.second_turn_id, trace_id: randomUUID(),
       supports_multi_outbound: true, agent_turn_v2: { schema_version: 2 as const, proposal: next },
       decision: f.placeholderDecision as never, model: f.model as never });

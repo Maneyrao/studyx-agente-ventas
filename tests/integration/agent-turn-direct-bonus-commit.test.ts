@@ -13,14 +13,14 @@ import { processInboundMessage } from '@/lib/services/ingestion.service';
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllEnvs(); });
 const run = process.env.TEST_DATABASE_URL ? describe : describe.skip;
 run('direct decision atomic repair', () => {
-  it('does not let a current-turn objection memory authorize its own first gift', async () => {
+  it('a legacy semantic memory without a committed model observation is not price evidence', async () => {
     vi.stubEnv('CENTRAL_CARGA_BONUS_ENABLED','true');vi.stubEnv('COURSE_BONUS_FLOW_MODE','direct');vi.stubEnv('COURSE_BONUS_MAX_COURSES','2');
     const f=await seedConversationForAgentTurn({selected_offering_code:'entrenamiento_funcional',intake_complete:true});
     await sql`INSERT INTO selected_memories(contact_id,conversation_id,source_message_id,status,memory_type,memory_key,value_normalized,source_quote,confidence,dedupe_hash)
       VALUES (${f.contact_id},${f.conversation_id},${f.turn_id},'active','objection','price_objection','caro','Me parece caro',1,${'c'.repeat(64)})`;
     expect(await capability.readCourseBonusCapabilityV1({workspace_slug:'studyx',contact_id:f.contact_id,
       conversation_id:f.conversation_id,channel:'text',selected_offering_code:'entrenamiento_funcional',source_turn_id:f.turn_id},{db:sql}))
-      .toMatchObject({enabled:true,max_bonus_courses:2,may_offer_bonus:false,may_request_review:false});
+      .toMatchObject({enabled:true,max_bonus_courses:2,may_request_review:false,ladder:{price_evidence:false,eligible:false}});
   });
   it.each(['direct','review','review_pending'] as const)('preserves multi-part delivery authority and the exact gift receipt in %s mode', async mode => {
     vi.stubEnv('CENTRAL_CARGA_BONUS_ENABLED','true');vi.stubEnv('COURSE_BONUS_FLOW_MODE','direct');vi.stubEnv('COURSE_BONUS_MAX_COURSES','2');
@@ -157,11 +157,10 @@ run('direct decision atomic repair', () => {
     // Simulate a capability that became stale before final transactional validation.
     vi.spyOn(capability,'readCourseBonusCapabilityV1').mockResolvedValue({
       status:'checkin_available', enabled:true, max_bonus_courses:2, may_offer_bonus:true,
-      ladder:deriveCourseBonusLadderV1({observed_price_objection_count:3,call_invitation_status:'offered',call_offer_count:1,may_offer_call:true}),
+      ladder:deriveCourseBonusLadderV1({price_evidence:true,retention_used:false}),
       may_schedule_checkin:false,may_request_review:false,may_accept_offer:false,
       may_send_promoted_payment:false,promotion_code:null,interest_offering_code:'entrenamiento_funcional',
-      rule_bonus:{paid_offering_code:'entrenamiento_funcional',paid_display_name:'Entrenamiento Funcional',
-        bonus_offering_code:'nutricion_alimentacion',display_name:'Nutrición y Alimentación Saludable',position:1},
+      bonus_candidates:[{code:'nutricion_alimentacion',display_name:'Nutrición y Alimentación Saludable'}],
       offer_version:0,bonus_offerings:[],delivered_bonus_offerings:[],
     });
     const proposal = {...f.proposalWithCallOfferAndFalsePrice,
@@ -173,9 +172,7 @@ run('direct decision atomic repair', () => {
       decision:f.placeholderDecision as never,model:f.model as never};
     await expect(commitAgentDecision(input)).rejects.toMatchObject({
       reason:'AGENT_TURN_V2_REJECTED:COMMERCIAL_TRUTH_VIOLATION',
-      subjects:['forbidden_promise','direct_bonus:ladder_step_pending',
-        'bonus_ladder:recorded_price_objections:0:required:2','bonus_ladder:call_invitation:not_offered',
-        'bonus_ladder:missing:recorded_price_objections'],
+      subjects:['forbidden_promise','direct_bonus:ladder_step_pending','bonus_ladder:missing:price_evidence'],
     });
     expect((await sql`SELECT count(*)::int n FROM agent_decisions WHERE turn_id=${f.turn_id}`)[0].n).toBe(0);
     expect((await sql`SELECT count(*)::int n FROM messages WHERE in_reply_to=${f.turn_id}`)[0].n).toBe(0);

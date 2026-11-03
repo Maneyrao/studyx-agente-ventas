@@ -6,6 +6,7 @@ import { recordDeliveryReport } from '@/lib/services/decision.service';
 import { offerDirectCourseBonusV1 } from '@/features/promotions/application/direct-course-bonus-service';
 import { readCourseBonusCapabilityV1 } from '@/features/promotions/application/read-course-bonus-capability';
 import { hashCallContext } from '@/features/calls/domain/call-context';
+import { recordModelPriceObjection } from '../helpers/record-model-negotiation-facts';
 
 /** Owner "Emma vende" (2026-11-03), live 07:38/07:41: the customer chooses the
  * gift or swaps the only gift while the package is open. Same literal detector
@@ -37,7 +38,9 @@ async function deliver(id: string): Promise<void> {
 }
 
 async function offeredWithIngles2() {
-  const f = await seedConversationForAgentTurn({ selected_offering_code: paid, first_message: 'Tenés alguna promo?' });
+  const f = await seedConversationForAgentTurn({ selected_offering_code: paid, first_message: 'Me parece caro' });
+  // The model recorded the price objection of the first turn: persisted price evidence.
+  await recordModelPriceObjection(db!, f.turn_id, { source_quote: 'Me parece caro' });
   const first = randomUUID();
   const offer = await offerDirectCourseBonusV1(db!, { workspace_id: f.workspace_id, contact_id: f.contact_id,
     conversation_id: f.conversation_id, paid_offering_code: paid, source_turn_id: f.turn_id,
@@ -59,7 +62,7 @@ run('customer-chosen bonus', () => {
     const capability = await readCourseBonusCapabilityV1({ workspace_slug: 'studyx', contact_id: f.contact_id,
       conversation_id: f.conversation_id, channel: 'text', selected_offering_code: paid, source_turn_id: f.second_turn_id }, { db: db! });
     expect(capability).toMatchObject({ rule_bonus: { bonus_offering_code: 'armado_reparacion_pc', source: 'customer_request',
-      replaces_offering_code: 'ingles_2', position: 1 }, ladder: { eligible: true } });
+      replaces_offering_code: 'ingles_2', position: 1 } });
     const window = new Date(Date.now() + 3 * 86_400_000);
     await db!`UPDATE promotion_offers SET expires_at=${window} WHERE promotion_cycle_id=${offer.promotion_cycle_id}::uuid`;
     const swapId = randomUUID();
@@ -100,7 +103,7 @@ run('customer-chosen bonus', () => {
       bonus_offering_codes: ['armado_reparacion_pc'], outbound: outbound(randomUUID()) })).toMatchObject({ ok: true, offer_version: 1 });
   });
 
-  it('adds the course the customer asked for as the next gift, without a new price objection', async () => {
+  it('a course the customer names literally is a valid next gift; the evidence is the persisted objection, not the wording', async () => {
     const { f, offer } = await offeredWithIngles2();
     await customerSays(f, 'y si yo tengo el curso de ingles 1 y armado y reparacion de pc, me bonificas uno de los dos?');
     const added = await offerDirectCourseBonusV1(db!, { workspace_id: f.workspace_id, contact_id: f.contact_id,

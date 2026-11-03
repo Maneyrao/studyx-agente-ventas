@@ -24,7 +24,7 @@ function turn(id: string, customer: string, override: Partial<GoldenTurnV1> = {}
     mustNot: ['No inventar datos del catálogo, descuentos, acciones ejecutadas ni bonificaciones sin efecto autorizado.'],
     authority: [...baseAuthority, ruleA, ruleB],
     expected: { move: moves, action: ['none'], state: {} },
-    hard: [{ type: 'workflow_committed' }, { type: 'rule_outcomes_recorded' }],
+    hard: [{ type: 'workflow_committed' }],
     ...override,
   };
 }
@@ -37,7 +37,7 @@ function bonusTurn(id: string, customer: string, count: number): GoldenTurnV1 {
     expected: { move: moves, action: ['offer_course_bonus'], state: {
       promotion: { status: ['offer_available'], bonusCount: [count], paidCourse: ['introduccion_ecommerce'] },
     } },
-    hard: [{ type: 'workflow_committed' }, { type: 'rule_outcomes_recorded' },
+    hard: [{ type: 'workflow_committed' },
       { type: 'course_bonus_preconditions' }, { type: 'action_bonus_in', values: [bonusCodes[count - 1]!] },
       ...(count > 1 ? [{ type: 'response_mentions_all_promotions' } as const] : [])],
   });
@@ -54,7 +54,7 @@ export const OWNER_GOLDEN_CASES: readonly GoldenCaseV1[] = [
         must: ['Responder al objetivo de vender en su tienda online.'],
         mustNot: ['No convertir poco presupuesto en autorización para regalar un curso ni prometer una llamada inmediata.'],
         expected: { move: moves, action: ['none'], state: noBonus },
-        hard: [{ type: 'workflow_committed' }, { type: 'rule_outcomes_recorded' }, { type: 'early_call_previously_recorded' }],
+        hard: [{ type: 'workflow_committed' }, { type: 'early_call_previously_recorded' }],
       }),
       turn('ecommerce_facts_now', 'Ecommerce me gusta. Cuánto es el total y cuántas clases son?', {
         must: ['Responder el precio total autorizado y la duración de Ecommerce con hechos de ese mismo turno: 8 clases en el fixture local.'],
@@ -173,7 +173,7 @@ const OWNER_PROMOTION_MODE_REPLAY_CASES_MUTABLE: GoldenCaseV1[] = [{
       authority: [promotionMode, ruleA],
       expected: { move: moves, action: ['offer_course_bonus'], state: {
         promotion: { status: ['offer_available'], bonusCount: [1], paidCourse: ['ingles_1'] } } },
-      hard: [{ type: 'workflow_committed' }, { type: 'rule_outcomes_recorded' }, { type: 'action_bonus_in', values: ['ingles_2'] },
+      hard: [{ type: 'workflow_committed' }, { type: 'action_bonus_in', values: ['ingles_2'] },
         { type: 'question_count_at_most', value: 1 }, ...noContingency],
     }),
     englishTurn('still_expensive_escalation', 'nono me parece caro', {
@@ -182,7 +182,7 @@ const OWNER_PROMOTION_MODE_REPLAY_CASES_MUTABLE: GoldenCaseV1[] = [{
       authority: [promotionMode, ruleA],
       expected: { move: moves, action: ['offer_course_bonus'], state: {
         promotion: { status: ['offer_available'], bonusCount: [2], paidCourse: ['ingles_1'] } } },
-      hard: [{ type: 'workflow_committed' }, { type: 'rule_outcomes_recorded' }, { type: 'action_bonus_in', values: ['ingles_3'] },
+      hard: [{ type: 'workflow_committed' }, { type: 'action_bonus_in', values: ['ingles_3'] },
         { type: 'response_mentions_all_promotions' }, { type: 'question_count_at_most', value: 1 }, ...noContingency],
     }),
     englishTurn('english_again', 'ignles\ningles'),
@@ -207,7 +207,7 @@ OWNER_PROMOTION_MODE_REPLAY_CASES_MUTABLE.push({
       authority: [promotionMode, ruleA],
       expected: { move: replayMoves, action: ['offer_course_bonus'], state: {
         promotion: { status: ['offer_available'], bonusCount: [1], paidCourse: ['ingles_1'] } } },
-      hard: [{ type: 'workflow_committed' }, { type: 'rule_outcomes_recorded' }, { type: 'action_bonus_in', values: ['ingles_2'] },
+      hard: [{ type: 'workflow_committed' }, { type: 'action_bonus_in', values: ['ingles_2'] },
         { type: 'question_count_at_most', value: 1 }, ...noContingency],
     }),
     englishTurn('only_price', 'solo el precio', {

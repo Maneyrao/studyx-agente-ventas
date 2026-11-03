@@ -1,5 +1,5 @@
 import { deriveCourseBonusLadderV1 } from '@/shared/conversation/bonus-ladder';
-import { draftConfirmsPriceOnlyBarrierV1, draftRecordsPriceObjectionV1, isCheckoutV1 } from '@/shared/conversation/deterministic-sales-rules';
+import { draftConfirmsPriceOnlyBarrierV1, draftDeclinesPurchaseV1, draftRecordsPriceObjectionV1, isCheckoutV1 } from '@/shared/conversation/deterministic-sales-rules';
 import { validateCourseMentionsV1 } from '@/shared/conversation/course-mentions';
 import { messagesWithoutExactCallOfferV1 } from '@/shared/conversation/call-offer-format';
 import { courseBonusLadderRejectionSubjectsV1 } from '@/shared/conversation/bonus-ladder-rejection';
@@ -55,7 +55,6 @@ export type AgentTurnRejectionReasonV2 =
   | 'MISSING_INTAKE'
   | 'CALL_OFFER_NOT_AUTHORIZED'
   | 'CALL_OFFER_MESSAGE_BOUNDARY_INVALID'
-  | 'CALL_OFFER_REQUIRED'
   | 'COURSE_ROLE_UNDECLARED'
   | 'COURSE_NOT_RESOLVED'
   | 'CHANNEL_PREFERENCE_NOT_SUPPORTED';
@@ -566,46 +565,40 @@ export function authorizeAgentTurnV2(input: {
   if (proposal.proposed_action.type === 'offer_course_bonus') {
     const proposed = proposal.proposed_action;
     const cap = input.course_bonus;
-    // Rule A (AGENTS.md, owner 2026-11-02): this turn's model memory, bound to
-    // literal customer text, completes the trigger; the course is the table's next one.
+    // Model-owned bonus (AGENTS.md "Venta interpretada por el modelo"): the
+    // model proposes, the backend validates the permission. Price evidence is
+    // persisted (cap.ladder) or this turn's model memory quoted from the batch;
+    // retention is a quoted purchase decline, usable once per conversation.
     const batch = input.current_customer_messages ?? [];
     const draftEvidence = { response: proposal.response, proposed_action: proposal.proposed_action,
       move: proposal.move, memory_candidates: proposal.memory_candidates };
-    const currentObjection = draftRecordsPriceObjectionV1(draftEvidence, batch);
-    const currentPriceOnly = draftConfirmsPriceOnlyBarrierV1(draftEvidence, batch);
-    const ladder = cap?.ladder ? deriveCourseBonusLadderV1({ ...cap.ladder,
-      observed_price_objection_count: cap.ladder.observed_price_objection_count + (currentObjection ? 1 : 0),
-      price_only_barrier_confirmed: cap.ladder.price_only_barrier_confirmed === true
-        || currentPriceOnly }) : undefined;
-    // Owner rule (2026-11-02, second revision): a promo/discount request or a
-    // confirmed price probe enables the offer instantly and allows escalation.
-    // Only the backend-computed trigger (checkout, payment and negation exclusions applied).
-    const instant = cap?.ladder?.instant_trigger === true;
-    const escalationWithoutNewObjection = (cap?.bonus_offerings.length ?? 0) > 0
-      && !currentObjection && !currentPriceOnly && !instant;
+    const currentPriceEvidence = draftRecordsPriceObjectionV1(draftEvidence, batch)
+      || draftConfirmsPriceOnlyBarrierV1(draftEvidence, batch);
+    const ladder = cap?.ladder ? deriveCourseBonusLadderV1({
+      price_evidence: cap.ladder.price_evidence || currentPriceEvidence,
+      retention_decline: draftDeclinesPurchaseV1(draftEvidence, batch),
+      retention_used: cap.ladder.retention_used }) : undefined;
     const checkout = isCheckoutV1({ stage: state.stage, awaiting_reply: state.awaiting_reply,
-      payment_link_request_pending: state.payment_link_request?.status === 'pending' }, draftEvidence,
-      input.current_customer_messages);
-    // Owner 2026-11-03: naming the course the customer chose as gift (or the gift
-    // it replaces) is the subject of the request, not a course change.
+      payment_link_request_pending: state.payment_link_request?.status === 'pending' }, draftEvidence);
+    // Owner 2026-11-03: a literal swap of the single offered bonus is not a new
+    // gift, so it needs no price evidence; naming the course is its subject, not a course change.
     const chosen = cap?.rule_bonus?.source === 'customer_request' ? cap.rule_bonus : null;
     const customerChoiceReference = chosen !== null && !changesCourse && !startsFreshSalesCycle
       && proposed.bonus_offering_code === chosen.bonus_offering_code
       && (requestedOffering === chosen.bonus_offering_code
         || (chosen.replaces_offering_code !== undefined && requestedOffering === chosen.replaces_offering_code));
+    const swap = chosen !== null && proposed.bonus_offering_code === chosen.bonus_offering_code;
+    const inCandidates = cap?.bonus_candidates?.some(candidate => candidate.code === proposed.bonus_offering_code) === true;
     const reason = cap?.enabled !== true ? 'bonus_disabled'
       : checkout ? 'sale_already_closed'
-      : (ladder?.eligible !== true && !instant) || escalationWithoutNewObjection ? 'ladder_step_pending'
-      : !cap.rule_bonus ? ((cap.bonus_offerings.length >= (cap.max_bonus_courses ?? 0)) ? 'bonus_limit_reached' : 'bonus_disabled')
-      : proposed.bonus_offering_code !== cap.rule_bonus.bonus_offering_code
-        && !cap.bonus_offerings.some(o => o.code === proposed.bonus_offering_code)
-        && proposed.bonus_offering_code !== capabilityInterestOffering ? 'invalid_offering'
+      : !swap && ladder?.eligible !== true ? 'ladder_step_pending'
+      : proposed.bonus_offering_code === capabilityInterestOffering ? 'same_as_paid_course'
+      : !swap && !inCandidates && !cap.bonus_offerings.some(o => o.code === proposed.bonus_offering_code) ? 'invalid_offering'
       : proposed.interest_offering_code !== capabilityInterestOffering
         || !(promotionMatchesCurrentInterest || customerChoiceReference)
         || !input.offerings.some(o => o.code === proposed.bonus_offering_code) ? 'invalid_offering'
-      : proposed.bonus_offering_code === capabilityInterestOffering ? 'same_as_paid_course'
-      : cap.bonus_offerings.some(o => o.code === proposed.bonus_offering_code) ? 'duplicate_bonus'
-      : cap.bonus_offerings.length >= (cap.max_bonus_courses ?? 0) ? 'bonus_limit_reached' : null;
+      : cap.bonus_offerings.some(o => o.code === proposed.bonus_offering_code) && !swap ? 'duplicate_bonus'
+      : !swap && cap.bonus_offerings.length >= (cap.max_bonus_courses ?? 0) ? 'bonus_limit_reached' : null;
     if (reason) return {ok:false,reasons:['COMMERCIAL_TRUTH_VIOLATION'],
       rejection_subjects:reason === 'ladder_step_pending'
         ? courseBonusLadderRejectionSubjectsV1(ladder ?? cap?.ladder)

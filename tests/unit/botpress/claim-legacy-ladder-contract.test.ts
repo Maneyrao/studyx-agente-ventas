@@ -2,10 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
   AgentAContextV1Schema,
   CourseBonusLadderV1Schema,
-  type AgentATurnProposalV1,
 } from '../../../botpress-agent/src/schemas/agent-a-brain';
 import { ClaimResponseSchema, ClaimedTurnSchema } from '../../../botpress-agent/src/schemas/contracts';
-import { decideDeterministicRulesV1 } from '../../../botpress-agent/src/lib/conversation/deterministic-rules-turn';
 
 const claimCapability = ClaimedTurnSchema.shape.course_bonus_capability;
 const paid = 'introduccion_ecommerce';
@@ -46,6 +44,9 @@ function contextWithCapability(courseBonus: unknown) {
   };
 }
 
+const canonical = { eligible: false, price_evidence: false, retention_decline: false, retention_used: false,
+  missing_steps: ['price_evidence'] };
+
 describe('claim-only legacy bonus ladder compatibility', () => {
   it('decodes the raw claim response and remains canonical on the workflow second parse', () => {
     const id = '00000000-0000-4000-8000-000000000001';
@@ -67,16 +68,13 @@ describe('claim-only legacy bonus ladder compatibility', () => {
     const decoded = ClaimResponseSchema.parse(raw);
     expect(decoded.outcome).toBe('claimed');
     if (decoded.outcome !== 'claimed') throw new Error('CLAIM_FIXTURE_NOT_CLAIMED');
-    expect(decoded.course_bonus_capability?.ladder?.required_price_objection_count).toBe(2);
+    expect(decoded.course_bonus_capability?.ladder).toEqual({ ...canonical, eligible: true, price_evidence: true, missing_steps: [] });
     expect(ClaimedTurnSchema.parse(decoded)).toEqual(decoded);
     expect(raw.course_bonus_capability.ladder).toEqual(legacyLadder);
   });
 
-  it('passes canonical threshold 2 and all existing capability values through unchanged', () => {
-    const ladder = {
-      ...legacyLadder, required_price_objection_count: 2, eligible: true, missing_steps: [],
-      price_only_barrier_confirmed: false, current_turn_price_objection: true,
-    };
+  it('passes the canonical ladder and all existing capability values through unchanged', () => {
+    const ladder = { ...canonical, eligible: true, price_evidence: true, missing_steps: [] };
     const input = capability(ladder, { enabled: false, may_offer_bonus: false,
       rule_bonus: { paid_offering_code: paid, paid_display_name: 'Introducción al Ecommerce',
         bonus_offering_code: 'publicidad_redes_sociales', display_name: 'Publicidad en Redes Sociales', position: 1 } });
@@ -85,36 +83,21 @@ describe('claim-only legacy bonus ladder compatibility', () => {
     expect(input).toEqual(before);
   });
 
-  it('normalizes exactly legacy threshold 3 to the sole canonical Rule A without adding evidence', () => {
-    const input = capability(legacyLadder);
-    const decoded = claimCapability.parse(input);
-    expect(decoded?.ladder).toEqual({
-      eligible: true, observed_price_objection_count: 2, required_price_objection_count: 2,
-      call_invitation_status: 'not_offered', call_offer_count: 0, may_offer_call: true,
-      missing_steps: [],
-    });
-    expect(decoded?.ladder).not.toHaveProperty('price_only_barrier_confirmed');
-    expect(decoded?.ladder).not.toHaveProperty('current_turn_price_objection');
-    expect(input.ladder).toEqual(legacyLadder);
+  it('maps a legacy count to price evidence only; thresholds, call fields and instant triggers grant nothing', () => {
+    expect(claimCapability.parse(capability({ ...legacyLadder, observed_price_objection_count: 0, eligible: true,
+      instant_trigger: true }))?.ladder).toEqual(canonical);
+    expect(claimCapability.parse(capability({ ...legacyLadder, observed_price_objection_count: 1,
+      required_price_objection_count: 2 }))?.ladder).toEqual({ ...canonical, eligible: true, price_evidence: true, missing_steps: [] });
+    expect(claimCapability.parse(capability({ ...legacyLadder, observed_price_objection_count: 0,
+      price_only_barrier_confirmed: true }))?.ladder).toMatchObject({ eligible: true, price_evidence: true });
   });
 
-  it.each([false, true])('never changes enabled=%s or a denied bonus permission and cannot invent a table course', enabled => {
+  it.each([false, true])('never changes enabled=%s or a denied bonus permission and cannot invent candidates', enabled => {
     const decoded = claimCapability.parse(capability(legacyLadder, { enabled }));
     expect(decoded).toMatchObject({ enabled, may_offer_bonus: false });
     expect(decoded).not.toHaveProperty('rule_bonus');
-    const context = AgentAContextV1Schema.parse(contextWithCapability(decoded));
-    const proposal: AgentATurnProposalV1 = {
-      schema_version: 1,
-      move: { schema_version: 1, move: 'ask_course_information', course_reference: paid,
-        secondary_moves: [], vetoes: [], confidence: 1 },
-      response: { messages: ['Podemos revisar el curso.'], call_offer: null },
-      proposed_action: { type: 'none' }, course_mentions: [], confirmed_phone: null,
-      profile_updates: [], profile_requests: [], used_fact_ids: [], used_memory_ids: [],
-      repair_of: null, memory_candidates: [],
-    };
-    expect(decideDeterministicRulesV1(context, proposal).bonus).toEqual({
-      kind: 'none', reason: enabled ? 'no_rule_course' : 'bonus_disabled',
-    });
+    expect(decoded).not.toHaveProperty('bonus_candidates');
+    expect(AgentAContextV1Schema.safeParse(contextWithCapability(decoded)).success).toBe(true);
   });
 
   it('preserves a supplied permission and rule_bonus instead of manufacturing either during normalization', () => {
@@ -123,12 +106,6 @@ describe('claim-only legacy bonus ladder compatibility', () => {
     expect(claimCapability.parse(capability(legacyLadder, {
       enabled: true, may_offer_bonus: true, rule_bonus: rule,
     }))).toMatchObject({ enabled: true, may_offer_bonus: true, rule_bonus: rule });
-  });
-
-  it('does not turn an insufficient legacy observation count into eligibility', () => {
-    expect(claimCapability.parse(capability({ ...legacyLadder, observed_price_objection_count: 1 }))?.ladder)
-      .toMatchObject({ eligible: false, observed_price_objection_count: 1,
-        required_price_objection_count: 2, missing_steps: ['recorded_price_objections'] });
   });
 
   it('rejects threshold 4 rather than interpreting another business rule', () => {
@@ -142,14 +119,12 @@ describe('claim-only legacy bonus ladder compatibility', () => {
     { call_invitation_status: 'unavailable' },
     { missing_steps: ['sales_copy'] },
     { prescribed_response: 'texto fijo' },
-    { price_only_barrier_confirmed: true },
-    { current_turn_price_objection: true },
     { may_offer_bonus: true },
-  ])('rejects malformed or extended legacy threshold 3: %j', invalid => {
+  ])('rejects malformed or extended legacy ladders: %j', invalid => {
     expect(claimCapability.safeParse(capability({ ...legacyLadder, ...invalid })).success).toBe(false);
   });
 
-  it('keeps threshold 3 forbidden at the canonical brain boundary', () => {
+  it('keeps the legacy ladder forbidden at the canonical brain boundary', () => {
     expect(CourseBonusLadderV1Schema.safeParse(legacyLadder).success).toBe(false);
     expect(AgentAContextV1Schema.safeParse(contextWithCapability(capability(legacyLadder))).success).toBe(false);
     expect(AgentAContextV1Schema.safeParse(contextWithCapability(claimCapability.parse(capability(legacyLadder)))).success).toBe(true);

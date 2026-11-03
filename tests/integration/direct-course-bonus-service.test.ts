@@ -65,9 +65,10 @@ run('atomic direct bonus service', () => {
     const cap=await readCourseBonusCapabilityV1({workspace_slug:f.w.slug ?? f.identity.promotion_code,
       contact_id:f.c.id,conversation_id:f.v.id,channel:'text',selected_offering_code:f.courses[0].code,
       source_turn_id:f.source},{db:db!});
-    expect(cap).toMatchObject({may_offer_bonus:count>=2,ladder:{observed_price_objection_count:count,eligible:count>=2}});
+    // One persisted objection is enough (no count of two); with none the offer stays pending.
+    expect(cap).toMatchObject({may_offer_bonus:true,ladder:{price_evidence:count>=1,eligible:count>=1}});
     const result=await offerDirectCourseBonusV1(db!,f.input());
-    expect(result).toMatchObject(count>=2?{ok:true}:{ok:false,reason:'ladder_step_pending',ladder:{observed_price_objection_count:count}});
+    expect(result).toMatchObject(count>=1?{ok:true}:{ok:false,reason:'ladder_step_pending',ladder:{price_evidence:false}});
   });
   it('counts the current second committed objection without counting duplicate legacy memory',async()=>{
     const f=await fixture(1);
@@ -75,7 +76,7 @@ run('atomic direct bonus service', () => {
     expect(await offerDirectCourseBonusV1(db!,f.input())).toMatchObject({ok:true,offer_version:1});
   });
   it('does not count action-only review/checkin records or future objections',async()=>{
-    const f=await fixture(1);
+    const f=await fixture(0);
     const actionTurn=await f.inbound(0);
     await recordModelPriceObjection(db!,actionTurn,{memory:false,action:'schedule_price_objection_checkin'});
     const reviewTurn=await f.inbound(0);
@@ -84,7 +85,7 @@ run('atomic direct bonus service', () => {
     const future=await f.inbound(0);
     await recordModelPriceObjection(db!,future);
     expect(await offerDirectCourseBonusV1(db!,f.input(current))).toMatchObject({ok:false,reason:'ladder_step_pending',
-      ladder:{observed_price_objection_count:1}});
+      ladder:{price_evidence:false}});
   });
   it('uses the durable prior call invitation when a later state cycle reset it',async()=>{
     const f=await fixture();
@@ -104,7 +105,7 @@ run('atomic direct bonus service', () => {
       const source=await f.inbound(0);await recordModelPriceObjection(db!,source,{source_quote:'Una cita que el cliente nunca escribió'});
     }
     const current=await f.inbound(0);
-    expect(await offerDirectCourseBonusV1(db!,f.input(current))).toMatchObject({ok:false,reason:'ladder_step_pending',ladder:{observed_price_objection_count:0}});
+    expect(await offerDirectCourseBonusV1(db!,f.input(current))).toMatchObject({ok:false,reason:'ladder_step_pending',ladder:{price_evidence:false}});
   });
   it.each(['terminal_call','expired_session'] as const)('does not reopen a bonus while persisted state remains in handoff (%s)',async kind=>{
     const f=await fixture();
@@ -297,7 +298,7 @@ run('atomic direct bonus service', () => {
     expect(await offerDirectCourseBonusV1(db!,f.input(await f.inbound(0),3,2))).toEqual({ok:false,reason:'bonus_disabled'});
   });
   it.each(['interest_current','selected_current','selected_future','selected_foreign'] as const)
-  ('does not borrow a prior course objection for unproven commercial context (%s)',async scenario=>{
+  ('price evidence is conversation-level and never needs the promotion-context table (%s)',async scenario=>{
     const f=await seedConversationForAgentTurn({intake_complete:true,first_message:'Me parece caro'});
     await commitAgentDecision({turn_id:f.turn_id,trace_id:f.trace_id,supports_multi_outbound:true,
       agent_turn_v2:{schema_version:2,proposal:{...f.proposalWithCallOfferAndFalsePrice,
@@ -319,14 +320,14 @@ run('atomic direct bonus service', () => {
       WHERE conversation_id=${f.conversation_id}`;
     const cap=await readCourseBonusCapabilityV1({workspace_slug:'studyx',contact_id:f.contact_id,conversation_id:f.conversation_id,
       channel:'text',selected_offering_code:scenario==='interest_current'?null:course,source_turn_id:f.second_turn_id},{db:db!});
-    expect(cap.may_offer_bonus).toBe(false);
+    // The objection committed on the first turn is persisted price evidence of this conversation.
+    expect(cap.ladder).toMatchObject({price_evidence:true,eligible:true});
     const id=randomUUID();
     expect(await offerDirectCourseBonusV1(db!,{workspace_id:f.workspace_id,contact_id:f.contact_id,conversation_id:f.conversation_id,
       paid_offering_code:course,source_turn_id:f.second_turn_id,expected_offer_version:0,
       bonus_offering_codes:[course==='ingles_2'?'ingles_3':'nutricion_alimentacion'],
       outbound:{id,content:'Te sumo el curso complementario.',provider:'test',integration_id:'test',channel:'whatsapp',destination:'test',idempotency_key:id}}))
-      .toMatchObject({ok:false});
-    expect(await db!`SELECT id FROM promotion_offers WHERE conversation_id=${f.conversation_id}`).toHaveLength(0);
+      .toMatchObject({ok:true});
   });
   it.each([null,'ingles_2'] as const)('retains B prior-objection evidence after a later non-objection turn (selection %s)',async selected=>{
     const f=await seedConversationForAgentTurn({intake_complete:true,first_message:'Me parece caro'});
@@ -384,12 +385,14 @@ run('atomic direct bonus service', () => {
     if(kind==='current_objection') source=f.turn_id;
     const cap=await readCourseBonusCapabilityV1({workspace_slug:'studyx',contact_id:contact,conversation_id:f.conversation_id,
       channel:'text',selected_offering_code:null,source_turn_id:source},{db:db!});
-    expect(cap.may_offer_bonus).not.toBe(true);
+    // The commercial interest of the conversation is only established by the second turn: at the
+    // first turn there is no course to bonify, whatever the price evidence says.
+    if (kind !== 'interest_other' && kind !== 'current_objection') expect(cap.may_offer_bonus).not.toBe(true);
     const id=randomUUID();
     expect(await offerDirectCourseBonusV1(db!,{workspace_id:f.workspace_id,contact_id:contact,conversation_id:f.conversation_id,
       paid_offering_code:'entrenamiento_funcional',source_turn_id:source,expected_offer_version:0,bonus_offering_codes:['nutricion_alimentacion'],
       outbound:{id,content:'Te regalo Inglés 1.',provider:'test',integration_id:'test',channel:'whatsapp',destination:'test',idempotency_key:id}}))
-      .toMatchObject({ok:false,reason:kind==='current_objection'?'ladder_step_pending':'invalid_offering'});
+      .toMatchObject({ok:false,reason:kind==='current_objection'?'stale_offer_version':'invalid_offering'});
     expect(await db!`SELECT id FROM promotion_offers WHERE conversation_id=${f.conversation_id}`).toHaveLength(0);
   });
   it('authorizes durable interest and committed objection without purchase selection or semantic memory',async()=>{
@@ -436,11 +439,19 @@ run('atomic direct bonus service', () => {
     });
   });
 
-  it('rejects an active gift outside the next fixed-table position before writing effects',async()=>{
-    const f=await fixture();const input=f.input(f.source,2);
+  it('rejects an active gift outside the affinity set before writing effects',async()=>{
+    const f=await fixture();const input=f.input(f.source,4);
     expect(await offerDirectCourseBonusV1(db!,input)).toEqual({ok:false,reason:'invalid_offering'});
     expect(await db!`SELECT id FROM promotion_offers WHERE conversation_id=${f.v.id}`).toHaveLength(0);
     expect(await db!`SELECT id FROM messages WHERE id=${input.outbound.id}`).toHaveLength(0);
+  });
+  it('accepts any affinity-row course (the model chooses, no fixed order) and a course the customer names literally',async()=>{
+    const row=await fixture();
+    // publicidad_redes_sociales is third in the row, not the "next" of a sequence.
+    expect(await offerDirectCourseBonusV1(db!,row.input(row.source,2))).toMatchObject({ok:true,offer_version:1});
+    const named=await fixture();
+    await db!`UPDATE messages SET content='me interesa tambien Course 4' WHERE id=${named.source}`;
+    expect(await offerDirectCourseBonusV1(db!,named.input(named.source,4))).toMatchObject({ok:true,offer_version:1});
   });
 
   it('rejects an empty reply without persisting an offer',async()=>{
@@ -515,6 +526,49 @@ run('atomic direct bonus service', () => {
       VALUES (${f.v.id},${f.c.id},'inbound','¿Y otra promo más?') RETURNING id`;
     const second=f.input(promoTurn.id,2,1);
     expect(await offerDirectCourseBonusV1(db!,second)).toMatchObject({ok:true,offer_version:2});
+  });
+
+  it.each(['payment_plan','payment_confirmation','contact_details'] as const)('never offers during checkout, decided by state only, even with price evidence and a promo wording (%s)',async awaiting=>{
+    const f=await fixture();
+    await db!`UPDATE messages SET content='me hacés un descuento? es caro' WHERE id=${f.source}`;
+    await db!`UPDATE conversation_sales_context_states_v1 SET awaiting_reply=${awaiting} WHERE conversation_id=${f.v.id}`;
+    const input=f.input();
+    expect(await offerDirectCourseBonusV1(db!,input)).toEqual({ok:false,reason:'sale_already_closed'});
+    expect(await db!`SELECT id FROM promotion_offers WHERE conversation_id=${f.v.id}`).toHaveLength(0);
+  });
+  it('retention: a quoted purchase decline offers one bonus without price evidence, once per conversation',async()=>{
+    const f=await fixture(0);
+    vi.stubEnv('COURSE_BONUS_MAX_COURSES','3');
+    await db!`UPDATE messages SET content='No gracias, lo dejo' WHERE id=${f.source}`;
+    // Without the model's declaration there is no permission.
+    expect(await offerDirectCourseBonusV1(db!,f.input())).toMatchObject({ok:false,reason:'ladder_step_pending',
+      ladder:{price_evidence:false,retention_decline:false}});
+    await recordModelPriceObjection(db!,f.source,{key:'purchase_decline',source_quote:'No gracias, lo dejo'});
+    const first=f.input();
+    expect(await offerDirectCourseBonusV1(db!,first)).toMatchObject({ok:true,offer_version:1});
+    await f.deliver(first.outbound.id);
+    // A second decline, even quoted, cannot reuse it; and it grants nothing else.
+    const again=await f.inbound(0);
+    await db!`UPDATE messages SET content='No, de verdad no' WHERE id=${again}`;
+    await recordModelPriceObjection(db!,again,{key:'purchase_decline',source_quote:'No, de verdad no'});
+    expect(await offerDirectCourseBonusV1(db!,f.input(again,2,1))).toMatchObject({ok:false,reason:'ladder_step_pending',
+      ladder:{retention_used:true,retention_decline:false,price_evidence:false}});
+  });
+  it('retention: a decline quote that is not in the customer batch grants nothing',async()=>{
+    const f=await fixture(0);
+    await recordModelPriceObjection(db!,f.source,{key:'purchase_decline',source_quote:'No gracias, lo dejo'});
+    expect(await offerDirectCourseBonusV1(db!,f.input())).toMatchObject({ok:false,reason:'ladder_step_pending',
+      ladder:{retention_decline:false}});
+  });
+  it('retention does not block a later price-evidence bonus',async()=>{
+    const f=await fixture(0);
+    vi.stubEnv('COURSE_BONUS_MAX_COURSES','3');
+    await recordModelPriceObjection(db!,f.source,{key:'purchase_decline'});
+    const first=f.input();
+    expect(await offerDirectCourseBonusV1(db!,first)).toMatchObject({ok:true,offer_version:1});
+    await f.deliver(first.outbound.id);
+    const later=await f.inbound(2);
+    expect(await offerDirectCourseBonusV1(db!,f.input(later,2,1))).toMatchObject({ok:true,offer_version:2});
   });
 
   it('delivers a second and third bonus, refuses a fourth, and cancels the open package when the paid course changes',async()=>{

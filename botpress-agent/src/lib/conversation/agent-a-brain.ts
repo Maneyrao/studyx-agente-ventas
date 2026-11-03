@@ -224,7 +224,6 @@ export async function generateDeepSeekAgentATurnProposalV1(input: {
   readonly timeout_ms?: number;
   readonly conversation_only?: boolean;
   /** Rule B may authorize invitation copy while all physical actions stay fenced. */
-  readonly allow_call_offer?: boolean;
   readonly on_provider_request?: () => void;
 }): Promise<GeneratedAgentATurnProposalV1> {
   const model = resolveAgentADeepSeekModelV1(input.model);
@@ -261,7 +260,7 @@ export async function generateDeepSeekAgentATurnProposalV1(input: {
           body: JSON.stringify({
             model,
             instructions: buildAgentABrainInstructionsV1(input.context)
-              + (input.conversation_only ? `\nThe requested operation was not executed. This is a conversation-only continuation from the structured turn_rejection. Answer the customer in your own usual voice using the actual context and explain or ask for the relevant missing information. Do not claim an effect succeeded, repeat an action, invent a provider cause, or ask the customer to repeat a message that is already in context. Preserve the customer intent with the accurate structured move; never use unknown merely because the physical action is fenced. Use proposed_action none. ${input.allow_call_offer ? 'The structured Rule B correction permits response.call_offer only; never request or claim an immediate call.' : 'Use no call_offer.'} These are internal effect boundaries, not wording instructions.` : ''),
+              + (input.conversation_only ? `\nThe requested operation was not executed. This is a conversation-only continuation from the structured turn_rejection. Answer the customer in your own usual voice using the actual context and explain or ask for the relevant missing information. Do not claim an effect succeeded, repeat an action, invent a provider cause, or ask the customer to repeat a message that is already in context. Preserve the customer intent with the accurate structured move; never use unknown merely because the physical action is fenced. Use proposed_action none. Use no call_offer. These are internal effect boundaries, not wording instructions.` : ''),
             input: `Current customer messages: ${JSON.stringify(input.context.turn.batch_messages.map((message) => message.text))}\nAnswer these messages and return only the single AgentATurnProposalV1 JSON object.${retryDiagnostic ? `\nThe previous output failed validation at ${retryDiagnostic}. Return a corrected full object. ${naturalnessRepairDirectiveV1(input.context)}${retryProfileEvidence}` : ''}`,
             reasoning: { effort: 'none' },
             temperature: 0.2,
@@ -271,7 +270,7 @@ export async function generateDeepSeekAgentATurnProposalV1(input: {
               format: {
                 type: 'json_schema',
                 name: 'studyx_agent_a_turn_proposal_v1',
-                schema: proposalJsonSchema(input.context, input.conversation_only, input.allow_call_offer),
+                schema: proposalJsonSchema(input.context, input.conversation_only),
               },
             },
           }),
@@ -500,7 +499,7 @@ function closedObject(properties: Record<string, unknown>) {
   return { type: 'object', properties, required: Object.keys(properties), additionalProperties: false };
 }
 
-function proposalJsonSchema(context: AgentAContextV1, conversationOnly = false, allowCallOffer = false): unknown {
+function proposalJsonSchema(context: AgentAContextV1, conversationOnly = false): unknown {
   const nullableString = { anyOf: [{ type: 'string' }, { type: 'null' }] };
   const profileFields = {
     type: 'array', minItems: 1, maxItems: 4, uniqueItems: true,
@@ -573,7 +572,13 @@ function proposalJsonSchema(context: AgentAContextV1, conversationOnly = false, 
         reason: { type: 'string', enum: ['persistent_price_objection'] },
       })]
     : [];
-  const directBonusCodes = eligibleDynamicBonusCodes.filter(code => !courseBonus?.bonus_offerings.some(o => o.code === code));
+  // The model chooses among the backend's authorized set (affinity row, bridges,
+  // courses the customer named), plus the literal swap target when there is one.
+  const authorizedDirectBonusCodes = courseBonus?.bonus_candidates
+    ? new Set([...courseBonus.bonus_candidates.map(candidate => candidate.code),
+      ...(courseBonus.rule_bonus ? [courseBonus.rule_bonus.bonus_offering_code] : [])]) : null;
+  const directBonusCodes = eligibleDynamicBonusCodes.filter(code => !courseBonus?.bonus_offerings.some(o => o.code === code)
+    && (authorizedDirectBonusCodes === null || authorizedDirectBonusCodes.has(code)));
   const directBonusAlternatives = courseBonus?.enabled && courseBonus.may_offer_bonus
     && courseBonus.interest_offering_code && directBonusCodes.length
     ? [closedObject({type:{type:'string',enum:['offer_course_bonus']},
@@ -635,7 +640,7 @@ function proposalJsonSchema(context: AgentAContextV1, conversationOnly = false, 
         description: 'One coherent reply split into one or two messages only. Answer the complete logical customer intervention before advancing once.',
       },
       call_offer: {
-        anyOf: conversationOnly && !allowCallOffer ? [{ type: 'null' }] : [{ type: 'string', maxLength: 2_000 }, { type: 'null' }],
+        anyOf: conversationOnly ? [{ type: 'null' }] : [{ type: 'string', maxLength: 2_000 }, { type: 'null' }],
         description: 'Optional short and natural call invitation. Follow the call policy in the instructions; a natural question is allowed.',
       },
     }),
@@ -680,7 +685,7 @@ function proposalJsonSchema(context: AgentAContextV1, conversationOnly = false, 
     memory_candidates: {
       type: 'array',
       maxItems: 10,
-      description: 'Record your interpretation of explicit customer statements with a verbatim inbound source_quote. For a customer confirmation that price is the only barrier, use type constraint, key price_only_barrier, value confirmed; if the customer reports another barrier, use the same type/key with value other_barriers_reported. Omit this observation when unknown. These are recorded observations, not permissions or sales-step instructions.',
+      description: 'Record your interpretation of explicit customer statements with a verbatim inbound source_quote. For a customer confirmation that price is the only barrier, use type constraint, key price_only_barrier, value confirmed; if the customer reports another barrier, use the same type/key with value other_barriers_reported. Omit this observation when unknown. For an explicit purchase decline use type objection, key purchase_decline. For an actual price objection use type objection, key price_objection. The source_quote must be verbatim customer text. These are recorded observations, not permissions or sales-step instructions.',
       items: closedObject({
         type: { type: 'string', enum: [...MEMORY_TYPES] },
         key: { type: 'string' },
@@ -2247,11 +2252,6 @@ export function decideRepairLevelV1(input: {
     || reason.code === 'CALL_BUDGET_EXHAUSTED'
     || reason.code === 'MISSING_INTAKE'
     || reason.code === 'REPEATED_AGENT_REPLY'
-    || reason.code === 'CALL_OFFER_REQUIRED'
-    || reason.code === 'BONUS_OFFER_REQUIRED'
-    || reason.code === 'PRICE_PROBE_REQUIRED'
-    || reason.code === 'PASSIVE_CLOSING_FORBIDDEN'
-    || reason.code === 'RETENTION_REQUIRED'
     || reason.code === 'CALL_OFFER_MESSAGE_BOUNDARY_INVALID'
     || reason.code === 'CHANNEL_PREFERENCE_NOT_SUPPORTED'
   ))

@@ -1,4 +1,3 @@
-import { BONUS_FALLBACK_PAUSE_MS_V1 } from '@/shared/conversation/deterministic-sales-rules';
 import { courseBonusLadderRejectionSubjectsV1 } from '@/shared/conversation/bonus-ladder-rejection';
 import { backendReleaseSha } from './turn-evidence.service';
 import type { ConversationChannel } from '@/lib/contracts/channel';
@@ -219,9 +218,6 @@ export interface CommitDecisionResult {
     authorized_egress: AuthorizedEgressV1;
     part_index: number;
     part_count: number;
-    /** Backend-persisted Rule A delivery timing, also returned on replay. */
-    minimum_delay_before_ms?: number;
-    not_before?: string;
   }>;
   /**
    * Present exactly when this decision reserved a call. On replay it carries
@@ -310,8 +306,6 @@ interface PersistedOutboundPartRow {
   delivery_attempt: number | null;
   authorized_egress: unknown;
   part_index: number;
-  minimum_delay_before_ms: number | null;
-  submitted_at: Date | null;
 }
 
 const AGENT_DECISION_TURN_UNIQUE_CONSTRAINT = 'agent_decisions_turn_id_uq';
@@ -357,9 +351,7 @@ async function loadDecisionOutbounds(
       delivery.state AS delivery_state,
       delivery.attempt_count AS delivery_attempt,
       message.metadata -> 'authorized_egress' AS authorized_egress,
-      part.part_index::integer AS part_index,
-      (message.metadata ->> 'rule_a_minimum_delay_before_ms')::integer AS minimum_delay_before_ms,
-      delivery.submitted_at
+      part.part_index::integer AS part_index
     FROM agent_decision_outbound_parts AS part
     JOIN messages AS message ON message.id = part.message_id
     LEFT JOIN outbound_deliveries AS delivery ON delivery.message_id = message.id
@@ -379,17 +371,11 @@ async function loadDecisionOutbounds(
     }];
   }
   return rows.map((row) => {
-    const previous = rows.find(part => Number(part.part_index) === Number(row.part_index) - 1);
-    const fixedPause = row.minimum_delay_before_ms === BONUS_FALLBACK_PAUSE_MS_V1;
     return {
       id: row.id, content: row.content, status: mapDeliveryState(row.delivery_state),
       delivery_attempt: Number(row.delivery_attempt ?? 1),
       authorized_egress: verifyPersistedEgress(row.content, row.authorized_egress),
       part_index: Number(row.part_index), part_count: rows.length,
-      ...(fixedPause ? { minimum_delay_before_ms: BONUS_FALLBACK_PAUSE_MS_V1,
-        ...(previous?.submitted_at ? { not_before: new Date(new Date(previous.submitted_at).getTime()
-          + BONUS_FALLBACK_PAUSE_MS_V1).toISOString() } : {}),
-      } : {}),
     };
   });
 }
@@ -1793,10 +1779,6 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
         const named = bonusCourse ? partTexts.findIndex(text => visible(text).includes(visible(bonusCourse.display_name))) : -1;
         bonusPartIndex = named >= 0 ? named : partTexts.length - 1;
       }
-      // Timing metadata is derived only after backend authorization of the
-      // bonus effect and exact owner fallback opening. It is never a caller grant.
-      const ruleAFixedFallback = committedBusinessAction?.type === 'offer_course_bonus'
-        && partTexts.length >= 2 && partTexts[0] === 'Dejame revisar qué te puedo ofrecer, dame un segundo.';
       const profileRequests = preparedAgentTurn && validatedInput.agent_turn_v2
         ? contactProfileRequestsForPartsV1({
             authored_messages: validatedInput.agent_turn_v2.proposal.response.messages,
@@ -1849,7 +1831,6 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
             const rows = await db<Message[]>`UPDATE messages SET metadata=${jsonbParam(db,{
               decision_id:decisionId,response_type:decision.response_type,model:validatedInput.model,
               part_index:partIndex,part_count:partTexts.length,authorized_egress:partManifest,
-              ...(ruleAFixedFallback && partIndex === 1 ? { rule_a_minimum_delay_before_ms: BONUS_FALLBACK_PAUSE_MS_V1 } : {}),
               ...(profileRequests[partIndex]?.length ? {contact_profile_requests_v1:profileRequests[partIndex]} : {}),
             })} WHERE id=${result.outbound_message_id}::uuid RETURNING *`;
             message = rows[0]!;
@@ -1871,7 +1852,6 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
               model: validatedInput.model,
               part_index: partIndex,
               part_count: partTexts.length,
-              ...(ruleAFixedFallback && partIndex === 1 ? { rule_a_minimum_delay_before_ms: BONUS_FALLBACK_PAUSE_MS_V1 } : {}),
               authorized_egress: partManifest,
               ...(profileRequests[partIndex]?.length ? { contact_profile_requests_v1: profileRequests[partIndex] } : {}),
             },
@@ -1970,7 +1950,6 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
           authorized_egress: manifest,
           part_index: partIndex,
           part_count: persistedParts.length,
-          ...(ruleAFixedFallback && partIndex === 1 ? { minimum_delay_before_ms: BONUS_FALLBACK_PAUSE_MS_V1 } : {}),
         });
       }
 

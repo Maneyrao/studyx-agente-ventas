@@ -16,15 +16,14 @@ const capability = {
   bonus_offerings: [],
 };
 
-describe('Botpress course bonus ladder contract', () => {
-  it.each([0, 2, 3])('preserves shared committed facts at both strict boundaries (%i objections)', count => {
-    // Rule 10, authority prompt:106-120: transport facts, not prescribed wording.
-    const ladder = deriveCourseBonusLadderV1({
-      observed_price_objection_count: count,
-      call_invitation_status: 'not_offered',
-      call_offer_count: 0,
-      may_offer_call: true,
-    });
+describe('Botpress course bonus permission contract', () => {
+  it.each([
+    { price_evidence: false, retention_used: false },
+    { price_evidence: true, retention_used: false },
+    { price_evidence: false, retention_decline: true, retention_used: false },
+    { price_evidence: false, retention_decline: true, retention_used: true },
+  ])('preserves shared committed facts at both strict boundaries (%j)', input => {
+    const ladder = deriveCourseBonusLadderV1(input);
     expect(CourseBonusLadderV1Schema.parse(ladder)).toEqual(ladder);
     for (const schema of [
       ClaimedTurnSchema.shape.course_bonus_capability,
@@ -35,17 +34,21 @@ describe('Botpress course bonus ladder contract', () => {
     }
   });
 
+  it('carries the bonus candidates and the retention state without prescribing wording', () => {
+    const extra = { bonus_candidates: [{ code: 'oratoria', display_name: 'Oratoria' }],
+      sales_flow: { retention_used: false, promo_expires_at: null } };
+    for (const schema of [
+      ClaimedTurnSchema.shape.course_bonus_capability,
+      AgentAContextV1Schema.shape.capabilities.shape.course_bonus,
+    ]) expect(schema.parse({ ...capability, ...extra })).toEqual({ ...capability, ...extra });
+  });
+
   it('rejects malformed ladder facts instead of silently dropping them', () => {
-    const ladder = deriveCourseBonusLadderV1({
-      observed_price_objection_count: 3, call_invitation_status: 'declined',
-      call_offer_count: 1, may_offer_call: false,
-    });
+    const ladder = deriveCourseBonusLadderV1({ price_evidence: true, retention_used: false });
     for (const invalid of [
-      { required_price_objection_count: 3 },
-      { observed_price_objection_count: -1 },
-      { observed_price_objection_count: 1.5 },
-      { call_offer_count: -1 },
-      { call_invitation_status: 'unavailable' },
+      { required_price_objection_count: 2 },
+      { instant_trigger: true },
+      { price_evidence: 'yes' },
       { missing_steps: ['sales_copy'] },
       { prescribed_response: 'texto fijo' },
     ]) expect(CourseBonusLadderV1Schema.safeParse({ ...ladder, ...invalid }).success).toBe(false);

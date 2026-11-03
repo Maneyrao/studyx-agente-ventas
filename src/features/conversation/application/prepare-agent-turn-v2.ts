@@ -1,4 +1,4 @@
-import { priceObservationQuoteInBatchV1 } from '@/shared/conversation/deterministic-sales-rules';
+import { declineQuoteInBatchV1, priceObservationQuoteInBatchV1, PURCHASE_DECLINE_MEMORY_KEY } from '@/shared/conversation/deterministic-sales-rules';
 import type { BusinessContextView, CatalogIndexView } from '@/features/orchestration/domain/business-context';
 import type { DecisionV4 } from '@/features/orchestration/domain/decision-v4';
 import type { ProtectedFactRef } from '@/features/orchestration/domain/egress-guard';
@@ -387,9 +387,11 @@ export async function prepareAgentTurnV2(input: {
   const requestedProposal = input.requested_action === undefined ? input.proposal
     : { ...input.proposal, proposed_action: input.requested_action };
   const effectiveProposal = { ...requestedProposal, memory_candidates: requestedProposal.memory_candidates.filter(candidate =>
-    !(candidate.type === 'objection' && candidate.key === 'price_objection'
-      || candidate.type === 'constraint' && candidate.key === 'price_only_barrier' && candidate.value === 'confirmed')
-    || priceObservationQuoteInBatchV1(candidate.source_quote, currentCustomerMessages)) };
+    candidate.type === 'objection' && candidate.key === PURCHASE_DECLINE_MEMORY_KEY
+      ? declineQuoteInBatchV1(candidate.source_quote, currentCustomerMessages)
+      : !(candidate.type === 'objection' && candidate.key === 'price_objection'
+        || candidate.type === 'constraint' && candidate.key === 'price_only_barrier' && candidate.value === 'confirmed')
+        || priceObservationQuoteInBatchV1(candidate.source_quote, currentCustomerMessages)) };
   const authority = authorize(effectiveProposal);
   let actionRejection: AgentActionRejectionV1 | null = null;
 

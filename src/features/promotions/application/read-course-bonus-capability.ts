@@ -1,9 +1,7 @@
 import { readCourseBonusLadderV1 } from './read-course-bonus-ladder';
-import { deriveCourseBonusLadderV1 } from '@/shared/conversation/bonus-ladder';
-import { confirmsPriceProbeV1, nextRuleBonusCodeV1, priceExpressionHintV1, promoRequestV1 } from '@/shared/conversation/deterministic-sales-rules';
+import { authorizedBonusCodesV1, courseCodesNamedInBatchV1 } from '@/shared/conversation/deterministic-sales-rules';
 import { currentFactualCourseReferencesV1 } from '@/features/orchestration/domain/course-focus';
 import { customerBonusRequestV1, type CustomerBonusRequestV1 } from '@/features/promotions/domain/customer-bonus-request';
-import { readSalesFlowFlagsV1 } from './sales-flow-markers';
 import type { CourseBonusLadderV1 } from '@/shared/conversation/bonus-ladder';
 import type { DbClient } from '@/lib/db/types';
 import { loadCourseBonusFlowConfig } from './course-bonus-flow-config';
@@ -33,14 +31,15 @@ export interface CourseBonusCapabilityV1 {
   readonly accepted_at?: string | null;
   readonly package_status?: CourseBonusOfferProjectionV1['status'] | null;
   readonly delivered_bonus_offerings?: Array<{readonly code:string; readonly display_name:string; readonly position:number}>;
-  /** Rule A (owner 2026-11-02): next course of the fixed table when a direct offer may be extended. */
-  /** Owner 2026-11-03 promo flow state, persisted as audit markers (sales-flow-markers). */
+  /** Persisted promotion state only (never inferred from agent phrases). */
   readonly sales_flow?: {
-    readonly price_probe: 'not_asked' | 'asked' | 'yes' | 'no';
     readonly retention_used: boolean;
     readonly promo_expires_at: string | null;
-    readonly gift_request_pending_probe: { readonly code: string; readonly display_name: string } | null;
   };
+  /** Bonus permission set (owner 2026-11-03): affinity row, universal bridges and
+   * any course the customer named literally. The model picks one; the backend validates. */
+  readonly bonus_candidates?: Array<{ readonly code: string; readonly display_name: string }>;
+  /** Only a literal customer swap of the single offered bonus ("cambiar X por Y"). */
   readonly rule_bonus?: { readonly paid_offering_code: string; readonly paid_display_name: string; readonly bonus_offering_code: string; readonly display_name: string; readonly position: number;
     /** Owner 2026-11-03: the customer named this course as the gift ("add") or as a replacement ("swap"). */
     readonly source?: 'customer_request'; readonly replaces_offering_code?: string; readonly replaces_display_name?: string } | null;
@@ -371,7 +370,6 @@ interface CapabilityRow {
 export function deriveDirectCourseBonusCapabilityV1(input: {
   readonly interest_offering_code: string;
   readonly max_bonus_courses: CourseBonusMaxCoursesV1;
-  readonly prior_price_objection: boolean;
   readonly ladder?: CourseBonusLadderV1;
   readonly package: {
     readonly promotion_code: string;
@@ -386,30 +384,29 @@ export function deriveDirectCourseBonusCapabilityV1(input: {
     readonly later_reply: boolean;
     readonly payment_superseded?: boolean;
   } | null;
-  /** Active catalog courses for the fixed Rule A table. Absent: no rule course. */
+  /** Active catalog courses the bonus set is drawn from. */
   readonly active_courses?: ReadonlyArray<{ readonly code: string; readonly display_name: string }>;
-  /** Literal customer choice this turn (customerBonusRequestV1). */
+  /** Courses the customer named literally in this batch (they widen the set). */
+  readonly named_codes?: readonly string[];
+  /** Literal customer swap this turn (customerBonusRequestV1). */
   readonly customer_request?: CustomerBonusRequestV1 | null;
 }): CourseBonusCapabilityV1 {
   const offer = input.package;
-  const request = input.customer_request ?? null;
-  if (request) {
-    const ladder = { ...(input.ladder ?? deriveCourseBonusLadderV1({ observed_price_objection_count: 0,
-      call_invitation_status: 'not_offered', call_offer_count: 0, may_offer_call: false })),
-      eligible: true, missing_steps: [], current_turn_price_objection: true, instant_trigger: true };
-    input = { ...input, ladder };
-  }
   const expiresAt = timestamp(offer?.expires_at ?? null);
   const expired = expiresAt !== null && expiresAt <= Date.now();
   const open = offer === null || (offer.status === 'offered' && !expired);
   const ready = offer === null || (offer.delivered && offer.later_reply);
+  const swapBonus = customerSwapBonus(input, open && ready);
+  const candidates = bonusCandidates(input, open && ready);
   const accepted = offer?.status === 'accepted' || offer?.status === 'attached';
   return {
     ...hidden(accepted ? 'accepted' : offer ? 'offer_available' : 'checkin_available'),
     enabled: true, max_bonus_courses: input.max_bonus_courses,
     ...(input.ladder ? {ladder:input.ladder} : {}),
-    may_offer_bonus: open && ready && (input.ladder?.eligible ?? false)
-      && (offer?.courses.length ?? 0) < input.max_bonus_courses,
+    // Structural availability. The price/retention evidence is validated per
+    // proposal (this turn's quoted memory may complete it), never decided here.
+    may_offer_bonus: open && ready && (offer?.courses.length ?? 0) < input.max_bonus_courses
+      && (candidates.length > 0 || swapBonus !== null),
     may_accept_offer: offer?.status === 'offered' && ready && !expired,
     may_send_promoted_payment: accepted && offer?.payment_superseded !== true,
     interest_offering_code: input.interest_offering_code,
@@ -421,39 +418,36 @@ export function deriveDirectCourseBonusCapabilityV1(input: {
     bonus_selection_mode: 'any_active_course',
     bonus_offerings: offer?.courses ?? [],
     delivered_bonus_offerings: [...(offer?.delivered_courses ?? (offer?.delivered ? offer.courses : []))],
-    rule_bonus: customerRuleBonus(input, open && ready) ?? ruleBonus(input, open && ready),
+    bonus_candidates: candidates,
+    rule_bonus: swapBonus,
   };
 }
 
-function customerRuleBonus(input: Parameters<typeof deriveDirectCourseBonusCapabilityV1>[0], extendable: boolean): CourseBonusCapabilityV1['rule_bonus'] {
+function customerSwapBonus(input: Parameters<typeof deriveDirectCourseBonusCapabilityV1>[0], extendable: boolean): CourseBonusCapabilityV1['rule_bonus'] {
   const request = input.customer_request;
   const courses = input.active_courses ?? [];
   const paid = courses.find(course => course.code === input.interest_offering_code);
   const bonus = request ? courses.find(course => course.code === request.bonus_offering_code) : undefined;
   if (!request || !extendable || !paid || !bonus) return null;
   const offered = input.package?.courses ?? [];
-  if (request.kind === 'swap') {
-    const replaced = offered.length === 1 && offered[0]!.code === request.replaced_offering_code ? offered[0]! : null;
-    if (!replaced || input.package?.status !== 'offered') return null;
-    return { paid_offering_code: paid.code, paid_display_name: paid.display_name, bonus_offering_code: bonus.code,
-      display_name: bonus.display_name, position: 1, source: 'customer_request',
-      replaces_offering_code: replaced.code, replaces_display_name: replaced.display_name };
-  }
-  if (offered.length >= input.max_bonus_courses || offered.some(course => course.code === bonus.code)) return null;
+  const replaced = offered.length === 1 && offered[0]!.code === request.replaced_offering_code ? offered[0]! : null;
+  if (!replaced || input.package?.status !== 'offered') return null;
   return { paid_offering_code: paid.code, paid_display_name: paid.display_name, bonus_offering_code: bonus.code,
-    display_name: bonus.display_name, position: offered.length + 1, source: 'customer_request' };
+    display_name: bonus.display_name, position: 1, source: 'customer_request',
+    replaces_offering_code: replaced.code, replaces_display_name: replaced.display_name };
 }
 
-function ruleBonus(input: Parameters<typeof deriveDirectCourseBonusCapabilityV1>[0], extendable: boolean): CourseBonusCapabilityV1['rule_bonus'] {
+/** Set membership (affinity row, universal bridges, literally named courses),
+ * minus the paid course and what the package already holds. */
+export function bonusCandidates(input: Pick<Parameters<typeof deriveDirectCourseBonusCapabilityV1>[0],
+  'active_courses' | 'interest_offering_code' | 'named_codes' | 'package'>, extendable: boolean): Array<{ code: string; display_name: string }> {
   const courses = input.active_courses ?? [];
-  const paid = courses.find(course => course.code === input.interest_offering_code);
-  if (!extendable || !paid) return null;
-  const offered = (input.package?.courses ?? []).map(course => course.code);
-  const code = nextRuleBonusCodeV1({ paid_code: paid.code, active_codes: courses.map(course => course.code),
-    delivered_codes: offered, max_bonus_courses: input.max_bonus_courses });
-  const bonus = code ? courses.find(course => course.code === code) : undefined;
-  return bonus ? { paid_offering_code: paid.code, paid_display_name: paid.display_name,
-    bonus_offering_code: bonus.code, display_name: bonus.display_name, position: offered.length + 1 } : null;
+  if (!extendable || !courses.some(course => course.code === input.interest_offering_code)) return [];
+  const offered = new Set((input.package?.courses ?? []).map(course => course.code));
+  return authorizedBonusCodesV1({ paid_code: input.interest_offering_code, active_codes: courses.map(course => course.code),
+    named_codes: input.named_codes })
+    .filter(code => !offered.has(code))
+    .flatMap(code => courses.filter(course => course.code === code).map(course => ({ code, display_name: course.display_name })));
 }
 
 /** Owner instant promo (2026-11-02): "me interesa X, tenés promo?" names the
@@ -487,21 +481,13 @@ function singleOrEntryLevelV1(codes: readonly string[]): string | null {
   return [...unique].sort((a, b) => Number(/_(\d+)$/u.exec(a)![1]) - Number(/_(\d+)$/u.exec(b)![1]))[0]!;
 }
 
-/** Owner promotion mode (2026-11-02): only on a literal Rule A trigger this
- * turn (promo request, price objection, or confirming the price-only question),
- * the promotion interest is the course the customer referenced this turn or,
- * failing that, most recently in the session. Interest only: no selection. */
+/** The promotion interest is the course the customer referenced this turn or,
+ * failing that, most recently in the session. Interest only: no selection, and
+ * no reading of the customer's intent (literal catalog references only). */
 async function promoRequestedCourseThisTurn(input: {
   workspace_slug: string; contact_id: string; conversation_id: string; source_turn_id?: string;
 }, db: DbClient): Promise<string | null> {
   const texts = await currentBatchTexts(input, db);
-  const previousAgent = input.source_turn_id ? (await db<Array<{ content: string }>>`
-    SELECT prior.content FROM messages prior JOIN messages current ON current.id=${input.source_turn_id}::uuid
-    WHERE prior.conversation_id=current.conversation_id AND prior.contact_id=current.contact_id
-      AND prior.direction='outbound' AND prior.created_at < current.created_at
-    ORDER BY prior.created_at DESC LIMIT 3`).map(row => row.content) : [];
-  const trigger = texts.some(promoRequestV1) || texts.some(priceExpressionHintV1) || confirmsPriceProbeV1(texts, previousAgent);
-  if (!trigger) return null;
   const offerings = await db<Array<{ code: string; display_name: string; aliases: string[] | null }>>`
     SELECT o.code, o.display_name, ARRAY(SELECT jsonb_array_elements_text(CASE WHEN jsonb_typeof(o.metadata->'aliases')='array'
       THEN o.metadata->'aliases' ELSE '[]'::jsonb END)) aliases
@@ -594,17 +580,18 @@ async function readDirectCapability(input: {
         AND s.selected_offering_code IS NULL
         AND message_occurrence_v1(source.metadata,source.created_at)<=message_occurrence_v1(current.metadata,current.created_at)
     `;
-    const sameTurnCourse = interest ? null : await promoRequestedCourseThisTurn(input, db);
     // Owner 2026-11-03 (live swap 07:41): with no selection and no recorded
     // interest, the paid course of the conversation's live direct package is
-    // the interest, so a gift choice or swap can be read against it.
-    const [livePackage] = interest || sameTurnCourse ? [] : await db<Array<{paid_code:string}>>`
+    // the interest, so a gift choice or swap can be read against it. Only
+    // without such a package is the course named this turn the interest.
+    const [livePackage] = interest ? [] : await db<Array<{paid_code:string}>>`
       SELECT paid.code AS paid_code FROM promotion_offers o
       JOIN offerings paid ON paid.id=o.paid_offering_id AND paid.workspace_id=o.workspace_id
       JOIN workspaces w ON w.id=o.workspace_id AND w.slug=${input.workspace_slug}
       WHERE o.conversation_id=${input.conversation_id}::uuid AND o.contact_id=${input.contact_id}::uuid
         AND o.package_mode='direct' AND o.status='offered'
       ORDER BY o.created_at DESC LIMIT 1`;
+    const sameTurnCourse = interest || livePackage ? null : await promoRequestedCourseThisTurn(input, db);
     const interestCode = interest?.interest_offering_code ?? sameTurnCourse ?? livePackage?.paid_code ?? null;
     if (!interestCode) return {...hidden('needs_interest'), enabled:true,max_bonus_courses:max};
     input={...input,selected_offering_code:interestCode};
@@ -615,15 +602,13 @@ async function readDirectCapability(input: {
     status: CourseBonusOfferProjectionV1['status']; courses: CourseBonusCapabilityV1['bonus_offerings'];
     expires_at: Date | null; accepted_at: Date | null;
     delivered_courses: CourseBonusCapabilityV1['bonus_offerings']; delivered: boolean; later_reply: boolean;
-    prior_price_objection: boolean;
     payment_superseded: boolean;
   }>>`
     SELECT p.promotion_code,o.promotion_cycle_id,o.offer_version,o.status,o.expires_at,o.accepted_at,
       EXISTS(SELECT 1 FROM payment_intent_supersessions superseded WHERE superseded.payment_id=o.payment_id) AS payment_superseded,
       COALESCE(b.courses,'[]'::jsonb) courses,COALESCE(b.delivered_courses,'[]'::jsonb) delivered_courses,
       COALESCE(b.delivered,false) delivered,
-      COALESCE(b.latest_delivery < message_occurrence_v1(current.metadata,current.created_at),false) later_reply,
-      false prior_price_objection
+      COALESCE(b.latest_delivery < message_occurrence_v1(current.metadata,current.created_at),false) later_reply
     FROM workspaces w JOIN offerings paid ON paid.workspace_id=w.id AND paid.code=${input.selected_offering_code}
       AND paid.status='active' AND paid.offering_type='course'
     JOIN workspace_contacts wc ON wc.workspace_id=w.id AND wc.contact_id=${input.contact_id}::uuid
@@ -647,57 +632,40 @@ async function readDirectCapability(input: {
     WHERE w.slug=${input.workspace_slug} AND w.status='active'
   `;
   if (!row) return {...hidden('unavailable'),enabled:false,max_bonus_courses:max};
-  // Owner 2026-11-03 (third revision): a first-message promo request no longer
-  // opens the offer; Emma asks the price question first.
   const ladder=await readCourseBonusLadderV1(input,db);
   const activeCourses=await db<Array<{code:string;display_name:string;aliases:string[]|null}>>`
     SELECT o.code,o.display_name,ARRAY(SELECT jsonb_array_elements_text(CASE WHEN jsonb_typeof(o.metadata->'aliases')='array'
       THEN o.metadata->'aliases' ELSE '[]'::jsonb END)) aliases
     FROM offerings o JOIN workspaces w ON w.id=o.workspace_id
     WHERE w.slug=${input.workspace_slug} AND o.status='active' AND o.offering_type='course'`;
-  const choice = row.status === 'accepted' || row.status === 'attached' ? null
+  const customerRequest = row.status === 'accepted' || row.status === 'attached' ? null
     : await customerBonusRequestThisTurnV1(input, db, activeCourses,
       row.status === 'offered' ? (row.courses ?? []).map(course => course.code) : [], max);
-  const customerRequest = choice?.request ?? null;
-  const pendingGift = choice?.pending_probe_code
-    ? activeCourses.find(course => course.code === choice.pending_probe_code) ?? null : null;
+  const namedCodes = courseCodesNamedInBatchV1(await currentBatchTexts(input, db), activeCourses);
   return {...deriveDirectCourseBonusCapabilityV1({interest_offering_code:input.selected_offering_code!,
-    active_courses:activeCourses,
+    active_courses:activeCourses,named_codes:namedCodes,
     ...(ladder ? {ladder} : {}),
-    max_bonus_courses:max,prior_price_objection:row.prior_price_objection,customer_request:customerRequest,
+    max_bonus_courses:max,customer_request:customerRequest,
     package:row.promotion_code ? {...row,promotion_code:row.promotion_code} : null}),
-    sales_flow:{price_probe:'not_asked',retention_used:false,
-      promo_expires_at:row.status==='offered' && row.expires_at ? new Date(row.expires_at).toISOString() : null,
-      gift_request_pending_probe:pendingGift ? {code:pendingGift.code,display_name:pendingGift.display_name} : null}};
+    sales_flow:{retention_used:ladder?.retention_used ?? false,
+      promo_expires_at:row.status==='offered' && row.expires_at ? new Date(row.expires_at).toISOString() : null}};
 }
 
-/** Current batch + the last agent replies, read once for the shared detector. */
+/** Literal customer swap of the single offered bonus, read from the current batch. */
 export async function customerBonusRequestThisTurnV1(input: {
   contact_id: string; conversation_id: string; source_turn_id?: string; selected_offering_code: string | null;
 }, db: DbClient, offerings: ReadonlyArray<{ code: string; display_name: string; aliases?: string[] | null }>,
-offered: readonly string[], max: number): Promise<{ request: CustomerBonusRequestV1 | null; pending_probe_code: string | null } | null> {
+offered: readonly string[], max: number): Promise<CustomerBonusRequestV1 | null> {
   if (!input.source_turn_id || !input.selected_offering_code) return null;
   const texts = await currentBatchTexts(input, db);
   if (texts.length === 0) return null;
-  const flags = await readSalesFlowFlagsV1(db, input.conversation_id);
   const previous = (await db<Array<{ content: string }>>`
     SELECT prior.content FROM messages prior JOIN messages current ON current.id=${input.source_turn_id}::uuid
     WHERE prior.conversation_id=current.conversation_id AND prior.contact_id=current.contact_id
       AND prior.direction='outbound' AND prior.created_at < current.created_at
     ORDER BY prior.created_at DESC LIMIT 4`).map(row => row.content);
-  const raw = customerBonusRequestV1({ batch_texts: texts, offerings, paid_offering_code: input.selected_offering_code,
+  return customerBonusRequestV1({ batch_texts: texts, offerings, paid_offering_code: input.selected_offering_code,
     offered_bonus_codes: offered, max_bonus_courses: max, previous_agent_messages: previous });
-  // Owner 4e (2026-11-03): with no package yet, "me bonificás X?" before the
-  // price question asks it first; the "sí" then gifts X even off the table.
-  if (offered.length === 0 && raw?.kind === 'add' && flags.price_probe !== 'yes') {
-    return { request: null, pending_probe_code: raw.bonus_offering_code };
-  }
-  const pending = flags.pending_gift_code;
-  if (!raw && offered.length === 0 && pending && pending !== input.selected_offering_code
-    && offerings.some(offering => offering.code === pending) && confirmsPriceProbeV1(texts, previous)) {
-    return { request: { kind: 'add', bonus_offering_code: pending }, pending_probe_code: null };
-  }
-  return { request: raw, pending_probe_code: null };
 }
 
 export async function readCourseBonusCapabilityV1(input: {
@@ -728,11 +696,7 @@ export async function readCourseBonusCapabilityV1(input: {
     }
     if (flow.mode === 'direct' && flow.maxBonusCourses !== null) {
       if (input.channel !== 'text') return {...hidden('unavailable'),enabled:false};
-      const flags=await readSalesFlowFlagsV1(deps.db,input.conversation_id);
-      const capability=await readDirectCapability(input,deps.db,flow.maxBonusCourses);
-      return {...capability,sales_flow:{price_probe:flags.price_probe,retention_used:flags.retention_used,
-        promo_expires_at:capability.sales_flow?.promo_expires_at ?? null,
-        gift_request_pending_probe:capability.sales_flow?.gift_request_pending_probe ?? null}};
+      return await readDirectCapability(input,deps.db,flow.maxBonusCourses);
     }
   } catch { return {...hidden('unavailable'),enabled:false}; }
   const contexts = await deps.db<Array<{

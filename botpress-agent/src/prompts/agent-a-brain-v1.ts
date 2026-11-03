@@ -1,5 +1,3 @@
-import { PRICE_PROBE_V1, decideBonusRuleV1, decidePriceProbeRuleV1, passiveRuleAppliesV1, planChoiceV1, priceExpressionHintV1, promotionTaskV1, purchaseIntentV1, decideRetentionRuleV1, retentionBonusDecisionV1, retentionTaskV1, type BonusRuleDecisionV1 } from '../../../src/shared/conversation/deterministic-sales-rules';
-import { promotionTaskDataV1, ruleContextFromAgentAContextV1 } from '../lib/conversation/deterministic-rules-turn';
 import type { AgentAContextV1 } from '../schemas/agent-a-brain';
 import {
   STUDYX_AGENT_A_CANONICAL_PROMPT,
@@ -7,7 +5,7 @@ import {
 } from './studyx-agent-a-canonical.generated';
 import { resolveCanonicalPromptIdentityV1 } from './agent-a-identity';
 
-export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v157' as const;
+export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v158' as const;
 
 /**
  * Runtime contract only. The sales behavior lives in the canonical prompt so
@@ -142,45 +140,12 @@ Preserve an already resolved course reference. Use only authorized duration, syl
   ));
   const courseDeclarationRepair = repairsBonusPromise || repairsUndeclaredCourse
     ? 'Rebuild course_mentions for the final rewritten response; remove declarations of courses no longer mentioned, without inventing authorization.' : '';
-  // Fresh transactional feedback supersedes the pre-generation snapshot.
-  const ladderFeedback = [
-    ...rejection.rejections.map(reason => reason.subject),
-    ...rejection.authorized_alternatives.missing_information,
-  ].filter(subject => subject.startsWith('bonus_ladder:'));
-  const pendingCall = ladderFeedback.length > 0
-    ? ladderFeedback.includes('bonus_ladder:missing:call_invitation')
-    : context.capabilities.course_bonus?.ladder?.missing_steps.includes('call_invitation') === true;
-  const callStepRepair = pendingCall && context.capabilities.may_offer_call
-    ? 'The identified missing step is call_invitation and it is currently authorized. Only offer the call after history confirms the earlier steps are complete; otherwise continue the earliest unfinished step under canonical_sales_behavior without inferring it from the objection count. Missing call evidence and insufficient objection count do not instruct an immediate invitation. When the call is the next step, offer it with a concrete reason under canonical_sales_behavior, in response.call_offer only. Never repeat the invitation in response.messages; those messages contain only the rest of your reply. This invitation does not mean a call was placed.'
-    : '';
   const forbiddenPromiseRepair = repairsBonusPromise ? `
 For ladder_step_pending or forbidden_promise, remove the unauthorized promise completely.
 Do not mention, suggest or imply any bonus in this rewrite, including a generic, conditional, questioned or hinted gift; do not anticipate a gift or invent a quantity. This repair boundary takes precedence over the course_bonus effect contract, including previously delivered bonuses.
 Use proposed_action=none for bonus effects; do not offer, accept or request review of a bonus in this rewrite. Keep delivered_bonus_offerings and existing obligations in durable state without mentioning them; never delete them. Pending additions remain pending and unconfirmed.
-Continue naturally with the paid course and the factually identified pending step. Counts alone do not prove value, installments or isolation were completed: reread history and follow canonical_sales_behavior in order; never invent objections or completed steps.
-${callStepRepair}
-When no pending step is identified, use only verified value or installment facts and a natural closing question; do not invent which step is missing.
+Continue naturally with the paid course under canonical_sales_behavior; never invent objections or completed steps.
 Do not claim a discount, promotion, gift, approval, income or result. Preserve the rest of the response only when its facts and effects remain authorized.` : '';
-  // Owner rules A/B (AGENTS.md, 2026-11-02): the backend decided the effect;
-  // the model writes the whole turn presenting it.
-  const ruleBonus = context.capabilities.course_bonus?.rule_bonus;
-  const deliveredRuleBonus = context.capabilities.course_bonus?.delivered_bonus_offerings ?? [];
-  const ruleBonusRepair = rejection.rejections.some(reason => reason.code === 'BONUS_OFFER_REQUIRED') && ruleBonus ? `
-The backend executes offer_course_bonus this turn: bonus_offering_code=${ruleBonus.bonus_offering_code} (${ruleBonus.display_name}), interest_offering_code=${ruleBonus.paid_offering_code} (${ruleBonus.paid_display_name}).
-Rewrite the whole turn presenting exactly that course, following <tarea_del_turno> at the end of these instructions: name ${ruleBonus.display_name} literally and close in the same message.${deliveredRuleBonus.length ? `\nThis escalation must recap the complete backend-owned package. Name the paid course ${ruleBonus.paid_display_name}, EVERY previously delivered bonus (${deliveredRuleBonus.map(course => course.display_name).join('; ')}), and the new bonus ${ruleBonus.display_name}. Keep all of these identities included; never omit or negate an already delivered course.` : ''}
-Use proposed_action offer_course_bonus with those two codes. Declare ${ruleBonus.paid_offering_code} as paid and ${ruleBonus.bonus_offering_code} as bonus in course_mentions${(context.capabilities.course_bonus?.delivered_bonus_offerings?.length ?? 0) > 0 ? ', keep the delivered bonus courses declared as bonus and recap the full package' : ''}. Mention no other gift.` : '';
-  const ruleCallRepair = rejection.rejections.some(reason => reason.code === 'CALL_OFFER_REQUIRED' && reason.subject === 'rule_b:call_offer') ? `
-The backend requires a call invitation this turn. Keep your reply in response.messages and put one brief invitation with a concrete reason in response.call_offer only. ${ruleBonusRepair ? 'Keep the independently authorized offer_course_bonus action required by Rule A.' : 'Use proposed_action=none.'} Do not claim a call was placed.` : '';
-  const priceProbeRepair = rejection.rejections.some(reason => reason.code === 'PRICE_PROBE_REQUIRED') ? `
-Owner rule C: the customer asked about or objected to the price. Answer it, then end the turn with exactly: "${PRICE_PROBE_V1}"` : '';
-  const passiveRepair = rejection.rejections.some(reason => reason.code === 'PASSIVE_CLOSING_FORBIDDEN') ? `
-Owner rule D: remove every passive closing ("lo ves tranquilo", "sin apuro", "cuando quieras", "avisame", "quedo atenta" and similar). Close with a concrete step toward buying now.` : '';
-  const retention = rejection.rejections.find(reason => reason.code === 'RETENTION_REQUIRED')
-  const retentionDecision = retention ? decideRetentionRuleV1(ruleContextFromAgentAContextV1(context),
-    { response: { messages: ['.'] }, proposed_action: { type: 'none' }, move: { move: 'decline_purchase', secondary_moves: [] }, memory_candidates: [] }) : null
-  const retentionOffer = retentionDecision?.kind === 'retain' ? retentionBonusDecisionV1(ruleContextFromAgentAContextV1(context)) : null
-  const retentionRepair = retentionOffer ? `
-Owner rule E: ${retentionTaskV1(retentionOffer)}` : '';
   return `
 <mandatory_repair attempt="1" rejection_id="${rejection.rejection_id}">
 Use repair_of with this rejection_id and attempt 1. This is the only rewrite.
@@ -191,11 +156,6 @@ ${courseDeclarationRepair}
 ${offeringRepair}
 ${courseLogisticsRepair}
 ${forbiddenPromiseRepair}
-${ruleBonusRepair}
-${ruleCallRepair}
-${priceProbeRepair}
-${passiveRepair}
-${retentionRepair}
 If an action did not occur, do not claim it; continue naturally from the permitted facts and effects.
 Do not repeat confirmed data or an earlier opening or question. Ask only for truly missing information.
 Keep prose and metadata consistent. Preserve accepted observations. Never expose validation to the customer.
@@ -232,9 +192,10 @@ function currentCourseBonusEffectContractV1(context: AgentAContextV1): string {
     ? `The effect request_promotion_review is available. If Agent A chooses it under canonical_sales_behavior, use proposed_action=request_promotion_review.${selectedBonusDirective}`
     : null;
   const deliveredBonusCount = courseBonus?.delivered_bonus_offerings?.length ?? 0;
+  const candidates = courseBonus?.bonus_candidates ?? [];
   const directBonusGuidance = directBonusContext
     ? courseBonus?.enabled===true && courseBonus.may_offer_bonus===true
-      ? `The effect offer_course_bonus is technically available. This capability does not choose when or which course; Agent A applies canonical_sales_behavior. The package contains ${deliveredBonusCount} delivered bonus course${deliveredBonusCount === 1 ? '' : 's'}, with maximum ${courseBonus.max_bonus_courses ?? 0}. If Agent A chooses this effect, proposed_action must contain exactly one new active bonus_offering_code and the exact interest_offering_code. The new code must differ from the paid course and every delivered_bonus_offerings code. The response and proposed_action must identify the same new course, and the paid-course price remains unchanged. A later addition requires a customer message after the last delivered offer. Backend validation decides whether the effect commits.`
+      ? `The effect offer_course_bonus is technically available. This capability does not choose when or which course; Agent A applies canonical_sales_behavior. The package contains ${deliveredBonusCount} delivered bonus course${deliveredBonusCount === 1 ? '' : 's'}, with maximum ${courseBonus.max_bonus_courses ?? 0}. If Agent A chooses this effect, proposed_action must contain exactly one new active bonus_offering_code from capabilities.course_bonus.bonus_candidates${candidates.length ? ` (${candidates.map(course => course.code).join(', ')})` : ''} and the exact interest_offering_code. The new code must differ from the paid course and every delivered_bonus_offerings code. The response and proposed_action must identify the same new course, and the paid-course price remains unchanged. A later addition requires a customer message after the last delivered offer. The backend validates the effect: it needs price evidence (a price_objection or price_only_barrier memory already persisted, or one you record in this same response with a verbatim source_quote from the customer's current messages) or a purchase decline you record as memory type=objection key=purchase_decline with a verbatim source_quote (usable once per conversation; ledger: ladder.retention_used). Persisted price evidence so far: ${courseBonus.ladder?.price_evidence === true}.`
       : `The effect offer_course_bonus is not authorized. Preserve the exact delivered_bonus_offerings package identity and do not repeat pending or rejected additions.`
     : null;
   const effectGuidance = directBonusGuidance
@@ -296,54 +257,6 @@ Before returning AgentATurnProposalV1, make response, move, profile metadata and
 - stage_hypothesis is diagnostic and must use only its allowed durable milestone enum. Do not expose internal validation in response.messages.
 </execution_consistency_check>`;
 
-/** Owner rules (AGENTS.md, 2026-11-02 second revision). Backend-decided; the
- * model writes. Kept technical: what must appear, not how to sell. */
-/** Owner "modo promoción" (2026-11-02): the backend decided a Rule A offer
- * for this turn (literal trigger before generation, or BONUS_OFFER_REQUIRED on
- * the rewrite). The model gets ONE short task, last in its instructions. */
-export function promotionTaskDecisionV1(context: AgentAContextV1): Extract<BonusRuleDecisionV1, { kind: 'offer' }> | null {
-  // A purchase intent or plan choice goes to checkout (the live offer is
-  // attached automatically); never push an escalation over it.
-  if (context.turn.batch_messages.some(message => purchaseIntentV1(message.text) || planChoiceV1(message.text))) return null
-  const stub = { response: { messages: ['.'] }, proposed_action: { type: 'none' },
-    move: { move: 'unknown', secondary_moves: [] }, memory_candidates: [] }
-  const decided = decideBonusRuleV1(ruleContextFromAgentAContextV1(context), stub)
-  if (decided.kind === 'offer') return decided
-  const rule = context.capabilities.course_bonus?.rule_bonus
-  const required = context.turn_rejection?.rejections.some(reason => reason.code === 'BONUS_OFFER_REQUIRED')
-  if (!rule || !required) return null
-  const bonus = context.capabilities.course_bonus
-  return { kind: 'offer', trigger: 'second_price_objection', paid_code: rule.paid_offering_code, paid_name: rule.paid_display_name,
-    bonus_code: rule.bonus_offering_code, bonus_name: rule.display_name, position: rule.position,
-    prior_bonus: bonus?.package_status === 'offered' ? bonus.delivered_bonus_offerings ?? [] : [] }
-}
-
-function promotionTaskDirectiveV1(context: AgentAContextV1): string {
-  const decision = promotionTaskDecisionV1(context)
-  if (!decision) return ''
-  const declared = [`${decision.paid_code} as paid`, ...decision.prior_bonus.map(course => `${course.code} as bonus`), `${decision.bonus_code} as bonus`]
-  return `<tarea_del_turno prioridad="maxima">
-${promotionTaskV1(decision, promotionTaskDataV1(context))}
-${decision.trigger === 'customer_request' ? `El curso pago sigue siendo ${decision.paid_name}: no uses move=select_course; usa move=ask_course_information con course_reference=${decision.paid_code}.\n` : ''}Contrato técnico: proposed_action={"type":"offer_course_bonus","bonus_offering_code":"${decision.bonus_code}","interest_offering_code":"${decision.paid_code}"}; course_mentions declara ${declared.join(', ')}${decision.replaces ? ` y, si nombras ${decision.replaces.display_name}, ${decision.replaces.code} as alternative (ya no es regalo)` : ''}. No nombres otro regalo. El backend ejecuta y guarda esta promoción antes de enviar tu texto: presentala sin condicionarla a una llamada ni a otra aprobación. Esta tarea prevalece sobre cualquier otra indicación de estas instrucciones para este turno.
-</tarea_del_turno>`
-}
-
-function ownerSalesRulesDirectiveV1(context: AgentAContextV1): string {
-  // Same deterministic decisions as the backend-enforced rules (once per
-  // conversation, never in checkout or on a plan choice), so the first draft complies.
-  const ruleContext = ruleContextFromAgentAContextV1(context)
-  const stub = { response: { messages: ['.'] }, proposed_action: { type: 'none' },
-    move: { move: 'unknown', secondary_moves: [] }, memory_candidates: [] }
-  const bonus = decideBonusRuleV1(ruleContext, stub)
-  const probe = decidePriceProbeRuleV1(ruleContext, stub, bonus)
-  const lines = [
-    passiveRuleAppliesV1(ruleContext, stub)
-      ? 'This is an open negotiation: never close passively ("lo ves tranquilo", "sin apuro", "cuando quieras", "avisame", "quedo atenta"). Close with a concrete step toward buying now.' : '',
-    probe.kind === 'ask' ? `The customer asked about or objected to the price: answer it and end the turn with exactly: "${PRICE_PROBE_V1}"` : '',
-  ].filter(Boolean)
-  return lines.length ? `<owner_sales_rules>\n${lines.join('\n')}\n</owner_sales_rules>` : ''
-}
-
 const COUNT_WORDS_V1 = ['', 'un', 'dos', 'tres', 'cuatro'] as const
 
 /** Owner "Emma vende" (2026-11-03): the persisted package, so "N cursos al
@@ -361,34 +274,21 @@ export function persistedPackageLineV1(context: AgentAContextV1): string {
   return `Paquete persistido: ${paidName} + ${delivered.map(course => course.display_name).join(' + ')} de regalo, todo por el precio de un curso: "${COUNT_WORDS_V1[total]} cursos al precio de uno". Usa exactamente esa cantidad.`
 }
 
-/** Owner "Emma vende" (2026-11-03): sales premise, appended near the end. */
+/** Owner "Emma vende" (2026-11-03): sales premise, appended near the end.
+ * Closing without invasion (Gabi feedback 2026-11-03). Facts and limits only:
+ * commercial guidance (phases, objections, promo, retention) lives in the
+ * authority prompt, and the backend validates effects, it never writes the copy. */
 export function ownerSalesPremiseV1(context: AgentAContextV1): string {
   return `<premisa_de_venta prioridad="alta" fuente="dueño 2026-11-03">
-Vendes sí o sí: eres proactiva, quieres cerrar la venta y cada respuesta avanza hacia el cierre (curso, plan, datos, link o llamada).
-Ante cualquier pedido, primero busca cómo sí hacerlo dentro de los límites. Nunca respondas sólo con un límite: si algo no se puede, ofrece en la misma frase la alternativa que sí.
-Prohibido el tono administrativo o negativo: "sería una compra aparte", "no es un cambio", "no puedo", "no es posible", "no incluye descuento", "el precio sigue siendo", "el precio no cambia", "se mantiene el precio", y abrir con "la bonificación ya está aplicada".
-Flexible: el cliente puede cambiar el curso principal, cambiar el bonificado por otro curso activo que le interese mientras no haya aceptado ni pagado, pedir qué curso quiere de regalo, cambiar de plan, seguir por chat o pasar a una llamada, y preguntar cualquier cosa; respondes y vuelves a la venta.
+Emma vende: eres proactiva y quieres cerrar la venta, sin invadir. Cada respuesta hace avanzar la conversación (descubrir qué busca el cliente, dar valor, resolver la duda), no necesariamente pide la inscripción.
+Pide la inscripción o el plan sólo ante una señal real: interés claro, una objeción recién resuelta, preguntas de pago o de inicio, o la aceptación de la promo. Si ya intentaste cerrar y no hubo un sí, no lo repitas hasta tener información nueva. Nunca pidas la inscripción en dos turnos seguidos.
+El cierre enérgico (con «!», sin «¡») es sólo para la oferta final o la promo.
+Ante cualquier pedido, primero busca cómo sí hacerlo dentro de los límites; si algo no se puede, ofrece en la misma frase la alternativa que sí.
 Límites fijos: USD 360 y sólo los planes reales del catálogo, sin descuento de dinero; máximo 3 bonificados, de a uno por turno, distintos del curso pago y sólo cursos activos; el paquete no cambia después de aceptar o pagar; nunca prometas algo que el backend no persistió ni inventes datos; si pide que no le escriban más, se respeta.
-Si pregunta el precio sin un curso elegido: da el valor real (USD 360 y los planes del catálogo) y pregunta qué curso le interesa.
-Registro de valor: al confirmar o recordar la bonificación, primero lo que gana y después el precio presentado como ganancia. ${persistedPackageLineV1(context)} No inventes montos de ahorro.
-Oferta final o paquete completo: cierra con energía y una sola pregunta, con "!" y sin "¡", variando el cierre sin repetirlo en la conversación: "Qué te parece?!", "Lo hacemos?!", "Cómo lo ves?!", "Te copa?!", "Qué piensas?!".
-Promo sólo con un «sí» explícito a la pregunta del precio (o tras una segunda queja de precio). Un pedido de promo suelto («qué promo me hacés?») no la habilita: vuelve con entusiasmo a la pregunta del precio («Te busco algo! Pero contame, el precio es lo único que te frena?»). Con un bonificado ya ofrecido, cada nuevo pedido o queja pasa al siguiente.
-Pregunta del precio: una sola vez por conversación salvo ante un pedido de promo sin el «sí», «El precio es el único inconveniente? Te puedo buscar una promoción que se adapte si es el caso». ${probeStateLineV1(context)}
-Sin curso elegido: cuenta como posibilidad (no como hecho) que puedes bonificarle un curso («te llevas dos por el precio de uno»), pregunta qué le parece y qué cursos tenía en mente.
-«Beneficio»: si viene hablando del precio, es pedido de promo; si es ambiguo pregunta «Te refieres a los beneficios del curso o a alguna promo?»; «Qué beneficios tiene el curso?» a secas se responde sobre el curso.
+${persistedPackageLineV1(context)} No inventes montos de ahorro.
 ${promoExpiryLineV1(context)}
-Primer «no» definitivo con menos de 3 bonificados: el backend decide la retención (un único intento, ofreciendo el siguiente bonificado). Al segundo «no», o con los 3 ya ofrecidos, despídete con calidez y deja la puerta abierta. Ante opt-out, insultos o pedido de terminar, respeta de inmediato sin ofrecer nada.
-Naturalidad (prueba del dueño 2026-11-03): mensajes cortos tipo WhatsApp; no repitas lo que ya contaste del curso (clases, temas, cuotas) si ya lo dijiste en la conversación; nada de muletillas como «tranquilo» o «con el precio resuelto»; la pregunta del precio va una sola vez por turno, con tus palabras o las del dueño, nunca las dos. Cuando el cliente dice que sí, ve directo a la promo sin parafrasear su respuesta.
 Usa siempre tú, nunca voseo.
 </premisa_de_venta>`
-}
-
-function probeStateLineV1(context: AgentAContextV1): string {
-  const state = context.capabilities.course_bonus?.sales_flow?.price_probe ?? 'not_asked'
-  return state === 'not_asked' ? 'Todavía no la hiciste.'
-    : state === 'asked' ? 'Ya la hiciste: no la repitas; interpreta su respuesta.'
-    : state === 'yes' ? 'Ya respondió que sí: cada nueva queja de precio o pedido de promo pasa directo al siguiente bonificado, sin repetirla.'
-    : 'Respondió que no: indaga el motivo real con una pregunta concreta; si más adelante vuelve a quejarse del precio, el backend ofrece directo, sin repetirla.'
 }
 
 function promoExpiryLineV1(context: AgentAContextV1): string {
@@ -420,14 +320,7 @@ ${inertJson(context)}
 
 ${verifiedPostSalePackageContextV1(context)}
 
-<price_expression_hint>
-${JSON.stringify({ detected: context.turn.batch_messages.some(message => priceExpressionHintV1(message.text)) })}
-This lexical hint is diagnostic only. Interpret the customer's actual statement. Record price_objection only for an actual objection with a literal source_quote; questions such as "es caro?" and negations such as "no es caro" are not objections. The hint itself never grants a bonus or confirms price_only_barrier.
-</price_expression_hint>
-
 ${currentCatalogResolutionDirectiveV1(context)}
-
-${ownerSalesRulesDirectiveV1(context)}
 
 ${currentCourseBonusEffectContractV1(context)}
 
@@ -439,7 +332,5 @@ ${mandatoryRepairDirectiveV1(context)}
 
 ${EXECUTION_CONSISTENCY_CHECK}
 
-${ownerSalesPremiseV1(context)}
-
-${promotionTaskDirectiveV1(context)}`;
+${ownerSalesPremiseV1(context)}`;
 }

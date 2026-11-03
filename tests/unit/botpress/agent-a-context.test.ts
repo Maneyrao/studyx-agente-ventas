@@ -364,10 +364,7 @@ describe('buildAgentAContextV1', () => {
   });
   it('preserves the backend ladder facts in the model context', () => {
     const claimed = claimedTurn();
-    const ladder = deriveCourseBonusLadderV1({
-      observed_price_objection_count: 2, call_invitation_status: 'offered',
-      call_offer_count: 1, may_offer_call: true,
-    });
+    const ladder = deriveCourseBonusLadderV1({ price_evidence: true, retention_used: false });
     claimed.course_bonus_capability = {
       status: 'not_eligible', may_schedule_checkin: false, may_request_review: false,
       may_accept_offer: false, may_send_promoted_payment: false,

@@ -85,7 +85,7 @@ import {
 } from '../lib/conversation/agent-a-attempt'
 import { resolveAgentAProposalV1 } from '../lib/conversation/resolve-agent-a-proposal'
 import { resolveAgentAPlannerlessProposalV2 } from '../lib/conversation/resolve-agent-a-plannerless'
-import { decideDeterministicRulesV1, finalizeDeterministicRulesCandidateV1, preserveRuleTriggerEvidenceV1, resolveDeterministicRulesTurnV1, type DeterministicRulesDecisionV1, type RuleOutcomeRecordV1 } from '../lib/conversation/deterministic-rules-turn'
+import { preserveRuleTriggerEvidenceV1 } from '../lib/conversation/preserve-bonus-evidence'
 import { bindCustomerCallInterpretationV1, type CustomerCallInterpretationV1 } from '../lib/conversation/customer-call-interpretation'
 import { authorizedPromotionActionsV1, continueAgentAAfterActionFeedbackV1, fencedAgentARequestV1, plannerlessActionFeedbackV1 } from '../lib/conversation/agent-a-action-feedback'
 import { evaluateCallOfferTurnPolicyV1 } from '../lib/conversation/call-offer-turn-policy'
@@ -466,7 +466,6 @@ function backendCommitTurnRejectionV1(input: {
         case 'MISSING_INTAKE': push('MISSING_INTAKE', missingSubject); break
         case 'CALL_OFFER_NOT_AUTHORIZED': push('CALL_BUDGET_EXHAUSTED', 'call_offer'); break
         case 'CALL_OFFER_MESSAGE_BOUNDARY_INVALID': push('CALL_OFFER_MESSAGE_BOUNDARY_INVALID', 'call_offer'); break
-        case 'CALL_OFFER_REQUIRED': push('CALL_OFFER_REQUIRED', 'call_offer'); break
         case 'COURSE_NOT_RESOLVED': push('COURSE_NOT_RESOLVED', 'course_reference'); break
         case 'COURSE_ROLE_UNDECLARED': {
           if (detailedSubjects.length === 0) push('COURSE_ROLE_UNDECLARED', 'course_mentions')
@@ -1098,7 +1097,6 @@ export const processInboundTurn = new Workflow({
             } } : {}),
           },
         }
-        const originalOutcome = rulesOutcomeByProposal.get(candidate.proposal)
         const boundProposal = customerCallInterpretation && candidate.operational_continuity !== 'call_consent_revoked'
           ? bindCustomerCallInterpretationV1(customerCallInterpretation, candidate.proposal, finalContext) : candidate.proposal
         if (boundProposal !== candidate.proposal) {
@@ -1106,36 +1104,7 @@ export const processInboundTurn = new Workflow({
           agentTurnV2Commit = candidate
           pipelineMemoryCandidates = boundProposal.memory_candidates
           args = { ...request, input: { ...request.input, agent_turn_v2: candidate } }
-          if (originalOutcome) rulesOutcomeByProposal.set(boundProposal, originalOutcome)
         }
-        const finalRules = await finalizeDeterministicRulesCandidateV1({
-          customer_call_interpretation: customerCallInterpretation,
-          call_obligation: requiredCallObligation,
-          context: finalContext,
-          initial: { proposal: candidate.proposal, provider: request.input.model.provider,
-            model: request.input.model.model, latency_ms: 0, attempt_count: 1 },
-          rejection_id: randomUUID, observe: journal.capture,
-          authored_outcome: rulesOutcomeByProposal.get(candidate.proposal)
-            ?? (latestRejection != null || agentAGenerationAttempts > 1 ? 'rewrite' : 'model'),
-          resolve: (initial, repair, rejectionId = randomUUID()) => {
-            if (repair) throw new Error('FINAL_RULE_CANDIDATE_GENERATION_NOT_ALLOWED')
-            return resolveAgentAPlannerlessProposalV2({
-              initial, context: finalContext, repair_enabled: false, semantic_rejections: 'advisory',
-              rejection_id: rejectionId, observe: journal.capture,
-              repair: async () => { throw new Error('FINAL_RULE_CANDIDATE_GENERATION_NOT_ALLOWED') },
-            })
-          },
-        })
-        if (finalRules.resolved !== null) {
-          agentTurnV2Commit = { ...candidate, proposal: finalRules.resolved.effective.proposal }
-          pipelineMemoryCandidates = finalRules.resolved.effective.proposal.memory_candidates
-          args = { ...request, input: { ...request.input, agent_turn_v2: agentTurnV2Commit } }
-        }
-        const finalProposal = finalRules.resolved?.effective.proposal ?? candidate.proposal
-        rulesOutcomeByProposal.set(finalProposal, finalRules.record)
-        journal.capture({ ...finalRules.record, phase: 'final_candidate' })
-        safeLog('studyx.turn.deterministic_rules', { trace_id: input.trace_id, turn_id: owned.turn_id,
-          ...finalRules.record, phase: 'final_candidate' })
       }
       const wire = (args as { input: Record<string, unknown> }).input
       journal.capture({ kind: 'commit_proposed', proposal: wire.agent_turn_v2 ?? null,
@@ -1226,9 +1195,7 @@ export const processInboundTurn = new Workflow({
     let pipelineDecisionModel = 'conversation-pipeline-v1'
     let pipelinePromptVersion = `${CONVERSATION_INTERPRETER_PROMPT_VERSION}+${CONVERSATION_COMPOSER_PROMPT_VERSION}+${STUDYX_SALES_BEHAVIOR_VERSION}`
     let pipelineMemoryCandidates: Decision['memory_candidates'] = []
-    const rulesOutcomeByProposal = new WeakMap<AgentATurnProposalV1, RuleOutcomeRecordV1>()
     let customerCallInterpretation: CustomerCallInterpretationV1 | undefined
-    let requiredCallObligation: Extract<DeterministicRulesDecisionV1['call'], { kind: 'offer' }> | undefined
     const precommitModelAuthoredCandidates: GeneratedAgentATurnProposalV1[] = []
     let turnDiagnostics: TurnDiagnosticsV1 | null = null
     let agentAGenerationAttempts: 0 | 1 | 2 | 3 = 0
@@ -1531,9 +1498,12 @@ export const processInboundTurn = new Workflow({
                   }),
                   { maxAttempts: 1 },
                 )
-                precommitModelAuthoredCandidates.push(repaired)
-                await persistProfileProposal(repaired.proposal, rejection)
-                return repaired
+                // The rewrite may change prose, never erase the quoted memory that backs an effect.
+                const preserved = { ...repaired, proposal: preserveRuleTriggerEvidenceV1(authoritativeGenerated.proposal,
+                  repaired.proposal, agentABrainContext.turn.batch_messages.map(message => message.text)) }
+                precommitModelAuthoredCandidates.push(preserved)
+                await persistProfileProposal(preserved.proposal, rejection)
+                return preserved
                 } catch (continuationError) {
       if (isTurnEvidencePersistenceError(continuationError)) throw continuationError
                   agentAContinuationFailure = continuationError
@@ -1550,22 +1520,14 @@ export const processInboundTurn = new Workflow({
                 rejection_id: rejectionId,
                 repair: plannerlessRepair,
               })
-            const initialCallDecision = decideDeterministicRulesV1(agentABrainContext, authoritativeGenerated.proposal).call
-            if (initialCallDecision.kind === 'offer') requiredCallObligation ??= initialCallDecision
-            const rulesTurn = await resolveDeterministicRulesTurnV1({
-              customer_call_interpretation: customerCallInterpretation, call_obligation: requiredCallObligation,
-              context: agentABrainContext, initial: authoritativeGenerated,
-              repair_enabled: repairEnabled, rejection_id: randomUUID,
-              resolve: resolvePlannerless, repair: plannerlessRepair, observe: journal.capture,
-              on_failure: (stage, error) => safeLog(`studyx.turn.rule_${stage}_failed`, {
-                trace_id: input.trace_id, turn_id: owned.turn_id, error_code: errorCode(error),
-              }),
-            })
-            const effectiveCallDecision = decideDeterministicRulesV1(agentABrainContext, rulesTurn.resolved.effective.proposal).call
-            if (effectiveCallDecision.kind === 'offer') requiredCallObligation ??= effectiveCallDecision
-            rulesOutcomeByProposal.set(rulesTurn.resolved.effective.proposal, rulesTurn.record)
-            journal.capture({ ...rulesTurn.record })
-            safeLog('studyx.turn.deterministic_rules', { trace_id: input.trace_id, turn_id: owned.turn_id, ...rulesTurn.record })
+            // The model owns the commercial reading of the turn. Botpress only binds
+            // the customer's call consent (never the model's) and runs the one
+            // bounded technical repair for facts and effects.
+            const callInterpretation = customerCallInterpretation ?? authoritativeGenerated.proposal.move
+            const bindCall = (candidate: typeof authoritativeGenerated) => ({ ...candidate,
+              proposal: bindCustomerCallInterpretationV1(callInterpretation, candidate.proposal, agentABrainContext) })
+            const firstResolved = await resolvePlannerless(bindCall(authoritativeGenerated), repairEnabled)
+            const rulesTurn = { resolved: { ...firstResolved, effective: bindCall(firstResolved.effective) } }
             const resolved = rulesTurn.resolved
             journal.capture({ kind: 'proposal_resolution', rejection: resolved.rejection, action_rejection: resolved.action_rejection, evidence: resolved.evidence })
             await journal.flush()
@@ -2775,8 +2737,6 @@ export const processInboundTurn = new Workflow({
                     : { type: 'none' as const },
                 },
               }
-              const retainedRuleOutcome = rulesOutcomeByProposal.get(candidate.proposal)
-              if (retainedRuleOutcome) rulesOutcomeByProposal.set(conversationCandidate.proposal, retainedRuleOutcome)
               try {
               const revalidated = await resolveAgentAPlannerlessProposalV2({
               observe: journal.capture,
@@ -3308,15 +3268,7 @@ export const processInboundTurn = new Workflow({
           if (outboundPart.part_index === 0) {
             await waitForNaturalWhatsAppReply(outboundPart.id)
           }
-          // Rule A timing comes from the committed backend part, including
-          // replays where part 0 was submitted by a previous workflow. ADK sleep
-          // is durable; the ownership check after waking still fences the send.
-          if (outboundPart.minimum_delay_before_ms) {
-            const delay = outboundPart.not_before
-              ? Math.max(0, Date.parse(outboundPart.not_before) - Date.now())
-              : outboundPart.minimum_delay_before_ms
-            if (delay > 0) await step.sleep(`rule-a-bonus-pause-${outboundPart.id}`, delay)
-          } else if (submittedPartsThisRun > 0) {
+          if (submittedPartsThisRun > 0) {
             await new Promise<void>(resolve => { setTimeout(resolve, interBubbleDelayMs(outboundPart.id)) })
           }
           delivery = await submitWithOwnership(

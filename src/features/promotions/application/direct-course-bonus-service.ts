@@ -6,7 +6,7 @@ import { getPostgresError, type DbClient } from '@/lib/db/types';
 import { loadCentralCargaBonusConfig } from '@/features/fulfillment/central-carga/config';
 import { isCentralCargaBonusEnabledForStoredContact } from '@/features/fulfillment/central-carga/bonus-contact-permission';
 import { loadCourseBonusFlowConfig } from './course-bonus-flow-config';
-import { nextRuleBonusCodeV1, isBonusCheckoutStateV1 } from '@/shared/conversation/deterministic-sales-rules';
+import { authorizedBonusCodesV1, courseCodesNamedInBatchV1, isBonusCheckoutStateV1 } from '@/shared/conversation/deterministic-sales-rules';
 
 export type DirectCourseBonusRejectionV1 = 'bonus_disabled' | 'no_price_objection' | 'invalid_offering'
   | 'same_as_paid_course' | 'duplicate_bonus' | 'bonus_limit_reached' | 'multiple_bonus_in_turn'
@@ -283,7 +283,7 @@ export async function offerDirectCourseBonusV1(db: DbClient, input: OfferDirectC
         AND current.contact_id=${input.contact_id}::uuid
       ORDER BY fragment.conversation_seq`).map(row => row.content);
     if (isBonusCheckoutStateV1({ stage: context.stage, awaiting_reply: context.awaiting_reply,
-      payment_link_request_pending: context.payment_link_request?.status === 'pending' }, currentBatch)) reject('sale_already_closed');
+      payment_link_request_pending: context.payment_link_request?.status === 'pending' })) reject('sale_already_closed');
     await validateOpen(tx,input,context,offer);
     if (input.bonus_offering_codes[0]===input.paid_offering_code) reject('same_as_paid_course');
     const [bonus]=await tx`SELECT id FROM offerings WHERE workspace_id=${input.workspace_id}::uuid
@@ -294,23 +294,22 @@ export async function offerDirectCourseBonusV1(db: DbClient, input: OfferDirectC
       FROM offerings WHERE workspace_id=${input.workspace_id}::uuid AND status='active' AND offering_type='course'`;
     const offered=offer ? await tx<Array<{code:string}>>`SELECT offering_code_snapshot code FROM promotion_offer_bonus_offerings
       WHERE offer_id=${offer.id}::uuid ORDER BY position` : [];
-    // Owner 2026-11-03: a literal customer choice of this exact course (same detector as the capability).
+    // Owner 2026-11-03: a literal customer swap of this exact course (same detector as the capability).
     const request=await customerBonusRequestThisTurnV1({...input,selected_offering_code:input.paid_offering_code},tx,active,
       offer?.status==='offered' ? offered.map(row=>row.code) : [],limit);
-    const chosen=request?.request?.bonus_offering_code===input.bonus_offering_codes[0] ? request.request : null;
+    const chosen=request?.bonus_offering_code===input.bonus_offering_codes[0] ? request : null;
     const swap=chosen?.kind==='swap' && offer?.status==='offered' && offer.offer_version===1 && offered.length===1
       && offered[0]!.code===chosen.replaced_offering_code ? chosen : null;
     if (chosen?.kind==='swap' && !swap) reject('stale_offer_version');
     if (!chosen) {
       const ladder=await readCourseBonusLadderV1({...input,selected_offering_code:context.selected_offering_code},tx);
       if (!ladder?.eligible) throw new Rejection('ladder_step_pending',ladder ?? undefined);
-      // Rule A escalation: a new price objection recorded in this customer reply.
-      if (offer && offer.offer_version>0 && ladder.current_turn_price_objection!==true) throw new Rejection('ladder_step_pending',ladder);
     }
     if (!swap && offer && offer.offer_version>=limit) reject('bonus_limit_reached');
-    // Rule A course: exactly the next course of the fixed table, unless the customer chose it.
-    if (!chosen && nextRuleBonusCodeV1({paid_code:input.paid_offering_code,active_codes:active.map(row=>row.code),
-      delivered_codes:offered.map(row=>row.code),max_bonus_courses:limit})!==input.bonus_offering_codes[0]
+    // The model chooses the course; it must belong to the authorized set: the
+    // paid course's affinity row, the universal bridges or a course the customer named literally.
+    if (!chosen && !authorizedBonusCodesV1({paid_code:input.paid_offering_code,active_codes:active.map(row=>row.code),
+      named_codes:courseCodesNamedInBatchV1(currentBatch,active)}).includes(input.bonus_offering_codes[0]!)
       && !offered.some(row=>row.code===input.bonus_offering_codes[0])) reject('invalid_offering');
     let replacedExpiresAt: Date | null = null;
     if (swap && offer) {

@@ -78,52 +78,14 @@ function courseBonusEffectContract(instructions: string): string {
 }
 
 describe('Agent A Brain prompt', () => {
-  it.each([['me parece caro', true], ['es caro?', false], ['no es caro', false]] as const)(
-    'passes the price hint before generation without authorizing effects: %s', (text, detected) => {
-      const current = context();
-      current.turn.batch_messages = [{ id: 'current', text }];
-      const instructions = buildAgentABrainInstructionsV1(current);
-      expect(instructions).toContain(JSON.stringify({ detected }));
-      expect(instructions).toContain('The hint itself never grants a bonus');
-      expect(current.capabilities.course_bonus).toBeUndefined();
-    });
-  it('keeps one authorized action when Rule A and Rule B require the same rewrite', () => {
+  it.each(['me parece caro', 'es caro?', 'no es caro'])('does not interpret the customer for the model: no backend price hint (%s)', text => {
     const current = context();
-    current.capabilities.course_bonus = { status: 'checkin_available', enabled: true, max_bonus_courses: 3,
-      may_offer_bonus: true, may_schedule_checkin: false, may_request_review: false,
-      may_accept_offer: false, may_send_promoted_payment: false, promotion_code: null,
-      interest_offering_code: 'redes-informaticas', bonus_offerings: [],
-      rule_bonus: { paid_offering_code: 'redes-informaticas', paid_display_name: 'Redes Informáticas',
-        bonus_offering_code: 'excel_integral', display_name: 'Excel Integral', position: 1 } };
-    current.turn_rejection = { schema_version: 1, rejection_id: '00000000-0000-4000-8000-000000000009', attempt: 1,
-      rejections: [{ code: 'BONUS_OFFER_REQUIRED', subject: 'rule_a:bonus:excel_integral' },
-        { code: 'CALL_OFFER_REQUIRED', subject: 'rule_b:call_offer' }],
-      authorized_alternatives: { fact_ids: [], actions: ['offer_course_bonus'], missing_information: [] } };
-    const repair = buildAgentABrainInstructionsV1(current).split('<mandatory_repair')[1]?.split('</mandatory_repair>')[0] ?? '';
-    expect(repair).toContain('Use proposed_action offer_course_bonus');
-    expect(repair).toContain('Keep the independently authorized offer_course_bonus action required by Rule A.');
-    expect(repair).not.toContain('Use proposed_action=none');
-    expect(repair).toContain('response.call_offer only');
-  });
-  it('names every delivered course explicitly in the one escalation repair instruction', () => {
-    const current = context();
-    current.capabilities.course_bonus = { status: 'offer_available', enabled: true, max_bonus_courses: 3,
-      may_offer_bonus: true, may_schedule_checkin: false, may_request_review: false,
-      may_accept_offer: true, may_send_promoted_payment: false, promotion_code: 'offered',
-      interest_offering_code: 'introduccion_ecommerce', bonus_offerings: [],
-      delivered_bonus_offerings: [
-        { code: 'fotografia_celulares_tiendas_online', display_name: 'Fotografía con Celulares para Tiendas Online', position: 1 },
-        { code: 'publicidad_redes_sociales', display_name: 'Publicidad en Redes Sociales', position: 2 },
-      ], rule_bonus: { paid_offering_code: 'introduccion_ecommerce', paid_display_name: 'Introducción al Ecommerce',
-        bonus_offering_code: 'instagram_emprendedores', display_name: 'Instagram para Emprendedores', position: 3 } };
-    current.turn_rejection = { schema_version: 1, rejection_id: '00000000-0000-4000-8000-000000000009', attempt: 1,
-      rejections: [{ code: 'BONUS_OFFER_REQUIRED', subject: 'rule_a:bonus:instagram_emprendedores' }],
-      authorized_alternatives: { fact_ids: [], actions: ['offer_course_bonus'], missing_information: [] } };
-    const repair = buildAgentABrainInstructionsV1(current).split('<mandatory_repair')[1]?.split('</mandatory_repair>')[0] ?? '';
-    for (const name of ['Introducción al Ecommerce', 'Fotografía con Celulares para Tiendas Online', 'Publicidad en Redes Sociales', 'Instagram para Emprendedores'])
-      expect(repair).toContain(name);
-    expect(repair).toContain('EVERY previously delivered bonus');
-    expect(repair).toContain('only rewrite');
+    current.turn.batch_messages = [{ id: 'current', text }];
+    const instructions = buildAgentABrainInstructionsV1(current);
+    expect(instructions).not.toContain('price_expression_hint');
+    expect(instructions).not.toContain('<owner_sales_rules>');
+    expect(instructions).not.toContain('<tarea_del_turno');
+    expect(current.capabilities.course_bonus).toBeUndefined();
   });
   it('requires model-declared course roles while keeping metadata separate from authorization',()=>{
     const instructions=buildAgentABrainInstructionsV1(context());
@@ -312,7 +274,9 @@ describe('Agent A Brain prompt', () => {
     expect(guidance).toContain('delivered_bonus_offerings');
     expect(guidance).toContain('does not choose when or which course');
     expect(guidance).toContain('Agent A applies canonical_sales_behavior');
-    expect(guidance).toContain('Backend validation decides whether the effect commits');
+    expect(guidance).toContain('The backend validates the effect');
+    expect(guidance).toContain('price evidence');
+    expect(guidance).toContain('purchase_decline');
     expect(guidance).not.toContain('request_promotion_review');
     expect(guidance).not.toContain('the customer has replied with the same price objection');
   });
@@ -439,7 +403,7 @@ describe('Agent A Brain prompt', () => {
     expect(JSON.parse(encoded)).toEqual(current);
     expect(instructions).not.toContain('<current_turn_guidance>');
     expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v103');
-    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v157');
+    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v158');
   });
 
   it('maps recommendations and generic continuation without persisting a customer choice', () => {
@@ -547,13 +511,12 @@ describe('Agent A Brain prompt', () => {
     expect(instructions).not.toContain('Choose the wording and structure yourself');
   });
 
-  it.each([0,2])('forbids every bonus mention while repairing ladder_step_pending with %s recorded objections', count=>{
+  it.each([false,true])('forbids every bonus mention while repairing ladder_step_pending (price evidence=%s)', evidence=>{
     const current=context();
     current.capabilities.course_bonus={enabled:true,max_bonus_courses:3,may_offer_bonus:false,status:'not_eligible',
       may_schedule_checkin:false,may_request_review:false,may_accept_offer:false,may_send_promoted_payment:false,
-      promotion_code:null,interest_offering_code:'redes-informaticas',bonus_offerings:[],ladder:{eligible:false,
-        observed_price_objection_count:count,required_price_objection_count:2,call_invitation_status:'not_offered',
-        call_offer_count:0,may_offer_call:true,missing_steps:['recorded_price_objections','call_invitation']}};
+      promotion_code:null,interest_offering_code:'redes-informaticas',bonus_offerings:[],ladder:{eligible:evidence,
+        price_evidence:evidence,retention_decline:false,retention_used:false,missing_steps:evidence?[]:['price_evidence']}};
     current.turn_rejection={schema_version:1,rejection_id:'r',attempt:1,
       rejections:[{code:'FACT_VALUE_MISMATCH',subject:'direct_bonus:ladder_step_pending'}],
       authorized_alternatives:{fact_ids:[],actions:['none'],missing_information:[]}};
@@ -561,51 +524,17 @@ describe('Agent A Brain prompt', () => {
     expect(repair).toContain('Do not mention, suggest or imply any bonus');
     expect(repair).toContain('including a generic, conditional, questioned or hinted gift');
     expect(repair).toContain('Use proposed_action=none for bonus effects');
-    expect(repair).toContain('Counts alone do not prove value, installments or isolation were completed');
     expect(repair).toContain('never invent objections or completed steps');
-    expect(repair).toContain('The identified missing step is call_invitation');
-    expect(repair).toContain('with a concrete reason under canonical_sales_behavior');
-    expect(repair).toContain('Only offer the call after history confirms the earlier steps are complete');
-    expect(repair).toContain('otherwise continue the earliest unfinished step');
   });
-  it.each([false,true])('offers the identified pending call only with current permission=%s', mayOffer=>{
-    const current=context();current.capabilities.may_offer_call=mayOffer;
+  it('no longer prescribes a call, a rule rewrite or fixed copy in any repair', ()=>{
+    const current=context();
     current.turn_rejection={schema_version:1,rejection_id:'r',attempt:1,rejections:[
       {code:'FACT_VALUE_MISMATCH',subject:'direct_bonus:ladder_step_pending'},
-      {code:'FACT_VALUE_MISMATCH',subject:'bonus_ladder:missing:call_invitation'}],
+      {code:'FACT_VALUE_MISMATCH',subject:'forbidden_promise'}],
       authorized_alternatives:{fact_ids:[],actions:['none'],missing_information:[]}};
     const repair=buildAgentABrainInstructionsV1(current).split('<mandatory_repair')[1]!.split('</mandatory_repair>')[0]!;
-    expect(repair.includes('The identified missing step is call_invitation')).toBe(mayOffer);
-  });
-  it.each(['subject','missing_information'] as const)('uses fresh ladder metadata from %s rather than a stale pending-call snapshot',transport=>{
-    const current=context();current.capabilities.course_bonus={enabled:true,max_bonus_courses:3,may_offer_bonus:false,
-      status:'not_eligible',may_schedule_checkin:false,may_request_review:false,may_accept_offer:false,may_send_promoted_payment:false,
-      promotion_code:null,interest_offering_code:'redes-informaticas',bonus_offerings:[],ladder:{eligible:false,
-        observed_price_objection_count:2,required_price_objection_count:2,call_invitation_status:'not_offered',
-        call_offer_count:0,may_offer_call:true,missing_steps:['call_invitation','recorded_price_objections']}};
-    const feedback=['bonus_ladder:call_invitation:offered','bonus_ladder:missing:recorded_price_objections'];
-    current.turn_rejection={schema_version:1,rejection_id:'r',attempt:1,
-      rejections:[{code:'FACT_VALUE_MISMATCH',subject:'direct_bonus:ladder_step_pending'},
-        ...(transport==='subject'?feedback.map(subject=>({code:'FACT_VALUE_MISMATCH' as const,subject})):[])],
-      authorized_alternatives:{fact_ids:[],actions:['none'],missing_information:transport==='missing_information'?feedback:[]}};
-    const repair=buildAgentABrainInstructionsV1(current).split('<mandatory_repair')[1]!.split('</mandatory_repair>')[0]!;
-    expect(repair).not.toContain('The identified missing step is call_invitation');
-  });
-  it('reads a pending call from fresh missing_information without a subject or capability snapshot',()=>{
-    const current=context();current.turn_rejection={schema_version:1,rejection_id:'r',attempt:1,
-      rejections:[{code:'FACT_VALUE_MISMATCH',subject:'direct_bonus:ladder_step_pending'}],
-      authorized_alternatives:{fact_ids:[],actions:['none'],missing_information:['bonus_ladder:missing:call_invitation']}};
-    const repair=buildAgentABrainInstructionsV1(current).split('<mandatory_repair')[1]!.split('</mandatory_repair>')[0]!;
-    expect(repair).toContain('The identified missing step is call_invitation');
-  });
-  it('does not infer a missing sales step from a rejection without identified steps',()=>{
-    const current=context();current.turn_rejection={schema_version:1,rejection_id:'r',attempt:1,
-      rejections:[{code:'FACT_VALUE_MISMATCH',subject:'forbidden_promise'}],
-      authorized_alternatives:{fact_ids:[],actions:['none'],missing_information:[]}};
-    const repair=buildAgentABrainInstructionsV1(current).split('<mandatory_repair')[1]!.split('</mandatory_repair>')[0]!;
-    expect(repair).toContain('When no pending step is identified');
-    expect(repair).toContain('verified value or installment facts');
-    expect(repair).not.toContain('The identified missing step is call_invitation');
+    for (const retired of ['call_invitation','Owner rule','El precio es el único inconveniente','Estás seguro','Rule A','Rule B'])
+      expect(repair).not.toContain(retired);
   });
   it.each(['review_available','offer_available','accepted'] as const)('does not revive legacy bonus promises during %s repair',status=>{
     const current=context();current.capabilities.course_bonus={status,may_schedule_checkin:false,

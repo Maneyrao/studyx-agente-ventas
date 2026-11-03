@@ -3,7 +3,6 @@ import { z } from '@botpress/runtime'
 import { ConversationPipelineCommitV1Schema } from './conversation-pipeline'
 import { AgentATurnCommitV2Schema } from './agent-turn-v2'
 import { TurnRejectionCodeSchema } from './turn-rejection'
-import { deriveCourseBonusLadderV1 } from '../../../src/shared/conversation/bonus-ladder'
 
 export const SourceSchema = z.literal('botpress')
 export const ChannelSchema = z.enum(['emulator', 'whatsapp', 'telegram'])
@@ -582,37 +581,30 @@ export const CatalogIndexSchema = z.object({
   injection_suspected_count: z.number().int().nonnegative().default(0),
 }).strict().nullable().default(null)
 
-// Claim transport compatibility for a bot-first rollout. The previous backend
-// sends exactly these legacy facts; Rule A remains the sole canonical rule (2).
-// Neither the canonical brain schema nor any permission is relaxed here.
-const LegacyClaimCourseBonusLadderV1Schema = CourseBonusLadderV1Schema
-  .omit({ price_only_barrier_confirmed: true, current_turn_price_objection: true, instant_trigger: true })
-  .extend({ required_price_objection_count: z.literal(3) })
-  .strict()
+// Claim transport compatibility for a bot-first rollout: the previous backend
+// sent a count-based ladder. Only its factual evidence survives: a recorded
+// price objection or a confirmed price-only barrier is price evidence; the old
+// call/threshold/instant fields carry no permission any more, and retention was
+// never persisted. A malformed legacy ladder falls through to the strict canonical parser.
+const LegacyClaimCourseBonusLadderV1Schema = z.object({
+  eligible: z.boolean(),
+  observed_price_objection_count: z.number().int().nonnegative(),
+  required_price_objection_count: z.union([z.literal(2), z.literal(3)]),
+  call_invitation_status: z.enum(['not_offered', 'offered', 'accepted', 'declined']),
+  call_offer_count: z.number().int().nonnegative(),
+  may_offer_call: z.boolean(),
+  missing_steps: z.array(z.enum(['recorded_price_objections', 'call_invitation'])),
+  price_only_barrier_confirmed: z.boolean().optional(),
+  current_turn_price_objection: z.boolean().optional(),
+  instant_trigger: z.boolean().optional(),
+}).strict()
 
 const IncomingClaimCourseBonusLadderV1Schema = z.preprocess((raw) => {
-  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)
-    || (raw as { required_price_objection_count?: unknown }).required_price_objection_count !== 3) return raw
   const legacy = LegacyClaimCourseBonusLadderV1Schema.safeParse(raw)
-  if (!legacy.success) return raw // The strict canonical parser rejects malformed legacy input.
-  const normalized = deriveCourseBonusLadderV1({
-    observed_price_objection_count: legacy.data.observed_price_objection_count,
-    call_invitation_status: legacy.data.call_invitation_status,
-    call_offer_count: legacy.data.call_offer_count,
-    may_offer_call: legacy.data.may_offer_call,
-  })
-  // Absent legacy evidence stays absent; deriving Rule A must not invent even
-  // false price-only/current-turn observations. Sibling capability flags and
-  // rule_bonus never enter this normalizer.
-  return {
-    eligible: normalized.eligible,
-    observed_price_objection_count: normalized.observed_price_objection_count,
-    required_price_objection_count: normalized.required_price_objection_count,
-    call_invitation_status: normalized.call_invitation_status,
-    call_offer_count: normalized.call_offer_count,
-    may_offer_call: normalized.may_offer_call,
-    missing_steps: normalized.missing_steps,
-  }
+  if (!legacy.success) return raw
+  const priceEvidence = legacy.data.observed_price_objection_count > 0 || legacy.data.price_only_barrier_confirmed === true
+  return { eligible: priceEvidence, price_evidence: priceEvidence, retention_decline: false, retention_used: false,
+    missing_steps: priceEvidence ? [] : ['price_evidence'] }
 }, CourseBonusLadderV1Schema)
 
 export const ClaimedTurnSchema = z.object({
@@ -676,7 +668,8 @@ export const ClaimedTurnSchema = z.object({
     accepted_at: z.string().nullable().optional(),
     package_status: z.enum(['pending_review','offered','accepted','cancelled','expired','attached']).nullable().optional(),
     delivered_bonus_offerings: z.array(z.object({code:z.string().trim().min(1),display_name:z.string().trim().min(1).max(240),position:z.number().int().min(1).max(3)}).strict()).max(3).optional(),
-    sales_flow: z.object({price_probe:z.enum(['not_asked','asked','yes','no']),retention_used:z.boolean(),promo_expires_at:z.string().nullable(),gift_request_pending_probe:z.object({code:z.string().trim().min(1),display_name:z.string().trim().min(1).max(240)}).strict().nullable()}).strict().optional(),
+    sales_flow: z.object({retention_used:z.boolean(),promo_expires_at:z.string().nullable()}).strict().optional(),
+    bonus_candidates: z.array(z.object({code:z.string().trim().min(1),display_name:z.string().trim().min(1).max(240)}).strict()).max(60).optional(),
     rule_bonus: z.object({paid_offering_code:z.string().trim().min(1),paid_display_name:z.string().trim().min(1).max(240),bonus_offering_code:z.string().trim().min(1),display_name:z.string().trim().min(1).max(240),position:z.number().int().min(1).max(3),source:z.literal('customer_request').optional(),replaces_offering_code:z.string().trim().min(1).optional(),replaces_display_name:z.string().trim().min(1).max(240).optional()}).strict().nullable().optional(),
     max_bonus_courses: z.union([z.literal(1), z.literal(2), z.literal(3)]).optional(),
     status: z.enum([
@@ -943,8 +936,6 @@ export const CommitDecisionResponseSchema = z.object({
   outbounds: z.array(CommittedOutboundSchema.extend({
     part_index: z.number().int().min(0).max(2),
     part_count: z.number().int().min(1).max(3),
-    minimum_delay_before_ms: z.literal(20000).optional(),
-    not_before: z.string().datetime().optional(),
   })).max(3).default([]),
   // Presente exactamente cuando la decisión reservó una llamada. En replay
   // trae el mismo call_id de la primera reserva; el workflow despacha por

@@ -1,4 +1,3 @@
-import { deriveCourseBonusLadderV1 } from '@/shared/conversation/bonus-ladder';
 import { describe, expect, it, vi } from 'vitest';
 import {
   derivePromotionContextRepairPlanV1,
@@ -22,6 +21,12 @@ const promotion = {
   bonus_offerings: [{ code: 'ingles_2', display_name: 'Inglés 2', position: 1 }],
 };
 
+const activeCourses = [
+  { code: 'ingles_1', display_name: 'Inglés 1' }, { code: 'ingles_2', display_name: 'Inglés 2' },
+  { code: 'ingles_3', display_name: 'Inglés 3' }, { code: 'oratoria', display_name: 'Oratoria' },
+  { code: 'estrategias_emprender', display_name: 'Estrategias para Emprender' },
+];
+
 describe('direct capability', () => {
   it('projects disabled rollout with the configured direct limit without reading customer data', async () => {
     vi.stubEnv('CENTRAL_CARGA_BONUS_ENABLED','false');vi.stubEnv('CENTRAL_CARGA_BONUS_CANARY_CONTACT_IDS','');
@@ -34,23 +39,47 @@ describe('direct capability', () => {
   });
   it('does not authorize accepting or extending an expired direct offer', () => {
     expect(deriveDirectCourseBonusCapabilityV1({interest_offering_code:'ingles_1',max_bonus_courses:2,
-      prior_price_objection:true,package:{promotion_code:'p',promotion_cycle_id:'cycle',offer_version:1,status:'offered',
+      active_courses:activeCourses,package:{promotion_code:'p',promotion_cycle_id:'cycle',offer_version:1,status:'offered',
         expires_at:'2000-01-01T00:00:00.000Z',courses:promotion.bonus_offerings,delivered:true,later_reply:true}}))
       .toMatchObject({may_offer_bonus:false,may_accept_offer:false});
   });
-  it('requires a prior committed objection and exposes the ordered durable package', () => {
-    const input = { interest_offering_code: 'ingles_1', max_bonus_courses: 2 as const,
-      prior_price_objection: false, package: null };
-    expect(deriveDirectCourseBonusCapabilityV1(input)).toMatchObject({ enabled: true,
-      max_bonus_courses: 2, may_offer_bonus: false, may_request_review: false, offer_version: 0 });
-    expect(deriveDirectCourseBonusCapabilityV1({ ...input, prior_price_objection: true,ladder:deriveCourseBonusLadderV1({observed_price_objection_count:3,call_invitation_status:'offered',call_offer_count:1,may_offer_call:true}) }))
-      .toMatchObject({ may_offer_bonus: true });
-    expect(deriveDirectCourseBonusCapabilityV1({ ...input, prior_price_objection: true,
+  it('exposes the bonus set as structure; the price/retention evidence is validated per proposal', () => {
+    const input = { interest_offering_code: 'ingles_1', max_bonus_courses: 2 as const, package: null, active_courses: activeCourses };
+    const open = deriveDirectCourseBonusCapabilityV1(input);
+    expect(open).toMatchObject({ enabled: true, max_bonus_courses: 2, may_offer_bonus: true, may_request_review: false, offer_version: 0 });
+    // Affinity row + universal bridges, never the paid course; the model chooses.
+    expect(open.bonus_candidates?.map(course => course.code)).toEqual(['ingles_2', 'ingles_3', 'estrategias_emprender']);
+    expect(open.bonus_candidates?.map(course => course.code)).not.toContain('oratoria');
+    expect(deriveDirectCourseBonusCapabilityV1({ ...input, named_codes: ['oratoria'] }).bonus_candidates?.map(course => course.code))
+      .toContain('oratoria');
+    expect(deriveDirectCourseBonusCapabilityV1({ ...input, active_courses: [activeCourses[0]!] })).toMatchObject({ may_offer_bonus: false, bonus_candidates: [] });
+    expect(deriveDirectCourseBonusCapabilityV1({ ...input,
       package: { promotion_code: 'p', promotion_cycle_id: 'cycle', offer_version: 1,
         status: 'offered', courses: promotion.bonus_offerings, delivered: false, later_reply: false } }))
       .toMatchObject({ promotion_code: 'p', promotion_cycle_id: 'cycle', offer_version: 1,
         bonus_offerings: promotion.bonus_offerings, delivered_bonus_offerings: [],
         may_offer_bonus: false, may_accept_offer: false });
+  });
+  it('allows a next bonus only after the previous one was delivered and answered, never past the limit, and drops what is already in the package', () => {
+    const base = { interest_offering_code: 'ingles_1', max_bonus_courses: 2 as const, active_courses: activeCourses };
+    const offered = { promotion_code: 'p', promotion_cycle_id: 'cycle', offer_version: 1, status: 'offered' as const,
+      courses: promotion.bonus_offerings, delivered: true, later_reply: true };
+    const next = deriveDirectCourseBonusCapabilityV1({ ...base, package: offered });
+    expect(next.may_offer_bonus).toBe(true);
+    expect(next.bonus_candidates?.map(course => course.code)).not.toContain('ingles_2');
+    expect(deriveDirectCourseBonusCapabilityV1({ ...base, package: { ...offered, later_reply: false } }).may_offer_bonus).toBe(false);
+    expect(deriveDirectCourseBonusCapabilityV1({ ...base, max_bonus_courses: 2, package: { ...offered, offer_version: 2,
+      courses: [...promotion.bonus_offerings, { code: 'ingles_3', display_name: 'Inglés 3', position: 2 }] } }).may_offer_bonus).toBe(false);
+    expect(deriveDirectCourseBonusCapabilityV1({ ...base, package: { ...offered, status: 'accepted' as const } }).may_offer_bonus).toBe(false);
+  });
+  it('a literal swap of the single offered bonus is exposed as the only rule_bonus', () => {
+    const offered = { promotion_code: 'p', promotion_cycle_id: 'cycle', offer_version: 1, status: 'offered' as const,
+      courses: promotion.bonus_offerings, delivered: true, later_reply: true };
+    expect(deriveDirectCourseBonusCapabilityV1({ interest_offering_code: 'ingles_1', max_bonus_courses: 1, active_courses: activeCourses,
+      package: offered, customer_request: { kind: 'swap', replaced_offering_code: 'ingles_2', bonus_offering_code: 'oratoria' } }).rule_bonus)
+      .toMatchObject({ bonus_offering_code: 'oratoria', source: 'customer_request', replaces_offering_code: 'ingles_2' });
+    expect(deriveDirectCourseBonusCapabilityV1({ interest_offering_code: 'ingles_1', max_bonus_courses: 1, active_courses: activeCourses,
+      package: offered }).rule_bonus).toBeNull();
   });
 });
 
