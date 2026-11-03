@@ -3,6 +3,7 @@ import { draftConfirmsPriceOnlyBarrierV1, draftDeclinesPurchaseV1, draftRecordsP
 import { inspectCourseBonusClaimsV1 } from '@/shared/conversation/course-bonus-claim';
 import { validateCourseMentionsV1 } from '@/shared/conversation/course-mentions';
 import { messagesWithoutExactCallOfferV1 } from '@/shared/conversation/call-offer-format';
+import { fichaFactIdV1 } from '@/shared/catalog/gabi-fichas';
 import { courseBonusLadderRejectionSubjectsV1 } from '@/shared/conversation/bonus-ladder-rejection';
 import { supportsChatPreferenceV1 } from './channel-preference-evidence';
 import type { AgentAProposedActionV1, AgentATurnProposalV1 } from './agent-a-brain';
@@ -321,7 +322,11 @@ export function authorizeAgentTurnV2(input: {
       && fact.id === `payment-workspace:${fact.payment_plan}:label:v1`;
     const temporaryTestPaymentFact = fact?.id === TEMPORARY_TEST_PAYMENT_FACT_ID
       && proposal.proposed_action.type === 'send_test_payment_link';
-    if (fact && (navigationFact || browsingCourseDetail || selectedOfferingFact || workspacePlanFact || temporaryTestPaymentFact)) {
+    // Gabi's ficha of a course the backend itself lists as a bonus candidate
+    // (a reason to choose it; permission stays with the bonus validation).
+    const bonusCandidateFicha = fact !== undefined && fact.id === fichaFactIdV1(fact.offering_code ?? '')
+      && input.course_bonus?.bonus_candidates?.some(candidate => candidate.code === fact.offering_code) === true;
+    if (fact && (navigationFact || browsingCourseDetail || selectedOfferingFact || workspacePlanFact || temporaryTestPaymentFact || bonusCandidateFicha)) {
       authorizedFactIds.push(factId);
     }
     else reasons.push('FACT_NOT_AUTHORIZED');

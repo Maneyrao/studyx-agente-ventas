@@ -68,7 +68,7 @@ describe('release manifest for the agent loop', () => {
       botpress_artifact_sha: 'f'.repeat(64),
       prompt_sha256: '1'.repeat(64),
       // Authority prompt:123/236: v148 declares course roles without granting effects.
-      prompt_version: 'studyx-agent-a-brain-v159',
+      prompt_version: 'studyx-agent-a-brain-v160',
       provider: 'deepseek-direct',
       model: 'deepseek-v4-flash',
     });

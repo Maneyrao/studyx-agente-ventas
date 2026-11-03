@@ -529,9 +529,23 @@ export function buildAgentAContextV1(
     && currentTurnIsUnderspecifiedV1(claimed);
   const selectedCode = startsFreshInterestCycle ? null : state.selected_offering_code;
   const catalogFocusCode = currentCode ?? selectedCode;
-  const selectedOffering = catalogFocusCode
+  const baseSelectedOffering = catalogFocusCode
     ? selectedOfferingFacts(claimed, catalogFocusCode)
     : null;
+  // Gabi's ficha of the course in focus; the backend only sends the focus and
+  // the current bonus candidates, never the whole manual.
+  const focusFicha = claimed.catalog_fichas?.find((ficha) => ficha.role === 'focus'
+    && ficha.offering_code === catalogFocusCode);
+  const selectedOffering = baseSelectedOffering && focusFicha
+    ? { ...baseSelectedOffering, facts: [...baseSelectedOffering.facts,
+        { id: focusFicha.fact_id, kind: 'offering_syllabus' as const, value: focusFicha.value }] }
+    : baseSelectedOffering;
+  const bonusCandidateCodes = new Set(!startsFreshInterestCycle
+    ? claimed.course_bonus_capability?.bonus_candidates?.map((candidate) => candidate.code) ?? [] : []);
+  const bonusCandidateFichas = (claimed.catalog_fichas ?? [])
+    .filter((ficha) => ficha.role === 'bonus_candidate' && bonusCandidateCodes.has(ficha.offering_code))
+    .map((ficha) => ({ code: ficha.offering_code,
+      fact: { id: ficha.fact_id, kind: 'offering_syllabus' as const, value: ficha.value } }));
   const areas = new Map<string, string>();
   for (const offering of index) {
     const code = areaCode(offering.academy);
@@ -677,6 +691,42 @@ export function buildAgentAContextV1(
     payment_reported: effectivePaymentReported,
     call_offer_count: callOfferCount,
   });
+  // Persisted data only (decision memories, sales state, promotion tables). The
+  // vector top-5 below can drop the customer's goal; this block cannot.
+  const emptyProfile = { objective: [], experience: [], tentative_interest: [], objections: [],
+    constraints: [], preferences: [], timeline: [], contact_preference: [] };
+  const bonusCapability = startsFreshInterestCycle ? null : claimed.course_bonus_capability ?? null;
+  const salesProfile = {
+    ...(claimed.sales_profile ?? emptyProfile),
+    selected_course: selectedCode === null ? null : {
+      code: selectedCode,
+      name: index.find((offering) => offering.code === selectedCode)?.display_name ?? selectedCode,
+    },
+    // A declined call is a customer choosing chat.
+    call_preference: currentTurnChoosesChat || effectiveCallPreference === 'chat' || effectiveCallPreference === 'declined'
+      ? 'chat' as const : effectiveCallPreference === 'call' ? 'call' as const : 'unknown' as const,
+    active_promotion: bonusCapability?.promotion_code && bonusCapability.interest_offering_code
+      && bonusCapability.package_status
+      ? {
+          promotion_code: bonusCapability.promotion_code,
+          interest_offering_code: bonusCapability.interest_offering_code,
+          status: bonusCapability.package_status === 'accepted' || bonusCapability.package_status === 'attached'
+            ? 'accepted' as const : bonusCapability.package_status === 'expired' ? 'expired' as const
+              : bonusCapability.package_status === 'cancelled' ? 'cancelled' as const : 'offer_available' as const,
+        } : null,
+    bonus_courses: (bonusCapability?.bonus_offerings ?? []).filter((course) => course.offered_at)
+      .map((course) => ({ code: course.code, name: course.display_name, position: course.position })),
+    missing_data: intakeMissing,
+    next_allowed_effects: [
+      ...(mayOfferCall ? ['offer_call'] : []),
+      ...(mayRequestCallNow ? ['request_call_now'] : []),
+      ...(claimed.policy.may_respond && paymentOptions.length > 0 ? ['present_payment_options'] : []),
+      ...(hasReadableCurrentInput && maySendPaymentLink ? ['send_payment_link'] : []),
+      ...(bonusCapability?.may_offer_bonus ? ['offer_course_bonus'] : []),
+      ...(bonusCapability?.may_accept_offer ? ['accept_promotion'] : []),
+    ],
+    retention_used: bonusCapability?.sales_flow?.retention_used ?? bonusCapability?.ladder?.retention_used ?? null,
+  };
   return AgentAContextV1Schema.parse({
     schema_version: 1,
     turn: {
@@ -721,6 +771,7 @@ export function buildAgentAContextV1(
     },
     identity: agentAIdentityFromClaim(claimed, advisorName),
     commercial_state: {
+      sales_profile: salesProfile,
       negotiation: {
         price_objections: {
           count: claimed.negotiation_facts?.price_objection_count ?? null,
@@ -810,6 +861,7 @@ export function buildAgentAContextV1(
         fact_id: `area:${code}:name:v1`,
         display_name,
       })),
+      ...(bonusCandidateFichas.length ? { bonus_candidate_fichas: bonusCandidateFichas } : {}),
       // Con una venta enfocada las alternativas distraen, así que no viajan.
       // Pero si la persona dejó de apuntar a algo concreto y no hay paso
       // pendiente, una lista vacía es justamente lo que dejaba al modelo sin

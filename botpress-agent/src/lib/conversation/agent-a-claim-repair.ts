@@ -39,6 +39,7 @@ function authorizedValues(context: AgentAContextV1): string[] {
   return [
     ...(context.catalog.selected_offering?.facts ?? []).map((fact) => fact.value),
     ...context.catalog.candidate_offerings.flatMap((offering) => (offering.facts ?? []).map((fact) => fact.value)),
+    ...(context.catalog.bonus_candidate_fichas ?? []).map((candidate) => candidate.fact.value),
     ...context.catalog.payment_plans.map((plan) => plan.label),
     ...(context.catalog.test_payment_options ?? []).map((option) => option.label),
   ]

@@ -2599,3 +2599,58 @@ it('separates missing contact data by the purpose Agent A is pursuing', () => {
     identity: ['nombre', 'apellido', 'correo'],
   });
 });
+
+describe('Agent A structured commercial context (sales_profile and fichas)', () => {
+  const memory = (key: string, value: string, source_quote: string) => ({ key, value, source_quote });
+  const emptyProfile = { objective: [], experience: [], tentative_interest: [], objections: [],
+    constraints: [], preferences: [], timeline: [], contact_preference: [] };
+
+  it('keeps the persisted objective even though customer.memories only carries the vector top-5', () => {
+    const claimed = claimedTurn();
+    Object.assign(claimed, { sales_profile: { ...emptyProfile,
+      objective: [memory('work_goal', 'trabajar con marcas', 'quiero trabajar con marcas')],
+      objections: [memory('price_objection', 'precio', 'está caro')] } });
+    const context = buildAgentAContextV1(claimed)!;
+    expect(context.customer.memories.some((item) => item.value.includes('marcas'))).toBe(false);
+    expect(context.commercial_state.sales_profile).toMatchObject({
+      objective: [{ key: 'work_goal', value: 'trabajar con marcas', source_quote: 'quiero trabajar con marcas' }],
+      objections: [{ key: 'price_objection', source_quote: 'está caro' }],
+      selected_course: { code: 'redes-informaticas' },
+    });
+  });
+
+  it('projects chat preference, missing data and allowed effects from persisted state only', () => {
+    const claimed = claimedTurn();
+    claimed.conversation_state_v1 = { ...claimed.conversation_state_v1!, call_preference: 'declined' };
+    claimed.contact_intake_missing = ['correo'];
+    const profile = buildAgentAContextV1(claimed)!.commercial_state.sales_profile!;
+    expect(profile.call_preference).toBe('chat');
+    expect(profile.missing_data).toEqual(['correo']);
+    expect(profile.retention_used).toBeNull();
+    expect(profile.bonus_courses).toEqual([]);
+  });
+
+  it('works without a claim projection (older backend) and never invents memories', () => {
+    const profile = buildAgentAContextV1(claimedTurn())!.commercial_state.sales_profile!;
+    expect(profile).toMatchObject(emptyProfile);
+  });
+
+  it('sends only the focus ficha and the current bonus-candidate fichas to the model', () => {
+    const claimed = claimedTurn();
+    const ficha = (code: string, role: 'focus' | 'bonus_candidate') =>
+      ({ offering_code: code, fact_id: `offering:${code}:ficha:v1`, role, value: `Ficha de ${code}` });
+    Object.assign(claimed, {
+      catalog_fichas: [ficha('redes-informaticas', 'focus'), ficha('otro-curso', 'bonus_candidate'),
+        ficha('no-candidato', 'bonus_candidate')],
+      course_bonus_capability: { enabled: true, status: 'checkin_available', may_schedule_checkin: false,
+        may_request_review: false, may_accept_offer: false, may_send_promoted_payment: false,
+        promotion_code: null, interest_offering_code: 'redes-informaticas', bonus_offerings: [],
+        bonus_candidates: [{ code: 'otro-curso', display_name: 'Otro curso' }] },
+    });
+    const { catalog } = buildAgentAContextV1(claimed)!;
+    expect(catalog.selected_offering?.facts).toContainEqual({
+      id: 'offering:redes-informaticas:ficha:v1', kind: 'offering_syllabus', value: 'Ficha de redes-informaticas' });
+    expect(catalog.bonus_candidate_fichas).toEqual([{ code: 'otro-curso',
+      fact: { id: 'offering:otro-curso:ficha:v1', kind: 'offering_syllabus', value: 'Ficha de otro-curso' } }]);
+  });
+});

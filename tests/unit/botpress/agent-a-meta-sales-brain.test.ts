@@ -88,13 +88,15 @@ describe('Agent A Meta sales brain', () => {
   it('keeps the instruction surface compact and leaves the real catalog in context', () => {
     const current = context();
     const instructions = buildAgentABrainInstructionsV1(current);
-    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v159');
+    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v160');
     const staticInstructions = instructions.split('<authorized_context>')[0]!;
     // The approved v2 surface intentionally restores Lisandro's complete
     // discovery, value, closing, objection, negotiation and affinity system.
     // Keep that expanded contract bounded without compressing it back into the
-    // summary that caused the production regression.
-    expect(staticInstructions.trim().split(/\s+/u).length).toBeLessThan(5000);
+    // summary that caused the production regression. v104 adds Gabi's manual
+    // (value arguments, objections, closes, real testimonies) and drops the
+    // per-area affinity lists the ficha's "Combínalo con" now carries.
+    expect(staticInstructions.trim().split(/\s+/u).length).toBeLessThan(5500);
     expect(JSON.parse(instructions.split('<authorized_context>')[1]!.split('</authorized_context>')[0]!)).toEqual(current);
   });
 });

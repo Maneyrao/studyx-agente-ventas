@@ -1,0 +1,1804 @@
+{
+  "source": "docs/authority/material-gabi-2026-11-03/Manual_Capacitacion_Studyx_2026.txt",
+  "index": "docs/authority/material-gabi-2026-11-03/indice_para_el_agente.csv",
+  "generated_by": "scripts/generate-gabi-fichas-seed.mjs",
+  "note": "Authorized catalog facts. Projected only for ACTIVE offerings; never carries price, scholarship or amounts.",
+  "unmapped": [
+    "Introducción a la Pastelería y Repostería",
+    "Auxiliar de Farmacia",
+    "Auxiliar de Educación Especial",
+    "Curso de Electricista",
+    "Estudios Bíblicos para la Vida Diaria",
+    "Real Estate",
+    "Diseño de Vidrieras y Stand",
+    "Plomería",
+    "Home Maintenance",
+    "Word",
+    "Inglés IV",
+    "Ceremonial y Protocolo"
+  ],
+  "courses": [
+    {
+      "manual_name": "Introducción al Vino, la Cata y el Maridaje",
+      "academia": "Academia Gastronómica",
+      "clases": 19,
+      "clases_a_confirmar": false,
+      "evaluacion": "6 ejercicios y 1 examen final",
+      "descripcion": "Recorre la elaboración de vinos tintos, blancos, rosados y especiales (espumosos y dulces). El alumno aprende a reconocer origen, variedad, antigüedad y estilo de cada vino, y a lograr combinaciones exitosas entre comida y bebida.",
+      "lo_mas_importante": [
+        "Elaboración del vino en distintas regiones del mundo",
+        "Degustación: color, aroma y sabor",
+        "Tipos de vino y de uva",
+        "Maridajes según el vino elegido"
+      ],
+      "cliente_ideal": "Amantes del vino, personal de restaurantes y bares, organizadores de eventos y quienes ofrecen catering.",
+      "combinalo_con": [
+        "Catering",
+        "Sushi para Principiantes",
+        "Organizador Profesional de Eventos",
+        "Ceremonial y Protocolo"
+      ],
+      "nuevo": false,
+      "publicado_en_web": true,
+      "offering_code": "vino_cata_maridaje"
+    },
+    {
+      "manual_name": "Introducción al Catering",
+      "academia": "Academia Gastronómica",
+      "clases": 20,
+      "clases_a_confirmar": false,
+      "evaluacion": "1 examen final",
+      "descripcion": "Enseña a armar un servicio de catering para todo tipo de público: menús según el evento, organización del servicio, presupuestos y cálculo de bebidas para reuniones sociales.",
+      "lo_mas_importante": [
+        "Armado del propio emprendimiento de catering",
+        "Planificación del menú",
+        "Tipos de catering para ofrecer",
+        "Promoción del negocio",
+        "Ideas de maridaje",
+        "Cálculo de presupuestos"
+      ],
+      "cliente_ideal": "Quien cocina bien y quiere cobrar por ello; emprendedores gastronómicos; organizadores de eventos.",
+      "combinalo_con": [
+        "Pastelería/Repostería",
+        "Barista",
+        "Sushi",
+        "Organizador de Eventos",
+        "Baby Shower",
+        "Estrategias para Emprender"
+      ],
+      "nuevo": false,
+      "publicado_en_web": true,
+      "offering_code": "introduccion_catering"
+    },
+    {
+      "manual_name": "Sushi para Principiantes",
+      "academia": "Academia Gastronómica",
+      "clases": 10,
+      "clases_a_confirmar": false,
+      "evaluacion": "4 exámenes parciales y 1 examen final",
+      "descripcion": "Paso a paso de recetas únicas, con más de 120 piezas diferentes para convertirse en sushiman, además de otras comidas y postres japoneses.",
+      "lo_mas_importante": [
+        "Herramientas para elaborar sushi",
+        "El arroz correcto y su cocción",
+        "Técnicas de enrollado",
+        "Recetario de sushi, comidas y postres japoneses"
+      ],
+      "cliente_ideal": "Quien quiere vender sushi por pedido o delivery, trabajar en restaurantes o sumar un producto rentable a su catering.",
+      "combinalo_con": [
+        "Catering",
+        "Vino y Maridaje",
+        "Fotografía con Celulares (para vender por redes)",
+        "Instagram para Emprendedores"
+      ],
+      "nuevo": false,
+      "publicado_en_web": true,
+      "offering_code": "sushi_principiantes"
+    },
+    {
+      "manual_name": "Introducción a la Pastelería y Repostería",
+      "academia": "Academia Gastronómica",
+      "clases": 15,
+      "clases_a_confirmar": false,
+      "evaluacion": "Actividades prácticas, exámenes parciales y examen final",
+      "descripcion": "Entrega los procedimientos técnicos para ejercer el oficio de pastelero. La pastelería combina fórmulas precisas con creatividad y destreza manual para transformar ingredientes simples en postres de calidad profesional.",
+      "lo_mas_importante": [
+        "Técnicas base de pastelería y repostería",
+        "Masas, cremas y rellenos",
+        "Decoración y presentación",
+        "Producción para la venta"
+      ],
+      "cliente_ideal": "Quien hace tortas o postres en casa y quiere profesionalizarse o vender; ideal para emprender desde el hogar.",
+      "combinalo_con": [
+        "Barista (cafetería propia)",
+        "Catering",
+        "Baby Shower",
+        "Fotografía con Celulares",
+        "Instagram para Emprendedores"
+      ],
+      "nuevo": true,
+      "publicado_en_web": true,
+      "offering_code": null
+    },
+    {
+      "manual_name": "Barista",
+      "academia": "Academia Gastronómica",
+      "clases": 12,
+      "clases_a_confirmar": false,
+      "evaluacion": "Actividades prácticas, exámenes parciales y examen final",
+      "descripcion": "Recorre el café desde el cultivo hasta la taza: variables de extracción, métodos, leche, bebidas y herramientas. Prepara para trabajar en una cafetería o para preparar café de nivel profesional en casa.",
+      "lo_mas_importante": [
+        "Historia del café, café de especialidad y cultivo",
+        "Cosecha, cata, tostado, almacenamiento y empaque",
+        "Extracción y sus variables",
+        "Métodos slow coffee y otros métodos",
+        "Leche y bebidas a base de café",
+        "Herramientas del barista",
+        "Rol del barista: desempeño y atención al cliente"
+      ],
+      "cliente_ideal": "Quien quiere trabajar en cafeterías (rubro con mucha demanda en EE. UU.), abrir su propio café o un food truck.",
+      "combinalo_con": [
+        "Pastelería/Repostería",
+        "Catering",
+        "Estrategias para Emprender",
+        "Inglés I (atención al cliente)"
+      ],
+      "nuevo": true,
+      "publicado_en_web": true,
+      "offering_code": "barista"
+    },
+    {
+      "manual_name": "Entrenamiento Funcional",
+      "academia": "Academia de Salud y Bienestar",
+      "clases": 16,
+      "clases_a_confirmar": false,
+      "evaluacion": "8 exámenes parciales y 1 examen final",
+      "descripcion": "Diseñado para empezar desde cero, sin límite de edad. Incluye anatomía, fisiología, ejercitación, variantes, preparación de clases y rutinas: lo que un profesor necesita entender para poder explicarlo.",
+      "lo_mas_importante": [
+        "Módulo 1: beneficios, anatomía, articulaciones y huesos",
+        "Módulo 2: sistema muscular, frecuencia cardíaca, series, repeticiones y circuitos",
+        "Módulo 3: entrada en calor, coordinación y planificación de clases"
+      ],
+      "cliente_ideal": "Personas activas que quieren dar clases, trabajar en gimnasios o como entrenadores personales.",
+      "combinalo_con": [
+        "Nutrición y Alimentación Saludable",
+        "Masoterapia",
+        "Instagram para Emprendedores"
+      ],
+      "nuevo": false,
+      "publicado_en_web": true,
+      "offering_code": "entrenamiento_funcional"
+    },
+    {
+      "manual_name": "Nutrición y Alimentación Saludable",
+      "academia": "Academia de Salud y Bienestar",
+      "clases": 16,
+      "clases_a_confirmar": false,
+      "evaluacion": "4 exámenes parciales y 1 examen final",
+      "descripcion": "Brinda herramientas para entender qué es realmente una alimentación saludable: conceptos de nutrición en las distintas edades y formas de comer sano sin resignar sabor.",
+      "lo_mas_importante": [
+        "Conceptos básicos de nutrición por edades",
+        "Alimentación saludable y deliciosa",
+        "Ideas de platillos"
+      ],
+      "cliente_ideal": "Quien quiere mejorar su alimentación y la de su familia, entrenadores, cocineros y cuidadores.",
+      "combinalo_con": [
+        "Entrenamiento Funcional",
+        "Asistente y Cuidador de Adultos Mayores",
+        "Catering",
+        "Pastelería"
+      ],
+      "nuevo": false,
+      "publicado_en_web": true,
+      "offering_code": "nutricion_alimentacion"
+    },
+    {
+      "manual_name": "Masoterapia",
+      "academia": "Academia de Salud y Bienestar",
+      "clases": 24,
+      "clases_a_confirmar": false,
+      "evaluacion": "Actividades prácticas, exámenes parciales y examen final",
+      "descripcion": "Fundamentos y técnicas de masaje para relajar, aliviar tensiones musculares y revitalizar. No requiere conocimientos previos.",
+      "lo_mas_importante": [
+        "Conceptos e historia del masaje",
+        "Posicionamiento, higiene, profesional y espacio de trabajo",
+        "Aceites y cremas",
+        "Efectos del masaje en músculos, piel, sistema nervioso, circulatorio y linfático",
+        "Técnicas: presión, amasamiento, frotación, fricción y vibración",
+        "Tipos de masaje y masajes por zona (piernas, cuello, manos, cabeza, rostro y pies)"
+      ],
+      "cliente_ideal": "Interesados en salud, estética y relajación: profesores de educación física, entrenadores, acompañantes terapéuticos y público general.",
+      "combinalo_con": [
+        "Técnico/a en Estética Integral",
+        "Entrenamiento Funcional",
+        "Depilación Definitiva"
+      ],
+      "nuevo": true,
+      "publicado_en_web": true,
+      "offering_code": "masoterapia"
+    },
+    {
+      "manual_name": "Asistente y Cuidador de Adultos Mayores",
+      "academia": "Academia de Salud y Bienestar",
+      "clases": 14,
+      "clases_a_confirmar": false,
+      "evaluacion": "7 trabajos integradores y 1 trabajo práctico final",
+      "descripcion": "Prepara para trabajar en geriátricos o asistir a adultos mayores en su domicilio, abordando salud, higiene, medicación, movilización, ejercicio, estimulación cognitiva y alimentación.",
+      "lo_mas_importante": [
+        "Rol y responsabilidades del cuidador; derechos del adulto mayor",
+        "Cambios en la vejez; autonomía y dependencia",
+        "Comunicación con adultos mayores",
+        "Higiene diaria y administración de medicamentos",
+        "Caídas, insomnio, incontinencia y úlceras por presión",
+        "Mecánica corporal, silla de ruedas y autocuidado del cuidador",
+        "Signos vitales y cuidados paliativos",
+        "Demencias y Alzheimer",
+        "Nutrición e hidratación"
+      ],
+      "cliente_ideal": "Personas que ya cuidan a un familiar, que buscan trabajo rápido en el área de cuidado (alta demanda en EE. UU.) o que quieren ofrecer el servicio por su cuenta.",
+      "combinalo_con": [
+        "Auxiliar de Farmacia",
+        "Nutrición y Alimentación Saludable",
+        "Auxiliar de Educación Especial",
+        "Inglés I"
+      ],
+      "nuevo": true,
+      "publicado_en_web": true,
+      "offering_code": "cuidador_adultos_mayores"
+    },
+    {
+      "manual_name": "Auxiliar de Farmacia",
+      "academia": "Academia de Salud y Bienestar",
+      "clases": 12,
+      "clases_a_confirmar": false,
+      "evaluacion": "Actividades prácticas, exámenes parciales y examen final",
+      "descripcion": "Forma para desempeñarse como primer contacto con la comunidad en una farmacia, colaborando con farmacéuticos, médicos y pacientes para brindar un servicio seguro y eficiente.",
+      "lo_mas_importante": [
+        "Funcionamiento de la farmacia y rol del auxiliar",
+        "Atención al paciente",
+        "Medicamentos y formas farmacéuticas",
+        "Seguridad y buenas prácticas"
+      ],
+      "cliente_ideal": "Quien busca empleo en farmacias, droguerías o centros de salud; perfiles con vocación de servicio.",
+      "combinalo_con": [
+        "Asistente y Cuidador de Adultos Mayores",
+        "Inglés I y II",
+        "Excel Integral"
+      ],
+      "nuevo": true,
+      "publicado_en_web": true,
+      "offering_code": null
+    },
+    {
+      "manual_name": "Auxiliar de Educación Especial",
+      "academia": "Academia de Salud y Bienestar",
+      "clases": null,
+      "clases_a_confirmar": true,
+      "evaluacion": null,
+      "descripcion": "Prepara para acompañar a niños, jóvenes y adultos con discapacidad o necesidades educativas especiales, en la escuela, en terapias o en el hogar, trabajando junto a docentes, terapeutas y familias.",
+      "lo_mas_importante": [
+        "Rol del auxiliar y trabajo en equipo con docentes y familias",
+        "Necesidades educativas especiales y discapacidad",
+        "Estrategias de apoyo, inclusión y comunicación",
+        "Acompañamiento en rutinas y actividades"
+      ],
+      "cliente_ideal": "Padres y familiares de personas con discapacidad, asistentes escolares, niñeras y quienes buscan trabajar en educación o terapias.",
+      "combinalo_con": [
+        "Asistente y Cuidador de Adultos Mayores",
+        "Oratoria",
+        "Inglés I"
+      ],
+      "nuevo": true,
+      "publicado_en_web": false,
+      "offering_code": null
+    },
+    {
+      "manual_name": "Marketing Digital",
+      "academia": "Academia de Marketing",
+      "clases": 16,
+      "clases_a_confirmar": false,
+      "evaluacion": "1 examen final",
+      "descripcion": "Enseña a desarrollar estrategias exitosas para comunicar con eficacia y potenciar un negocio en el mundo digital: redes sociales, contenido, tácticas, métricas y herramientas web.",
+      "lo_mas_importante": [
+        "Marketing digital vs. marketing tradicional",
+        "Introducción a redes sociales",
+        "Estrategias",
+        "Medición de métricas",
+        "Planificación"
+      ],
+      "cliente_ideal": "Emprendedores y dueños de negocios que quieren vender online; quienes buscan trabajar en agencias.",
+      "combinalo_con": [
+        "Community Manager",
+        "Publicidad en Redes Sociales",
+        "Diseño gráfico con Photoshop",
+        "Introducción al E-commerce"
+      ],
+      "nuevo": false,
+      "publicado_en_web": true,
+      "offering_code": "marketing_digital"
+    },
+    {
+      "manual_name": "Community Manager",
+      "academia": "Academia de Marketing",
+      "clases": 16,
+      "clases_a_confirmar": false,
+      "evaluacion": "15 actividades y 1 examen final",
+      "descripcion": "Enseña a gestionar redes sociales de forma profesional: estrategias de social media, campañas digitales, manejo de crisis y medición de resultados.",
+      "lo_mas_importante": [
+        "Marketing de contenidos",
+        "Planificación y estrategia",
+        "Atención al cliente online",
+        "Campañas digitales",
+        "Cómo presupuestar el servicio"
+      ],
+      "cliente_ideal": "Quien quiere trabajar como freelancer manejando redes de comercios y marcas.",
+      "combinalo_con": [
+        "Marketing Digital",
+        "Publicidad en Redes",
+        "Photoshop",
+        "Influencers y Creadores de Contenidos"
+      ],
+      "nuevo": false,
+      "publicado_en_web": true,
+      "offering_code": "community_manager"
+    },
+    {
+      "manual_name": "Especialista en Marketing",
+      "academia": "Academia de Marketing",
+      "clases": 17,
+      "clases_a_confirmar": false,
+      "evaluacion": "7 ejercicios y 1 examen final",
+      "descripcion": "Permite analizar mercados, mejorar distribución y logística, crear campañas de publicidad y comunicación, posicionar una marca y entender las necesidades del cliente.",
+      "lo_mas_importante": [
+        "Conceptos generales de marketing",
+        "Planeación estratégica",
+        "Investigación de mercados",
+        "Ciclo de vida del producto",
+        "Publicidad, promoción y relaciones públicas"
+      ],
+      "cliente_ideal": "Emprendedores, vendedores y profesionales que quieren una base sólida de marketing.",
+      "combinalo_con": [
+        "Marketing Digital",
+        "Especialista en Ventas",
+        "Estrategias para Emprender"
+      ],
+      "nuevo": false,
+      "publicado_en_web": true,
+      "offering_code": "especialista_marketing"
+    },
+    {
+      "manual_name": "Introducción al E-commerce",
+      "academia": "Academia de Marketing",
+      "clases": 8,
+      "clases_a_confirmar": false,
+      "evaluacion": "3 exámenes parciales y 1 examen final",
+      "descripcion": "Herramientas para vender productos por internet, desde los fundamentos hasta un plan de acción con objetivos, con estrategias gratuitas y pagas para atraer público a la tienda online.",
+      "lo_mas_importante": [
+        "Ventajas del e-commerce",
+        "Creación del sitio web: presupuesto, estructura, aspectos legales, logística y diseño",
+        "Planeamiento estratégico y auditoría de la competencia",
+        "Atracción de clientes: contenidos y anuncios",
+        "Medición y optimización: KPI y análisis de datos"
+      ],
+      "cliente_ideal": "Quien vende o quiere vender productos y necesita su tienda online.",
+      "combinalo_con": [
+        "Fotografía con Celulares para Tiendas Online",
+        "Publicidad en Redes",
+        "Excel Integral"
+      ],
+      "nuevo": false,
+      "publicado_en_web": true,
+      "offering_code": "introduccion_ecommerce"
+    },
+    {
+      "manual_name": "Fotografía con Celulares para Tiendas Online",
+      "academia": "Academia de Marketing",
+      "clases": 20,
+      "clases_a_confirmar": false,
+      "evaluacion": "3 ejercicios, 1 examen parcial y 1 examen final",
+      "descripcion": "Enseña a aprovechar al máximo la cámara del celular: iluminación, exposición, edición y retoque de productos, videos promocionales y su aplicación en redes para impulsar el negocio.",
+      "lo_mas_importante": [
+        "Fotografía con celular: calidad, luz, sombras y fondos",
+        "Edición y retoque desde el celular",
+        "Video: tomas y cortes",
+        "Feed de Instagram",
+        "Armado de la tienda online"
+      ],
+      "cliente_ideal": "Cualquier emprendedor que vende por redes: comida, ropa, belleza, artesanías.",
+      "combinalo_con": [
+        "Es el complemento ideal de casi cualquier curso de emprendimiento: E-commerce",
+        "Pastelería",
+        "Uñas",
+        "Maquillaje",
+        "Sushi"
+      ],
+      "nuevo": false,
+      "publicado_en_web": true,
+      "offering_code": "fotografia_celulares_tiendas_online"
+    },
+    {
+      "manual_name": "Influencers y Creadores de Contenidos",
+      "academia": "Academia de Marketing",
+      "clases": 20,
+      "clases_a_confirmar": false,
+      "evaluacion": "9 exámenes parciales y 1 examen final",
+      "descripcion": "Enseña a crear una comunidad propia en redes sobre temas que apasionan, con contenido original, empatía e interacción con seguidores.",
+      "lo_mas_importante": [
+        "Redes sociales y marketing de contenidos para influencers",
+        "Creación de contenido",
+        "Instagram y YouTube: cómo monetizar",
+        "Hashtags y estadísticas"
+      ],
+      "cliente_ideal": "Quien quiere crecer en redes y monetizar su contenido.",
+      "combinalo_con": [
+        "Oratoria",
+        "Fotografía con Celulares",
+        "Publicidad en Redes",
+        "Photoshop"
+      ],
+      "nuevo": false,
+      "publicado_en_web": true,
+      "offering_code": "influencers_creadores_contenidos"
+    },
+    {
+      "manual_name": "Publicidad en Redes Sociales",
+      "academia": "Academia de Marketing",
+      "clases": 10,
+      "clases_a_confirmar": false,
+      "evaluacion": "5 exámenes parciales y 1 examen final",
+      "descripcion": "Enseña a hacer publicidad eficiente en Facebook e Instagram y a generar anuncios para públicos específicos en plataformas como X (Twitter) y LinkedIn.",
+      "lo_mas_importante": [
+        "Introducción a redes y marketing",
+        "Creación de contenidos",
+        "Estadísticas en cada red",
+        "Monetización e interacción con marcas e influencers"
+      ],
+      "cliente_ideal": "Emprendedores que ya venden y quieren escalar; community managers.",
+      "combinalo_con": [
+        "Marketing Digital",
+        "Community Manager",
+        "E-commerce"
+      ],
+      "nuevo": false,
+      "publicado_en_web": true,
+      "offering_code": "publicidad_redes_sociales"
+    },
+    {
+      "manual_name": "Maquillaje Profesional",
+      "academia": "Academia de Moda y Belleza",
+      "clases": 38,
+      "clases_a_confirmar": false,
+      "evaluacion": "20 exámenes parciales, 3 ejercicios y 1 examen final",
+      "descripcion": "Forma para trabajar como maquillador profesional: materiales, tipos de piel, formas de rostro, gustos del cliente y asesoramiento en cada trabajo, logrando maquillajes profesionales y duraderos.",
+      "lo_mas_importante": [
+        "Materiales de trabajo",
+        "Tipos de piel y formas de rostro",
+        "Asesoramiento al cliente",
+        "Técnicas de maquillaje profesional y duradero"
+      ],
+      "cliente_ideal": "Quien quiere trabajar en eventos, novias, quinceañeras, producciones o tener su propio estudio.",
+      "combinalo_con": [
+        "Uñas Gelificadas",
+        "Estética Integral",
+        "Fotografía con Celulares",
+        "Instagram para Emprendedores"
+      ],
+      "nuevo": false,
+      "publicado_en_web": true,
+      "offering_code": "maquillaje_profesional"
+    },
+    {
+      "manual_name": "Uñas Gelificadas",
+      "academia": "Academia de Moda y Belleza",
+      "clases": 25,
+      "clases_a_confirmar": false,
+      "evaluacion": "5 actividades, 9 exámenes parciales y 1 examen final",
+      "descripcion": "Construcción de uñas en gel en las manos: evaluación de cada caso según la forma de la uña y la anatomía de la mano, para lograr resultados naturales, y reconocimiento de patologías ungueales.",
+      "lo_mas_importante": [
+        "Anatomía de la mano y la uña",
+        "Construcción de uñas en gel",
+        "Evaluación de cada caso",
+        "Patologías de las uñas"
+      ],
+      "cliente_ideal": "Quien busca un ingreso rápido trabajando desde casa o a domicilio.",
+      "combinalo_con": [
+        "Maquillaje Profesional",
+        "Estética Integral",
+        "Instagram para Emprendedores",
+        "Fotografía con Celulares"
+      ],
+      "nuevo": false,
+      "publicado_en_web": true,
+      "offering_code": "unas_gelificadas"
+    },
+    {
+      "manual_name": "Técnico/a en Estética Integral",
+      "academia": "Academia de Moda y Belleza",
+      "clases": 20,
+      "clases_a_confirmar": false,
+      "evaluacion": "Actividades prácticas, exámenes parciales y examen final",
+      "descripcion": "Forma técnicos para realizar tratamientos de belleza y bienestar: cosmética, tratamientos faciales y corporales, aparatología, depilación y masajes.",
+      "lo_mas_importante": [
+        "La piel y la piel del rostro; anatomía de músculos faciales",
+        "Formas cosméticas y alteraciones faciales",
+        "Peeling, masaje facial, rosácea y tratamiento del acné",
+        "Alta frecuencia, electroporación y mesoterapia",
+        "Brossage y vacumterapia",
+        "Técnicas y tipos de masaje",
+        "Depilación y tratamientos capilares",
+        "Marketing personal y armado de CV del esteticista"
+      ],
+      "cliente_ideal": "Quien quiere trabajar en spas o centros de estética o abrir su propio gabinete.",
+      "combinalo_con": [
+        "Depilación Definitiva",
+        "Masoterapia",
+        "Maquillaje",
+        "Uñas Gelificadas"
+      ],
+      "nuevo": true,
+      "publicado_en_web": true,
+      "offering_code": "estetica_integral"
+    },
+    {
+      "manual_name": "Técnico/a en Depilación Definitiva",
+      "academia": "Academia de Moda y Belleza",
+      "clases": 7,
+      "clases_a_confirmar": false,
+      "evaluacion": "Actividades prácticas, exámenes parciales y examen final",
+      "descripcion": "Estructura y ciclos del pelo, tipos de piel y métodos de fotodepilación con láser y luz pulsada intensa (IPL): indicaciones, contraindicaciones, equipos y protocolo de atención.",
+      "lo_mas_importante": [
+        "Introducción y fotodepilación",
+        "Materiales para el protocolo",
+        "Luz pulsada intensa (IPL)",
+        "Fotodepilación láser",
+        "Consulta, primera sesión y consentimiento informado"
+      ],
+      "cliente_ideal": "Esteticistas que quieren sumar un servicio muy rentable; quien busca especializarse rápido (curso corto).",
+      "combinalo_con": [
+        "Estética Integral (combo natural)",
+        "Masoterapia",
+        "Instagram para Emprendedores"
+      ],
+      "nuevo": true,
+      "publicado_en_web": true,
+      "offering_code": "depilacion_definitiva"
+    },
+    {
+      "manual_name": "Instalación y Configuración de Cámaras de Seguridad",
+      "academia": "Academia de Oficios",
+      "clases": 12,
+      "clases_a_confirmar": false,
+      "evaluacion": "1 examen final",
+      "descripcion": "Conocimientos técnicos para instalar y configurar cámaras de seguridad en comercios, casas, depósitos o empresas, con visualización en TV, PC y celular, incluyendo terminología y herramientas del rubro.",
+      "lo_mas_importante": [
+        "Componentes de un sistema de videovigilancia",
+        "Instalación y cableado",
+        "Configuración y visualización remota",
+        "Herramientas del rubro"
+      ],
+      "cliente_ideal": "Técnicos, electricistas y quien quiere un oficio con demanda en hogares y comercios.",
+      "combinalo_con": [
+        "Redes Informáticas",
+        "Electricista",
+        "Energía Solar Fotovoltaica"
+      ],
+      "nuevo": false,
+      "publicado_en_web": true,
+      "offering_code": "camaras_seguridad"
+    },
+    {
+      "manual_name": "Instalación de Aires Acondicionados",
+      "academia": "Academia de Oficios",
+      "clases": 9,
+      "clases_a_confirmar": false,
+      "evaluacion": "1 examen final",
+      "descripcion": "Instruye para instalar y poner en marcha equipos de aire acondicionado: ubicación de unidades, cañerías, necesidades del usuario y terminación adecuada.",
+      "lo_mas_importante": [
+        "Tipos de equipos",
+        "Ubicación y montaje de unidades",
+        "Instalación de cañerías",
+        "Puesta en marcha y verificación"
+      ],
+      "cliente_ideal": "Quien busca un oficio técnico bien pago; handymen que quieren sumar servicios.",
+      "combinalo_con": [
+        "Electricista",
+        "Home Maintenance",
+        "Plomería",
+        "Energía Solar"
+      ],
+      "nuevo": false,
+      "publicado_en_web": true,
+      "offering_code": "aires_acondicionados"
+    },
+    {
+      "manual_name": "Energía Solar Fotovoltaica (Paneles Solares)",
+      "academia": "Academia de Oficios",
+      "clases": 8,
+      "clases_a_confirmar": false,
+      "evaluacion": "4 exámenes parciales y 1 examen final",
+      "descripcion": "Introduce en la transformación de luz solar en energía eléctrica y en el componente central de las instalaciones: los módulos fotovoltaicos.",
+      "lo_mas_importante": [
+        "Fundamentos de la energía solar fotovoltaica",
+        "Módulos fotovoltaicos",
+        "Componentes de una instalación"
+      ],
+      "cliente_ideal": "Técnicos y electricistas que quieren entrar en un mercado en crecimiento.",
+      "combinalo_con": [
+        "Electricista",
+        "Aires Acondicionados",
+        "Cámaras de Seguridad"
+      ],
+      "nuevo": false,
+      "publicado_en_web": true,
+      "offering_code": "energia_solar_fotovoltaica"
+    },
+    {
+      "manual_name": "Armado y Reparación de PC",
+      "academia": "Academia de Oficios",
+      "clases": 22,
+      "clases_a_confirmar": false,
+      "evaluacion": "10 exámenes parciales y 1 examen final",
+      "descripcion": "Mantenimiento de computadoras de escritorio desde cero con casos reales: cuándo reparar, cuándo reemplazar componentes y cómo asesorar al cliente.",
+      "lo_mas_importante": [
+        "Componentes de la PC",
+        "Diagnóstico de fallas",
+        "Reparación y reemplazo",
+        "Asesoramiento al cliente"
+      ],
+      "cliente_ideal": "Aficionados a la tecnología que quieren abrir un servicio técnico.",
+      "combinalo_con": [
+        "Reparación de Celulares",
+        "Redes Informáticas",
+        "Cámaras de Seguridad"
+      ],
+      "nuevo": false,
+      "publicado_en_web": true,
+      "offering_code": "armado_reparacion_pc"
+    },
+    {
+      "manual_name": "Reparación de Celulares",
+      "academia": "Academia de Oficios",
+      "clases": 20,
+      "clases_a_confirmar": false,
+      "evaluacion": "4 actividades, 5 exámenes parciales y 1 examen final",
+      "descripcion": "Desde la evolución de la telefonía hasta los smartphones actuales: herramientas de medición, cambio de módulos, reparación de pines e integrados, y conceptos de programación para reprogramar o proteger equipos de distintas marcas.",
+      "lo_mas_importante": [
+        "Herramientas de medición",
+        "Cambio de módulos",
+        "Reparación de pines e integrados",
+        "Programación y protección de equipos"
+      ],
+      "cliente_ideal": "Quien quiere un negocio propio de bajo costo inicial y mucha demanda.",
+      "combinalo_con": [
+        "Armado y Reparación de PC",
+        "Redes Informáticas",
+        "Estrategias para Emprender"
+      ],
+      "nuevo": false,
+      "publicado_en_web": true,
+      "offering_code": "reparacion_celulares"
+    },
+    {
+      "manual_name": "Redes Informáticas",
+      "academia": "Academia de Oficios",
+      "clases": 16,
+      "clases_a_confirmar": false,
+      "evaluacion": "8 exámenes parciales y 1 examen final",
+      "descripcion": "Funcionamiento de las redes, sus elementos y dispositivos, y las capas que permiten transmitir información.",
+      "lo_mas_importante": [
+        "Arquitectura de una red",
+        "Funcionalidad de los dispositivos de red",
+        "Capas de un modelo de red",
+        "Diferencias entre modelos de red"
+      ],
+      "cliente_ideal": "Técnicos en informática y quien instala cámaras o equipos conectados.",
+      "combinalo_con": [
+        "Cámaras de Seguridad",
+        "Armado y Reparación de PC"
+      ],
+      "nuevo": false,
+      "publicado_en_web": true,
+      "offering_code": "redes_informaticas"
+    },
+    {
+      "manual_name": "Curso de Electricista",
+      "academia": "Academia de Oficios",
+      "clases": 10,
+      "clases_a_confirmar": false,
+      "evaluacion": "Actividades prácticas, exámenes parciales y examen final",
+      "descripcion": "Principios de la electricidad e instalación, reparación y mantenimiento de sistemas eléctricos según el National Electrical Code (NEC) y las normas de seguridad OSHA. Para principiantes o quienes quieren perfeccionarse.",
+      "lo_mas_importante": [
+        "Fundamentos de electricidad",
+        "Instalación, reparación y mantenimiento",
+        "Normativa NEC",
+        "Seguridad OSHA"
+      ],
+      "cliente_ideal": "Quien quiere insertarse en el rubro eléctrico en EE. UU. o iniciar su propio negocio.",
+      "combinalo_con": [
+        "Plomería",
+        "Home Maintenance",
+        "Aires Acondicionados",
+        "Energía Solar"
+      ],
+      "nuevo": true,
+      "publicado_en_web": true,
+      "offering_code": null
+    },
+    {
+      "manual_name": "Estudios Bíblicos para la Vida Diaria",
+      "academia": "Academia de Oficios",
+      "clases": 8,
+      "clases_a_confirmar": false,
+      "evaluacion": "Actividades prácticas, exámenes parciales y examen final",
+      "descripcion": "Da a conocer los fundamentos de la fe cristiana de forma clara y práctica, y enseña a aplicar la Biblia en las decisiones y desafíos diarios: relaciones, trabajo, finanzas y propósito de vida.",
+      "lo_mas_importante": [
+        "Fundamentos de la fe cristiana",
+        "Aplicación de la Biblia en la vida cotidiana",
+        "Oración, crecimiento personal y comunidad",
+        "Identidad en Cristo e influencia positiva en el entorno"
+      ],
+      "cliente_ideal": "Personas de fe, líderes de grupos y ministerios, y quien busca crecimiento espiritual.",
+      "combinalo_con": [
+        "Oratoria (para quienes predican o lideran grupos)",
+        "Coaching y Liderazgo",
+        "Asistente y Cuidador de Adultos Mayores"
+      ],
+      "nuevo": true,
+      "publicado_en_web": true,
+      "offering_code": null
+    },
+    {
+      "manual_name": "Real Estate",
+      "academia": "Academia de Emprendedores",
+      "clases": 11,
+      "clases_a_confirmar": false,
+      "evaluacion": "Actividades prácticas, exámenes parciales y examen final",
+      "descripcion": "El negocio inmobiliario en EE. UU.: conceptos legales y financieros, marketing, administración de propiedades y marca personal. Combina teoría y práctica; no requiere experiencia previa.",
+      "lo_mas_importante": [
+        "Conceptos legales y financieros del mercado de EE. UU.",
+        "Marketing inmobiliario",
+        "Administración de propiedades",
+        "Marca personal del agente"
+      ],
+      "cliente_ideal": "Latinos que quieren trabajar, invertir o emprender en bienes raíces en EE. UU.",
+      "combinalo_con": [
+        "Especialista en Ventas",
+        "Oratoria",
+        "Inglés I a IV",
+        "Fotografía Profesional",
+        "Home Maintenance"
+      ],
+      "nuevo": true,
+      "publicado_en_web": true,
+      "offering_code": null
+    },
+    {
+      "manual_name": "Decoración de Interiores",
+      "academia": "Academia de Emprendedores",
+      "clases": 33,
+      "clases_a_confirmar": false,
+      "evaluacion": "12 ejercicios, 7 exámenes parciales y 1 examen final",
+      "descripcion": "Forma en el oficio de decorador de interiores: inicios, tendencias, estilos, herramientas, materiales y consejos prácticos.",
+      "lo_mas_importante": [
+        "Historia del diseño",
+        "El diseño de interiores y sus partes; el comitente",
+        "Estilos y tendencias",
+        "Materiales y herramientas",
+        "Plan de necesidades"
+      ],
+      "cliente_ideal": "Personas creativas que quieren ofrecer asesoramiento a hogares y comercios.",
+      "combinalo_con": [
+        "AutoCAD (orientado a interiores)",
+        "Diseño de Vidrieras y Stand",
+        "Paisajismo y Jardinería"
+      ],
+      "nuevo": false,
+      "publicado_en_web": true,
+      "offering_code": "decoracion_de_interiores"
+    },
+    {
+      "manual_name": "Fotografía Profesional",
+      "academia": "Academia de Emprendedores",
+      "clases": 41,
+      "clases_a_confirmar": false,
+      "evaluacion": "1 examen parcial y 1 examen final",
+      "descripcion": "El proceso fotográfico digital desde cero: control de los principales parámetros, manejo de cámara y edición.",
+      "lo_mas_importante": [
+        "Parámetros fotográficos",
+        "Manejo de cámara",
+        "Composición e iluminación",
+        "Edición"
+      ],
+      "cliente_ideal": "Quien quiere trabajar en eventos, retratos, productos o propiedades.",
+      "combinalo_con": [
+        "Diseño gráfico con Photoshop",
+        "Instagram para Emprendedores",
+        "Organizador de Eventos",
+        "Real Estate"
+      ],
+      "nuevo": false,
+      "publicado_en_web": true,
+      "offering_code": "fotografia_profesional"
+    },
+    {
+      "manual_name": "Organizador Profesional de Eventos Sociales",
+      "academia": "Academia de Emprendedores",
+      "clases": 20,
+      "clases_a_confirmar": false,
+      "evaluacion": "1 trabajo práctico, 5 exámenes parciales y 1 examen final",
+      "descripcion": "Conceptos y términos del rubro para armar y desarrollar una empresa de eventos. Además de formar como OPE, enseña a vender los servicios e incluye clases para potenciar el emprendimiento en redes.",
+      "lo_mas_importante": [
+        "Conceptos y términos del rubro",
+        "Armado de la empresa de eventos",
+        "Trabajo en equipo",
+        "Venta de servicios y redes sociales"
+      ],
+      "cliente_ideal": "Quien ya organiza fiestas para familiares y amigos y quiere cobrar por ello.",
+      "combinalo_con": [
+        "Organización de Baby Showers",
+        "Ceremonial y Protocolo",
+        "Catering",
+        "Vino y Maridaje"
+      ],
+      "nuevo": false,
+      "publicado_en_web": true,
+      "offering_code": "organizador_eventos_sociales"
+    },
+    {
+      "manual_name": "Organización de Baby Showers",
+      "academia": "Academia de Emprendedores",
+      "clases": 21,
+      "clases_a_confirmar": false,
+      "evaluacion": "1 trabajo práctico, exámenes parciales y examen final",
+      "descripcion": "Especialización en eventos de baby shower: un festejo de mucha emoción para la familia donde la sensibilidad del organizador es clave para celebrar la llegada de un nuevo miembro.",
+      "lo_mas_importante": [
+        "Planificación del evento",
+        "Temáticas y ambientación",
+        "Relación con la familia",
+        "Proveedores y presupuesto"
+      ],
+      "cliente_ideal": "Organizadores de eventos y decoradoras que quieren un nicho rentable y constante.",
+      "combinalo_con": [
+        "Organizador Profesional de Eventos",
+        "Pastelería/Repostería",
+        "Catering"
+      ],
+      "nuevo": false,
+      "publicado_en_web": true,
+      "offering_code": "organizacion_baby_shower"
+    },
+    {
+      "manual_name": "Estrategias para Emprender",
+      "academia": "Academia de Emprendedores",
+      "clases": 20,
+      "clases_a_confirmar": false,
+      "evaluacion": "6 exámenes parciales y 1 examen final",
+      "descripcion": "Claves fundamentales para emprender con éxito y estrategias efectivas para no fallar en el intento: inversión, tiempo, esfuerzo y planificación inteligente.",
+      "lo_mas_importante": [
+        "Idea y modelo de negocio",
+        "Planificación e inversión",
+        "Estrategias de crecimiento",
+        "Errores frecuentes"
+      ],
+      "cliente_ideal": "Cualquier alumno que quiera convertir su oficio en negocio propio.",
+      "combinalo_con": [
+        "Complemento universal: suma valor a cualquier curso de oficio",
+        "belleza o gastronomía"
+      ],
+      "nuevo": false,
+      "publicado_en_web": true,
+      "offering_code": "estrategias_emprender"
+    },
+    {
+      "manual_name": "Diseño de Vidrieras y Stand",
+      "academia": "Academia de Emprendedores",
+      "clases": null,
+      "clases_a_confirmar": true,
+      "evaluacion": null,
+      "descripcion": "Enseña a diseñar vidrieras y stands que atraen al cliente y venden: composición, color, iluminación, exhibición de productos y armado de stands para ferias y exposiciones.",
+      "lo_mas_importante": [
+        "Visual merchandising",
+        "Composición, color e iluminación",
+        "Exhibición de productos",
+        "Stands para ferias y exposiciones"
+      ],
+      "cliente_ideal": "Comerciantes, decoradores y emprendedores que participan en ferias.",
+      "combinalo_con": [
+        "Decoración de Interiores",
+        "AutoCAD",
+        "Organizador de Eventos"
+      ],
+      "nuevo": true,
+      "publicado_en_web": false,
+      "offering_code": null
+    },
+    {
+      "manual_name": "Instagram para Emprendedores",
+      "academia": "Academia de Emprendedores",
+      "clases": 10,
+      "clases_a_confirmar": false,
+      "evaluacion": "6 exámenes parciales y 1 examen final",
+      "descripcion": "Pensado para que los emprendedores desarrollen su negocio y ganen visibilidad en Instagram, incluyendo cómo aparecer ante usuarios cercanos con ubicación y etiquetas correctas.",
+      "lo_mas_importante": [
+        "Perfil profesional",
+        "Contenido para vender",
+        "Ubicación y etiquetas",
+        "Crecimiento de la cuenta"
+      ],
+      "cliente_ideal": "Cualquier emprendedor que vende por redes.",
+      "combinalo_con": [
+        "Complemento universal para belleza",
+        "gastronomía",
+        "eventos y servicios"
+      ],
+      "nuevo": false,
+      "publicado_en_web": true,
+      "offering_code": "instagram_emprendedores"
+    },
+    {
+      "manual_name": "Plomería",
+      "academia": "Academia de Emprendedores",
+      "clases": 10,
+      "clases_a_confirmar": false,
+      "evaluacion": "Actividades prácticas, exámenes parciales y examen final",
+      "descripcion": "Formación completa, práctica y actualizada en plomería, para principiantes y para quienes tienen experiencia básica y quieren profesionalizarse en el mantenimiento de viviendas y edificios.",
+      "lo_mas_importante": [
+        "Fundamentos de plomería",
+        "Instalaciones de agua y desagüe",
+        "Reparaciones frecuentes",
+        "Herramientas y seguridad"
+      ],
+      "cliente_ideal": "Handymen, trabajadores de la construcción y quien quiere un oficio con demanda constante.",
+      "combinalo_con": [
+        "Home Maintenance",
+        "Electricista",
+        "Aires Acondicionados"
+      ],
+      "nuevo": true,
+      "publicado_en_web": true,
+      "offering_code": null
+    },
+    {
+      "manual_name": "Home Maintenance",
+      "academia": "Academia de Emprendedores",
+      "clases": 8,
+      "clases_a_confirmar": false,
+      "evaluacion": "Actividades prácticas, exámenes parciales y examen final",
+      "descripcion": "Programa práctico adaptado a la vida en EE. UU. para cuidar y mantener una casa, desde lo más básico hasta técnicas que usan los profesionales a diario.",
+      "lo_mas_importante": [
+        "Mantenimiento preventivo del hogar",
+        "Reparaciones básicas",
+        "Herramientas y materiales",
+        "Técnicas profesionales"
+      ],
+      "cliente_ideal": "Propietarios, inquilinos y quien quiere ofrecer servicios de handyman.",
+      "combinalo_con": [
+        "Plomería",
+        "Electricista",
+        "Aires Acondicionados",
+        "Real Estate"
+      ],
+      "nuevo": true,
+      "publicado_en_web": true,
+      "offering_code": null
+    },
+    {
+      "manual_name": "Paisajismo y Jardinería",
+      "academia": "Academia de Emprendedores",
+      "clases": 23,
+      "clases_a_confirmar": false,
+      "evaluacion": "7 exámenes parciales y 1 examen final",
+      "descripcion": "Capacita para intervenir espacios exteriores privados y públicos (jardines, terrazas, balcones, parques y plazas), con conocimiento de especies vegetales, cuidados y estilos de diseño.",
+      "lo_mas_importante": [
+        "Análisis del espacio exterior",
+        "Componentes naturales y materiales",
+        "Especies vegetales y sus cuidados",
+        "Estilos de diseño"
+      ],
+      "cliente_ideal": "Jardineros (gran salida laboral en EE. UU.) y decoradores que quieren sumar exteriores.",
+      "combinalo_con": [
+        "Decoración de Interiores",
+        "Home Maintenance",
+        "Estrategias para Emprender"
+      ],
+      "nuevo": false,
+      "publicado_en_web": true,
+      "offering_code": "paisajismo_jardineria"
+    },
+    {
+      "manual_name": "Diseño Gráfico con CorelDRAW",
+      "academia": "Academia de Diseño Informático",
+      "clases": 16,
+      "clases_a_confirmar": false,
+      "evaluacion": "10 ejercicios, 1 trabajo práctico integrador y 1 examen final",
+      "descripcion": "Enseña la tarea del diseñador gráfico con profesionalismo: el diseño no es solo embellecer una pieza, sino comunicar con intención.",
+      "lo_mas_importante": [
+        "Rol del diseñador gráfico",
+        "Herramientas de CorelDRAW",
+        "Piezas gráficas profesionales"
+      ],
+      "cliente_ideal": "Quien trabaja en imprentas, cartelería o sublimación.",
+      "combinalo_con": [
+        "Photoshop",
+        "Illustrator",
+        "Instagram para Emprendedores"
+      ],
+      "nuevo": false,
+      "publicado_en_web": true,
+      "offering_code": "diseno_corel_draw"
+    },
+    {
+      "manual_name": "Diseño Gráfico con Photoshop",
+      "academia": "Academia de Diseño Informático",
+      "clases": 16,
+      "clases_a_confirmar": false,
+      "evaluacion": "8 ejercicios y 1 examen final",
+      "descripcion": "Edición y retoque de imágenes y creación de piezas gráficas con la herramienta estándar de la industria.",
+      "lo_mas_importante": [
+        "Interfaz y herramientas",
+        "Capas, selecciones y máscaras",
+        "Retoque fotográfico",
+        "Piezas para redes y publicidad"
+      ],
+      "cliente_ideal": "Community managers, fotógrafos y emprendedores que crean su propio contenido.",
+      "combinalo_con": [
+        "Illustrator",
+        "Fotografía Profesional",
+        "Community Manager",
+        "Marketing Digital"
+      ],
+      "nuevo": false,
+      "publicado_en_web": true,
+      "offering_code": "diseno_photoshop"
+    },
+    {
+      "manual_name": "Diseño Gráfico con Illustrator",
+      "academia": "Academia de Diseño Informático",
+      "clases": 17,
+      "clases_a_confirmar": false,
+      "evaluacion": "17 ejercicios, 6 exámenes parciales y 1 examen final",
+      "descripcion": "Diseño vectorial profesional: logotipos, ilustraciones e identidad de marca.",
+      "lo_mas_importante": [
+        "Diseño vectorial",
+        "Logotipos e identidad",
+        "Ilustración digital",
+        "Preparación de archivos para impresión y web"
+      ],
+      "cliente_ideal": "Quien quiere diseñar marcas y logos para clientes.",
+      "combinalo_con": [
+        "Photoshop",
+        "CorelDRAW",
+        "Marketing Digital"
+      ],
+      "nuevo": false,
+      "publicado_en_web": true,
+      "offering_code": "diseno_illustrator"
+    },
+    {
+      "manual_name": "AutoCAD (orientado al Diseño de Interiores)",
+      "academia": "Academia de Diseño Informático",
+      "clases": 11,
+      "clases_a_confirmar": false,
+      "evaluacion": "1 examen final",
+      "descripcion": "Conocimiento práctico y teórico para dominar el dibujo digital y realizar planos técnicos en dos dimensiones, orientado a decoración de interiores, diseño efímero y mobiliario.",
+      "lo_mas_importante": [
+        "Entorno de AutoCAD",
+        "Dibujo técnico 2D",
+        "Planos de interiores",
+        "Mobiliario y diseño efímero"
+      ],
+      "cliente_ideal": "Decoradores, diseñadores de mobiliario y estudiantes de interiorismo.",
+      "combinalo_con": [
+        "Decoración de Interiores",
+        "Diseño de Vidrieras y Stand"
+      ],
+      "nuevo": false,
+      "publicado_en_web": true,
+      "offering_code": "autocad_interiores"
+    },
+    {
+      "manual_name": "Excel Integral",
+      "academia": "Academia de Negocios",
+      "clases": 17,
+      "clases_a_confirmar": false,
+      "evaluacion": "1 examen parcial y 1 examen final",
+      "descripcion": "Herramientas elementales, tipos de fórmulas y funciones, gráficos y resúmenes de información, entre otras funciones del programa.",
+      "lo_mas_importante": [
+        "Fórmulas y funciones",
+        "Gráficos",
+        "Resúmenes de información",
+        "Organización de datos"
+      ],
+      "cliente_ideal": "Quien busca empleo administrativo o quiere ordenar los números de su negocio.",
+      "combinalo_con": [
+        "Word",
+        "Inglés",
+        "Comunicación Interna en Empresas",
+        "Introducción a las Criptomonedas"
+      ],
+      "nuevo": false,
+      "publicado_en_web": true,
+      "offering_code": "excel_integral"
+    },
+    {
+      "manual_name": "Especialista en Ventas",
+      "academia": "Academia de Negocios",
+      "clases": 16,
+      "clases_a_confirmar": false,
+      "evaluacion": "5 ejercicios, 1 trabajo práctico y 1 examen final",
+      "descripcion": "Aptitudes para optimizar recursos y potenciar ventas: técnicas de negociación, discurso asertivo, escucha activa y estrategias de fidelización.",
+      "lo_mas_importante": [
+        "Técnicas de negociación",
+        "Discurso asertivo",
+        "Escucha activa",
+        "Fidelización de clientes"
+      ],
+      "cliente_ideal": "Vendedores, emprendedores y agentes inmobiliarios.",
+      "combinalo_con": [
+        "Real Estate",
+        "Oratoria",
+        "Coaching y Liderazgo",
+        "Especialista en Marketing"
+      ],
+      "nuevo": false,
+      "publicado_en_web": true,
+      "offering_code": "especialista_ventas"
+    },
+    {
+      "manual_name": "Coaching y Liderazgo",
+      "academia": "Academia de Negocios",
+      "clases": 16,
+      "clases_a_confirmar": false,
+      "evaluacion": "4 trabajos prácticos y 1 examen final",
+      "descripcion": "Desarrolla actitudes y habilidades para enfrentar los desafíos del mercado laboral, en especial a nivel gerencial, con foco en las competencias conversacionales y las relaciones laborales efectivas.",
+      "lo_mas_importante": [
+        "Competencias conversacionales",
+        "Relaciones laborales efectivas",
+        "Productividad",
+        "Nueva visión del liderazgo"
+      ],
+      "cliente_ideal": "Supervisores, encargados, líderes de equipo y emprendedores con empleados.",
+      "combinalo_con": [
+        "Oratoria",
+        "Comunicación Interna en Empresas",
+        "Especialista en Ventas"
+      ],
+      "nuevo": false,
+      "publicado_en_web": true,
+      "offering_code": "coaching_liderazgo"
+    },
+    {
+      "manual_name": "Comunicación Interna en Empresas",
+      "academia": "Academia de Negocios",
+      "clases": 20,
+      "clases_a_confirmar": false,
+      "evaluacion": "6 exámenes parciales y 1 examen final",
+      "descripcion": "Estrategias para gestionar e integrar equipos, mejorar el vínculo entre empleados y aumentar su productividad y desempeño.",
+      "lo_mas_importante": [
+        "Gestión de equipos",
+        "Canales de comunicación interna",
+        "Clima laboral",
+        "Productividad"
+      ],
+      "cliente_ideal": "Recursos humanos, supervisores y dueños de negocios.",
+      "combinalo_con": [
+        "Coaching y Liderazgo",
+        "Oratoria",
+        "Excel",
+        "Word"
+      ],
+      "nuevo": false,
+      "publicado_en_web": true,
+      "offering_code": "comunicacion_interna_empresas"
+    },
+    {
+      "manual_name": "Introducción a las Criptomonedas",
+      "academia": "Academia de Negocios",
+      "clases": 21,
+      "clases_a_confirmar": false,
+      "evaluacion": "3 exámenes parciales y 1 examen final",
+      "descripcion": "Curso introductorio, sin conocimientos previos, sobre el mundo cripto: historia de la criptografía, principales monedas virtuales, Bitcoin en profundidad y su potencial para cambiar cómo usamos, ahorramos e invertimos el dinero.",
+      "lo_mas_importante": [
+        "Historia de la criptografía",
+        "Principales criptomonedas",
+        "Bitcoin en profundidad",
+        "Usos y potencial"
+      ],
+      "cliente_ideal": "Curiosos de las finanzas digitales y quienes reciben o envían dinero internacionalmente.",
+      "combinalo_con": [
+        "Excel Integral",
+        "Estrategias para Emprender"
+      ],
+      "nuevo": false,
+      "publicado_en_web": true,
+      "offering_code": "introduccion_criptomonedas"
+    },
+    {
+      "manual_name": "Word",
+      "academia": "Academia de Negocios",
+      "clases": null,
+      "clases_a_confirmar": true,
+      "evaluacion": null,
+      "descripcion": "Manejo profesional de Microsoft Word para crear documentos de trabajo: formato, estilos, tablas, imágenes, plantillas, cartas y currículums.",
+      "lo_mas_importante": [
+        "Formato de texto y párrafo",
+        "Estilos, tablas e imágenes",
+        "Plantillas, cartas y CV",
+        "Impresión y exportación a PDF"
+      ],
+      "cliente_ideal": "Quien busca empleo de oficina o necesita armar su currículum y documentos de negocio.",
+      "combinalo_con": [
+        "Excel Integral (pack oficina)",
+        "Inglés",
+        "Comunicación Interna"
+      ],
+      "nuevo": true,
+      "publicado_en_web": false,
+      "offering_code": null
+    },
+    {
+      "manual_name": "Oratoria",
+      "academia": "Academia Cultural",
+      "clases": 20,
+      "clases_a_confirmar": false,
+      "evaluacion": "2 ejercicios, 6 exámenes parciales y 1 examen final",
+      "descripcion": "Herramientas para comunicar con claridad y sin miedo: postura, dicción y pérdida del miedo a hablar en público, para desenvolverse en cualquier ámbito.",
+      "lo_mas_importante": [
+        "Postura y lenguaje corporal",
+        "Dicción y voz",
+        "Manejo del miedo escénico",
+        "Estructura del discurso"
+      ],
+      "cliente_ideal": "Vendedores, líderes, emprendedores, docentes y creadores de contenido.",
+      "combinalo_con": [
+        "Complemento universal; ideal con Especialista en Ventas",
+        "Coaching",
+        "Real Estate",
+        "Influencers"
+      ],
+      "nuevo": false,
+      "publicado_en_web": true,
+      "offering_code": "oratoria"
+    },
+    {
+      "manual_name": "Inglés I (Básico)",
+      "academia": "Academia Cultural",
+      "clases": 12,
+      "clases_a_confirmar": false,
+      "evaluacion": "4 exámenes parciales y 1 examen final",
+      "descripcion": "Acerca al estudiante al idioma de forma natural: conceptos básicos, estructuras de conversaciones y comunicaciones escritas y orales simples pero efectivas.",
+      "lo_mas_importante": [
+        "Conceptos básicos del idioma",
+        "Conversaciones simples",
+        "Comunicación escrita y oral",
+        "Práctica dentro y fuera del aula"
+      ],
+      "cliente_ideal": "Latinos en EE. UU. que necesitan desenvolverse en el día a día y en el trabajo.",
+      "combinalo_con": [
+        "Ruta de Inglés I a IV; complemento universal para cualquier oficio con atención al público"
+      ],
+      "nuevo": false,
+      "publicado_en_web": true,
+      "offering_code": "ingles_1"
+    },
+    {
+      "manual_name": "Inglés II (Intermedio)",
+      "academia": "Academia Cultural",
+      "clases": 12,
+      "clases_a_confirmar": false,
+      "evaluacion": "3 exámenes parciales y 1 examen final",
+      "descripcion": "Profundiza en los modos verbales y en cómo entablar una conversación, aplicando todo lo aprendido.",
+      "lo_mas_importante": [
+        "Modos y tiempos verbales",
+        "Cómo entablar una conversación",
+        "Práctica aplicada"
+      ],
+      "cliente_ideal": "Quien terminó Inglés I o ya tiene una base.",
+      "combinalo_con": [
+        "Inglés III y IV"
+      ],
+      "nuevo": false,
+      "publicado_en_web": true,
+      "offering_code": "ingles_2"
+    },
+    {
+      "manual_name": "Inglés III",
+      "academia": "Academia Cultural",
+      "clases": 21,
+      "clases_a_confirmar": false,
+      "evaluacion": "3 exámenes parciales y 1 examen final",
+      "descripcion": "Gramática y vocabulario para desenvolverse en contextos reales como el aeropuerto o una entrevista laboral, con apoyo visual, audios, videos y actividades.",
+      "lo_mas_importante": [
+        "Gramática y vocabulario",
+        "Situaciones reales: aeropuerto, entrevista laboral",
+        "Audios y videos",
+        "Uso del inglés en la vida real"
+      ],
+      "cliente_ideal": "Quien quiere usar el inglés con fluidez en trabajo y vida diaria.",
+      "combinalo_con": [
+        "Inglés IV",
+        "Oratoria"
+      ],
+      "nuevo": false,
+      "publicado_en_web": true,
+      "offering_code": "ingles_3"
+    },
+    {
+      "manual_name": "Inglés IV",
+      "academia": "Academia Cultural",
+      "clases": null,
+      "clases_a_confirmar": true,
+      "evaluacion": null,
+      "descripcion": "Cierre de la ruta de inglés: consolida gramática y vocabulario de nivel avanzado y lleva al alumno a comunicarse con mayor fluidez y seguridad en contextos laborales y sociales.",
+      "lo_mas_importante": [
+        "Gramática avanzada",
+        "Conversación fluida",
+        "Inglés para el trabajo",
+        "Comprensión de audios y lecturas"
+      ],
+      "cliente_ideal": "Quien completó Inglés III y quiere cerrar su formación.",
+      "combinalo_con": [
+        "Oratoria",
+        "Especialista en Ventas",
+        "Real Estate"
+      ],
+      "nuevo": true,
+      "publicado_en_web": false,
+      "offering_code": null
+    },
+    {
+      "manual_name": "Ceremonial y Protocolo",
+      "academia": "Academia Cultural",
+      "clases": null,
+      "clases_a_confirmar": true,
+      "evaluacion": null,
+      "descripcion": "Normas de ceremonial y protocolo para organizar eventos sociales, empresariales e institucionales con nivel profesional: precedencias, ubicación de invitados, etiqueta y comunicación.",
+      "lo_mas_importante": [
+        "Ceremonial social, empresarial e institucional",
+        "Precedencias y ubicación de invitados",
+        "Etiqueta y vestimenta",
+        "Organización de actos y eventos"
+      ],
+      "cliente_ideal": "Organizadores de eventos, asistentes ejecutivos y quienes trabajan en hotelería.",
+      "combinalo_con": [
+        "Organizador Profesional de Eventos",
+        "Oratoria",
+        "Vino y Maridaje"
+      ],
+      "nuevo": true,
+      "publicado_en_web": false,
+      "offering_code": null
+    }
+  ],
+  "routes": [
+    {
+      "name": "Mi propia cafetería",
+      "courses": [
+        {
+          "manual_name": "Barista",
+          "offering_code": "barista"
+        },
+        {
+          "manual_name": "Introducción a la Pastelería y Repostería",
+          "offering_code": null
+        },
+        {
+          "manual_name": "Estrategias para Emprender",
+          "offering_code": "estrategias_emprender"
+        }
+      ],
+      "para_quien": "Sueña con un café, food truck o venta de postres",
+      "argumento": "Café y pastelería se venden juntos: el mismo cliente compra los dos y duplica el ticket."
+    },
+    {
+      "name": "Gastronomía para eventos",
+      "courses": [
+        {
+          "manual_name": "Introducción al Catering",
+          "offering_code": "introduccion_catering"
+        },
+        {
+          "manual_name": "Sushi para Principiantes",
+          "offering_code": "sushi_principiantes"
+        },
+        {
+          "manual_name": "Introducción al Vino, la Cata y el Maridaje",
+          "offering_code": "vino_cata_maridaje"
+        }
+      ],
+      "para_quien": "Cocina para fiestas o quiere vender por pedido",
+      "argumento": "Ofrece un servicio completo: menú, opción gourmet y bebidas maridadas."
+    },
+    {
+      "name": "Organizador 360",
+      "courses": [
+        {
+          "manual_name": "Organizador Profesional de Eventos Sociales",
+          "offering_code": "organizador_eventos_sociales"
+        },
+        {
+          "manual_name": "Organización de Baby Showers",
+          "offering_code": "organizacion_baby_shower"
+        },
+        {
+          "manual_name": "Ceremonial y Protocolo",
+          "offering_code": null
+        },
+        {
+          "manual_name": "Introducción al Catering",
+          "offering_code": "introduccion_catering"
+        }
+      ],
+      "para_quien": "Organiza fiestas de amigos y familiares",
+      "argumento": "Cubre bodas, quinceañeras, baby showers y eventos corporativos: más tipos de clientes todo el año."
+    },
+    {
+      "name": "Centro de estética",
+      "courses": [
+        {
+          "manual_name": "Técnico/a en Estética Integral",
+          "offering_code": "estetica_integral"
+        },
+        {
+          "manual_name": "Técnico/a en Depilación Definitiva",
+          "offering_code": "depilacion_definitiva"
+        },
+        {
+          "manual_name": "Masoterapia",
+          "offering_code": "masoterapia"
+        }
+      ],
+      "para_quien": "Quiere trabajar en spa o abrir su gabinete",
+      "argumento": "Tres servicios en una misma cabina: el cliente vuelve por cada uno."
+    },
+    {
+      "name": "Beauty freelance",
+      "courses": [
+        {
+          "manual_name": "Maquillaje Profesional",
+          "offering_code": "maquillaje_profesional"
+        },
+        {
+          "manual_name": "Uñas Gelificadas",
+          "offering_code": "unas_gelificadas"
+        },
+        {
+          "manual_name": "Instagram para Emprendedores",
+          "offering_code": "instagram_emprendedores"
+        }
+      ],
+      "para_quien": "Quiere trabajar desde casa o a domicilio",
+      "argumento": "Novias y quinceañeras piden maquillaje y uñas juntos; Instagram trae los clientes."
+    },
+    {
+      "name": "Cuidado y salud",
+      "courses": [
+        {
+          "manual_name": "Asistente y Cuidador de Adultos Mayores",
+          "offering_code": "cuidador_adultos_mayores"
+        },
+        {
+          "manual_name": "Auxiliar de Farmacia",
+          "offering_code": null
+        },
+        {
+          "manual_name": "Nutrición y Alimentación Saludable",
+          "offering_code": "nutricion_alimentacion"
+        }
+      ],
+      "para_quien": "Busca empleo rápido en el área de cuidado",
+      "argumento": "Perfil más completo frente a agencias y familias: cuida, entiende la medicación y la alimentación."
+    },
+    {
+      "name": "Acompañamiento e inclusión",
+      "courses": [
+        {
+          "manual_name": "Auxiliar de Educación Especial",
+          "offering_code": null
+        },
+        {
+          "manual_name": "Asistente y Cuidador de Adultos Mayores",
+          "offering_code": "cuidador_adultos_mayores"
+        }
+      ],
+      "para_quien": "Familiares de personas con discapacidad o cuidadores",
+      "argumento": "Puede trabajar con niños, jóvenes y adultos mayores: duplica las oportunidades de empleo."
+    },
+    {
+      "name": "Fitness y bienestar",
+      "courses": [
+        {
+          "manual_name": "Entrenamiento Funcional",
+          "offering_code": "entrenamiento_funcional"
+        },
+        {
+          "manual_name": "Nutrición y Alimentación Saludable",
+          "offering_code": "nutricion_alimentacion"
+        },
+        {
+          "manual_name": "Masoterapia",
+          "offering_code": "masoterapia"
+        }
+      ],
+      "para_quien": "Activo, va al gimnasio, quiere dar clases",
+      "argumento": "Entrena, aconseja la alimentación y ofrece masajes de recuperación: un paquete premium para sus alumnos."
+    },
+    {
+      "name": "Handyman USA",
+      "courses": [
+        {
+          "manual_name": "Home Maintenance",
+          "offering_code": null
+        },
+        {
+          "manual_name": "Plomería",
+          "offering_code": null
+        },
+        {
+          "manual_name": "Curso de Electricista",
+          "offering_code": null
+        },
+        {
+          "manual_name": "Instalación de Aires Acondicionados",
+          "offering_code": "aires_acondicionados"
+        }
+      ],
+      "para_quien": "Trabaja en construcción o mantenimiento",
+      "argumento": "Un solo técnico que resuelve todo en la casa cobra más y consigue clientes fijos."
+    },
+    {
+      "name": "Instalador técnico",
+      "courses": [
+        {
+          "manual_name": "Instalación y Configuración de Cámaras de Seguridad",
+          "offering_code": "camaras_seguridad"
+        },
+        {
+          "manual_name": "Redes Informáticas",
+          "offering_code": "redes_informaticas"
+        },
+        {
+          "manual_name": "Energía Solar Fotovoltaica (Paneles Solares)",
+          "offering_code": "energia_solar_fotovoltaica"
+        }
+      ],
+      "para_quien": "Le gusta la tecnología y el trabajo de campo",
+      "argumento": "Instala, conecta y mantiene: mercados en crecimiento en hogares y comercios."
+    },
+    {
+      "name": "Servicio técnico propio",
+      "courses": [
+        {
+          "manual_name": "Reparación de Celulares",
+          "offering_code": "reparacion_celulares"
+        },
+        {
+          "manual_name": "Armado y Reparación de PC",
+          "offering_code": "armado_reparacion_pc"
+        },
+        {
+          "manual_name": "Redes Informáticas",
+          "offering_code": "redes_informaticas"
+        }
+      ],
+      "para_quien": "Aficionado a la tecnología",
+      "argumento": "Un local o servicio a domicilio que repara todo lo que el cliente usa a diario."
+    },
+    {
+      "name": "Marketing digital 360",
+      "courses": [
+        {
+          "manual_name": "Marketing Digital",
+          "offering_code": "marketing_digital"
+        },
+        {
+          "manual_name": "Community Manager",
+          "offering_code": "community_manager"
+        },
+        {
+          "manual_name": "Publicidad en Redes Sociales",
+          "offering_code": "publicidad_redes_sociales"
+        }
+      ],
+      "para_quien": "Quiere trabajar freelance o en agencia",
+      "argumento": "Planifica, gestiona y pauta: lo que piden los negocios a un solo profesional."
+    },
+    {
+      "name": "Creador de contenido",
+      "courses": [
+        {
+          "manual_name": "Influencers y Creadores de Contenidos",
+          "offering_code": "influencers_creadores_contenidos"
+        },
+        {
+          "manual_name": "Fotografía con Celulares para Tiendas Online",
+          "offering_code": "fotografia_celulares_tiendas_online"
+        },
+        {
+          "manual_name": "Oratoria",
+          "offering_code": "oratoria"
+        }
+      ],
+      "para_quien": "Activo en redes, quiere monetizar",
+      "argumento": "Contenido de calidad, buena imagen y seguridad frente a cámara."
+    },
+    {
+      "name": "Tienda online",
+      "courses": [
+        {
+          "manual_name": "Introducción al E-commerce",
+          "offering_code": "introduccion_ecommerce"
+        },
+        {
+          "manual_name": "Fotografía con Celulares para Tiendas Online",
+          "offering_code": "fotografia_celulares_tiendas_online"
+        },
+        {
+          "manual_name": "Publicidad en Redes Sociales",
+          "offering_code": "publicidad_redes_sociales"
+        }
+      ],
+      "para_quien": "Vende productos o quiere hacerlo",
+      "argumento": "Arma la tienda, la llena de buenas fotos y le trae tráfico."
+    },
+    {
+      "name": "Diseñador gráfico completo",
+      "courses": [
+        {
+          "manual_name": "Diseño Gráfico con Photoshop",
+          "offering_code": "diseno_photoshop"
+        },
+        {
+          "manual_name": "Diseño Gráfico con Illustrator",
+          "offering_code": "diseno_illustrator"
+        },
+        {
+          "manual_name": "Diseño Gráfico con CorelDRAW",
+          "offering_code": "diseno_corel_draw"
+        }
+      ],
+      "para_quien": "Creativo, quiere trabajar con clientes o en imprenta",
+      "argumento": "Domina las tres herramientas que pide el mercado."
+    },
+    {
+      "name": "Interiorismo y espacios",
+      "courses": [
+        {
+          "manual_name": "Decoración de Interiores",
+          "offering_code": "decoracion_de_interiores"
+        },
+        {
+          "manual_name": "AutoCAD (orientado al Diseño de Interiores)",
+          "offering_code": "autocad_interiores"
+        },
+        {
+          "manual_name": "Diseño de Vidrieras y Stand",
+          "offering_code": null
+        },
+        {
+          "manual_name": "Paisajismo y Jardinería",
+          "offering_code": "paisajismo_jardineria"
+        }
+      ],
+      "para_quien": "Creativo, le gusta transformar espacios",
+      "argumento": "Diseña, presenta planos profesionales y suma clientes comerciales."
+    },
+    {
+      "name": "Fotógrafo profesional",
+      "courses": [
+        {
+          "manual_name": "Fotografía Profesional",
+          "offering_code": "fotografia_profesional"
+        },
+        {
+          "manual_name": "Diseño Gráfico con Photoshop",
+          "offering_code": "diseno_photoshop"
+        },
+        {
+          "manual_name": "Instagram para Emprendedores",
+          "offering_code": "instagram_emprendedores"
+        }
+      ],
+      "para_quien": "Le gusta la fotografía",
+      "argumento": "Toma, edita y vende su trabajo."
+    },
+    {
+      "name": "Agente inmobiliario latino",
+      "courses": [
+        {
+          "manual_name": "Real Estate",
+          "offering_code": null
+        },
+        {
+          "manual_name": "Especialista en Ventas",
+          "offering_code": "especialista_ventas"
+        },
+        {
+          "manual_name": "Oratoria",
+          "offering_code": "oratoria"
+        }
+      ],
+      "para_quien": "Quiere entrar en bienes raíces en EE. UU.",
+      "argumento": "Conoce el negocio, sabe negociar y se presenta con seguridad ante clientes."
+    },
+    {
+      "name": "Empleo de oficina",
+      "courses": [
+        {
+          "manual_name": "Excel Integral",
+          "offering_code": "excel_integral"
+        },
+        {
+          "manual_name": "Word",
+          "offering_code": null
+        },
+        {
+          "manual_name": "Inglés I (Básico)",
+          "offering_code": "ingles_1"
+        }
+      ],
+      "para_quien": "Busca trabajo administrativo",
+      "argumento": "Las tres habilidades que más piden los avisos de empleo."
+    },
+    {
+      "name": "Ruta completa de inglés",
+      "courses": [
+        {
+          "manual_name": "Inglés I (Básico)",
+          "offering_code": "ingles_1"
+        },
+        {
+          "manual_name": "Inglés II (Intermedio)",
+          "offering_code": "ingles_2"
+        },
+        {
+          "manual_name": "Inglés III",
+          "offering_code": "ingles_3"
+        },
+        {
+          "manual_name": "Inglés IV",
+          "offering_code": null
+        }
+      ],
+      "para_quien": "Necesita el idioma para trabajar y vivir en EE. UU.",
+      "argumento": "Un camino claro de principiante a avanzado; el alumno ya sabe qué sigue."
+    },
+    {
+      "name": "Liderazgo y gestión",
+      "courses": [
+        {
+          "manual_name": "Coaching y Liderazgo",
+          "offering_code": "coaching_liderazgo"
+        },
+        {
+          "manual_name": "Comunicación Interna en Empresas",
+          "offering_code": "comunicacion_interna_empresas"
+        },
+        {
+          "manual_name": "Oratoria",
+          "offering_code": "oratoria"
+        }
+      ],
+      "para_quien": "Supervisor, encargado o dueño con empleados",
+      "argumento": "Lidera, comunica y motiva al equipo."
+    },
+    {
+      "name": "Fe y liderazgo",
+      "courses": [
+        {
+          "manual_name": "Estudios Bíblicos para la Vida Diaria",
+          "offering_code": null
+        },
+        {
+          "manual_name": "Oratoria",
+          "offering_code": "oratoria"
+        },
+        {
+          "manual_name": "Coaching y Liderazgo",
+          "offering_code": "coaching_liderazgo"
+        }
+      ],
+      "para_quien": "Líder de grupo, ministerio o comunidad",
+      "argumento": "Profundiza su fe y gana herramientas para guiar y hablar ante su comunidad."
+    }
+  ]
+}

@@ -33,6 +33,8 @@ import {
   type AgentLoopModeV3,
   type AgentLoopRolloutReaderV3,
 } from '../domain/agent-loop-rollout';
+import type { SalesProfileMemoriesV1 } from '@/shared/conversation/sales-profile';
+import { claimFichasV1, type ClaimFichaV1 } from '@/shared/catalog/gabi-fichas';
 import { isTrivial } from '@/lib/heuristics/triviality';
 import { isExplicitOptOut } from '@/lib/heuristics/opt-out';
 import type {
@@ -76,6 +78,7 @@ import type { CourseBonusCapabilityV1 } from '@/features/promotions/application/
 export interface ClaimBatchDependencies {
   readonly negotiationFacts?: (input: { source_turn_id: string; contact_id: string; conversation_id: string;
     selected_offering_code: string | null }) => Promise<RecordedNegotiationFactsV1 | null>;
+  readonly salesProfile?: (input: { source_turn_id: string; contact_id: string; conversation_id: string }) => Promise<SalesProfileMemoriesV1 | null>;
   readonly store: OrchestrationStore;
   readonly embedding: QueryEmbedder;
   readonly memory: MemoryRetriever;
@@ -223,6 +226,10 @@ export interface ClaimedTurn {
   readonly payment_verification: PaymentVerificationV1 | null;
   readonly course_bonus_capability?: CourseBonusCapabilityV1 | null;
   readonly negotiation_facts?: RecordedNegotiationFactsV1 | null;
+  /** Persisted commercial memories (latest per type/key), each with its source quote. */
+  readonly sales_profile?: SalesProfileMemoriesV1 | null;
+  /** Gabi's fichas: the course in focus and the current bonus candidates only. */
+  readonly catalog_fichas?: readonly ClaimFichaV1[];
   readonly contact: {
     readonly id: string;
     readonly status: 'prospecto' | 'cliente' | 'inactivo';
@@ -1138,7 +1145,7 @@ export async function claimBatch(
     });
     return null;
   }) ?? Promise.resolve(null);
-  const [callIntakeReadiness, paymentVerification, contactProfile, courseBonusCapability, negotiationFacts] = await Promise.all([
+  const [callIntakeReadiness, paymentVerification, contactProfile, courseBonusCapability, negotiationFacts, salesProfile] = await Promise.all([
     readCallIntakeReadiness(facts.contact.id, claim.conversation_id!),
     readPaymentVerification(facts.contact.id, {
       offering_code: conversationStateV1?.selected_offering_code ?? null,
@@ -1150,6 +1157,12 @@ export async function claimBatch(
       conversation_id: claim.conversation_id!, selected_offering_code: conversationStateV1?.selected_offering_code ?? null,
     }).catch((error) => {
       log('orchestration.claim.negotiation_facts_unavailable', { trace_id: input.trace_id,
+        error: error instanceof Error ? error.name : 'UNKNOWN' });
+      return null;
+    }) ?? null,
+    deps.salesProfile?.({ source_turn_id: facts.representative_turn_id, contact_id: facts.contact.id,
+      conversation_id: claim.conversation_id! }).catch((error) => {
+      log('orchestration.claim.sales_profile_unavailable', { trace_id: input.trace_id,
         error: error instanceof Error ? error.name : 'UNKNOWN' });
       return null;
     }) ?? null,
@@ -1212,6 +1225,13 @@ export async function claimBatch(
     payment_verification: paymentVerification,
     course_bonus_capability: courseBonusCapability,
     negotiation_facts: negotiationFacts,
+    sales_profile: salesProfile,
+    catalog_fichas: claimFichasV1({
+      focusCode: catalog_resolution.kind === 'exact'
+        ? catalog_resolution.offeringCode : conversationStateV1?.selected_offering_code ?? null,
+      bonusCandidateCodes: courseBonusCapability?.bonus_candidates?.map((candidate) => candidate.code) ?? [],
+      activeCodes: new Set((resolvedCatalogIndex?.offerings ?? []).map((offering) => offering.code)),
+    }),
     contact: {
       id: facts.contact.id,
       status: facts.contact.status,

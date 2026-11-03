@@ -5,6 +5,7 @@ import type {
   CanonicalFactV1,
 } from './conversation-pipeline';
 import { canonicalReferenceKey } from './conversation-planner';
+import { fichaFactIdV1, fichaFactValueV1 } from '@/shared/catalog/gabi-fichas';
 
 export interface CanonicalFactRegistryV1 {
   readonly facts: ReadonlyMap<string, CanonicalFactV1>;
@@ -84,6 +85,17 @@ export function buildCanonicalFactRegistry(input: {
         source: 'business_snapshot', value: offering.modality, offering_code: offering.code,
       });
     }
+  }
+  // Gabi's ficha, only for offerings the catalog lists (active). The model
+  // receives just the focus and bonus-candidate fichas; this registry lets the
+  // backend authorize a citation of any of them.
+  const activeCodes = new Set((input.catalog_index?.offerings ?? input.business_context?.offerings ?? [])
+    .map((offering) => offering.code));
+  for (const code of activeCodes) {
+    const value = fichaFactValueV1(code, { activeCodes });
+    if (value === null) continue;
+    facts.set(fichaFactIdV1(code), { id: fichaFactIdV1(code), kind: 'offering_syllabus',
+      source: 'business_snapshot', value, offering_code: code });
   }
   // Public informational scope; no course selection and never a payment URL.
   for (const option of input.business_context?.workspace.payment_options ?? []) {

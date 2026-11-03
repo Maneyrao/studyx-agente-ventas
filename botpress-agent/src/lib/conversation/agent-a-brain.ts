@@ -1035,6 +1035,7 @@ function authorizedFactIds(context: AgentAContextV1): Set<string> {
     ids.add(offering.fact_id);
     for (const fact of offering.facts ?? []) ids.add(fact.id);
   }
+  for (const candidate of context.catalog.bonus_candidate_fichas ?? []) ids.add(candidate.fact.id);
   for (const plan of context.catalog.payment_plans) ids.add(plan.fact_id);
   for (const option of context.catalog.test_payment_options ?? []) ids.add(option.fact_id);
   return ids;
@@ -1118,6 +1119,7 @@ function commercialValuesByFactId(context: AgentAContextV1): ReadonlyMap<string,
     values.set(offering.fact_id, offering.display_name);
     for (const fact of offering.facts ?? []) values.set(fact.id, fact.value);
   }
+  for (const candidate of context.catalog.bonus_candidate_fichas ?? []) values.set(candidate.fact.id, candidate.fact.value);
   for (const plan of context.catalog.payment_plans) values.set(plan.fact_id, plan.label);
   for (const option of context.catalog.test_payment_options ?? []) {
     values.set(option.fact_id, option.label);

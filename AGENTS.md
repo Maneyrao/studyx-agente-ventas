@@ -185,3 +185,6 @@ Manual, 57 fichas e `indice_para_el_agente.csv`. Es conocimiento para el modelo,
 
 ### Razonamiento del turno
 - La propuesta lleva un campo interno (`turn_reasoning`) que no se envía al cliente: fase, qué quiere o duda ahora, qué ya se dijo y no hay que repetir, objetivo del cliente y próximo paso (descubrir / valor / objeción / cierre / promo / llamada). Se guarda en la evidencia del turno. Sin validadores sobre ese campo.
+
+### Contexto comercial persistido (Bloque 3, 2026-11-03)
+- `commercial_state.sales_profile` (memorias de decisiones previas con su cita, curso, canal, promoción, bonificados, datos faltantes, efectos permitidos, retención) y las fichas de Gabi del curso en foco y de los candidatos a bonificar (`supabase/seed/data/fichas-gabi-2026-11-03.json`, generadas con `scripts/generate-gabi-fichas-seed.mjs`). Prompt canónico v104. Brain v160.

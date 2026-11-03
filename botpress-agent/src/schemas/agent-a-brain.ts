@@ -80,6 +80,37 @@ export const RecordedNegotiationFactsV1Schema = z.object({
   latest_legacy_price_objection_source_message_ids: z.array(z.string().uuid()).max(20).optional(),
   price_only_barrier: RecordedPriceOnlyBarrierV1Schema,
 }).strict();
+const SalesProfileItemV1Schema = z.object({
+  key: z.string().regex(/^[a-z][a-z0-9_]{0,63}$/u),
+  value: z.string().trim().min(1).max(512),
+  source_quote: z.string().trim().min(1).max(400),
+}).strict();
+const SalesProfileItemsSchema = z.array(SalesProfileItemV1Schema).max(4);
+/** Claim-level: persisted model memories, latest per (type, key). */
+export const SalesProfileMemoriesV1Schema = z.object({
+  objective: SalesProfileItemsSchema, experience: SalesProfileItemsSchema,
+  tentative_interest: SalesProfileItemsSchema, objections: SalesProfileItemsSchema,
+  constraints: SalesProfileItemsSchema, preferences: SalesProfileItemsSchema,
+  timeline: SalesProfileItemsSchema, contact_preference: SalesProfileItemsSchema,
+}).strict();
+export const ClaimFichaV1Schema = z.object({
+  offering_code: IdentifierSchema, fact_id: IdentifierSchema,
+  role: z.enum(['focus', 'bonus_candidate']), value: z.string().trim().min(1).max(1_200),
+}).strict();
+/** What the model sees in commercial_state: persisted data only, never agent phrases. */
+const SalesProfileV1Schema = SalesProfileMemoriesV1Schema.extend({
+  selected_course: z.object({ code: IdentifierSchema, name: z.string().trim().min(1).max(240) }).strict().nullable(),
+  call_preference: z.enum(['chat', 'call', 'unknown']),
+  active_promotion: z.object({
+    promotion_code: IdentifierSchema, interest_offering_code: IdentifierSchema,
+    status: z.enum(['none', 'offer_available', 'accepted', 'expired', 'cancelled']),
+  }).strict().nullable(),
+  bonus_courses: z.array(z.object({ code: IdentifierSchema, name: z.string().trim().min(1).max(240),
+    position: z.union([z.literal(1), z.literal(2), z.literal(3)]) }).strict()).max(3),
+  missing_data: z.array(z.enum(['nombre', 'apellido', 'correo', 'telefono'])).max(4),
+  next_allowed_effects: z.array(z.string().min(1).max(64)).max(16),
+  retention_used: z.boolean().nullable(),
+}).strict();
 const AgentANegotiationContextV1Schema = z.object({
   price_objections: z.object({ count: z.number().int().min(0).nullable(),
     scope: z.literal('conversation_prior_recorded_sources'),
@@ -172,6 +203,7 @@ export const AgentAContextV1Schema = z.object({
     instagram: z.string().trim().min(1).max(120).nullable(),
   }).strict().nullable(),
   commercial_state: z.object({
+    sales_profile: SalesProfileV1Schema.optional(),
     negotiation: AgentANegotiationContextV1Schema.optional(),
     promotion: z.object({
       promotion_code: IdentifierSchema,
@@ -260,6 +292,11 @@ export const AgentAContextV1Schema = z.object({
       fact_id: IdentifierSchema,
       display_name: z.string().trim().min(1).max(240),
     }).strict()).max(24),
+    // Gabi's ficha of each current bonus candidate: reasons to choose, not permission.
+    bonus_candidate_fichas: z.array(z.object({
+      code: IdentifierSchema,
+      fact: AgentAFactSchema,
+    }).strict()).max(8).optional(),
     candidate_offerings: z.array(z.object({
       code: IdentifierSchema,
       fact_id: IdentifierSchema,

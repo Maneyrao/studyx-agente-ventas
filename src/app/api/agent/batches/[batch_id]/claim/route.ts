@@ -198,6 +198,12 @@ export async function POST(
           ]);
           return readNegotiationFactsV1({ workspace_slug: workspaceSlug, ...input }, { db: sql });
         },
+        salesProfile: async (input) => {
+          const [{ readSalesProfileMemoriesV1 }, { sql }] = await Promise.all([
+            import('@/features/conversation/application/read-sales-profile'), import('@/lib/db/orchestrator'),
+          ]);
+          return readSalesProfileMemoriesV1({ workspace_slug: workspaceSlug, ...input }, { db: sql });
+        },
         agentLoopRollout,
       }
     )
