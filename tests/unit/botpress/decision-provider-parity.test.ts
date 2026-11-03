@@ -918,6 +918,15 @@ describe('applyDecisionPolicy — provider parity', () => {
         expect(fallback.response).not.toMatch(/USD/u);
       });
 
+    it('a price question whose drafts were all rejected still gets the canonical price (golden 21)', () => {
+      const decision = validationExhaustedNotice('technical_fallback', { claimed: claimedTurn({
+        allowed_response_types: ['commercial_reply', 'technical_fallback'],
+        batch_message_content: 'ingles quiero saber el precio', offering_names: ['Inglés 1'], payment_options: plans,
+      }), failure_codes: ['FACT_VALUE_MISMATCH'] });
+      expect(decision.response).toMatch(/^El valor es USD 360 y lo puedes pagar en 12 cuotas de USD 30/u);
+      expect(decision.reason_code).toBe('AGENT_A_VALIDATION_EXHAUSTED');
+    });
+
     it('uses the natural clarification only for an unclassifiable message', () => {
       const fallback = modelUnavailableFallback(claimedTurn({
         batch_message_content: 'mmm', offering_names: ['Inglés 1'], payment_options: plans,

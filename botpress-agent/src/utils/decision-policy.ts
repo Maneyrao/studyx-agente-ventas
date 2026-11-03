@@ -159,7 +159,7 @@ export function validationExhaustedNotice(
     kind: 'reply',
     response: comparisonIsAmbiguous
       ? 'Qué dos cursos comparamos?'
-      : 'Perdón, no te entendí bien, a qué te refieres?',
+      : (recovery ? groundedPriceReplyV1(recovery.claimed) : null) ?? 'Perdón, no te entendí bien, a qué te refieres?',
     response_type: responseType === 'technical_fallback' ? 'commercial_reply' : responseType,
     business_action: null,
     memory_candidates: [],
@@ -309,25 +309,13 @@ export function modelUnavailableFallback(
       : /\b(?:como estas|todo bien|como va)\b/u.test(latest)
         ? `Bien, gracias! 😊 Qué te gustaría aprender o consultar?`
         : null
-  // Owner P0 (2026-11-03): a price or payment question is answered with the
-  // canonical price and plans, never with a clarification. Only backend values.
-  const priceQuestion = /\b(?:cuanto\s+(?:sale|cuesta|vale|es)|precio|costo|valor|pago|pagar|cuotas?|forma\s+de\s+pago)\b/u
-    .test(currentBatch)
-  // A payment report, inability to pay or a post-checkout state is not a price
-  // question: no sales pitch there (architect review 2026-11-03).
-  const paymentReport = /\b(?:ya\s+(?:pague|abone|transferi|hice\s+el\s+pago|realice\s+el\s+pago)|hice\s+el\s+pago|pague|no\s+puedo\s+pagar|comprobante|me\s+cobr\w*|reembolso|devolucion)\b/u
-    .test(currentBatch)
-  const stage = claimed.conversation_state_v1?.stage
-  const postCheckout = stage === 'payment_link_sent' || stage === 'handoff' || stage === 'closed'
-  const priceAnswer = priceQuestion && !paymentReport && !postCheckout ? canonicalPriceLineV1(claimed) : null
-  if (priceAnswer) {
+  const priceReply = groundedPriceReplyV1(claimed)
+  if (priceReply) {
     return {
       schema_version: 4,
       intent: 'commercial',
       kind: 'reply',
-      response: course
-        ? `${course}: ${priceAnswer} Con cuál plan te gustaría avanzar?`
-        : `${priceAnswer} Qué curso te interesa? Así te cuento todo sobre ese.`,
+      response: priceReply,
       response_type: 'commercial_reply',
       business_action: null,
       memory_candidates: [],
@@ -372,6 +360,27 @@ export function modelUnavailableFallback(
     confidence: 1,
     retrieval_used: null,
   }
+}
+
+/** Owner P0 (2026-11-03): a price or payment question is answered with the
+ * canonical price and plans, never with a clarification. Only backend values;
+ * never for a payment report or after checkout (architect review). */
+export function groundedPriceReplyV1(claimed: ClaimedTurn): string | null {
+  const currentBatch = normalizeCatalogGuidanceText(
+    claimed.context.batch_messages.map((message) => message.content).join(' '),
+  )
+  const priceQuestion = /\b(?:cuanto\s+(?:sale|cuesta|vale|es)|precio|costo|valor|pago|pagar|cuotas?|forma\s+de\s+pago)\b/u
+    .test(currentBatch)
+  const paymentReport = /\b(?:ya\s+(?:pague|abone|transferi|hice\s+el\s+pago|realice\s+el\s+pago)|hice\s+el\s+pago|pague|no\s+puedo\s+pagar|comprobante|me\s+cobr\w*|reembolso|devolucion)\b/u
+    .test(currentBatch)
+  const stage = claimed.conversation_state_v1?.stage
+  const postCheckout = stage === 'payment_link_sent' || stage === 'handoff' || stage === 'closed'
+  const priceAnswer = priceQuestion && !paymentReport && !postCheckout ? canonicalPriceLineV1(claimed) : null
+  if (!priceAnswer) return null
+  const course = claimed.sales_context.course_of_interest?.trim()
+  return course
+    ? `${course}: ${priceAnswer} Con cuál plan te gustaría avanzar?`
+    : `${priceAnswer} Qué curso te interesa? Así te cuento todo sobre ese.`
 }
 
 /** "El valor es USD 360 y lo puedes pagar en ..." from the backend snapshot only. */

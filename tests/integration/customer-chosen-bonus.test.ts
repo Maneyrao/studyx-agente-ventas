@@ -85,6 +85,21 @@ run('customer-chosen bonus', () => {
     ]);
   });
 
+  it('swaps with no persisted selection or interest: the live package identifies the paid course (golden 24)', async () => {
+    const { f, offer } = await offeredWithIngles2();
+    await db!`UPDATE conversation_sales_context_states_v1 SET selected_offering_code=NULL WHERE conversation_id=${f.conversation_id}::uuid`;
+    await db!`DELETE FROM conversation_promotion_context_v1 WHERE conversation_id=${f.conversation_id}::uuid`;
+    await customerSays(f, 'osea no puedo cambiar ingles 2 por armado y reparacion de pc?');
+    const capability = await readCourseBonusCapabilityV1({ workspace_slug: 'studyx', contact_id: f.contact_id,
+      conversation_id: f.conversation_id, channel: 'text', selected_offering_code: null, source_turn_id: f.second_turn_id }, { db: db! });
+    expect(capability).toMatchObject({ interest_offering_code: paid,
+      rule_bonus: { bonus_offering_code: 'armado_reparacion_pc', replaces_offering_code: 'ingles_2' } });
+    expect(await offerDirectCourseBonusV1(db!, { workspace_id: f.workspace_id, contact_id: f.contact_id,
+      conversation_id: f.conversation_id, paid_offering_code: paid, source_turn_id: f.second_turn_id,
+      expected_offer_version: 1, promotion_code: offer.promotion_code, promotion_cycle_id: offer.promotion_cycle_id,
+      bonus_offering_codes: ['armado_reparacion_pc'], outbound: outbound(randomUUID()) })).toMatchObject({ ok: true, offer_version: 1 });
+  });
+
   it('adds the course the customer asked for as the next gift, without a new price objection', async () => {
     const { f, offer } = await offeredWithIngles2();
     await customerSays(f, 'y si yo tengo el curso de ingles 1 y armado y reparacion de pc, me bonificas uno de los dos?');

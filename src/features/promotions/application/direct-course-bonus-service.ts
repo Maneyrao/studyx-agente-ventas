@@ -174,7 +174,15 @@ async function lockIdentity(tx: DbClient, input: Identity) {
     ` : [];
   // Effective identity only; never persist a purchase selection. Same-turn
   // interest can identify a course, but cannot establish a prior objection.
-  return {...context,selected_offering_code:context.selected_offering_code ?? packageIdentity?.paid_code ?? (source ? interest.interest_offering_code : null),
+  // Same fallback as the capability (owner 2026-11-03): the live direct package's paid course.
+  const resolved=context.selected_offering_code ?? packageIdentity?.paid_code ?? (source ? interest.interest_offering_code : null);
+  const [livePackage]=resolved ? [] : await tx<Array<{paid_code:string}>>`
+    SELECT paid.code AS paid_code FROM promotion_offers o
+    JOIN offerings paid ON paid.id=o.paid_offering_id AND paid.workspace_id=o.workspace_id
+    WHERE o.workspace_id=${input.workspace_id}::uuid AND o.conversation_id=${input.conversation_id}::uuid
+      AND o.contact_id=${input.contact_id}::uuid AND o.package_mode='direct' AND o.status='offered'
+    ORDER BY o.created_at DESC LIMIT 1 FOR UPDATE OF o`;
+  return {...context,selected_offering_code:resolved ?? livePackage?.paid_code ?? null,
     structured_objection_authorized:source?.prior===true && interest.interest_offering_code===input.paid_offering_code
       && interest.price_objection_count>0};
 }
