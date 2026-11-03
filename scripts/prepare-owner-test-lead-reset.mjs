@@ -7,7 +7,7 @@ import { parseEnv } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import postgres from '../node_modules/postgres/src/index.js';
 import { Client } from '../botpress-agent/node_modules/@botpress/client/dist/index.cjs';
-import { OWNER_RESET_SCOPE as scope, classifyOwnerReset, resetFingerprint, ownerResetBarrier, assertFreshLeadBarrier, ownerResetRoutingTags, validateResetDbReceipt, inspectNativeInboundReadiness, inspectActiveOwnerWorkflows } from './lib/owner-test-lead-reset.mjs';
+import { OWNER_RESET_SCOPE as scope, canonicalOwnerPhone, classifyOwnerReset, resetFingerprint, ownerResetBarrier, assertFreshLeadBarrier, ownerResetRoutingTags, validateResetDbReceipt, inspectNativeInboundReadiness, inspectActiveOwnerWorkflows } from './lib/owner-test-lead-reset.mjs';
 const root = fileURLToPath(new URL('..', import.meta.url));
 const stateDir = process.argv[3];
 const command = process.argv[2];
@@ -56,6 +56,11 @@ async function readSnapshot(tx, lock = false) {
   const [others] = await tx`SELECT count(*)::int AS count, md5(COALESCE(string_agg(md5(row_to_json(c)::text), '' ORDER BY id),'')) AS digest
     FROM contacts c WHERE id<>${scope.contactId}::uuid`;
   return { contact: contacts[0], memberships: sorted(memberships), related, indirect, otherContacts: others };
+}
+const missingBotpressOk = process.env.STUDYX_RESET_BOTPRESS_MISSING_OK === '1';
+async function readBotpressOrMissing() {
+  try { return await readBotpress(); }
+  catch (error) { if (missingBotpressOk && isMissing(error)) return null; throw error; }
 }
 async function readBotpress() {
   const { conversation } = await client.getConversation({ id: scope.botpressConversationId });
@@ -168,13 +173,14 @@ async function safeNewConversationProof(conversationId, participantId, routingDi
   ensure(number && classifyPhone(number),'RESET_NEW_PARTICIPANT_PHONE_MISMATCH');
   return {id:conversationId,participantId,messageCount:0,activeWorkflows:0};
 }
-const classifyPhone = value => ['5491169004497','541169004497'].includes(String(value??'').replace(/\D/gu,''));
+// Same identity rule as the library (scope phone, with or without the Argentine 9).
+const classifyPhone = value => canonicalOwnerPhone(value) === scope.phone;
 async function awaitNativeInbound(receipt) {
   const resetId=receipt.resetId;
   ensure(await getPhase(db,resetId,'bp_deleted'),'RESET_OLD_DELETE_CHECKPOINT_REQUIRED');
   const backup=JSON.parse(fs.readFileSync(path.join(stateDir,'backup.private.json'),'utf8'));
-  const routingTags=ownerResetRoutingTags(backup.botpress.conversation);
-  ensure(resetFingerprint(routingTags)===receipt.routingDigest,'RESET_PRIVATE_ROUTE_PROOF_CHANGED');
+  const routingTags=backup.botpress ? ownerResetRoutingTags(backup.botpress.conversation) : null;
+  ensure(routingTags===null ? receipt.routingDigest===null : resetFingerprint(routingTags)===receipt.routingDigest,'RESET_PRIVATE_ROUTE_PROOF_CHANGED');
   await inspectNativeInboundReadiness(client,receipt,routingTags);
   const result=await db.begin(async tx=>{
     await tx`SELECT pg_advisory_xact_lock(hashtext('studyx:owner-test-reset:1169004497'))`;
@@ -199,6 +205,12 @@ async function finishBotpress(resetId) {
   const nativeReady=await getPhase(db,resetId,'ready_for_first_inbound');
   if(nativeReady)return {...nativeReady,resumed:true};
   if(process.argv.includes('--await-native-inbound'))return awaitNativeInbound(receipt);
+  if(receipt.participantId==null){
+    // DB-only reset: nothing to delete in Botpress; prove it is still missing, then await-native unblocks.
+    try { await client.getConversation({id:scope.botpressConversationId}); throw new Error('RESET_OLD_CONVERSATION_STILL_EXISTS'); }
+    catch(error) { if(!isMissing(error))throw error; }
+    return appendPhase(db,resetId,'bp_deleted',{newContactId:receipt.newContactId,oldBotpressConversationId:scope.botpressConversationId,botpressConversationMissing:true});
+  }
   await db.begin(async tx=>{await tx`SELECT pg_advisory_xact_lock(hashtext('studyx:owner-test-reset:1169004497'))`; await verifyBarrier(tx,receipt);});
   const backup=JSON.parse(fs.readFileSync(path.join(stateDir,'backup.private.json'),'utf8'));
   const routingTags=ownerResetRoutingTags(backup.botpress.conversation);
@@ -285,7 +297,7 @@ try {
       newBotpressConversationId:proof.id??null,routingValidation:nativeReady?'pending_first_real_inbound':'validated_empty_conversation',cleanCounts:counts};save('verification.json',outcome);
   } else {
     if(command==='discover') {
-      const botpress=await readBotpress();
+      const botpress=await readBotpressOrMissing();
       const before=await readSnapshot(db),plan=classifyOwnerReset(before,botpress),resetId=randomUUID();
       const last=before.related.messages.map(row=>Date.parse(row.created_at)).sort((a,b)=>a-b).at(-1);
       ensure(!last || Date.now()-last>60_000,'RESET_RECENT_USER_ACTIVITY');
@@ -308,11 +320,11 @@ try {
             if(already){outcome=validateResetDbReceipt(already,resetId);return;}
             const before=await readSnapshot(tx,true);
             ensure(resetFingerprint(before)===prep.fingerprint,'RESET_TARGET_CHANGED_SINCE_PREPARATION');
-            const freshBotpress=await readBotpress(),plan=classifyOwnerReset(before,freshBotpress);
+            const freshBotpress=await readBotpressOrMissing(),plan=classifyOwnerReset(before,freshBotpress);
             const swap=await swapInsideTransaction(tx,before,plan,resetId);
             const data={...swap,oldBotpressConversationId:scope.botpressConversationId,participantId:plan.participantId,
               financialDigest:resetFingerprint(financial(before)),continuityDigest:resetFingerprint(continuity(before)),
-              snapshotDigest:prep.fingerprint,routingDigest:resetFingerprint(ownerResetRoutingTags(freshBotpress.conversation)),
+              snapshotDigest:prep.fingerprint,routingDigest:freshBotpress ? resetFingerprint(ownerResetRoutingTags(freshBotpress.conversation)) : null,
               observedAt:new Date().toISOString()};
             const audit=await appendPhase(tx,resetId,'db_committed',data);
             ensure((await getPhase(tx,resetId,'db_committed'))?.newContactId===swap.newContactId,'RESET_ATOMIC_RECEIPT_MISSING');

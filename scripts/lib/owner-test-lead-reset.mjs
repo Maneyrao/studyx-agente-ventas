@@ -1,13 +1,20 @@
 import { createHash } from 'node:crypto';
 
+import { readFileSync as readScopeFile } from 'node:fs';
+// Owner 2026-11-03 ("resetea todos los números"): one test contact per run,
+// scope read from STUDYX_RESET_SCOPE_FILE (phone/contact/conversation ids) when set.
+const scopeOverride = process.env.STUDYX_RESET_SCOPE_FILE
+  ? JSON.parse(readScopeFile(process.env.STUDYX_RESET_SCOPE_FILE, 'utf8')) : {};
 export const OWNER_RESET_SCOPE = Object.freeze({
-  phone: '+5491169004497', contactId: '59a93e00-0c24-4ce0-adbf-5567068cedaa',
+  phone: '+5491169004497', contactId: '8ada1bf9-e3a0-401f-b395-14cd247d50e7',
   workspaceId: 'b0000000-0000-4000-8000-000000000001',
-  conversationId: 'c7079a9f-4201-47d2-9876-0166943ebe87',
-  botpressConversationId: 'conv_01M6F3E2FJFZJZ9JZXYF2ZZ4SW',
+  conversationId: 'b3b2b54e-f406-4d49-bb45-5cef2e4aae52',
+  botpressConversationId: 'conv_01M6F5KAVBCN19E9GS7Z4DGXE9',
   botId: '0d7c9ecb-4781-4c65-913d-f7e947fa14d4',
   botpressWorkspaceId: 'wkspace_01M4XEBZNC10HX2KDHKY36T6R0',
   botPhoneNumberId: '1300545066485709', profile: 'studyx-detmaneyro', databaseRef: 'eqspozrpzgzvtpowwprg',
+  ...Object.fromEntries(['phone', 'contactId', 'conversationId', 'botpressConversationId']
+    .filter(key => typeof scopeOverride[key] === 'string').map(key => [key, scopeOverride[key]])),
 });
 export const stable = value => Array.isArray(value) ? value.map(stable)
   : value && typeof value === 'object' && !(value instanceof Date)
@@ -15,7 +22,10 @@ export const stable = value => Array.isArray(value) ? value.map(stable)
 export const resetFingerprint = value => createHash('sha256').update(JSON.stringify(stable(value))).digest('hex');
 export function canonicalOwnerPhone(value) {
   const digits = String(value ?? '').replace(/\D/gu, '');
-  return ['5491169004497', '541169004497'].includes(digits) ? OWNER_RESET_SCOPE.phone : null;
+  // Argentine mobile numbers appear with and without the 9 after 54.
+  const scoped = OWNER_RESET_SCOPE.phone.replace(/\D/gu, '');
+  const variants = new Set([scoped, scoped.startsWith('549') ? `54${scoped.slice(3)}` : scoped.startsWith('54') ? `549${scoped.slice(2)}` : scoped]);
+  return variants.has(digits) ? OWNER_RESET_SCOPE.phone : null;
 }
 const ensure = (ok, code) => { if (!ok) throw new Error(code); };
 const uuid = value => /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/u.test(value ?? '');
@@ -26,19 +36,24 @@ export function classifyOwnerReset(snapshot, botpress) {
   const s = OWNER_RESET_SCOPE;
   ensure(contact?.id === s.contactId && contact.phone === s.phone && !contact.deleted_at, 'RESET_CONTACT_SCOPE_MISMATCH');
   ensure(memberships.length === 1 && memberships[0].workspace_id === s.workspaceId, 'RESET_MULTIPLE_OR_WRONG_MEMBERSHIPS');
-  ensure(related.conversations.length === 1 && related.conversations[0].id === s.conversationId, 'RESET_CONVERSATION_SCOPE_MISMATCH');
-  ensure(related.channel_threads.length === 1 && related.channel_threads[0].external_conversation_id === s.botpressConversationId
-    && related.channel_threads[0].provider === 'botpress' && related.channel_threads[0].integration_id === 'whatsapp'
-    && related.channel_threads[0].channel === 'whatsapp', 'RESET_THREAD_SCOPE_MISMATCH');
-  ensure(botpress.conversation.id === s.botpressConversationId && botpress.conversation.integration === 'whatsapp' && botpress.conversation.channel === 'channel', 'RESET_BOTPRESS_SCOPE_MISMATCH');
-  ensure(!botpress.participants.nextToken && !botpress.workflows.nextToken, 'RESET_PAGINATION_INCOMPLETE');
-  const participants = botpress.participants.participants.filter(person => canonicalOwnerPhone(person.tags?.['whatsapp:number']) === s.phone);
-  ensure(participants.length === 1 && botpress.participants.participants.length === 1, 'RESET_END_USER_IDENTITY_MISMATCH');
-  ensure(botpress.workflows.workflows.length === 0, 'RESET_ACTIVE_BOTPRESS_WORKFLOW');
+  // Owner 2026-11-03: a tester may have several conversations; all are archived with the contact.
+  ensure(related.conversations.length >= 1 && related.conversations.some(row => row.id === s.conversationId), 'RESET_CONVERSATION_SCOPE_MISMATCH');
+  ensure(related.channel_threads.length >= 1 && related.channel_threads.every(row => row.provider === 'botpress'
+    && row.integration_id === 'whatsapp' && row.channel === 'whatsapp')
+    && related.channel_threads.some(row => row.external_conversation_id === s.botpressConversationId), 'RESET_THREAD_SCOPE_MISMATCH');
+  let participants = [{ id: null }];
+  // botpress === null: the Botpress conversation no longer exists (DB-only reset).
+  if (botpress !== null) {
+    ensure(botpress.conversation.id === s.botpressConversationId && botpress.conversation.integration === 'whatsapp' && botpress.conversation.channel === 'channel', 'RESET_BOTPRESS_SCOPE_MISMATCH');
+    ensure(!botpress.participants.nextToken && !botpress.workflows.nextToken, 'RESET_PAGINATION_INCOMPLETE');
+    participants = botpress.participants.participants.filter(person => canonicalOwnerPhone(person.tags?.['whatsapp:number']) === s.phone);
+    ensure(participants.length === 1 && botpress.participants.participants.length === 1, 'RESET_END_USER_IDENTITY_MISMATCH');
+    ensure(botpress.workflows.workflows.length === 0, 'RESET_ACTIVE_BOTPRESS_WORKFLOW');
+  }
   ensure(related.inbound_batches.every(row => ['completed', 'abandoned'].includes(row.state)), 'RESET_ACTIVE_BATCH');
   ensure(related.outbound_deliveries.every(row => ['submitted', 'delivered', 'cancelled', 'dead_letter'].includes(row.state)
     && !row.lease_until && (['submitted', 'delivered'].includes(row.state) ? !!row.provider_message_id : true)), 'RESET_ACTIVE_OR_AMBIGUOUS_DELIVERY');
-  ensure(related.call_sessions.every(row => ['completed', 'failed', 'cancelled'].includes(row.status)), 'RESET_ACTIVE_CALL');
+  ensure(related.call_sessions.every(row => ['completed', 'failed', 'cancelled', 'timed_out', 'no_answer'].includes(row.status)), 'RESET_ACTIVE_CALL');
   ensure(related.payments.every(row => ['paid', 'failed', 'cancelled', 'expired'].includes(row.status)), 'RESET_PENDING_PAYMENT');
   ensure(indirect.fulfillment_jobs.every(row => ['completed', 'cancelled', 'failed', 'dead_letter'].includes(row.status)), 'RESET_ACTIVE_FULFILLMENT');
   ensure(indirect.post_sale_notifications.every(row => ['sent', 'cancelled', 'dead_letter', 'failed'].includes(row.status)), 'RESET_ACTIVE_POST_SALE');
@@ -160,6 +175,11 @@ export async function inspectNativeInboundReadiness(client, receipt, routingTags
   try { await client.getConversation({ id: OWNER_RESET_SCOPE.botpressConversationId }); oldExists = true; }
   catch (error) { if (!isMissing(error)) throw error; }
   ensure(!oldExists, 'RESET_OLD_CONVERSATION_STILL_EXISTS');
+  if (receipt.participantId == null) {
+    // DB-only reset: no Botpress conversation or participant existed at discovery.
+    return { oldConversationDeleted: true, newBotpressConversationId: null, matchingConversationCount: 0,
+      activeWorkflows: 0, routingValidation: 'pending_first_real_inbound', botpressConversationMissing: true };
+  }
   const { user } = await client.getUser({ id: receipt.participantId });
   ensure(user.id === receipt.participantId && canonicalOwnerPhone(user.tags?.['whatsapp:number']) === OWNER_RESET_SCOPE.phone, 'RESET_END_USER_IDENTITY_MISMATCH');
   const conversations = await client.listConversations({ integrationName: 'whatsapp', channel: 'channel', tags: routingTags, pageSize: 100 });
