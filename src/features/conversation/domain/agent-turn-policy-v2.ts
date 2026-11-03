@@ -586,6 +586,12 @@ export function authorizeAgentTurnV2(input: {
     const checkout = isCheckoutV1({ stage: state.stage, awaiting_reply: state.awaiting_reply,
       payment_link_request_pending: state.payment_link_request?.status === 'pending' }, draftEvidence,
       input.current_customer_messages);
+    // Owner 2026-11-03: naming the course the customer chose as gift (or the gift
+    // it replaces) is the subject of the request, not a course change.
+    const chosen = cap?.rule_bonus?.source === 'customer_request' ? cap.rule_bonus : null;
+    const customerChoiceReference = chosen !== null && proposed.bonus_offering_code === chosen.bonus_offering_code
+      && (requestedOffering === chosen.bonus_offering_code || requestedOffering === chosen.replaces_offering_code
+        || requestedOfferingIsPresentedBonus);
     const reason = cap?.enabled !== true ? 'bonus_disabled'
       : checkout ? 'sale_already_closed'
       : (ladder?.eligible !== true && !instant) || escalationWithoutNewObjection ? 'ladder_step_pending'
@@ -593,7 +599,8 @@ export function authorizeAgentTurnV2(input: {
       : proposed.bonus_offering_code !== cap.rule_bonus.bonus_offering_code
         && !cap.bonus_offerings.some(o => o.code === proposed.bonus_offering_code)
         && proposed.bonus_offering_code !== capabilityInterestOffering ? 'invalid_offering'
-      : proposed.interest_offering_code !== capabilityInterestOffering || !promotionMatchesCurrentInterest
+      : proposed.interest_offering_code !== capabilityInterestOffering
+        || !(promotionMatchesCurrentInterest || customerChoiceReference)
         || !input.offerings.some(o => o.code === proposed.bonus_offering_code) ? 'invalid_offering'
       : proposed.bonus_offering_code === capabilityInterestOffering ? 'same_as_paid_course'
       : cap.bonus_offerings.some(o => o.code === proposed.bonus_offering_code) ? 'duplicate_bonus'
