@@ -162,7 +162,9 @@ export function retentionFallbackProposalV1(draft: AgentATurnProposalV1,
   decision: Extract<RetentionRuleDecisionV1, { kind: 'retain' }>): AgentATurnProposalV1 {
   const vetoes = [...new Set([...(draft.move.vetoes ?? []).filter(veto => veto !== 'purchase'), 'payment_link' as const])]
   return { ...draft,
-    move: { ...draft.move, move: 'unknown', secondary_moves: [], vetoes },
+    // A clean move: 'unknown' accepts no course/area/plan reference (schema superRefine).
+    move: { schema_version: draft.move.schema_version, move: 'unknown', secondary_moves: [], vetoes,
+      confidence: draft.move.confidence },
     response: { messages: [retentionFallbackMessageV1(decision)], call_offer: null },
     proposed_action: { type: 'none' },
     course_mentions: decision.variant === 'more_bonus' && decision.paid_code

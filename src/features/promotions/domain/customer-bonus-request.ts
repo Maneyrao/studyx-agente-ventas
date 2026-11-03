@@ -27,7 +27,11 @@ export interface CustomerBonusRequestInputV1 {
 }
 
 const normalized = (value: string) => value.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase();
-const GIFT_VERB = /\b(?:bonific\w*|regal\w*|gratis|sin costo|inclu\w*|sum\w*|agreg\w*)\b/u;
+// "Qué incluye X?" or "X suma horas?" is a question, never a gift request
+// (architect review): adding verbs count only addressed to the customer.
+const GIFT_VERB = /\b(?:bonific\w*|regal\w*|(?:me|nos)\s+(?:lo\s+|la\s+)?(?:sum|inclu|agreg)(?:as|is|es|arias|irias|ias)|(?:sumar|incluir|agregar)(?:me|nos)(?:lo|la)?)\b/u;
+/** The agent's own retention question invites a bare course name as the answer. */
+const RETENTION_INVITE = /\bestas segur[oa]\b.*\bbonificacion\b/u;
 const SWAP_VERB = /\b(?:cambi\w*|reemplaz\w*|en vez de|en lugar de)\b/u;
 const REFUSAL = /\bno\s+(?:me\s+)?(?:quiero|interesa|hace falta|bonifiques|sumes|agregues|cambies|regales)\b/u;
 
@@ -35,7 +39,8 @@ export function customerBonusRequestV1(input: CustomerBonusRequestInputV1): Cust
   const text = normalized(input.batch_texts.join(' '));
   if (REFUSAL.test(text)) return null;
   const swap = SWAP_VERB.test(text);
-  if (!swap && !GIFT_VERB.test(text)) return null;
+  const invited = (input.previous_agent_messages ?? []).slice(0, 2).some(message => RETENTION_INVITE.test(normalized(message)));
+  if (!swap && !GIFT_VERB.test(text) && !invited) return null;
   const index = { as_of: new Date(0).toISOString(), offerings_total: input.offerings.length, injection_suspected_count: 0,
     offerings: input.offerings.map(offering => ({ code: offering.code, display_name: offering.display_name,
       aliases: [...(offering.aliases ?? [])], academy: null })) };

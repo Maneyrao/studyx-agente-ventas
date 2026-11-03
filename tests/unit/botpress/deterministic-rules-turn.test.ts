@@ -498,6 +498,17 @@ describe('owner rule E (2026-11-03): one retention attempt on the first definiti
     expect(proposal.move.vetoes).not.toContain('purchase');
   });
 
+  it('a decline that names the course still yields a schema-valid retention fallback', async () => {
+    const current = declineContext();
+    const naming = () => draft({ move: { schema_version: 1, move: 'decline_purchase', course_reference: paid, secondary_moves: [],
+      vetoes: ['purchase'], confidence: 1 }, response: { messages: ['Perfecto, cualquier cosa me escribes.'], call_offer: null }, memory_candidates: [] });
+    const repair = vi.fn<(rejection: TurnRejectionV1) => Promise<GeneratedAgentATurnProposalV1>>(async () => naming());
+    const result = await resolveDeterministicRulesTurnV1({ context: current, initial: naming(),
+      repair_enabled: true, rejection_id: () => rejectionId, resolve: resolver(current), repair });
+    expect(result.resolved.effective.proposal.response.messages[0]).toMatch(/^Estás seguro\?/u);
+    expect(result.resolved.effective.proposal.move).not.toHaveProperty('course_reference');
+  });
+
   it('respects the second no: no retention when it was already attempted', async () => {
     const current = declineContext();
     current.turn.recent_turns = [{ id: 'r', direction: 'outbound',

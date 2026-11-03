@@ -589,8 +589,19 @@ async function readDirectCapability(input: {
         AND message_occurrence_v1(source.metadata,source.created_at)<=message_occurrence_v1(current.metadata,current.created_at)
     `;
     const sameTurnCourse = interest ? null : await promoRequestedCourseThisTurn(input, db);
-    if (!interest && !sameTurnCourse) return {...hidden('needs_interest'), enabled:true,max_bonus_courses:max};
-    input={...input,selected_offering_code:interest?.interest_offering_code ?? sameTurnCourse};
+    // Owner 2026-11-03 (live swap 07:41): with no selection and no recorded
+    // interest, the paid course of the conversation's live direct package is
+    // the interest, so a gift choice or swap can be read against it.
+    const [livePackage] = interest || sameTurnCourse ? [] : await db<Array<{paid_code:string}>>`
+      SELECT paid.code AS paid_code FROM promotion_offers o
+      JOIN offerings paid ON paid.id=o.paid_offering_id AND paid.workspace_id=o.workspace_id
+      JOIN workspaces w ON w.id=o.workspace_id AND w.slug=${input.workspace_slug}
+      WHERE o.conversation_id=${input.conversation_id}::uuid AND o.contact_id=${input.contact_id}::uuid
+        AND o.package_mode='direct' AND o.status='offered'
+      ORDER BY o.created_at DESC LIMIT 1`;
+    const interestCode = interest?.interest_offering_code ?? sameTurnCourse ?? livePackage?.paid_code ?? null;
+    if (!interestCode) return {...hidden('needs_interest'), enabled:true,max_bonus_courses:max};
+    input={...input,selected_offering_code:interestCode};
 
   }
   const [row] = await db<Array<{

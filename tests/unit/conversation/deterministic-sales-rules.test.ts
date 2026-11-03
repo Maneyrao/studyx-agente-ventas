@@ -520,7 +520,7 @@ describe('Regla A — curso elegido por el cliente (dueño 2026-11-03)', () => {
 
 describe('Regla E — retención ante el primer «no» (dueño 2026-11-03)', () => {
   const declined = (text = 'no gracias, no lo voy a comprar') => draft({ move: { move: 'decline_purchase', secondary_moves: [] } });
-  const base = { paid_display_name: 'Inglés 1', paid_offering_code: 'ingles_1' };
+  const base = { paid_display_name: 'Inglés 1', paid_offering_code: 'ingles_1', bonus_enabled: true };
   it('primer no con menos de 3 regalos: busca otra bonificación', () => {
     const decision = decideRetentionRuleV1(ctx({ ...base, batch_texts: ['no gracias'] }), declined());
     expect(decision).toEqual({ kind: 'retain', variant: 'more_bonus', paid_name: 'Inglés 1', paid_code: 'ingles_1' });
@@ -540,7 +540,12 @@ describe('Regla E — retención ante el primer «no» (dueño 2026-11-03)', () 
     expect(decideRetentionRuleV1(ctx({ ...base, batch_texts: ['no'], recent_turns: [{ direction: 'outbound',
       content: 'Estás seguro? Te puedo buscar otra bonificación' }] }), declined())).toMatchObject({ kind: 'none', reason: 'already_attempted' });
   });
-  it.each(['no me escribas más', 'dejame de mandar mensajes', 'quiero darme de baja', 'sos un chanta', 'basta'])(
+  it('sin bonificación habilitada no promete otra: recuerda la promoción', () => {
+    expect(decideRetentionRuleV1(ctx({ ...base, batch_texts: ['no'], bonus_enabled: false }), declined()))
+      .toMatchObject({ kind: 'retain', variant: 'limited_time' });
+  });
+  it.each(['no me escribas más', 'dejame de mandar mensajes', 'quiero darme de baja', 'sos un chanta', 'basta',
+    'no quiero recibir promociones', 'no me mandes más ofertas'])(
     'respeta de inmediato: %s', (text) => {
       expect(decideRetentionRuleV1(ctx({ ...base, batch_texts: [text] }), declined())).toMatchObject({ kind: 'none', reason: 'respect_end' });
     });

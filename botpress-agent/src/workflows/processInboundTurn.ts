@@ -1431,6 +1431,8 @@ export const processInboundTurn = new Workflow({
               { maxAttempts: 1 },
             )
           },
+          // Durable backoff: survives a workflow restart like the other waits.
+          wait: (ms) => step.sleep('agent-a-provider-backoff', ms),
           onRetry: (failure) => {
             firstRetryCode = failure.code
             safeLog('studyx.turn.agent_a_brain_retry', {

@@ -32,9 +32,23 @@ describe('customerBonusRequestV1 (owner 2026-11-03, live 07:38/07:41)', () => {
     ['refusal', 'no quiero que me sumes armado y reparacion de pc'],
     ['two candidate courses', 'me bonificas armado y reparacion de pc o reparacion de celulares?'],
     ['only the paid or gifted course', 'me bonificas ingles 2?'],
+    ['a content question (architect review)', 'que incluye armado y reparacion de pc?'],
+    ['a content question with "me"', 'que me incluye armado y reparacion de pc?'],
+    ['a feature question', 'armado y reparacion de pc incluye certificado?'],
   ])('null: %s', (_label, text) => expect(request(text)).toBeNull());
   it('no swap with two gifts; no add at the limit', () => {
     expect(request('cambiame ingles 2 por armado y reparacion de pc', ['ingles_2', 'ingles_3'])).toBeNull();
     expect(request('me sumas armado y reparacion de pc?', ['ingles_2', 'ingles_3', 'reparacion_celulares'], 3)).toBeNull();
+  });
+  it('adding verbs addressed to the customer count', () => {
+    expect(request('me sumas armado y reparacion de pc?')).toMatchObject({ kind: 'add' });
+    expect(request('podes incluirme armado y reparacion de pc')).toMatchObject({ kind: 'add' });
+  });
+  it('a bare course name right after the retention question is a gift choice', () => {
+    expect(customerBonusRequestV1({ batch_texts: ['armado y reparacion de pc'], offerings, paid_offering_code: 'ingles_1',
+      offered_bonus_codes: ['ingles_2'], max_bonus_courses: 3,
+      previous_agent_messages: ['Estás seguro? Te puedo buscar otra bonificación que seguro te interesa! Qué te gustaría aprender además de Inglés 1?'] }))
+      .toEqual({ kind: 'add', bonus_offering_code: 'armado_reparacion_pc' });
+    expect(request('armado y reparacion de pc')).toBeNull();
   });
 });

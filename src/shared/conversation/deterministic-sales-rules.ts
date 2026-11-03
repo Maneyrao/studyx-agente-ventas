@@ -628,7 +628,7 @@ export type RetentionRuleDecisionV1 =
 
 /** Literal marker shared by the task, the fallback and the once-per-conversation check. */
 export const RETENTION_MARKER_V1 = /\bestas segur[oa]\b/u;
-const OPT_OUT_OR_END = /\b(?:no me (?:escrib|mand|contact|llam|molest)\w*|dej\w* de (?:escribir\w*|mandar\w*|molestar\w*|contactar\w*)|dej\w* en paz|dar(?:me)? de baja|la baja|stop|basta|no (?:quiero|me interesa) (?:hablar|seguir hablando|que me escrib\w*)|bloque\w*|denunci\w*)\b/u;
+const OPT_OUT_OR_END = /\b(?:no me (?:escrib|mand|contact|llam|molest)\w*|dej\w* de (?:escribir\w*|mandar\w*|molestar\w*|contactar\w*)|dej\w* en paz|dar(?:me)? de baja|la baja|stop|basta|no (?:quiero|me interesa) (?:hablar|seguir hablando|que me escrib\w*)|no (?:quiero|me interesa) recibir\w*|no me (?:mandes|envies|ofrezcas) (?:mas )?(?:promo\w*|ofertas?|mensajes)|bloque\w*|denunci\w*)\b/u;
 const INSULT = /\b(?:idiota|estupid\w*|imbecil\w*|pelotud\w*|boludo|mierda|puta|forro|chanta|estafa\w*|ladron\w*|garca)\b/u;
 
 export function decideRetentionRuleV1(context: RuleContextV1, draft: RuleDraftV1): RetentionRuleDecisionV1 {
@@ -643,7 +643,8 @@ export function decideRetentionRuleV1(context: RuleContextV1, draft: RuleDraftV1
     return { kind: 'none', reason: 'already_attempted' };
   }
   const gifts = context.package_status === 'offered' ? context.delivered_bonus.length : 0;
-  return { kind: 'retain', variant: gifts >= MAX_RULE_BONUS_COURSES_V1 ? 'limited_time' : 'more_bonus', paid_name: paid,
+  // Never promise a bonus the backend cannot give (bonus disabled for this contact).
+  return { kind: 'retain', variant: gifts >= MAX_RULE_BONUS_COURSES_V1 || !context.bonus_enabled ? 'limited_time' : 'more_bonus', paid_name: paid,
     paid_code: context.paid_offering_code ?? null };
 }
 
