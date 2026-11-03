@@ -471,3 +471,42 @@ describe('dueño — nunca silencio', () => {
     expect(result.record).toMatchObject({ rule_b: 'unmet' });
   });
 });
+
+describe('owner rule E (2026-11-03): one retention attempt on the first definitive no', () => {
+  const declineContext = () => {
+    const current = context();
+    current.turn.batch_messages = [{ id: 'current', text: 'no, gracias, no lo voy a comprar' }];
+    current.capabilities.course_bonus!.ladder = undefined;
+    current.capabilities.course_bonus!.rule_bonus = null;
+    return current;
+  };
+  const declined = () => draft({ move: { schema_version: 1, move: 'decline_purchase', secondary_moves: [], vetoes: ['purchase'], confidence: 1 },
+    response: { messages: ['Perfecto, cualquier cosa me escribes.'], call_offer: null }, memory_candidates: [] });
+
+  it('rewrites once, then sends the owner retention copy without closing the sale', async () => {
+    const current = declineContext();
+    const repair = vi.fn(async () => declined());
+    const result = await resolveDeterministicRulesTurnV1({ context: current, initial: declined(),
+      repair_enabled: true, rejection_id: () => rejectionId, resolve: resolver(current), repair });
+    expect(repair).toHaveBeenCalledOnce();
+    expect(repair.mock.calls[0]?.[0].rejections.map(reason => reason.code)).toEqual(['RETENTION_REQUIRED']);
+    const proposal = result.resolved.effective.proposal;
+    expect(proposal.response.messages).toEqual(['Estás seguro? Te puedo buscar otra bonificación que seguro te interesa! '
+      + 'Qué te gustaría aprender además de Introducción al Ecommerce?']);
+    expect(proposal.move.move).not.toBe('decline_purchase');
+    expect(proposal.move.vetoes).toContain('payment_link');
+    expect(proposal.move.vetoes).not.toContain('purchase');
+  });
+
+  it('respects the second no: no retention when it was already attempted', async () => {
+    const current = declineContext();
+    current.turn.recent_turns = [{ id: 'r', direction: 'outbound',
+      content: 'Estás seguro? Te puedo buscar otra bonificación que seguro te interesa!' }];
+    const repair = vi.fn();
+    const result = await resolveDeterministicRulesTurnV1({ context: current, initial: declined(),
+      repair_enabled: true, rejection_id: () => rejectionId, resolve: resolver(current), repair });
+    expect(repair).not.toHaveBeenCalled();
+    expect(result.resolved.effective.proposal.move.move).toBe('decline_purchase');
+  });
+});
+

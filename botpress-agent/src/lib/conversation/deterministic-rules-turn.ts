@@ -11,6 +11,7 @@ import {
   CALL_FALLBACK_OFFER_V1, bonusFallbackMessagesV1, decideBonusRuleV1, decideCallRuleV1, decidePriceProbeRuleV1,
   draftFulfillsPromotionTaskV1, draftPresentsCallV1, messagesContainPriceProbeV1, passiveClosingSentencesV1, passiveRuleAppliesV1,
   PRICE_PROBE_V1, priceExpressionHintV1, priceObservationQuoteInBatchV1, withPriceProbeV1, withoutPassiveClosingV1,
+  decideRetentionRuleV1, draftFulfillsRetentionV1, retentionFallbackMessageV1, type RetentionRuleDecisionV1,
   type BonusRuleDecisionV1, type CallRuleDecisionV1, type PromotionTaskDataV1, type PriceProbeRuleDecisionV1, type RuleContextV1, type RuleOutcomeV1,
 } from '../../../../src/shared/conversation/deterministic-sales-rules'
 import { latestAgentTurnMessages } from '../../../../src/features/orchestration/domain/course-focus'
@@ -51,7 +52,14 @@ export function ruleContextFromAgentAContextV1(context: AgentAContextV1): RuleCo
     payment_reported: state.payment_reported,
     active_call: state.active_call != null,
     opted_out: !context.capabilities.may_reply,
+    ...paidCourseV1(context),
   }
+}
+
+function paidCourseV1(context: AgentAContextV1): { paid_offering_code: string | null; paid_display_name: string | null } {
+  const code = context.commercial_state.selected_offering_code ?? context.capabilities.course_bonus?.interest_offering_code ?? null
+  const name = code ? context.catalog.available_offerings.find(offering => offering.code === code)?.display_name ?? null : null
+  return { paid_offering_code: name ? code : null, paid_display_name: name }
 }
 
 export interface DeterministicRulesDecisionV1 {
@@ -62,6 +70,8 @@ export interface DeterministicRulesDecisionV1 {
   /** Owner rule D (2026-11-02): no passive closings while the sale is open. */
   readonly passive_forbidden: boolean
   readonly price_expression_hint: boolean
+  /** Owner rule E (2026-11-03): one retention attempt on the first definitive "no". */
+  readonly retention?: RetentionRuleDecisionV1
 }
 
 export function decideDeterministicRulesV1(context: AgentAContextV1, draft: AgentATurnProposalV1,
@@ -84,11 +94,13 @@ export function decideDeterministicRulesV1(context: AgentAContextV1, draft: Agen
     probe: decidePriceProbeRuleV1(ruleContext, draft, bonus),
     passive_forbidden: passiveRuleAppliesV1(ruleContext, draft),
     price_expression_hint: ruleContext.batch_texts.some(priceExpressionHintV1),
+    retention: decideRetentionRuleV1(ruleContext, draft),
   }
 }
 
 function rulesApply(decision: DeterministicRulesDecisionV1, draft: AgentATurnProposalV1): boolean {
   return decision.bonus.kind === 'offer' || decision.call.kind === 'offer' || decision.probe.kind === 'ask'
+    || decision.retention?.kind === 'retain'
     || (decision.passive_forbidden && passiveClosingSentencesV1(draft.response.messages).length > 0)
 }
 
@@ -119,6 +131,8 @@ export function ruleRejectionV1(input: {
   if (input.decision.probe.kind === 'ask' && !(input.draft && messagesContainPriceProbeV1(input.draft.response.messages)))
     rejections.push({ code: 'PRICE_PROBE_REQUIRED', subject: 'rule_c:price_probe' })
   if (input.decision.passive_forbidden && (!input.draft || passiveClosingSentencesV1(input.draft.response.messages).length > 0)) rejections.push({ code: 'PASSIVE_CLOSING_FORBIDDEN', subject: 'rule_d:passive_closing' })
+  if (input.decision.retention?.kind === 'retain' && !(input.draft && draftFulfillsRetentionV1(input.draft)))
+    rejections.push({ code: 'RETENTION_REQUIRED', subject: `rule_e:retention:${input.decision.retention.variant}` })
   if (rejections.length) return {
     schema_version: 1, rejection_id: input.rejection_id, attempt: 1, rejections,
     authorized_alternatives: { fact_ids: factIds,
@@ -140,6 +154,20 @@ export function draftSatisfiesRulesV1(draft: AgentATurnProposalV1, decision: Det
     && (decision.call.kind !== 'offer' || draftPresentsCallV1(draft))
     && (decision.probe.kind !== 'ask' || messagesContainPriceProbeV1(draft.response.messages))
     && (!decision.passive_forbidden || passiveClosingSentencesV1(draft.response.messages).length === 0)
+    && (decision.retention?.kind !== 'retain' || draftFulfillsRetentionV1(draft))
+}
+
+/** Rule E fallback (owner wording): the whole turn, sale kept open, payment link withdrawn. */
+export function retentionFallbackProposalV1(draft: AgentATurnProposalV1,
+  decision: Extract<RetentionRuleDecisionV1, { kind: 'retain' }>): AgentATurnProposalV1 {
+  const vetoes = [...new Set([...(draft.move.vetoes ?? []).filter(veto => veto !== 'purchase'), 'payment_link' as const])]
+  return { ...draft,
+    move: { ...draft.move, move: 'unknown', secondary_moves: [], vetoes },
+    response: { messages: [retentionFallbackMessageV1(decision)], call_offer: null },
+    proposed_action: { type: 'none' },
+    course_mentions: decision.variant === 'more_bonus' && decision.paid_code
+      ? [{ offering_code: decision.paid_code, role: 'paid' }] : [],
+    profile_requests: [] }
 }
 
 /** Rules C/D fallback on the model's own turn: drop passive sentences, then end
@@ -343,6 +371,8 @@ export async function resolveDeterministicRulesTurnV1(input: {
     fixed = bonusFallbackProposalV1({ context: input.context, draft: { ...initial.proposal,
       repair_of: fixed.repair_of }, decision: decision.bonus })
     outcomes.rule_a = 'fixed'
+  } else if (decision.retention?.kind === 'retain') {
+    fixed = retentionFallbackProposalV1(initial.proposal, decision.retention)
   } else if (decision.probe.kind === 'ask' || passiveClosingSentencesV1(fixed.response.messages).length > 0) {
     // Rules C/D keep the model's answer and replace only the closing (owner wording).
     fixed = withFixedPriceRulesV1(fixed, decision)

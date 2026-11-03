@@ -1,4 +1,4 @@
-import { PRICE_PROBE_V1, decideBonusRuleV1, decidePriceProbeRuleV1, passiveRuleAppliesV1, planChoiceV1, priceExpressionHintV1, promotionTaskV1, purchaseIntentV1, type BonusRuleDecisionV1 } from '../../../src/shared/conversation/deterministic-sales-rules';
+import { PRICE_PROBE_V1, decideBonusRuleV1, decidePriceProbeRuleV1, passiveRuleAppliesV1, planChoiceV1, priceExpressionHintV1, promotionTaskV1, purchaseIntentV1, decideRetentionRuleV1, retentionTaskV1, type BonusRuleDecisionV1 } from '../../../src/shared/conversation/deterministic-sales-rules';
 import { promotionTaskDataV1, ruleContextFromAgentAContextV1 } from '../lib/conversation/deterministic-rules-turn';
 import type { AgentAContextV1 } from '../schemas/agent-a-brain';
 import {
@@ -175,6 +175,11 @@ The backend requires a call invitation this turn. Keep your reply in response.me
 Owner rule C: the customer asked about or objected to the price. Answer it, then end the turn with exactly: "${PRICE_PROBE_V1}"` : '';
   const passiveRepair = rejection.rejections.some(reason => reason.code === 'PASSIVE_CLOSING_FORBIDDEN') ? `
 Owner rule D: remove every passive closing ("lo ves tranquilo", "sin apuro", "cuando quieras", "avisame", "quedo atenta" and similar). Close with a concrete step toward buying now.` : '';
+  const retention = rejection.rejections.find(reason => reason.code === 'RETENTION_REQUIRED')
+  const retentionDecision = retention ? decideRetentionRuleV1(ruleContextFromAgentAContextV1(context),
+    { response: { messages: ['.'] }, proposed_action: { type: 'none' }, move: { move: 'decline_purchase', secondary_moves: [] }, memory_candidates: [] }) : null
+  const retentionRepair = retentionDecision?.kind === 'retain' ? `
+Owner rule E: ${retentionTaskV1(retentionDecision)}` : '';
   return `
 <mandatory_repair attempt="1" rejection_id="${rejection.rejection_id}">
 Use repair_of with this rejection_id and attempt 1. This is the only rewrite.
@@ -189,6 +194,7 @@ ${ruleBonusRepair}
 ${ruleCallRepair}
 ${priceProbeRepair}
 ${passiveRepair}
+${retentionRepair}
 If an action did not occur, do not claim it; continue naturally from the permitted facts and effects.
 Do not repeat confirmed data or an earlier opening or question. Ask only for truly missing information.
 Keep prose and metadata consistent. Preserve accepted observations. Never expose validation to the customer.
@@ -317,7 +323,7 @@ function promotionTaskDirectiveV1(context: AgentAContextV1): string {
   const declared = [`${decision.paid_code} as paid`, ...decision.prior_bonus.map(course => `${course.code} as bonus`), `${decision.bonus_code} as bonus`]
   return `<tarea_del_turno prioridad="maxima">
 ${promotionTaskV1(decision, promotionTaskDataV1(context))}
-Contrato técnico: proposed_action={"type":"offer_course_bonus","bonus_offering_code":"${decision.bonus_code}","interest_offering_code":"${decision.paid_code}"}; course_mentions declara ${declared.join(', ')}. No nombres otro regalo. El backend ejecuta y guarda esta promoción antes de enviar tu texto: presentala sin condicionarla a una llamada ni a otra aprobación. Esta tarea prevalece sobre cualquier otra indicación de estas instrucciones para este turno.
+Contrato técnico: proposed_action={"type":"offer_course_bonus","bonus_offering_code":"${decision.bonus_code}","interest_offering_code":"${decision.paid_code}"}; course_mentions declara ${declared.join(', ')}${decision.replaces ? ` y, si nombras ${decision.replaces.display_name}, ${decision.replaces.code} as alternative (ya no es regalo)` : ''}. No nombres otro regalo. El backend ejecuta y guarda esta promoción antes de enviar tu texto: presentala sin condicionarla a una llamada ni a otra aprobación. Esta tarea prevalece sobre cualquier otra indicación de estas instrucciones para este turno.
 </tarea_del_turno>`
 }
 

@@ -27,6 +27,7 @@ export const TURN_REJECTION_CODES_V1 = [
   'BONUS_OFFER_REQUIRED',
   'PRICE_PROBE_REQUIRED',
   'PASSIVE_CLOSING_FORBIDDEN',
+  'RETENTION_REQUIRED',
   /** La invitación inicial debe ser el segundo outbound separado. */
   'CALL_OFFER_MESSAGE_BOUNDARY_INVALID',
   'PROPOSAL_SCHEMA_INVALID',

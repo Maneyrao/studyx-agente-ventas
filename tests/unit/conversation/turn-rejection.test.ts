@@ -36,6 +36,8 @@ describe('TurnRejectionV1', () => {
       'PROPOSAL_SCHEMA_INVALID',
       // V8: devolver el mismo mensaje que ya se mandó no es contestar.
       'REPEATED_AGENT_REPLY',
+      // Regla E del dueño (2026-11-03): retención ante el primer «no».
+      'RETENTION_REQUIRED',
       'UNSUPPORTED_OPERATIONAL_CLAIM',
     ]);
   });

@@ -1,4 +1,5 @@
 import { readCourseBonusLadderV1 } from './read-course-bonus-ladder';
+import { customerBonusRequestThisTurnV1 } from './read-course-bonus-capability';
 import type { CourseBonusLadderV1 } from '@/shared/conversation/bonus-ladder';
 import { createHash } from 'node:crypto';
 import { getPostgresError, type DbClient } from '@/lib/db/types';
@@ -229,6 +230,23 @@ export async function offerDirectCourseBonusV1(db: DbClient, input: OfferDirectC
       || (input.expected_offer_version>0 && (!input.promotion_code || !input.promotion_cycle_id))) reject('stale_offer_version');
     const context=await lockIdentity(tx,input);
     let offer=await resolveOffer(tx,input,context.paid_id);
+    // Owner 2026-11-03 swap replay: the new cycle created by this exact reply.
+    const [swapReplay]=await tx<Array<OfferRow & {replay_version:number;exact:boolean}>>`
+      SELECT o.*,p.promotion_code,b.offer_version AS replay_version,
+        (b.offering_code_snapshot=${input.bonus_offering_codes[0]} AND m.content=${input.outbound.content}
+          AND d.provider=${input.outbound.provider} AND d.integration_id=${input.outbound.integration_id}
+          AND d.channel=${input.outbound.channel} AND d.destination=${input.outbound.destination}
+          AND d.idempotency_key=${input.outbound.idempotency_key}) AS exact
+      FROM promotion_offer_bonus_offerings b JOIN promotion_offers o ON o.id=b.offer_id
+      JOIN promotions p ON p.id=o.promotion_id JOIN messages m ON m.id=b.offered_outbound_message_id
+      JOIN outbound_deliveries d ON d.message_id=m.id
+      WHERE b.offered_outbound_message_id=${input.outbound.id}::uuid AND b.source_turn_id=${input.source_turn_id}::uuid
+        AND o.conversation_id=${input.conversation_id}::uuid AND o.contact_id=${input.contact_id}::uuid
+        AND o.package_mode='direct' AND o.id IS DISTINCT FROM ${offer?.id ?? null}::uuid`;
+    if (swapReplay) {
+      if (!swapReplay.exact) reject('stale_offer_version');
+      return {...durable(swapReplay,swapReplay.replay_version),outbound_message_id:input.outbound.id};
+    }
     if (offer) {
       const [replay] = await tx<Array<{offer_version:number;offered_outbound_message_id:string;exact:boolean}>>`
         SELECT b.offer_version,b.offered_outbound_message_id,
@@ -262,31 +280,53 @@ export async function offerDirectCourseBonusV1(db: DbClient, input: OfferDirectC
     const [bonus]=await tx`SELECT id FROM offerings WHERE workspace_id=${input.workspace_id}::uuid
       AND code=${input.bonus_offering_codes[0]} AND status='active' AND offering_type='course' FOR SHARE`;
     if (!bonus) reject('invalid_offering');
-    const ladder=await readCourseBonusLadderV1({...input,selected_offering_code:context.selected_offering_code},tx);
-    if (!ladder?.eligible) throw new Rejection('ladder_step_pending',ladder ?? undefined);
-    // Rule A escalation: a new price objection recorded in this customer reply.
-    if (offer && offer.offer_version>0 && ladder.current_turn_price_objection!==true) throw new Rejection('ladder_step_pending',ladder);
-    if (offer && offer.offer_version>=limit) reject('bonus_limit_reached');
-    // Rule A course: exactly the next course of the fixed table.
-    const active=await tx<Array<{code:string}>>`SELECT code FROM offerings WHERE workspace_id=${input.workspace_id}::uuid
-      AND status='active' AND offering_type='course'`;
+    const active=await tx<Array<{code:string;display_name:string;aliases:string[]|null}>>`SELECT code,display_name,
+      ARRAY(SELECT jsonb_array_elements_text(CASE WHEN jsonb_typeof(metadata->'aliases')='array' THEN metadata->'aliases' ELSE '[]'::jsonb END)) aliases
+      FROM offerings WHERE workspace_id=${input.workspace_id}::uuid AND status='active' AND offering_type='course'`;
     const offered=offer ? await tx<Array<{code:string}>>`SELECT offering_code_snapshot code FROM promotion_offer_bonus_offerings
       WHERE offer_id=${offer.id}::uuid ORDER BY position` : [];
-    if (nextRuleBonusCodeV1({paid_code:input.paid_offering_code,active_codes:active.map(row=>row.code),
+    // Owner 2026-11-03: a literal customer choice of this exact course (same detector as the capability).
+    const request=await customerBonusRequestThisTurnV1({...input,selected_offering_code:input.paid_offering_code},tx,active,
+      offer?.status==='offered' ? offered.map(row=>row.code) : [],limit);
+    const chosen=request?.bonus_offering_code===input.bonus_offering_codes[0] ? request : null;
+    const swap=chosen?.kind==='swap' && offer?.status==='offered' && offer.offer_version===1 && offered.length===1
+      && offered[0]!.code===chosen.replaced_offering_code ? chosen : null;
+    if (chosen?.kind==='swap' && !swap) reject('stale_offer_version');
+    if (!chosen) {
+      const ladder=await readCourseBonusLadderV1({...input,selected_offering_code:context.selected_offering_code},tx);
+      if (!ladder?.eligible) throw new Rejection('ladder_step_pending',ladder ?? undefined);
+      // Rule A escalation: a new price objection recorded in this customer reply.
+      if (offer && offer.offer_version>0 && ladder.current_turn_price_objection!==true) throw new Rejection('ladder_step_pending',ladder);
+    }
+    if (!swap && offer && offer.offer_version>=limit) reject('bonus_limit_reached');
+    // Rule A course: exactly the next course of the fixed table, unless the customer chose it.
+    if (!chosen && nextRuleBonusCodeV1({paid_code:input.paid_offering_code,active_codes:active.map(row=>row.code),
       delivered_codes:offered.map(row=>row.code),max_bonus_courses:limit})!==input.bonus_offering_codes[0]
       && !offered.some(row=>row.code===input.bonus_offering_codes[0])) reject('invalid_offering');
+    if (swap && offer) {
+      // Never swap under a live call: the voice store reads the offered cycle.
+      const [call]=await tx`SELECT 1 FROM call_sessions WHERE conversation_id=${input.conversation_id}::uuid
+        AND contact_id=${input.contact_id}::uuid
+        AND status IN ('requested','dispatching','provider_accepted','dispatch_ambiguous','in_progress') LIMIT 1`;
+      if (call) reject('stale_offer_version');
+      // History is kept: the old cycle is cancelled, never rewritten.
+      await tx`UPDATE promotion_offers SET status='cancelled',cancel_reason='CUSTOMER_REPLACED_BONUS' WHERE id=${offer.id}::uuid`;
+      await tx`UPDATE course_bonus_followups SET status='cancelled',terminal_reason='CUSTOMER_REPLACED_BONUS'
+        WHERE offer_id=${offer.id}::uuid AND status='pending'`;
+      offer=undefined;
+    }
     if (offer) {
       if ((await tx`SELECT id FROM promotion_offer_bonus_offerings WHERE offer_id=${offer.id}::uuid AND offering_id=${bonus.id}::uuid`).length) reject('duplicate_bonus');
     } else {
-      const code=input.promotion_code ?? `any_bonus_${createHash('sha256').update(`${input.paid_offering_code}\u0000${input.bonus_offering_codes[0]}`).digest('hex').slice(0,32)}`;
-      if (!input.promotion_code) await tx`INSERT INTO promotions(workspace_id,promotion_code,paid_offering_id,channels,active)
+      const code=(swap ? null : input.promotion_code) ?? `any_bonus_${createHash('sha256').update(`${input.paid_offering_code}\u0000${input.bonus_offering_codes[0]}`).digest('hex').slice(0,32)}`;
+      if (swap || !input.promotion_code) await tx`INSERT INTO promotions(workspace_id,promotion_code,paid_offering_id,channels,active)
         VALUES (${input.workspace_id}::uuid,${code},${context.paid_id}::uuid,ARRAY['text'],true) ON CONFLICT(workspace_id,promotion_code) DO NOTHING`;
       const [promotion]=await tx`SELECT id FROM promotions WHERE workspace_id=${input.workspace_id}::uuid
         AND promotion_code=${code} AND paid_offering_id=${context.paid_id}::uuid AND active=true
         AND 'text'=ANY(channels) AND (valid_from IS NULL OR valid_from<=now()) AND (valid_until IS NULL OR valid_until>now()) FOR SHARE`;
       if (!promotion) reject('bonus_disabled');
       const [created]=await tx<OfferRow[]>`INSERT INTO promotion_offers(workspace_id,contact_id,conversation_id,promotion_id,paid_offering_id,package_mode,promotion_cycle_id)
-        VALUES (${input.workspace_id}::uuid,${input.contact_id}::uuid,${input.conversation_id}::uuid,${promotion.id}::uuid,${context.paid_id}::uuid,'direct',COALESCE(${input.promotion_cycle_id ?? null}::uuid,gen_random_uuid())) RETURNING *`;
+        VALUES (${input.workspace_id}::uuid,${input.contact_id}::uuid,${input.conversation_id}::uuid,${promotion.id}::uuid,${context.paid_id}::uuid,'direct',COALESCE(${swap ? null : input.promotion_cycle_id ?? null}::uuid,gen_random_uuid())) RETURNING *`;
       offer={...created,promotion_code:code};
       await validateOpen(tx,input,context,offer);
     }
@@ -294,7 +334,7 @@ export async function offerDirectCourseBonusV1(db: DbClient, input: OfferDirectC
       VALUES (${input.outbound.id}::uuid,${input.conversation_id}::uuid,${input.contact_id}::uuid,'outbound',${input.outbound.content},${input.source_turn_id}::uuid,${input.outbound.part_index ?? 0})`;
     await tx`INSERT INTO outbound_deliveries(message_id,conversation_id,contact_id,provider,integration_id,channel,destination,idempotency_key)
       VALUES (${input.outbound.id}::uuid,${input.conversation_id}::uuid,${input.contact_id}::uuid,${input.outbound.provider},${input.outbound.integration_id},${input.outbound.channel},${input.outbound.destination},${input.outbound.idempotency_key})`;
-    const [result]=await tx<Array<{version:number}>>`SELECT append_direct_course_bonus(${offer.id}::uuid,${bonus.id}::uuid,${input.source_turn_id}::uuid,${input.outbound.id}::uuid,${input.expected_offer_version}) AS version`;
+    const [result]=await tx<Array<{version:number}>>`SELECT append_direct_course_bonus(${offer.id}::uuid,${bonus.id}::uuid,${input.source_turn_id}::uuid,${input.outbound.id}::uuid,${swap ? 0 : input.expected_offer_version}) AS version`;
     return {...durable(offer,result.version),outbound_message_id:input.outbound.id};
   });
 }

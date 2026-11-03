@@ -2,6 +2,7 @@ import { readCourseBonusLadderV1 } from './read-course-bonus-ladder';
 import { deriveCourseBonusLadderV1 } from '@/shared/conversation/bonus-ladder';
 import { confirmsPriceProbeV1, nextRuleBonusCodeV1, priceExpressionHintV1, promoRequestV1 } from '@/shared/conversation/deterministic-sales-rules';
 import { currentFactualCourseReferencesV1 } from '@/features/orchestration/domain/course-focus';
+import { customerBonusRequestV1, type CustomerBonusRequestV1 } from '@/features/promotions/domain/customer-bonus-request';
 import type { CourseBonusLadderV1 } from '@/shared/conversation/bonus-ladder';
 import type { DbClient } from '@/lib/db/types';
 import { loadCourseBonusFlowConfig } from './course-bonus-flow-config';
@@ -32,7 +33,9 @@ export interface CourseBonusCapabilityV1 {
   readonly package_status?: CourseBonusOfferProjectionV1['status'] | null;
   readonly delivered_bonus_offerings?: Array<{readonly code:string; readonly display_name:string; readonly position:number}>;
   /** Rule A (owner 2026-11-02): next course of the fixed table when a direct offer may be extended. */
-  readonly rule_bonus?: { readonly paid_offering_code: string; readonly paid_display_name: string; readonly bonus_offering_code: string; readonly display_name: string; readonly position: number } | null;
+  readonly rule_bonus?: { readonly paid_offering_code: string; readonly paid_display_name: string; readonly bonus_offering_code: string; readonly display_name: string; readonly position: number;
+    /** Owner 2026-11-03: the customer named this course as the gift ("add") or as a replacement ("swap"). */
+    readonly source?: 'customer_request'; readonly replaces_offering_code?: string; readonly replaces_display_name?: string } | null;
   readonly status: CourseBonusCapabilityStatus;
   readonly may_schedule_checkin: boolean;
   readonly may_request_review: boolean;
@@ -377,8 +380,17 @@ export function deriveDirectCourseBonusCapabilityV1(input: {
   } | null;
   /** Active catalog courses for the fixed Rule A table. Absent: no rule course. */
   readonly active_courses?: ReadonlyArray<{ readonly code: string; readonly display_name: string }>;
+  /** Literal customer choice this turn (customerBonusRequestV1). */
+  readonly customer_request?: CustomerBonusRequestV1 | null;
 }): CourseBonusCapabilityV1 {
   const offer = input.package;
+  const request = input.customer_request ?? null;
+  if (request) {
+    const ladder = { ...(input.ladder ?? deriveCourseBonusLadderV1({ observed_price_objection_count: 0,
+      call_invitation_status: 'not_offered', call_offer_count: 0, may_offer_call: false })),
+      eligible: true, missing_steps: [], current_turn_price_objection: true, instant_trigger: true };
+    input = { ...input, ladder };
+  }
   const expiresAt = timestamp(offer?.expires_at ?? null);
   const expired = expiresAt !== null && expiresAt <= Date.now();
   const open = offer === null || (offer.status === 'offered' && !expired);
@@ -401,8 +413,27 @@ export function deriveDirectCourseBonusCapabilityV1(input: {
     bonus_selection_mode: 'any_active_course',
     bonus_offerings: offer?.courses ?? [],
     delivered_bonus_offerings: [...(offer?.delivered_courses ?? (offer?.delivered ? offer.courses : []))],
-    rule_bonus: ruleBonus(input, open && ready),
+    rule_bonus: customerRuleBonus(input, open && ready) ?? ruleBonus(input, open && ready),
   };
+}
+
+function customerRuleBonus(input: Parameters<typeof deriveDirectCourseBonusCapabilityV1>[0], extendable: boolean): CourseBonusCapabilityV1['rule_bonus'] {
+  const request = input.customer_request;
+  const courses = input.active_courses ?? [];
+  const paid = courses.find(course => course.code === input.interest_offering_code);
+  const bonus = request ? courses.find(course => course.code === request.bonus_offering_code) : undefined;
+  if (!request || !extendable || !paid || !bonus) return null;
+  const offered = input.package?.courses ?? [];
+  if (request.kind === 'swap') {
+    const replaced = offered.length === 1 && offered[0]!.code === request.replaced_offering_code ? offered[0]! : null;
+    if (!replaced || input.package?.status !== 'offered') return null;
+    return { paid_offering_code: paid.code, paid_display_name: paid.display_name, bonus_offering_code: bonus.code,
+      display_name: bonus.display_name, position: 1, source: 'customer_request',
+      replaces_offering_code: replaced.code, replaces_display_name: replaced.display_name };
+  }
+  if (offered.length >= input.max_bonus_courses || offered.some(course => course.code === bonus.code)) return null;
+  return { paid_offering_code: paid.code, paid_display_name: paid.display_name, bonus_offering_code: bonus.code,
+    display_name: bonus.display_name, position: offered.length + 1, source: 'customer_request' };
 }
 
 function ruleBonus(input: Parameters<typeof deriveDirectCourseBonusCapabilityV1>[0], extendable: boolean): CourseBonusCapabilityV1['rule_bonus'] {
@@ -605,14 +636,36 @@ async function readDirectCapability(input: {
     ?? (await promoRequestedThisTurn(input, db) ? { ...deriveCourseBonusLadderV1({ observed_price_objection_count: 0, call_invitation_status: 'not_offered',
       call_offer_count: 0, may_offer_call: false }), eligible: true, missing_steps: [], current_turn_price_objection: true,
       instant_trigger: true } : null);
-  const activeCourses=await db<Array<{code:string;display_name:string}>>`
-    SELECT o.code,o.display_name FROM offerings o JOIN workspaces w ON w.id=o.workspace_id
+  const activeCourses=await db<Array<{code:string;display_name:string;aliases:string[]|null}>>`
+    SELECT o.code,o.display_name,ARRAY(SELECT jsonb_array_elements_text(CASE WHEN jsonb_typeof(o.metadata->'aliases')='array'
+      THEN o.metadata->'aliases' ELSE '[]'::jsonb END)) aliases
+    FROM offerings o JOIN workspaces w ON w.id=o.workspace_id
     WHERE w.slug=${input.workspace_slug} AND o.status='active' AND o.offering_type='course'`;
+  const customerRequest = row.status === 'accepted' || row.status === 'attached' ? null
+    : await customerBonusRequestThisTurnV1(input, db, activeCourses,
+      row.status === 'offered' ? (row.courses ?? []).map(course => course.code) : [], max);
   return deriveDirectCourseBonusCapabilityV1({interest_offering_code:input.selected_offering_code!,
     active_courses:activeCourses,
     ...(ladder ? {ladder} : {}),
-    max_bonus_courses:max,prior_price_objection:row.prior_price_objection,
+    max_bonus_courses:max,prior_price_objection:row.prior_price_objection,customer_request:customerRequest,
     package:row.promotion_code ? {...row,promotion_code:row.promotion_code} : null});
+}
+
+/** Current batch + the last agent replies, read once for the shared detector. */
+export async function customerBonusRequestThisTurnV1(input: {
+  contact_id: string; conversation_id: string; source_turn_id?: string; selected_offering_code: string | null;
+}, db: DbClient, offerings: ReadonlyArray<{ code: string; display_name: string; aliases?: string[] | null }>,
+offered: readonly string[], max: number): Promise<CustomerBonusRequestV1 | null> {
+  if (!input.source_turn_id || !input.selected_offering_code) return null;
+  const texts = await currentBatchTexts(input, db);
+  if (texts.length === 0) return null;
+  const previous = (await db<Array<{ content: string }>>`
+    SELECT prior.content FROM messages prior JOIN messages current ON current.id=${input.source_turn_id}::uuid
+    WHERE prior.conversation_id=current.conversation_id AND prior.contact_id=current.contact_id
+      AND prior.direction='outbound' AND prior.created_at < current.created_at
+    ORDER BY prior.created_at DESC LIMIT 4`).map(row => row.content);
+  return customerBonusRequestV1({ batch_texts: texts, offerings, paid_offering_code: input.selected_offering_code,
+    offered_bonus_codes: offered, max_bonus_courses: max, previous_agent_messages: previous });
 }
 
 export async function readCourseBonusCapabilityV1(input: {

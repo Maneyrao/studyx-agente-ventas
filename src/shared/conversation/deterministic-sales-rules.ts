@@ -271,7 +271,8 @@ export interface RuleContextV1 {
   readonly delivered_bonus: readonly { readonly code: string; readonly display_name: string }[];
   /** Backend authority: next course of the fixed table for the effective paid course. */
   readonly rule_bonus: { readonly paid_offering_code: string; readonly paid_display_name: string;
-    readonly bonus_offering_code: string; readonly display_name: string; readonly position: number } | null;
+    readonly bonus_offering_code: string; readonly display_name: string; readonly position: number;
+    readonly source?: 'customer_request'; readonly replaces_offering_code?: string; readonly replaces_display_name?: string } | null;
   readonly prior_price_objection_count: number;
   readonly price_only_confirmed: boolean;
   readonly may_offer_call: boolean;
@@ -284,6 +285,9 @@ export interface RuleContextV1 {
   readonly payment_reported?: boolean;
   readonly active_call?: boolean;
   readonly opted_out?: boolean;
+  /** Effective paid course (selected course or package), for Rule E. */
+  readonly paid_display_name?: string | null;
+  readonly paid_offering_code?: string | null;
 }
 
 const CHECKOUT_AWAITING = new Set(['payment_plan', 'payment_confirmation', 'contact_details']);
@@ -373,9 +377,11 @@ export function isCheckoutV1(context: Pick<RuleContextV1, 'stage' | 'awaiting_re
 
 export type BonusRuleDecisionV1 =
   | { readonly kind: 'none'; readonly reason: string }
-  | { readonly kind: 'offer'; readonly trigger: 'second_price_objection' | 'price_only_barrier' | 'escalation' | 'promo_request' | 'price_probe_confirmed';
+  | { readonly kind: 'offer'; readonly trigger: 'second_price_objection' | 'price_only_barrier' | 'escalation' | 'promo_request' | 'price_probe_confirmed' | 'customer_request';
       readonly paid_code: string; readonly paid_name: string; readonly bonus_code: string; readonly bonus_name: string;
-      readonly position: number; readonly prior_bonus: readonly { readonly code: string; readonly display_name: string }[] };
+      readonly position: number; readonly prior_bonus: readonly { readonly code: string; readonly display_name: string }[];
+      /** Owner 2026-11-03: the customer's chosen course replaces this single bonus (new package cycle). */
+      readonly replaces?: { readonly code: string; readonly display_name: string } };
 
 /** Rule A trigger. The course comes only from the backend's fixed table (rule_bonus). */
 export function decideBonusRuleV1(context: RuleContextV1, draft: RuleDraftV1): BonusRuleDecisionV1 {
@@ -383,6 +389,15 @@ export function decideBonusRuleV1(context: RuleContextV1, draft: RuleDraftV1): B
   if (context.payment_paid) return { kind: 'none', reason: 'paid' };
   if (isCheckoutV1(context, draft, context.batch_texts)) return { kind: 'none', reason: 'checkout' };
   if (context.package_status === 'accepted' || context.package_status === 'attached') return { kind: 'none', reason: 'package_accepted' };
+  // Owner 2026-11-03: the customer chose the gift (or a replacement) literally this turn.
+  const chosen = context.rule_bonus?.source === 'customer_request' ? context.rule_bonus : null;
+  if (chosen) {
+    const swap = chosen.replaces_offering_code
+      ? { code: chosen.replaces_offering_code, display_name: chosen.replaces_display_name ?? chosen.replaces_offering_code } : undefined;
+    return { kind: 'offer', trigger: 'customer_request', paid_code: chosen.paid_offering_code, paid_name: chosen.paid_display_name,
+      bonus_code: chosen.bonus_offering_code, bonus_name: chosen.display_name, position: chosen.position,
+      prior_bonus: swap || context.package_status !== 'offered' ? [] : context.delivered_bonus, ...(swap ? { replaces: swap } : {}) };
+  }
   const currentObjection = draftRecordsPriceObjectionV1(draft, context.batch_texts);
   const currentPriceOnly = draftConfirmsPriceOnlyBarrierV1(draft, context.batch_texts);
   const promoRequest = context.batch_texts.some(promoRequestV1);
@@ -489,6 +504,18 @@ export function promotionTaskV1(decision: Extract<BonusRuleDecisionV1, { kind: '
     ? `Cierra con energía y una sola pregunta que ofrezca el plan: ${plans} (por ejemplo «Lo arrancamos en ${plans}?!»).`
     : 'Cierra con energía y una sola pregunta para avanzar (por ejemplo «Lo hacemos?!»).';
   const value = `Vende el beneficio antes que el precio: «te llevas ${packageValuePhraseV1(decision)}».`;
+  if (decision.trigger === 'customer_request') {
+    const prior = decision.prior_bonus.map(course => course.display_name);
+    return [
+      decision.replaces
+        ? `El cliente te pidió cambiar ${decision.replaces.display_name} por ${decision.bonus_name}. Se puede: en este turno queda cambiado.`
+        : `El cliente te pidió ${decision.bonus_name} de regalo. Se puede: en este turno queda sumado.`,
+      `1) Dile que sí, con energía (por ejemplo «Listo!» o «Buenísimo!»), sin explicar trámites ni límites.`,
+      `2) Recapitula el paquete como ganancia: ${decision.paid_name} + ${joinNamesV1([...prior, decision.bonus_name])} de regalo, ${packageValuePhraseV1(decision)}.`,
+      `3) ${close}`,
+      PROMOTION_TASK_PROHIBITIONS_V1,
+    ].join('\n');
+  }
   if (decision.prior_bonus.length === 0) {
     const goal = data.customer_goal ?? 'lo que el cliente te contó que busca';
     return [
@@ -545,6 +572,13 @@ export function bonusFallbackMessagesV1(decision: Extract<BonusRuleDecisionV1, {
   data: PromotionTaskDataV1 = { plan_codes: ['monthly_12', 'monthly_6'], customer_goal: null }): [string] {
   const plans = planAlternativeV1(data.plan_codes);
   const value = packageValuePhraseV1(decision);
+  if (decision.trigger === 'customer_request') {
+    const all = joinNamesV1([...decision.prior_bonus.map(course => course.display_name), decision.bonus_name]);
+    const close = plans ? `Lo arrancamos en ${plans.replace(' o 6 ', ' o en 6 ')}?!` : 'Lo hacemos?!';
+    return [decision.replaces
+      ? `Listo! Cambiamos ${decision.replaces.display_name} por ${decision.bonus_name}: te queda ${decision.paid_name} + ${decision.bonus_name} de regalo, ${value}! ${close}`
+      : `Listo! Te sumo ${decision.bonus_name} de regalo: te llevas ${decision.paid_name} + ${all}, ${value}! ${close}`];
+  }
   if (decision.prior_bonus.length === 0) return [
     `Te lo puedo resolver! Tengo una promoción exclusiva para ti: si avanzas con ${decision.paid_name}, te bonifico ${decision.bonus_name}, así te llevas ${value}. ${plans ? `Lo arrancamos en ${plans.replace(' o 6 ', ' o en 6 ')}?!` : 'Lo hacemos?!'}`,
   ];
@@ -584,3 +618,57 @@ export function decideCallRuleV1(context: RuleContextV1, draft: RuleDraftV1, bon
 export function draftPresentsCallV1(draft: RuleDraftV1): boolean {
   return typeof draft.response.call_offer === 'string' && draft.response.call_offer.trim().length > 0;
 }
+
+/** Owner Rule E (2026-11-03, exception to the authority prompt :127): one
+ * retention attempt on the first definitive "no" while the sale is open.
+ * Never on opt-out, insults or an explicit request to end the conversation. */
+export type RetentionRuleDecisionV1 =
+  | { readonly kind: 'none'; readonly reason: string }
+  | { readonly kind: 'retain'; readonly variant: 'more_bonus' | 'limited_time'; readonly paid_name: string; readonly paid_code: string | null };
+
+/** Literal marker shared by the task, the fallback and the once-per-conversation check. */
+export const RETENTION_MARKER_V1 = /\bestas segur[oa]\b/u;
+const OPT_OUT_OR_END = /\b(?:no me (?:escrib|mand|contact|llam|molest)\w*|dej\w* de (?:escribir\w*|mandar\w*|molestar\w*|contactar\w*)|dej\w* en paz|dar(?:me)? de baja|la baja|stop|basta|no (?:quiero|me interesa) (?:hablar|seguir hablando|que me escrib\w*)|bloque\w*|denunci\w*)\b/u;
+const INSULT = /\b(?:idiota|estupid\w*|imbecil\w*|pelotud\w*|boludo|mierda|puta|forro|chanta|estafa\w*|ladron\w*|garca)\b/u;
+
+export function decideRetentionRuleV1(context: RuleContextV1, draft: RuleDraftV1): RetentionRuleDecisionV1 {
+  if (!draftMoves(draft).has('decline_purchase')) return { kind: 'none', reason: 'no_decline' };
+  const text = normalizedVisible(context.batch_texts.join(' '));
+  if (context.opted_out || OPT_OUT_OR_END.test(text) || INSULT.test(text)) return { kind: 'none', reason: 'respect_end' };
+  if (context.payment_paid || context.stage === 'closed' || context.stage === 'handoff') return { kind: 'none', reason: 'closed' };
+  if (context.package_status === 'accepted' || context.package_status === 'attached') return { kind: 'none', reason: 'package_accepted' };
+  const paid = context.paid_display_name?.trim();
+  if (!paid) return { kind: 'none', reason: 'no_paid_course' };
+  if (context.recent_turns.some(turn => turn.direction === 'outbound' && RETENTION_MARKER_V1.test(normalizedVisible(turn.content)))) {
+    return { kind: 'none', reason: 'already_attempted' };
+  }
+  const gifts = context.package_status === 'offered' ? context.delivered_bonus.length : 0;
+  return { kind: 'retain', variant: gifts >= MAX_RULE_BONUS_COURSES_V1 ? 'limited_time' : 'more_bonus', paid_name: paid,
+    paid_code: context.paid_offering_code ?? null };
+}
+
+/** Owner wording (2026-11-03). */
+export function retentionFallbackMessageV1(decision: Extract<RetentionRuleDecisionV1, { kind: 'retain' }>): string {
+  return decision.variant === 'more_bonus'
+    ? `Estás seguro? Te puedo buscar otra bonificación que seguro te interesa! Qué te gustaría aprender además de ${decision.paid_name}?`
+    : 'Estás seguro? Las bonificaciones las podemos ofrecer por tiempo limitado, y la verdad que te llevas una gran promoción!';
+}
+
+export function retentionTaskV1(decision: Extract<RetentionRuleDecisionV1, { kind: 'retain' }>): string {
+  return [
+    'El cliente dijo que no por primera vez. Antes de cerrar, haz UN único intento de retención, con energía y sin presión:',
+    decision.variant === 'more_bonus'
+      ? `abre con «Estás seguro?» y ofrécele buscar otra bonificación que le interese, preguntando qué le gustaría aprender además de ${decision.paid_name}.`
+      : 'abre con «Estás seguro?» y recuérdale que las bonificaciones son por tiempo limitado y que se lleva una gran promoción.',
+    'No uses move=decline_purchase en este turno ni te despidas. Máximo 2 mensajes. Usa tú, con «!» y sin «¡».',
+  ].join('\n');
+}
+
+/** The retention turn keeps the sale open and carries the literal marker. */
+export function draftFulfillsRetentionV1(draft: RuleDraftV1): boolean {
+  if (draftMoves(draft).has('decline_purchase')) return false;
+  const messages = draft.response.messages;
+  if (messages.length === 0 || messages.length > 2) return false;
+  return RETENTION_MARKER_V1.test(normalizedVisible(messages.join(' ')));
+}
+

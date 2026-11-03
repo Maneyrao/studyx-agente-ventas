@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  decideRetentionRuleV1, draftFulfillsRetentionV1, retentionFallbackMessageV1,
   BONUS_AFFINITY_TABLE_V1, agentResponseOrdinalV1, bonusFallbackMessagesV1, bonusSequenceForPaidCourseV1,
   decideBonusRuleV1, decideCallRuleV1, draftFulfillsPromotionTaskV1, draftPresentsBonusV1, promotionTaskV1, nextRuleBonusCodeV1, priceExpressionHintV1,
   type RuleContextV1, type RuleDraftV1,
@@ -483,3 +484,72 @@ describe('pregunta de precio parafraseada por el modelo (en vivo 2026-11-02 18:4
     expect(confirmsPriceProbeV1(['solo el precio'], ['Qué curso te interesa?'])).toBe(false);
   });
 });
+
+describe('Regla A — curso elegido por el cliente (dueño 2026-11-03)', () => {
+  const chosen = (replaces?: { code: string; name: string }) => ({ paid_offering_code: 'ingles_1', paid_display_name: 'Inglés 1',
+    bonus_offering_code: 'armado_reparacion_pc', display_name: 'Armado y Reparación de PC', position: replaces ? 1 : 2,
+    source: 'customer_request' as const,
+    ...(replaces ? { replaces_offering_code: replaces.code, replaces_display_name: replaces.name } : {}) });
+  const delivered = [{ code: 'ingles_2', display_name: 'Inglés 2' }];
+  const data = { plan_codes: ['monthly_12', 'monthly_6', 'one_time'], customer_goal: null };
+  it('suma el curso pedido sin objeción nueva y recapitula tres al precio de uno', () => {
+    const decision = decideBonusRuleV1(ctx({ package_status: 'offered', delivered_bonus: delivered, rule_bonus: chosen() }), draft());
+    expect(decision).toMatchObject({ kind: 'offer', trigger: 'customer_request', bonus_code: 'armado_reparacion_pc', prior_bonus: delivered });
+    if (decision.kind !== 'offer') throw new Error();
+    expect(bonusFallbackMessagesV1(decision, data)).toEqual(['Listo! Te sumo Armado y Reparación de PC de regalo: te llevas '
+      + 'Inglés 1 + Inglés 2 y Armado y Reparación de PC, tres cursos al precio de uno! Lo arrancamos en 12 cuotas de USD 30 o en 6 de USD 60?!']);
+  });
+  it('cambia el único regalo: el paquete nuevo es de dos cursos y la tarea no habla de trámites', () => {
+    const decision = decideBonusRuleV1(ctx({ package_status: 'offered', delivered_bonus: delivered,
+      rule_bonus: chosen({ code: 'ingles_2', name: 'Inglés 2' }) }), draft());
+    expect(decision).toMatchObject({ kind: 'offer', trigger: 'customer_request', prior_bonus: [], replaces: { code: 'ingles_2' } });
+    if (decision.kind !== 'offer') throw new Error();
+    const [fixed] = bonusFallbackMessagesV1(decision, data);
+    expect(fixed).toBe('Listo! Cambiamos Inglés 2 por Armado y Reparación de PC: te queda Inglés 1 + Armado y Reparación de PC de regalo, '
+      + 'dos cursos al precio de uno! Lo arrancamos en 12 cuotas de USD 30 o en 6 de USD 60?!');
+    const task = promotionTaskV1(decision, data);
+    expect(task).toContain('El cliente te pidió cambiar Inglés 2 por Armado y Reparación de PC');
+    expect(task).toContain('«compra aparte»');
+    const action = { type: 'offer_course_bonus', bonus_offering_code: 'armado_reparacion_pc', interest_offering_code: 'ingles_1' };
+    expect(draftFulfillsPromotionTaskV1(draft({ proposed_action: action, response: { messages: [fixed] } }), decision, data)).toBe(true);
+  });
+  it('nunca en checkout ni con el paquete aceptado', () => {
+    expect(decideBonusRuleV1(ctx({ package_status: 'accepted', rule_bonus: chosen() }), draft())).toMatchObject({ kind: 'none' });
+  });
+});
+
+describe('Regla E — retención ante el primer «no» (dueño 2026-11-03)', () => {
+  const declined = (text = 'no gracias, no lo voy a comprar') => draft({ move: { move: 'decline_purchase', secondary_moves: [] } });
+  const base = { paid_display_name: 'Inglés 1', paid_offering_code: 'ingles_1' };
+  it('primer no con menos de 3 regalos: busca otra bonificación', () => {
+    const decision = decideRetentionRuleV1(ctx({ ...base, batch_texts: ['no gracias'] }), declined());
+    expect(decision).toEqual({ kind: 'retain', variant: 'more_bonus', paid_name: 'Inglés 1', paid_code: 'ingles_1' });
+    if (decision.kind !== 'retain') throw new Error();
+    expect(retentionFallbackMessageV1(decision)).toBe('Estás seguro? Te puedo buscar otra bonificación que seguro te interesa! '
+      + 'Qué te gustaría aprender además de Inglés 1?');
+    expect(draftFulfillsRetentionV1(draft({ response: { messages: [retentionFallbackMessageV1(decision)] } }))).toBe(true);
+    expect(draftFulfillsRetentionV1(draft({ move: { move: 'decline_purchase', secondary_moves: [] },
+      response: { messages: ['Estás seguro? Te busco otra.'] } }))).toBe(false);
+  });
+  it('con los 3 regalos ya ofrecidos: recuerda la promoción', () => {
+    const gifts = ['a', 'b', 'c'].map(code => ({ code, display_name: code }));
+    expect(decideRetentionRuleV1(ctx({ ...base, batch_texts: ['no'], package_status: 'offered', delivered_bonus: gifts }), declined()))
+      .toMatchObject({ kind: 'retain', variant: 'limited_time' });
+  });
+  it('una sola vez por conversación', () => {
+    expect(decideRetentionRuleV1(ctx({ ...base, batch_texts: ['no'], recent_turns: [{ direction: 'outbound',
+      content: 'Estás seguro? Te puedo buscar otra bonificación' }] }), declined())).toMatchObject({ kind: 'none', reason: 'already_attempted' });
+  });
+  it.each(['no me escribas más', 'dejame de mandar mensajes', 'quiero darme de baja', 'sos un chanta', 'basta'])(
+    'respeta de inmediato: %s', (text) => {
+      expect(decideRetentionRuleV1(ctx({ ...base, batch_texts: [text] }), declined())).toMatchObject({ kind: 'none', reason: 'respect_end' });
+    });
+  it('nunca con opt-out, venta cerrada, sin curso o sin un no definitivo', () => {
+    expect(decideRetentionRuleV1(ctx({ ...base, batch_texts: ['no'], opted_out: true }), declined())).toMatchObject({ kind: 'none' });
+    expect(decideRetentionRuleV1(ctx({ ...base, batch_texts: ['no'], stage: 'closed' }), declined())).toMatchObject({ kind: 'none' });
+    expect(decideRetentionRuleV1(ctx({ batch_texts: ['no'] }), declined())).toMatchObject({ kind: 'none', reason: 'no_paid_course' });
+    expect(decideRetentionRuleV1(ctx({ ...base, batch_texts: ['lo voy a pensar'] }),
+      draft({ move: { move: 'defer_payment', secondary_moves: [] } }))).toMatchObject({ kind: 'none', reason: 'no_decline' });
+  });
+});
+
