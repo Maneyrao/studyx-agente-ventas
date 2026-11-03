@@ -1462,7 +1462,7 @@ describe('Agent A Brain V1', () => {
     });
 
     expect(composition.narrative.opening).toBe(
-      'Queda registrada tu elección. Avisame cuando quieras avanzar.',
+      'Queda registrada tu elección. Avísame cuando quieras avanzar.',
     );
     expect(composition.narrative.opening).not.toMatch(/USD|30|cuotas/iu);
   });

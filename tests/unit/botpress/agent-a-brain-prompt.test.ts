@@ -285,8 +285,8 @@ describe('Agent A Brain prompt', () => {
     const instructions = buildAgentABrainInstructionsV1(context());
     // Authority prompt lines 25-141 and 204-212 are now the literal behavior source.
     for (const rule of ['cierre de prueba', 'Ante señal de compra',
-      'Nunca en el primer contacto, ante la primera mención de precio',
-      'un segundo y, como máximo, un tercero', 'una pregunta principal',
+      'Se ofrece cuando confirma que el precio es el único inconveniente',
+      'hasta un tercero como máximo', 'una pregunta principal',
       'interés expresado o el curso que compra',
       'La llamada es una herramienta de cierre complementaria']) {
       expect(instructions).toContain(rule);

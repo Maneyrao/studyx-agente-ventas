@@ -90,7 +90,7 @@ describe('Agent A brain keeps the model as author of the copy', () => {
   it('falls back to the safe constant only when the model copy carries an unauthorized value', () => {
     const composition = compose('confirm_selected_plan', ['Perfecto, elegiste 12 cuotas de USD 30.']);
 
-    expect(composition.narrative.opening).toBe('Queda registrada tu elección. Avisame cuando quieras avanzar.');
+    expect(composition.narrative.opening).toBe('Queda registrada tu elección. Avísame cuando quieras avanzar.');
     expect(composition.narrative.opening).not.toMatch(/USD|30|cuotas/iu);
   });
 

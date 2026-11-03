@@ -296,4 +296,28 @@ OWNER_PROMOTION_MODE_REPLAY_CASES_MUTABLE.push({
   ],
 });
 
+/** Gabi's live test of 2026-11-03 12:28 (-00:00): a course outside the catalog,
+ * the agent proposes the closest one and the customer answers "sí, ese curso".
+ * Live it fell into "Perdón, no te entendí bien" (COURSE_NOT_RESOLVED during the
+ * audit_log permission outage). Real Estate is not in the eval catalog, so the
+ * same pattern uses Aires Acondicionados. */
+OWNER_PROMOTION_MODE_REPLAY_CASES_MUTABLE.push({
+  id: '25_gabi_ese_curso_replay_20261103_1228',
+  title: 'Replay 3/11 12:28 (Gabi): curso inexistente → propuesta cercana → «sí, ese curso» sin contingencia',
+  turns: [
+    englishTurn('course_outside_catalog', 'hola buen dia.\ncomo estan ?\nestoy interesado en informacion sobre el curso de tecnico en refrigeracion', {
+      must: ['Saludar, aclarar con naturalidad que ese curso puntual no está y proponer el más cercano del catálogo (Aires Acondicionados), con una pregunta de avance.'],
+      authority: [emmaSells], hard: [{ type: 'workflow_committed' }, ...valueRegister],
+    }),
+    englishTurn('that_course', 'si, ese curso es el que me interesa', {
+      must: ['Entender que «ese curso» es el que acaba de proponer y seguir con ese curso (valor, contenido o siguiente paso), sin pedir aclaración ni afirmar datos que no estén en la ficha.'],
+      authority: [emmaSells], hard: [{ type: 'workflow_committed' }, ...valueRegister],
+    }),
+    englishTurn('what_dont_you_get', 'que no entendes ?', {
+      must: ['Responder con naturalidad, sin contingencia, retomando el curso elegido y avanzando.'],
+      authority: [emmaSells], hard: [{ type: 'workflow_committed' }, ...valueRegister],
+    }),
+  ],
+});
+
 export const OWNER_PROMOTION_MODE_REPLAY_CASES: readonly GoldenCaseV1[] = OWNER_PROMOTION_MODE_REPLAY_CASES_MUTABLE;

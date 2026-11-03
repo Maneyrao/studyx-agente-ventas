@@ -23,7 +23,7 @@ describe('canonical prompt deployment parity', () => {
   it('keeps diagnosis, value-based objection handling and calls while fencing promotions', () => {
     expect(source).toContain('Descubre sólo lo que te sirve para vender');
     expect(source).toContain('La llamada es una herramienta de cierre complementaria');
-    expect(source).toContain('Nunca en el primer contacto, ante la primera mención de precio');
+    expect(source).toContain('Se ofrece cuando confirma que el precio es el único inconveniente');
     expect(source).toContain('en el mismo turno, presenta el curso en tu respuesta');
     expect(source).toContain('`accept_promotion` lleva la identidad completa del contexto');
     expect(source).toContain('schedule_price_objection_checkin');

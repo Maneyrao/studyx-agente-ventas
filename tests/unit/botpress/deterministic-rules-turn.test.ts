@@ -244,7 +244,7 @@ describe('live Rule A/B orchestration, bounded rewrite and validated fallback', 
       repair_enabled: true, rejection_id: () => rejectionId, resolve: resolver(current), repair });
     expect(result.record.rule_b).toBe('fixed');
     expect(result.resolved.effective.proposal.response.call_offer)
-      .toBe('Si querés, coordinamos una llamada corta para verlo juntos. Te sirve?');
+      .toBe('Si quieres, coordinamos una llamada corta para verlo juntos. Te sirve?');
     expect(result.resolved.action_rejection).toBeNull();
     expect(repair).toHaveBeenCalledOnce();
   });
@@ -354,7 +354,7 @@ describe('live Rule A/B orchestration, bounded rewrite and validated fallback', 
 });
 
 describe('dueño 2026-11-02 (segunda revisión): promo instantánea, pregunta de precio y sin cierres pasivos', () => {
-  const probe = 'El precio es el único inconveniente? Puedo revisar una promoción.';
+  const probe = 'El precio es el único inconveniente? Te puedo buscar una promoción que se adapte si es el caso';
   function priceContext(text: string, objections = 0): AgentAContextV1 {
     const current = context(false);
     current.turn.batch_messages = [{ id: 'current', text }];
@@ -476,8 +476,9 @@ describe('owner rule E (2026-11-03): one retention attempt on the first definiti
   const declineContext = () => {
     const current = context();
     current.turn.batch_messages = [{ id: 'current', text: 'no, gracias, no lo voy a comprar' }];
-    current.capabilities.course_bonus!.ladder = undefined;
-    current.capabilities.course_bonus!.rule_bonus = null;
+    // The backend authorizes the retention offer on the literal first decline (instant trigger).
+    current.capabilities.course_bonus!.ladder = { ...current.capabilities.course_bonus!.ladder!, eligible: true,
+      missing_steps: [], instant_trigger: true };
     return current;
   };
   const declined = () => draft({ move: { schema_version: 1, move: 'decline_purchase', secondary_moves: [], vetoes: ['purchase'], confidence: 1 },
@@ -489,13 +490,13 @@ describe('owner rule E (2026-11-03): one retention attempt on the first definiti
     const result = await resolveDeterministicRulesTurnV1({ context: current, initial: declined(),
       repair_enabled: true, rejection_id: () => rejectionId, resolve: resolver(current), repair });
     expect(repair).toHaveBeenCalledOnce();
-    expect(repair.mock.calls[0]?.[0].rejections.map(reason => reason.code)).toEqual(['RETENTION_REQUIRED']);
+    expect(repair.mock.calls[0]?.[0].rejections.map(reason => reason.code)).toEqual(['BONUS_OFFER_REQUIRED', 'RETENTION_REQUIRED']);
     const proposal = result.resolved.effective.proposal;
-    expect(proposal.response.messages).toEqual(['Estás seguro? Te puedo buscar otra bonificación que seguro te interesa! '
-      + 'Qué te gustaría aprender además de Introducción al Ecommerce?']);
+    // Owner 2026-11-03 second batch: the retention offers the next gift for real.
+    expect(proposal.response.messages).toEqual([`Estás seguro? Te puedo sumar ${bonusName} sin costo con Introducción al Ecommerce, `
+      + 'seguro te interesa! Qué te parece?!']);
+    expect(proposal.proposed_action).toEqual({ type: 'offer_course_bonus', bonus_offering_code: bonus, interest_offering_code: paid });
     expect(proposal.move.move).not.toBe('decline_purchase');
-    expect(proposal.move.vetoes).toContain('payment_link');
-    expect(proposal.move.vetoes).not.toContain('purchase');
   });
 
   it('a decline that names the course still yields a schema-valid retention fallback', async () => {
@@ -506,7 +507,8 @@ describe('owner rule E (2026-11-03): one retention attempt on the first definiti
     const result = await resolveDeterministicRulesTurnV1({ context: current, initial: naming(),
       repair_enabled: true, rejection_id: () => rejectionId, resolve: resolver(current), repair });
     expect(result.resolved.effective.proposal.response.messages[0]).toMatch(/^Estás seguro\?/u);
-    expect(result.resolved.effective.proposal.move).not.toHaveProperty('course_reference');
+    // Clean move on the paid course (never the decline's own references).
+    expect(result.resolved.effective.proposal.move).toMatchObject({ move: 'ask_course_information', course_reference: paid });
   });
 
   it('respects the second no: no retention when it was already attempted', async () => {

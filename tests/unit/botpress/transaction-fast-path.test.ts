@@ -321,7 +321,7 @@ describe('transaction fast paths', () => {
     expect(matchCourseFactsFastPath(turn)?.response).toBe(
       'El curso de Decoración de Interiores tiene 34 clases. '
       + 'La certificación de Decoración de Interiores no está especificada en la información disponible. '
-      + '¿Querés que revisemos otro dato?',
+      + '¿Quieres que revisemos otro dato?',
     );
   });
 
