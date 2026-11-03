@@ -474,9 +474,7 @@ async function currentBatchTexts(input: {
 }
 
 /** No sales state yet (first message) means no checkout; a literal promo request is the trigger. */
-async function promoRequestedThisTurn(input: { contact_id: string; conversation_id: string; source_turn_id?: string }, db: DbClient): Promise<boolean> {
-  return (await currentBatchTexts(input, db)).some(promoRequestV1);
-}
+
 
 /** A leveled family ("Inglés 1/2/3") referenced without a level resolves to
  * its entry level; anything else must be a single course. */
@@ -649,12 +647,9 @@ async function readDirectCapability(input: {
     WHERE w.slug=${input.workspace_slug} AND w.status='active'
   `;
   if (!row) return {...hidden('unavailable'),enabled:false,max_bonus_courses:max};
-  // First message of a conversation: no sales state yet, so no ladder. A promo
-  // request naming the course in this very message is the verified instant trigger.
-  const ladder=await readCourseBonusLadderV1(input,db)
-    ?? (await promoRequestedThisTurn(input, db) ? { ...deriveCourseBonusLadderV1({ observed_price_objection_count: 0, call_invitation_status: 'not_offered',
-      call_offer_count: 0, may_offer_call: false }), eligible: true, missing_steps: [], current_turn_price_objection: true,
-      instant_trigger: true } : null);
+  // Owner 2026-11-03 (third revision): a first-message promo request no longer
+  // opens the offer; Emma asks the price question first.
+  const ladder=await readCourseBonusLadderV1(input,db);
   const activeCourses=await db<Array<{code:string;display_name:string;aliases:string[]|null}>>`
     SELECT o.code,o.display_name,ARRAY(SELECT jsonb_array_elements_text(CASE WHEN jsonb_typeof(o.metadata->'aliases')='array'
       THEN o.metadata->'aliases' ELSE '[]'::jsonb END)) aliases
@@ -694,7 +689,7 @@ offered: readonly string[], max: number): Promise<{ request: CustomerBonusReques
     offered_bonus_codes: offered, max_bonus_courses: max, previous_agent_messages: previous });
   // Owner 4e (2026-11-03): with no package yet, "me bonificás X?" before the
   // price question asks it first; the "sí" then gifts X even off the table.
-  if (offered.length === 0 && raw?.kind === 'add' && flags.price_probe === 'not_asked') {
+  if (offered.length === 0 && raw?.kind === 'add' && flags.price_probe !== 'yes') {
     return { request: null, pending_probe_code: raw.bonus_offering_code };
   }
   const pending = flags.pending_gift_code;

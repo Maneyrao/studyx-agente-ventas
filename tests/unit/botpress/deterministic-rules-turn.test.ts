@@ -362,14 +362,15 @@ describe('dueño 2026-11-02 (segunda revisión): promo instantánea, pregunta de
       call_invitation_status: 'not_offered', call_offer_count: 0, may_offer_call: false });
     return current;
   }
-  it('un pedido de descuento sin objeción previa exige la oferta de la tabla en ese turno', async () => {
+  it('un pedido de descuento sin «sí» previo no ofrece: vuelve a la pregunta del precio (dueño, tercera revisión 2026-11-03)', async () => {
     const current = priceContext('me hacés un descuento?');
-    const repair = vi.fn(async () => offered());
-    const result = await resolveDeterministicRulesTurnV1({ context: current, initial: draft({ memory_candidates: [] }),
+    const repair = vi.fn(async () => { throw new Error('provider timeout'); });
+    const result = await resolveDeterministicRulesTurnV1({ context: current,
+      initial: draft({ memory_candidates: [], response: { messages: ['Te busco algo!'], call_offer: null } }),
       repair_enabled: true, rejection_id: () => rejectionId, resolve: resolver(current), repair });
-    expect(repair).toHaveBeenCalledOnce();
-    expect(result.record).toMatchObject({ rule_a: 'rewrite', rule_a_reason: 'promo_request', rule_a_bonus_code: bonus });
-    expect(result.resolved.effective.proposal.proposed_action).toMatchObject({ type: 'offer_course_bonus', bonus_offering_code: bonus });
+    expect(result.record).toMatchObject({ rule_a: 'not_applicable', rule_c: 'fixed' });
+    expect(result.resolved.effective.proposal.proposed_action.type).not.toBe('offer_course_bonus');
+    expect(result.resolved.effective.proposal.response.messages.at(-1)).toBe(probe);
   });
   it('una pregunta de precio sin la frase: una reescritura y, si falla, burbuja fija al final', async () => {
     const current = priceContext('cuánto sale?');

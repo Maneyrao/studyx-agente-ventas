@@ -150,7 +150,7 @@ export function instrumentBotpressReleaseSources({ sourceBaseSha, instrumentatio
   }
   const provenance = Object.freeze({ source_base_sha: sourceBaseSha,
     instrumentation_version: BOT_RELEASE_INSTRUMENTATION_VERSION, instrumentation_sha256: instrumentationSha256,
-    brain_version: 'studyx-agent-a-brain-v155', prompt_version: 'studyx-agent-a-canonical-v102' });
+    brain_version: 'studyx-agent-a-brain-v156', prompt_version: 'studyx-agent-a-canonical-v103' });
   const patched = {
     [BOT_RELEASE_SOURCE_PATHS[0]]: instrumentPersistence(parse(BOT_RELEASE_SOURCE_PATHS[0], sources[BOT_RELEASE_SOURCE_PATHS[0]])),
     [BOT_RELEASE_SOURCE_PATHS[1]]: instrumentWorkflow(parse(BOT_RELEASE_SOURCE_PATHS[1], sources[BOT_RELEASE_SOURCE_PATHS[1]]), 'processInboundTurn', 'turn'),

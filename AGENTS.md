@@ -137,3 +137,10 @@ Prueba en vivo del 03/11 07:31–07:42: contingencia por caída del proveedor, n
 - **«Tiempo limitado»:** sólo si el ciclo vigente tiene vencimiento real (`expires_at`); nunca urgencia ni fecha inventadas.
 - **Retención (Regla E):** primer «no» definitivo con menos de 3 bonificados → un único intento que ofrece de verdad el siguiente bonificado: «Estás seguro? Te puedo sumar {curso} también sin costo, seguro te interesa! Qué te parece?!» (si no hubo pregunta del precio, el primero). El backend lo autoriza con el «no» literal; la marca de retención usada queda persistida. Segundo «no» o 3 ya ofrecidos → despedida cálida y cierre. Opt-out, insultos o pedido de terminar → se respeta sin ofrecer nada.
 - **Cierres con energía, registro de valor y límites fijos:** sin cambios respecto de la sección anterior.
+
+## Promo sólo con «sí» explícito (2026-11-03, tercera revisión)
+
+- Reemplaza la «Promo instantánea» de la sección del 2026-11-02: un pedido de promo suelto («qué promo me podés hacer?») ya no abre la primera oferta. Emma vuelve con entusiasmo a la pregunta del precio («Te busco algo! Pero contame, el precio es lo único que te frena?»), aunque ya la haya hecho.
+- La primera oferta sale sólo con un «sí» explícito a la pregunta del precio, o tras una segunda queja de precio (o una queja después de un «no»). Con un bonificado ya ofrecido, cada nuevo pedido de promo o queja de precio pasa al siguiente.
+- «Me bonificas X?» sin paquete: sin el «sí» previo, primero la pregunta del precio; con el «sí», bonifica X.
+- Prompt de autoridad: canónico v103. Brain v156.

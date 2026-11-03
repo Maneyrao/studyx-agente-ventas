@@ -309,7 +309,7 @@ describe('Regla B — llamada', () => {
 import { PRICE_PROBE_V1, confirmsPriceProbeV1, decidePriceProbeRuleV1, passiveClosingSentencesV1,
   priceConcernTextV1, promoRequestV1, withPriceProbeV1, withoutPassiveClosingV1 } from '@/shared/conversation/deterministic-sales-rules';
 
-describe('dueño — promo o descuento habilita la oferta al instante', () => {
+describe('dueño — pedido de promo (tercera revisión 2026-11-03: sólo con «sí» explícito)', () => {
   it.each(['tenés alguna promo?', 'me hacés un descuento?', 'hay alguna promoción', 'algo más barato?',
     'me regalás un curso gratis?', 'hay beca?', 'precio especial?'])('"%s" es pedido de promo', t => {
     expect(promoRequestV1(t)).toBe(true);
@@ -317,12 +317,20 @@ describe('dueño — promo o descuento habilita la oferta al instante', () => {
   it('"no me hacés un descuento?" es un pedido cortés, no una negación de la promo', () => {
     const text = 'No me hacés un descuento? USD 360 me parece caro.';
     expect(promoRequestV1(text)).toBe(true);
+    // No longer an offer by itself: Emma goes back to the price question.
     expect(decideBonusRuleV1(ctx({ prior_price_objection_count: 0, batch_texts: [text] }), draft({ memory: [] })))
-      .toMatchObject({ kind: 'offer', trigger: 'promo_request', bonus_code: 'fotografia_celulares_tiendas_online' });
+      .toMatchObject({ kind: 'none' });
   });
-  it('sin objeción previa, el pedido de promo ofrece el 1.º de la tabla', () => {
-    expect(decideBonusRuleV1(ctx({ prior_price_objection_count: 0, batch_texts: ['me hacés un descuento?'] }), draft({ memory: [] })))
-      .toMatchObject({ kind: 'offer', trigger: 'promo_request', bonus_code: 'fotografia_celulares_tiendas_online' });
+  it('sin «sí» a la pregunta del precio, el pedido de promo no ofrece y vuelve a la pregunta (aunque ya se hizo)', () => {
+    const context = ctx({ prior_price_objection_count: 0, batch_texts: ['que promo me podes hacer?'], price_probe_status: 'asked' });
+    const bonus = decideBonusRuleV1(context, draft({ memory: [] }));
+    expect(bonus).toMatchObject({ kind: 'none' });
+    expect(decidePriceProbeRuleV1(context, draft({ memory: [] }), bonus)).toEqual({ kind: 'ask' });
+  });
+  it('con el «sí» explícito a la pregunta del precio, ofrece el 1.º de la tabla', () => {
+    expect(decideBonusRuleV1(ctx({ prior_price_objection_count: 0, batch_texts: ['si'],
+      previous_agent_messages: ['El precio es el único inconveniente? Te puedo buscar una promoción que se adapte si es el caso'] }), draft({ memory: [] })))
+      .toMatchObject({ kind: 'offer', trigger: 'price_probe_confirmed', bonus_code: 'fotografia_celulares_tiendas_online' });
   });
   it('con oferta entregada, un nuevo pedido de promo escala al siguiente', () => {
     const delivered = [{ code: 'fotografia_celulares_tiendas_online', display_name: 'Fotografía con Celulares para Tiendas Online' }];
@@ -451,10 +459,11 @@ describe('dueño — objeción literal después de una oferta escala (golden rea
 
 describe('Modo promoción — toma de datos interrumpida (dueño 2026-11-02)', () => {
   const collecting = { stage: 'course_selected', awaiting_reply: 'contact_details', payment_link_request_pending: true };
-  it('un pedido de promo por precio durante la toma de datos dispara la oferta', () => {
-    const decision = decideBonusRuleV1(ctx({ ...collecting,
-      batch_texts: ['hay bonificaciones?', 'o algun tipo de promocion', 'porque me parece caro'] }), draft({ memory: [] }));
-    expect(decision).toMatchObject({ kind: 'offer', trigger: 'promo_request' });
+  it('un pedido de promo por precio durante la toma de datos interrumpe y vuelve a la pregunta del precio', () => {
+    const context = ctx({ ...collecting, batch_texts: ['hay bonificaciones?', 'o algun tipo de promocion', 'porque me parece caro'] });
+    const decision = decideBonusRuleV1(context, draft({ memory: [] }));
+    expect(decision).toMatchObject({ kind: 'none' });
+    expect(decidePriceProbeRuleV1(context, draft({ memory: [] }), decision)).toEqual({ kind: 'ask' });
   });
   it.each([
     ['dato de contacto', ['me llamo Ana Pérez, ana@mail.com']],

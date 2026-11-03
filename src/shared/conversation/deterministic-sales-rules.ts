@@ -243,18 +243,24 @@ export function decidePriceProbeRuleV1(context: RuleContextV1, draft: RuleDraftV
   if (bonus.kind === 'offer') return { kind: 'none', reason: 'bonus_turn' };
   if (!context.bonus_enabled) return { kind: 'none', reason: 'bonus_disabled' };
   if (context.payment_paid) return { kind: 'none', reason: 'paid' };
-  if (isCheckoutV1(context, draft)) return { kind: 'none', reason: 'checkout' };
+  if (isCheckoutV1(context, draft, context.batch_texts)) return { kind: 'none', reason: 'checkout' };
   if (context.package_status === 'offered' || context.package_status === 'accepted' || context.package_status === 'attached')
     return { kind: 'none', reason: 'package_exists' };
-  // Owner 2026-11-03: once per conversation, from the persisted flag (paraphrases included).
-  if (context.price_probe_status && context.price_probe_status !== 'not_asked') return { kind: 'none', reason: 'already_asked' };
-  if (context.recent_turns.some(turn => turn.direction === 'outbound' && agentAskedPriceOnlyV1([turn.content])))
-    return { kind: 'none', reason: 'already_asked' };
+  // Owner 2026-11-03 (third revision): a promo request without an explicit "sí"
+  // goes back to the price question, even if it was already asked.
+  const promoWithoutYes = context.batch_texts.some(promoRequestV1) && context.price_probe_status !== 'yes'
+    && !confirmsPriceProbeV1(context.batch_texts, context.previous_agent_messages ?? []);
+  // Otherwise once per conversation, from the conversation history (paraphrases included).
+  if (!promoWithoutYes) {
+    if (context.price_probe_status && context.price_probe_status !== 'not_asked') return { kind: 'none', reason: 'already_asked' };
+    if (context.recent_turns.some(turn => turn.direction === 'outbound' && agentAskedPriceOnlyV1([turn.content])))
+      return { kind: 'none', reason: 'already_asked' };
+  }
   if (!context.recent_turns_complete) return { kind: 'none', reason: 'history_truncated' };
   if (context.batch_texts.some(text => planChoiceV1(text) || purchaseIntentV1(text))) return { kind: 'none', reason: 'plan_choice' };
   const concern = context.batch_texts.some(priceConcernTextV1) || draftRecordsPriceObjectionV1(draft, context.batch_texts)
     // "Me bonificás X?" before the question: ask it first (owner 4e).
-    || context.gift_request_pending_probe === true;
+    || context.gift_request_pending_probe === true || promoWithoutYes;
   return concern ? { kind: 'ask' } : { kind: 'none', reason: 'no_price_concern' };
 }
 
@@ -435,8 +441,6 @@ export function decideBonusRuleV1(context: RuleContextV1, draft: RuleDraftV1): B
       return { kind: 'none', reason: 'no_new_price_objection' };
     }
     trigger = 'escalation';
-  } else if (promoRequest) {
-    trigger = 'promo_request';
   } else if (probeConfirmed) {
     trigger = 'price_probe_confirmed';
   } else if (context.price_probe_status === 'no' && (currentObjection || context.batch_texts.some(priceExpressionHintV1))) {

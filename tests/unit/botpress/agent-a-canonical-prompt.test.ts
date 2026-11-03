@@ -35,7 +35,7 @@ describe('Agent A canonical sales prompt authority', () => {
       `export const STUDYX_AGENT_A_CANONICAL_PROMPT = ${JSON.stringify(prompt)} as const;`,
     );
     expect(generated[0]).toContain(
-      "export const STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION = 'studyx-agent-a-canonical-v102' as const;",
+      "export const STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION = 'studyx-agent-a-canonical-v103' as const;",
     );
   });
 

@@ -111,8 +111,12 @@ export async function readCourseBonusLadderV1(input: {
   const flowTrigger = !inCheckout && (
     (flow.price_probe === 'no' && row.customer_messages.some(priceExpressionHintV1))
     || (!flow.retention_used && flow.price_probe !== 'asked' && (gifts?.n ?? 0) < 3 && literalDeclineV1(row.customer_messages)));
-  const instantTrigger = flowTrigger || !inCheckout && (row.customer_messages.some(promoRequestV1)
-    || (liveOffer?.live === true && row.customer_messages.some(priceExpressionHintV1)))
+  // Owner 2026-11-03 (third revision): a promo request alone never opens the
+  // first offer; only an explicit "sí" to the price question (or a second
+  // complaint, via the ladder) does. After an offer, a new promo request or
+  // complaint escalates to the next gift.
+  const instantTrigger = flowTrigger || !inCheckout && liveOffer?.live === true
+    && (row.customer_messages.some(promoRequestV1) || row.customer_messages.some(priceExpressionHintV1))
     || !inCheckout && confirmsPriceProbeV1(row.customer_messages, previousAgent.map(message => message.content));
   // The locked scope above is authoritative for this turn. A first-turn promo
   // or a current committed price-only observation is valid even when there is
