@@ -60,6 +60,8 @@ run('customer-chosen bonus', () => {
       conversation_id: f.conversation_id, channel: 'text', selected_offering_code: paid, source_turn_id: f.second_turn_id }, { db: db! });
     expect(capability).toMatchObject({ rule_bonus: { bonus_offering_code: 'armado_reparacion_pc', source: 'customer_request',
       replaces_offering_code: 'ingles_2', position: 1 }, ladder: { eligible: true } });
+    const window = new Date(Date.now() + 3 * 86_400_000);
+    await db!`UPDATE promotion_offers SET expires_at=${window} WHERE promotion_cycle_id=${offer.promotion_cycle_id}::uuid`;
     const swapId = randomUUID();
     const input = { workspace_id: f.workspace_id, contact_id: f.contact_id, conversation_id: f.conversation_id,
       paid_offering_code: paid, source_turn_id: f.second_turn_id, expected_offer_version: 1,
@@ -70,6 +72,9 @@ run('customer-chosen bonus', () => {
     if (!swapped.ok) throw new Error();
     expect(swapped.promotion_cycle_id).not.toBe(offer.promotion_cycle_id);
     expect(await offerDirectCourseBonusV1(db!, input)).toEqual(swapped);
+    const [replacement] = await db!<Array<{ expires_at: Date }>>`SELECT expires_at FROM promotion_offers
+      WHERE promotion_cycle_id=${swapped.promotion_cycle_id}::uuid`;
+    expect(replacement?.expires_at.getTime()).toBe(window.getTime());
     const cycles = await db!<Array<{ status: string; cancel_reason: string | null; gifts: string[] }>>`
       SELECT o.status,o.cancel_reason,ARRAY(SELECT b.offering_code_snapshot FROM promotion_offer_bonus_offerings b
         WHERE b.offer_id=o.id ORDER BY b.position) gifts

@@ -485,7 +485,7 @@ describe('owner rule E (2026-11-03): one retention attempt on the first definiti
 
   it('rewrites once, then sends the owner retention copy without closing the sale', async () => {
     const current = declineContext();
-    const repair = vi.fn(async () => declined());
+    const repair = vi.fn<(rejection: TurnRejectionV1) => Promise<GeneratedAgentATurnProposalV1>>(async () => declined());
     const result = await resolveDeterministicRulesTurnV1({ context: current, initial: declined(),
       repair_enabled: true, rejection_id: () => rejectionId, resolve: resolver(current), repair });
     expect(repair).toHaveBeenCalledOnce();

@@ -49,6 +49,7 @@ interface DurableResult {
 type Rejected = { readonly ok: false; readonly reason: DirectCourseBonusRejectionV1; readonly ladder?: CourseBonusLadderV1 };
 export type DirectCourseBonusResultV1 = (DurableResult & { readonly outbound_message_id: string }) | Rejected;
 export type AcceptDirectCourseBonusResultV1 = DurableResult | Rejected;
+export const MAX_BONUS_SWAPS_PER_CONVERSATION_V1 = 3;
 class Rejection extends Error {
   constructor(readonly reason: DirectCourseBonusRejectionV1, readonly ladder?: CourseBonusLadderV1) { super(reason); }
 }
@@ -303,12 +304,19 @@ export async function offerDirectCourseBonusV1(db: DbClient, input: OfferDirectC
     if (!chosen && nextRuleBonusCodeV1({paid_code:input.paid_offering_code,active_codes:active.map(row=>row.code),
       delivered_codes:offered.map(row=>row.code),max_bonus_courses:limit})!==input.bonus_offering_codes[0]
       && !offered.some(row=>row.code===input.bonus_offering_codes[0])) reject('invalid_offering');
+    let replacedExpiresAt: Date | null = null;
     if (swap && offer) {
       // Never swap under a live call: the voice store reads the offered cycle.
       const [call]=await tx`SELECT 1 FROM call_sessions WHERE conversation_id=${input.conversation_id}::uuid
         AND contact_id=${input.contact_id}::uuid
         AND status IN ('requested','dispatching','provider_accepted','dispatch_ambiguous','in_progress') LIMIT 1`;
       if (call) reject('stale_offer_version');
+      // A swap never adds a gift; cap the churn anyway (security review 2026-11-03).
+      const [swaps]=await tx<Array<{n:number}>>`SELECT count(*)::int n FROM promotion_offers
+        WHERE conversation_id=${input.conversation_id}::uuid AND contact_id=${input.contact_id}::uuid
+          AND cancel_reason='CUSTOMER_REPLACED_BONUS'`;
+      if ((swaps?.n ?? 0)>=MAX_BONUS_SWAPS_PER_CONVERSATION_V1) reject('bonus_limit_reached');
+      replacedExpiresAt=offer.expires_at ?? null;
       // History is kept: the old cycle is cancelled, never rewritten.
       await tx`UPDATE promotion_offers SET status='cancelled',cancel_reason='CUSTOMER_REPLACED_BONUS' WHERE id=${offer.id}::uuid`;
       await tx`UPDATE course_bonus_followups SET status='cancelled',terminal_reason='CUSTOMER_REPLACED_BONUS'
@@ -328,6 +336,11 @@ export async function offerDirectCourseBonusV1(db: DbClient, input: OfferDirectC
       const [created]=await tx<OfferRow[]>`INSERT INTO promotion_offers(workspace_id,contact_id,conversation_id,promotion_id,paid_offering_id,package_mode,promotion_cycle_id)
         VALUES (${input.workspace_id}::uuid,${input.contact_id}::uuid,${input.conversation_id}::uuid,${promotion.id}::uuid,${context.paid_id}::uuid,'direct',COALESCE(${swap ? null : input.promotion_cycle_id ?? null}::uuid,gen_random_uuid())) RETURNING *`;
       offer={...created,promotion_code:code};
+      if (replacedExpiresAt) {
+        // The replacement keeps the original promotion window.
+        await tx`UPDATE promotion_offers SET expires_at=${replacedExpiresAt} WHERE id=${created.id}::uuid`;
+        offer={...offer,expires_at:replacedExpiresAt};
+      }
       await validateOpen(tx,input,context,offer);
     }
     await tx`INSERT INTO messages(id,conversation_id,contact_id,direction,content,in_reply_to,part_index)

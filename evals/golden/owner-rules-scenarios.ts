@@ -240,4 +240,60 @@ OWNER_PROMOTION_MODE_REPLAY_CASES_MUTABLE.push({
   ],
 });
 
+/** Owner live test of 2026-11-03 07:31–07:42 (-03:00), "Emma vende". The first two
+ * turns fell into the contingency (DeepSeek 503/timeout); the bonus choice was
+ * answered with an administrative register. The setup turn reproduces the
+ * live package (Inglés 1 + Inglés 2) the contact already had. */
+const valueRegister = [
+  { type: 'not_contains', value: 'compra aparte' } as const, { type: 'not_contains', value: 'No es un cambio' } as const,
+  { type: 'not_contains', value: 'sigue siendo USD' } as const, { type: 'not_contains', value: 'precio no cambia' } as const,
+  { type: 'not_contains', value: 'Qué dato o qué curso' } as const, ...noContingency];
+const emmaSells = owner(114, 114, 'Emma vende');
+const setupPackage = englishTurn('setup_live_package', 'me interesa ingles 1, desde cero\ntenés alguna promo? me parece caro', {
+  must: ['Presentar la promoción exclusiva: Inglés 1 con Inglés 2 bonificado, con valor y cierre de plan.'],
+  authority: [promotionMode, ruleA],
+  expected: { move: replayMoves, action: ['offer_course_bonus'], state: {
+    promotion: { status: ['offer_available'], bonusCount: [1], paidCourse: ['ingles_1'] } } },
+  hard: [{ type: 'workflow_committed' }, { type: 'action_bonus_in', values: ['ingles_2'] }, ...valueRegister],
+});
+OWNER_PROMOTION_MODE_REPLAY_CASES_MUTABLE.push({
+  id: '23_owner_emma_vende_replay_20261103_0731',
+  title: 'Replay 3/11 07:31: pago sin curso → precio real; «me bonificas uno de los dos?» → se suma con registro de valor',
+  turns: [
+    englishTurn('payment_without_course', 'quiero saber como es el tema del pago\npuede ser?\nbuenas', {
+      must: ['Dar el valor real (USD 360) con los planes reales y preguntar qué curso le interesa.'],
+      authority: [emmaSells],
+      hard: [{ type: 'workflow_committed' }, { type: 'contains', value: '360' }, ...valueRegister],
+    }),
+    englishTurn('not_defined_yet', 'no lo he definido aun', { authority: [emmaSells],
+      hard: [{ type: 'workflow_committed' }, ...valueRegister] }),
+    setupPackage,
+    englishTurn('bonify_one_of_two', 'y si yo tengo el curso de ingles 1 y armado y reparacion de pc, me bonificas uno de los dos?', {
+      must: ['Decir que sí: sumar Armado y Reparación de PC de regalo y recapitular el paquete como ganancia (tres cursos al precio de uno), cerrando con una sola pregunta con energía.'],
+      mustNot: ['No usar «compra aparte», «no es un cambio», «el precio sigue siendo» ni abrir con «la bonificación ya está aplicada».'],
+      authority: [emmaSells, ruleA],
+      expected: { move: replayMoves, action: ['offer_course_bonus'], state: {
+        promotion: { status: ['offer_available'], bonusCount: [2], paidCourse: ['ingles_1'] } } },
+      hard: [{ type: 'workflow_committed' }, { type: 'action_bonus_in', values: ['armado_reparacion_pc'] },
+        { type: 'question_count_at_most', value: 1 }, ...valueRegister],
+    }),
+  ],
+});
+OWNER_PROMOTION_MODE_REPLAY_CASES_MUTABLE.push({
+  id: '24_owner_emma_vende_swap_20261103_0741',
+  title: 'Replay 3/11 07:41: «no puedo cambiar Inglés 2 por Reparación de PC?» → se cambia el único bonificado',
+  turns: [
+    setupPackage,
+    englishTurn('swap_only_bonus', 'osea no puedo cambiar ingles 2 por armado y reparacion de pc?', {
+      must: ['Decir que sí y cambiarlo: Inglés 1 + Armado y Reparación de PC de regalo, dos cursos al precio de uno, con cierre de una sola pregunta.'],
+      mustNot: ['No negar el cambio ni usar tono administrativo.'],
+      authority: [emmaSells, ruleA],
+      expected: { move: replayMoves, action: ['offer_course_bonus'], state: {
+        promotion: { status: ['offer_available'], bonusCount: [1], paidCourse: ['ingles_1'] } } },
+      hard: [{ type: 'workflow_committed' }, { type: 'action_bonus_in', values: ['armado_reparacion_pc'] },
+        { type: 'question_count_at_most', value: 1 }, ...valueRegister],
+    }),
+  ],
+});
+
 export const OWNER_PROMOTION_MODE_REPLAY_CASES: readonly GoldenCaseV1[] = OWNER_PROMOTION_MODE_REPLAY_CASES_MUTABLE;
