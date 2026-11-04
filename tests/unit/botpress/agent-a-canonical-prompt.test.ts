@@ -13,7 +13,7 @@ const TECHNICAL_ANNEX = `## Anexo técnico
 - La especificación de bonificación se traduce al contrato real \`AgentATurnProposalV1\`: no existe \`move=negotiate\` y \`proposed_action\` es un objeto.
 - \`accept_promotion\` lleva la identidad completa del contexto: \`promotion_code\`, \`interest_offering_code\`, \`promotion_cycle_id\` y \`offer_version\`.
 - Ante el rechazo de una bonificación se quita sólo el curso nuevo y se conservan los ya entregados.
-- La \`price_objection\` que habilita la bonificación debe estar registrada en un turno anterior.
+- El motivo de la bonificación (\`motive.quote\`) debe ser literal en el mensaje entrante actual; una objeción registrada en un turno anterior no la habilita.
 - Los temarios y el texto del certificado llegan al modelo como datos autorizados mediante \`fact_id\`.
 `;
 
@@ -35,7 +35,7 @@ describe('Agent A canonical sales prompt authority', () => {
       `export const STUDYX_AGENT_A_CANONICAL_PROMPT = ${JSON.stringify(prompt)} as const;`,
     );
     expect(generated[0]).toContain(
-      "export const STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION = 'studyx-agent-a-canonical-v108' as const;",
+      "export const STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION = 'studyx-agent-a-canonical-v109' as const;",
     );
   });
 
@@ -50,7 +50,7 @@ describe('Agent A canonical sales prompt authority', () => {
   });
 });
 
-describe('Agent A canonical prompt v108 (Gabi manual integration)', () => {
+describe('Agent A canonical prompt v109 (Gabi manual integration)', () => {
   const prompt = readFileSync(PROMPT_PATH, 'utf8');
   const authority = readFileSync(AUTHORITY_PATH, 'utf8');
 
@@ -99,7 +99,7 @@ describe('Agent A canonical prompt v108 (Gabi manual integration)', () => {
 
   it('pins the canonical source in the generator', () => {
     const generator = readFileSync('scripts/generate-agent-a-prompt-module.mjs', 'utf8');
-    expect(generator).toContain('studyx-agent-a-canonical-v108');
+    expect(generator).toContain('studyx-agent-a-canonical-v109');
     expect(generator).toContain(`lineCount !== ${prompt.match(/\n/gu)!.length}`);
   });
 });

@@ -26,6 +26,7 @@ const COURSE_BOUND_MOVES = new Set<ConversationMoveV1['move']>([
   'defer_payment',
   'request_payment_link',
   'decline_purchase',
+  'request_course_program',
 ]);
 
 const LOW_INFORMATION_TOKENS = new Set([

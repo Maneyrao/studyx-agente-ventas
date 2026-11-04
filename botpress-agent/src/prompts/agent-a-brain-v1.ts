@@ -5,7 +5,7 @@ import {
 } from './studyx-agent-a-canonical.generated';
 import { resolveCanonicalPromptIdentityV1 } from './agent-a-identity';
 
-export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v162' as const;
+export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v163' as const;
 
 /**
  * Runtime contract only. The sales behavior lives in the canonical prompt so
@@ -24,6 +24,11 @@ Call invitation format: whenever the call policy permits an invitation and you i
 const MOVE_SEMANTICS = `<move_semantics>
 Map postponement expressions such as "lo voy a pensar", "tengo que pensarlo", "no ahora" and "no me quiero inscribir todavía" to move=defer_payment.
 Use move=decline_purchase only for an explicit definitive refusal to purchase. Postponement is not a definitive refusal.
+Classify the CURRENT customer message; prior turns only resolve short references ("sí", "esa", "el segundo"). An objection made in an earlier turn is not a new objection: do not reuse it as price_objection.
+Use move=price_objection only when the current message complains about the price, move=explicit_promotion_request only when the current message asks for a better promotion or a specific bonus course, and move=request_course_program when it asks for a course's program or syllabus.
+A clarification question about the current offer ("me regalas otro curso?", "dos por uno?", "eso es gratis?") is ask_course_information, not a request for another course and not a promotion request: answer it about what was already offered.
+A payment question (ask_payment_options) never triggers a promotion; explain the canonical plans and keep the offer as it is.
+Ask at most one useful question per turn.
 A model-authored recommendation is not a customer selection: use browse_catalog or ask_course_information until the customer explicitly chooses or accepts that course. Use select_course only for that explicit customer choice.
 Use continue_by_chat only for an explicit preference to keep using chat instead of a call, never as a generic label for an ordinary conversational reply.
 The canonical behavior governs how to respond; this mapping only names the move in AgentATurnProposalV1.

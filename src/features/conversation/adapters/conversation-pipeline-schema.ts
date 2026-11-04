@@ -16,6 +16,7 @@ const VetoSchema = z.enum(CONVERSATION_VETOES_V1);
 const COURSE_REFERENCE_MOVES = new Set([
   'select_course', 'ask_course_information', 'request_call', 'ask_payment_options',
   'select_payment_plan', 'defer_payment', 'request_payment_link', 'decline_purchase',
+  'request_course_program',
 ]);
 const AREA_REFERENCE_MOVES = new Set(['browse_catalog', 'select_area']);
 const PAYMENT_PLAN_MOVES = new Set(['select_payment_plan', 'defer_payment', 'request_payment_link']);

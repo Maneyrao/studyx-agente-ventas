@@ -255,7 +255,7 @@ describe('Agent A Brain prompt', () => {
     const instructions = buildAgentABrainInstructionsV1(context());
     // Authority prompt lines 25-141 and 204-212 are now the literal behavior source.
     for (const rule of ['cierre de prueba', 'Ante señal de compra',
-      'Se ofrece cuando el precio es de verdad el obstáculo',
+      'Motivo del mensaje actual',
       'hasta un tercero como máximo', 'una pregunta principal',
       'interés expresado o el curso que compra',
       'La llamada es una herramienta de cierre complementaria']) {
@@ -410,8 +410,8 @@ describe('Agent A Brain prompt', () => {
     const encoded = instructions.split('<authorized_context>')[1]!.split('</authorized_context>')[0]!;
     expect(JSON.parse(encoded)).toEqual(current);
     expect(instructions).not.toContain('<current_turn_guidance>');
-    expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v108');
-    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v162');
+    expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v109');
+    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v163');
   });
 
   it('maps recommendations and generic continuation without persisting a customer choice', () => {

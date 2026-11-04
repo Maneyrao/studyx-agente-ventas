@@ -17,6 +17,9 @@ export const CONVERSATION_MOVE_KINDS_V1 = [
   'ask_current_state',
   'provide_contact_details',
   'decline_purchase',
+  'price_objection',
+  'explicit_promotion_request',
+  'request_course_program',
   'unknown',
 ] as const;
 

@@ -29,6 +29,9 @@ Choose one primary move and at most two compatible secondary moves:
   Use it whenever identity data is the substance of the turn, including when it answers a request
   for that data. It carries no commercial authorization of its own.
 - decline_purchase: explicitly ends the purchase intention.
+- price_objection: the current message complains that the price is high or unaffordable.
+- explicit_promotion_request: the current message asks for a better promotion or a specific bonus course.
+- request_course_program: asks to receive the program or syllabus of a course.
 - unknown: meaning is too ambiguous for a safe move.
 
 Payment-link authorization requires an unambiguous forward-looking or imperative request to receive

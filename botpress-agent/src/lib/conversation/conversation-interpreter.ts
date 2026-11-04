@@ -69,7 +69,8 @@ export interface GeneratedConversationMoveV1 {
 const MOVE_KINDS = [
   'greeting', 'browse_catalog', 'select_area', 'select_course', 'ask_course_information',
   'continue_by_chat', 'request_call', 'decline_call', 'ask_payment_options',
-  'select_payment_plan', 'defer_payment', 'request_payment_link', 'decline_purchase', 'unknown',
+  'select_payment_plan', 'defer_payment', 'request_payment_link', 'decline_purchase', 'price_objection',
+  'explicit_promotion_request', 'request_course_program', 'unknown',
 ] as const
 
 function closedObject(properties: Record<string, unknown>) {
@@ -118,6 +119,7 @@ function omitNullReferences(value: unknown): unknown {
   if (![...moves].some((move) => [
     'select_course', 'ask_course_information', 'request_call', 'ask_payment_options',
     'select_payment_plan', 'defer_payment', 'request_payment_link', 'decline_purchase',
+    'request_course_program',
   ].includes(move))) delete output.course_reference
   if (![...moves].some((move) => ['browse_catalog', 'select_area'].includes(move))) {
     delete output.area_reference
