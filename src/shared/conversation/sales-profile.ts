@@ -34,6 +34,7 @@ export interface SalesProfileDecisionRowV1 {
 }
 
 const MAX_PER_BUCKET = 4;
+const SALES_PROFILE_KEY = /^[a-z][a-z0-9_]{0,63}$/u;
 const norm = (text: string) => text.toLowerCase().replace(/\s+/gu, ' ').trim();
 
 /** `rows` come newest first. A memory counts only when its quote is literal customer text. */
@@ -49,6 +50,9 @@ export function projectSalesProfileMemoriesV1(rows: readonly SalesProfileDecisio
       const { type, key, value, source_quote: quote } = candidate;
       if (typeof type !== 'string' || typeof key !== 'string' || typeof value !== 'string' || typeof quote !== 'string') continue;
       if (!(SALES_PROFILE_MEMORY_TYPES as readonly string[]).includes(type)) continue;
+      // The Botpress claim schema only parses keys like this one: a bad legacy key must drop that
+      // memory, never make the whole claim unparseable.
+      if (!SALES_PROFILE_KEY.test(key)) continue;
       const trimmedQuote = quote.trim();
       if (!trimmedQuote || !value.trim() || !evidence.some((text) => text.includes(norm(trimmedQuote)))) continue;
       const identity = `${type}:${key}`;

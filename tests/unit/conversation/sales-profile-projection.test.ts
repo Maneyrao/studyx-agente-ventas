@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { projectSalesProfileMemoriesV1 } from '@/shared/conversation/sales-profile';
+import { SalesProfileMemoriesV1Schema } from '../../../botpress-agent/src/schemas/agent-a-brain';
 
 const row = (candidates: Array<Record<string, unknown>>, evidence: string[]) => ({ memory_candidates: candidates, evidence });
 
@@ -24,6 +25,16 @@ describe('sales profile memory projection', () => {
     ]);
     expect(profile.objective).toEqual([]);
     expect(profile.objections).toEqual([]);
+  });
+
+  it('M1: a bad legacy key is dropped and never makes the claim unparseable', () => {
+    const profile = projectSalesProfileMemoriesV1([
+      row([{ type: 'objection', key: 'Price Objection!', value: 'caro', source_quote: 'es caro' },
+        { type: 'objection', key: 'a'.repeat(65), value: 'caro', source_quote: 'es caro' },
+        { type: 'objection', key: 'price_objection', value: 'caro', source_quote: 'es caro' }], ['es caro']),
+    ]);
+    expect(profile.objections.map((item) => item.key)).toEqual(['price_objection']);
+    expect(SalesProfileMemoriesV1Schema.safeParse(profile).success).toBe(true);
   });
 
   it('routes types to buckets and ignores types outside the DB constraint', () => {
