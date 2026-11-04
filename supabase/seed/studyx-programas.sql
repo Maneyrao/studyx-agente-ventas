@@ -4367,7 +4367,7 @@ Objetivo: Brindar al alumno una comprensión completa del sistema inmobiliario
 estadounidense, sus reglas, oportunidades y procesos operativos.
 Contenidos destacados:
 Programa completo: https://mystudyx.com/diplomado/real-estate/',
- 'active',1,'{"source":"official_program_pdf","course_slug":"real-estate","offering_code":null,"catalog_url":"https://mystudyx.com/diplomado/real-estate/","pdf_sha256":"f7631135a630119e0c07fb9602d42c57b62bd1a821a70d46c6690dde7fa0e6bc","source_page":1,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
+ 'active',1,'{"source":"official_program_pdf","course_slug":"real-estate","offering_code":"real_estate","catalog_url":"https://mystudyx.com/diplomado/real-estate/","pdf_sha256":"f7631135a630119e0c07fb9602d42c57b62bd1a821a70d46c6690dde7fa0e6bc","source_page":1,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
 ('397d2873-85d3-4aed-bc09-e12f761ba0d3','b0000000-0000-4000-8000-000000000001','offering',
  'Programa — Real Estate — página 1 — parte 2',
  'Curso: Real Estate.
@@ -4381,7 +4381,7 @@ Fuente oficial: programa StudyX, página 1 de 3.
  Claves legales, fiscales y prácticas
 – Módulo 3 - Marketing Inmobiliario Digital
 Programa completo: https://mystudyx.com/diplomado/real-estate/',
- 'active',1,'{"source":"official_program_pdf","course_slug":"real-estate","offering_code":null,"catalog_url":"https://mystudyx.com/diplomado/real-estate/","pdf_sha256":"f7631135a630119e0c07fb9602d42c57b62bd1a821a70d46c6690dde7fa0e6bc","source_page":1,"source_part":2,"extracted_at":"2026-10-29"}'::jsonb),
+ 'active',1,'{"source":"official_program_pdf","course_slug":"real-estate","offering_code":"real_estate","catalog_url":"https://mystudyx.com/diplomado/real-estate/","pdf_sha256":"f7631135a630119e0c07fb9602d42c57b62bd1a821a70d46c6690dde7fa0e6bc","source_page":1,"source_part":2,"extracted_at":"2026-10-29"}'::jsonb),
 ('e1a9979d-5b64-4317-bf02-c026f8eef366','b0000000-0000-4000-8000-000000000001','offering',
  'Programa — Real Estate — página 2 — parte 1',
  'Curso: Real Estate.
@@ -4402,7 +4402,7 @@ con ganancia.
 – Módulo 7 - Home Staging – Cómo preparar una propiedad para
 maximizar su valor y vender rápido
 Programa completo: https://mystudyx.com/diplomado/real-estate/',
- 'active',1,'{"source":"official_program_pdf","course_slug":"real-estate","offering_code":null,"catalog_url":"https://mystudyx.com/diplomado/real-estate/","pdf_sha256":"f7631135a630119e0c07fb9602d42c57b62bd1a821a70d46c6690dde7fa0e6bc","source_page":2,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
+ 'active',1,'{"source":"official_program_pdf","course_slug":"real-estate","offering_code":"real_estate","catalog_url":"https://mystudyx.com/diplomado/real-estate/","pdf_sha256":"f7631135a630119e0c07fb9602d42c57b62bd1a821a70d46c6690dde7fa0e6bc","source_page":2,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
 ('42c40dca-9abd-4577-a5e1-ebe0a910e162','b0000000-0000-4000-8000-000000000001','offering',
  'Programa — Real Estate — página 2 — parte 2',
  'Curso: Real Estate.
@@ -4415,7 +4415,7 @@ Formate como administrador profesional de unidades en alquiler, gestionando cont
 inquilinos, mantenimiento y reportes.
 – Módulo 9 - Diseño y Renovación para Real Estate
 Programa completo: https://mystudyx.com/diplomado/real-estate/',
- 'active',1,'{"source":"official_program_pdf","course_slug":"real-estate","offering_code":null,"catalog_url":"https://mystudyx.com/diplomado/real-estate/","pdf_sha256":"f7631135a630119e0c07fb9602d42c57b62bd1a821a70d46c6690dde7fa0e6bc","source_page":2,"source_part":2,"extracted_at":"2026-10-29"}'::jsonb),
+ 'active',1,'{"source":"official_program_pdf","course_slug":"real-estate","offering_code":"real_estate","catalog_url":"https://mystudyx.com/diplomado/real-estate/","pdf_sha256":"f7631135a630119e0c07fb9602d42c57b62bd1a821a70d46c6690dde7fa0e6bc","source_page":2,"source_part":2,"extracted_at":"2026-10-29"}'::jsonb),
 ('339c20e6-b72b-4124-ac9c-68b96d04b46b','b0000000-0000-4000-8000-000000000001','offering',
  'Programa — Real Estate — página 3 — parte 1',
  'Curso: Real Estate.
@@ -4436,7 +4436,7 @@ Al terminar este programa, el alumno:
  Tiene herramientas para captar, negociar, invertir y administrar
  Desarrolla una marca personal fuerte
 Programa completo: https://mystudyx.com/diplomado/real-estate/',
- 'active',1,'{"source":"official_program_pdf","course_slug":"real-estate","offering_code":null,"catalog_url":"https://mystudyx.com/diplomado/real-estate/","pdf_sha256":"f7631135a630119e0c07fb9602d42c57b62bd1a821a70d46c6690dde7fa0e6bc","source_page":3,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
+ 'active',1,'{"source":"official_program_pdf","course_slug":"real-estate","offering_code":"real_estate","catalog_url":"https://mystudyx.com/diplomado/real-estate/","pdf_sha256":"f7631135a630119e0c07fb9602d42c57b62bd1a821a70d46c6690dde7fa0e6bc","source_page":3,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
 ('897b92fd-e129-4bbc-8ddd-8a74d587307d','b0000000-0000-4000-8000-000000000001','offering',
  'Programa — Real Estate — página 3 — parte 2',
  'Curso: Real Estate.
@@ -4444,7 +4444,7 @@ Fuente oficial: programa StudyX, página 3 de 3.
  Domina aspectos legales, técnicos, financieros y digitales
  Está preparado para actuar en el mercado con criterio y confianza
 Programa completo: https://mystudyx.com/diplomado/real-estate/',
- 'active',1,'{"source":"official_program_pdf","course_slug":"real-estate","offering_code":null,"catalog_url":"https://mystudyx.com/diplomado/real-estate/","pdf_sha256":"f7631135a630119e0c07fb9602d42c57b62bd1a821a70d46c6690dde7fa0e6bc","source_page":3,"source_part":2,"extracted_at":"2026-10-29"}'::jsonb),
+ 'active',1,'{"source":"official_program_pdf","course_slug":"real-estate","offering_code":"real_estate","catalog_url":"https://mystudyx.com/diplomado/real-estate/","pdf_sha256":"f7631135a630119e0c07fb9602d42c57b62bd1a821a70d46c6690dde7fa0e6bc","source_page":3,"source_part":2,"extracted_at":"2026-10-29"}'::jsonb),
 ('f7cd28f7-f993-4edf-9f14-79bebbd5a0a7','b0000000-0000-4000-8000-000000000001','offering',
  'Programa — Sushi para Principiantes — página 3 — parte 1',
  'Curso: Sushi para Principiantes.

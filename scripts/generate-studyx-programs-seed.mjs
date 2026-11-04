@@ -62,6 +62,7 @@ export const OFFERING_CODES = {
   'organizador-profesional-de-eventos-sociales': 'organizador_eventos_sociales',
   'paisajismo-jardineria': 'paisajismo_jardineria',
   'publicidad-en-las-redes-sociales': 'publicidad_redes_sociales',
+  'real-estate': 'real_estate',
   'sushi-para-principiantes': 'sushi_principiantes',
   'tecnica-o-en-depilacion-definitiva': 'depilacion_definitiva',
   'tecnica-o-en-estetica-integral': 'estetica_integral',

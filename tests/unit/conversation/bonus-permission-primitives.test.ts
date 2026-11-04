@@ -52,6 +52,15 @@ describe('afinidad como pertenencia a un conjunto', () => {
       expect(new Set(list).size).toBe(list.length);
     }
   });
+  it('Real Estate (oferta fuera del manual) tiene afinidad sólo con cursos activos del catálogo del manual', async () => {
+    const manual = JSON.parse((await import('node:fs')).readFileSync('supabase/seed/data/studyx-manual.json', 'utf8')) as { courses: Array<{ code: string }> };
+    const manualCodes = manual.courses.map(course => course.code);
+    expect(BONUS_AFFINITY_TABLE_V1.real_estate!.length).toBeGreaterThan(0);
+    for (const code of BONUS_AFFINITY_TABLE_V1.real_estate!) expect(manualCodes).toContain(code);
+    const set = authorizedBonusCodesV1({ paid_code: 'real_estate', active_codes: manualCodes });
+    expect(set).toContain('especialista_ventas');
+    expect(set).not.toContain('real_estate');
+  });
   it('un curso nombrado se reconoce por su nombre exacto del catálogo en el lote', () => {
     expect(courseCodesNamedInBatchV1(['Y me bonificás Oratoria?'], catalog)).toEqual(['oratoria']);
     expect(courseCodesNamedInBatchV1(['quiero marketing'], catalog)).toEqual([]);

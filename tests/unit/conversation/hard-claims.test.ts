@@ -84,3 +84,16 @@ describe('hard claims ignore URLs and honor a real expiry', () => {
     expect(hardClaimKindsInTextV1('Vence el 16 de noviembre.', expiry)).toContain('invented_deadline');
   });
 });
+
+describe('Real Estate is a licensed trade (US state license)', () => {
+  it.each([
+    'Con el curso de Real Estate quedas habilitado para ejercer legalmente en Estados Unidos.',
+    'El curso de Real Estate te da la licencia inmobiliaria.',
+    'En Real Estate no necesitas licencia para vender propiedades.',
+  ])('flags a license promise: %s', (text) => {
+    expect(kinds(text)).toContain('license_claim')
+  })
+  it('lets the honest statement through', () => {
+    expect(kinds('El curso de Real Estate te da la base, pero no reemplaza la licencia estatal que exige Estados Unidos.')).not.toContain('license_claim')
+  })
+})

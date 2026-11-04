@@ -57,6 +57,8 @@ export const BONUS_AFFINITY_TABLE_V1: Readonly<Record<string, readonly string[]>
   ingles_1: ['ingles_2', 'ingles_3'],
   ingles_2: ['ingles_3'],
   ingles_3: [],
+  // Real Estate (offering outside the manual, owner 2026-11-04): sales, marketing and visual content, as its programme modules.
+  real_estate: ['especialista_ventas', 'marketing_digital', 'fotografia_profesional', 'publicidad_redes_sociales'],
 };
 
 /** "Puentes universales para emprender" (authority prompt:144). */

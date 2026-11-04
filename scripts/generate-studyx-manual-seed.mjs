@@ -15,6 +15,9 @@ const OUTPUT_PATH = join(ROOT, 'supabase/seed/studyx-manual.sql');
 const WORKSPACE_ID = 'b0000000-0000-4000-8000-000000000001';
 
 const data = JSON.parse(readFileSync(DATA_PATH, 'utf8'));
+// Active offerings that live outside the manual (own source: official programme PDF, see
+// scripts/upsert-real-estate-offering.mjs). The catalog sync must never deactivate them.
+const OUTSIDE_MANUAL_ACTIVE_CODES = ['real_estate'];
 
 if (data.source_of_truth !== true || data.courses.length !== 40) {
   throw new Error('The StudyX manual must declare exactly 40 explicit catalog courses.');
@@ -181,7 +184,7 @@ SET status = 'inactive',
     ),
     updated_at = now()
 WHERE workspace_id = ${sqlString(WORKSPACE_ID)}::uuid
-  AND code NOT IN (${data.courses.map((course) => sqlString(course.code)).join(', ')})
+  AND code NOT IN (${[...data.courses.map((course) => course.code), ...OUTSIDE_MANUAL_ACTIVE_CODES].map((code) => sqlString(code)).join(', ')})
   AND status = 'active';
 
 -- Retire website-derived course sources so retrieval has one catalog truth.
