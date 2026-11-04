@@ -243,6 +243,39 @@ describe('Agent A Brain V1', () => {
         .toBe(forbidden);
     }
   });
+  it('H1: an offer_course_bonus whose copy names only an earlier bonus is rejected once as bonus_not_named', () => {
+    const current = context();
+    current.catalog.selected_offering = { code: 'fotografia_profesional', display_name: 'Fotografía Profesional', area_code: 'diseno', facts: [] };
+    current.commercial_state.selected_offering_code = 'fotografia_profesional';
+    current.catalog.available_offerings = [
+      { code: 'fotografia_profesional', display_name: 'Fotografía Profesional', area_code: 'diseno', fact_id: 'paid' },
+      { code: 'ingles_1', display_name: 'Inglés 1', area_code: 'cultural', fact_id: 'one' },
+      { code: 'instagram_emprendedores', display_name: 'Instagram para Emprendedores', area_code: 'marketing', fact_id: 'two' },
+    ];
+    current.capabilities.course_bonus = {
+      enabled: true, max_bonus_courses: 3, may_offer_bonus: true, status: 'checkin_available',
+      may_schedule_checkin: false, may_request_review: false, may_accept_offer: false, may_send_promoted_payment: false,
+      promotion_code: null, interest_offering_code: 'fotografia_profesional',
+      bonus_offerings: [], delivered_bonus_offerings: [{ code: 'ingles_1', display_name: 'Inglés 1', position: 1 }],
+    };
+    const action = { type: 'offer_course_bonus' as const, interest_offering_code: 'fotografia_profesional',
+      bonus_offering_code: 'instagram_emprendedores' };
+    for (const [message, rejected] of [
+      ['Ya tienes Inglés 1 sin costo, y te sumo otro más. El precio no cambia.', true],
+      ['Te sumo instagram para emprendedores sin costo. El precio no cambia.', false],
+    ] as const) {
+      const parsed = parseAgentATurnProposalV1(proposal({
+        move: { schema_version: 1, move: 'continue_by_chat', secondary_moves: [], vetoes: [], confidence: 1 },
+        response: { messages: [message], call_offer: null }, proposed_action: action }), current);
+      const rejection = validateAgentATurnProposalV1({ proposal: parsed, context: current,
+        planned_fact_ids: [], rejection_id: '00000000-0000-4000-8000-000000000001' });
+      expect(rejection?.rejections.some(item => item.subject === 'bonus_not_named') ?? false).toBe(rejected);
+    }
+    current.turn_rejection = { schema_version: 1, rejection_id: '00000000-0000-4000-8000-000000000001', attempt: 1,
+      rejections: [{ code: 'FACT_VALUE_MISMATCH', subject: 'bonus_not_named' }] } as never;
+    const repair = buildAgentABrainInstructionsV1(current);
+    expect(repair).toContain("name the course you're adding");
+  });
   it('accepts neutral exact terms for a real budget limit without a price-reframe rejection', () => {
     const current = context();
     current.turn.batch_messages = [{ id: 'current', text: 'No me alcanza el presupuesto' }];

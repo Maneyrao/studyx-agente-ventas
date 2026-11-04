@@ -1,4 +1,5 @@
 import { courseBonusLadderRejectionSubjectsV1 } from '@/shared/conversation/bonus-ladder-rejection';
+import { copyNamesCourseV1 } from '@/shared/conversation/course-bonus-claim';
 import { backendReleaseSha } from './turn-evidence.service';
 import type { ConversationChannel } from '@/lib/contracts/channel';
 import { randomUUID } from 'node:crypto';
@@ -1792,9 +1793,14 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
         const [bonusCourse] = await db<Array<{ display_name: string }>>`
           SELECT o.display_name FROM offerings o JOIN workspaces w ON w.id=o.workspace_id
           WHERE w.slug=${workspaceSlug} AND o.code=${committedBusinessAction.bonus_offering_code} LIMIT 1`;
-        const visible = (value: string) => value.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase();
-        const named = bonusCourse ? partTexts.findIndex(text => visible(text).includes(visible(bonusCourse.display_name))) : -1;
-        bonusPartIndex = named >= 0 ? named : partTexts.length - 1;
+        const named = bonusCourse ? partTexts.findIndex(text => copyNamesCourseV1(text, bonusCourse.display_name)) : -1;
+        bonusPartIndex = named;
+        // Never bind a bonus to a bubble that does not name it: without a naming
+        // bubble the effect is dropped (copy kept) and nothing is marked delivered.
+        if (named < 0) {
+          committedBusinessAction = null;
+          await db`UPDATE agent_decisions SET business_action = NULL WHERE id = ${decisionId}::uuid`;
+        }
       }
       const profileRequests = preparedAgentTurn && validatedInput.agent_turn_v2
         ? contactProfileRequestsForPartsV1({

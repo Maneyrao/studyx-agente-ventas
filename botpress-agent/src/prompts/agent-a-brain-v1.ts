@@ -146,6 +146,9 @@ Do not mention, suggest or imply any bonus in this rewrite, including a generic,
 Use proposed_action=none for bonus effects; do not offer, accept or request review of a bonus in this rewrite. Keep delivered_bonus_offerings and existing obligations in durable state without mentioning them; never delete them. Pending additions remain pending and unconfirmed.
 Continue naturally with the paid course under canonical_sales_behavior; never invent objections or completed steps.
 Do not claim a discount, promotion, gift, approval, income or result. Preserve the rest of the response only when its facts and effects remain authorized.` : '';
+  const repairsBonusNaming = rejection.rejections.some(reason => reason.subject === 'bonus_not_named');
+  const bonusNamingRepair = repairsBonusNaming ? `
+For bonus_not_named, name the course you're adding: write the bonus course's exact display_name in the customer-visible copy where you offer it (do not name only an earlier bonus), or use proposed_action=none and do not present a new gift.` : '';
   return `
 <mandatory_repair attempt="1" rejection_id="${rejection.rejection_id}">
 Use repair_of with this rejection_id and attempt 1. This is the only rewrite.
@@ -156,6 +159,7 @@ ${courseDeclarationRepair}
 ${offeringRepair}
 ${courseLogisticsRepair}
 ${forbiddenPromiseRepair}
+${bonusNamingRepair}
 If an action did not occur, do not claim it; continue naturally from the permitted facts and effects.
 Do not repeat confirmed data or an earlier opening or question. Ask only for truly missing information.
 Keep prose and metadata consistent. Preserve accepted observations. Never expose validation to the customer.

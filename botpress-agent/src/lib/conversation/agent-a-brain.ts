@@ -2,7 +2,7 @@ import { COURSE_MENTION_ROLES_V1 } from '../../../../src/shared/conversation/cou
 import { messagesWithoutExactCallOfferV1 } from '../../../../src/shared/conversation/call-offer-format';
 import type { ModelObservation } from '../observability/turn-evidence';
 import { courseLogisticsInV1 } from '../../../../src/shared/conversation/course-logistics';
-import { inspectCourseBonusClaimsV1 } from '../../../../src/shared/conversation/course-bonus-claim';
+import { copyNamesCourseV1, inspectCourseBonusClaimsV1 } from '../../../../src/shared/conversation/course-bonus-claim';
 import { eligibleContactRequestFieldsV1 } from './contact-profile-request-policy';
 import { supportsChatPreferenceV1 } from './channel-preference-evidence';
 import type { TurnRejectionV1 } from '../../schemas/turn-rejection'
@@ -1803,6 +1803,13 @@ export function validateAgentATurnProposalV1(input: {
     && directAction.bonus_offering_code !== directBonusCapability.interest_offering_code
     && !directBonusCapability.bonus_offerings.some(o => o.code === directAction.bonus_offering_code)
     ? input.context.catalog.available_offerings.find(o => o.code === directAction.bonus_offering_code) : null;
+  // The offer_course_bonus effect is real only if the visible copy names the
+  // bonus course; one repair chance, otherwise the backend rejects the effect.
+  if (directOffering && !copyNamesCourseV1([...input.proposal.response.messages,
+    ...(input.proposal.response.call_offer ? [input.proposal.response.call_offer] : [])].join('\n'),
+  directOffering.display_name)) {
+    rejections.push({ code: 'FACT_VALUE_MISMATCH', subject: 'bonus_not_named' });
+  }
   const authorizedBonusOfferingNames = hasDirectBonusContextV1(input.context)
     ? [...(directBonusCapability?.delivered_bonus_offerings ?? []).flatMap(o => {
       const active = input.context.catalog.available_offerings.find(offering => offering.code === o.code);

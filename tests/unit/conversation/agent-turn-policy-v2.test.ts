@@ -609,7 +609,9 @@ describe('plannerless Agent A authority', () => {
       : {ok:true,action:{type:'send_payment_link',offering_code:to,payment_plan:'one_time'}});
   });
   it('authorizes exactly one active direct course only with the capability', () => {
-    const p = proposal({ proposed_action: { type: 'offer_course_bonus',
+    const p = proposal({ response: { messages: ['Te sumo Excel Integral y el precio sigue igual.'] },
+      course_mentions: [{ offering_code: 'redes_informaticas', role: 'paid' }, { offering_code: 'excel_integral', role: 'bonus' }],
+      proposed_action: { type: 'offer_course_bonus',
       interest_offering_code: 'redes_informaticas', bonus_offering_code: 'excel_integral' } });
     const cap: NonNullable<Parameters<typeof authorizeAgentTurnV2>[0]['course_bonus']> = { status: 'checkin_available', enabled: true, max_bonus_courses: 2,
       ladder: deriveCourseBonusLadderV1({ price_evidence: true, retention_used: false }),
@@ -619,16 +621,17 @@ describe('plannerless Agent A authority', () => {
       bonus_candidates: [{ code: 'excel_integral', display_name: 'Excel Integral' }] };
     expect(authorize({ proposal: p, state: state({selected_offering_code:'redes_informaticas'}),
       courseBonus: cap })).toMatchObject({ok:true, action:p.proposed_action});
-    expect(authorize({ proposal:p, state:state({selected_offering_code:'redes_informaticas'}),
+    const neutral = { ...p, response: { messages: ['Seguimos con tu curso.'] }, course_mentions: [] };
+    expect(authorize({ proposal:neutral, state:state({selected_offering_code:'redes_informaticas'}),
       courseBonus:{...cap,enabled:false}, actionRejections:'structured' }))
       .toMatchObject({ok:true, action:{type:'none'}});
     // A rejected effect rejects only the effect: the copy that names the gift as a bonus is the false claim.
-    expect(authorize({ proposal:{...p, course_mentions:[{offering_code:'excel_integral',role:'bonus'}]},
+    expect(authorize({ proposal:{...p, response:{messages:['Te sumo Excel Integral sin costo.']}},
       state:state({selected_offering_code:'redes_informaticas'}),
       courseBonus:{...cap,enabled:false}, actionRejections:'structured' }))
       .toMatchObject({ok:false, rejection_subjects:['forbidden_promise','direct_bonus:bonus_disabled']});
     // A course outside the authorized set (affinity row, bridges, named literally) is rejected.
-    expect(authorize({ proposal:p, state:state({selected_offering_code:'redes_informaticas'}),
+    expect(authorize({ proposal:neutral, state:state({selected_offering_code:'redes_informaticas'}),
       courseBonus:{...cap,bonus_candidates:[{code:'camaras_seguridad',display_name:'Cámaras'}]} }))
       .toMatchObject({ok:true, action:{type:'none'}});
   });
@@ -650,6 +653,17 @@ describe('plannerless Agent A authority', () => {
   it('no instant trigger: a promo request with no price evidence is pending, whatever the customer text says', () => {
     expect(authorize({state:selected(),customerText:'me hacés un descuento?',proposal:bonusProposal(),courseBonus:ruleCap(false)}))
       .toMatchObject(rejectedBy('ladder_step_pending'));
+  });
+  it('H1: a bonus effect whose copy does not name the bonus course rejects only the effect', () => {
+    const unnamed = proposal({ ...bonusProposal(), course_mentions: [], response: { messages: ['Te sumo otro curso sin costo; el precio sigue igual. Avanzamos?'] } });
+    expect(authorize({state:selected(),customerText:'ok',proposal:unnamed,courseBonus:ruleCap(true)}))
+      .toMatchObject({ok:true,action:{type:'none'}});
+    const earlier = proposal({ ...bonusProposal(), course_mentions: [], response: { messages: ['Ya tienes Word con tu curso, cualquier duda me dices.'] } });
+    expect(authorize({state:selected(),customerText:'ok',proposal:earlier,courseBonus:ruleCap(true)}))
+      .toMatchObject({ok:true,action:{type:'none'}});
+    const accented = proposal({ ...bonusProposal(), response: { messages: ['Te sumo EXCEL INTEGRAL sin costo.'] } });
+    expect(authorize({state:selected(),customerText:'ok',proposal:accented,courseBonus:ruleCap(true)}))
+      .toMatchObject({ok:true,action:{type:'offer_course_bonus'}});
   });
   it('persisted price evidence (one objection, no count of two, no call prerequisite) authorizes a candidate', () => {
     expect(authorize({state:selected(),customerText:'ok',proposal:bonusProposal(),courseBonus:ruleCap(true)}))

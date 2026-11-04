@@ -334,6 +334,8 @@ function isNonBlockingGuidanceReason(
     && [
       'candidate_course_detail',
       'candidate_course_names',
+      // After the one repair the backend rejects the unnamed bonus effect alone.
+      'bonus_not_named',
     ].includes(reason.subject)) return true
   return NON_BLOCKING_GUIDANCE_CODES.has(reason.code)
 }

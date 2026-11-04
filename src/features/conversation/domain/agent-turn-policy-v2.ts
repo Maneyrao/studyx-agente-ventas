@@ -1,6 +1,6 @@
 import { deriveCourseBonusLadderV1 } from '@/shared/conversation/bonus-ladder';
 import { draftConfirmsPriceOnlyBarrierV1, draftDeclinesPurchaseV1, draftRecordsPriceObjectionV1, isCheckoutV1 } from '@/shared/conversation/deterministic-sales-rules';
-import { inspectCourseBonusClaimsV1 } from '@/shared/conversation/course-bonus-claim';
+import { copyNamesCourseV1, inspectCourseBonusClaimsV1 } from '@/shared/conversation/course-bonus-claim';
 import { validateCourseMentionsV1 } from '@/shared/conversation/course-mentions';
 import { messagesWithoutExactCallOfferV1 } from '@/shared/conversation/call-offer-format';
 import { fichaFactIdV1 } from '@/shared/catalog/gabi-fichas';
@@ -626,7 +626,12 @@ export function authorizeAgentTurnV2(input: {
       rejection_subjects:reason === 'ladder_step_pending'
         ? courseBonusLadderRejectionSubjectsV1(ladder ?? cap?.ladder)
         : ['forbidden_promise',`direct_bonus:${reason}`]};
-    if (!reason) action = proposed;
+    // The effect is only real if the visible copy names the bonus course; an
+    // unnamed bonus rejects the effect alone (copy kept, never delivered).
+    const bonusDisplayName = input.offerings.find(o => o.code === proposed.bonus_offering_code)?.display_name;
+    const copyNamesBonus = bonusDisplayName !== undefined && copyNamesCourseV1([...proposal.response.messages,
+      ...(proposal.response.call_offer ? [proposal.response.call_offer] : [])].join('\n'), bonusDisplayName);
+    if (!reason && copyNamesBonus) action = proposed;
   }
   if (
     proposal.proposed_action.type === 'none'
