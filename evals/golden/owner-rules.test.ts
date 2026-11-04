@@ -102,6 +102,11 @@ describe('owner-rule supplementary golden campaign', () => {
     expect(codes([{ type: 'no_call_offer' }], { response: 'Si querés coordinamos una llamada.' })).toContain('CALL_OFFERED_WITHOUT_REQUEST');
     expect(codes([{ type: 'no_enrollment_ask' }], { response: 'Arrancamos con el plan de 12 cuotas?' })).toContain('ENROLLMENT_ASKED_WITHOUT_SIGNAL');
     expect(codes([{ type: 'no_enrollment_ask' }], { response: 'Qué te gustaría lograr con el curso?' })).not.toContain('ENROLLMENT_ASKED_WITHOUT_SIGNAL');
+    // The ask is the question sentence: a plan listed in a previous sentence is not an ask (real natural-1a413da 27/informative_price).
+    const informative = 'Marketing Digital tiene un total de USD 360, y lo puedes pagar en 12 cuotas de USD 30, en 6 de USD 60 o de una sola vez.\nPensando en tu meta, son 16 clases. Te queda claro así o quieres que veamos cómo encaja con lo que buscas?';
+    expect(codes([{ type: 'no_enrollment_ask' }], { response: informative })).not.toContain('ENROLLMENT_ASKED_WITHOUT_SIGNAL');
+    expect(codes([{ type: 'no_enrollment_ask' }], { response: 'Son 12 cuotas de USD 30. Arrancamos con la inscripción?' })).toContain('ENROLLMENT_ASKED_WITHOUT_SIGNAL');
+    expect(codes([{ type: 'no_enrollment_ask' }], { response: 'Qué plan prefieres, 12 cuotas o 6?' })).toContain('ENROLLMENT_ASKED_WITHOUT_SIGNAL');
     const ask = 'Te anoto con el plan de 12 cuotas?';
     expect(codes([{ type: 'no_consecutive_enrollment_ask' }], { response: ask }, { response: ask })).toContain('CONSECUTIVE_ENROLLMENT_ASK');
     expect(codes([{ type: 'no_consecutive_enrollment_ask' }], { response: ask }, { response: 'Son 8 clases online.' })).not.toContain('CONSECUTIVE_ENROLLMENT_ASK');

@@ -153,7 +153,7 @@ export function turnHasRequiredPriorPromotion(
 
 /** Eval-only text heuristics (golden judge); the runtime never uses them. */
 const CALL_OFFER_TEXT = /\b(?:llamada|llamarte|llamarnos|videollamada|agendar)\b/iu;
-const ENROLLMENT_ASK = /(?:inscrib\w*|anotar\w*|reservar\w*|arrancamos|avanzamos|link de pago|plan de pago|qu[eé] plan|12 cuotas|6 cuotas)[^?]*\?/iu;
+const ENROLLMENT_ASK = /(?:inscrib\w*|anotar\w*|reservar\w*|arrancamos|avanzamos|link de pago|plan de pago|qu[eé] plan|12 cuotas|6 cuotas)[^?.!\n]*\?/iu;
 const visibleKey = (value: string): string => value.replace(/\s+/gu, ' ').trim().toLowerCase();
 
 export function evaluateHardRules(
