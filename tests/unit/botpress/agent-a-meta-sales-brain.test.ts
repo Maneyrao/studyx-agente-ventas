@@ -95,8 +95,8 @@ describe('Agent A Meta sales brain', () => {
     // Keep that expanded contract bounded without compressing it back into the
     // summary that caused the production regression. v104 adds Gabi's manual
     // (value arguments, objections, closes, real testimonies) and drops the
-    // per-area affinity lists the ficha's "Combínalo con" now carries.
-    expect(staticInstructions.trim().split(/\s+/u).length).toBeLessThan(5500);
+    // per-area affinity lists the ficha's "Combínalo con" now carries. v107: +100 for Gabi's close-without-invasion corrections and the general facts.
+    expect(staticInstructions.trim().split(/\s+/u).length).toBeLessThan(5600);
     expect(JSON.parse(instructions.split('<authorized_context>')[1]!.split('</authorized_context>')[0]!)).toEqual(current);
   });
 });

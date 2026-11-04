@@ -35,7 +35,7 @@ describe('Agent A canonical sales prompt authority', () => {
       `export const STUDYX_AGENT_A_CANONICAL_PROMPT = ${JSON.stringify(prompt)} as const;`,
     );
     expect(generated[0]).toContain(
-      "export const STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION = 'studyx-agent-a-canonical-v106' as const;",
+      "export const STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION = 'studyx-agent-a-canonical-v107' as const;",
     );
   });
 
@@ -50,7 +50,7 @@ describe('Agent A canonical sales prompt authority', () => {
   });
 });
 
-describe('Agent A canonical prompt v106 (Gabi manual integration)', () => {
+describe('Agent A canonical prompt v107 (Gabi manual integration)', () => {
   const prompt = readFileSync(PROMPT_PATH, 'utf8');
   const authority = readFileSync(AUTHORITY_PATH, 'utf8');
 
@@ -79,9 +79,20 @@ describe('Agent A canonical prompt v106 (Gabi manual integration)', () => {
     expect(prompt).toContain('no inventes días, horarios ni fechas de clase');
   });
 
+  it('closes without invasion: the advance is the conversation, not an enrollment ask',()=>{
+    // Real failures of run natural-1a413da: informative price ended "Cómo te acomoda más pagarlo?";
+    // "ok, gracias" was answered with "seguimos con tu inscripción a Marketing Digital…";
+    // a classes question ended "te paso el formulario de inscripción?" right after an enrollment ask;
+    // the testimonial said "tenemos egresadas que hoy cobran por sus servicios de belleza".
+    expect(prompt).not.toContain('Cada respuesta tuya debe terminar con un avance');
+    for (const phrase of ['no es un pedido de inscripción o plan', 'nunca pidas la inscripción en dos turnos seguidos',
+      'no vuelvas a empujar la inscripción ni repitas el paquete', 'no es una señal',
+      'nunca «cómo te acomoda pagarlo?»', 'nunca «tenemos egresadas/alumnas que…» genérico']) expect(prompt).toContain(phrase);
+  });
+
   it('pins the canonical source in the generator', () => {
     const generator = readFileSync('scripts/generate-agent-a-prompt-module.mjs', 'utf8');
-    expect(generator).toContain('studyx-agent-a-canonical-v106');
+    expect(generator).toContain('studyx-agent-a-canonical-v107');
     expect(generator).toContain(`lineCount !== ${prompt.match(/\n/gu)!.length}`);
   });
 });
