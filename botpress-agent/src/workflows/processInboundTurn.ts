@@ -4,7 +4,7 @@ import { summarizeProviderError } from '../lib/observability/provider-error-summ
 import { persistTurnEvidence } from '../lib/observability/persist-turn-evidence'
 import { getOrCreateEvidenceWorkflow } from '../lib/observability/evidence-workflow'
 import { commitDecisionWithRejectionReceiptV1, backendDecisionRejectionReason, backendDecisionRejectionSubjects, backendDecisionRejectionSentences } from '../lib/delivery/commit-decision-receipt'
-import { removeEffectClaimBubblesV1, salvageFactClaimsV1 } from '../lib/conversation/agent-a-claim-repair'
+import { removeEffectClaimBubblesV1, repairCourseMentionRolesV1, salvageFactClaimsV1 } from '../lib/conversation/agent-a-claim-repair'
 import { eligibleContactRequestFieldsV1 } from '../lib/conversation/contact-profile-request-policy'
 import { scheduleTurnRecovery } from '../actions/scheduleTurnRecovery'
 import { bindRecoveryFeedbackV1 } from '../lib/conversation/recovery-feedback'
@@ -2725,6 +2725,11 @@ export const processInboundTurn = new Workflow({
                     ? candidateProposal.proposed_action.bonus_offering_code : null,
                 })
                 if (withoutEffectClaims !== null) candidateProposal = withoutEffectClaims
+              }
+              // Role metadata is not prose: never discard a valid draft over it.
+              if (currentBackendRejection.rejections.some((reason) => reason.code === 'COURSE_ROLE_UNDECLARED')) {
+                const withRoles = repairCourseMentionRolesV1({ proposal: candidateProposal, context: repairContext })
+                if (withRoles !== null) candidateProposal = withRoles
               }
               if (currentBackendRejection.rejections.some((reason) => reason.code === 'FACT_VALUE_MISMATCH')) {
                 const withoutWrongFacts = salvageFactClaimsV1({

@@ -181,3 +181,37 @@ export function removeEffectClaimBubblesV1(input: {
     profile_requests: messages.length === proposal.response.messages.length ? proposal.profile_requests : [],
   }
 }
+
+/**
+ * COURSE_ROLE_UNDECLARED is metadata, not prose. With no persisted selection
+ * or package, rebuild course_mentions from the literal catalog names in the
+ * reply: every named course not already declared in a valid role is an
+ * `alternative`, and a `paid` declaration for a course that is not the current
+ * focus is downgraded the same way. Prose, action and bonus declarations stay
+ * untouched. Returns null when a durable selection/package exists or nothing
+ * changes; the caller revalidates the whole proposal.
+ */
+export function repairCourseMentionRolesV1(input: {
+  readonly proposal: AgentATurnProposalV1
+  readonly context: AgentAContextV1
+}): AgentATurnProposalV1 | null {
+  const { proposal, context } = input
+  const bonus = context.capabilities.course_bonus
+  if (context.catalog.selected_offering !== null && context.catalog.selected_offering !== undefined) return null
+  if ((bonus?.delivered_bonus_offerings?.length ?? 0) > 0) return null
+  if (proposal.proposed_action.type === 'offer_course_bonus') return null
+  const text = [...proposal.response.messages, proposal.response.call_offer ?? ''].join('\n')
+  const named = context.catalog.available_offerings.filter((offering) => normalizedIncludes(text, offering.display_name))
+  const namedCodes = new Set(named.map((offering) => offering.code))
+  const declared = new Map<string, AgentATurnProposalV1['course_mentions'][number]>()
+  for (const mention of proposal.course_mentions ?? []) {
+    if (!namedCodes.has(mention.offering_code) || mention.role === 'bonus') continue
+    declared.set(mention.offering_code, mention.role === 'paid' ? { ...mention, role: 'alternative' } : mention)
+  }
+  for (const offering of named) {
+    if (!declared.has(offering.code)) declared.set(offering.code, { offering_code: offering.code, role: 'alternative' })
+  }
+  const next = [...declared.values()]
+  if (JSON.stringify(next) === JSON.stringify(proposal.course_mentions ?? [])) return null
+  return { ...proposal, course_mentions: next }
+}

@@ -181,6 +181,9 @@ function containsUnknownOffering(sentence: string, names: readonly string[], are
         && !/\p{L}/u.test(remainder.slice(candidate.length, candidate.length + 1)));
       if (!name) return true;
       remainder = remainder.slice(name.length).trim();
+      // "Te recomiendo Marketing Digital: trabajas contenidos…" — a colon after a
+      // canonical name introduces its description, not another offering.
+      if (remainder.startsWith(':')) break;
       const descriptor = remainder.replace(OFFERING_LIST_SEPARATOR, '');
       const membership = descriptor.match(AREA_MEMBERSHIP)
         ?? descriptor.match(COLLECTIVE_AREA_MEMBERSHIP);

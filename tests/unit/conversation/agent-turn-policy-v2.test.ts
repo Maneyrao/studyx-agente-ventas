@@ -4,6 +4,7 @@ import type { CanonicalFactV1, ConversationStateV1 } from '@/features/conversati
 import { createDefaultConversationStateV1 } from '@/features/conversation/domain/conversation-planner';
 import { deriveCourseBonusLadderV1 } from '@/shared/conversation/bonus-ladder';
 import { authorizeAgentTurnV2 } from '@/features/conversation/domain/agent-turn-policy-v2';
+import marketingBudget from '../fixtures/marketing-budget-natural-59cab80.json';
 import { contactProfileRequestsForPartsV1 } from '@/features/orchestration/domain/physical-outbound-texts';
 
 const identity = {
@@ -15,6 +16,7 @@ const identity = {
 const offerings = [
   { code: 'redes_informaticas', display_name: 'Redes Informáticas', aliases: ['redes'] },
   { code: 'excel_integral', display_name: 'Excel Integral', aliases: ['excel'] },
+  { code: 'marketing_digital', display_name: 'Marketing Digital', aliases: [] },
 ];
 
 const facts: CanonicalFactV1[] = [
@@ -162,6 +164,19 @@ describe('plannerless Agent A authority', () => {
       proposal:proposal({response:{messages:['Redes Informáticas puede servirte.']},
         course_mentions:[{offering_code:'redes_informaticas',role:'paid'}]})});
     expect(result).toMatchObject({ok:true,action:{type:'none'},transition:{selected_offering_code:null,selected_payment_plan:null}});
+  });
+  it('treats a paid declaration for a recommended course as metadata when nothing is persisted (real draft natural-59cab80 17/marketing_budget)',()=>{
+    const draft=marketingBudget.drafts[0]!;
+    const raw=proposal({response:{messages:draft.messages as [string,...string[]]},course_mentions:draft.course_mentions as never});
+    // Focus-only or no focus: the recommendation is not rejected and prose is untouched.
+    for(const paidMention of [null,'redes_informaticas'] as const){
+      const result=authorize({state:state({selected_offering_code:null}),paidMention,proposal:raw});
+      expect(result).toMatchObject({ok:true,action:{type:'none'},transition:{selected_offering_code:null,selected_payment_plan:null}});
+      if(result.ok) expect(result.response_messages).toEqual(draft.messages);
+    }
+    // A durable selection keeps rejecting the mismatch.
+    expect(authorize({state:state({selected_offering_code:'excel_integral'}),paidMention:null,proposal:raw}))
+      .toMatchObject({ok:false,reasons:['COURSE_ROLE_UNDECLARED'],rejection_subjects:['course_mentions:paid_mismatch:marketing_digital']});
   });
   it('does not let conversational focus replace a fresher durable paid selection',()=>{
     const result=authorize({state:state({selected_offering_code:'excel_integral'}),paidMention:'redes_informaticas',

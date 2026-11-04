@@ -754,3 +754,21 @@ describe('hard factual claims share one detector with the Botpress brain', () =>
     expect(enforce(content).violations).toEqual([]);
   });
 });
+
+describe('offering list guard: a colon after a canonical name introduces its description', () => {
+  // Real drafts of natural-59cab80 17/marketing_budget were rejected as OFFERING_NOT_CANONICAL.
+  const canonical = canonicalTruthSetFromOfferingsV1({
+    offerings: [{ code: 'marketing_digital', display_name: 'Marketing Digital', price_type: 'fixed', price_amount: '360', currency: 'USD',
+      description: 'x', delivery: { classes: 16, modality: 'online' } }] as never,
+    selected_offering_code: null,
+  });
+  it.each([
+    'Para vender los productos de tu tienda online te recomiendo Marketing Digital: trabajas contenidos, redes y cómo atraer clientes a la tienda.',
+    'Para vender los productos de tu tienda online te recomiendo Marketing Digital: trabajas cómo atraer público y convertir visitas en ventas.',
+  ])('does not flag %s', (content) => {
+    expect(enforce(content, canonical).violations.map((v) => v.code)).not.toContain('OFFERING_NOT_CANONICAL');
+  });
+  it('still flags an invented course', () => {
+    expect(enforce('Te recomiendo Marketing Cuántico Avanzado.', canonical).violations.map((v) => v.code)).toContain('OFFERING_NOT_CANONICAL');
+  });
+});

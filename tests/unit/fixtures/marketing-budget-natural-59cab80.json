@@ -1,0 +1,45 @@
+{
+ "source": "evals/golden/results/natural-59cab80.json 17/marketing_budget",
+ "customer": "Tengo poco presupuesto y quiero algo de marketing para vender los productos de mi tienda online.",
+ "drafts": [
+  {
+   "messages": [
+    "Con poco presupuesto se puede, y para vender los productos de tu tienda online el curso que mejor encaja es Marketing Digital: ahí ves cómo atraer clientes y armar un plan de acción para tu tienda, todo 100% en español y a tu ritmo.",
+    "Se puede pagar en 12 cuotas de USD 30 al mes. Te suena como el camino que buscas para mover tus ventas?"
+   ],
+   "course_mentions": [
+    {
+     "offering_code": "marketing_digital",
+     "role": "paid"
+    }
+   ],
+   "move": "browse_catalog"
+  },
+  {
+   "messages": [
+    "Con poco presupuesto se puede igual: el plan de 12 cuotas de USD 30 por mes es el más liviano, y el total es USD 360 sin importar cómo lo pagues.",
+    "Para vender los productos de tu tienda online te recomiendo Marketing Digital: trabajas contenidos, redes y cómo atraer clientes a la tienda. Te suena ese camino o preferís algo más enfocado en fotografía y publicaciones?"
+   ],
+   "course_mentions": [
+    {
+     "offering_code": "marketing_digital",
+     "role": "alternative"
+    }
+   ],
+   "move": "browse_catalog"
+  },
+  {
+   "messages": [
+    "Con poco presupuesto se puede avanzar igual: la formación se paga en 12 cuotas de USD 30 al mes, y eso te da acceso a todo el curso.",
+    "Para vender los productos de tu tienda online te recomiendo Marketing Digital: trabajas cómo atraer público y convertir visitas en ventas, 100% en español y a tu ritmo. Te suena como lo que buscas?"
+   ],
+   "course_mentions": [
+    {
+     "offering_code": "marketing_digital",
+     "role": "alternative"
+    }
+   ],
+   "move": "browse_catalog"
+  }
+ ]
+}

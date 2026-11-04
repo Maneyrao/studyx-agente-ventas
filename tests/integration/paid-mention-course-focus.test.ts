@@ -27,10 +27,16 @@ run('paid mention identity uses the same server course focus as the claim',()=>{
     expect(await db!`SELECT id FROM promotion_offers WHERE conversation_id=${f.conversation_id}`).toHaveLength(0);
     expect((await db!`SELECT business_action FROM agent_decisions WHERE turn_id=${turn}`)[0].business_action).toBeNull();
   });
-  it('does not let a different paid code or an unauthorized bonus use the conversational identity',async()=>{
+  it('does not let an unauthorized bonus use the conversational identity',async()=>{
     const f=await seedConversationForAgentTurn({selected_offering_code:null,first_message:'Quiero información de Entrenamiento Funcional.'});
-    await expect(commitAgentDecision(request(f,f.turn_id,'ingles_1'))).rejects.toMatchObject({subjects:expect.arrayContaining(['course_mentions:paid_mismatch:ingles_1'])});
     await expect(commitAgentDecision(request(f,f.turn_id,'ingles_1','bonus'))).rejects.toMatchObject({subjects:expect.arrayContaining(['forbidden_promise'])});
     expect(await db!`SELECT id FROM agent_decisions WHERE turn_id=${f.turn_id}`).toHaveLength(0);
+  });
+  it('downgrades a paid declaration for another recommended course to metadata when nothing is persisted',async()=>{
+    const f=await seedConversationForAgentTurn({selected_offering_code:null,first_message:'Quiero información de Entrenamiento Funcional.'});
+    const result=await commitAgentDecision(request(f,f.turn_id,'ingles_1'));
+    expect(result.status).toBe('committed');
+    expect((await db!`SELECT selected_offering_code FROM conversation_sales_context_states_v1 WHERE conversation_id=${f.conversation_id}`)[0])
+      .toMatchObject({selected_offering_code:null});
   });
 });

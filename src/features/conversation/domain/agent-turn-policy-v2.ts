@@ -672,9 +672,22 @@ export function authorizeAgentTurnV2(input: {
     ?? (retainsDurableIdentity && hasDeliveredPackage ? capabilityInterestOffering : null);
   const packageIsCurrent = input.course_bonus?.interest_offering_code===primaryCourse
     && ['offered','accepted','attached'].includes(input.course_bonus.package_status ?? '');
+  // A recommendation that switches the conversational focus is legitimate
+  // (prompt: "Si cambia de curso, suelta el anterior"). With no persisted
+  // selection or package, a `paid` declaration for another active course is
+  // metadata only: it becomes `alternative` (prose untouched). With a durable
+  // selection or package the mismatch keeps being rejected.
+  const focusOnlyCode = !startsFreshSalesCycle && !(changesCourse && requestedOffering!==null)
+    ? input.paid_mention_offering_code ?? null : null;
+  const mentionsForValidation = primaryCourse === null && !hasDeliveredPackage
+    ? proposal.course_mentions?.map(mention => (
+      mention.role==='paid' && mention.offering_code!==focusOnlyCode
+        && input.offerings.some(offering=>offering.code===mention.offering_code)
+        ? {...mention,role:'alternative' as const} : mention))
+    : proposal.course_mentions;
   const courseMentions = validateCourseMentionsV1({
     messages:proposal.response.messages,call_offer:proposal.response.call_offer,catalog:input.offerings,
-    course_mentions:proposal.course_mentions,paid_offering_code:primaryCourse,
+    course_mentions:mentionsForValidation,paid_offering_code:primaryCourse,
     paid_mention_offering_code:!startsFreshSalesCycle && !(changesCourse && requestedOffering!==null)
       ? input.paid_mention_offering_code : null,
     ...(action.type==='offer_course_bonus' ? {authorized_bonus_action:{
