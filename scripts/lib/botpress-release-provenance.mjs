@@ -3,7 +3,12 @@ import { readFileSync, readdirSync, readlinkSync } from 'node:fs';
 import path from 'node:path';
 import ts from 'typescript';
 
-export const BOT_RELEASE_BASE_SHA = 'fdbe4e54e6bd0b942964a5ea90884f430ca6c168';
+// Last commit of claude/agent-a-model-owned-sales that changed deployable code (brain v161, prompt v107).
+// Anything committed after it must be docs/evals/tests only (see assertOnlyNonCodeChangesSinceBaseV1), so a release
+// prepared from the branch HEAD runs exactly this code. Re-pin whenever a code file changes.
+export const BOT_RELEASE_BASE_SHA = 'ca58c6be7a5dc3d0c17eb47b38c0668d753a9a73';
+export const BOT_RELEASE_BRAIN_VERSION = 'studyx-agent-a-brain-v161';
+export const BOT_RELEASE_PROMPT_VERSION = 'studyx-agent-a-canonical-v107';
 export const BOT_RELEASE_INSTRUMENTATION_VERSION = 'studyx-release-provenance-v1';
 export const BOT_RELEASE_SOURCE_PATHS = Object.freeze([
   'botpress-agent/src/lib/observability/persist-turn-evidence.ts',
@@ -12,9 +17,27 @@ export const BOT_RELEASE_SOURCE_PATHS = Object.freeze([
 ]);
 const REVIEWED_SOURCE_HASHES = Object.freeze({
   [BOT_RELEASE_SOURCE_PATHS[0]]: 'c1a85e1d95000cd56f885e02d3cf900d7900ea5102b08ed51910500387c2de93',
-  [BOT_RELEASE_SOURCE_PATHS[1]]: 'a0ef3f00bcb8a0a6481605a6b959e05b2fdb525aa65cad5abb4eb6e3301a93d8',
+  [BOT_RELEASE_SOURCE_PATHS[1]]: '190da2781a279b2fcb2183b014012adfda4460a114477ad4c41e4c12332d492f',
   [BOT_RELEASE_SOURCE_PATHS[2]]: '77809dcfbf8e605affe2eeb746f56bcf5ce91ca07ef05726ec5fe20111c07fd2',
 });
+// Paths that may change after the pinned base without altering what is deployed.
+const NON_CODE_EXACT = new Set(['AGENTS.md', 'scripts/lib/botpress-release-provenance.mjs', 'scripts/prepare-instrumented-botpress-release.mjs']);
+const NON_CODE_PREFIXES = ['docs/', 'evals/', 'tests/'];
+
+/** Guard: the branch HEAD may only differ from the pinned base in docs, evals, tests, AGENTS.md and these tools. */
+export function assertOnlyNonCodeChangesSinceBaseV1(changedPaths) {
+  const offending = changedPaths.filter(file => !NON_CODE_EXACT.has(file) && !NON_CODE_PREFIXES.some(prefix => file.startsWith(prefix)));
+  if (offending.length) throw new Error(`CODE_CHANGED_SINCE_RELEASE_BASE:${offending.slice(0, 5).join(',')}`);
+}
+
+/** Guard: the labels written into the provenance must be the ones the pinned code declares. */
+export function assertReleaseLabelsMatchCodeV1({ brainSource, promptSource }) {
+  if (!brainSource.includes(`AGENT_A_BRAIN_PROMPT_VERSION = '${BOT_RELEASE_BRAIN_VERSION}'`)
+    || !promptSource.includes(`STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION = '${BOT_RELEASE_PROMPT_VERSION}'`)) {
+    throw new Error('RELEASE_LABELS_MISMATCH_CODE');
+  }
+}
+
 const GENERATED_PATH = 'botpress-agent/src/lib/observability/release-provenance.generated.ts';
 const hash = value => createHash('sha256').update(value).digest('hex');
 const printer = ts.createPrinter({ newLine: ts.NewLineKind.LineFeed });
@@ -150,7 +173,7 @@ export function instrumentBotpressReleaseSources({ sourceBaseSha, instrumentatio
   }
   const provenance = Object.freeze({ source_base_sha: sourceBaseSha,
     instrumentation_version: BOT_RELEASE_INSTRUMENTATION_VERSION, instrumentation_sha256: instrumentationSha256,
-    brain_version: 'studyx-agent-a-brain-v161', prompt_version: 'studyx-agent-a-canonical-v107' });
+    brain_version: BOT_RELEASE_BRAIN_VERSION, prompt_version: BOT_RELEASE_PROMPT_VERSION });
   const patched = {
     [BOT_RELEASE_SOURCE_PATHS[0]]: instrumentPersistence(parse(BOT_RELEASE_SOURCE_PATHS[0], sources[BOT_RELEASE_SOURCE_PATHS[0]])),
     [BOT_RELEASE_SOURCE_PATHS[1]]: instrumentWorkflow(parse(BOT_RELEASE_SOURCE_PATHS[1], sources[BOT_RELEASE_SOURCE_PATHS[1]]), 'processInboundTurn', 'turn'),

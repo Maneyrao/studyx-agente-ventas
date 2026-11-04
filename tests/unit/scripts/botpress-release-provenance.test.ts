@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
@@ -10,6 +10,7 @@ import {
   finalizeBotpressReleaseManifest,
   BOT_RELEASE_BASE_SHA,
   BOT_RELEASE_SOURCE_PATHS, snapshotReleaseSources, assertReleaseSourcesUnchanged,
+  assertOnlyNonCodeChangesSinceBaseV1, assertReleaseLabelsMatchCodeV1, BOT_RELEASE_BRAIN_VERSION, BOT_RELEASE_PROMPT_VERSION,
 } from '../../../scripts/lib/botpress-release-provenance.mjs';
 
 const hash = (value: string) => createHash('sha256').update(value).digest('hex');
@@ -191,4 +192,25 @@ describe('instrumented Botpress release provenance from the reviewed source comm
     } finally { rmSync(directory, { recursive: true, force: true }); }
   });
 
+
+  it('H2: the pinned base is an ancestor of HEAD and the instrumented sources are this branch\'s sources', () => {
+    execFileSync('git', ['merge-base', '--is-ancestor', BOT_RELEASE_BASE_SHA, 'HEAD']);
+    // Same reviewed hashes at the pin and at the working tree: preparing from HEAD runs the branch code.
+    for (const file of BOT_RELEASE_SOURCE_PATHS) {
+      expect(hash(execFileSync('git', ['show', `${BOT_RELEASE_BASE_SHA}:${file}`], { encoding: 'utf8' })))
+        .toBe(hash(readFileSync(file, 'utf8')));
+    }
+    const changed = execFileSync('git', ['diff', '--name-only', BOT_RELEASE_BASE_SHA, 'HEAD'], { encoding: 'utf8' }).split('\n').filter(Boolean);
+    expect(() => assertOnlyNonCodeChangesSinceBaseV1(changed)).not.toThrow();
+  });
+
+  it('H2: refuses code changed after the pin and labels that do not match the code', () => {
+    expect(() => assertOnlyNonCodeChangesSinceBaseV1(['docs/x.md', 'evals/a.ts', 'tests/b.ts', 'AGENTS.md'])).not.toThrow();
+    expect(() => assertOnlyNonCodeChangesSinceBaseV1(['docs/x.md', 'src/lib/services/decision.service.ts'])).toThrow('CODE_CHANGED_SINCE_RELEASE_BASE');
+    const brainSource = execFileSync('git', ['show', `${BOT_RELEASE_BASE_SHA}:botpress-agent/src/prompts/agent-a-brain-v1.ts`], { encoding: 'utf8' });
+    const promptSource = execFileSync('git', ['show', `${BOT_RELEASE_BASE_SHA}:botpress-agent/src/prompts/studyx-agent-a-canonical.generated.ts`], { encoding: 'utf8' });
+    expect(() => assertReleaseLabelsMatchCodeV1({ brainSource, promptSource })).not.toThrow();
+    expect(() => assertReleaseLabelsMatchCodeV1({ brainSource: brainSource.replace(BOT_RELEASE_BRAIN_VERSION, 'studyx-agent-a-brain-v1'), promptSource })).toThrow('RELEASE_LABELS_MISMATCH_CODE');
+    expect(() => assertReleaseLabelsMatchCodeV1({ brainSource, promptSource: promptSource.replace(BOT_RELEASE_PROMPT_VERSION, 'x') })).toThrow('RELEASE_LABELS_MISMATCH_CODE');
+  });
 });

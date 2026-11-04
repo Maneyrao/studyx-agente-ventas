@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  BOT_RELEASE_BASE_SHA, BOT_RELEASE_SOURCE_PATHS,
+  BOT_RELEASE_BASE_SHA, BOT_RELEASE_SOURCE_PATHS, assertOnlyNonCodeChangesSinceBaseV1, assertReleaseLabelsMatchCodeV1,
   instrumentBotpressReleaseSources, finalizeBotpressReleaseManifest, snapshotReleaseSources, assertReleaseSourcesUnchanged,
 } from './lib/botpress-release-provenance.mjs';
 
@@ -27,6 +27,16 @@ if (command === 'prepare') {
   if (existsSync(output)) throw new Error('OUTPUT_DIRECTORY_ALREADY_EXISTS');
   const verified = execFileSync('git', ['rev-parse', '--verify', `${base}^{commit}`], { cwd: root, encoding: 'utf8' }).trim();
   if (verified !== base) throw new Error('SOURCE_BASE_NOT_FOUND');
+  // Guards: a clean tree, a base that is an ancestor of HEAD with only docs/evals/tests changed since,
+  // and labels (brain/prompt versions) that match the pinned code.
+  const git = (...args) => execFileSync('git', args, { cwd: root, encoding: 'utf8' });
+  if (git('status', '--porcelain').trim() !== '') throw new Error('DIRTY_WORKING_TREE');
+  try { git('merge-base', '--is-ancestor', base, 'HEAD'); } catch { throw new Error('SOURCE_BASE_NOT_ANCESTOR_OF_HEAD'); }
+  assertOnlyNonCodeChangesSinceBaseV1(git('diff', '--name-only', base, 'HEAD').split('\n').filter(Boolean));
+  assertReleaseLabelsMatchCodeV1({
+    brainSource: git('show', `${base}:botpress-agent/src/prompts/agent-a-brain-v1.ts`),
+    promptSource: git('show', `${base}:botpress-agent/src/prompts/studyx-agent-a-canonical.generated.ts`),
+  });
   const original = Object.fromEntries(BOT_RELEASE_SOURCE_PATHS.map(file => [file,
     execFileSync('git', ['show', `${base}:${file}`], { cwd: root, encoding: 'utf8' })]));
   const toolFiles = ['scripts/lib/botpress-release-provenance.mjs', 'scripts/prepare-instrumented-botpress-release.mjs'];
