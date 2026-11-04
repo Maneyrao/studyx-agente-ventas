@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { removeOffendingSentencesV1, repairCourseMentionRolesV1 } from '../../../botpress-agent/src/lib/conversation/agent-a-claim-repair';
+import { removeEffectClaimBubblesV1, removeOffendingSentencesV1, repairCourseMentionRolesV1, salvageFactClaimsV1 } from '../../../botpress-agent/src/lib/conversation/agent-a-claim-repair';
 import type { AgentAContextV1, AgentATurnProposalV1 } from '../../../botpress-agent/src/schemas/agent-a-brain';
 import marketingBudget from '../fixtures/marketing-budget-natural-59cab80.json';
 
@@ -59,5 +59,43 @@ describe('M4: backend-reported sentences match by bubble index plus containment'
       backend_sentences: [{ sentence: 'Es un plan muy accesible. Dale, seguimos con todo.', message_index: 1 }] });
     expect(result.messages[0]).toBe('Es un plan muy accesible 😀');
     expect(result.messages[1]).toContain('Dale.');
+  });
+});
+
+describe('salvage and effect-claim removal keep the structured fields (acceptance 82054dd 10_requested_call/request)', () => {
+  // Real DeepSeek draft (call-0028): bubble 0 claims the call, bubble 1 asks the data and carries the request.
+  const real = {
+    schema_version: 1,
+    response: { messages: [
+      'Claro, te llamo y vemos juntos cuál de los cursos de fotografía te conviene. Soy Emma, asesora de Studyx.',
+      'Para coordinar la llamada, ¿me pasas tu nombre, apellido, correo y teléfono?',
+    ], call_offer: null },
+    proposed_action: { type: 'none' }, course_mentions: [],
+    profile_requests: [{ message_index: 1, fields: ['nombre', 'apellido', 'correo', 'telefono'], purpose: 'call', mode: 'collect' }],
+    memory_candidates: [{ type: 'contact_preference', key: 'call_preference', value: 'Prefiere llamada', source_quote: 'Quiero que me llames', confidence: 0.95 }],
+    turn_reasoning: { phase: 'solicitud de llamada', next_step: 'call' },
+    move: { move: 'request_call' },
+  } as unknown as AgentATurnProposalV1;
+  const cat = { commercial_state: {}, capabilities: { course_bonus: { delivered_bonus_offerings: [] } },
+    catalog: { selected_offering: null, available_offerings: [], candidate_offerings: [], payment_plans: [] } } as unknown as AgentAContextV1;
+
+  it('removing the claim bubble re-indexes the request onto the surviving ask', () => {
+    const fixed = removeEffectClaimBubblesV1({ proposal: real, context: cat });
+    expect(fixed?.response.messages).toEqual([real.response.messages[1]]);
+    expect(fixed?.profile_requests).toEqual([{ ...real.profile_requests![0]!, message_index: 0 }]);
+    expect(fixed?.memory_candidates).toEqual(real.memory_candidates);
+    expect(fixed?.turn_reasoning).toEqual(real.turn_reasoning);
+    expect(fixed?.move).toEqual(real.move);
+  });
+  it('a request whose bubble was removed goes with it', () => {
+    const onClaim = { ...real, profile_requests: [{ ...real.profile_requests![0]!, message_index: 0 }] } as AgentATurnProposalV1;
+    expect(removeEffectClaimBubblesV1({ proposal: onClaim, context: cat })?.profile_requests).toEqual([]);
+  });
+  it('sentence salvage re-indexes when a whole bubble is dropped', () => {
+    const flagged = { ...real, response: { messages: ['Cuesta USD 999 hoy.', real.response.messages[1]!], call_offer: null } } as AgentATurnProposalV1;
+    const fixed = salvageFactClaimsV1({ proposal: flagged, context: cat });
+    expect(fixed?.response.messages[0]).toBe(real.response.messages[1]);
+    expect(fixed?.profile_requests?.map(r => r.message_index)).toEqual([0]);
+    expect(fixed?.memory_candidates).toEqual(real.memory_candidates);
   });
 });

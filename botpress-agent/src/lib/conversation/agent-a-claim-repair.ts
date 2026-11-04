@@ -65,13 +65,28 @@ function authorizedBonusNames(context: AgentAContextV1, proposal: AgentATurnProp
   ]
 }
 
+/**
+ * profile_requests point at a bubble by index. When bubbles are removed, keep
+ * the requests whose bubble survived and re-index them; a request whose bubble
+ * was removed goes with it.
+ */
+export function remapProfileRequestsV1(
+  requests: AgentATurnProposalV1['profile_requests'],
+  keptIndices: readonly number[],
+): AgentATurnProposalV1['profile_requests'] {
+  return (requests ?? []).flatMap((request) => {
+    const index = keptIndices.indexOf(request.message_index)
+    return index < 0 ? [] : [{ ...request, message_index: index }]
+  })
+}
+
 /** Sentence-level removal of wrong facts across the reply bubbles. */
 export function removeOffendingSentencesV1(input: {
   readonly proposal: AgentATurnProposalV1
   readonly context: AgentAContextV1
   /** Violating sentences reported by the backend guard. */
   readonly backend_sentences?: readonly BackendSentenceV1[]
-}): { messages: string[]; call_offer: string | null; removed: RemovedSentenceV1[] } {
+}): { messages: string[]; kept_indices: number[]; call_offer: string | null; removed: RemovedSentenceV1[] } {
   const { proposal, context } = input
   const authorizedPrices = new Set(authorizedValues(context).flatMap((value) => assertedCommercialPricesV1(value)))
   const authorizedLogistics = new Set(authorizedValues(context).flatMap((value) => courseLogisticsInV1(value)))
@@ -113,10 +128,12 @@ export function removeOffendingSentencesV1(input: {
     }
     return kept.join('').replace(/\s{2,}/gu, ' ').trim()
   }
-  const messages = proposal.response.messages.map((message, index) => clean(message, index)).filter((message) => message.length > 0)
+  const cleaned = proposal.response.messages.map((message, index) => ({ index, message: clean(message, index) }))
+    .filter((entry) => entry.message.length > 0)
+  const messages = cleaned.map((entry) => entry.message)
   const callOffer = proposal.response.call_offer
   const cleanedOffer = typeof callOffer === 'string' ? clean(callOffer, -1) : null
-  return { messages, call_offer: cleanedOffer && cleanedOffer === callOffer ? callOffer : null, removed }
+  return { messages, kept_indices: cleaned.map((entry) => entry.index), call_offer: cleanedOffer && cleanedOffer === callOffer ? callOffer : null, removed }
 }
 
 /**
@@ -145,12 +162,11 @@ export function salvageFactClaimsV1(input: {
     }
   }
   if (messages.length === 0) return null
-  const sameBubbles = messages.length === proposal.response.messages.length
   return {
     ...proposal,
     used_fact_ids: usedFactIds,
     response: { ...proposal.response, messages: messages as [string, ...string[]], call_offer: result.call_offer },
-    profile_requests: sameBubbles ? proposal.profile_requests : [],
+    profile_requests: remapProfileRequestsV1(proposal.profile_requests, result.kept_indices),
   }
 }
 
@@ -176,7 +192,8 @@ export function removeEffectClaimBubblesV1(input: {
   const claims = (message: string) => claimsImmediatePaymentLinkDeliveryV1(message)
     || claimsImmediateCallDispatchV1(message, status)
     || (bonusName !== null && normalizedIncludes(message, bonusName))
-  const messages = proposal.response.messages.filter((message) => !claims(message))
+  const keptIndices = proposal.response.messages.flatMap((message, index) => (claims(message) ? [] : [index]))
+  const messages = keptIndices.map((index) => proposal.response.messages[index]!)
   const offer = proposal.response.call_offer
   const offerClaims = typeof offer === 'string' && claims(offer)
   if (messages.length === proposal.response.messages.length && !offerClaims) return null
@@ -188,7 +205,7 @@ export function removeEffectClaimBubblesV1(input: {
       : (proposal.course_mentions ?? []).filter((mention) => !(mention.role === 'bonus' && mention.offering_code === input.bonus_offering_code)),
     response: { ...proposal.response, messages: messages as [string, ...string[]],
       call_offer: offerClaims ? null : proposal.response.call_offer },
-    profile_requests: messages.length === proposal.response.messages.length ? proposal.profile_requests : [],
+    profile_requests: remapProfileRequestsV1(proposal.profile_requests, keptIndices),
   }
 }
 

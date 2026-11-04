@@ -479,7 +479,7 @@ const COURSE_REFERENCE_MOVES = new Set([
 ]);
 const AREA_REFERENCE_MOVES = new Set(['browse_catalog', 'select_area']);
 const PAYMENT_PLAN_MOVES = new Set(['select_payment_plan', 'defer_payment', 'request_payment_link']);
-const MOVE_SEMANTICS = `Classify only the current customer message, using prior state solely to resolve short contextual replies. continue_by_chat and decline_call require an explicit channel preference or a refusal of a pending call offer; study goals and ordinary diagnostic replies are not channel choices. greeting is a current greeting or social opening. report_payment requires an explicit current-message claim that payment already happened; never use it for a greeting, a status question, a future intention, or merely because a link was sent earlier. ask_current_state is a question about what is already selected, sent, or recorded. provide_contact_details means the current message actually supplies identity details. select_course requires exactly one resolved canonical course_reference; use browse_catalog when you present several courses and ask the customer to choose. select_payment_plan records a chosen plan; request_payment_link requires an explicit request to receive or advance with the link. Map postponement expressions such as "lo voy a pensar", "tengo que pensarlo", "no ahora" and "no me quiero inscribir todavía" to defer_payment. decline_purchase requires an explicit definitive refusal to purchase; postponement is not a definitive refusal. unknown is only for meaning that remains unresolved after applying awaiting_reply.`;
+const MOVE_SEMANTICS = `Classify only the current customer message, using prior state solely to resolve short contextual replies. continue_by_chat and decline_call require an explicit channel preference or a refusal of a pending call offer; study goals and ordinary diagnostic replies are not channel choices. greeting is a current greeting or social opening. report_payment requires an explicit current-message claim that payment already happened; never use it for a greeting, a status question, a future intention, or merely because a link was sent earlier. ask_current_state is a question about what is already selected, sent, or recorded. provide_contact_details means the current message actually supplies identity details. select_course requires exactly one resolved canonical course_reference; use browse_catalog when you present several courses and ask the customer to choose. select_payment_plan records a chosen plan; request_payment_link requires an explicit request to receive or advance with the link; an enrollment or purchase signal ("dale, cómo me inscribo", "quiero pagar") advances with it even while contact data is still being collected, and ask_payment_options is only for presenting or choosing plans. Map postponement expressions such as "lo voy a pensar", "tengo que pensarlo", "no ahora" and "no me quiero inscribir todavía" to defer_payment. decline_purchase requires an explicit definitive refusal to purchase; postponement is not a definitive refusal. unknown is only for meaning that remains unresolved after applying awaiting_reply.`;
 
 function normalizedCurrentCustomerTextV1(context: AgentAContextV1): string {
   return context.turn.batch_messages
@@ -673,6 +673,19 @@ function proposalJsonSchema(context: AgentAContextV1, conversationOnly = false):
       items: profileRequestAlternatives.length ? { anyOf: profileRequestAlternatives }
         : profileRequest('clarify', CONTACT_PROFILE_FIELDS_V1),
     },
+    // Structured observations come before the internal reasoning so they are not crowded out by it.
+    memory_candidates: {
+      type: 'array',
+      maxItems: 10,
+      description: 'Record your interpretation of explicit customer statements with a verbatim inbound source_quote. For a customer confirmation that price is the only barrier, use type constraint, key price_only_barrier, value confirmed; if the customer reports another barrier, use the same type/key with value other_barriers_reported. Omit this observation when unknown. For an explicit purchase decline use type objection, key purchase_decline. For an actual price objection use type objection, key price_objection; a budget limit ("no me alcanza", "estoy muy justo", "está caro") is a price_objection, not a custom constraint key. The source_quote must be verbatim customer text. These are recorded observations, not permissions or sales-step instructions.',
+      items: closedObject({
+        type: { type: 'string', enum: [...MEMORY_TYPES] },
+        key: { type: 'string' },
+        value: { type: 'string' },
+        source_quote: { type: 'string' },
+        confidence: { type: 'number' },
+      }),
+    },
     // The single repair must echo its actual rejection. Omitting this field
     // from a closed provider schema made every conforming repair fail the
     // resolver's correlation check, even when its rewritten text was valid.
@@ -694,18 +707,6 @@ function proposalJsonSchema(context: AgentAContextV1, conversationOnly = false):
     },
     used_fact_ids: { type: 'array', maxItems: 60, items: { type: 'string' } },
     used_memory_ids: { type: 'array', maxItems: 5, items: { type: 'string' } },
-    memory_candidates: {
-      type: 'array',
-      maxItems: 10,
-      description: 'Record your interpretation of explicit customer statements with a verbatim inbound source_quote. For a customer confirmation that price is the only barrier, use type constraint, key price_only_barrier, value confirmed; if the customer reports another barrier, use the same type/key with value other_barriers_reported. Omit this observation when unknown. For an explicit purchase decline use type objection, key purchase_decline. For an actual price objection use type objection, key price_objection. The source_quote must be verbatim customer text. These are recorded observations, not permissions or sales-step instructions.',
-      items: closedObject({
-        type: { type: 'string', enum: [...MEMORY_TYPES] },
-        key: { type: 'string' },
-        value: { type: 'string' },
-        source_quote: { type: 'string' },
-        confidence: { type: 'number' },
-      }),
-    },
   });
 }
 

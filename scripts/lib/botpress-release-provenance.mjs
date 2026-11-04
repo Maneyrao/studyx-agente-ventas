@@ -7,7 +7,7 @@ import ts from 'typescript';
 // Anything committed after it must be docs/evals/tests only (see assertOnlyNonCodeChangesSinceBaseV1), so a release
 // prepared from the branch HEAD runs exactly this code. Re-pin whenever a code file changes.
 export const BOT_RELEASE_BASE_SHA = 'ca58c6be7a5dc3d0c17eb47b38c0668d753a9a73';
-export const BOT_RELEASE_BRAIN_VERSION = 'studyx-agent-a-brain-v161';
+export const BOT_RELEASE_BRAIN_VERSION = 'studyx-agent-a-brain-v162';
 export const BOT_RELEASE_PROMPT_VERSION = 'studyx-agent-a-canonical-v107';
 export const BOT_RELEASE_INSTRUMENTATION_VERSION = 'studyx-release-provenance-v1';
 export const BOT_RELEASE_SOURCE_PATHS = Object.freeze([

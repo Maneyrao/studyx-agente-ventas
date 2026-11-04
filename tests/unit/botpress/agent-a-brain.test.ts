@@ -1803,6 +1803,13 @@ describe('Agent A Brain V1', () => {
     ]) expect(moveSemantics).toContain(`"${expression}"`);
     expect(moveSemantics).toContain('to defer_payment');
     expect(moveSemantics).toContain('decline_purchase requires an explicit definitive refusal');
+    // Acceptance 82054dd: structured observations are emitted before the internal reasoning,
+    // and the contract names the budget-limit and enrollment-signal cases the model got wrong.
+    const props = Object.keys(body.response_format.json_schema.schema.properties);
+    expect(props.indexOf('profile_requests')).toBeLessThan(props.indexOf('turn_reasoning'));
+    expect(props.indexOf('memory_candidates')).toBeLessThan(props.indexOf('turn_reasoning'));
+    expect(body.response_format.json_schema.schema.properties.memory_candidates.description).toContain('"no me alcanza"');
+    expect(moveSemantics).toContain('"dale, cómo me inscribo"');
   });
 
   it.each([400, 413])(
