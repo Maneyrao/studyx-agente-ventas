@@ -807,6 +807,15 @@ describe('offering list guard: a colon after a canonical name introduces its des
   ])('keeps checking course names after the colon: %s', (content) => {
     expect(enforce(content, canonical).violations.map((v) => v.code)).toContain('OFFERING_NOT_CANONICAL');
   });
+  it.each([
+    'Te recomiendo Marketing Digital: es el Diplomado en Criptomonedas Avanzadas.',
+    'Te recomiendo Marketing Digital: te enseña el Curso de Barbería Canina.',
+    'Te recomiendo Marketing Digital: aprendes con el curso de peluquería canina.',
+    'Te recomiendo Marketing Digital: 3 meses y el Diplomado en Criptomonedas.',
+    'Te recomiendo Marketing Digital: aprendes y luego Barbería Canina Pro.',
+  ])('M3 bypass: an invented course inside a description is flagged: %s', (content) => {
+    expect(enforce(content, canonical).violations.map((v) => v.code)).toContain('OFFERING_NOT_CANONICAL');
+  });
   it('M3: a capitalized verb-led description passes', () => {
     expect(enforce('Te recomiendo Marketing Digital: Aprendes estrategias y métricas.', canonical).violations.map((v) => v.code))
       .not.toContain('OFFERING_NOT_CANONICAL');

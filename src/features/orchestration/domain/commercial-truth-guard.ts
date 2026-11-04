@@ -133,6 +133,22 @@ const AREA_MEMBERSHIP = /^(?:que\s+)?(?:dentro\s+de|(?:como\s+)?parte\s+de|(?:fo
 const COLLECTIVE_AREA_MEMBERSHIP = /^(?:todos?|todas?)\s+(?:dentro\s+de|(?:como\s+)?parte\s+de|pertenecientes?\s+a)\s+(?:(?:la|el|nuestra|nuestro)\s+)?/u;
 const OFFERING_LIST_SEPARATOR = /^(?:[,;:]\s*(?:(?:y|e|o)\s+)?|(?:y|e|o)\s+)/u;
 
+const COURSE_NOUN_TAIL = /\b(?:curso|diplomado|diplomatura|carrera|programa)\s+(?:de\s+|en\s+)?(.+)$/u;
+const CAPITALIZED_NAME = /\p{Lu}\p{L}+(?:\s+(?:(?:de|del|en|y|para|con)\s+)?\p{Lu}\p{L}+)+/gu;
+
+/** Inside a colon description: course-type nouns and capitalized multi-word names must start with a canonical name. */
+function descriptionNamesUnknownCourse(namedObject: string, after: string, canonicalNames: readonly string[]): boolean {
+  const startsCanonical = (text: string) => canonicalNames.some((name) => text.startsWith(name)
+    && !/\p{L}/u.test(text.slice(name.length, name.length + 1)));
+  const tail = COURSE_NOUN_TAIL.exec(after)?.[1];
+  if (tail !== undefined && !startsCanonical(tail.trim())) return true;
+  let originalAfter = after;
+  for (let index = namedObject.indexOf(':'); index >= 0; index = namedObject.indexOf(':', index + 1)) {
+    if (normalize(namedObject.slice(index + 1)) === after) { originalAfter = namedObject.slice(index + 1); break; }
+  }
+  return [...originalAfter.matchAll(CAPITALIZED_NAME)].some((match) => !startsCanonical(normalize(match[0])));
+}
+
 function offersUnauthorizedBenefit(sentence: string): boolean {
   // Una negación alcanza su cláusula, nunca una oferta afirmativa posterior.
   const clauses = sentence.split(/[,;]|\b(?:pero|aunque|sin embargo)\b|\by\s+(?=(?:(?:para\s+(?:vos|ti|usted)|en\s+tu\s+caso)\s+)?(?:te\s+)?(?:damos|ofrecemos|hacemos|tenemos|aplicamos|hay)\b)/u);
@@ -192,7 +208,13 @@ function containsUnknownOffering(sentence: string, names: readonly string[], are
       // check; the colon examined is always the current one.
       if (remainder.startsWith(':')) {
         const after = remainder.slice(1).trim();
-        if (after.length === 0 || OFFERING_DESCRIPTION.test(after) || DESCRIPTION_VERB_LED.test(after)) break;
+        if (after.length === 0) break;
+        if (OFFERING_DESCRIPTION.test(after) || DESCRIPTION_VERB_LED.test(after)) {
+          // A description prefix never exempts the rest: an explicit course noun or a capitalized
+          // multi-word name inside it is another course and must be canonical.
+          if (descriptionNamesUnknownCourse(namedObject, after, canonicalNames)) return true;
+          break;
+        }
         remainder = after.replace(EXPLICIT_COURSE, '');
         continue;
       }
