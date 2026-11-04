@@ -2641,6 +2641,13 @@ describe('Agent A structured commercial context (sales_profile and fichas)', () 
       Object.assign(claimed, { course_bonus_capability: capability });
       return buildAgentAContextV1(claimed)!.commercial_state.sales_profile!.next_allowed_effects;
     };
+    it('H4: an old-shape sales_flow never reaches the strict context', () => {
+      const claimed = claimedTurn();
+      Object.assign(claimed, { course_bonus_capability: { ...cap(undefined),
+        sales_flow: { price_probe: 'asked', retention_used: true, promo_expires_at: null, gift_request_pending_probe: null } } });
+      const context = buildAgentAContextV1(claimed)!;
+      expect(context.capabilities.course_bonus?.sales_flow).toEqual({ retention_used: true, promo_expires_at: null });
+    });
     it('advertises it with price evidence, labels it without, and omits it in checkout', () => {
       const evidence = { eligible: true, price_evidence: true, retention_decline: false, retention_used: false, missing_steps: [] };
       const none = { eligible: false, price_evidence: false, retention_decline: false, retention_used: false, missing_steps: ['price_evidence'] };

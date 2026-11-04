@@ -910,7 +910,11 @@ export function buildAgentAContextV1(
         && (claimed.business_context?.workspace.payment_options.length ?? 0) > 0,
       may_send_payment_link: hasReadableCurrentInput && maySendPaymentLink,
       ...(!startsFreshInterestCycle && claimed.course_bonus_capability
-        ? { course_bonus: claimed.course_bonus_capability }
+        ? { course_bonus: claimed.course_bonus_capability.sales_flow === undefined
+          ? claimed.course_bonus_capability
+          : { ...claimed.course_bonus_capability, sales_flow: {
+            retention_used: claimed.course_bonus_capability.sales_flow.retention_used,
+            promo_expires_at: claimed.course_bonus_capability.sales_flow.promo_expires_at } } }
         : {}),
       intake_status: intakeStatus,
       authorized_payment_plan: selectedPlan,
