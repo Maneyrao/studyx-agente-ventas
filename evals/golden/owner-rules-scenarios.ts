@@ -96,7 +96,7 @@ export const OWNER_GOLDEN_CASES: readonly GoldenCaseV1[] = [
       bonusTurn('second_bonus', 'Me suma, pero el precio me sigue pareciendo caro.', [1, 2, 3]),
       turn('third_bonus', 'El curso me interesa, pero todavía no me alcanza por el precio.', {
         must: ['Mantener el precio y el paquete vigente. Con el permiso concedido puede sumar el 3.º bonificado (un curso pago + tres bonificados es el paquete máximo y es válido: no es un cuarto bonificado); si lo suma, recapitula el paquete completo.'],
-        mustNot: ['No ofrecer, insinuar ni materializar un CUARTO bonificado (más de tres bonificados además del curso pago).', 'No mencionar beca ni el precio de 699.'],
+        mustNot: ['No ofrecer, insinuar ni materializar un CUARTO bonificado (más de tres bonificados además del curso pago); «cuatro cursos al precio de uno» para 1 pago + 3 bonificados es el registro autorizado.', 'No mencionar beca ni el precio de 699.'],
         authority: [limits, permission, gabi(136, 142, 'Máximo de cursos bonificados')],
         expected: { move: moves, action: ['none', 'offer_course_bonus'], state: {
           promotion: { status: ['offer_available'], bonusCount: [1, 2, 3], paidCourse: ['introduccion_ecommerce'] },
@@ -104,10 +104,10 @@ export const OWNER_GOLDEN_CASES: readonly GoldenCaseV1[] = [
         hard: [{ type: 'workflow_committed' }, { type: 'promotion_bonus_count_at_most', value: 3 }, ...noBeca],
       }),
       turn('no_fourth', 'Y otro curso gratuito más también?', {
-        must: ['Conservar los bonificados existentes (máximo tres), mantener el precio y proponer avanzar o dejar la puerta abierta.'],
-        mustNot: ['No ofrecer, insinuar ni materializar un cuarto curso bonificado.'],
+        must: ['Mantener el precio y el paquete. Si aún no hay tres bonificados, puede sumar el 3.º en este turno o en el anterior (no se exige un turno concreto); con tres ya entregados, conserva el paquete y propone avanzar o deja la puerta abierta.'],
+        mustNot: ['No ofrecer, insinuar ni materializar un CUARTO bonificado (más de tres además del curso pago). Decir «cuatro cursos al precio de uno» para 1 pago + 3 bonificados es el registro de valor autorizado: no es una violación.'],
         authority: [limits, gabi(136, 142, 'Máximo de cursos bonificados')],
-        expected: { move: [...moves, 'ask_current_state'], action: ['none'], state: { promotion: { status: ['offer_available'], bonusCount: [1, 2, 3], paidCourse: ['introduccion_ecommerce'] } } },
+        expected: { move: [...moves, 'ask_current_state'], action: ['none', 'offer_course_bonus'], state: { promotion: { status: ['offer_available'], bonusCount: [1, 2, 3], paidCourse: ['introduccion_ecommerce'] } } },
         hard: [{ type: 'workflow_committed' }, { type: 'promotion_bonus_count_at_most', value: 3 }],
       }),
     ],

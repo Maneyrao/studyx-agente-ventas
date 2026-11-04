@@ -115,7 +115,11 @@ describe('owner-rule supplementary golden campaign', () => {
     expect(turns.find(turn => turn.id === 'price_only_first_bonus')?.expected.action).toEqual(['offer_course_bonus']);
     expect(turns.find(turn => turn.id === 'second_bonus')?.expected.action).toEqual(['none', 'offer_course_bonus']);
     expect(turns.find(turn => turn.id === 'third_bonus')?.expected.state.promotion?.bonusCount).toEqual([1, 2, 3]);
-    expect(turns.find(turn => turn.id === 'no_fourth')?.expected.action).toEqual(['none']);
+    // The 3rd bonus may land on third_bonus or no_fourth; a 4th is never valid (bonusCount <= 3 on every turn).
+    expect(turns.find(turn => turn.id === 'no_fourth')?.expected.action).toEqual(['none', 'offer_course_bonus']);
+    for (const id of ['third_bonus', 'no_fourth']) {
+      expect(turns.find(turn => turn.id === id)?.hard).toContainEqual({ type: 'promotion_bonus_count_at_most', value: 3 });
+    }
     expect(turns.find(turn => turn.id === 'marketing_budget')?.mustNot.join(' ')).toContain('No ofrecer una llamada');
   });
 
