@@ -3,10 +3,10 @@ import { readFileSync, readdirSync, readlinkSync } from 'node:fs';
 import path from 'node:path';
 import ts from 'typescript';
 
-// Last commit of claude/agent-a-model-owned-sales that changed deployable code (brain v161, prompt v107).
+// Last commit of claude/agent-a-model-owned-sales that changed deployable code (brain v162, prompt v108).
 // Anything committed after it must be docs/evals/tests only (see assertOnlyNonCodeChangesSinceBaseV1), so a release
 // prepared from the branch HEAD runs exactly this code. Re-pin whenever a code file changes.
-export const BOT_RELEASE_BASE_SHA = 'ca58c6be7a5dc3d0c17eb47b38c0668d753a9a73';
+export const BOT_RELEASE_BASE_SHA = 'b385f91e5c454156b3d653369d82b930ffdaed5a';
 export const BOT_RELEASE_BRAIN_VERSION = 'studyx-agent-a-brain-v162';
 export const BOT_RELEASE_PROMPT_VERSION = 'studyx-agent-a-canonical-v108';
 export const BOT_RELEASE_INSTRUMENTATION_VERSION = 'studyx-release-provenance-v1';
