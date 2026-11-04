@@ -7,6 +7,7 @@ import type { ConversationMoveV1 } from '../../schemas/conversation-pipeline';
 import { classifyBatchSalesSignal } from '../../../../src/features/orchestration/domain/sales-signal';
 import { supportsChatPreferenceV1 } from './channel-preference-evidence';
 import { mayOfferCallV1 } from '../../../../src/shared/conversation/bonus-ladder';
+import { isBonusCheckoutStateV1 } from '../../../../src/shared/conversation/deterministic-sales-rules';
 import { STUDYX_GENERAL_FACTS_V1 } from '../../../../src/shared/catalog/studyx-general-facts';
 import { currentFactualCourseReferencesV1, latestAgentTurnMessages,
   type FactualCourseReferenceV1 } from '../../../../src/features/orchestration/domain/course-focus';
@@ -723,7 +724,12 @@ export function buildAgentAContextV1(
       ...(mayRequestCallNow ? ['request_call_now'] : []),
       ...(claimed.policy.may_respond && paymentOptions.length > 0 ? ['present_payment_options'] : []),
       ...(hasReadableCurrentInput && maySendPaymentLink ? ['send_payment_link'] : []),
-      ...(bonusCapability?.may_offer_bonus ? ['offer_course_bonus'] : []),
+      // Never advertised in checkout; without price evidence it is labelled, not offered as available.
+      ...(bonusCapability?.may_offer_bonus && !isBonusCheckoutStateV1({ stage: effectiveStage,
+        awaiting_reply: effectiveAwaitingReply,
+        payment_link_request_pending: !startsFreshInterestCycle && state.payment_link_request?.status === 'pending' })
+        ? [bonusCapability.ladder?.eligible === true ? 'offer_course_bonus' : 'offer_course_bonus_needs_price_evidence']
+        : []),
       ...(bonusCapability?.may_accept_offer ? ['accept_promotion'] : []),
     ],
     retention_used: bonusCapability?.sales_flow?.retention_used ?? bonusCapability?.ladder?.retention_used ?? null,

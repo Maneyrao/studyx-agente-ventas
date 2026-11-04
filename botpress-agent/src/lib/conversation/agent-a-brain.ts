@@ -2109,7 +2109,10 @@ export function validateAgentATurnProposalV1(input: {
       || input.proposal.move.vetoes.includes('purchase')
     )
   );
-  const promotionEffectOwnsThisTurn = input.proposal.proposed_action.type === 'offer_course_bonus'
+  // A bonus the capability does not allow (checkout, no candidates) is pruned by the backend, so it
+  // cannot own the turn: the copy must still ask for the missing data.
+  const promotionEffectOwnsThisTurn = (input.proposal.proposed_action.type === 'offer_course_bonus'
+      && input.context.capabilities.course_bonus?.may_offer_bonus === true)
     || input.proposal.proposed_action.type === 'accept_promotion';
   const mustGuideIntake = missingIntake.length > 0
     && !paymentDeferred

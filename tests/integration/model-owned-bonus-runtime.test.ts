@@ -163,6 +163,32 @@ run('model-owned bonus at the actual commit and transactional boundaries', () =>
     expect(state.selected_offering_code).toBeNull();
   });
 
+  it('H1: a bonus whose copy does not name the course commits no gift and never marks one delivered', async () => {
+    const f = await seedConversationForAgentTurn({ selected_offering_code: paid, first_message: 'me sigue pareciendo caro' });
+    await seedPriorModelNegotiation(db!, f, 1);
+    const draft = proposal();
+    draft.response = { messages: ['Mirá, con Introducción al Ecommerce armás tu tienda.', 'Te sumo otro curso sin costo y el precio sigue igual. Avanzamos?'], call_offer: null };
+    draft.course_mentions = [{ offering_code: paid, role: 'paid' }];
+    const committed = await commitAgentDecision({ turn_id: f.turn_id, trace_id: f.trace_id, supports_multi_outbound: true,
+      supports_send_fencing: true, agent_turn_v2: { schema_version: 2 as const, proposal: draft },
+      decision: f.placeholderDecision as never, model: f.model as never });
+    expect(committed.status).toBe('committed');
+    const gifts = await db!`SELECT 1 FROM promotion_offer_bonus_offerings b JOIN promotion_offers o ON o.id=b.offer_id
+      WHERE o.conversation_id=${f.conversation_id}::uuid`;
+    expect(gifts).toHaveLength(0);
+  });
+
+  it('M5: the capability stops advertising a new bonus once the sale is in checkout', async () => {
+    const f = await seedConversationForAgentTurn({ selected_offering_code: paid, first_message: 'me sigue pareciendo caro' });
+    await seedPriorModelNegotiation(db!, f, 1);
+    const read = () => readCourseBonusCapabilityV1({ workspace_slug: 'studyx', contact_id: f.contact_id,
+      conversation_id: f.conversation_id, channel: 'text', selected_offering_code: paid, source_turn_id: f.turn_id }, { db: db! });
+    expect((await read()).may_offer_bonus).toBe(true);
+    await db!`UPDATE conversation_sales_context_states_v1 SET awaiting_reply='contact_details'
+      WHERE conversation_id=${f.conversation_id}::uuid`;
+    expect((await read()).may_offer_bonus).toBe(false);
+  });
+
   it('never cancels the bubble that carries the committed offer when the customer writes between bubbles', async () => {
     const f = await seedConversationForAgentTurn({ selected_offering_code: paid, first_message: 'me sigue pareciendo caro' });
     await seedPriorModelNegotiation(db!, f, 1);

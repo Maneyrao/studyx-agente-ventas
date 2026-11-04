@@ -2630,6 +2630,31 @@ describe('Agent A structured commercial context (sales_profile and fichas)', () 
     expect(profile.bonus_courses).toEqual([]);
   });
 
+  describe('M5: offer_course_bonus in next_allowed_effects', () => {
+    const cap = (ladder: unknown) => ({ enabled: true, max_bonus_courses: 3, may_offer_bonus: true, status: 'checkin_available',
+      may_schedule_checkin: false, may_request_review: false, may_accept_offer: false, may_send_promoted_payment: false,
+      promotion_code: null, interest_offering_code: 'redes-informaticas', bonus_offerings: [], delivered_bonus_offerings: [],
+      ...(ladder ? { ladder } : {}) });
+    const effects = (capability: unknown, patch: Record<string, unknown> = {}) => {
+      const claimed = claimedTurn();
+      claimed.conversation_state_v1 = { ...claimed.conversation_state_v1!, ...patch } as never;
+      Object.assign(claimed, { course_bonus_capability: capability });
+      return buildAgentAContextV1(claimed)!.commercial_state.sales_profile!.next_allowed_effects;
+    };
+    it('advertises it with price evidence, labels it without, and omits it in checkout', () => {
+      const evidence = { eligible: true, price_evidence: true, retention_decline: false, retention_used: false, missing_steps: [] };
+      const none = { eligible: false, price_evidence: false, retention_decline: false, retention_used: false, missing_steps: ['price_evidence'] };
+      expect(effects(cap(evidence))).toContain('offer_course_bonus');
+      const labelled = effects(cap(none));
+      expect(labelled).not.toContain('offer_course_bonus');
+      expect(labelled).toContain('offer_course_bonus_needs_price_evidence');
+      for (const awaiting_reply of ['contact_details', 'payment_plan', 'payment_confirmation']) {
+        const inCheckout = effects(cap(evidence), { awaiting_reply });
+        expect(inCheckout.some((effect) => effect.startsWith('offer_course_bonus'))).toBe(false);
+      }
+    });
+  });
+
   it('works without a claim projection (older backend) and never invents memories', () => {
     const profile = buildAgentAContextV1(claimedTurn())!.commercial_state.sales_profile!;
     expect(profile).toMatchObject(emptyProfile);

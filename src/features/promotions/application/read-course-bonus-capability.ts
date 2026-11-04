@@ -1,5 +1,5 @@
 import { readCourseBonusLadderV1 } from './read-course-bonus-ladder';
-import { authorizedBonusCodesV1, courseCodesNamedInBatchV1 } from '@/shared/conversation/deterministic-sales-rules';
+import { authorizedBonusCodesV1, courseCodesNamedInBatchV1, isBonusCheckoutStateV1 } from '@/shared/conversation/deterministic-sales-rules';
 import { currentFactualCourseReferencesV1 } from '@/features/orchestration/domain/course-focus';
 import { customerBonusRequestV1, type CustomerBonusRequestV1 } from '@/features/promotions/domain/customer-bonus-request';
 import type { CourseBonusLadderV1 } from '@/shared/conversation/bonus-ladder';
@@ -642,11 +642,19 @@ async function readDirectCapability(input: {
     : await customerBonusRequestThisTurnV1(input, db, activeCourses,
       row.status === 'offered' ? (row.courses ?? []).map(course => course.code) : [], max);
   const namedCodes = courseCodesNamedInBatchV1(await currentBatchTexts(input, db), activeCourses);
-  return {...deriveDirectCourseBonusCapabilityV1({interest_offering_code:input.selected_offering_code!,
+  // Checkout (by durable state) closes new gifts: never advertise the effect there.
+  const [salesState] = await db<Array<{stage:string;awaiting_reply:string|null;link_status:string|null}>>`
+    SELECT stage,awaiting_reply,payment_link_request->>'status' AS link_status
+    FROM conversation_sales_context_states_v1
+    WHERE conversation_id=${input.conversation_id}::uuid AND contact_id=${input.contact_id}::uuid LIMIT 1`;
+  const inCheckout = salesState !== undefined && isBonusCheckoutStateV1({stage:salesState.stage,
+    awaiting_reply:salesState.awaiting_reply ?? 'none',payment_link_request_pending:salesState.link_status==='pending'});
+  const derived = deriveDirectCourseBonusCapabilityV1({interest_offering_code:input.selected_offering_code!,
     active_courses:activeCourses,named_codes:namedCodes,
     ...(ladder ? {ladder} : {}),
     max_bonus_courses:max,customer_request:customerRequest,
-    package:row.promotion_code ? {...row,promotion_code:row.promotion_code} : null}),
+    package:row.promotion_code ? {...row,promotion_code:row.promotion_code} : null});
+  return {...derived, ...(inCheckout ? {may_offer_bonus:false} : {}),
     sales_flow:{retention_used:ladder?.retention_used ?? false,
       promo_expires_at:row.status==='offered' && row.expires_at ? new Date(row.expires_at).toISOString() : null}};
 }

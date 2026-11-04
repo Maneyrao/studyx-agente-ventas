@@ -292,6 +292,26 @@ describe('Agent A Brain V1', () => {
       expect(rejection?.rejections.some(r => r.subject === 'hard_claim.invented_deadline') ?? false).toBe(rejected);
     }
   });
+  it('M5: a bonus the capability does not allow (checkout) does not exempt the copy from asking for missing data', () => {
+    const current = context();
+    current.commercial_state.awaiting_reply = 'contact_details';
+    current.capabilities.intake_missing = ['correo'];
+    current.catalog.available_offerings = [
+      { code: 'redes-informaticas', display_name: 'Redes Informáticas', area_code: 'tecnologia', fact_id: 'paid' },
+      { code: 'word', display_name: 'Word', area_code: 'ofimatica', fact_id: 'bonus' },
+    ];
+    current.capabilities.course_bonus = {
+      enabled: true, max_bonus_courses: 3, may_offer_bonus: false, status: 'checkin_available',
+      may_schedule_checkin: false, may_request_review: false, may_accept_offer: false, may_send_promoted_payment: false,
+      promotion_code: null, interest_offering_code: 'redes-informaticas', bonus_offerings: [], delivered_bonus_offerings: [],
+    };
+    const parsed = parseAgentATurnProposalV1(proposal({
+      response: { messages: ['Te sumo Word sin costo.'], call_offer: null },
+      proposed_action: { type: 'offer_course_bonus', interest_offering_code: 'redes-informaticas', bonus_offering_code: 'word' } }), current);
+    const rejection = validateAgentATurnProposalV1({ proposal: parsed, context: current, planned_fact_ids: [],
+      rejection_id: '00000000-0000-4000-8000-000000000001' });
+    expect(rejection?.rejections).toContainEqual({ code: 'MISSING_INTAKE', subject: 'correo' });
+  });
   it('accepts neutral exact terms for a real budget limit without a price-reframe rejection', () => {
     const current = context();
     current.turn.batch_messages = [{ id: 'current', text: 'No me alcanza el presupuesto' }];
