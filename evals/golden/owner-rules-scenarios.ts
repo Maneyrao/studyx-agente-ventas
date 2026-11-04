@@ -1,6 +1,7 @@
 import type { AuthorityReference, GoldenCaseV1, GoldenTurnV1 } from './scenarios';
 import { OWNER_REPLAY_CUSTOMER_TURNS_V1 } from './owner-conversation-2026-11-02';
-import { BONUS_AFFINITY_TABLE_V1, UNIVERSAL_BONUS_BRIDGES_V1 } from '../../src/shared/conversation/deterministic-sales-rules';
+import { authorizedBonusCodesV1 } from '../../src/shared/conversation/deterministic-sales-rules';
+import { fichaOfferingCodes } from '../../src/shared/catalog/gabi-fichas';
 
 // Supplemental campaign: never included in the unchanged formal 16-case/48-turn gate.
 // Authority since 2026-11-03 (AGENTS.md «Venta interpretada por el modelo», lines 148-190): the backend validates
@@ -26,8 +27,9 @@ const baseAuthority = [gabi(38, 44, 'Una recomendación no es elección'), gabi(
 const moves = ['greeting', 'browse_catalog', 'select_course', 'ask_course_information', 'ask_payment_options',
   'unknown', 'continue_by_chat', 'defer_payment', 'request_call', 'decline_purchase'];
 const allActions = ['none', 'offer_course_bonus', 'accept_promotion'];
-/** Bonus candidates are set membership (AGENTS.md:161): affinity row + universal bridges. */
-const affinitySet = (paid: string): string[] => [...(BONUS_AFFINITY_TABLE_V1[paid] ?? []), ...UNIVERSAL_BONUS_BRIDGES_V1];
+/** Bonus candidates are set membership (AGENTS.md:161): the same function the backend uses for the permission
+ * (ficha «Combinalo con» + career routes, affinity row, universal bridges) over the courses with a ficha. */
+const affinitySet = (paid: string): string[] => authorizedBonusCodesV1({ paid_code: paid, active_codes: fichaOfferingCodes() });
 const ecommerceSet = affinitySet('introduccion_ecommerce');
 const noBeca = [{ type: 'not_contains', value: 'beca' } as const, { type: 'not_contains', value: '699' } as const];
 function turn(id: string, customer: string, override: Partial<GoldenTurnV1> = {}): GoldenTurnV1 {
@@ -93,8 +95,8 @@ export const OWNER_GOLDEN_CASES: readonly GoldenCaseV1[] = [
       bonusTurn('price_only_first_bonus', 'Sí, sólo el precio me frena; sigue siendo caro.', [1, 2], { required: true }),
       bonusTurn('second_bonus', 'Me suma, pero el precio me sigue pareciendo caro.', [1, 2, 3]),
       turn('third_bonus', 'El curso me interesa, pero todavía no me alcanza por el precio.', {
-        must: ['Conservar el paquete vigente, mantener el precio y seguir sin prometer un cuarto curso. Máximo tres bonificados en total.'],
-        mustNot: ['No ofrecer, insinuar ni materializar un cuarto curso bonificado.', 'No mencionar beca ni el precio de 699.'],
+        must: ['Mantener el precio y el paquete vigente. Con el permiso concedido puede sumar el 3.º bonificado (un curso pago + tres bonificados es el paquete máximo y es válido: no es un cuarto bonificado); si lo suma, recapitula el paquete completo.'],
+        mustNot: ['No ofrecer, insinuar ni materializar un CUARTO bonificado (más de tres bonificados además del curso pago).', 'No mencionar beca ni el precio de 699.'],
         authority: [limits, permission, gabi(136, 142, 'Máximo de cursos bonificados')],
         expected: { move: moves, action: ['none', 'offer_course_bonus'], state: {
           promotion: { status: ['offer_available'], bonusCount: [1, 2, 3], paidCourse: ['introduccion_ecommerce'] },
@@ -391,7 +393,7 @@ OWNER_PROMOTION_MODE_REPLAY_CASES_MUTABLE.push({
       must: ['Identificar Marketing Digital y empezar por el descubrimiento: una sola pregunta sobre lo que quiere lograr o su situación, sin precio ni cierre todavía.'],
       mustNot: ['No ofrecer una llamada, no pedir inscripción ni plan, no abrir con el precio, no cerrar con «?!».'],
       authority: [noForcedRules, noInvasion, gabi(36, 44, 'Descubre sólo lo que te sirve para vender')],
-      hard: [{ type: 'workflow_committed' }, { type: 'selected_course_equals', value: 'marketing_digital' },
+      hard: [{ type: 'workflow_committed' }, { type: 'contains', value: 'Marketing Digital' },
         { type: 'no_call_offer' }, { type: 'no_enrollment_ask' }, { type: 'question_count_at_most', value: 1 },
         { type: 'not_contains', value: '?!' }, ...noBeca],
     }),
@@ -411,7 +413,7 @@ OWNER_PROMOTION_MODE_REPLAY_CASES_MUTABLE.push({
         { type: 'not_contains', value: 'unico inconveniente' }, { type: 'not_contains', value: '?!' }, ...noBeca],
     }),
     marketingTurn('value_objection', 'mmm, es bastante para mí ahora', {
-      must: ['Objeción de valor/presupuesto citada: el permiso del backend está concedido. Trabajar el valor ligado a trabajar con marcas; la guía del prompt pide presentar Publicidad en Redes Sociales como bonificado por afinidad directa con ese objetivo (puede preguntar una sola vez si el precio es lo único que lo frena).'],
+      must: ['Objeción de valor/presupuesto citada: el permiso del backend está concedido. Trabajar el valor ligado a trabajar con marcas; el modelo decide: o presenta un bonificado afín del conjunto autorizado (p. ej. Publicidad en Redes Sociales o Community Manager), o aísla una sola vez la objeción preguntando o invitando a confirmar si el precio es lo único que lo frena (cualquier formulación natural vale; sin ofrecer aún el curso). No es obligatorio bonificar en este turno.'],
       mustNot: ['No ofrecer descuento de precio, no mencionar beca ni 699, no ofrecer una llamada, no cerrar con «?!» salvo en la oferta de la promo.'],
       authority: [permission, affinity, limits, yesIsGuide, retention],
       expected: { move: marketingMoves, action: ['none', 'offer_course_bonus'], state: {
@@ -420,7 +422,7 @@ OWNER_PROMOTION_MODE_REPLAY_CASES_MUTABLE.push({
         { type: 'bonus_in_when_offered', values: marketingSet }, { type: 'no_call_offer' }, ...noBeca],
     }),
     marketingTurn('price_only_yes', 'sí, es solo el precio lo que me frena', {
-      must: ['Confirmó que el precio es lo único: presentar el bonificado afín Publicidad en Redes Sociales (guía del prompt) explicando cómo le sirve para trabajar con marcas, mantener el precio y cerrar con una sola pregunta; el cierre enérgico es válido sólo aquí (oferta final/promo).'],
+      must: ['Confirmó que el precio es lo único: presentar un bonificado afín del conjunto autorizado (p. ej. Publicidad en Redes Sociales o Community Manager; el modelo elige) explicando cómo le sirve para trabajar con marcas, mantener el precio y cerrar con una sola pregunta; el cierre enérgico es válido sólo aquí (oferta final/promo).'],
       mustNot: ['No cambiar el curso pago, no ofrecer una llamada, no mencionar beca ni 699.'],
       authority: [permission, affinity, limits, yesIsGuide, noInvasion],
       expected: { move: marketingMoves, action: ['offer_course_bonus', 'none'], state: {
@@ -437,7 +439,7 @@ OWNER_PROMOTION_MODE_REPLAY_CASES_MUTABLE.push({
       hard: [{ type: 'workflow_committed' }, { type: 'no_call_offer' }, { type: 'not_repeat_previous_reply' }, ...noBeca],
     }),
     marketingTurn('resume', 'hola, sigo interesada', {
-      must: ['Retomar la conversación con calidez conservando el paquete ya ofrecido (Marketing Digital + Publicidad en Redes Sociales) y el objetivo de trabajar con marcas, con información nueva o una pregunta que avance.'],
+      must: ['Retomar la conversación con calidez conservando el paquete ya ofrecido (Marketing Digital + el bonificado que el agente ofreció en el turno de la promo, sin cambiarlo) y el objetivo de trabajar con marcas, con información nueva o una pregunta que avance.'],
       mustNot: ['No repetir literalmente ninguna respuesta anterior del agente, no volver a presentar la promoción como si fuera nueva, no ofrecer una llamada, no cerrar con «?!» mecánico.'],
       authority: [noForcedRules, noInvasion, effectsApart, gabi(23, 23, 'Responde sólo con información nueva')],
       expected: { move: marketingMoves, action: ['none'], state: { promotion: { status: ['offer_available'], bonusCount: [1], paidCourse: ['marketing_digital'] } } },

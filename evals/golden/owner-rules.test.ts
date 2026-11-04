@@ -137,6 +137,17 @@ describe('owner-rule supplementary golden campaign', () => {
       .toEqual(FOCUSED_SELECTION.split(',').sort());
   });
 
+  it('judges the bonus against the same authorized set the backend validates (Combinalo con included)', () => {
+    const marketing = OWNER_PROMOTION_MODE_REPLAY_CASES.find(item => item.id.startsWith('27_'))!;
+    const rule = marketing.turns.find(item => item.id === 'price_only_yes')!.hard
+      .find(item => item.type === 'bonus_in_when_offered') as { values: string[] };
+    expect(rule.values).toEqual(expect.arrayContaining(['community_manager', 'publicidad_redes_sociales']));
+    expect(rule.values).not.toContain('marketing_digital');
+    expect(marketing.turns.find(item => item.id === 'asks_marketing')!.hard.map(item => item.type)).not.toContain('selected_course_equals');
+    const third = OWNER_GOLDEN_CASES[0]!.turns.find(item => item.id === 'third_bonus')!;
+    expect(third.must.join(' ')).toContain('no es un cuarto bonificado');
+  });
+
   it('accepts the recorded canonical current-state move only at the fourth-bonus limit check', () => {
     // Recorded real model behavior, source owner-rules-1687498-20261102T150651Z/17/no_fourth.
     // This tests evaluator compatibility, not model quality using a handwritten answer.
