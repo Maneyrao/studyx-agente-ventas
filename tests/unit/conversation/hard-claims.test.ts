@@ -45,3 +45,29 @@ describe('hard factual claim detectors', () => {
     expect(claims).toEqual([{ kind: 'official_title', sentence: 'Recibís un título oficial.' }])
   })
 })
+
+describe('invented testimonials (only the manual\'s real stories may be told)', () => {
+  it.each([
+    'Tenemos egresadas que hoy viven de esto.',
+    'Hay alumnas que ya cobran por sus servicios de uñas.',
+    'Tenemos egresadas que hoy cobran por sus servicios de belleza, algunas desde casa.',
+    'Muchas alumnas empezaron de cero y hoy trabajan por su cuenta.',
+    'Nuestros egresados ya trabajan en agencias.',
+  ])('flags %s', (sentence) => {
+    expect(kinds(sentence)).toContain('invented_testimonial')
+  })
+  it.each([
+    'No tengo un caso puntual de ese rubro, pero puedo contarte el de otro.',
+    'No tenemos alumnas que te puedan contar su experiencia todavía.',
+    'Felipe Serrano, de Oficios, creó su empresa y hoy tiene un equipo; tenemos alumnos que lo siguen.',
+    'Cristian y Ana María abrieron su negocio gastronómico con los diplomados.',
+    'Amparo y Edson consiguieron empleo como diseñadores gráficos.',
+    'Los alumnos acceden al Campus Virtual.',
+  ])('passes %s', (sentence) => {
+    expect(kinds(sentence)).not.toContain('invented_testimonial')
+  })
+  it('removes only the offending sentence', () => {
+    expect(hardClaimsInTextV1('Es un buen curso. Tenemos egresadas que hoy viven de esto. Son 25 clases.'))
+      .toEqual([{ kind: 'invented_testimonial', sentence: 'Tenemos egresadas que hoy viven de esto.' }])
+  })
+})

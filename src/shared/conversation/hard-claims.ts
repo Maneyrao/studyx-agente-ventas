@@ -20,7 +20,8 @@ export type HardClaimKindV1 =
   | 'invented_discount'
   | 'invented_deadline'
   | 'forbidden_price'
-  | 'scholarship';
+  | 'scholarship'
+  | 'invented_testimonial';
 
 export interface HardClaimV1 {
   readonly kind: HardClaimKindV1;
@@ -108,6 +109,16 @@ const DEADLINE_DATE = new RegExp(
   'u',
 );
 
+// Only the manual's real stories may be told (AGENTS.md, Material de Gabi): a generic
+// "tenemos egresadas que..." is an invented testimonial unless the sentence names one of them.
+const GRADUATE = '(?:egresad[oa]s?|alumn[oa]s?|estudiantes|graduad[oa]s?|exalumn[oa]s?)';
+const TESTIMONIAL = [
+  new RegExp(`\\b(?:tenemos|tengo|hay|contamos\\s+con|conozco)\\s+(?:muchos?\\s+|muchas\\s+|varios?\\s+|varias\\s+|algunos?\\s+|algunas\\s+|miles\\s+de\\s+|cientos\\s+de\\s+)?${GRADUATE}\\s+que\\b`, 'u'),
+  new RegExp(`\\b(?:muchos?|muchas|varios|varias|miles\\s+de|cientos\\s+de)\\s+(?:de\\s+nuestr[oa]s\\s+)?${GRADUATE}\\b`, 'u'),
+  new RegExp(`\\bnuestr[oa]s\\s+${GRADUATE}\\s+(?:ya\\s+|hoy\\s+)?(?:viven|cobran|trabajan|ganan|facturan|abrieron|consiguieron|montaron)\\b`, 'u'),
+];
+const REAL_STORY = /\b(?:felipe\s+serrano|cristian\s+y\s+ana\s+maria|amparo\s+y\s+edson)\b/u;
+
 const FORBIDDEN_PRICE = /(?:^|[^\d])699(?!\d)/u;
 const SCHOLARSHIP = /\bbec(?:a|as|ado|ados|ada|adas)\b/u;
 
@@ -129,6 +140,7 @@ export function hardClaimKindsInSentenceV1(sentence: string, context?: { readonl
       add('license_claim');
     }
   }
+  if (!REAL_STORY.test(text) && TESTIMONIAL.some((pattern) => hasAffirmed(text, pattern))) add('invented_testimonial');
   if (SCARCITY.some((pattern) => hasAffirmed(text, pattern))) add('invented_scarcity');
   if (DISCOUNT.some((pattern) => hasAffirmed(text, pattern))) add('invented_discount');
   if (DEADLINE_TERMS.some((pattern) => hasAffirmed(text, pattern))
