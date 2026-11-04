@@ -230,7 +230,7 @@ export const GOLDEN_CASES: readonly GoldenCaseV1[] = [
         mustNot: ['No demorar el precio, no inventar descuentos, no seleccionar un plan por el cliente y no preguntar si el precio es el único inconveniente: es una pregunta informativa.'],
         authority: [ref(PROMPT, 108, 115, 'Ante una pregunta directa de precio'), ref(PROMPT, 125, 125, 'una pregunta informativa')],
         expected: { move: ['ask_payment_options', 'select_course', 'ask_course_information'], action: ['none'], state: state({ plan: [null] }) },
-        hard: [{ type: 'not_contains', value: 'único inconveniente' }, { type: 'selected_course_equals', value: 'marketing_digital' }],
+        hard: [{ type: 'not_contains', value: 'único inconveniente' }, { type: 'contains', value: 'Marketing Digital' }],
       },
       {
         id: 'budget', customer: 'No me alcanza, ahora mismo estoy muy justo.',
@@ -611,7 +611,7 @@ export const GOLDEN_CASES: readonly GoldenCaseV1[] = [
         mustNot: ['No ofrecer descuento de precio ni ejecutar todavía una bonificación, y no preguntar si el precio es el único inconveniente: es una pregunta informativa.'],
         authority: [ref(PROMPT, 113, 124, 'El precio total no se baja'), ref(PROMPT, 125, 125, 'una pregunta informativa')],
         expected: { move: ['ask_payment_options', 'select_course', 'ask_course_information'], action: ['none'], state: state({ plan: [null] }) },
-        hard: [{ type: 'not_contains', value: 'único inconveniente' }, { type: 'selected_course_equals', value: 'marketing_digital' },
+        hard: [{ type: 'not_contains', value: 'único inconveniente' }, { type: 'contains', value: 'Marketing Digital' },
           { type: 'promotion_bonus_count_at_most', value: 0 }],
       },
       {
