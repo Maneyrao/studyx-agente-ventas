@@ -71,3 +71,16 @@ describe('invented testimonials (only the manual\'s real stories may be told)', 
       .toEqual([{ kind: 'invented_testimonial', sentence: 'Tenemos egresadas que hoy viven de esto.' }])
   })
 })
+
+describe('hard claims ignore URLs and honor a real expiry', () => {
+  it('does not read 699 or beca inside a URL', () => {
+    expect(kinds('Link: https://buy.stripe.com/test_699aBecaX9')).toEqual([]);
+    expect(kinds('Costaba 699. https://buy.stripe.com/x')).toContain('forbidden_price');
+  });
+  it('passes tiempo limitado and the exact date only with the authorized expiry', () => {
+    const expiry = { promoExpiresAt: '2026-11-15T12:00:00.000Z' };
+    expect(hardClaimKindsInTextV1('Es por tiempo limitado, vence el 15 de noviembre.', expiry)).toEqual([]);
+    expect(kinds('Es por tiempo limitado, vence el 15 de noviembre.')).toContain('invented_deadline');
+    expect(hardClaimKindsInTextV1('Vence el 16 de noviembre.', expiry)).toContain('invented_deadline');
+  });
+});

@@ -755,6 +755,34 @@ describe('hard factual claims share one detector with the Botpress brain', () =>
   });
 });
 
+describe('H3: the backend-inserted payment URL is not prose for hard claims', () => {
+  const url = 'https://buy.stripe.com/test_699aBecaX9Zq1699beca';
+  it('passes a link whose opaque id contains 699 and beca', () => {
+    const verdict = enforce(`Aquí tienes el link de pago: ${url}`, CANONICAL, [url]);
+    expect(verdict.violations).toEqual([]);
+    expect(verdict.content).toContain(url);
+  });
+  it('still rejects plain text 699 and beca beside the link', () => {
+    const verdict = enforce(`Antes costaba USD 699. Link: ${url}`, CANONICAL, [url]);
+    expect(verdict.violations).toContainEqual({ code: 'HARD_CLAIM', value: 'forbidden_price' });
+  });
+});
+
+describe('M2: a real promotion expiry authorizes the deadline wording', () => {
+  const expiry = '2026-11-15T23:59:00.000Z';
+  const withExpiry = { ...CANONICAL, authorized_promo_expires_at: expiry };
+  it.each(['La promo es por tiempo limitado.', 'La oferta vence el 15 de noviembre.', 'La promoción vence el 15/11.'])(
+    'passes %s with the real expiry and fails without it', (sentence) => {
+      expect(enforce(sentence, withExpiry).violations).toEqual([]);
+      expect(enforce(sentence).violations).toContainEqual({ code: 'HARD_CLAIM', value: 'invented_deadline' });
+    });
+  it('keeps rejecting a different or relative deadline', () => {
+    for (const sentence of ['La oferta vence el 20 de noviembre.', 'La oferta vence el viernes.', 'Es solo por hoy.']) {
+      expect(enforce(sentence, withExpiry).violations).toContainEqual({ code: 'HARD_CLAIM', value: 'invented_deadline' });
+    }
+  });
+});
+
 describe('offering list guard: a colon after a canonical name introduces its description', () => {
   // Real drafts of natural-59cab80 17/marketing_budget were rejected as OFFERING_NOT_CANONICAL.
   const canonical = canonicalTruthSetFromOfferingsV1({

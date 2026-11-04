@@ -81,7 +81,8 @@ export function removeOffendingSentencesV1(input: {
     if (courseLogisticsInV1(sentence).some((fact) => !authorizedLogistics.has(fact))) kinds.push('logistics')
     if (inspectCourseBonusClaimsV1({ content: sentence, authorized_bonus_names: bonusNames,
       known_offering_names: knownNames, paid_offering_names: paidNames }).has_unauthorized_claim) kinds.push('promise')
-    for (const kind of hardClaimKindsInSentenceV1(sentence, { tradeText: bubble })) kinds.push(kind)
+    for (const kind of hardClaimKindsInSentenceV1(sentence, { tradeText: bubble,
+      promoExpiresAt: context.capabilities.course_bonus?.sales_flow?.promo_expires_at })) kinds.push(kind)
     return kinds
   }
   const clean = (text: string): string => {

@@ -28,6 +28,29 @@ export interface HardClaimV1 {
   readonly sentence: string;
 }
 
+/** URLs carry opaque ids (a Stripe link may hold "699" or "beca"); they are not prose. */
+const URL_IN_TEXT = /https?:\/\/[^\s<>"')\]}]+/giu;
+export function stripUrlsV1(value: string): string {
+  return value.replace(URL_IN_TEXT, ' ');
+}
+
+const MONTHS = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+
+/** Day/month pairs (as "d/m" and "d de mes") the authorized expiry can be read as, in the markets' time zones. */
+function authorizedExpiryDates(iso: string | null | undefined): Set<string> {
+  const dates = new Set<string>();
+  const time = iso ? Date.parse(iso) : Number.NaN;
+  if (Number.isNaN(time)) return dates;
+  for (const offsetHours of [0, -3, -5]) {
+    const local = new Date(time + offsetHours * 3_600_000);
+    const day = local.getUTCDate();
+    const month = local.getUTCMonth();
+    dates.add(`${day}/${month + 1}`);
+    dates.add(`${day} de ${MONTHS[month]}`);
+  }
+  return dates;
+}
+
 function fold(value: string): string {
   return value.normalize('NFD').replace(/[̀-ͯ]/gu, '').toLowerCase();
 }
@@ -123,8 +146,15 @@ const FORBIDDEN_PRICE = /(?:^|[^\d])699(?!\d)/u;
 const SCHOLARSHIP = /\bbec(?:a|as|ado|ados|ada|adas)\b/u;
 
 /** Kinds asserted by one sentence. Order is stable. */
-export function hardClaimKindsInSentenceV1(sentence: string, context?: { readonly tradeText?: string }): HardClaimKindV1[] {
-  const text = fold(sentence).replace(/\s+/gu, ' ');
+export interface HardClaimContextV1 {
+  readonly tradeText?: string;
+  /** Real, persisted promotion expiry. A deadline claim matching it is authorized. */
+  readonly promoExpiresAt?: string | null;
+}
+
+export function hardClaimKindsInSentenceV1(sentence: string, context?: HardClaimContextV1): HardClaimKindV1[] {
+  const text = fold(stripUrlsV1(sentence)).replace(/\s+/gu, ' ');
+  const expiry = authorizedExpiryDates(context?.promoExpiresAt);
   const kinds: HardClaimKindV1[] = [];
   const add = (kind: HardClaimKindV1) => { if (!kinds.includes(kind)) kinds.push(kind); };
 
@@ -143,8 +173,14 @@ export function hardClaimKindsInSentenceV1(sentence: string, context?: { readonl
   if (!REAL_STORY.test(text) && TESTIMONIAL.some((pattern) => hasAffirmed(text, pattern))) add('invented_testimonial');
   if (SCARCITY.some((pattern) => hasAffirmed(text, pattern))) add('invented_scarcity');
   if (DISCOUNT.some((pattern) => hasAffirmed(text, pattern))) add('invented_discount');
-  if (DEADLINE_TERMS.some((pattern) => hasAffirmed(text, pattern))
-    || (DEADLINE_SUBJECT.test(text) && hasAffirmed(text, DEADLINE_DATE))) add('invented_deadline');
+  // With a real expiry, "tiempo limitado" and a date equal to it are true; any other deadline stays invented.
+  const mentionedDates = [...text.matchAll(/\b(\d{1,2})\s+de\s+([a-z]+)\b|\b(\d{1,2})\/(\d{1,2})\b/gu)]
+    .map((m) => (m[1] ? `${Number(m[1])} de ${m[2]}` : `${Number(m[3])}/${Number(m[4])}`));
+  const datesAuthorized = mentionedDates.length > 0 && mentionedDates.every((date) => expiry.has(date));
+  const [limitedTime, otherTerms] = DEADLINE_TERMS;
+  if ((hasAffirmed(text, limitedTime!) && expiry.size === 0)
+    || (hasAffirmed(text, otherTerms!) && !datesAuthorized)
+    || (DEADLINE_SUBJECT.test(text) && hasAffirmed(text, DEADLINE_DATE) && !datesAuthorized)) add('invented_deadline');
   return kinds;
 }
 
@@ -154,12 +190,12 @@ export function splitClaimSentencesV1(message: string): string[] {
 }
 
 /** Every offending sentence of one bubble. `tradeText` widens trade detection to the whole bubble. */
-export function hardClaimsInTextV1(message: string): HardClaimV1[] {
+export function hardClaimsInTextV1(message: string, context?: Pick<HardClaimContextV1, 'promoExpiresAt'>): HardClaimV1[] {
   return splitClaimSentencesV1(message).flatMap((sentence) => (
-    hardClaimKindsInSentenceV1(sentence, { tradeText: message }).map((kind) => ({ kind, sentence: sentence.trim() }))
+    hardClaimKindsInSentenceV1(sentence, { tradeText: message, promoExpiresAt: context?.promoExpiresAt }).map((kind) => ({ kind, sentence: sentence.trim() }))
   ));
 }
 
-export function hardClaimKindsInTextV1(message: string): HardClaimKindV1[] {
-  return [...new Set(hardClaimsInTextV1(message).map((claim) => claim.kind))];
+export function hardClaimKindsInTextV1(message: string, context?: Pick<HardClaimContextV1, 'promoExpiresAt'>): HardClaimKindV1[] {
+  return [...new Set(hardClaimsInTextV1(message, context).map((claim) => claim.kind))];
 }

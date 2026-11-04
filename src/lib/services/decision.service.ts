@@ -1381,6 +1381,7 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
         authorized_urls: authorizedUrls,
         canonical: {
           ...canonicalTruth,
+          authorized_promo_expires_at: courseBonusCapability?.sales_flow?.promo_expires_at ?? null,
           paid_offering_names: offerings.filter(o => o.code === commercialTruthPaidOfferingCode).map(o => o.display_name),
           authorized_bonus_names: [
             ...(courseBonusCapability?.delivered_bonus_offerings ??

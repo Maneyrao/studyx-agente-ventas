@@ -1950,7 +1950,8 @@ export function validateAgentATurnProposalV1(input: {
   }
   // Hard factual controls: official title, guaranteed work/income, state
   // license, invented quota/discount/deadline, 699, beca. Claim validation only.
-  for (const kind of new Set(authoredNarrative.flatMap(hardClaimKindsInTextV1))) {
+  for (const kind of new Set(authoredNarrative.flatMap(message => hardClaimKindsInTextV1(message, {
+    promoExpiresAt: input.context.capabilities.course_bonus?.sales_flow?.promo_expires_at })))) {
     rejections.push({ code: 'FACT_VALUE_MISMATCH', subject: `hard_claim.${kind}` });
   }
 

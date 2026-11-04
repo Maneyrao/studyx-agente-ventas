@@ -1,6 +1,6 @@
 import { STUDYX_GENERAL_FACTS_V1 } from '../../../shared/catalog/studyx-general-facts';
 import { courseLogisticsInV1 as courseLogisticsIn, type CourseLogisticsFactV1 } from '../../../shared/conversation/course-logistics';
-import { hardClaimKindsInSentenceV1 } from '../../../shared/conversation/hard-claims';
+import { hardClaimKindsInSentenceV1, stripUrlsV1 } from '../../../shared/conversation/hard-claims';
 import { inspectCourseBonusClaimsV1 } from '../../../shared/conversation/course-bonus-claim';
 
 /**
@@ -42,6 +42,8 @@ export interface CanonicalTruthSetV1 {
   readonly area_names?: readonly string[];
   /** Logística explícita de la oferta; nunca se infiere de que sea online. */
   readonly course_logistics?: readonly CourseLogisticsFactV1[];
+  /** Real persisted promotion expiry (ISO). Lets "tiempo limitado" / "vence el <esa fecha>" pass. */
+  readonly authorized_promo_expires_at?: string | null;
 }
 
 export type CommercialTruthViolationCodeV1 =
@@ -461,12 +463,14 @@ function sentenceViolations(
     violations.push({ code: 'OFFERING_NOT_CANONICAL', value: 'offering' });
   }
 
-  for (const kind of hardClaimKindsInSentenceV1(sentence)) {
+  // The backend-inserted payment/test URL has opaque ids ("699", "beca"): it is not prose.
+  const prose = stripUrlsV1(sentence);
+  for (const kind of hardClaimKindsInSentenceV1(prose, { promoExpiresAt: canonical.authorized_promo_expires_at })) {
     violations.push({ code: 'HARD_CLAIM', value: kind });
   }
 
   const authorizedLogistics = new Set(canonical.course_logistics ?? []);
-  if (courseLogisticsIn(sentence).some((fact) => !authorizedLogistics.has(fact))) {
+  if (courseLogisticsIn(prose).some((fact) => !authorizedLogistics.has(fact))) {
     violations.push({ code: 'LOGISTICS_NOT_CANONICAL', value: 'course_logistics' });
   }
 
