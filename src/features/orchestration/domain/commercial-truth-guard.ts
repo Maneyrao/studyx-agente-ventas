@@ -125,6 +125,8 @@ const UNCERTAIN_BENEFIT = /\b(?:no\s+(?:(?:tengo|tenemos)\s+(?:(?:informacion|da
 const OFFERING_CLAIM = /\b(?:(?:studyx\s+)?(?:ofrece(?:mos)?|tenemos|brinda(?:mos)?|dicta(?:mos)?|contamos\s+con|disponemos\s+de)|studyx\s+tiene|pod[eé]s\s+estudiar|te\s+recomiendo)\s+([^.!?\n]+)/giu;
 const GENERIC_CATALOG = /^(?:(?:varias|distintas|muchas|algunas|las|estas|tres)\s+)?(?:opciones|alternativas|areas|formas|planes)\b|^(?:cursos|diplomados)\s*(?:$|disponibles\b)/u;
 const OFFERING_DESCRIPTION = /^(?:todos|todas|ambos|ambas|que|para|con|sin|ideal|donde|porque|si|una\s+opcion|un\s+curso|es|tiene|incluye)\b/u;
+// Second-person / descriptive verbs that open a description after "Curso: …" (accent-folded).
+const DESCRIPTION_VERB_LED = /^(?:te\s+\p{L}+|\d+\b|(?:aprend(?:es|eras)|ve(?:ras|s)|trabaj(?:as|aras)|desarroll(?:as|aras)|domin(?:as|aras)|conoc(?:es|eras)|practic(?:as|aras)|construy(?:es)|construiras|cre(?:as|aras)|manej(?:as|aras)|us(?:as|aras)|disen(?:as|aras)|aplic(?:as|aras)|obtien(?:es)|obtendras|adquier(?:es)|adquiriras|descubr(?:es|iras)|analiz(?:as|aras)|gestion(?:as|aras)|program(?:as|aras)|edit(?:as|aras)|armas|haras|lograras|podras|sabras|tendras|incluy(?:e|en)|cubr(?:e|en)|abarca(?:n)?|ensena(?:n)?|permit(?:e|en)|ayuda(?:n)?|prepara(?:n)?|brinda(?:n)?|ofrece(?:n)?|combina(?:n)?|integra(?:n)?|es|son|sirv(?:e|en)|se)\b)/u;
 const NON_COURSE_OBJECT = /^(?:(?:el|la|un|una|nuestro|nuestra)\s+)?(?:\d+\s+)?(?:pagos?|cuotas?|planes?|chat|soporte|llamadas?|asesoria|acompanamiento|ayuda|informacion|acceso|profesores|clases|certificados?|descuentos?|becas?)\b/u;
 const EXPLICIT_COURSE = /^(?:(?:el|un|nuestro)\s+)?(?:curso|diplomado|diplomatura|carrera)\s+(?:de\s+|en\s+)?/u;
 const AREA_MEMBERSHIP = /^(?:que\s+)?(?:dentro\s+de|(?:como\s+)?parte\s+de|(?:forma|es)\s+parte\s+de|(?:pertenece|perteneciente)\s+a)\s+(?:(?:la|el|nuestra|nuestro)\s+)?/u;
@@ -183,16 +185,14 @@ function containsUnknownOffering(sentence: string, names: readonly string[], are
         && !/\p{L}/u.test(remainder.slice(candidate.length, candidate.length + 1)));
       if (!name) return true;
       remainder = remainder.slice(name.length).trim();
-      // After a canonical name a colon usually introduces its description
-      // ("Marketing Digital: trabajas contenidos…"). It only stays a description
-      // when it is one; an explicit course ("Diplomado en…") or a capitalized
-      // proper noun is another course object and keeps being checked.
+      // After a canonical name a colon either introduces its description
+      // ("Marketing Digital: aprendes estrategias…") or is a list item that
+      // names another course, which is checked against the canonical names.
+      // Only a description (OFFERING_DESCRIPTION or verb-led, any case) ends the
+      // check; the colon examined is always the current one.
       if (remainder.startsWith(':')) {
         const after = remainder.slice(1).trim();
-        const original = namedObject.slice(namedObject.indexOf(':') + 1).trim();
-        const isAnotherObject = after.length > 0 && !OFFERING_DESCRIPTION.test(after)
-          && (EXPLICIT_COURSE.test(after) || /^\p{Lu}/u.test(original));
-        if (!isAnotherObject) break;
+        if (after.length === 0 || OFFERING_DESCRIPTION.test(after) || DESCRIPTION_VERB_LED.test(after)) break;
         remainder = after.replace(EXPLICIT_COURSE, '');
         continue;
       }
