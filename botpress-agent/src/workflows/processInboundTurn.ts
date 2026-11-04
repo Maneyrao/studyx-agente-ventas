@@ -54,6 +54,7 @@ import {
 } from '../utils/decision-policy'
 import {
   routeCommercialTurn,
+  withoutPrefabCommercialCopy,
 } from '../utils/commercial-router'
 import { verifyAuthorizedEgressPortable } from '../utils/authorized-egress'
 import { generateGeminiDecision as generateGeminiUnobserved, MAX_GEMINI_DECISION_TIMEOUT_MS } from '../lib/decision/gemini-direct'
@@ -1176,10 +1177,10 @@ export const processInboundTurn = new Workflow({
     // One pure router owns capability precedence for both this workflow and
     // the local evaluator. It chooses a deterministic decision, suppression,
     // or one model request; it never applies the final policy itself.
-    const commercialRoute = routeCommercialTurn({
+    const commercialRoute = withoutPrefabCommercialCopy(routeCommercialTurn({
       automationEnabled: configuration.automationEnabled,
       claimed: owned,
-    })
+    }))
     let authorizedOfferingCode = commercialRoute.kind === 'deterministic'
       ? commercialRoute.authorizedOfferingCode ?? owned.sales_context.offering_code
       : owned.sales_context.offering_code

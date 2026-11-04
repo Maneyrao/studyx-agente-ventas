@@ -187,6 +187,23 @@ function suppressedRoute(
   }
 }
 
+/**
+ * Owner decision 2026-11-04: the model writes commercial copy; the backend
+ * delivers data and effects. A deterministic route that reaches the customer
+ * (only when the brain did not run: brain off, or ineligible) keeps its
+ * effects, ids and reason but never its prefab sales wording: the text becomes
+ * the single P0 sentence. Kept as written: the opt-out acknowledgement, the
+ * call handoff acknowledgements and any decision that carries a business action
+ * (e.g. the payment-link acknowledgement).
+ */
+export const PREFAB_COPY_FALLBACK_TEXT = 'Perdón, no te entendí bien, a qué te refieres?'
+export function withoutPrefabCommercialCopy(route: CommercialRouteResult): CommercialRouteResult {
+  if (route.kind !== 'deterministic' || route.origin === 'opt_out_ack' || route.origin === 'call_handoff') return route
+  const { decision } = route
+  if (decision.kind === 'suppress' || !decision.response || decision.business_action) return route
+  return { ...route, decision: { ...decision, response: PREFAB_COPY_FALLBACK_TEXT } }
+}
+
 function deterministicRoute(
   origin: DeterministicCommercialRouteOrigin,
   model: string,

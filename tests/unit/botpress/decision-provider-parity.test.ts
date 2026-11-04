@@ -899,9 +899,32 @@ describe('applyDecisionPolicy — provider parity', () => {
         offering_names: ['Inglés 1'], payment_options: plans,
       }));
       expect(fallback.response).toBe('El valor es USD 360 y lo puedes pagar en 12 cuotas de USD 30, '
-        + '6 cuotas de USD 60 o un pago único de USD 360. Qué curso te interesa? Así te cuento todo sobre ese.');
+        + '6 cuotas de USD 60 o un pago único de USD 360. Qué curso te interesa?');
       expect(fallback.response).not.toMatch(/Qué dato o qué curso|no te entendí|https?:/u);
     });
+
+    it('with a course in focus answers canonical data only: no fixed closing question (owner 2026-11-04)', () => {
+      const fallback = modelUnavailableFallback(claimedTurn({
+        batch_message_content: 'cuanto sale?', course_of_interest: 'Inglés 1', offering_code: 'course_1',
+        offering_names: ['Inglés 1'], payment_options: plans,
+      }));
+      expect(fallback.response).toBe('Inglés 1: El valor es USD 360 y lo puedes pagar en 12 cuotas de USD 30, '
+        + '6 cuotas de USD 60 o un pago único de USD 360.');
+    });
+
+    it.each(['cuanto sale?', 'quiero saber como es el tema del pago', 'ingles quiero saber el precio', 'mmm', 'hola'])(
+      'no live-path fallback ends with a removed prefab CTA or the old technical text: %s', (text) => {
+        for (const course_of_interest of [undefined, 'Inglés 1']) {
+          const fallback = modelUnavailableFallback(claimedTurn({
+            batch_message_content: text, course_of_interest, offering_code: course_of_interest ? 'course_1' : undefined,
+            offering_names: ['Inglés 1'], payment_options: plans,
+          } as never));
+          expect(fallback.response).not.toMatch(/Con cuál plan te gustaría avanzar\?|Así te cuento todo sobre ese|Hubo un problema/u);
+        }
+        const invalid = applyDecisionPolicy({ ...modelUnavailableFallback(claimedTurn({ batch_message_content: text, offering_names: ['Inglés 1'] })),
+          response: null, response_type: null } as never, claimedTurn({ batch_message_content: text, offering_names: ['Inglés 1'] }));
+        expect(invalid.response).toBe('Perdón, no te entendí bien, a qué te refieres?');
+      });
 
     it('never asserts a price the backend did not authorize', () => {
       const fallback = modelUnavailableFallback(claimedTurn({

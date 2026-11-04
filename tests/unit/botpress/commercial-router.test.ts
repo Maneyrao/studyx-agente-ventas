@@ -5,7 +5,7 @@ import {
   type ClaimedTurn,
   type Decision,
 } from '../../../botpress-agent/src/schemas/contracts';
-import { routeCommercialTurn } from '../../../botpress-agent/src/utils/commercial-router';
+import { routeCommercialTurn, withoutPrefabCommercialCopy, PREFAB_COPY_FALLBACK_TEXT } from '../../../botpress-agent/src/utils/commercial-router';
 import { applyDecisionPolicy } from '../../../botpress-agent/src/utils/decision-policy';
 
 const UUID = '18a823e8-27c2-4279-9956-058f45f33cd5';
@@ -307,6 +307,36 @@ describe('routeCommercialTurn', () => {
     });
 
     expect(route).toMatchObject({ kind: 'deterministic', origin: 'payment_comparison' });
+  });
+
+  it('the live path never delivers prefab commercial copy: effects stay, wording becomes the single P0 sentence (owner 2026-11-04)', () => {
+    const cases = [
+      ['¿Cuál es la diferencia entre el plan corto y el plan largo de pago?', 'payment_comparison'],
+      ['Hola', 'greeting'],
+    ] as const;
+    for (const [text, origin] of cases) {
+      const raw = routeCommercialTurn({ automationEnabled: true,
+        claimed: claimedTurn({ texts: [text], courseOfInterest: 'Fotografía Profesional', offeringCode: 'fotografia_profesional' }) });
+      if (raw.kind !== 'deterministic' || raw.origin !== origin) continue;
+      const gated = withoutPrefabCommercialCopy(raw);
+      expect(gated).toMatchObject({ kind: 'deterministic', origin, reason: raw.reason, model: raw.model });
+      if (gated.kind === 'deterministic') {
+        expect(gated.decision.response).toBe(PREFAB_COPY_FALLBACK_TEXT);
+        expect(gated.decision.response).not.toMatch(/Con cuál|Cuál prefieres|¿|Te referís|Quieres que/u);
+        expect(gated.decision.business_action).toBe(raw.decision.business_action);
+      }
+    }
+    const payment = routeCommercialTurn({ automationEnabled: true,
+      claimed: claimedTurn({ texts: ['¿Cuál es la diferencia entre el plan corto y el plan largo de pago?'],
+        courseOfInterest: 'Fotografía Profesional', offeringCode: 'fotografia_profesional' }) });
+    expect(payment).toMatchObject({ origin: 'payment_comparison' });
+    expect(withoutPrefabCommercialCopy(payment)).toMatchObject({ decision: { response: PREFAB_COPY_FALLBACK_TEXT } });
+  });
+
+  it('keeps the opt-out acknowledgement and the call handoff as written', () => {
+    const call = routeCommercialTurn({ automationEnabled: true,
+      claimed: claimedTurn({ texts: ['Llamame'], route: 'call_direct_request', allowedActions: ['request_call_now'] }) });
+    expect(withoutPrefabCommercialCopy(call)).toBe(call);
   });
 
   it('returns an explicit suppression decision when automation is disabled', () => {

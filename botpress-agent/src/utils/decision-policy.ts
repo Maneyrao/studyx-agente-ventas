@@ -378,9 +378,8 @@ export function groundedPriceReplyV1(claimed: ClaimedTurn): string | null {
   const priceAnswer = priceQuestion && !paymentReport && !postCheckout ? canonicalPriceLineV1(claimed) : null
   if (!priceAnswer) return null
   const course = claimed.sales_context.course_of_interest?.trim()
-  return course
-    ? `${course}: ${priceAnswer} Con cuál plan te gustaría avanzar?`
-    : `${priceAnswer} Qué curso te interesa? Así te cuento todo sobre ese.`
+  // Canonical data only; no fixed closing question when a course is already in focus.
+  return course ? `${course}: ${priceAnswer}` : `${priceAnswer} Qué curso te interesa?`
 }
 
 /** "El valor es USD 360 y lo puedes pagar en ..." from the backend snapshot only. */
@@ -412,7 +411,7 @@ function allowedTextFallback(claimed: ClaimedTurn, reasonCode: string): Decision
     schema_version: 3,
     intent: 'unknown',
     kind: 'reply',
-    response: 'Hubo un problema al preparar la respuesta. Envíame el mensaje otra vez en un momento.',
+    response: 'Perdón, no te entendí bien, a qué te refieres?',
     response_type: responseType,
     business_action: null,
     memory_candidates: [],
