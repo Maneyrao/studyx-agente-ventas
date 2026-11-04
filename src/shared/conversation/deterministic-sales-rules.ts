@@ -6,6 +6,7 @@
  * literal-quote checks that bind model memory to the customer's words, and the
  * checkout state. Nothing here decides whether a reply sells, closes or probes.
  */
+import { fichaCombinationCodesV1 } from '../catalog/gabi-fichas';
 
 /** Gabi's affinity map (docs/authority/prompt-agente-a-studyx-v2.md:142-187),
  * flattened per paid course: same path → complementary → bridge. Codes absent
@@ -63,14 +64,15 @@ export const UNIVERSAL_BONUS_BRIDGES_V1 = [
   'estrategias_emprender', 'instagram_emprendedores', 'fotografia_celulares_tiendas_online', 'especialista_ventas',
 ] as const;
 
-/** Bonus candidates are a set, not a sequence: the paid course's affinity row,
- * the universal bridges and any course the customer named literally. The model
+/** Bonus candidates are a set, not a sequence: the manual's "Combinalo con" and
+ * career routes of the paid course, the fallback affinity row, the universal
+ * bridges and any course the customer named literally. The model
  * chooses among them. Codes absent from the active catalog are never offered. */
 export function authorizedBonusCodesV1(input: {
   readonly paid_code: string; readonly active_codes: Iterable<string>; readonly named_codes?: Iterable<string>;
 }): string[] {
   const active = new Set(input.active_codes);
-  const candidates = [...(BONUS_AFFINITY_TABLE_V1[input.paid_code] ?? []), ...UNIVERSAL_BONUS_BRIDGES_V1, ...(input.named_codes ?? [])];
+  const candidates = [...fichaCombinationCodesV1(input.paid_code), ...(BONUS_AFFINITY_TABLE_V1[input.paid_code] ?? []), ...UNIVERSAL_BONUS_BRIDGES_V1, ...(input.named_codes ?? [])];
   return [...new Set(candidates)].filter(code => code !== input.paid_code && active.has(code));
 }
 

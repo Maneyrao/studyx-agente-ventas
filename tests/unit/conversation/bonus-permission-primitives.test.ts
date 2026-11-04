@@ -23,11 +23,22 @@ const draft = (memory: RuleDraftV1['memory_candidates'], overrides: Partial<Rule
 });
 
 describe('afinidad como pertenencia a un conjunto', () => {
-  it('une la fila del curso pago, los puentes universales y los cursos nombrados, sólo activos', () => {
-    expect(new Set(authorizedBonusCodesV1({ paid_code: 'introduccion_ecommerce', active_codes: active })))
-      .toEqual(new Set(['fotografia_celulares_tiendas_online', 'publicidad_redes_sociales', 'instagram_emprendedores', 'estrategias_emprender']));
+  it('une «Combinalo con», rutas, la fila del curso pago, los puentes universales y los nombrados, sólo activos', () => {
+    const set = authorizedBonusCodesV1({ paid_code: 'introduccion_ecommerce', active_codes: active });
+    expect(new Set(set)).toEqual(new Set(['fotografia_celulares_tiendas_online', 'publicidad_redes_sociales', 'instagram_emprendedores', 'estrategias_emprender']));
     expect(authorizedBonusCodesV1({ paid_code: 'ingles_3', active_codes: active })).not.toContain('publicidad_redes_sociales');
     expect(authorizedBonusCodesV1({ paid_code: 'ingles_3', active_codes: active, named_codes: ['oratoria'] })).toContain('oratoria');
+  });
+  it('Marketing Digital admite Community Manager, Publicidad en Redes, Photoshop y E-commerce; rechaza lo ajeno salvo nombrado', () => {
+    const all = [...active, 'community_manager', 'diseno_photoshop', 'sushi_principiantes', 'barista'];
+    const set = authorizedBonusCodesV1({ paid_code: 'marketing_digital', active_codes: all });
+    for (const code of ['community_manager', 'publicidad_redes_sociales', 'diseno_photoshop', 'introduccion_ecommerce']) expect(set).toContain(code);
+    expect(set).not.toContain('sushi_principiantes');
+    expect(authorizedBonusCodesV1({ paid_code: 'marketing_digital', active_codes: all, named_codes: ['sushi_principiantes'] })).toContain('sushi_principiantes');
+  });
+  it('un curso inactivo, p. ej. Barista, nunca se autoriza', () => {
+    expect(authorizedBonusCodesV1({ paid_code: 'marketing_digital', active_codes: active, named_codes: ['barista'] })).not.toContain('barista');
+    expect(authorizedBonusCodesV1({ paid_code: 'estrategias_emprender', active_codes: active })).not.toContain('barista');
   });
   it('nunca incluye el curso pago, uno inactivo ni repetidos', () => {
     const set = authorizedBonusCodesV1({ paid_code: 'introduccion_ecommerce', active_codes: active, named_codes: ['introduccion_ecommerce', 'curso_inexistente', 'oratoria', 'oratoria'] });

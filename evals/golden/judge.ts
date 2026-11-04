@@ -656,7 +656,7 @@ function semanticFailureContradictedByObjectiveEvidence(input: {
     && input.requirement.startsWith('Si se añade un bonificado,')
     && input.observation.backendAction !== 'offer_course_bonus') return true;
   if (input.failure.code === 'SEMANTIC_MUST_FAILED'
-    && input.requirement.startsWith('Aplicar la excepción expresa del dueño:')
+    && input.requirement.startsWith('Aplicar la autoridad vigente')
     && input.observation.ruleOutcomes?.rule_a === 'not_applicable'
     && input.observation.courseBonus?.mayOfferBonus === false
     && input.observation.negotiationFacts?.ladder?.eligible === false

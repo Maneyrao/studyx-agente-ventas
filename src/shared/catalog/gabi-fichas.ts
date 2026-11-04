@@ -32,6 +32,48 @@ export const fichaFactIdV1 = (offeringCode: string): string => `offering:${offer
 export const FICHA_FACT_ID_PATTERN = /^offering:([a-z0-9_]+):ficha:v1$/u;
 export const FICHA_FACT_MAX_CHARS = 1_200;
 
+const fold = (value: string): string => value.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase()
+  .replace(/\([^)]*\)/gu, ' ').replace(/[^a-z0-9/\- ]+/gu, ' ').replace(/\s+/gu, ' ').trim();
+
+/** Short forms the manual uses inside "Combinalo con" for a course, folded. */
+const COMBINE_ALIASES: Readonly<Record<string, readonly string[]>> = {
+  'publicidad en redes': ['publicidad_redes_sociales'], 'photoshop': ['diseno_photoshop'],
+  'illustrator': ['diseno_illustrator'], 'coreldraw': ['diseno_corel_draw'],
+  'e-commerce': ['introduccion_ecommerce'], 'ecommerce': ['introduccion_ecommerce'],
+  'fotografia con celulares': ['fotografia_celulares_tiendas_online'],
+  'influencers': ['influencers_creadores_contenidos'], 'catering': ['introduccion_catering'],
+  'sushi': ['sushi_principiantes'], 'vino y maridaje': ['vino_cata_maridaje'],
+  'organizador de eventos': ['organizador_eventos_sociales'], 'baby shower': ['organizacion_baby_shower'],
+  'estetica integral': ['estetica_integral'], 'maquillaje': ['maquillaje_profesional'],
+  'unas': ['unas_gelificadas'], 'depilacion definitiva': ['depilacion_definitiva'],
+  'energia solar': ['energia_solar_fotovoltaica'], 'aires acondicionados': ['aires_acondicionados'],
+  'camaras de seguridad': ['camaras_seguridad'], 'excel': ['excel_integral'], 'coaching': ['coaching_liderazgo'],
+  'comunicacion interna': ['comunicacion_interna_empresas'], 'autocad': ['autocad_interiores'],
+  'ingles': ['ingles_1'], 'ingles i': ['ingles_1'], 'ingles i y ii': ['ingles_1', 'ingles_2'],
+  'ingles iii y iv': ['ingles_3'], 'ingles i a iv': ['ingles_1', 'ingles_2', 'ingles_3'],
+};
+const CODE_BY_FOLDED_NAME = new Map<string, readonly string[]>([
+  ...COURSES.flatMap((course) => course.offering_code ? [[fold(course.manual_name), [course.offering_code]] as const] : []),
+  ...Object.entries(COMBINE_ALIASES),
+]);
+
+/** "Combinalo con" entries of the ficha as offering codes; entries naming no mapped course are dropped. */
+function combinaloCodes(ficha: FichaCourse): string[] {
+  return ficha.combinalo_con.flatMap((entry) => entry.split(/[;:]/u).flatMap((part) => CODE_BY_FOLDED_NAME.get(fold(part)) ?? []));
+}
+
+/**
+ * Courses the manual combines with a paid course: its "Combinalo con" plus every
+ * career route containing it. The single source of the bonus permission (backend)
+ * and of the candidates the model sees; the caller keeps only active offerings.
+ */
+export function fichaCombinationCodesV1(offeringCode: string): string[] {
+  const ficha = BY_CODE.get(offeringCode);
+  const fromRoutes = ROUTES.filter((route) => route.courses.some((course) => course.offering_code === offeringCode))
+    .flatMap((route) => route.courses.flatMap((course) => course.offering_code ? [course.offering_code] : []));
+  return [...new Set([...(ficha ? combinaloCodes(ficha) : []), ...fromRoutes])].filter((code) => code !== offeringCode);
+}
+
 export function fichaOfferingCodes(): readonly string[] {
   return [...BY_CODE.keys()];
 }

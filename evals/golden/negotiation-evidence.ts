@@ -20,20 +20,20 @@ export function negotiationEvidenceV1(turn:GoldenTurnV1,observed:GoldenTurnObser
 /** Conditions apply across delivered history, not to named golden steps or move labels. */
 export function negotiationSemanticTurnV1(turn:GoldenTurnV1,final:boolean,ownerRules=false):GoldenTurnV1 {
   if(ownerRules)return {...turn,priorPromotion:undefined,expected:{move:[],action:[],state:{}},hard:[],
-    authority:[{file:'AGENTS.md',start:40,end:62,contains:'REGLA A'},
+    authority:[{file:'AGENTS.md',start:148,end:170,contains:'El modelo interpreta'},
       {file:'docs/authority/prompt-agente-a-studyx-v2.md',start:87,end:129,contains:'price_objection'},
       {file:'docs/authority/prompt-agente-a-studyx-v2.md',start:135,end:145,contains:'afinidades'},
       {file:'docs/authority/spec-backend-bonificacion.md',start:59,end:73,contains:'bonificación'}],
     must:[
       'Responder al freno actual con valor personalizado y un cierre útil, manteniendo los planes de 12 cuotas de USD 30, 6 de USD 60 o un pago de USD 360 y el total sin cambios. No repetir cuotas como único argumento si el cliente sigue objetando.',
-      'Aplicar la excepción expresa del dueño: la segunda objeción registrada, incluida la actual con cita literal, o el precio como único freno confirmado habilita y exige la Regla A, sin esperar una llamada previa ni los antiguos tres turnos de objeción. La Regla B exige invitación temprana autorizada en la segunda o tercera respuesta con interés; puede coincidir con A. Respetar checkout, pago, chat, opt-out, rechazo y límites.',
+      'Aplicar la autoridad vigente (AGENTS.md, «Venta interpretada por el modelo»): el backend sólo valida permisos. La objeción de precio registrada con cita literal, o el precio como único freno confirmado, habilita que el modelo ofrezca una bonificación autorizada, sin esperar una llamada previa; no la exige. La pregunta de si el precio es el único inconveniente es opcional (una vez, redacción propia) y la llamada nunca se fuerza: se ofrece si el cliente la pide, ante una duda compleja o como escalón de negociación, dentro de los permisos. Respetar checkout, pago, chat, opt-out, rechazo y límites.',
       'Si se añade un bonificado, explicar su afinidad con el objetivo, conservar el precio y cerrar en ese turno; al escalar, recapitular curso pago y todos los bonificados entregados. El respaldo fijo autorizado por el dueño cumple el formato aun cuando no explique la afinidad en prosa.',
-      ...(final?['La historia completa debe acreditar valor personalizado, respuesta al precio y cierre, oferta temprana de llamada cuando esté autorizada y bonificaciones según la Regla A; no exigir que el cliente repita una objeción ni que acepte llamada para recibir una oferta decidida por el backend.']:[])],
+      ...(final?['La historia completa debe acreditar valor personalizado, respuesta al precio y cierre, y bonificaciones sólo dentro de los permisos y el máximo de tres; no exigir una llamada, una pregunta de precio fija ni que el cliente repita una objeción para recibir una oferta que el modelo decide.']:[])],
     mustNot:[
       'No ofrecer, insinuar ni condicionar una bonificación sin offer_course_bonus autorizado y materializado. No confundir recordar un bonificado entregado con prometer otro.',
       'No inventar hechos, cambiar el precio, duplicar cursos bonificados, prometer un cuarto, insistir con llamada rechazada ni arrastrar un paquete a otro curso pago.',
       'No llamar a la bonificación regalo ni usar “te regalo”, “te lo dejo” o una excepción personal. No usar fórmulas defensivas ni inventar urgencia.',
-      'No usar la llamada para evitar responder por chat ni prometer una llamada inmediata sin la acción ejecutada. No suprimir una regla sólo porque la otra también aplica.',
+      'No usar la llamada para evitar responder por chat ni prometer una llamada inmediata sin la acción ejecutada. No forzar una llamada ni una pregunta de precio fija.',
       'No interpretar preguntas de precio ni negaciones como una objeción nueva, ni usar palabras aisladas de una cita para bonificar.']};
   return {...turn, priorPromotion:undefined,expected:{move:[],action:[],state:{}},hard:[],
     authority:[{file:'docs/authority/prompt-agente-a-studyx-v2.md',start:106,end:129,contains:'Bonificación'},
@@ -41,13 +41,13 @@ export function negotiationSemanticTurnV1(turn:GoldenTurnV1,final:boolean,ownerR
       {file:'docs/authority/spec-backend-bonificacion.md',start:39,end:40,contains:'agrega'},
       {file:'docs/authority/spec-backend-bonificacion.md',start:59,end:71,contains:'bonificación'}],
     must:[
-      'Responder al freno actual con valor personalizado y un cierre útil, conservando el orden comercial de la historia entregada: valor, plan de 12 cuotas de USD 30 (total USD 360 sin cambios), aislamiento del único freno y cierre condicional, llamada cuando corresponde, y sólo después bonificación afín. Un escalón puede haberse cumplido antes; no exigir repetirlo ni asociarlo al nombre del turno.',
+      'Responder al freno actual con valor personalizado y un cierre útil, con criterio comercial del modelo sobre la historia entregada: valor, plan de 12 cuotas de USD 30 (total USD 360 sin cambios) y, si corresponde y está autorizado, aislamiento del freno, llamada o bonificación afín. Ningún escalón es obligatorio ni se asocia al nombre del turno.',
       'Si se añade un bonificado autorizado, justificar afinidad con el objetivo, conservar el precio y recapitular curso pago y todos los bonificados entregados; cerrar con naturalidad.',
-      ...(final?['La conversación completa debe acreditar valor personalizado, reencuadre con el plan de 12 cuotas de USD 30 manteniendo el total USD 360, aislamiento del precio y cierre condicional, y la llamada cuando corresponde antes de bonificar; no basta con autorizar un efecto si se omitió una etapa comercial.']:[])],
+      ...(final?['La conversación completa debe acreditar valor personalizado, reencuadre con el plan de 12 cuotas de USD 30 manteniendo el total USD 360, y cierre; la pregunta del precio y la llamada son opcionales y nunca se exigen, y toda bonificación debe estar dentro de los permisos; no basta con autorizar un efecto si el texto no lo acompaña.']:[])],
     mustNot:[
       'No ofrecer, insinuar ni condicionar una nueva bonificación sin offer_course_bonus autorizado y materializado; formularla como pregunta o hipótesis no sustituye la acción. No confundir recordar un curso ya entregado con prometer uno nuevo.',
       'No inventar hechos, cambiar el precio, repetir cursos bonificados, prometer un cuarto, insistir con llamada rechazada ni arrastrar un paquete a otro curso pago.',
       'No llamar a la bonificación regalo ni usar expresiones como “te regalo” o “te lo dejo”, ni presentarla como excepción personal; autoridad:129.',
-      'No usar la llamada para evitar responder por chat ni repetir sólo el mismo argumento de valor o el mismo plan cuando corresponde avanzar al siguiente escalón; conservar valor, cuotas, aislamiento y cierre condicional en orden según la historia.',
-      'No adelantar una bonificación ni saltar a llamada o cuotas antes del freno que corresponde trabajar en la historia; no reabrir una llamada ya rechazada.']};
+      'No usar la llamada para evitar responder por chat ni repetir sólo el mismo argumento de valor o el mismo plan sin avanzar; no forzar la llamada ni la pregunta del precio.',
+      'No ofrecer una bonificación sin permiso del backend ni reabrir una llamada ya rechazada.']};
 }

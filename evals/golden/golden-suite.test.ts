@@ -58,7 +58,7 @@ describe('Agent A authority-only golden specification', () => {
     const byId = (caseId: string, turnId: string) => GOLDEN_CASES
       .find((scenario) => scenario.id === caseId)!.turns.find((turn) => turn.id === turnId)!;
 
-    expect(byId('04_price_value_objection', 'expensive').must.join(' ')).toContain('pregunta exacta de la Regla C');
+    expect(byId('04_price_value_objection', 'expensive').must.join(' ')).not.toContain('Regla C');
     expect(byId('05_real_budget_limit', 'budget').expected.action).toContain('offer_course_bonus');
     expect(byId('06_repeated_price_bonus_ladder', 'installments').expected.action).toContain('offer_course_bonus');
     expect(byId('14_course_change_cancels_promotion', 'installments').expected.action).toContain('offer_course_bonus');

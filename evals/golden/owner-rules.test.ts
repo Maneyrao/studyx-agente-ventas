@@ -225,7 +225,7 @@ describe('owner-rule supplementary golden campaign', () => {
     const current = negotiationSemanticTurnV1(turn, true, true);
     expect(current.authority.some(ref => ref.file === 'AGENTS.md')).toBe(true);
     expect(current.must.join(' ')).toContain('sin esperar una llamada previa');
-    expect(current.mustNot.join(' ')).toContain('No suprimir una regla');
-    expect(negotiationSemanticTurnV1(turn, true).must.join(' ')).toContain('antes de bonificar');
+    expect(current.mustNot.join(' ')).toContain('No forzar una llamada');
+    expect(negotiationSemanticTurnV1(turn, true).must.join(' ')).toContain('nunca se exigen');
   });
 });

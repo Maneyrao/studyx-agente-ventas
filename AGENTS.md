@@ -158,7 +158,7 @@ Reemplaza en el runtime las Reglas B, C, D y E, la promo instantánea, la tarea 
   6. oferta anterior entregada y respondida;
   7. sin aceptar ni pagar;
   8. fuera del checkout (por estado);
-  9. afinidad como pertenencia al conjunto: fila del curso pago, puentes universales o curso nombrado literalmente por el cliente.
+  9. afinidad como pertenencia al conjunto: «Combinalo con» de la ficha del curso pago y rutas de carrera que lo contienen (datos de las fichas de Gabi), fila de la tabla de afinidades como respaldo, puentes universales o curso nombrado literalmente por el cliente; siempre activos, sin el pago ni los ya ofrecidos. Una sola función para el permiso y para los candidatos del modelo.
 
   El «sí» a la pregunta del precio es guía del prompt, no un permiso.
 - Retención: un rechazo de compra declarado por el modelo, con cita literal en el lote, habilita UNA bonificación de retención por conversación aunque no haya objeción de precio. Redacta el modelo; sin texto fijo.
