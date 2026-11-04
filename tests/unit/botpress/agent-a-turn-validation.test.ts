@@ -1289,6 +1289,31 @@ describe('V8 respuesta repetida', () => {
     expect(rejection?.rejections.map((r) => r.code)).toContain('REPEATED_AGENT_REPLY');
   });
 
+  it('rechaza al retomar la conversación un borrador igual a una respuesta anterior que no es la última', () => {
+    // Insumo fijo para la maquinaria determinista de duplicados; no prueba conducta del modelo.
+    const older = 'Marketing Digital te prepara para trabajar con marcas. ¿Qué te gustaría lograr?';
+    const reject = (draft: string, customer: string) => validateAgentATurnProposalV1({
+      proposal: proposal({ response: { messages: [draft], call_offer: null }, used_fact_ids: [] }),
+      context: context({
+        turn: {
+          batch_messages: [{ id: 'm9', text: customer }],
+          recent_turns: [
+            { id: 'r1', direction: 'outbound', content: older },
+            { id: 'r2', direction: 'inbound', content: 'qué precio tiene?' },
+            { id: 'r3', direction: 'outbound', content: 'Son USD 360, en cuotas si querés.' },
+            { id: 'r4', direction: 'inbound', content: 'hola, sigo interesada' },
+          ],
+        },
+      } as Partial<AgentAContextV1>),
+      planned_fact_ids: [],
+      rejection_id: '11111111-1111-4111-8111-111111111111',
+    });
+    expect(reject(older, 'hola, sigo interesada')?.rejections.map((r) => r.code)).toContain('REPEATED_AGENT_REPLY');
+    expect(reject(older, 'me lo repetís?')?.rejections.map((r) => r.code) ?? []).not.toContain('REPEATED_AGENT_REPLY');
+    expect(reject('Qué bueno que volvés. ¿Seguimos con Marketing Digital?', 'hola, sigo interesada')?.rejections.map((r) => r.code) ?? [])
+      .not.toContain('REPEATED_AGENT_REPLY');
+  });
+
   it('no rechaza una respuesta que dice algo distinto', () => {
     const rejection = withPrevious(['Sin tus datos no puedo dejarte anotado.']);
     expect(rejection?.rejections.map((r) => r.code) ?? []).not.toContain('REPEATED_AGENT_REPLY');

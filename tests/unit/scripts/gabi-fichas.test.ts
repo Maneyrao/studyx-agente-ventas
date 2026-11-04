@@ -50,6 +50,17 @@ describe('ficha facts', () => {
     expect(value).not.toContain('Instagram para Emprendedores (');
   });
 
+  it("carries the manual's «Combínalo con» and only active route courses in the focus and candidate fichas", () => {
+    const nails = fichaFactValueV1('unas_gelificadas', { activeCodes: active })!;
+    expect(nails).toMatch(/Combínalo con: [^.]+\./u);
+    const candidate = claimFichasV1({ focusCode: 'unas_gelificadas', bonusCandidateCodes: ['maquillaje_profesional'], activeCodes: active })
+      .find((ficha) => ficha.role === 'bonus_candidate')!;
+    expect(candidate.value).toContain('Rutas de carrera (solo argumento)');
+    // The ficha is argument for the model; the permission set stays the backend's (AGENTS.md: pertenencia al conjunto).
+    const withoutPartner = fichaFactValueV1('unas_gelificadas', { activeCodes: new Set(['unas_gelificadas']) })!;
+    expect(withoutPartner).not.toContain('Rutas de carrera');
+  });
+
   it('claims only the focus ficha and the bonus candidates, never the whole manual', () => {
     const fichas = claimFichasV1({ focusCode: 'unas_gelificadas',
       bonusCandidateCodes: ['maquillaje_profesional', 'unas_gelificadas', 'barista_inexistente'], activeCodes: active });

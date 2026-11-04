@@ -2635,6 +2635,28 @@ describe('Agent A structured commercial context (sales_profile and fichas)', () 
     expect(profile).toMatchObject(emptyProfile);
   });
 
+  it('resumed informative-price conversation keeps the objective and the active promotion, and owes no probe or call', () => {
+    // Deterministic projection only: fixed persisted data in, context out. Not a claim about model behavior.
+    const claimed = claimedTurn();
+    Object.assign(claimed, { sales_profile: { ...emptyProfile,
+      objective: [memory('work_goal', 'trabajar con marcas', 'quiero trabajar con marcas')] },
+    course_bonus_capability: { enabled: true, max_bonus_courses: 3, may_offer_bonus: false, status: 'offer_available',
+      may_schedule_checkin: false, may_request_review: false, may_accept_offer: true, may_send_promoted_payment: false,
+      promotion_code: 'marketing-con-redes', promotion_cycle_id: UUID, offer_version: 1, package_status: 'offered',
+      interest_offering_code: 'redes-informaticas', accepted_at: null,
+      bonus_offerings: [{ code: 'publicidad_redes_sociales', display_name: 'Publicidad en Redes Sociales', position: 1, offered_at: NOW }],
+      delivered_bonus_offerings: [{ code: 'publicidad_redes_sociales', display_name: 'Publicidad en Redes Sociales', position: 1 }] } });
+    const context = buildAgentAContextV1(claimed)!;
+    const profile = context.commercial_state.sales_profile!;
+    expect(profile.objective).toEqual([{ key: 'work_goal', value: 'trabajar con marcas', source_quote: 'quiero trabajar con marcas' }]);
+    expect(profile.active_promotion).toMatchObject({ promotion_code: 'marketing-con-redes', status: 'offer_available' });
+    expect(profile.bonus_courses.map((course) => course.code)).toEqual(['publicidad_redes_sociales']);
+    expect(context.commercial_state.promotion?.bonus_offerings.map((course) => course.offering_code)).toEqual(['publicidad_redes_sociales']);
+    // The backend owes the model no price probe and no call: the default context has no obligations at all.
+    expect(context.obligations?.owes ?? []).toEqual([]);
+    expect(JSON.stringify(context.obligations ?? {})).not.toMatch(/call|price|precio|llamada/iu);
+  });
+
   it('sends only the focus ficha and the current bonus-candidate fichas to the model', () => {
     const claimed = claimedTurn();
     const ficha = (code: string, role: 'focus' | 'bonus_candidate') =>

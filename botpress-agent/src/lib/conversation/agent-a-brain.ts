@@ -30,7 +30,6 @@ import {
 } from '../../schemas/conversation-pipeline';
 import { buildAgentABrainInstructionsV1, hasDirectBonusContextV1 } from '../../prompts/agent-a-brain-v1';
 import { assertedCommercialClausesV1, assertedCommercialPricesV1 } from '../../../../src/features/orchestration/domain/commercial-truth-guard';
-import { lastAgentReplyV1 } from './conversation-composer';
 import {
   extractProtectedFacts,
   extractUrlCandidates,
@@ -1781,10 +1780,15 @@ export function validateAgentATurnProposalV1(input: {
   // El backend no reescribe la copia —eso sería redactar por el modelo— pero
   // sí puede rechazar y abrir la única reparación. No se piden hechos nuevos ni
   // se autoriza nada: la alternativa autorizada es exactamente la misma.
-  const previousReply = lastAgentReplyV1(input.context.turn.recent_turns);
+  // Al retomar una conversación el modelo puede repetir una respuesta anterior
+  // que no es la última: se compara contra todas las respuestas recientes del
+  // agente (chequeo factual de duplicado, no de calidad comercial).
+  const previousReplies = input.context.turn.recent_turns
+    .filter((turn) => turn.direction === 'outbound' && turn.content.trim().length > 0)
+    .map((turn) => turn.content);
   const currentCustomerText = input.context.turn.batch_messages.map((message) => message.text).join('\n');
   const customerRequestsRepeat = CUSTOMER_REQUESTS_REPEAT.test(currentCustomerText);
-  if (previousReply && !customerRequestsRepeat && sameVisibleText(input.proposal.response.messages, previousReply)) {
+  if (!customerRequestsRepeat && previousReplies.some((reply) => sameVisibleText(input.proposal.response.messages, reply))) {
     rejections.push({ code: 'REPEATED_AGENT_REPLY', subject: 'previous_agent_reply' });
   }
   const authorizedBonusOffer = input.context.capabilities.course_bonus?.status === 'offer_available'

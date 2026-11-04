@@ -388,8 +388,11 @@ describe('golden hard judge', () => {
     const ineligible = evaluateHardRules(turn, {
       ...eligible,
       courseBonus: { enabled: false, maxBonusCourses: 1, mayOfferBonus: false, status: 'disabled' },
-      priceObjectionMemory: { present: true, sourceMessageIds: ['current'], priorSourceMessageIds: [] },
+      priceObjectionMemory: { present: false, sourceMessageIds: [], priorSourceMessageIds: [] },
     });
+    // Model-owned sales (AGENTS.md:154): an objection quoted in the current turn is price evidence too.
+    expect(evaluateHardRules(turn, { ...eligible, priceObjectionMemory: { present: true, sourceMessageIds: ['current'], priorSourceMessageIds: [] } })
+      .failures.map((failure) => failure.code)).not.toContain('BONUS_PRIOR_PRICE_OBJECTION_MISSING');
     expect(ineligible.failures.map((failure) => failure.code)).toEqual(expect.arrayContaining([
       'BONUS_CONFIGURATION_DISABLED',
       'BONUS_MAX_COURSES_CONFIG_MISMATCH',

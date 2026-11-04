@@ -1,12 +1,15 @@
 import { describe, expect, it, vi } from 'vitest';
 import { GOLDEN_CASES, validateGoldenAuthorityReferences, type GoldenTurnV1 } from './scenarios';
-import { OWNER_GOLDEN_CASES, OWNER_REPLAY_CASES } from './owner-rules-scenarios';
+import { OWNER_GOLDEN_CASES, OWNER_REPLAY_CASES, OWNER_PROMOTION_MODE_REPLAY_CASES } from './owner-rules-scenarios';
 import { OWNER_REPLAY_CUSTOMER_TURNS_V1, OWNER_REPLAY_SOURCE_V1 } from './owner-conversation-2026-11-02';
 import { selectGoldenCasesV1 } from './run-config.mjs';
 import { evaluateHardRules, judgeCaseSemantically, goldenPromotionDeltaV1,
   type EarlyCallOfferEvidenceV1, type GoldenTurnObservationV1 } from './judge';
 import { negotiationSemanticTurnV1 } from './negotiation-evidence';
 import { absoluteGoldenAcceptanceV1 } from './comparison';
+
+/** Focused critical selection for the first natural DeepSeek run (docs/reports/2026-11-03-model-owned-sales/05-golden-plan.md). */
+const FOCUSED_SELECTION = '27,28,25,17,10,11';
 
 const observed = (overrides: Partial<GoldenTurnObservationV1> = {}): GoldenTurnObservationV1 => ({
   response: 'Respuesta real', move: 'unknown', secondaryMoves: [], proposedAction: { type: 'none' },
@@ -38,7 +41,7 @@ describe('owner-rule supplementary golden campaign', () => {
   it('cites Gabi and the precise owner exception in every new scenario', async () => {
     expect(OWNER_GOLDEN_CASES).toHaveLength(2);
     expect(OWNER_REPLAY_CASES).toHaveLength(1);
-    await expect(validateGoldenAuthorityReferences([...OWNER_GOLDEN_CASES, ...OWNER_REPLAY_CASES])).resolves.toEqual([]);
+    await expect(validateGoldenAuthorityReferences([...OWNER_GOLDEN_CASES, ...OWNER_REPLAY_CASES, ...OWNER_PROMOTION_MODE_REPLAY_CASES])).resolves.toEqual([]);
     for (const scenario of [...OWNER_GOLDEN_CASES, ...OWNER_REPLAY_CASES]) {
       expect(scenario.turns.some(turn => turn.authority.some(ref => ref.file === 'docs/authority/prompt-agente-a-studyx-v2.md'))).toBe(true);
     }
@@ -51,47 +54,87 @@ describe('owner-rule supplementary golden campaign', () => {
     expect(OWNER_REPLAY_CASES[0]!.turns[6]).toMatchObject({ expected: { action: ['offer_course_bonus'] } });
   });
 
-  it('covers overlapping A/B and excludes negations and questions from escalation', () => {
+  it('model-owned authority: a promo request alone grants no bonus, a quoted price-only objection does, negations and questions never escalate', () => {
     const scenario = OWNER_GOLDEN_CASES[1]!;
-    expect(scenario.turns[1]!.hard).toContainEqual({ type: 'call_offer_recorded' });
-    expect(scenario.turns[1]!.expected.action).toEqual(['offer_course_bonus']);
-    // Owner second revision (2026-11-02): the promo request itself offers the first bonus.
-    expect(scenario.turns[0]!.expected).toMatchObject({ action: ['offer_course_bonus'], state: { promotion: { bonusCount: [1] } } });
+    const byId = (id: string) => scenario.turns.find(turn => turn.id === id)!;
+    expect(byId('request_without_objection').expected).toMatchObject({ action: ['none'], state: { promotion: { bonusCount: [0] } } });
+    expect(byId('price_only_with_promo_request').expected).toMatchObject({ action: ['offer_course_bonus'], state: { promotion: { bonusCount: [1] } } });
     for (const id of ['negated_price', 'price_question']) {
-      expect(scenario.turns.find(turn => turn.id === id)?.expected).toMatchObject({ action: ['none'], state: { promotion: { bonusCount: [2] } } });
+      expect(byId(id).expected).toMatchObject({ action: ['none'], state: { promotion: { bonusCount: [1] } } });
     }
+    const everyHard = [...OWNER_GOLDEN_CASES, ...OWNER_REPLAY_CASES, ...OWNER_PROMOTION_MODE_REPLAY_CASES]
+      .flatMap(item => item.turns).flatMap(item => item.hard ?? []);
+    expect(everyHard.filter(rule => ['call_offer_recorded', 'early_call_previously_recorded', 'rule_outcomes_recorded'].includes(rule.type))).toEqual([]);
+    expect(JSON.stringify(everyHard)).not.toContain('Puedo revisar una promoción');
   });
 
-  it('does not require a prior price objection for the owner-authorized instant promotion', () => {
-    const turn = OWNER_GOLDEN_CASES[1]!.turns.find(item => item.id === 'request_without_objection')!;
-    const current = observed({
+  it('judges a bonus by recorded price evidence, a confirmed barrier or a cited retention, never by a prior-turn count', () => {
+    const turn = OWNER_GOLDEN_CASES[1]!.turns.find(item => item.id === 'price_only_with_promo_request')!;
+    const offered = (priceObjectionMemory: GoldenTurnObservationV1['priceObjectionMemory']) => observed({
       proposedAction: { type: 'offer_course_bonus', bonus_offering_code: 'fotografia_celulares_tiendas_online' },
       backendAction: 'offer_course_bonus',
       courseBonus: { enabled: true, maxBonusCourses: 3, mayOfferBonus: true, status: 'offer_available' },
-      priceObjectionMemory: { present: false, sourceMessageIds: [], priorSourceMessageIds: [] },
-      negotiationFacts: { currentTurnId: 'turn-current', priorPriceSourceIds: [], ladder: {
-        eligible: false, observed_price_objection_count: 0, required_price_objection_count: 2,
-        call_invitation_status: 'not_offered', call_offer_count: 0, may_offer_call: true, missing_steps: [],
-      } },
+      priceObjectionMemory,
       state: { selectedCourse: 'introduccion_ecommerce', stage: 'course_selected', awaitingReply: 'none', plan: null,
         promotion: { status: 'offer_available', bonusCount: 1, paidCourse: 'introduccion_ecommerce',
           bonusCourses: ['fotografia_celulares_tiendas_online'] } },
     });
-    expect(evaluateHardRules(turn, current).failures.map(failure => failure.code))
+    const codes = (value: GoldenTurnObservationV1) => evaluateHardRules(turn, value).failures.map(failure => failure.code);
+    expect(codes(offered({ present: true, sourceMessageIds: ['m-now'], priorSourceMessageIds: [] }))).not.toContain('BONUS_PRIOR_PRICE_OBJECTION_MISSING');
+    expect(codes(offered({ present: false, sourceMessageIds: [], priorSourceMessageIds: [] }))).toContain('BONUS_PRIOR_PRICE_OBJECTION_MISSING');
+    const retention = { ...turn, authority: [...turn.authority, { file: 'AGENTS.md' as const, start: 164, end: 164, contains: 'Retención' }] };
+    expect(evaluateHardRules(retention, offered({ present: false, sourceMessageIds: [], priorSourceMessageIds: [] })).failures.map(failure => failure.code))
       .not.toContain('BONUS_PRIOR_PRICE_OBJECTION_MISSING');
   });
 
-  it('counts a new price objection after the Rule C probe as the first bonus trigger', () => {
+  it('bonus_in_when_offered allows no offer, accepts an authorized course and rejects an unrelated one', () => {
+    const turn = measured([{ type: 'bonus_in_when_offered', values: ['publicidad_redes_sociales'] }]);
+    const offer = (code: string) => observed({ proposedAction: { type: 'offer_course_bonus', bonus_offering_code: code }, backendAction: 'offer_course_bonus' });
+    expect(evaluateHardRules(turn, observed()).failures.map(failure => failure.code)).not.toContain('BONUS_AFFINITY_MISMATCH');
+    expect(evaluateHardRules(turn, offer('publicidad_redes_sociales')).failures.map(failure => failure.code)).not.toContain('BONUS_AFFINITY_MISMATCH');
+    expect(evaluateHardRules(turn, offer('ingles_3')).failures.map(failure => failure.code)).toContain('BONUS_AFFINITY_MISMATCH');
+  });
+
+  it('eval-only text checks: no call, no enrollment ask, no consecutive enrollment ask, no literal repeat', () => {
+    const codes = (hard: GoldenTurnV1['hard'], current: Partial<GoldenTurnObservationV1>, previous?: Partial<GoldenTurnObservationV1>) =>
+      evaluateHardRules(measured(hard), observed(current), previous ? observed(previous) : null).failures.map(failure => failure.code);
+    expect(codes([{ type: 'no_call_offer' }], { response: 'El total es USD 360.' })).not.toContain('CALL_OFFERED_WITHOUT_REQUEST');
+    expect(codes([{ type: 'no_call_offer' }], { response: 'Si querés coordinamos una llamada.' })).toContain('CALL_OFFERED_WITHOUT_REQUEST');
+    expect(codes([{ type: 'no_enrollment_ask' }], { response: 'Arrancamos con el plan de 12 cuotas?' })).toContain('ENROLLMENT_ASKED_WITHOUT_SIGNAL');
+    expect(codes([{ type: 'no_enrollment_ask' }], { response: 'Qué te gustaría lograr con el curso?' })).not.toContain('ENROLLMENT_ASKED_WITHOUT_SIGNAL');
+    const ask = 'Te anoto con el plan de 12 cuotas?';
+    expect(codes([{ type: 'no_consecutive_enrollment_ask' }], { response: ask }, { response: ask })).toContain('CONSECUTIVE_ENROLLMENT_ASK');
+    expect(codes([{ type: 'no_consecutive_enrollment_ask' }], { response: ask }, { response: 'Son 8 clases online.' })).not.toContain('CONSECUTIVE_ENROLLMENT_ASK');
+    expect(codes([{ type: 'not_repeat_previous_reply' }], { response: 'Hola  de nuevo.' }, { response: 'hola de nuevo.' })).toContain('LITERAL_REPEAT_OF_PREVIOUS_REPLY');
+    expect(codes([{ type: 'not_repeat_previous_reply' }], { response: 'Qué bueno que volviste.' }, { response: 'Hola de nuevo.' })).not.toContain('LITERAL_REPEAT_OF_PREVIOUS_REPLY');
+  });
+
+  it('case 17: the model decides; only the explicit price-only «sí» requires the offer, and no call is invited early', () => {
     const turns = OWNER_GOLDEN_CASES[0]!.turns;
-    expect(turns.find(turn => turn.id === 'first_price_objection')?.expected.action)
-      .toEqual(['offer_course_bonus']);
-    expect(turns.find(turn => turn.id === 'first_price_objection')?.expected.state.promotion)
-      .toMatchObject({ bonusCount: [1] });
-    expect(turns.find(turn => turn.id === 'price_only_first_bonus')?.expected.state.promotion)
-      .toMatchObject({ bonusCount: [2] });
-    expect(turns.find(turn => turn.id === 'second_bonus')?.expected.state.promotion)
-      .toMatchObject({ bonusCount: [3] });
-    expect(turns.find(turn => turn.id === 'third_bonus')?.expected.action).toEqual(['none']);
+    expect(turns.find(turn => turn.id === 'first_price_objection')?.expected.action).toEqual(['none', 'offer_course_bonus']);
+    expect(turns.find(turn => turn.id === 'price_only_first_bonus')?.expected.action).toEqual(['offer_course_bonus']);
+    expect(turns.find(turn => turn.id === 'second_bonus')?.expected.action).toEqual(['none', 'offer_course_bonus']);
+    expect(turns.find(turn => turn.id === 'third_bonus')?.expected.state.promotion?.bonusCount).toEqual([1, 2, 3]);
+    expect(turns.find(turn => turn.id === 'no_fourth')?.expected.action).toEqual(['none']);
+    expect(turns.find(turn => turn.id === 'marketing_budget')?.mustNot.join(' ')).toContain('No ofrecer una llamada');
+  });
+
+  it('registers cases 27 (Marketing 03/11, reconstructed) and 28 (Gabi) and the focused selection resolves', () => {
+    const registry = [...GOLDEN_CASES, ...OWNER_GOLDEN_CASES, ...OWNER_REPLAY_CASES, ...OWNER_PROMOTION_MODE_REPLAY_CASES];
+    const marketing = OWNER_PROMOTION_MODE_REPLAY_CASES.find(item => item.id.startsWith('27_'))!;
+    expect(marketing).toMatchObject({ reconstructed: true, note: 'transcripción exacta pendiente del dueño' });
+    expect(marketing.turns.map(item => item.id)).toEqual(['asks_marketing', 'goal_brands', 'informative_price', 'value_objection',
+      'price_only_yes', 'short_reply', 'resume', 'classes_question', 'buying_signal']);
+    const informative = marketing.turns.find(item => item.id === 'informative_price')!;
+    expect(informative.expected.action).toEqual(['none']);
+    expect(informative.hard).toEqual(expect.arrayContaining([{ type: 'no_call_offer' }, { type: 'no_enrollment_ask' },
+      { type: 'not_contains', value: 'único inconveniente' }, { type: 'not_contains', value: '?!' }]));
+    expect(marketing.turns.find(item => item.id === 'resume')!.hard).toContainEqual({ type: 'not_repeat_previous_reply' });
+    expect(marketing.turns.find(item => item.id === 'classes_question')!.hard).toContainEqual({ type: 'no_consecutive_enrollment_ask' });
+    expect(OWNER_PROMOTION_MODE_REPLAY_CASES.find(item => item.id.startsWith('28_'))!.turns.map(item => item.id))
+      .toEqual(['interest', 'expensive', 'think_about_it', 'official_title', 'licensed_trade', 'testimonial']);
+    expect(selectGoldenCasesV1(FOCUSED_SELECTION, registry).map(item => item.id.slice(0, 2)).sort())
+      .toEqual(FOCUSED_SELECTION.split(',').sort());
   });
 
   it('accepts the recorded canonical current-state move only at the fourth-bonus limit check', () => {
@@ -132,8 +175,9 @@ describe('owner-rule supplementary golden campaign', () => {
       expect(evaluateHardRules(turn, { ...valid, earlyCallOfferEvidence: earlyCallOfferEvidence as readonly EarlyCallOfferEvidenceV1[] }).failures[0]?.code)
         .toBe('EARLY_CALL_DELIVERY_EVIDENCE_MISSING');
     }
-    expect(OWNER_GOLDEN_CASES[0]!.turns[2]!.hard).toContainEqual({ type: 'early_call_previously_recorded' });
-    expect(OWNER_GOLDEN_CASES[1]!.turns[1]!.hard).toContainEqual({ type: 'call_offer_recorded' });
+    // The scenarios no longer require any early call (model-owned sales); the evaluator rule stays for historical reports.
+    expect(OWNER_GOLDEN_CASES[0]!.turns[2]!.hard).not.toContainEqual({ type: 'early_call_previously_recorded' });
+    expect(OWNER_GOLDEN_CASES[1]!.turns[1]!.hard).not.toContainEqual({ type: 'call_offer_recorded' });
   });
 
   it('gives the semantic judge the previous delivered ledger, call receipt and exact next table course', async () => {

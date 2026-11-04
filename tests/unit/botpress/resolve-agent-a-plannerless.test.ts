@@ -3599,3 +3599,61 @@ describe('separar la copia conversacional de los efectos y de los hechos (Bloque
     expect(parseAgentATurnProposalV1({ ...proposal() }, context()).turn_reasoning).toBeUndefined();
   });
 });
+
+describe('natural sales regression: deterministic machinery (fixed proposals are INPUTS, not model evidence)', () => {
+  const OLDER = 'Marketing Digital te prepara para trabajar con marcas. Qué te gustaría lograr?';
+  const resumed = (customer: string) => {
+    const current = context();
+    current.turn.batch_messages = [{ id: 'm9', text: customer }];
+    current.turn.recent_turns = [
+      { id: 'a1', direction: 'outbound', content: OLDER },
+      { id: 'c1', direction: 'inbound', content: 'qué precio tiene?' },
+      { id: 'a2', direction: 'outbound', content: 'Son USD 360, en cuotas si lo preferís.' },
+      { id: 'c2', direction: 'inbound', content: 'hola, sigo interesada' },
+    ];
+    current.commercial_state.call_offer_status = 'not_offered';
+    current.commercial_state.call_preference = 'unknown';
+    return current;
+  };
+
+  it('an informative price question: the model text goes out exactly as written, with no probe, no call and no appended text', async () => {
+    const current = resumed('qué precio tiene?');
+    const initial = generated(proposal({
+      response: { messages: ['El total es USD 360, en 12 cuotas de USD 30.'], call_offer: null },
+      used_fact_ids: current.catalog.payment_plans.map(plan => plan.fact_id),
+    }));
+    const repair = vi.fn();
+    const result = await resolveAgentAPlannerlessProposalV2({ initial, context: current, repair_enabled: true, repair,
+      rejection_id: '00000000-0000-4000-8000-0000000000c1' });
+    expect(repair).not.toHaveBeenCalled();
+    expect(result.effective).toBe(initial);
+    expect(result.effective.proposal.response.messages).toEqual(['El total es USD 360, en 12 cuotas de USD 30.']);
+    expect(result.effective.proposal.response.call_offer).toBeNull();
+    expect(result.effective.proposal.proposed_action).toEqual({ type: 'none' });
+    expect(result.evidence).toMatchObject({ repair_attempted: false, repaired: false });
+  });
+
+  it('a literal repeat of an earlier (not the last) agent reply on resume gets the single repair, and the repair is used', async () => {
+    const current = resumed('hola, sigo interesada');
+    const repeated = generated(proposal({ response: { messages: [OLDER], call_offer: null }, used_fact_ids: [] }));
+    const fresh = 'Qué bueno que volviste. Seguimos con Marketing Digital?';
+    const repair = vi.fn(async rejection => generated(proposal({
+      response: { messages: [fresh], call_offer: null }, used_fact_ids: [],
+      repair_of: { rejection_id: rejection.rejection_id, attempt: 1 } })));
+    const result = await resolveAgentAPlannerlessProposalV2({ initial: repeated, context: current, repair_enabled: true, repair,
+      semantic_rejections: 'advisory', rejection_id: '00000000-0000-4000-8000-0000000000c2' });
+    expect(repair).toHaveBeenCalledTimes(1);
+    expect(result.evidence).toMatchObject({ repair_attempted: true, repaired: true });
+    expect(result.effective.proposal.response.messages).toEqual([fresh]);
+  });
+
+  it('never silences: if the repair repeats too, the safe draft is still delivered', async () => {
+    const current = resumed('hola, sigo interesada');
+    const repeated = generated(proposal({ response: { messages: [OLDER], call_offer: null }, used_fact_ids: [] }));
+    const result = await resolveAgentAPlannerlessProposalV2({ initial: repeated, context: current, repair_enabled: true,
+      repair: async rejection => generated(proposal({ response: { messages: [OLDER], call_offer: null }, used_fact_ids: [],
+        repair_of: { rejection_id: rejection.rejection_id, attempt: 1 } })),
+      semantic_rejections: 'advisory', rejection_id: '00000000-0000-4000-8000-0000000000c3' });
+    expect(result.effective.proposal.response.messages).toEqual([OLDER]);
+  });
+});

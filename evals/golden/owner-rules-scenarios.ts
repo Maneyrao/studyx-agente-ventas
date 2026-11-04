@@ -1,127 +1,146 @@
 import type { AuthorityReference, GoldenCaseV1, GoldenTurnV1 } from './scenarios';
 import { OWNER_REPLAY_CUSTOMER_TURNS_V1 } from './owner-conversation-2026-11-02';
+import { BONUS_AFFINITY_TABLE_V1, UNIVERSAL_BONUS_BRIDGES_V1 } from '../../src/shared/conversation/deterministic-sales-rules';
 
 // Supplemental campaign: never included in the unchanged formal 16-case/48-turn gate.
+// Authority since 2026-11-03 (AGENTS.md «Venta interpretada por el modelo», lines 148-190): the backend validates
+// PERMISSIONS and facts; the model decides strategy, call timing, promotion timing and wording. Nothing here is
+// required by a backend rule: expectations are the prompt's guidance judged on REAL model output, plus hard
+// facts/effects (prices, max 3, one per turn, checkout, link, enrollment).
 const gabi = (start: number, end: number, contains: string): AuthorityReference => ({
   file: 'docs/authority/prompt-agente-a-studyx-v2.md', start, end, contains,
 });
 const owner = (start: number, end: number, contains: string): AuthorityReference => ({
   file: 'AGENTS.md', start, end, contains,
 });
-const ruleA = owner(45, 54, '2.ª objeción');
-const ruleB = owner(56, 62, '2.ª o 3.ª respuesta');
-const ownerPromo = owner(66, 66, 'Promo instantánea');
-const ownerPriceProbe = owner(67, 68, 'nueva objeción de precio dispara la oferta');
-const baseAuthority = [gabi(38, 44, 'Una recomendación no es elección'), gabi(68, 89, 'price_objection')];
+const permission = owner(154, 154, 'evidencia de precio');
+const limits = owner(157, 157, 'máximo 3, uno por turno');
+const affinity = owner(161, 161, 'afinidad como pertenencia');
+const yesIsGuide = owner(163, 163, 'guía del prompt, no un permiso');
+const retention = owner(164, 164, 'Retención');
+const effectsApart = owner(165, 165, 'Respuesta y efectos independientes');
+const noForcedRules = owner(168, 168, 'fuerce llamadas o preguntas de precio');
+const singleFallback = owner(169, 169, 'Respaldos fijos');
+const noInvasion = owner(183, 183, 'Nunca dos turnos seguidos pidiendo inscripción');
+const baseAuthority = [gabi(38, 44, 'Una recomendación no es elección'), gabi(102, 123, 'price_objection')];
 const moves = ['greeting', 'browse_catalog', 'select_course', 'ask_course_information', 'ask_payment_options',
   'unknown', 'continue_by_chat', 'defer_payment', 'request_call', 'decline_purchase'];
 const allActions = ['none', 'offer_course_bonus', 'accept_promotion'];
-const bonusCodes = ['fotografia_celulares_tiendas_online', 'publicidad_redes_sociales', 'instagram_emprendedores'];
+/** Bonus candidates are set membership (AGENTS.md:161): affinity row + universal bridges. */
+const affinitySet = (paid: string): string[] => [...(BONUS_AFFINITY_TABLE_V1[paid] ?? []), ...UNIVERSAL_BONUS_BRIDGES_V1];
+const ecommerceSet = affinitySet('introduccion_ecommerce');
+const noBeca = [{ type: 'not_contains', value: 'beca' } as const, { type: 'not_contains', value: '699' } as const];
 function turn(id: string, customer: string, override: Partial<GoldenTurnV1> = {}): GoldenTurnV1 {
   return {
     id, customer,
     must: ['Responder al mensaje actual con hechos autorizados y un próximo paso apropiado.'],
     mustNot: ['No inventar datos del catálogo, descuentos, acciones ejecutadas ni bonificaciones sin efecto autorizado.'],
-    authority: [...baseAuthority, ruleA, ruleB],
+    authority: [...baseAuthority, noForcedRules],
     expected: { move: moves, action: ['none'], state: {} },
     hard: [{ type: 'workflow_committed' }],
     ...override,
   };
 }
 const noBonus = { promotion: { status: [null, 'none'], bonusCount: [0] } } as const;
-function bonusTurn(id: string, customer: string, count: number): GoldenTurnV1 {
+/** A bonus turn: the model decides whether to offer (permission is the backend's). `required` marks the turns
+ * where the authority prompt itself says to offer (e.g. the customer's explicit «sí, sólo el precio»). */
+function bonusTurn(id: string, customer: string, counts: readonly number[], options: {
+  readonly required?: boolean; readonly set?: readonly string[]; readonly paid?: string; readonly extra?: Partial<GoldenTurnV1>;
+} = {}): GoldenTurnV1 {
+  const { required = false, set = ecommerceSet, paid = 'introduccion_ecommerce', extra = {} } = options;
   return turn(id, customer, {
-    must: ['Ofrecer el siguiente bonificado exacto de la tabla para Ecommerce, mantener el precio del principal y cerrar en el mismo turno. Al escalar, recapitular el paquete completo.'],
-    mustNot: ['No cambiar el curso pago, repetir un bonificado, añadir dos nuevos ni supeditar la oferta a una llamada.'],
-    authority: [ruleA, gabi(121, 129, 'recuerda en pocas palabras el paquete completo'), gabi(159, 164, 'Introducción al e-commerce')],
-    expected: { move: moves, action: ['offer_course_bonus'], state: {
-      promotion: { status: ['offer_available'], bonusCount: [count], paidCourse: ['introduccion_ecommerce'] },
+    must: [required
+      ? 'La guía del prompt pide presentar un bonificado afín del conjunto autorizado, mantener el precio del principal y cerrar con una sola pregunta. Si es el 2.º o 3.º, recapitular el paquete completo.'
+      : 'Responder a la objeción con valor conectado a su objetivo. El modelo decide si ofrece ya un bonificado afín o primero pregunta una vez si el precio es lo único que lo frena; no es obligatorio ofrecer. Si suma uno, recapitular el paquete.'],
+    mustNot: ['No cambiar el curso pago, repetir un bonificado, añadir dos nuevos en el mismo turno ni supeditar la oferta a una llamada.',
+      'No mencionar beca ni el precio de 699.'],
+    authority: [permission, affinity, limits, gabi(139, 147, 'recuerda en pocas palabras el paquete completo'), gabi(158, 163, 'Mapa de afinidades')],
+    expected: { move: moves, action: required ? ['offer_course_bonus'] : ['none', 'offer_course_bonus'], state: {
+      promotion: { status: ['offer_available', ...(required ? [] : [null, 'none'])], bonusCount: counts, paidCourse: [paid, ...(required ? [] : [null])] },
     } },
-    hard: [{ type: 'workflow_committed' },
-      { type: 'course_bonus_preconditions' }, { type: 'action_bonus_in', values: [bonusCodes[count - 1]!] },
-      ...(count > 1 ? [{ type: 'response_mentions_all_promotions' } as const] : [])],
+    hard: [{ type: 'workflow_committed' }, { type: 'course_bonus_preconditions' },
+      required ? { type: 'action_bonus_in', values: set } : { type: 'bonus_in_when_offered', values: set },
+      { type: 'promotion_bonus_count_at_most', value: 3 }, ...noBeca],
+    ...extra,
   });
 }
 
 export const OWNER_GOLDEN_CASES: readonly GoldenCaseV1[] = [
   {
     id: '17_owner_marketing_ecommerce_ladder',
-    title: 'Presupuesto/marketing → Ecommerce con hechos del turno → escalera de la Regla A',
+    title: 'Presupuesto/marketing → Ecommerce con hechos del turno → objeciones de precio: el modelo decide el bonificado dentro del permiso',
     turns: [
       turn('greeting', 'Hola'),
       turn('recommendation', 'Qué me podés recomendar para seguir estudiando?'),
       turn('marketing_budget', 'Tengo poco presupuesto y quiero algo de marketing para vender los productos de mi tienda online.', {
         must: ['Responder al objetivo de vender en su tienda online.'],
-        mustNot: ['No convertir poco presupuesto en autorización para regalar un curso ni prometer una llamada inmediata.'],
+        mustNot: ['No convertir poco presupuesto en autorización para regalar un curso.',
+          'No ofrecer una llamada: el cliente no la pidió ni hay una duda compleja (el modelo decide la llamada, no el backend).'],
+        authority: [noForcedRules, noInvasion],
         expected: { move: moves, action: ['none'], state: noBonus },
-        hard: [{ type: 'workflow_committed' }, { type: 'early_call_previously_recorded' }],
+        hard: [{ type: 'workflow_committed' }],
       }),
       turn('ecommerce_facts_now', 'Ecommerce me gusta. Cuánto es el total y cuántas clases son?', {
         must: ['Responder el precio total autorizado y la duración de Ecommerce con hechos de ese mismo turno: 8 clases en el fixture local.'],
         mustNot: ['No usar duración o temario de Marketing Digital ni inventar 16 clases para Ecommerce.'],
-        authority: [...baseAuthority, gabi(48, 54, 'duración'), gabi(91, 98, 'USD 360'), ruleB],
+        authority: [...baseAuthority, gabi(52, 58, 'duración'), gabi(108, 115, 'USD 360'), noForcedRules],
         hard: [{ type: 'workflow_committed' }, { type: 'current_course_facts_present', value: 'introduccion_ecommerce' }],
       }),
-      (() => {
-        const bonus = bonusTurn('first_price_objection', 'Me parece muy caro.', 1);
-        return { ...bonus,
-          authority: [ownerPriceProbe, ...bonus.authority],
-          must: ['Registrar la objeción literal. Como el agente ya hizo la pregunta de la Regla C, esta nueva objeción dispara el primer bonificado exacto de la tabla.'],
-          hard: [...bonus.hard, { type: 'current_price_objection_recorded' } as const],
-        };
-      })(),
-      bonusTurn('price_only_first_bonus', 'Sí, sólo el precio me frena; sigue siendo caro.', 2),
-      bonusTurn('second_bonus', 'Me suma, pero el precio me sigue pareciendo caro.', 3),
+      bonusTurn('first_price_objection', 'Me parece muy caro.', [0, 1], {
+        extra: { hard: [{ type: 'workflow_committed' }, { type: 'course_bonus_preconditions' }, { type: 'bonus_in_when_offered', values: ecommerceSet },
+          { type: 'current_price_objection_recorded' }, { type: 'promotion_bonus_count_at_most', value: 3 }, ...noBeca] },
+      }),
+      bonusTurn('price_only_first_bonus', 'Sí, sólo el precio me frena; sigue siendo caro.', [1, 2], { required: true }),
+      bonusTurn('second_bonus', 'Me suma, pero el precio me sigue pareciendo caro.', [1, 2, 3]),
       turn('third_bonus', 'El curso me interesa, pero todavía no me alcanza por el precio.', {
-        must: ['Conservar el paquete de tres bonificados, mantener el precio y seguir cerrando sin prometer un cuarto curso.'],
-        mustNot: ['No ofrecer, insinuar ni materializar un cuarto curso bonificado.'],
-        authority: [ruleA, gabi(121, 127, 'Máximo de cursos bonificados')],
-        expected: { move: moves, action: ['none'], state: {
-          promotion: { status: ['offer_available'], bonusCount: [3], paidCourse: ['introduccion_ecommerce'] },
+        must: ['Conservar el paquete vigente, mantener el precio y seguir sin prometer un cuarto curso. Máximo tres bonificados en total.'],
+        mustNot: ['No ofrecer, insinuar ni materializar un cuarto curso bonificado.', 'No mencionar beca ni el precio de 699.'],
+        authority: [limits, permission, gabi(136, 142, 'Máximo de cursos bonificados')],
+        expected: { move: moves, action: ['none', 'offer_course_bonus'], state: {
+          promotion: { status: ['offer_available'], bonusCount: [1, 2, 3], paidCourse: ['introduccion_ecommerce'] },
         } },
-        hard: [{ type: 'workflow_committed' }, { type: 'promotion_bonus_count_at_most', value: 3 }],
+        hard: [{ type: 'workflow_committed' }, { type: 'promotion_bonus_count_at_most', value: 3 }, ...noBeca],
       }),
       turn('no_fourth', 'Y otro curso gratuito más también?', {
-        must: ['Conservar los tres bonificados existentes, mantener el precio y proponer avanzar o dejar la puerta abierta.'],
+        must: ['Conservar los bonificados existentes (máximo tres), mantener el precio y proponer avanzar o dejar la puerta abierta.'],
         mustNot: ['No ofrecer, insinuar ni materializar un cuarto curso bonificado.'],
-        authority: [ruleA, gabi(121, 127, 'Máximo de cursos bonificados')],
-        expected: { move: [...moves, 'ask_current_state'], action: ['none'], state: { promotion: { status: ['offer_available'], bonusCount: [3], paidCourse: ['introduccion_ecommerce'] } } },
+        authority: [limits, gabi(136, 142, 'Máximo de cursos bonificados')],
+        expected: { move: [...moves, 'ask_current_state'], action: ['none'], state: { promotion: { status: ['offer_available'], bonusCount: [1, 2, 3], paidCourse: ['introduccion_ecommerce'] } } },
         hard: [{ type: 'workflow_committed' }, { type: 'promotion_bonus_count_at_most', value: 3 }],
       }),
     ],
   },
   {
     id: '18_explicit_promotion_request',
-    title: 'Pedido de promoción: oferta instantánea de la tabla, escalada por pedido u objeción, sin descuento de precio',
+    title: 'Pedido de promoción: sin evidencia de precio no hay permiso (se pregunta una vez por el precio); con objeción citada el modelo puede bonificar; sin descuento de precio',
     turns: [
-      (() => {
-        const bonus = bonusTurn('request_without_objection', 'Me interesa Introducción al Ecommerce para vender los productos de mi tienda online. Tenés alguna promoción para sumar un curso gratuito?', 1);
-        return { ...bonus, authority: [ownerPromo, ...bonus.authority],
-          must: ['Regla del dueño (segunda revisión): el pedido de promoción habilita la oferta en este turno sin objeción previa. Ofrecer el primer bonificado de la tabla para Ecommerce, mantener el precio y cerrar.'],
-          mustNot: [...bonus.mustNot, 'No inventar un descuento de precio.'] };
-      })(),
-      (() => {
-        const bonus = bonusTurn('price_only_and_early_call', 'Sólo el precio me frena, me parece caro. Ofreceme esa promoción para sumar un curso sin costo.', 2);
-        return { ...bonus, authority: [ownerPromo, ...bonus.authority],
-          must: [...bonus.must, 'Al coincidir la escalada y la Regla B en la segunda respuesta, presentar el paquete y conservar la invitación de llamada en response.call_offer, sin duplicarla.'],
-          hard: [...(bonus.hard ?? []), { type: 'call_offer_recorded' } as const],
-        };
-      })(),
+      turn('request_without_objection', 'Me interesa Introducción al Ecommerce para vender los productos de mi tienda online. Tenés alguna promoción para sumar un curso gratuito?', {
+        must: ['Responder con entusiasmo y volver con naturalidad, una sola vez, a si el precio es lo único que lo frena (guía del prompt). El pedido de promoción sin evidencia de precio no habilita todavía la bonificación.'],
+        mustNot: ['No afirmar que ya le bonifica un curso ni inventar un descuento de precio.'],
+        authority: [yesIsGuide, permission, effectsApart],
+        expected: { move: moves, action: ['none'], state: noBonus },
+        hard: [{ type: 'workflow_committed' }, { type: 'question_count_at_most', value: 1 }, ...noBeca],
+      }),
+      bonusTurn('price_only_with_promo_request', 'Sólo el precio me frena, me parece caro. Ofreceme esa promoción para sumar un curso sin costo.', [1], {
+        required: true,
+        extra: { mustNot: ['No supeditar la oferta a una llamada ni ofrecer una llamada sin que el cliente la pida.',
+          'No mencionar beca ni el precio de 699.'] },
+      }),
       turn('negated_price', 'Prefiero seguir por chat. No es caro y no necesito otra promo, sólo quería saber cómo sigue.', {
-        must: ['Respetar chat y conservar el paquete con dos bonificados: una negación no es objeción ni pedido de promoción.'],
-        mustNot: ['No usar las palabras aisladas caro o promo, negadas, como evidencia para escalar.'],
-        authority: [ownerPromo, ruleA, owner(40, 43, 'Las preguntas'), ruleB],
-        expected: { move: moves, action: ['none'], state: { promotion: { status: ['offer_available'], bonusCount: [2] } } },
-        hard: [{ type: 'workflow_committed' }, { type: 'promotion_bonus_count_at_most', value: 2 }],
+        must: ['Respetar chat y conservar el paquete vigente: una negación no es objeción ni pedido de promoción.'],
+        mustNot: ['No usar las palabras aisladas caro o promo, negadas, como evidencia para escalar.', 'No ofrecer una llamada.'],
+        authority: [permission, owner(40, 43, 'Las preguntas'), noForcedRules],
+        expected: { move: moves, action: ['none'], state: { promotion: { status: ['offer_available'], bonusCount: [1] } } },
+        hard: [{ type: 'workflow_committed' }, { type: 'promotion_bonus_count_at_most', value: 1 }],
       }),
       turn('price_question', 'Es caro? Te pregunto, no estoy diciendo que me parezca caro.', {
-        must: ['Responder a la pregunta sin convertirla en una nueva objeción de precio ni ampliar el paquete.'],
-        mustNot: ['No ofrecer un tercer bonificado por una pregunta o por una cita parcial de caro.'],
-        authority: [ownerPromo, ruleA, owner(40, 43, 'Las preguntas')],
-        expected: { move: moves, action: ['none'], state: { promotion: { status: ['offer_available'], bonusCount: [2] } } },
-        hard: [{ type: 'workflow_committed' }, { type: 'promotion_bonus_count_at_most', value: 2 }],
+        must: ['Responder a la pregunta con valor/inversión por resultado, sin convertirla en una nueva objeción de precio ni ampliar el paquete.'],
+        mustNot: ['No ofrecer un segundo bonificado por una pregunta o por una cita parcial de caro.', 'No mencionar beca ni el precio de 699.'],
+        authority: [permission, owner(40, 43, 'Las preguntas'), noForcedRules],
+        expected: { move: moves, action: ['none'], state: { promotion: { status: ['offer_available'], bonusCount: [1] } } },
+        hard: [{ type: 'workflow_committed' }, { type: 'promotion_bonus_count_at_most', value: 1 }, ...noBeca],
       }),
-      bonusTurn('new_objection_after_offer', 'Ahora sí, el precio me sigue pareciendo caro y no me alcanza.', 3),
+      bonusTurn('new_objection_after_offer', 'Ahora sí, el precio me sigue pareciendo caro y no me alcanza.', [1, 2]),
     ],
   },
 ];
@@ -130,13 +149,15 @@ export const OWNER_REPLAY_CASES: readonly GoldenCaseV1[] = [{
   id: '19_owner_conversation_replay_20261102',
   title: 'Replay de los 11 mensajes del dueño del 2/11, con respuestas nuevas de DeepSeek real',
   turns: OWNER_REPLAY_CUSTOMER_TURNS_V1.map((source, index) => {
-    if (index === 6) return bonusTurn(source.id, source.customer, 1);
+    if (index === 6) return bonusTurn(source.id, source.customer, [1, 2], { required: true });
     return turn(source.id, source.customer, {
       must: ['Responder sin silencio al mensaje real de este turno, conservando la intención y los hechos de la conversación.'],
       expected: { move: moves, action: allActions, state: {} },
       ...(index === 3 ? {
-        must: ['Responder sobre marketing y presupuesto. Acreditar la invitación temprana de llamada autorizada por la Regla B, con motivo concreto, o conservar la que ya fue entregada antes sin repetirla.'],
-        hard: [{ type: 'workflow_committed' }, { type: 'early_call_previously_recorded' }],
+        must: ['Responder sobre marketing y presupuesto, descubriendo lo que necesita.'],
+        mustNot: ['No ofrecer una llamada antes de que el cliente la pida o haya una duda compleja.'],
+        authority: [noForcedRules, noInvasion],
+        hard: [{ type: 'workflow_committed' }],
       } : index === 4 ? {
         must: ['Dar el total de USD 360 y, si menciona duración, usar las 8 clases de Ecommerce verificadas en el turno actual.'],
         hard: [{ type: 'workflow_committed' }, { type: 'current_course_facts_present', value: 'introduccion_ecommerce' }],
@@ -148,9 +169,11 @@ export const OWNER_REPLAY_CASES: readonly GoldenCaseV1[] = [{
 /** Owner conversation of 2026-11-02 17:30–17:34 (-03:00), customer inputs only,
  * read from the owner's own test contact. Live failures: the escalation turn
  * fell into the technical contingency and the next objection never escalated. */
+/** Inglés 1 affinity row + universal bridges + the course the customer names literally in case 23/24. */
+const englishSet = [...affinitySet('ingles_1'), 'armado_reparacion_pc'];
 const noContingency = [{ type: 'not_contains', value: 'no te entendí bien' } as const,
   { type: 'not_contains', value: 'Qué dos cursos comparamos' } as const];
-const promotionMode = owner(66, 66, 'Promo instantánea');
+const promotionMode = permission;
 // The customer says "quiero directamente pagar": checkout moves are valid here.
 const replayMoves = [...moves, 'request_payment_link', 'provide_contact_details'];
 const englishTurn = (id: string, customer: string, override: Partial<GoldenTurnV1> = {}) => turn(id, customer, {
@@ -168,26 +191,26 @@ const OWNER_PROMOTION_MODE_REPLAY_CASES_MUTABLE: GoldenCaseV1[] = [{
     englishTurn('wants_to_pay', 'nono, quiero directamente pagar'),
     englishTurn('course_and_payment', 'como son los cursos y el tema del pago'),
     englishTurn('promo_because_expensive', 'hay bonificaciones?\no algun tipo de promocion\nporque me parece caro', {
-      must: ['Modo promoción, primera oferta: reconocer el freno del precio, decir que se lo puede resolver, presentar una promoción exclusiva (si avanza con Inglés 1, le bonifica Inglés 2) explicando por qué le suma a aprender desde cero, y cerrar con la alternativa de 12 cuotas de USD 30 o 6 de USD 60.'],
-      mustNot: ['No abrir con el precio ni con «el precio no cambia», no volver sólo a las cuotas, no comparar con gastos (comida, salidas, café), no usar frases defensivas, no más de 2 mensajes ni más de una pregunta.'],
-      authority: [promotionMode, ruleA],
-      expected: { move: moves, action: ['offer_course_bonus'], state: {
-        promotion: { status: ['offer_available'], bonusCount: [1], paidCourse: ['ingles_1'] } } },
-      hard: [{ type: 'workflow_committed' }, { type: 'action_bonus_in', values: ['ingles_2'] },
-        { type: 'question_count_at_most', value: 1 }, ...noContingency],
+      must: ['Reconocer el freno del precio. La objeción está citada, así que el modelo puede bonificar; si decide hacerlo, presentar la promoción (Inglés 1 con un bonificado afín del conjunto autorizado) explicando por qué le suma a aprender desde cero y cerrar con una sola pregunta; si decide preguntar primero por el precio, hacerlo una sola vez. No es obligatorio ofrecer en este turno.'],
+      mustNot: ['No abrir con el precio ni con «el precio no cambia», no volver sólo a las cuotas, no comparar con gastos (comida, salidas, café), no usar frases defensivas, no más de 2 mensajes ni más de una pregunta, no mencionar beca ni 699.'],
+      authority: [permission, affinity, limits],
+      expected: { move: moves, action: ['none', 'offer_course_bonus'], state: {
+        promotion: { status: ['offer_available', null, 'none'], bonusCount: [0, 1], paidCourse: ['ingles_1', null] } } },
+      hard: [{ type: 'workflow_committed' }, { type: 'bonus_in_when_offered', values: englishSet },
+        { type: 'question_count_at_most', value: 1 }, ...noBeca, ...noContingency],
     }),
     englishTurn('still_expensive_escalation', 'nono me parece caro', {
-      must: ['Modo promoción, escalada: sin repetir la pregunta del precio ni volver sólo a cuotas, sumar Inglés 3 además de Inglés 2 explicando qué le agrega, recapitular Inglés 1 + Inglés 2 + Inglés 3 por el mismo valor y cerrar con alternativa de plan.'],
-      mustNot: ['No caer en una respuesta de contingencia, no comparar con gastos, no más de una pregunta.'],
-      authority: [promotionMode, ruleA],
-      expected: { move: moves, action: ['offer_course_bonus'], state: {
-        promotion: { status: ['offer_available'], bonusCount: [2], paidCourse: ['ingles_1'] } } },
-      hard: [{ type: 'workflow_committed' }, { type: 'action_bonus_in', values: ['ingles_3'] },
-        { type: 'response_mentions_all_promotions' }, { type: 'question_count_at_most', value: 1 }, ...noContingency],
+      must: ['Nueva queja de precio tras la oferta: sin repetir la pregunta del precio ni volver sólo a cuotas. El modelo decide si suma otro bonificado afín (explicando qué le agrega y recapitulando el paquete completo) o si refuerza el valor del paquete vigente; en ambos casos cierra con una sola pregunta.'],
+      mustNot: ['No caer en una respuesta de contingencia, no comparar con gastos, no más de una pregunta, no mencionar beca ni 699.'],
+      authority: [permission, affinity, limits],
+      expected: { move: moves, action: ['none', 'offer_course_bonus'], state: {
+        promotion: { status: ['offer_available', null, 'none'], bonusCount: [0, 1, 2], paidCourse: ['ingles_1', null] } } },
+      hard: [{ type: 'workflow_committed' }, { type: 'bonus_in_when_offered', values: englishSet },
+        { type: 'promotion_bonus_count_at_most', value: 3 }, { type: 'question_count_at_most', value: 1 }, ...noBeca, ...noContingency],
     }),
     englishTurn('english_again', 'ignles\ningles'),
     englishTurn('but_expensive', 'pero es caro', {
-      must: ['Responder a la nueva objeción conservando el paquete vigente; si el backend decide otra escalada, presentarla con recapitulación.'],
+      must: ['Responder a la nueva objeción conservando el paquete vigente; si el modelo decide otra escalada dentro del permiso, presentarla con recapitulación.'],
       hard: [{ type: 'workflow_committed' }, { type: 'promotion_bonus_count_at_most', value: 3 }, ...noContingency],
     }),
   ],
@@ -202,16 +225,16 @@ OWNER_PROMOTION_MODE_REPLAY_CASES_MUTABLE.push({
     englishTurn('greeting', 'buenas\ncomo estas?'),
     englishTurn('english_price', 'ingles\nquiero saber el precio'),
     englishTurn('promo_because_expensive', 'noo\nquiero saber si hay alguna promo\nme parece caro el precio', {
-      must: ['Modo promoción, primera oferta: reconocer el freno del precio, decir que se lo puede resolver, presentar una promoción exclusiva (si avanza con Inglés 1, le bonifica Inglés 2) y cerrar con la alternativa de 12 cuotas de USD 30 o 6 de USD 60.'],
-      mustNot: ['No volver sólo a las cuotas, no preguntar de nuevo si el precio es lo único que lo frena, no comparar con gastos, no más de una pregunta.'],
-      authority: [promotionMode, ruleA],
-      expected: { move: replayMoves, action: ['offer_course_bonus'], state: {
-        promotion: { status: ['offer_available'], bonusCount: [1], paidCourse: ['ingles_1'] } } },
-      hard: [{ type: 'workflow_committed' }, { type: 'action_bonus_in', values: ['ingles_2'] },
-        { type: 'question_count_at_most', value: 1 }, ...noContingency],
+      must: ['Reconocer el freno del precio (objeción citada). El modelo decide si presenta ya la promoción (Inglés 1 con un bonificado afín) o si pregunta primero, una sola vez, si el precio es lo único que lo frena; no es obligatorio ofrecer.'],
+      mustNot: ['No volver sólo a las cuotas, no preguntar dos veces si el precio es lo único que lo frena, no comparar con gastos, no más de una pregunta, no mencionar beca ni 699.'],
+      authority: [permission, affinity, limits, yesIsGuide],
+      expected: { move: replayMoves, action: ['none', 'offer_course_bonus'], state: {
+        promotion: { status: ['offer_available', null, 'none'], bonusCount: [0, 1], paidCourse: ['ingles_1', null] } } },
+      hard: [{ type: 'workflow_committed' }, { type: 'bonus_in_when_offered', values: englishSet },
+        { type: 'question_count_at_most', value: 1 }, ...noBeca, ...noContingency],
     }),
     englishTurn('only_price', 'solo el precio', {
-      must: ['Responder conservando el paquete vigente y avanzar al cierre; si el backend decide una escalada, presentarla con recapitulación.'],
+      must: ['Responder conservando el paquete vigente y avanzar sin invadir; si el modelo decide una escalada dentro del permiso, presentarla con recapitulación.'],
       hard: [{ type: 'workflow_committed' }, { type: 'promotion_bonus_count_at_most', value: 3 }, ...noContingency],
     }),
   ],
@@ -227,11 +250,11 @@ OWNER_PROMOTION_MODE_REPLAY_CASES_MUTABLE.push({
     englishTurn('english', 'ingles'),
     englishTurn('from_zero_price', 'seria de 0\ncual es el precio'),
     englishTurn('price_only_confirmed', 'si\nes el un inconveniente', {
-      must: ['Confirmó que el precio es el único inconveniente: presentar la promoción exclusiva (Inglés 1 con Inglés 2 bonificado) y cerrar con alternativa de plan.'],
-      authority: [promotionMode, ruleA],
+      must: ['Confirmó que el precio es el único inconveniente: la guía del prompt pide presentar la promoción (Inglés 1 con un bonificado afín del conjunto autorizado) y cerrar con una sola pregunta.'],
+      authority: [permission, affinity, limits, yesIsGuide],
       expected: { move: replayMoves, action: ['offer_course_bonus'], state: {
         promotion: { status: ['offer_available'], bonusCount: [1], paidCourse: ['ingles_1'] } } },
-      hard: [{ type: 'workflow_committed' }, { type: 'action_bonus_in', values: ['ingles_2'] }, ...noContingency],
+      hard: [{ type: 'workflow_committed' }, { type: 'action_bonus_in', values: englishSet }, ...noBeca, ...noContingency],
     }),
     englishTurn('syllabus', 'y el programa?', {
       must: ['Responder qué incluye Inglés 1 con hechos autorizados, conservando el paquete vigente, sin contingencia.'],
@@ -250,11 +273,11 @@ const valueRegister = [
   { type: 'not_contains', value: 'Qué dato o qué curso' } as const, ...noContingency];
 const emmaSells = owner(114, 114, 'Emma vende');
 const setupPackage = englishTurn('setup_live_package', 'me interesa ingles 1, desde cero\ntenés alguna promo? me parece caro', {
-  must: ['Presentar la promoción exclusiva: Inglés 1 con Inglés 2 bonificado, con valor y cierre de plan.'],
-  authority: [promotionMode, ruleA],
-  expected: { move: replayMoves, action: ['offer_course_bonus'], state: {
-    promotion: { status: ['offer_available'], bonusCount: [1], paidCourse: ['ingles_1'] } } },
-  hard: [{ type: 'workflow_committed' }, { type: 'action_bonus_in', values: ['ingles_2'] }, ...valueRegister],
+  must: ['Quiere Inglés 1 desde cero, pide promo y dice que le parece caro (objeción citada). Presentar la promoción (Inglés 1 con un bonificado afín del conjunto autorizado) con registro de valor, o preguntar primero una sola vez por el precio; el modelo decide.'],
+  authority: [permission, affinity, limits, yesIsGuide],
+  expected: { move: replayMoves, action: ['none', 'offer_course_bonus'], state: {
+    promotion: { status: ['offer_available', null, 'none'], bonusCount: [0, 1], paidCourse: ['ingles_1', null] } } },
+  hard: [{ type: 'workflow_committed' }, { type: 'bonus_in_when_offered', values: englishSet }, ...noBeca, ...valueRegister],
 });
 OWNER_PROMOTION_MODE_REPLAY_CASES_MUTABLE.push({
   id: '23_owner_emma_vende_replay_20261103_0731',
@@ -269,13 +292,13 @@ OWNER_PROMOTION_MODE_REPLAY_CASES_MUTABLE.push({
       hard: [{ type: 'workflow_committed' }, ...valueRegister] }),
     setupPackage,
     englishTurn('bonify_one_of_two', 'y si yo tengo el curso de ingles 1 y armado y reparacion de pc, me bonificas uno de los dos?', {
-      must: ['Decir que sí: sumar Armado y Reparación de PC de regalo y recapitular el paquete como ganancia (tres cursos al precio de uno), cerrando con una sola pregunta con energía.'],
+      must: ['Elección del regalo por el cliente (nombró el curso literal, queda dentro del conjunto autorizado): decir que sí, sumar Armado y Reparación de PC de regalo y recapitular el paquete como ganancia (tres cursos al precio de uno), cerrando con una sola pregunta con energía.'],
       mustNot: ['No usar «compra aparte», «no es un cambio», «el precio sigue siendo» ni abrir con «la bonificación ya está aplicada».'],
-      authority: [emmaSells, ruleA],
+      authority: [emmaSells, permission, affinity, limits],
       expected: { move: replayMoves, action: ['offer_course_bonus'], state: {
-        promotion: { status: ['offer_available'], bonusCount: [2], paidCourse: ['ingles_1'] } } },
+        promotion: { status: ['offer_available'], bonusCount: [1, 2], paidCourse: ['ingles_1'] } } },
       hard: [{ type: 'workflow_committed' }, { type: 'action_bonus_in', values: ['armado_reparacion_pc'] },
-        { type: 'question_count_at_most', value: 1 }, ...valueRegister],
+        { type: 'question_count_at_most', value: 1 }, ...noBeca, ...valueRegister],
     }),
   ],
 });
@@ -285,9 +308,9 @@ OWNER_PROMOTION_MODE_REPLAY_CASES_MUTABLE.push({
   turns: [
     setupPackage,
     englishTurn('swap_only_bonus', 'osea no puedo cambiar ingles 2 por armado y reparacion de pc?', {
-      must: ['Decir que sí y cambiarlo: Inglés 1 + Armado y Reparación de PC de regalo, dos cursos al precio de uno, con cierre de una sola pregunta.'],
+      must: ['Decir que sí y cambiarlo (con un solo bonificado el cambio por un curso nombrado literalmente no necesita nueva evidencia de precio): Inglés 1 + Armado y Reparación de PC de regalo, dos cursos al precio de uno, con cierre de una sola pregunta.'],
       mustNot: ['No negar el cambio ni usar tono administrativo.'],
-      authority: [emmaSells, ruleA],
+      authority: [emmaSells, permission, affinity, limits],
       expected: { move: replayMoves, action: ['offer_course_bonus'], state: {
         promotion: { status: ['offer_available'], bonusCount: [1], paidCourse: ['ingles_1'] } } },
       hard: [{ type: 'workflow_committed' }, { type: 'action_bonus_in', values: ['armado_reparacion_pc'] },
@@ -310,8 +333,9 @@ OWNER_PROMOTION_MODE_REPLAY_CASES_MUTABLE.push({
       authority: [emmaSells], hard: [{ type: 'workflow_committed' }, ...valueRegister],
     }),
     englishTurn('that_course', 'si, ese curso es el que me interesa', {
-      must: ['Entender que «ese curso» es el que acaba de proponer y seguir con ese curso (valor, contenido o siguiente paso), sin pedir aclaración ni afirmar datos que no estén en la ficha.'],
-      authority: [emmaSells], hard: [{ type: 'workflow_committed' }, ...valueRegister],
+      must: ['Entender que «ese curso» es el único que acaba de proponer (Aires Acondicionados) y seguir con ese curso (valor, contenido o siguiente paso), sin pedir aclaración ni afirmar datos que no estén en la ficha.'],
+      authority: [emmaSells, singleFallback], hard: [{ type: 'workflow_committed' },
+        { type: 'selected_course_equals', value: 'aires_acondicionados' }, ...valueRegister],
     }),
     englishTurn('what_dont_you_get', 'que no entendes ?', {
       must: ['Responder con naturalidad, sin contingencia, retomando el curso elegido y avanzando.'],
@@ -332,15 +356,162 @@ OWNER_PROMOTION_MODE_REPLAY_CASES_MUTABLE.push({
       authority: [emmaSells], hard: [{ type: 'workflow_committed' }, ...valueRegister],
     }),
     englishTurn('promo_request', 'y la promo, cuál me podes ofrecer?', {
-      must: ['No dar la promo todavía: volver con naturalidad a la pregunta de si el precio es lo único que lo frena, una sola vez en el turno.'],
-      authority: [emmaSells], hard: [{ type: 'workflow_committed' }, { type: 'question_count_at_most', value: 1 }, ...valueRegister],
+      must: ['Sin evidencia de precio el backend no permite bonificar: volver con naturalidad a la pregunta de si el precio es lo único que lo frena (guía del prompt, una sola vez en el turno).'],
+      authority: [emmaSells, yesIsGuide, permission], hard: [{ type: 'workflow_committed' }, { type: 'question_count_at_most', value: 1 }, onePriceQuestion, ...valueRegister],
     }),
     englishTurn('yes_with_promo_request', 'quiero ver, qué me podes ofrecer\nsi me sirve el precio si', {
-      must: ['Tomarlo como el «sí» y presentar la promoción en este turno (Decoración de Interiores con un bonificado afín), con valor y una sola pregunta de cierre, sin muletillas ni repetir la descripción del curso.'],
-      authority: [emmaSells, ruleA],
-      expected: { move: replayMoves, action: ['offer_course_bonus'], state: {
-        promotion: { status: ['offer_available'], bonusCount: [1], paidCourse: ['decoracion_de_interiores'] } } },
-      hard: [{ type: 'workflow_committed' }, { type: 'question_count_at_most', value: 1 }, onePriceQuestion, ...valueRegister],
+      must: ['Tomarlo como el «sí» (guía del prompt): si el permiso del backend lo habilita, presentar la promoción en este turno (Decoración de Interiores con un bonificado afín), con valor y una sola pregunta de cierre, sin muletillas ni repetir la descripción del curso. Si el backend no lo permite (sin evidencia de precio persistida), responder con valor sin afirmar un bonificado.'],
+      authority: [emmaSells, yesIsGuide, permission, affinity, limits],
+      expected: { move: replayMoves, action: ['none', 'offer_course_bonus'], state: {
+        promotion: { status: ['offer_available', null, 'none'], bonusCount: [0, 1], paidCourse: ['decoracion_de_interiores', null] } } },
+      hard: [{ type: 'workflow_committed' }, { type: 'bonus_in_when_offered', values: affinitySet('decoracion_de_interiores') },
+        { type: 'question_count_at_most', value: 1 }, onePriceQuestion, ...noBeca, ...valueRegister],
+    }),
+  ],
+});
+
+
+/** Case 27: the owner's live "Marketing 03/11" conversation. The exact transcript is NOT available: the customer
+ * side is a faithful reconstruction from the owner's description. The owner's observation of the run at 12d564b
+ * (baseline for this case) is recorded in docs/reports/2026-11-03-model-owned-sales/05-golden-plan.md.
+ * Everything below is judged on REAL model output; nothing here is a backend rule. */
+const marketingMoves = [...moves, 'request_payment_link', 'provide_contact_details'];
+const marketingSet = affinitySet('marketing_digital');
+const marketingTurn = (id: string, customer: string, override: Partial<GoldenTurnV1> = {}) => turn(id, customer, {
+  expected: { move: marketingMoves, action: ['none'], state: {} },
+  ...override,
+});
+OWNER_PROMOTION_MODE_REPLAY_CASES_MUTABLE.push({
+  id: '27_owner_marketing_20261103',
+  title: 'Marketing 03/11 (reconstruida): descubrimiento → precio informativo → objeción de valor con promo afín → retomar conversación → compra',
+  reconstructed: true,
+  note: 'transcripción exacta pendiente del dueño',
+  turns: [
+    marketingTurn('asks_marketing', 'Hola, buenas tardes. Quiero información del curso de Marketing Digital', {
+      must: ['Identificar Marketing Digital y empezar por el descubrimiento: una sola pregunta sobre lo que quiere lograr o su situación, sin precio ni cierre todavía.'],
+      mustNot: ['No ofrecer una llamada, no pedir inscripción ni plan, no abrir con el precio, no cerrar con «?!».'],
+      authority: [noForcedRules, noInvasion, gabi(36, 44, 'Descubre sólo lo que te sirve para vender')],
+      hard: [{ type: 'workflow_committed' }, { type: 'selected_course_equals', value: 'marketing_digital' },
+        { type: 'no_call_offer' }, { type: 'no_enrollment_ask' }, { type: 'question_count_at_most', value: 1 },
+        { type: 'not_contains', value: '?!' }, ...noBeca],
+    }),
+    marketingTurn('goal_brands', 'Me gustaría trabajar con marcas, llevarles las redes y la publicidad', {
+      must: ['Usar el objetivo «trabajar con marcas» para conectar el curso con lo que vería y cómo lo aplicaría; seguir descubriendo o dar valor sin presionar. El modelo registra el objetivo con su cita literal.'],
+      mustNot: ['No ofrecer una llamada, no pedir inscripción ni plan, no prometer empleo ni ingresos.'],
+      authority: [noForcedRules, noInvasion, gabi(36, 44, 'Lo que descubres es tu munición')],
+      hard: [{ type: 'workflow_committed' }, { type: 'no_call_offer' }, { type: 'no_enrollment_ask' },
+        { type: 'question_count_at_most', value: 1 }, { type: 'not_contains', value: '?!' }, ...noBeca],
+    }),
+    marketingTurn('informative_price', 'qué precio tiene?', {
+      must: ['Responder el precio con los planes reales (USD 360; 12 cuotas de USD 30, 6 de USD 60 o un pago) conectando el valor con trabajar con marcas. Es una pregunta informativa: la respuesta es corta y natural.'],
+      mustNot: ['No tratarla como objeción: no decir que el precio es el único inconveniente ni preguntar si lo es, no ofrecer promoción ni bonificado, no ofrecer una llamada, no pedir inscripción ni plan, no cerrar con «?!», no mencionar beca ni 699.'],
+      authority: [noForcedRules, noInvasion, effectsApart, gabi(108, 115, 'USD 360')],
+      hard: [{ type: 'workflow_committed' }, { type: 'contains', value: '360' }, { type: 'no_call_offer' },
+        { type: 'no_enrollment_ask' }, { type: 'not_contains', value: 'único inconveniente' },
+        { type: 'not_contains', value: 'unico inconveniente' }, { type: 'not_contains', value: '?!' }, ...noBeca],
+    }),
+    marketingTurn('value_objection', 'mmm, es bastante para mí ahora', {
+      must: ['Objeción de valor/presupuesto citada: el permiso del backend está concedido. Trabajar el valor ligado a trabajar con marcas; la guía del prompt pide presentar Publicidad en Redes Sociales como bonificado por afinidad directa con ese objetivo (puede preguntar una sola vez si el precio es lo único que lo frena).'],
+      mustNot: ['No ofrecer descuento de precio, no mencionar beca ni 699, no ofrecer una llamada, no cerrar con «?!» salvo en la oferta de la promo.'],
+      authority: [permission, affinity, limits, yesIsGuide, retention],
+      expected: { move: marketingMoves, action: ['none', 'offer_course_bonus'], state: {
+        promotion: { status: ['offer_available', null, 'none'], bonusCount: [0, 1], paidCourse: ['marketing_digital', null] } } },
+      hard: [{ type: 'workflow_committed' }, { type: 'course_bonus_preconditions' },
+        { type: 'bonus_in_when_offered', values: marketingSet }, { type: 'no_call_offer' }, ...noBeca],
+    }),
+    marketingTurn('price_only_yes', 'sí, es solo el precio lo que me frena', {
+      must: ['Confirmó que el precio es lo único: presentar el bonificado afín Publicidad en Redes Sociales (guía del prompt) explicando cómo le sirve para trabajar con marcas, mantener el precio y cerrar con una sola pregunta; el cierre enérgico es válido sólo aquí (oferta final/promo).'],
+      mustNot: ['No cambiar el curso pago, no ofrecer una llamada, no mencionar beca ni 699.'],
+      authority: [permission, affinity, limits, yesIsGuide, noInvasion],
+      expected: { move: marketingMoves, action: ['offer_course_bonus', 'none'], state: {
+        promotion: { status: ['offer_available'], bonusCount: [1], paidCourse: ['marketing_digital'] } } },
+      hard: [{ type: 'workflow_committed' }, { type: 'course_bonus_preconditions' },
+        { type: 'bonus_in_when_offered', values: marketingSet }, { type: 'no_call_offer' },
+        { type: 'promotion_bonus_count_at_most', value: 3 }, ...noBeca],
+    }),
+    marketingTurn('short_reply', 'ok, gracias', {
+      must: ['Respuesta corta y sin presión que deja la puerta abierta; conserva el paquete vigente.'],
+      mustNot: ['No pedir inscripción ni plan tras un «ok, gracias», no ofrecer una llamada, no repetir la oferta literal.'],
+      authority: [noInvasion, noForcedRules],
+      expected: { move: marketingMoves, action: ['none'], state: { promotion: { status: ['offer_available'], bonusCount: [1], paidCourse: ['marketing_digital'] } } },
+      hard: [{ type: 'workflow_committed' }, { type: 'no_call_offer' }, { type: 'not_repeat_previous_reply' }, ...noBeca],
+    }),
+    marketingTurn('resume', 'hola, sigo interesada', {
+      must: ['Retomar la conversación con calidez conservando el paquete ya ofrecido (Marketing Digital + Publicidad en Redes Sociales) y el objetivo de trabajar con marcas, con información nueva o una pregunta que avance.'],
+      mustNot: ['No repetir literalmente ninguna respuesta anterior del agente, no volver a presentar la promoción como si fuera nueva, no ofrecer una llamada, no cerrar con «?!» mecánico.'],
+      authority: [noForcedRules, noInvasion, effectsApart, gabi(23, 23, 'Responde sólo con información nueva')],
+      expected: { move: marketingMoves, action: ['none'], state: { promotion: { status: ['offer_available'], bonusCount: [1], paidCourse: ['marketing_digital'] } } },
+      hard: [{ type: 'workflow_committed' }, { type: 'no_call_offer' }, { type: 'not_repeat_previous_reply' },
+        { type: 'not_contains', value: '?!' }, ...noBeca],
+    }),
+    marketingTurn('classes_question', 'cuántas clases son y cómo se cursan?', {
+      must: ['Responder con los hechos autorizados de duración y modalidad, conectados con trabajar con marcas, con una sola pregunta de avance si corresponde.'],
+      mustNot: ['No pedir inscripción ni plan en dos turnos seguidos: si el turno anterior ya invitó a avanzar, no repetirlo hasta tener información nueva. No ofrecer una llamada.'],
+      authority: [noInvasion, noForcedRules],
+      hard: [{ type: 'workflow_committed' }, { type: 'current_course_facts_present', value: 'marketing_digital' },
+        { type: 'no_call_offer' }, { type: 'no_consecutive_enrollment_ask' }, { type: 'not_contains', value: '?!' }, ...noBeca],
+    }),
+    marketingTurn('buying_signal', 'me convenciste, quiero inscribirme', {
+      must: ['Señal real de compra: dejar de argumentar y avanzar a la inscripción (plan de pago o los datos faltantes), usando una vez el objetivo de trabajar con marcas. Es el único turno donde pedir inscripción corresponde.'],
+      mustNot: ['No volver a vender beneficios, no ofrecer una llamada, no mencionar beca ni 699.'],
+      authority: [noInvasion, gabi(181, 190, 'Plan, datos y pago')],
+      expected: { move: [...marketingMoves, 'ask_payment_options', 'select_payment_plan'], action: ['none', 'select_payment_plan', 'send_payment_link'], state: {} },
+      hard: [{ type: 'workflow_committed' }, { type: 'no_call_offer' }, ...noBeca],
+    }),
+  ],
+});
+
+/** Case 28: Gabi's material (2026-11-03, docs/authority/material-gabi-2026-11-03). Judged on real model output;
+ * hard checks are facts (no beca, no 699), semantic checks are the manual's guidance. */
+const gabiSet = affinitySet('unas_gelificadas');
+const gabiTurn = (id: string, customer: string, override: Partial<GoldenTurnV1> = {}) => turn(id, customer, {
+  expected: { move: marketingMoves, action: ['none'], state: {} },
+  ...override,
+});
+OWNER_PROMOTION_MODE_REPLAY_CASES_MUTABLE.push({
+  id: '28_gabi_material_20261103',
+  title: 'Material de Gabi: «es caro», «lo voy a pensar», título oficial, licencia, testimonio por afinidad y bonificado por «Combínalo con»',
+  turns: [
+    gabiTurn('interest', 'Hola, quiero hacer el curso de Uñas Gelificadas para trabajar por mi cuenta', {
+      must: ['Identificar Uñas Gelificadas y descubrir lo justo (experiencia, cómo piensa trabajar) con una sola pregunta.'],
+      mustNot: ['No ofrecer una llamada, no pedir inscripción ni plan todavía.'],
+      authority: [noForcedRules, noInvasion],
+      hard: [{ type: 'workflow_committed' }, { type: 'selected_course_equals', value: 'unas_gelificadas' },
+        { type: 'no_call_offer' }, { type: 'no_enrollment_ask' }, ...noBeca],
+    }),
+    gabiTurn('expensive', 'es caro', {
+      must: ['Responder con valor/inversión por resultado (lo que puede generar trabajando por su cuenta), sin justificarse; la objeción citada habilita el permiso de bonificar y el modelo decide si ofrece ya un bonificado afín o pregunta una vez por el precio. El bonificado, si lo hay, es un curso del conjunto autorizado elegido por el «Combínalo con» de la ficha (Maquillaje Profesional, Estética Integral o Instagram para Emprendedores).'],
+      mustNot: ['No mencionar beca, no mencionar el precio de 699, no bajar el precio, no ofrecer una llamada.'],
+      authority: [permission, affinity, gabi(81, 105, 'Manejo de objeciones'), owner(177, 177, 'Beca Studyx')],
+      expected: { move: marketingMoves, action: ['none', 'offer_course_bonus'], state: {
+        promotion: { status: ['offer_available', null, 'none'], bonusCount: [0, 1], paidCourse: ['unas_gelificadas', null] } } },
+      hard: [{ type: 'workflow_committed' }, { type: 'course_bonus_preconditions' }, { type: 'bonus_in_when_offered', values: gabiSet },
+        { type: 'no_call_offer' }, ...noBeca],
+    }),
+    gabiTurn('think_about_it', 'lo voy a pensar', {
+      must: ['Responder con una pregunta aclaratoria sobre qué quiere pensar (el curso, el precio o el tiempo), sin empujar ni repetir la oferta.'],
+      mustNot: ['No pedir inscripción ni plan, no ofrecer una llamada, no repetir la respuesta anterior, no mencionar beca.'],
+      authority: [noInvasion, gabi(81, 105, '«Lo voy a pensar»'), noForcedRules],
+      hard: [{ type: 'workflow_committed' }, { type: 'no_enrollment_ask' }, { type: 'no_call_offer' },
+        { type: 'question_count_at_most', value: 1 }, { type: 'not_repeat_previous_reply' }, ...noBeca],
+    }),
+    gabiTurn('official_title', 'es título oficial?', {
+      must: ['Responder con honestidad: el diploma es un certificado de Studyx, no un título oficial, universitario ni avalado por el gobierno; sin quitarle valor al curso.'],
+      mustNot: ['No afirmar que es un título oficial, universitario o reconocido por el gobierno.'],
+      authority: [owner(178, 178, 'nunca título oficial')],
+      hard: [{ type: 'workflow_committed' }, { type: 'no_call_offer' }, ...noBeca],
+    }),
+    gabiTurn('licensed_trade', 'soy electricista, necesito licencia para instalar paneles solares?', {
+      must: ['Honesto: el diplomado de Energía Solar da la base pero no reemplaza la licencia estatal en EE. UU.; indicar que debe consultar el requisito de su estado, sin prometer empleo ni ingresos.'],
+      mustNot: ['No afirmar que el diplomado reemplaza o habilita la licencia, no prometer trabajo ni ingresos determinados.'],
+      authority: [owner(178, 178, 'licencia estatal')],
+      hard: [{ type: 'workflow_committed' }, { type: 'no_call_offer' }, ...noBeca],
+    }),
+    gabiTurn('testimonial', 'hay alguien que lo haya hecho y le haya servido?', {
+      must: ['Contar una historia real elegida por afinidad con el cliente (sólo las del manual: Felipe Serrano; Cristian y Ana María; Amparo y Edson) sin atribuirles resultados que el manual no dice.'],
+      mustNot: ['No inventar nombres, historias ni cifras de alumnos; no prometer que obtendrá los mismos resultados.'],
+      authority: [gabi(58, 58, 'Historias de éxito'), owner(176, 176, 'Testimonios sólo los reales')],
+      hard: [{ type: 'workflow_committed' }, { type: 'no_call_offer' }, ...noBeca],
     }),
   ],
 });

@@ -184,6 +184,14 @@ describe('plannerless Agent A authority', () => {
         response:{messages:['Excel Integral puede servirte.']},course_mentions:[{offering_code:'excel_integral',role:'paid'}]})});
     expect(result).toMatchObject({ok:true,transition:{selected_offering_code:'excel_integral'}});
   });
+  it("«sí, ese curso» after the agent named a single close course: the model's reference by display name becomes the focus (golden 25 machinery)", () => {
+    // Fixed proposal as INPUT to the deterministic resolver; whether the real model produces it is a golden question.
+    const select = (reference: string) => authorize({ state: state({ selected_offering_code: null, stage: 'exploring' }),
+      proposal: proposal({ move: { schema_version: 1, move: 'select_course', course_reference: reference, secondary_moves: [], vetoes: [], confidence: 1 },
+        response: { messages: ['Excel Integral es el que más se acerca. Te cuento qué vas a ver?'] } }) });
+    expect(select('Excel Integral')).toMatchObject({ ok: true, transition: { selected_offering_code: 'excel_integral' } });
+    expect(select('Real Estate')).toMatchObject({ ok: false });
+  });
   it.each(['payment_plan', 'payment_confirmation', 'contact_details'] as const)(
     'rejects a model-proposed bonus and proactive invitation during checkout even if both capabilities are permissive: %s', awaiting => {
       const cap = { enabled: true, max_bonus_courses: 3 as const, may_offer_bonus: true, status: 'checkin_available' as const,
