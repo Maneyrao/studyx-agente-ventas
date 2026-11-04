@@ -113,7 +113,7 @@ Reemplaza la redacción y el respaldo de la Regla A; los disparadores (incluida 
 
 ## Emma vende — decisiones del dueño (2026-11-03)
 
-Prueba en vivo del 03/11 07:31–07:42: contingencia por caída del proveedor, negó el cambio de bonificado, tono administrativo. Excepciones explícitas al prompt de Gabi (`docs/authority`, que no se modifica):
+Prueba en vivo del 03/11 07:31–07:42: contingencia por caída del proveedor, negó el cambio de bonificado, tono administrativo. Excepciones explícitas al prompt de Gabi (`docs/authority`; el prompt de autoridad no se edita por iniciativa propia, salvo la edición que el dueño autorizó el 03/11, ver «Venta interpretada por el modelo»):
 
 - **P0 contingencia:** la frase genérica sólo sale ante un error real del proveedor o del backend, y es natural («Perdón, no te entendí bien, a qué te refieres?»). Una caída del proveedor responde con datos canónicos: pregunta de precio o pago sin curso → «El valor es USD 360 y lo puedes pagar en 12 cuotas de USD 30, 6 cuotas de USD 60 o un pago único de USD 360. Qué curso te interesa?» (nunca ante un pago informado ni después del checkout). Un 5xx rápido espera 2,5 s antes del único reintento; sigue el límite de dos solicitudes reales.
 - **Premisa de venta** (`<premisa_de_venta>`, cerca del final de las instrucciones del brain): Emma vende sí o sí; cada respuesta avanza al cierre; primero busca cómo sí; prohibido el tono administrativo o negativo.
@@ -147,7 +147,7 @@ Prueba en vivo del 03/11 07:31–07:42: contingencia por caída del proveedor, n
 
 ## Venta interpretada por el modelo (decisión del dueño, 2026-11-03, rama claude/agent-a-model-owned-sales)
 
-Reemplaza en el runtime las Reglas B, C, D y E, la promo instantánea, la tarea y el chequeo de promoción y todos los respaldos fijos comerciales de las secciones del 2026-11-02 y 2026-11-03. Las reglas comerciales siguen como guía del modelo en `docs/authority/prompt-agente-a-studyx-v2.md`, que no se modifica.
+Reemplaza en el runtime las Reglas B, C, D y E, la promo instantánea, la tarea y el chequeo de promoción y todos los respaldos fijos comerciales de las secciones del 2026-11-02 y 2026-11-03. Las reglas comerciales siguen como guía del modelo en `docs/authority/prompt-agente-a-studyx-v2.md`. Ese prompt no se edita por iniciativa propia; el dueño autorizó expresamente su edición para incorporar sus decisiones del 03/11 (ver más abajo).
 - El modelo interpreta, identifica la fase, decide la estrategia (descubrimiento, valor, objeciones, cierre, momento de llamada y de promoción, curso bonificado) y redacta. Ningún regex del backend decide si una respuesta vende, avanza, insiste, cierra bien o debe ofrecer una llamada.
 - Prompt :120 («el backend decide el momento y el curso»): se lee como «el backend valida el permiso». El modelo propone `offer_course_bonus`; el backend valida:
   1. bonificación habilitada;
@@ -187,4 +187,4 @@ Manual, 57 fichas e `indice_para_el_agente.csv`. Es conocimiento para el modelo,
 - La propuesta lleva un campo interno (`turn_reasoning`) que no se envía al cliente: fase, qué quiere o duda ahora, qué ya se dijo y no hay que repetir, objetivo del cliente y próximo paso (descubrir / valor / objeción / cierre / promo / llamada). Se guarda en la evidencia del turno. Sin validadores sobre ese campo.
 
 ### Contexto comercial persistido (Bloque 3, 2026-11-03)
-- `commercial_state.sales_profile` (memorias de decisiones previas con su cita, curso, canal, promoción, bonificados, datos faltantes, efectos permitidos, retención) y las fichas de Gabi del curso en foco y de los candidatos a bonificar (`supabase/seed/data/fichas-gabi-2026-11-03.json`, generadas con `scripts/generate-gabi-fichas-seed.mjs`). Prompt canónico v104. Brain v160.
+- `commercial_state.sales_profile` (memorias de decisiones previas con su cita, curso, canal, promoción, bonificados, datos faltantes, efectos permitidos, retención) y las fichas de Gabi del curso en foco y de los candidatos a bonificar (`supabase/seed/data/fichas-gabi-2026-11-03.json`, generadas con `scripts/generate-gabi-fichas-seed.mjs`). Prompt canónico v107. Brain v161.
