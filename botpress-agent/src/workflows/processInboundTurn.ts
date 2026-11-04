@@ -2452,7 +2452,7 @@ export const processInboundTurn = new Workflow({
       })
         latestRejection = rejection
         let currentBackendRejection = rejection
-        let backendViolationSentences: readonly string[] = backendDecisionRejectionSentences(initialCommitError)
+        let backendViolationSentences: readonly { sentence: string; message_index?: number }[] = backendDecisionRejectionSentences(initialCommitError)
         // Keep only proposals that already crossed the local authority
         // boundary. If their business effect becomes stale at commit time,
         // one of these can still provide Agent A's own conversational reply

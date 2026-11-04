@@ -1,5 +1,6 @@
 import { courseBonusLadderRejectionSubjectsV1 } from '@/shared/conversation/bonus-ladder-rejection';
 import { copyNamesCourseV1 } from '@/shared/conversation/course-bonus-claim';
+import { messageIndexOfSentenceV1 } from '@/shared/conversation/sentence-locator';
 import { backendReleaseSha } from './turn-evidence.service';
 import type { ConversationChannel } from '@/lib/contracts/channel';
 import { randomUUID } from 'node:crypto';
@@ -253,7 +254,7 @@ export class DecisionPolicyError extends Error {
     public readonly reason: string,
     public readonly subjects: readonly string[] = [],
     /** Violating values and sentences, so the author can repair only that claim. */
-    public readonly violations: readonly { code: string; value: string; sentence: string }[] = [],
+    public readonly violations: readonly { code: string; value: string; sentence: string; message_index?: number }[] = [],
   ) {
     super(reason);
     this.name = 'DecisionPolicyError';
@@ -1412,6 +1413,7 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
           ],
         },
       });
+      const authoredMessages = validatedInput.agent_turn_v2?.proposal.response.messages ?? [];
       const inspectedVerdict = inspectCommercialText(finalResponse);
       // Agent A owns its wording and transition. Reject an unsupported fact
       // before the transaction commits so A can reformulate the complete turn;
@@ -1441,6 +1443,7 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
             })),
             ...verdict.removed.slice(0, 16).map((sentence) => ({
               code: 'sentence', value: '', sentence: sentence.trim().slice(0, 600),
+              ...messageIndexOfSentenceV1(authoredMessages, sentence),
             })),
           ],
         );

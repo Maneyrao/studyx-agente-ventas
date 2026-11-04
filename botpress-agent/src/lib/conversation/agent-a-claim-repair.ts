@@ -2,6 +2,7 @@ import { claimsImmediatePaymentLinkDeliveryV1 } from '../../../../src/shared/con
 import { inspectCourseBonusClaimsV1 } from '../../../../src/shared/conversation/course-bonus-claim'
 import { courseLogisticsInV1 } from '../../../../src/shared/conversation/course-logistics'
 import { hardClaimKindsInSentenceV1, splitClaimSentencesV1 } from '../../../../src/shared/conversation/hard-claims'
+import { sentencesOverlapV1 } from '../../../../src/shared/conversation/sentence-locator'
 import { assertedCommercialPricesV1 } from '../../../../src/features/orchestration/domain/commercial-truth-guard'
 import type { AgentAContextV1, AgentATurnProposalV1 } from '../../schemas/agent-a-brain'
 import { claimsImmediateCallDispatchV1, withoutUnsupportedPrerequisiteClausesV1 } from './agent-a-brain'
@@ -28,6 +29,12 @@ export function canonicalPlansSentenceV1(context: AgentAContextV1): { message: s
 }
 
 export type RemovedSentenceKindV1 = 'price' | 'prerequisites' | 'logistics' | 'promise' | 'hard_claim' | 'backend'
+
+/** A sentence the backend guard flagged, with the reply bubble that carries it when it could tell. */
+export interface BackendSentenceV1 {
+  readonly sentence: string
+  readonly message_index?: number
+}
 
 export interface RemovedSentenceV1 {
   readonly sentence: string
@@ -63,7 +70,7 @@ export function removeOffendingSentencesV1(input: {
   readonly proposal: AgentATurnProposalV1
   readonly context: AgentAContextV1
   /** Violating sentences reported by the backend guard. */
-  readonly backend_sentences?: readonly string[]
+  readonly backend_sentences?: readonly BackendSentenceV1[]
 }): { messages: string[]; call_offer: string | null; removed: RemovedSentenceV1[] } {
   const { proposal, context } = input
   const authorizedPrices = new Set(authorizedValues(context).flatMap((value) => assertedCommercialPricesV1(value)))
@@ -71,12 +78,14 @@ export function removeOffendingSentencesV1(input: {
   const bonusNames = authorizedBonusNames(context, proposal)
   const knownNames = context.catalog.available_offerings.map((offering) => offering.display_name)
   const paidNames = context.catalog.selected_offering ? [context.catalog.selected_offering.display_name] : []
-  const backend = new Set((input.backend_sentences ?? []).map(fold))
+  const backend = input.backend_sentences ?? []
   const removed: RemovedSentenceV1[] = []
 
-  const inspect = (sentence: string, bubble: string): string[] => {
+  // Segmentation differs between backend and Botpress: match by bubble index plus containment.
+  const inspect = (sentence: string, bubble: string, bubbleIndex: number): string[] => {
     const kinds: string[] = []
-    if (backend.has(fold(sentence))) kinds.push('backend')
+    if (backend.some((entry) => (entry.message_index === undefined || entry.message_index === bubbleIndex)
+      && sentencesOverlapV1(entry.sentence, sentence))) kinds.push('backend')
     if (assertedCommercialPricesV1(sentence).some((price) => !authorizedPrices.has(price))) kinds.push('price')
     if (courseLogisticsInV1(sentence).some((fact) => !authorizedLogistics.has(fact))) kinds.push('logistics')
     if (inspectCourseBonusClaimsV1({ content: sentence, authorized_bonus_names: bonusNames,
@@ -85,14 +94,14 @@ export function removeOffendingSentencesV1(input: {
       promoExpiresAt: context.capabilities.course_bonus?.sales_flow?.promo_expires_at })) kinds.push(kind)
     return kinds
   }
-  const clean = (text: string): string => {
+  const clean = (text: string, bubbleIndex: number): string => {
     const kept: string[] = []
     for (const original of splitClaimSentencesV1(text)) {
       // Unsupported prerequisites: keep the supported part of the sentence when possible.
       const sentence = withoutUnsupportedPrerequisiteClausesV1(original) === original.trim()
         ? original : withoutUnsupportedPrerequisiteClausesV1(original)
       const prerequisiteTouched = sentence !== original
-      const kinds = inspect(sentence, text)
+      const kinds = inspect(sentence, text, bubbleIndex)
       if (kinds.length > 0) {
         removed.push({ sentence: original.trim(), kinds,
           price_related: kinds.some((kind) => ['price', 'forbidden_price', 'invented_discount', 'backend'].includes(kind))
@@ -104,9 +113,9 @@ export function removeOffendingSentencesV1(input: {
     }
     return kept.join('').replace(/\s{2,}/gu, ' ').trim()
   }
-  const messages = proposal.response.messages.map(clean).filter((message) => message.length > 0)
+  const messages = proposal.response.messages.map((message, index) => clean(message, index)).filter((message) => message.length > 0)
   const callOffer = proposal.response.call_offer
-  const cleanedOffer = typeof callOffer === 'string' ? clean(callOffer) : null
+  const cleanedOffer = typeof callOffer === 'string' ? clean(callOffer, -1) : null
   return { messages, call_offer: cleanedOffer && cleanedOffer === callOffer ? callOffer : null, removed }
 }
 
@@ -118,7 +127,7 @@ export function removeOffendingSentencesV1(input: {
 export function salvageFactClaimsV1(input: {
   readonly proposal: AgentATurnProposalV1
   readonly context: AgentAContextV1
-  readonly backend_sentences?: readonly string[]
+  readonly backend_sentences?: readonly BackendSentenceV1[]
 }): AgentATurnProposalV1 | null {
   const { proposal, context } = input
   const result = removeOffendingSentencesV1(input)
