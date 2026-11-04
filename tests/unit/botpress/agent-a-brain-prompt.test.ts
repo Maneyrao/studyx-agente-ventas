@@ -96,6 +96,14 @@ describe('Agent A Brain prompt', () => {
     expect(contract).toContain('delivered_bonus_offerings');
     expect(contract).toContain('not a delivered bonus');
   });
+  it('keeps the rejected draft next step (move, profile_requests, action) when repairing a logistics claim',()=>{
+    const current=context();
+    current.turn_rejection={schema_version:1,rejection_id:'00000000-0000-4000-8000-000000000002',attempt:1,
+      rejections:[{code:'FACT_VALUE_MISMATCH',subject:'course_logistics.self_paced'}],
+      authorized_alternatives:{fact_ids:[],actions:['none'],missing_information:[]}};
+    const repair=buildAgentABrainInstructionsV1(current).split('<mandatory_repair')[1]?.split('</mandatory_repair>')[0]??'';
+    expect(repair).toContain('intent, move and profile_requests');
+  });
   it('repairs an undeclared course role through a truthful declaration or removal, never an inferred gift',()=>{
     const current=context();
     current.turn_rejection={schema_version:1,rejection_id:'00000000-0000-4000-8000-000000000001',attempt:1,
@@ -402,8 +410,8 @@ describe('Agent A Brain prompt', () => {
     const encoded = instructions.split('<authorized_context>')[1]!.split('</authorized_context>')[0]!;
     expect(JSON.parse(encoded)).toEqual(current);
     expect(instructions).not.toContain('<current_turn_guidance>');
-    expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v104');
-    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v160');
+    expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v105');
+    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v161');
   });
 
   it('maps recommendations and generic continuation without persisting a customer choice', () => {

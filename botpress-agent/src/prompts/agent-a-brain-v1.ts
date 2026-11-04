@@ -5,7 +5,7 @@ import {
 } from './studyx-agent-a-canonical.generated';
 import { resolveCanonicalPromptIdentityV1 } from './agent-a-identity';
 
-export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v160' as const;
+export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v161' as const;
 
 /**
  * Runtime contract only. The sales behavior lives in the canonical prompt so
@@ -149,7 +149,7 @@ Do not claim a discount, promotion, gift, approval, income or result. Preserve t
   return `
 <mandatory_repair attempt="1" rejection_id="${rejection.rejection_id}">
 Use repair_of with this rejection_id and attempt 1. This is the only rewrite.
-Correct only the facts or effects identified in turn_rejection, preserving the customer's intent.
+Correct only the facts or effects identified in turn_rejection, preserving the customer's intent, move and profile_requests.
 ${callRepair}
 ${undeclaredCourseRepair}
 ${courseDeclarationRepair}

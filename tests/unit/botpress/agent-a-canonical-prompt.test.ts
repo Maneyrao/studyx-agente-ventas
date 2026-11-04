@@ -35,7 +35,7 @@ describe('Agent A canonical sales prompt authority', () => {
       `export const STUDYX_AGENT_A_CANONICAL_PROMPT = ${JSON.stringify(prompt)} as const;`,
     );
     expect(generated[0]).toContain(
-      "export const STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION = 'studyx-agent-a-canonical-v104' as const;",
+      "export const STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION = 'studyx-agent-a-canonical-v105' as const;",
     );
   });
 
@@ -50,7 +50,7 @@ describe('Agent A canonical sales prompt authority', () => {
   });
 });
 
-describe('Agent A canonical prompt v104 (Gabi manual integration)', () => {
+describe('Agent A canonical prompt v105 (Gabi manual integration)', () => {
   const prompt = readFileSync(PROMPT_PATH, 'utf8');
   const authority = readFileSync(AUTHORITY_PATH, 'utf8');
 
@@ -73,9 +73,14 @@ describe('Agent A canonical prompt v104 (Gabi manual integration)', () => {
     expect(prompt).not.toMatch(/cierre con beca|cierre por inicio de clases/iu);
   });
 
+  it('does not teach logistics claims the factual guard rejects unless an authorized fact says so',()=>{
+    expect(prompt).not.toMatch(/a su ritmo|a tu ritmo|horarios adaptados|quedan grabadas/iu);
+    expect(prompt).toContain('sólo si un hecho autorizado del curso lo dice');
+  });
+
   it('pins the canonical source in the generator', () => {
     const generator = readFileSync('scripts/generate-agent-a-prompt-module.mjs', 'utf8');
-    expect(generator).toContain('studyx-agent-a-canonical-v104');
+    expect(generator).toContain('studyx-agent-a-canonical-v105');
     expect(generator).toContain(`lineCount !== ${prompt.match(/\n/gu)!.length}`);
   });
 });

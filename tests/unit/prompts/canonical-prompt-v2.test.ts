@@ -16,7 +16,7 @@ const source = readFileSync(
 describe('canonical prompt deployment parity', () => {
   it('loads the same source used to generate the deployed behavior', () => {
     // Authority: prompt lines 91-129 replace the previous commercial ladder.
-    expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v104');
+    expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v105');
     expect(STUDYX_AGENT_A_CANONICAL_PROMPT).toBe(source);
   });
 
