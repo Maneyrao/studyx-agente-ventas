@@ -32,7 +32,7 @@ export function negotiationSemanticTurnV1(turn:GoldenTurnV1,final:boolean,ownerR
     mustNot:[
       'No ofrecer, insinuar ni condicionar una bonificación sin offer_course_bonus autorizado y materializado. No confundir recordar un bonificado entregado con prometer otro.',
       'No inventar hechos, cambiar el precio, duplicar cursos bonificados, prometer un cuarto, insistir con llamada rechazada ni arrastrar un paquete a otro curso pago.',
-      'No llamar a la bonificación regalo ni usar “te regalo”, “te lo dejo” o una excepción personal. No usar fórmulas defensivas ni inventar urgencia.',
+      'Se permite el registro de valor del dueño (AGENTS.md:120): «de regalo», «te regalo» y «dos/tres cursos al precio de uno». No usar “te lo dejo” ni presentarla como excepción personal. No usar fórmulas defensivas ni inventar urgencia.',
       'No usar la llamada para evitar responder por chat ni prometer una llamada inmediata sin la acción ejecutada. No forzar una llamada ni una pregunta de precio fija.',
       'No interpretar preguntas de precio ni negaciones como una objeción nueva, ni usar palabras aisladas de una cita para bonificar.']};
   return {...turn, priorPromotion:undefined,expected:{move:[],action:[],state:{}},hard:[],
@@ -47,7 +47,7 @@ export function negotiationSemanticTurnV1(turn:GoldenTurnV1,final:boolean,ownerR
     mustNot:[
       'No ofrecer, insinuar ni condicionar una nueva bonificación sin offer_course_bonus autorizado y materializado; formularla como pregunta o hipótesis no sustituye la acción. No confundir recordar un curso ya entregado con prometer uno nuevo.',
       'No inventar hechos, cambiar el precio, repetir cursos bonificados, prometer un cuarto, insistir con llamada rechazada ni arrastrar un paquete a otro curso pago.',
-      'No llamar a la bonificación regalo ni usar expresiones como “te regalo” o “te lo dejo”, ni presentarla como excepción personal; autoridad:129.',
+      'Se permite el registro de valor del dueño (AGENTS.md:120): «de regalo» y «dos cursos al precio de uno». No usar “te lo dejo” ni presentarla como excepción personal.',
       'No usar la llamada para evitar responder por chat ni repetir sólo el mismo argumento de valor o el mismo plan sin avanzar; no forzar la llamada ni la pregunta del precio.',
       'No ofrecer una bonificación sin permiso del backend ni reabrir una llamada ya rechazada.']};
 }

@@ -12,6 +12,9 @@ import {
   extractModelAttemptsV1,
   normalizePromotionStatusV1,
   deliveryAcknowledgementTargetsV1,
+  reportTurnTotalsV1,
+  reportTurnLabelV1,
+  noVerdictReasonV1,
 } from './runner-support';
 
 describe('golden live runner evidence extraction', () => {
@@ -190,5 +193,18 @@ describe('golden live runner evidence extraction', () => {
     expect(extractFinalBackendDecisionErrorV1([rejected]))
       .toBe('AGENT_TURN_V2_REJECTED:ACTION_NOT_AUTHORIZED');
     expect(extractFinalBackendDecisionErrorV1([rejected, repaired])).toBeNull();
+  });
+});
+
+describe('golden results report counts every turn', () => {
+  const turn = (approved: boolean | null, execution_status: 'executed' | 'not_executed' | 'evaluation_error' = 'executed') =>
+    ({ turn_id: 't', approved, execution_status, failures: [] });
+  it('header totals add up and approved=null is labelled with a reason, not FALLIDO', () => {
+    const turns = [turn(true), turn(false), turn(null), turn(null, 'evaluation_error')];
+    const totals = reportTurnTotalsV1(turns);
+    expect(totals).toMatchObject({ total: 4, approved: 1, failed: 1, no_verdict: 2, evaluation_error: 1 });
+    expect(totals.approved + totals.failed + totals.no_verdict).toBe(totals.total);
+    expect(turns.map(reportTurnLabelV1)).toEqual(['APROBADO', 'FALLIDO', 'SIN_VEREDICTO', 'ERROR_EVALUACIÓN']);
+    expect(noVerdictReasonV1({ ...turn(null), invariant_status: 'INDETERMINATE' })).toContain('invariant_status=INDETERMINATE');
   });
 });

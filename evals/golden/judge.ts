@@ -166,7 +166,7 @@ export function evaluateHardRules(
   const evaluatorErrors: GoldenFailureV1[] = [];
   if(evaluationMode==='negotiation_invariants') {
     // Keep objective facts; discard only positional labels/package milestones.
-    const retained=new Set(['current_price_objection_recorded','question_count_at_most','response_uses_authorized_syllabus','selected_course_equals','payment_link_delivered','requests_only_missing_call_fields','access_lists_all_activated_courses']);
+    const retained=new Set(['current_price_objection_recorded','offered_bonus_named','question_count_at_most','response_uses_authorized_syllabus','selected_course_equals','payment_link_delivered','requests_only_missing_call_fields','access_lists_all_activated_courses']);
     const hard=turn.hard?.filter(rule=>retained.has(rule.type))??[];
     // Configuration and prior-memory evidence are facts whenever an actual bonus is proposed/executed.
     if(observation.proposedAction?.type==='offer_course_bonus'||observation.backendAction==='offer_course_bonus')hard.push({type:'course_bonus_preconditions'});
@@ -263,6 +263,12 @@ export function evaluateHardRules(
       const bonus = observation.proposedAction?.bonus_offering_code;
       if (typeof bonus !== 'string' || !rule.values.includes(bonus)) {
         add(failures, 'BONUS_AFFINITY_MISMATCH', `Bonificación real ${String(bonus)}; opciones afines ${rule.values.join('|')}.`);
+      }
+    }
+    if (rule.type === 'offered_bonus_named' && actualAction === 'offer_course_bonus') {
+      const code = observation.proposedAction?.bonus_offering_code;
+      if (typeof code !== 'string' || !includesText(observation.response, offeringName(observation, code))) {
+        add(failures, 'BONUS_NOT_NAMED', `El curso bonificado ${String(code)} no se nombra en el texto entregado.`);
       }
     }
     if (rule.type === 'no_call_offer' && (Boolean(observation.callOffer?.trim()) || actualAction === 'request_call_now'
@@ -782,6 +788,9 @@ async function judgeTurnSemantically(input: {
     turn_id: input.turn.id,
     authority_scope: { bonus_tone: {
       authority_line: 129, applies_to: 'bonus_or_personal_exception', ordinary_link_delivery_is_bonus: false,
+      // AGENTS.md :120 (owner value register) lifts the «te regalo» ban of :129 for these wordings only.
+      allowed_value_register: ['de regalo', 'te regalo', 'dos/tres cursos al precio de uno'],
+      still_forbidden: ['te lo dejo', 'excepción personal', 'fórmulas defensivas', 'urgencia inventada'],
     } },
     ...(deliveredHistory ? { evaluation_mode:'negotiation_invariants', delivered_history:deliveredHistory,
       negotiation_ledger:negotiationLedger, semantic_scope:'Judge delivered history and the current reply; stage names and move labels do not impose a fixed turn. Earlier completed steps count. Explicit or implicit unauthorized bonus offers fail, including questions and hypotheses. In each ledger entry ladder is the evidence before that turn; promotion and action are its committed outcome. A call offered in that same turn never becomes prior authorization for its bonus.' } : {}),

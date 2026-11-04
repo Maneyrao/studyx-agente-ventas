@@ -219,13 +219,26 @@ describe('golden hard judge', () => {
     const turn = GOLDEN_CASES[5]!.turns.find((item) => item.id === 'isolate')!;
     const failed = evaluateHardRules(turn, observation({
       response: 'Puedo sumar otro curso.',
-      proposedAction: { type: 'none' },
+      proposedAction: { type: 'offer_course_bonus', bonus_offering_code: 'camaras_seguridad' },
+      backendAction: 'offer_course_bonus',
       state: { selectedCourse: 'fotografia_profesional', stage: 'course_selected', awaitingReply: 'none', plan: null,
-        promotion: { status: 'offer_available', bonusCount: 1,
+        promotion: { status: 'offer_available', bonusCount: 4,
           paidCourse: 'fotografia_profesional', bonusCourses: ['diseno_photoshop'] } },
     }));
-    expect(failed.failures.map((item) => item.code)).toContain('ACTION_MISMATCH');
+    expect(failed.failures.map((item) => item.code)).toContain('BONUS_AFFINITY_MISMATCH');
     expect(failed.failures.map((item) => item.code)).toContain('PROMOTION_BONUS_COUNT_MISMATCH');
+  });
+
+  it('14/installments: an offered bonus must be named in the delivered copy (H1)', () => {
+    const turn = GOLDEN_CASES.find((item) => item.id.startsWith('14_'))!.turns.find((item) => item.id === 'installments')!;
+    const base = {
+      proposedAction: { type: 'offer_course_bonus', bonus_offering_code: 'instagram_emprendedores' }, backendAction: 'offer_course_bonus',
+      availableOfferings: [{ code: 'instagram_emprendedores', displayName: 'Instagram para Emprendedores' }],
+    };
+    const unnamed = evaluateHardRules(turn, observation({ ...base, response: 'Te sumo otro curso, el de Inglés. Avanzamos?' }));
+    expect(unnamed.failures.map((item) => item.code)).toContain('BONUS_NOT_NAMED');
+    const named = evaluateHardRules(turn, observation({ ...base, response: 'Te sumo instagram para emprendedores. Avanzamos?' }));
+    expect(named.failures.map((item) => item.code)).not.toContain('BONUS_NOT_NAMED');
   });
 
   it('attributes missing syllabus context separately from a model refusal', () => {
@@ -1002,7 +1015,7 @@ describe('negotiation invariant judge mode',()=>{
       expect(JSON.stringify(payloads[1]!.requirements)).not.toContain('Mantener el paquete acumulado de tres');
       expect(JSON.stringify(payloads[1]!.requirements)).toContain('aislamiento');
       expect(JSON.stringify(payloads[1]!.requirements)).toContain('insinuar');
-      expect(JSON.stringify(payloads[1]!.requirements)).toContain('te regalo');
+      expect(JSON.stringify(payloads[1]!.requirements)).toContain('de regalo');
       expect(JSON.stringify(payloads[1]!.requirements)).toContain('evitar responder por chat');
       expect(JSON.stringify(payloads[1]!.requirements)).toContain('repetir sólo');
     }finally{mock.mockRestore();}

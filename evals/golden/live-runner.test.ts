@@ -48,6 +48,9 @@ import {
   extractFinalDeterministicRuleOutcomeV1,
   extractModelAttemptsV1,
   normalizePromotionStatusV1,
+  reportTurnTotalsV1,
+  reportTurnLabelV1,
+  noVerdictReasonV1,
 } from './runner-support';
 import { GOLDEN_BASE_SHA, GOLDEN_CASES, type GoldenCaseV1 } from './scenarios';
 import { selectGoldenCasesV1 } from './run-config.mjs';
@@ -548,14 +551,15 @@ function markdown(cases: readonly CaseResultV1[]): string {
     `- Tokens: entrada ${providerReport?.tokens?.input ?? 'no informado'}, salida ${providerReport?.tokens?.output ?? 'no informado'}, total ${providerReport?.tokens?.total ?? 'no informado'}`,
     `- Recuperaciones de formato del juez: ${cases.flatMap(item => item.turns).filter(turn => turn.judge_format_recovery).length}; originales y diagnóstico conservados en el JSON por turno.`,
     `- Casos: ${cases.filter((item) => item.approved === true).length} aprobados; ${cases.filter((item) => item.approved === false).length} fallidos; ${cases.filter((item) => item.approved === null).length} con error del evaluador`,
-    `- Turnos: ${cases.flatMap((item) => item.turns).filter((turn) => turn.approved === true).length} aprobados; ${cases.flatMap((item) => item.turns).filter((turn) => turn.approved === false).length} fallidos; ${cases.flatMap((item) => item.turns).filter((turn) => turn.execution_status === 'evaluation_error').length} con error del evaluador`, '',
+    (() => {
+      const totals = reportTurnTotalsV1(cases.flatMap((item) => item.turns));
+      return `- Turnos (${totals.total}): ${totals.approved} aprobados; ${totals.failed} fallidos; ${totals.no_verdict} sin veredicto (approved=null, de los cuales ${totals.evaluation_error} con error del evaluador)`;
+    })(), '',
     '| Caso/turno | Resultado | Autoridad | Borradores originales y reparaciones | Texto entregado al transporte | Move / acción | Rechazos backend | Hipótesis de capa |',
     '|---|---|---|---|---|---|---|---|',
   ];
   for (const item of cases) for (const turn of item.turns) {
-    const result = turn.execution_status === 'not_executed' ? 'NO_EJECUTADO'
-      : turn.execution_status === 'evaluation_error' ? 'ERROR_EVALUACIÓN'
-        : turn.approved ? 'APROBADO' : 'FALLIDO';
+    const result = reportTurnLabelV1(turn);
     const layer = turn.failure_layer === 'validador' && turn.validator_rejections.length > 0
       ? `validador — ${turn.validator_rejections.map((rejection) => `${rejection.code}${rejection.subject ? ` / ${rejection.subject}` : ''}`).join('; ')}`
       : turn.failure_layer ?? '—';
@@ -563,7 +567,7 @@ function markdown(cases: readonly CaseResultV1[]): string {
   }
   lines.push('', '## Fallos', '');
   for (const item of cases) for (const turn of item.turns.filter((candidate) => candidate.approved !== true)) {
-    lines.push(`- **${item.case_id}/${turn.turn_id} — ${turn.failure_layer ?? turn.execution_status}:** ${turn.failures.map((failure) => `${failure.code} [${failure.authorityReference ?? turn.authority[0] ?? 'sin referencia'}]: ${failure.detail}`).join(' | ')}`);
+    lines.push(`- **${item.case_id}/${turn.turn_id} — ${turn.failure_layer ?? turn.execution_status}:** ${turn.failures.length === 0 && turn.approved === null ? noVerdictReasonV1(turn) : turn.failures.map((failure) => `${failure.code} [${failure.authorityReference ?? turn.authority[0] ?? 'sin referencia'}]: ${failure.detail}`).join(' | ')}`);
   }
   lines.push('', '## Evidencia de entorno y precondiciones', '');
   for (const item of cases.filter((candidate) => ['06_repeated_price_bonus_ladder', '10_requested_call',

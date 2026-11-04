@@ -345,3 +345,38 @@ export function extractContextEvidenceV1(exchanges: readonly ExchangeLikeV1[]): 
     },
   };
 }
+
+/** Minimal turn shape the results report needs (the live runner's TurnResultV1 satisfies it). */
+export interface ReportTurnV1 {
+  readonly turn_id: string;
+  readonly approved: boolean | null;
+  readonly execution_status: 'executed' | 'not_executed' | 'evaluation_error';
+  readonly invariant_status?: string;
+  readonly failures: readonly unknown[];
+}
+
+/** approved=true, approved=false and approved=null always add up to the number of turns. */
+export function reportTurnTotalsV1(turns: readonly ReportTurnV1[]) {
+  return {
+    total: turns.length,
+    approved: turns.filter((turn) => turn.approved === true).length,
+    failed: turns.filter((turn) => turn.approved === false).length,
+    no_verdict: turns.filter((turn) => turn.approved === null).length,
+    evaluation_error: turns.filter((turn) => turn.execution_status === 'evaluation_error').length,
+  };
+}
+
+export function reportTurnLabelV1(turn: ReportTurnV1): string {
+  if (turn.execution_status === 'not_executed') return 'NO_EJECUTADO';
+  if (turn.execution_status === 'evaluation_error') return 'ERROR_EVALUACIÓN';
+  if (turn.approved === null) return 'SIN_VEREDICTO';
+  return turn.approved ? 'APROBADO' : 'FALLIDO';
+}
+
+/** Why a turn without verdict (approved=null) has no failures to list. */
+export function noVerdictReasonV1(turn: ReportTurnV1): string {
+  const parts = [`execution_status=${turn.execution_status}`];
+  if (turn.invariant_status) parts.push(`invariant_status=${turn.invariant_status}`);
+  parts.push('el evaluador no emitió veredicto (evidencia o juez indeterminado), no hay fallos que listar');
+  return parts.join('; ');
+}
