@@ -457,7 +457,7 @@ OWNER_PROMOTION_MODE_REPLAY_CASES_MUTABLE.push({
       must: ['Señal real de compra: dejar de argumentar y avanzar a la inscripción (plan de pago o los datos faltantes), usando una vez el objetivo de trabajar con marcas. Es el único turno donde pedir inscripción corresponde.'],
       mustNot: ['No volver a vender beneficios, no ofrecer una llamada, no mencionar beca ni 699.'],
       authority: [noInvasion, gabi(181, 190, 'Plan, datos y pago')],
-      expected: { move: [...marketingMoves, 'ask_payment_options', 'select_payment_plan'], action: ['none', 'select_payment_plan', 'send_payment_link'], state: {} },
+      expected: { move: [...marketingMoves, 'ask_payment_options', 'select_payment_plan'], action: ['none', 'accept_promotion', 'select_payment_plan', 'send_payment_link'], state: {} },
       hard: [{ type: 'workflow_committed' }, { type: 'no_call_offer' }, ...noBeca],
     }),
   ],
