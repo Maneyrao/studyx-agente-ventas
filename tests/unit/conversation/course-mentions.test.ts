@@ -71,8 +71,7 @@ describe('canonical course roles (authority prompt:123,129; bonus spec:59-71)',(
       {...base,messages:['Community Manager'],course_mentions:[{offering_code:longCode,role:'paid' as const},{offering_code:longCode,role:'alternative' as const}]},
       {...base,course_mentions:[{offering_code:'invalid/code',role:'alternative' as const}]},
       {...base,course_mentions:[{offering_code:'short',role:'not_a_role' as never}]},
-      {...base,messages:['Community Manager'],course_mentions:[{offering_code:'short',role:'bonus' as const}],ladder:{eligible:false,
-        price_evidence:false,retention_decline:false,retention_used:false,missing_steps:['price_evidence'] as const}},
+      {...base,messages:['Community Manager'],course_mentions:[{offering_code:'short',role:'bonus' as const}]},
     ];
     for(const value of inputs) {
       const rejections=validateCourseMentionsV1(value).violations;
@@ -84,10 +83,8 @@ describe('canonical course roles (authority prompt:123,129; bonus spec:59-71)',(
       expect(rejections.every(reason=>reason.subject.length<=160 && !reason.subject.includes(','))).toBe(true);
     }
   });
-  it('returns factual ladder metadata when an effectless bonus skips missing prerequisites',()=>{
-    const result=validateCourseMentionsV1({...base,messages:['Community Manager'],course_mentions:[{offering_code:'short',role:'bonus'}],
-      ladder:{eligible:false,price_evidence:false,retention_decline:false,retention_used:false,missing_steps:['price_evidence']}});
-    expect(result.violations.map(v=>v.subject)).toContain('direct_bonus:ladder_step_pending');
-    expect(result.violations.map(v=>v.subject)).toContain('bonus_ladder:missing:price_evidence');
+  it('rejects an effectless bonus mention as a forbidden promise',()=>{
+    const result=validateCourseMentionsV1({...base,messages:['Community Manager'],course_mentions:[{offering_code:'short',role:'bonus'}]});
+    expect(result.violations.map(v=>v.subject)).toContain('forbidden_promise');
   });
 });

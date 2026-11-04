@@ -1,19 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import { deriveCourseBonusLadderV1 } from '@/shared/conversation/bonus-ladder';
 import { courseBonusLadderRejectionSubjectsV1 } from '@/shared/conversation/bonus-ladder-rejection';
 
-describe('course bonus permission rejection evidence', () => {
-  it('reports unavailable evidence without inventing a missing step', () => {
+describe('course bonus motive rejection evidence', () => {
+  it('always reports the missing current-message motive and never a persisted-evidence step', () => {
     const subjects = courseBonusLadderRejectionSubjectsV1();
-    expect(subjects).toContain('bonus_ladder:evidence_unavailable');
-    expect(subjects).not.toContain('bonus_ladder:missing:price_evidence');
+    expect(subjects).toEqual(['forbidden_promise', 'direct_bonus:ladder_step_pending',
+      'bonus_ladder:missing:current_message_motive']);
+    expect(subjects.join()).not.toContain('price_evidence');
   });
 
-  it('reports only the missing steps present in a real snapshot', () => {
-    const subjects = courseBonusLadderRejectionSubjectsV1(deriveCourseBonusLadderV1({ price_evidence: false, retention_used: false }));
-    expect(subjects).toContain('bonus_ladder:missing:price_evidence');
-    expect(subjects).not.toContain('bonus_ladder:evidence_unavailable');
-    expect(courseBonusLadderRejectionSubjectsV1(deriveCourseBonusLadderV1({ price_evidence: true, retention_used: false })))
-      .not.toContain('bonus_ladder:missing:price_evidence');
+  it('carries the structural reason when the motive failed a check', () => {
+    expect(courseBonusLadderRejectionSubjectsV1('motive_move_incoherent')).toContain('bonus_motive:motive_move_incoherent');
   });
 });

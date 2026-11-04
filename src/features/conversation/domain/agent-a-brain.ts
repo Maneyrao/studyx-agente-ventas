@@ -197,6 +197,7 @@ export type AgentAProposedActionV1 =
       readonly type: 'offer_course_bonus';
       readonly bonus_offering_code: string;
       readonly interest_offering_code: string;
+      readonly motive: { readonly kind: 'price_objection' | 'promotion_rejection' | 'better_promotion_request' | 'purchase_decline'; readonly quote: string };
     }
   | {
       /** Temporary, hidden Stripe verification checkout. Never a commercial plan. */

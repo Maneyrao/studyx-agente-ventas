@@ -1,5 +1,5 @@
-import { deriveCourseBonusLadderV1 } from '@/shared/conversation/bonus-ladder';
-import { draftConfirmsPriceOnlyBarrierV1, draftDeclinesPurchaseV1, draftRecordsPriceObjectionV1, isCheckoutV1 } from '@/shared/conversation/deterministic-sales-rules';
+import { validateBonusMotiveV1 } from '@/shared/conversation/bonus-motive';
+import { draftDeclinesPurchaseV1, isCheckoutV1 } from '@/shared/conversation/deterministic-sales-rules';
 import { copyNamesCourseV1, inspectCourseBonusClaimsV1 } from '@/shared/conversation/course-bonus-claim';
 import { validateCourseMentionsV1 } from '@/shared/conversation/course-mentions';
 import { messagesWithoutExactCallOfferV1 } from '@/shared/conversation/call-offer-format';
@@ -574,18 +574,18 @@ export function authorizeAgentTurnV2(input: {
     const proposed = proposal.proposed_action;
     const cap = input.course_bonus;
     // Model-owned bonus (AGENTS.md "Venta interpretada por el modelo"): the
-    // model proposes, the backend validates the permission. Price evidence is
-    // persisted (cap.ladder) or this turn's model memory quoted from the batch;
-    // retention is a quoted purchase decline, usable once per conversation.
+    // model proposes, the backend validates the permission. The motive comes
+    // from the CURRENT message (bonus-motive.ts); persisted memories never
+    // authorize. Retention is a quoted purchase decline, once per conversation.
     const batch = input.current_customer_messages ?? [];
     const draftEvidence = { response: proposal.response, proposed_action: proposal.proposed_action,
       move: proposal.move, memory_candidates: proposal.memory_candidates };
-    const currentPriceEvidence = draftRecordsPriceObjectionV1(draftEvidence, batch)
-      || draftConfirmsPriceOnlyBarrierV1(draftEvidence, batch);
-    const ladder = cap?.ladder ? deriveCourseBonusLadderV1({
-      price_evidence: cap.ladder.price_evidence || currentPriceEvidence,
-      retention_decline: draftDeclinesPurchaseV1(draftEvidence, batch),
-      retention_used: cap.ladder.retention_used }) : undefined;
+    const motiveReason = validateBonusMotiveV1({
+      motive: proposed.motive, moves: [proposal.move.move, ...proposal.move.secondary_moves], batch,
+      has_delivered_bonus: (cap?.delivered_bonus_offerings?.length ?? 0) > 0,
+      retention_used: cap?.ladder?.retention_used ?? false,
+      purchase_decline_recorded: draftDeclinesPurchaseV1(draftEvidence, batch),
+      previous_turn_asked_price_question: cap?.ladder?.previous_turn_asked_price_question ?? false });
     const checkout = isCheckoutV1({ stage: state.stage, awaiting_reply: state.awaiting_reply,
       payment_link_request_pending: state.payment_link_request?.status === 'pending' }, draftEvidence);
     // Owner 2026-11-03: a literal swap of the single offered bonus is not a new
@@ -599,7 +599,7 @@ export function authorizeAgentTurnV2(input: {
     const inCandidates = cap?.bonus_candidates?.some(candidate => candidate.code === proposed.bonus_offering_code) === true;
     const reason = cap?.enabled !== true ? 'bonus_disabled'
       : checkout ? 'sale_already_closed'
-      : !swap && ladder?.eligible !== true ? 'ladder_step_pending'
+      : !swap && motiveReason !== null ? 'ladder_step_pending'
       : proposed.bonus_offering_code === capabilityInterestOffering ? 'same_as_paid_course'
       : !swap && !inCandidates && !cap.bonus_offerings.some(o => o.code === proposed.bonus_offering_code) ? 'invalid_offering'
       : proposed.interest_offering_code !== capabilityInterestOffering
@@ -624,7 +624,7 @@ export function authorizeAgentTurnV2(input: {
       }).has_unauthorized_claim);
     if (reason && namesGiftAsBonus) return {ok:false,reasons:['COMMERCIAL_TRUTH_VIOLATION'],
       rejection_subjects:reason === 'ladder_step_pending'
-        ? courseBonusLadderRejectionSubjectsV1(ladder ?? cap?.ladder)
+        ? courseBonusLadderRejectionSubjectsV1(motiveReason ?? undefined)
         : ['forbidden_promise',`direct_bonus:${reason}`]};
     // The effect is only real if the visible copy names the bonus course; an
     // unnamed bonus rejects the effect alone (copy kept, never delivered).
@@ -698,7 +698,6 @@ export function authorizeAgentTurnV2(input: {
     ...(action.type==='offer_course_bonus' ? {authorized_bonus_action:{
       paid_offering_code:action.interest_offering_code,bonus_offering_code:action.bonus_offering_code}} : {}),
     delivered_bonus_offering_codes:packageIsCurrent ? (input.course_bonus?.delivered_bonus_offerings ?? []).map(course=>course.code) : [],
-    ladder:input.course_bonus?.ladder,
   });
   if (courseMentions.violations.length>0) return {
     ok:false,

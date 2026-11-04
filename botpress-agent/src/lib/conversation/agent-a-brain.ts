@@ -587,7 +587,9 @@ function proposalJsonSchema(context: AgentAContextV1, conversationOnly = false):
     && courseBonus.interest_offering_code && directBonusCodes.length
     ? [closedObject({type:{type:'string',enum:['offer_course_bonus']},
       interest_offering_code:{type:'string',enum:[courseBonus.interest_offering_code]},
-      bonus_offering_code:{type:'string',enum:directBonusCodes}})] : [];
+      bonus_offering_code:{type:'string',enum:directBonusCodes},
+      motive:closedObject({kind:{type:'string',enum:['price_objection','promotion_rejection','better_promotion_request','purchase_decline']},
+        quote:{type:'string',minLength:1,maxLength:2_048,description:'Verbatim text from the customer\'s CURRENT messages that motivates the bonus.'}})})] : [];
   const acceptanceAlternatives = courseBonus?.may_accept_offer
     ? hasDirectBonusContextV1(context)
       ? courseBonus.promotion_code && courseBonus.promotion_cycle_id && courseBonus.interest_offering_code && courseBonus.offer_version

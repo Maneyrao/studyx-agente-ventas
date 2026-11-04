@@ -1,9 +1,9 @@
+import { offerBonusWithMotive } from '../helpers/offer-bonus';
 import { randomUUID } from 'node:crypto';
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { openLocalTestDatabase } from '../helpers/db';
 import { seedConversationForAgentTurn } from '../helpers/agent-turn-fixtures';
 import { recordDeliveryReport } from '@/lib/services/decision.service';
-import { offerDirectCourseBonusV1 } from '@/features/promotions/application/direct-course-bonus-service';
 import { readCourseBonusCapabilityV1 } from '@/features/promotions/application/read-course-bonus-capability';
 import { hashCallContext } from '@/features/calls/domain/call-context';
 import { recordModelPriceObjection } from '../helpers/record-model-negotiation-facts';
@@ -42,7 +42,7 @@ async function offeredWithIngles2() {
   // The model recorded the price objection of the first turn: persisted price evidence.
   await recordModelPriceObjection(db!, f.turn_id, { source_quote: 'Me parece caro' });
   const first = randomUUID();
-  const offer = await offerDirectCourseBonusV1(db!, { workspace_id: f.workspace_id, contact_id: f.contact_id,
+  const offer = await offerBonusWithMotive(db!, { workspace_id: f.workspace_id, contact_id: f.contact_id,
     conversation_id: f.conversation_id, paid_offering_code: paid, source_turn_id: f.turn_id,
     expected_offer_version: 0, bonus_offering_codes: ['ingles_2'], outbound: outbound(first) });
   if (!offer.ok) throw new Error(`first offer rejected: ${offer.reason}`);
@@ -70,11 +70,11 @@ run('customer-chosen bonus', () => {
       paid_offering_code: paid, source_turn_id: f.second_turn_id, expected_offer_version: 1,
       promotion_code: offer.promotion_code, promotion_cycle_id: offer.promotion_cycle_id,
       bonus_offering_codes: ['armado_reparacion_pc'], outbound: outbound(swapId) };
-    const swapped = await offerDirectCourseBonusV1(db!, input);
+    const swapped = await offerBonusWithMotive(db!, input);
     expect(swapped).toMatchObject({ ok: true, offer_version: 1, outbound_message_id: swapId });
     if (!swapped.ok) throw new Error();
     expect(swapped.promotion_cycle_id).not.toBe(offer.promotion_cycle_id);
-    expect(await offerDirectCourseBonusV1(db!, input)).toEqual(swapped);
+    expect(await offerBonusWithMotive(db!, input)).toEqual(swapped);
     const [replacement] = await db!<Array<{ expires_at: Date }>>`SELECT expires_at FROM promotion_offers
       WHERE promotion_cycle_id=${swapped.promotion_cycle_id}::uuid`;
     expect(replacement?.expires_at.getTime()).toBe(window.getTime());
@@ -97,19 +97,20 @@ run('customer-chosen bonus', () => {
       conversation_id: f.conversation_id, channel: 'text', selected_offering_code: null, source_turn_id: f.second_turn_id }, { db: db! });
     expect(capability).toMatchObject({ interest_offering_code: paid,
       rule_bonus: { bonus_offering_code: 'armado_reparacion_pc', replaces_offering_code: 'ingles_2' } });
-    expect(await offerDirectCourseBonusV1(db!, { workspace_id: f.workspace_id, contact_id: f.contact_id,
+    expect(await offerBonusWithMotive(db!, { workspace_id: f.workspace_id, contact_id: f.contact_id,
       conversation_id: f.conversation_id, paid_offering_code: paid, source_turn_id: f.second_turn_id,
       expected_offer_version: 1, promotion_code: offer.promotion_code, promotion_cycle_id: offer.promotion_cycle_id,
       bonus_offering_codes: ['armado_reparacion_pc'], outbound: outbound(randomUUID()) })).toMatchObject({ ok: true, offer_version: 1 });
   });
 
-  it('a course the customer names literally is a valid next gift; the evidence is the persisted objection, not the wording', async () => {
+  it('a course the customer names literally is a valid next gift when the customer asks for it explicitly (better_promotion_request quoted from this message)', async () => {
     const { f, offer } = await offeredWithIngles2();
     await customerSays(f, 'y si yo tengo el curso de ingles 1 y armado y reparacion de pc, me bonificas uno de los dos?');
-    const added = await offerDirectCourseBonusV1(db!, { workspace_id: f.workspace_id, contact_id: f.contact_id,
+    const added = await offerBonusWithMotive(db!, { workspace_id: f.workspace_id, contact_id: f.contact_id,
       conversation_id: f.conversation_id, paid_offering_code: paid, source_turn_id: f.second_turn_id, expected_offer_version: 1,
       promotion_code: offer.promotion_code, promotion_cycle_id: offer.promotion_cycle_id,
-      bonus_offering_codes: ['armado_reparacion_pc'], outbound: outbound(randomUUID()) });
+      bonus_offering_codes: ['armado_reparacion_pc'], outbound: outbound(randomUUID()),
+      motive: { kind: 'better_promotion_request', quote: 'me bonificas uno de los dos?' }, declared_moves: ['explicit_promotion_request'] });
     expect(added).toMatchObject({ ok: true, offer_version: 2, promotion_cycle_id: offer.promotion_cycle_id });
   });
 
@@ -119,7 +120,7 @@ run('customer-chosen bonus', () => {
     const base = { workspace_id: f.workspace_id, contact_id: f.contact_id, conversation_id: f.conversation_id,
       paid_offering_code: paid, source_turn_id: f.second_turn_id, expected_offer_version: 1,
       promotion_code: offer.promotion_code, promotion_cycle_id: offer.promotion_cycle_id };
-    expect(await offerDirectCourseBonusV1(db!, { ...base, bonus_offering_codes: ['armado_reparacion_pc'],
+    expect(await offerBonusWithMotive(db!, { ...base, bonus_offering_codes: ['armado_reparacion_pc'],
       outbound: outbound(randomUUID()) })).toMatchObject({ ok: false, reason: 'invalid_offering' });
     await customerSays(f, 'cambiame ingles 2 por armado y reparacion de pc');
     const callId = randomUUID();
@@ -131,7 +132,7 @@ run('customer-chosen bonus', () => {
       VALUES (${callId}::uuid, ${f.turn_id}::uuid, ${f.contact_id}::uuid, ${f.conversation_id}::uuid,
         ${f.workspace_id}::uuid, 'retell', ${`retell:${callId}`}, ${`bonus-call:${callId}`}, 'in_progress',
         ${f.turn_id}::uuid, ${db!.json(callContext)}, decode(${hashCallContext(callContext)}, 'hex'), 'agent-b-v1')`;
-    expect(await offerDirectCourseBonusV1(db!, { ...base, bonus_offering_codes: ['armado_reparacion_pc'],
+    expect(await offerBonusWithMotive(db!, { ...base, bonus_offering_codes: ['armado_reparacion_pc'],
       outbound: outbound(randomUUID()) })).toMatchObject({ ok: false, reason: 'stale_offer_version' });
   });
 });

@@ -11,26 +11,14 @@ export function mayOfferCallV1(input: {
 }
 
 /**
- * Bonus permission evidence (AGENTS.md "Venta interpretada por el modelo").
- * `price_evidence`: a persisted objection/price_objection or constraint/
- * price_only_barrier memory, or this turn's memory quoted literally from the
- * batch. `retention_used`: the single retention offer of this conversation was
- * already granted. The backend validates a proposal; it never chooses it.
+ * Persisted facts the bonus motive check needs (AGENTS.md "Bonificación por
+ * motivo actual"). A persisted price objection is NOT among them: the motive
+ * must come from the current message. `retention_used`: the single retention
+ * offer of this conversation was already granted.
+ * `previous_turn_asked_price_question`: the previous agent turn declared, as a
+ * structured memory, that it asked the price question.
  */
 export interface CourseBonusLadderV1 {
-  readonly eligible: boolean;
-  readonly price_evidence: boolean;
-  /** A model-declared purchase decline, quoted from this batch, with the retention offer still unused. */
-  readonly retention_decline: boolean;
   readonly retention_used: boolean;
-  readonly missing_steps: readonly 'price_evidence'[];
-}
-
-export function deriveCourseBonusLadderV1(input: {
-  readonly price_evidence: boolean; readonly retention_decline?: boolean; readonly retention_used: boolean;
-}): CourseBonusLadderV1 {
-  const retentionDecline = input.retention_decline === true && !input.retention_used;
-  const eligible = input.price_evidence || retentionDecline;
-  return { eligible, price_evidence: input.price_evidence, retention_decline: retentionDecline,
-    retention_used: input.retention_used, missing_steps: eligible ? [] : ['price_evidence'] };
+  readonly previous_turn_asked_price_question: boolean;
 }

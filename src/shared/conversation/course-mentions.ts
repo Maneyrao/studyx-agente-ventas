@@ -1,5 +1,3 @@
-import type { CourseBonusLadderV1 } from './bonus-ladder';
-import { courseBonusLadderRejectionSubjectsV1 } from './bonus-ladder-rejection';
 
 export const COURSE_MENTION_ROLES_V1 = ['paid', 'bonus', 'paid_complement', 'alternative'] as const;
 export interface CourseMentionV1 {
@@ -36,7 +34,6 @@ export function validateCourseMentionsV1(input: {
   readonly paid_mention_offering_code?: string | null;
   readonly authorized_bonus_action?: { readonly paid_offering_code: string; readonly bonus_offering_code: string };
   readonly delivered_bonus_offering_codes: readonly string[];
-  readonly ladder?: CourseBonusLadderV1;
 }): { readonly violations: readonly CourseMentionViolationV1[]; readonly named_offering_codes: readonly string[] } {
   const violations: CourseMentionViolationV1[] = [];
   const reject = (rawSubject: string, code: CourseMentionViolationV1['code'] = 'COURSE_ROLE_UNDECLARED') => {
@@ -99,7 +96,7 @@ export function validateCourseMentionsV1(input: {
     const delivered=mention.offering_code!==input.paid_offering_code
       && input.delivered_bonus_offering_codes.includes(mention.offering_code);
     if (!prospective && !delivered) {
-      const subjects=input.ladder?.eligible===false ? courseBonusLadderRejectionSubjectsV1(input.ladder) : ['forbidden_promise'];
+      const subjects=['forbidden_promise'];
       for(const subject of subjects) reject(subject,'FACT_VALUE_MISMATCH');
     }
   }

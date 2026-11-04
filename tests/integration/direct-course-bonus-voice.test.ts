@@ -1,8 +1,9 @@
+import { offerBonusWithMotive } from '../helpers/offer-bonus';
 import { recordModelPriceObjection, seedPriorModelNegotiation } from '../helpers/record-model-negotiation-facts';
 import { randomUUID } from 'node:crypto';
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { openLocalTestDatabase } from '../helpers/db';
-import { acceptDirectCourseBonusByVoiceV1, offerDirectCourseBonusV1 } from '@/features/promotions/application/direct-course-bonus-service';
+import {acceptDirectCourseBonusByVoiceV1 } from '@/features/promotions/application/direct-course-bonus-service';
 import { PostgresRetellOrchestrationStore } from '@/features/calls/adapters/postgres-retell-orchestration-store';
 import { hashCallContext } from '@/features/calls/domain/call-context';
 import { reservePaymentLink } from '@/features/payments/application/reserve-payment-link';
@@ -30,7 +31,7 @@ async function fixture() {
     VALUES (${w.id},${v.id},${c.id},${courses[0].code},'one_time')`;
   async function inbound(prior = false) {
     const [m] = await db!`INSERT INTO messages(conversation_id,contact_id,direction,content,created_at)
-      VALUES (${v.id},${c.id},'inbound','Customer',clock_timestamp() - ${prior ? 10 : 0} * interval '1 second') RETURNING id`;
+      VALUES (${v.id},${c.id},'inbound','me parece muy caro',clock_timestamp() - ${prior ? 10 : 0} * interval '1 second') RETURNING id`;
     // Model-recorded current reply supports Rule A escalation; text alone does not.
     if (!prior) await recordModelPriceObjection(db!, m.id);
     return m.id as string;
@@ -53,7 +54,7 @@ async function fixture() {
   let offer: {offer_id:string;promotion_code:string;promotion_cycle_id:string;offer_version:number} | undefined;
   async function append(n:number, delivered=true) {
     const id=randomUUID();
-    const result=await offerDirectCourseBonusV1(db!,{...identity,source_turn_id:await inbound(),expected_offer_version:n-1,
+    const result=await offerBonusWithMotive(db!,{...identity,source_turn_id:await inbound(),expected_offer_version:n-1,
       ...(offer ? {promotion_code:offer.promotion_code,promotion_cycle_id:offer.promotion_cycle_id}:{}),bonus_offering_codes:[courses[n].code as string],
       outbound:{id,content:'Bonus',provider:'test',integration_id:'test',channel:'whatsapp',destination:'test',idempotency_key:id}});
     if(!result.ok) throw new Error(result.reason); offer=result;

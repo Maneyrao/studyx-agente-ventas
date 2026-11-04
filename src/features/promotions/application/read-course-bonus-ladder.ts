@@ -1,25 +1,30 @@
-import { declineQuoteInBatchV1, priceObservationQuoteInBatchV1, PURCHASE_DECLINE_MEMORY_KEY } from '@/shared/conversation/deterministic-sales-rules';
+import { declineQuoteInBatchV1, PURCHASE_DECLINE_MEMORY_KEY } from '@/shared/conversation/deterministic-sales-rules';
 import type { DbClient } from '@/lib/db/types';
-import { readNegotiationFactsV1 } from '@/features/conversation/application/read-negotiation-facts';
-import { deriveCourseBonusLadderV1, type CourseBonusLadderV1 } from '@/shared/conversation/bonus-ladder';
+import type { CourseBonusLadderV1 } from '@/shared/conversation/bonus-ladder';
+
+/** Structured memory the model records on the turn where it asks the price question. */
+export const PRICE_QUESTION_ASKED_MEMORY_KEY = 'price_question_asked';
 
 /**
- * Bonus permission evidence (AGENTS.md "Venta interpretada por el modelo").
- * Caller owns the state lock when authorizing an effect. Claims/proposals are
- * never inputs; only persisted model memories and this batch's literal quotes.
+ * Persisted facts for the bonus motive check (AGENTS.md "Bonificación por
+ * motivo actual"). Caller owns the state lock when authorizing an effect.
+ * A persisted price objection no longer authorizes anything.
  *
- * - price evidence: a persisted objection/price_objection or constraint/
- *   price_only_barrier memory in the conversation, or this turn's memory whose
- *   source_quote is literally present in the batch;
- * - retention: this turn's model-declared purchase decline (objection/
- *   purchase_decline, quoted from the batch), usable once per conversation.
- *   "Used" is read from the persisted offer rows: a bonus whose source turn
- *   carries that decline memory.
+ * - retention: "used" is read from the persisted offer rows: a bonus whose
+ *   source turn carries the purchase_decline memory;
+ * - previous_turn_asked_price_question: the latest earlier reply decision of the
+ *   conversation recorded the structured price_question_asked memory;
+ * - purchase_decline_recorded: this turn's committed memory has the decline with
+ *   a quote literally present in the batch.
  */
+export interface BonusMotiveEvidenceV1 extends CourseBonusLadderV1 {
+  readonly purchase_decline_recorded: boolean;
+}
+
 export async function readCourseBonusLadderV1(input: {
   workspace_id?: string; workspace_slug?: string; contact_id: string;
   conversation_id: string; source_turn_id?: string; selected_offering_code: string | null;
-}, db: DbClient): Promise<CourseBonusLadderV1 | null> {
+}, db: DbClient): Promise<BonusMotiveEvidenceV1 | null> {
   const [row] = await db<Array<{ workspace_slug: string; source_turn_id: string; customer_messages: string[] }>>`
     SELECT w.slug workspace_slug,current.id source_turn_id,
       ARRAY(SELECT fragment.content FROM messages fragment WHERE fragment.direction='inbound'
@@ -37,35 +42,30 @@ export async function readCourseBonusLadderV1(input: {
       AND v.id=${input.conversation_id}::uuid AND c.id=${input.contact_id}::uuid
   `;
   if (!row) return null;
-  const facts = await readNegotiationFactsV1({ ...input, workspace_slug: row.workspace_slug, source_turn_id: row.source_turn_id }, { db });
-  // This turn's committed model memory: before the decision is persisted
-  // (context time) nothing matches; at offer time the same transaction already
-  // holds it. Quotes must be literal customer text of this batch.
-  const [current] = await db<Array<{ candidates: Array<{type:string;key:string;value:string;source_quote:string}> | null; price_only: boolean; retention_used: boolean }>>`
+  const [current] = await db<Array<{ candidates: Array<{type:string;key:string;value:string;source_quote:string}> | null; retention_used: boolean; asked: boolean }>>`
     SELECT
       (SELECT d.memory_candidates FROM agent_decisions d
         WHERE d.turn_id=${row.source_turn_id}::uuid AND d.decision_kind='reply' LIMIT 1) candidates,
-      EXISTS(SELECT 1 FROM agent_decisions d CROSS JOIN LATERAL jsonb_array_elements(
-          CASE WHEN jsonb_typeof(d.negotiation_observations)='array' THEN d.negotiation_observations ELSE '[]'::jsonb END) observation
-        WHERE d.turn_id=${row.source_turn_id}::uuid AND d.decision_kind='reply'
-          AND observation->>'status'='confirmed'
-          AND (observation->>'offering_code') IS NOT DISTINCT FROM ${input.selected_offering_code}) price_only,
       EXISTS(SELECT 1 FROM promotion_offers o JOIN promotion_offer_bonus_offerings b ON b.offer_id=o.id
         JOIN agent_decisions d ON d.turn_id=b.source_turn_id AND d.decision_kind='reply'
         WHERE o.conversation_id=${input.conversation_id}::uuid AND o.contact_id=${input.contact_id}::uuid
           AND o.package_mode='direct' AND b.source_turn_id<>${row.source_turn_id}::uuid
           AND jsonb_typeof(d.memory_candidates)='array'
           AND EXISTS(SELECT 1 FROM jsonb_array_elements(d.memory_candidates) candidate
-            WHERE candidate->>'type'='objection' AND candidate->>'key'=${PURCHASE_DECLINE_MEMORY_KEY})) retention_used
+            WHERE candidate->>'type'='objection' AND candidate->>'key'=${PURCHASE_DECLINE_MEMORY_KEY})) retention_used,
+      COALESCE((SELECT jsonb_typeof(last.memory_candidates)='array' AND EXISTS(
+          SELECT 1 FROM jsonb_array_elements(last.memory_candidates) candidate
+          WHERE candidate->>'key'=${PRICE_QUESTION_ASKED_MEMORY_KEY})
+        FROM agent_decisions last JOIN messages source ON source.id=last.turn_id
+        WHERE last.decision_kind='reply' AND source.conversation_id=${input.conversation_id}::uuid
+          AND source.contact_id=${input.contact_id}::uuid AND source.direction='inbound'
+          AND source.id<>${row.source_turn_id}::uuid
+          AND message_occurrence_v1(source.metadata,source.created_at) < (SELECT message_occurrence_v1(metadata,created_at)
+            FROM messages WHERE id=${row.source_turn_id}::uuid)
+        ORDER BY message_occurrence_v1(source.metadata,source.created_at) DESC, last.created_at DESC LIMIT 1),false) asked
   `;
-  const currentPrice = current?.candidates?.some(candidate => (candidate.type === 'objection' && candidate.key === 'price_objection'
-    || candidate.type === 'constraint' && candidate.key === 'price_only_barrier' && candidate.value === 'confirmed')
-    && priceObservationQuoteInBatchV1(candidate.source_quote, row.customer_messages)) === true;
-  const currentDecline = current?.candidates?.some(candidate => candidate.type === 'objection'
+  const decline = current?.candidates?.some(candidate => candidate.type === 'objection'
     && candidate.key === PURCHASE_DECLINE_MEMORY_KEY && declineQuoteInBatchV1(candidate.source_quote, row.customer_messages)) === true;
-  return deriveCourseBonusLadderV1({
-    price_evidence: (facts?.price_objection_count ?? 0) > 0 || facts?.price_only_barrier.status === 'confirmed'
-      || currentPrice || current?.price_only === true,
-    retention_decline: currentDecline, retention_used: current?.retention_used === true,
-  });
+  return { retention_used: current?.retention_used === true,
+    previous_turn_asked_price_question: current?.asked === true, purchase_decline_recorded: decline };
 }

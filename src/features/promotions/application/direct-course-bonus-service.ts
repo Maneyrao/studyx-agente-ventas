@@ -1,6 +1,6 @@
 import { readCourseBonusLadderV1 } from './read-course-bonus-ladder';
 import { customerBonusRequestThisTurnV1 } from './read-course-bonus-capability';
-import type { CourseBonusLadderV1 } from '@/shared/conversation/bonus-ladder';
+import { validateBonusMotiveV1, type BonusMotiveV1 } from '@/shared/conversation/bonus-motive';
 import { createHash } from 'node:crypto';
 import { getPostgresError, type DbClient } from '@/lib/db/types';
 import { loadCentralCargaBonusConfig } from '@/features/fulfillment/central-carga/config';
@@ -23,6 +23,9 @@ interface Identity {
 }
 export interface OfferDirectCourseBonusInputV1 extends Identity {
   readonly bonus_offering_codes: readonly string[];
+  /** Motive and declared moves of the authorized proposal; required unless the offer is a literal swap. */
+  readonly motive?: BonusMotiveV1;
+  readonly declared_moves?: readonly string[];
   readonly outbound: {
     readonly id: string;
     readonly content: string;
@@ -46,12 +49,12 @@ interface DurableResult {
   readonly promotion_cycle_id: string;
   readonly offer_version: number;
 }
-type Rejected = { readonly ok: false; readonly reason: DirectCourseBonusRejectionV1; readonly ladder?: CourseBonusLadderV1 };
+type Rejected = { readonly ok: false; readonly reason: DirectCourseBonusRejectionV1; readonly motive_reason?: string };
 export type DirectCourseBonusResultV1 = (DurableResult & { readonly outbound_message_id: string }) | Rejected;
 export type AcceptDirectCourseBonusResultV1 = DurableResult | Rejected;
 export const MAX_BONUS_SWAPS_PER_CONVERSATION_V1 = 3;
 class Rejection extends Error {
-  constructor(readonly reason: DirectCourseBonusRejectionV1, readonly ladder?: CourseBonusLadderV1) { super(reason); }
+  constructor(readonly reason: DirectCourseBonusRejectionV1, readonly motive_reason?: string) { super(reason); }
 }
 function reject(reason: DirectCourseBonusRejectionV1): never { throw new Rejection(reason); }
 
@@ -97,7 +100,7 @@ async function mayAcceptExistingPackage(input: Identity, db: DbClient): Promise<
 }
 async function execute<T>(db: DbClient, work: (tx: DbClient) => Promise<T>): Promise<T | Rejected> {
   try { return await transaction(db, work); } catch (error) {
-    if (error instanceof Rejection) return { ok: false, reason: error.reason, ...(error.ladder ? { ladder: error.ladder } : {}) };
+    if (error instanceof Rejection) return { ok: false, reason: error.reason, ...(error.motive_reason ? { motive_reason: error.motive_reason } : {}) };
     if (error instanceof Error && SQL_REJECTIONS[error.message]) {
       return { ok: false, reason: SQL_REJECTIONS[error.message] };
     }
@@ -140,8 +143,8 @@ async function lockIdentity(tx: DbClient, input: Identity) {
   if (!context) reject('invalid_offering');
   // Purchase selection determines the course, never the provenance of its
   // commercial evidence. Lock that evidence in both selected/interest paths.
-  const [interest]=await tx<Array<{interest_offering_code:string;price_objection_count:number;source_turn_id:string}>>`
-      SELECT interest.interest_offering_code,interest.price_objection_count,interest.source_turn_id
+  const [interest]=await tx<Array<{interest_offering_code:string;source_turn_id:string}>>`
+      SELECT interest.interest_offering_code,interest.source_turn_id
       FROM conversation_promotion_context_v1 interest
       WHERE interest.workspace_id=${input.workspace_id}::uuid AND interest.conversation_id=${input.conversation_id}::uuid
         AND interest.contact_id=${input.contact_id}::uuid
@@ -182,9 +185,7 @@ async function lockIdentity(tx: DbClient, input: Identity) {
     WHERE o.workspace_id=${input.workspace_id}::uuid AND o.conversation_id=${input.conversation_id}::uuid
       AND o.contact_id=${input.contact_id}::uuid AND o.package_mode='direct' AND o.status='offered'
     ORDER BY o.created_at DESC LIMIT 1 FOR UPDATE OF o`;
-  return {...context,selected_offering_code:resolved ?? livePackage?.paid_code ?? null,
-    structured_objection_authorized:source?.prior===true && interest.interest_offering_code===input.paid_offering_code
-      && interest.price_objection_count>0};
+  return {...context,selected_offering_code:resolved ?? livePackage?.paid_code ?? null};
 }
 async function resolveOffer(tx: DbClient, input: Identity, paidId: string): Promise<OfferRow | undefined> {
   const [offer] = await tx<OfferRow[]>`
@@ -302,8 +303,13 @@ export async function offerDirectCourseBonusV1(db: DbClient, input: OfferDirectC
       && offered[0]!.code===chosen.replaced_offering_code ? chosen : null;
     if (chosen?.kind==='swap' && !swap) reject('stale_offer_version');
     if (!chosen) {
-      const ladder=await readCourseBonusLadderV1({...input,selected_offering_code:context.selected_offering_code},tx);
-      if (!ladder?.eligible) throw new Rejection('ladder_step_pending',ladder ?? undefined);
+      // The motive comes from the current batch; no persisted memory authorizes it.
+      const evidence=await readCourseBonusLadderV1({...input,selected_offering_code:context.selected_offering_code},tx);
+      const motiveReason=validateBonusMotiveV1({motive:input.motive,moves:input.declared_moves ?? [],batch:currentBatch,
+        has_delivered_bonus:offered.length>0,retention_used:evidence?.retention_used ?? false,
+        purchase_decline_recorded:evidence?.purchase_decline_recorded ?? false,
+        previous_turn_asked_price_question:evidence?.previous_turn_asked_price_question ?? false});
+      if (motiveReason) throw new Rejection('ladder_step_pending',motiveReason);
     }
     if (!swap && offer && offer.offer_version>=limit) reject('bonus_limit_reached');
     // The model chooses the course; it must belong to the authorized set: the

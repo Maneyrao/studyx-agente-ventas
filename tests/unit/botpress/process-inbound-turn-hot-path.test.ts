@@ -1,4 +1,3 @@
-import { deriveCourseBonusLadderV1 } from '../../../src/shared/conversation/bonus-ladder';
 import { buildAuthorizedEgress } from '../../../src/features/orchestration/domain/egress-guard';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as evidencePersistence from '../../../botpress-agent/src/lib/observability/persist-turn-evidence';
@@ -405,7 +404,7 @@ describe('processInboundTurn hot path', () => {
       package_status: 'offered', promotion_code: 'test-offered', interest_offering_code: paid,
       bonus_offerings: [{ code: prior, display_name: priorName, position: 1 }],
       delivered_bonus_offerings: [{ code: prior, display_name: priorName, position: 1 }],
-      ladder: deriveCourseBonusLadderV1({ price_evidence: true, retention_used: false }),
+      ladder: { retention_used: false, previous_turn_asked_price_question: false },
       rule_bonus: { paid_offering_code: paid, paid_display_name: 'Introducción al Ecommerce', bonus_offering_code: next, display_name: 'Publicidad en Redes Sociales', position: 2 } };
     actionSpies.claim.mockResolvedValue(claimed);
     configuration.agentAPlannerlessV2Enabled = true;
@@ -419,7 +418,7 @@ describe('processInboundTurn hot path', () => {
       .mockImplementationOnce(async ({ context }: { context: AgentAContextV1 }) => generated({ ...base,
         move: { schema_version: 1, move: 'ask_course_information', secondary_moves: [], vetoes: [], course_reference: paid, confidence: 1 },
         response: { messages: [complete ? completeText : 'Te sumo Publicidad en Redes Sociales sin costo extra.'], call_offer: null },
-        proposed_action: { type: 'offer_course_bonus', interest_offering_code: paid, bonus_offering_code: next },
+        proposed_action: { type: 'offer_course_bonus', motive:{kind:'price_objection',quote:'es caro'}, interest_offering_code: paid, bonus_offering_code: next },
         course_mentions: complete ? [{ offering_code: paid, role: 'paid' }, { offering_code: prior, role: 'bonus' },
           { offering_code: next, role: 'bonus' }] : [{ offering_code: next, role: 'bonus' }],
         memory_candidates: [{ type: 'objection', key: 'price_objection', value: 'precio', source_quote: 'caro', confidence: 1 }],
@@ -439,7 +438,7 @@ describe('processInboundTurn hot path', () => {
     expect(actionSpies.agentABrainDeepSeek).toHaveBeenCalledTimes(2);
     expect(actionSpies.commit).toHaveBeenCalledTimes(2);
     const final = actionSpies.commit.mock.calls[1][0].input.agent_turn_v2.proposal;
-    expect(final.proposed_action).toEqual({ type: 'offer_course_bonus', interest_offering_code: paid, bonus_offering_code: next });
+    expect(final.proposed_action).toEqual({ type: 'offer_course_bonus', motive:{kind:'price_objection',quote:'es caro'}, interest_offering_code: paid, bonus_offering_code: next });
     // The model's own text is committed; the backend never substitutes fixed copy.
     expect(final.response.messages).toEqual([complete ? completeText : 'Te sumo Publicidad en Redes Sociales sin costo extra.']);
     expect(final.memory_candidates).toEqual(expect.arrayContaining([expect.objectContaining({ key: 'price_objection' })]));
@@ -2171,7 +2170,7 @@ describe('processInboundTurn hot path', () => {
             course_reference: 'marketing_digital', confidence: 1 },
           response: { messages: [safeText, rejectedBonusText], call_offer: null },
           proposed_action: { type: 'offer_course_bonus',
-            interest_offering_code: 'marketing_digital', bonus_offering_code: 'community_manager' },
+            motive:{kind:'price_objection',quote:'es caro'}, interest_offering_code: 'marketing_digital', bonus_offering_code: 'community_manager' },
           used_fact_ids: [], used_memory_ids: [], memory_candidates: [], repair_of: null,
         },
         provider: 'deepseek-direct', model: 'deepseek-v4-flash', latency_ms: 1, attempt_count: 1,
@@ -2270,7 +2269,7 @@ describe('processInboundTurn hot path', () => {
           response: { messages: generation === 1
             ? [safeText, rejectedBonusText] : [rejectedBonusText], call_offer: null },
           proposed_action: {
-            type: 'offer_course_bonus', interest_offering_code: 'redes-informaticas',
+            type: 'offer_course_bonus', motive:{kind:'price_objection',quote:'es caro'}, interest_offering_code: 'redes-informaticas',
             bonus_offering_code: 'community_manager',
           },
           used_fact_ids: [], used_memory_ids: [], memory_candidates: [],
@@ -2342,7 +2341,7 @@ describe('processInboundTurn hot path', () => {
         move: { schema_version: 1, move: 'unknown', secondary_moves: [], vetoes: [], confidence: 1 },
         response: { messages: ['Te sumo otro curso sin costo extra.'], call_offer: null },
         proposed_action: generation === 1 ? {
-          type: 'offer_course_bonus', interest_offering_code: 'redes-informaticas',
+          type: 'offer_course_bonus', motive:{kind:'price_objection',quote:'es caro'}, interest_offering_code: 'redes-informaticas',
           bonus_offering_code: 'fotografia_celulares_tiendas_online',
         } : { type: 'none' },
         used_fact_ids: [], used_memory_ids: [], memory_candidates: [],

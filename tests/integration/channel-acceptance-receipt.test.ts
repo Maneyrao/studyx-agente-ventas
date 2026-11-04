@@ -1,9 +1,9 @@
+import { offerBonusWithMotive } from '../helpers/offer-bonus';
 import { randomUUID } from 'node:crypto';
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { openLocalTestDatabase } from '../helpers/db';
 import { seedConversationForAgentTurn } from '../helpers/agent-turn-fixtures';
 import { recordDeliveryReport } from '@/lib/services/decision.service';
-import { offerDirectCourseBonusV1 } from '@/features/promotions/application/direct-course-bonus-service';
 import { readCourseBonusCapabilityV1 } from '@/features/promotions/application/read-course-bonus-capability';
 import { recordModelPriceObjection } from '../helpers/record-model-negotiation-facts';
 
@@ -38,7 +38,7 @@ run('channel acceptance receipt', () => {
     const f = await seedConversationForAgentTurn({ selected_offering_code: paid, first_message: 'Me parece caro' });
     await recordModelPriceObjection(db!, f.turn_id, { source_quote: 'Me parece caro' });
     const outbound = randomUUID();
-    const offer = await offerDirectCourseBonusV1(db!, { workspace_id: f.workspace_id, contact_id: f.contact_id,
+    const offer = await offerBonusWithMotive(db!, { workspace_id: f.workspace_id, contact_id: f.contact_id,
       conversation_id: f.conversation_id, paid_offering_code: paid, source_turn_id: f.turn_id,
       expected_offer_version: 0, bonus_offering_codes: [bonus], outbound: { id: outbound, content: 'oferta',
         provider: 'test', integration_id: 'test', channel: 'whatsapp', destination: 'test', idempotency_key: outbound } });
@@ -82,7 +82,7 @@ run('channel acceptance receipt', () => {
     const f = await seedConversationForAgentTurn({ selected_offering_code: paid, first_message: 'Me parece caro' });
     await recordModelPriceObjection(db!, f.turn_id, { source_quote: 'Me parece caro' });
     const outbound = randomUUID();
-    const offer = await offerDirectCourseBonusV1(db!, { workspace_id: f.workspace_id, contact_id: f.contact_id,
+    const offer = await offerBonusWithMotive(db!, { workspace_id: f.workspace_id, contact_id: f.contact_id,
       conversation_id: f.conversation_id, paid_offering_code: paid, source_turn_id: f.turn_id,
       expected_offer_version: 0, bonus_offering_codes: [bonus], outbound: { id: outbound, content: 'oferta',
         provider: 'test', integration_id: 'test', channel: 'whatsapp', destination: 'test', idempotency_key: outbound } });
@@ -105,7 +105,7 @@ run('channel acceptance receipt', () => {
     const f = await seedConversationForAgentTurn({ selected_offering_code: paid, first_message: 'Me parece caro' });
     await recordModelPriceObjection(db!, f.turn_id, { source_quote: 'Me parece caro' });
     const outbound = randomUUID();
-    const offer = await offerDirectCourseBonusV1(db!, { workspace_id: f.workspace_id, contact_id: f.contact_id,
+    const offer = await offerBonusWithMotive(db!, { workspace_id: f.workspace_id, contact_id: f.contact_id,
       conversation_id: f.conversation_id, paid_offering_code: paid, source_turn_id: f.turn_id,
       expected_offer_version: 0, bonus_offering_codes: [bonus], outbound: { id: outbound, content: 'oferta',
         provider: 'test', integration_id: 'test', channel: 'whatsapp', destination: 'test', idempotency_key: outbound } });

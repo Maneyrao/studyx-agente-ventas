@@ -27,13 +27,12 @@ const fixed = ['Mirá, con Introducción al Ecommerce armás tu tienda desde cer
 
 function proposal(): AgentATurnProposalV1 {
   return { schema_version: 1,
-    move: { schema_version: 1, move: 'ask_course_information', course_reference: paid,
-      secondary_moves: [], vetoes: [], confidence: 1 },
+    move: { schema_version: 1, move: 'price_objection', secondary_moves: [], vetoes: [], confidence: 1 },
     response: { messages: fixed, call_offer: null },
-    proposed_action: { type: 'offer_course_bonus', interest_offering_code: paid, bonus_offering_code: bonus },
+    proposed_action: { type: 'offer_course_bonus', motive:{kind:'price_objection',quote:'me sigue pareciendo caro'}, interest_offering_code: paid, bonus_offering_code: bonus },
     course_mentions: [{ offering_code: paid, role: 'paid' }, { offering_code: bonus, role: 'bonus' }],
     used_fact_ids: [`offering:${paid}:name:v1`, `offering:${bonus}:name:v1`], used_memory_ids: [],
-    memory_candidates: [{ type: 'objection', key: 'price_objection', value: 'precio', source_quote: 'caro', confidence: 1 }],
+    memory_candidates: [{ type: 'objection', key: 'price_objection', value: 'precio', source_quote: 'me sigue pareciendo caro', confidence: 1 }],
     confirmed_phone: null, profile_updates: [], profile_requests: [], repair_of: null };
 }
 
@@ -42,7 +41,7 @@ run('model-owned bonus at the actual commit and transactional boundaries', () =>
     ['promo_and_objection', 'Contame, qué es lo que más te frena para avanzar?',
       'noo\nquiero saber si hay alguna promo\nme parece caro el precio',
       { type: 'objection', key: 'price_objection', value: 'caro', source_quote: 'me parece caro el precio', confidence: 1 }],
-    ['paraphrased_barrier_confirmed', 'Contame, el precio es lo único que te frena o hay algo más que querés saber?',
+    ['answers_the_price_question', 'Contame, el precio es lo único que te frena o hay algo más que querés saber?',
       'solo el precio',
       { type: 'constraint', key: 'price_only_barrier', value: 'confirmed', source_quote: 'solo el precio', confidence: 1 }],
   ] as const)('live 2026-11-02 18:43: "ingles" without level resolves the promotion to Inglés 1 (%s)', async (_kind, agentAsked, customerReply, evidence) => {
@@ -53,7 +52,9 @@ run('model-owned bonus at the actual commit and transactional boundaries', () =>
     first.proposed_action = { type: 'none' };
     first.course_mentions = [];
     first.used_fact_ids = [];
-    first.memory_candidates = [];
+    // Structured declaration that this turn asked the price question (a later bare reply can quote against it).
+    first.memory_candidates = _kind === 'answers_the_price_question'
+      ? [{ type: 'constraint', key: 'price_question_asked', value: 'asked', source_quote: 'ingles', confidence: 1 }] : [];
     const firstCommit = await commitAgentDecision({ turn_id: f.turn_id, trace_id: f.trace_id,
       supports_multi_outbound: true, agent_turn_v2: { schema_version: 2 as const, proposal: first },
       decision: f.placeholderDecision as never, model: f.model as never });
@@ -64,13 +65,14 @@ run('model-owned bonus at the actual commit and transactional boundaries', () =>
       conversation_id: f.conversation_id, channel: 'text', selected_offering_code: null,
       source_turn_id: f.second_turn_id }, { db: db! });
     expect(capability).toMatchObject({ enabled: true, interest_offering_code: 'ingles_1',
-      // No regex decides: only the model's own memory (recorded below) is price evidence.
-      ladder: { eligible: false, price_evidence: false } });
+      // No persisted evidence: only the current message (quoted in the motive) is a permission.
+      // The price question the previous turn declared is read back structurally, never from its text.
+      ladder: { retention_used: false, previous_turn_asked_price_question: _kind === 'answers_the_price_question' } });
     expect(capability.bonus_candidates?.map(course => course.code)).toContain('ingles_2');
     const offer = proposal();
-    offer.move = { ...offer.move, move: 'defer_payment', course_reference: 'ingles_1' };
+    offer.move = { ...offer.move, move: 'price_objection' };
     offer.response = { messages: ['Te lo puedo resolver: si avanzás con Inglés 1, te bonifico Inglés 2. Arrancamos en 12 cuotas de USD 30?'], call_offer: null };
-    offer.proposed_action = { type: 'offer_course_bonus', interest_offering_code: 'ingles_1', bonus_offering_code: 'ingles_2' };
+    offer.proposed_action = { type: 'offer_course_bonus', motive:{kind:'price_objection',quote: evidence.source_quote}, interest_offering_code: 'ingles_1', bonus_offering_code: 'ingles_2' };
     offer.course_mentions = [{ offering_code: 'ingles_1', role: 'paid' }, { offering_code: 'ingles_2', role: 'bonus' }];
     offer.used_fact_ids = ['offering:ingles_1:name:v1', 'offering:ingles_2:name:v1', 'payment-workspace:monthly_12:label:v1'];
     offer.memory_candidates = [{ ...evidence }];
@@ -90,7 +92,7 @@ run('model-owned bonus at the actual commit and transactional boundaries', () =>
     const capability = await readCourseBonusCapabilityV1({ workspace_slug: 'studyx', contact_id: f.contact_id,
       conversation_id: f.conversation_id, channel: 'text', selected_offering_code: null,
       source_turn_id: f.second_turn_id }, { db: db! });
-    expect(capability.ladder).toMatchObject({ eligible: false, price_evidence: false });
+    expect(capability.ladder).toEqual({ retention_used: false, previous_turn_asked_price_question: false });
   });
 
   it.each([
@@ -134,20 +136,20 @@ run('model-owned bonus at the actual commit and transactional boundaries', () =>
       conversation_id: f.conversation_id, channel: 'text', selected_offering_code: null,
       source_turn_id: f.second_turn_id }, { db: db! });
     expect(before).toMatchObject({ enabled: true, interest_offering_code: marketing, may_offer_bonus: true,
-      ladder: { eligible: false, price_evidence: false } });
+      ladder: { retention_used: false, previous_turn_asked_price_question: false } });
     expect(before.bonus_candidates?.map(course => course.code)).toContain(advertising);
 
     const bonus = proposal();
-    bonus.move = { ...bonus.move, move: 'defer_payment', course_reference: marketing };
+    bonus.move = { ...bonus.move, move: 'price_objection' };
     bonus.response = { messages: [
       'El precio de Marketing Digital sigue igual y te sumo Publicidad en Redes Sociales sin costo extra. Avanzamos?',
     ], call_offer: 'Si querés, te llamo un momento y lo vemos juntos.' };
-    bonus.proposed_action = { type: 'offer_course_bonus', interest_offering_code: marketing,
+    bonus.proposed_action = { type: 'offer_course_bonus', motive:{kind:'price_objection',quote}, interest_offering_code: marketing,
       bonus_offering_code: advertising };
     bonus.course_mentions = [{ offering_code: marketing, role: 'paid' },
       { offering_code: advertising, role: 'bonus' }];
     bonus.used_fact_ids = [`offering:${marketing}:name:v1`, `offering:${advertising}:name:v1`];
-    // The model's own memory, quoted from this turn, is the price evidence.
+    // The motive quotes this turn's own text.
     bonus.memory_candidates = [{ type: 'objection', key: 'price_objection', value: 'caro', source_quote: quote, confidence: 1 }];
     const committed = await commitAgentDecision({ turn_id: f.second_turn_id, trace_id: randomUUID(),
       supports_multi_outbound: true, agent_turn_v2: { schema_version: 2 as const, proposal: bonus },
@@ -228,13 +230,14 @@ run('model-owned bonus at the actual commit and transactional boundaries', () =>
       delivery_attempt: committed.outbounds[1].delivery_attempt })).toMatchObject({ outcome: 'superseded' });
   });
 
-  it('commits the next bonus when this reply newly confirms price is the only barrier', async () => {
-    const f = await seedConversationForAgentTurn({ selected_offering_code: paid, first_message: 'Tenés alguna promo?' });
+  it('commits the next bonus when this reply states a new price complaint (second step)', async () => {
+    const f = await seedConversationForAgentTurn({ selected_offering_code: paid, first_message: 'Me parece caro. Tenés alguna promo?' });
     await seedPriorModelNegotiation(db!, f, 1);
     const firstOutbound = randomUUID();
     const first = await offerDirectCourseBonusV1(db!, { workspace_id: f.workspace_id, contact_id: f.contact_id,
       conversation_id: f.conversation_id, paid_offering_code: paid, source_turn_id: f.turn_id,
-      expected_offer_version: 0, bonus_offering_codes: [bonus], outbound: { id: firstOutbound, content: fixed[1],
+      expected_offer_version: 0, bonus_offering_codes: [bonus], motive: { kind: 'price_objection', quote: 'Me parece caro' }, declared_moves: ['price_objection'],
+      outbound: { id: firstOutbound, content: fixed[1],
         provider: 'test', integration_id: 'test', channel: 'whatsapp', destination: 'test', idempotency_key: firstOutbound } });
     expect(first).toMatchObject({ ok: true, offer_version: 1 });
     await db!`UPDATE outbound_deliveries SET state='leased',leased_by='price-only-test',lease_until=clock_timestamp()+interval '1 minute'
@@ -249,11 +252,11 @@ run('model-owned bonus at the actual commit and transactional boundaries', () =>
 
     const nextCode = 'publicidad_redes_sociales';
     const next = proposal();
-    next.move = { ...next.move, move: 'defer_payment', course_reference: paid };
+    next.move = { ...next.move, move: 'price_objection' };
     next.response = { messages: [
       'Te quedan Introducción al Ecommerce + Fotografía con Celulares para Tiendas Online + Publicidad en Redes Sociales sin costo extra, al mismo precio. Avanzamos?',
     ], call_offer: null };
-    next.proposed_action = { type: 'offer_course_bonus', interest_offering_code: paid, bonus_offering_code: nextCode };
+    next.proposed_action = { type: 'offer_course_bonus', motive:{kind:'price_objection',quote:'el precio es el único freno'}, interest_offering_code: paid, bonus_offering_code: nextCode };
     next.course_mentions = [{ offering_code: paid, role: 'paid' }, { offering_code: bonus, role: 'bonus' },
       { offering_code: nextCode, role: 'bonus' }];
     next.used_fact_ids = [`offering:${paid}:name:v1`, `offering:${bonus}:name:v1`, `offering:${nextCode}:name:v1`];
@@ -275,6 +278,105 @@ run('model-owned bonus at the actual commit and transactional boundaries', () =>
     expect(gifts.map(gift => gift.code)).toEqual([bonus, nextCode]);
   });
 
+  describe('the persisted objection no longer re-enables the bonus (real trace 2026-11-04)', () => {
+    async function afterFirstBonus() {
+      const f = await seedConversationForAgentTurn({ selected_offering_code: paid, first_message: 'Me parece caro. Tenés alguna promo?' });
+      await seedPriorModelNegotiation(db!, f, 2);
+      const firstOutbound = randomUUID();
+      const first = await offerDirectCourseBonusV1(db!, { workspace_id: f.workspace_id, contact_id: f.contact_id,
+        conversation_id: f.conversation_id, paid_offering_code: paid, source_turn_id: f.turn_id,
+        expected_offer_version: 0, bonus_offering_codes: [bonus], motive: { kind: 'price_objection', quote: 'Me parece caro' },
+        declared_moves: ['price_objection'], outbound: { id: firstOutbound, content: fixed[1],
+          provider: 'test', integration_id: 'test', channel: 'whatsapp', destination: 'test', idempotency_key: firstOutbound } });
+      if (!first.ok) throw new Error(first.reason);
+      await db!`UPDATE outbound_deliveries SET state='leased',leased_by='trace-test',lease_until=clock_timestamp()+interval '1 minute' WHERE message_id=${firstOutbound}::uuid`;
+      await db!`UPDATE outbound_deliveries SET state='submitted',submitted_at=clock_timestamp(),provider_message_id=${`bp-trace-${randomUUID()}`} WHERE message_id=${firstOutbound}::uuid`;
+      await db!`UPDATE outbound_deliveries SET state='delivered',delivered_at=clock_timestamp() WHERE message_id=${firstOutbound}::uuid`;
+      const customerTurn = async (text: string) => {
+        await db!`UPDATE messages SET content=${text},created_at=clock_timestamp(),metadata=metadata-'occurred_at_trusted' WHERE id=${f.second_turn_id}::uuid`;
+      };
+      const pkg = async () => (await db!`SELECT o.promotion_cycle_id,o.offer_version,
+        (SELECT count(*)::int FROM promotion_offer_bonus_offerings b WHERE b.offer_id=o.id) bonus_count
+        FROM promotion_offers o WHERE o.conversation_id=${f.conversation_id}::uuid ORDER BY o.created_at`);
+      const attempt = (text: string, p: AgentATurnProposalV1) => commitAgentDecision({ turn_id: f.second_turn_id, trace_id: randomUUID(),
+        supports_multi_outbound: true, agent_turn_v2: { schema_version: 2 as const, proposal: p },
+        decision: f.placeholderDecision as never, model: f.model as never });
+      return { f, customerTurn, pkg, attempt };
+    }
+    const nextCode = 'publicidad_redes_sociales';
+    const offerProposal = (move: string, kind: 'price_objection' | 'better_promotion_request' | 'promotion_rejection', quote: string, messages: string[]) => {
+      const p = proposal();
+      p.move = { schema_version: 1, move: move as never, secondary_moves: [], vetoes: [], confidence: 0.86 };
+      p.response = { messages, call_offer: null };
+      p.proposed_action = { type: 'offer_course_bonus', motive: { kind, quote }, interest_offering_code: paid, bonus_offering_code: nextCode };
+      p.course_mentions = [{ offering_code: paid, role: 'paid' }, { offering_code: bonus, role: 'bonus' }];
+      p.used_fact_ids = []; p.memory_candidates = [];
+      return p;
+    };
+    const noClaim = ['Es un solo curso pago, y el que ya te sumé queda incluido. Cómo seguimos con tu inscripción?'];
+    const claims = ['Te sumo Publicidad en Redes Sociales sin costo. Avanzamos?'];
+
+    it('clarification ("osea me regalas otro curso?" + "dos por uno?") with an invalid motive: the package is unchanged and the text is still sent', async () => {
+      const { f, customerTurn, pkg, attempt } = await afterFirstBonus();
+      await customerTurn('osea me regalas otro curso?\ndos por uno?');
+      const before = await pkg();
+      const committed = await attempt('', offerProposal('ask_course_information', 'price_objection', 'osea me regalas otro curso?', noClaim));
+      expect(committed.status).toBe('committed');
+      expect(committed.outbounds.map(part => part.content).join(' ')).toContain('Es un solo curso pago');
+      expect(await pkg()).toEqual(before);
+      const [decision] = await db!`SELECT business_action FROM agent_decisions WHERE turn_id=${f.second_turn_id}`;
+      expect(decision.business_action).toBeNull();
+    });
+
+    it('the same trace with copy that claims the gift is rejected for repair, leaving the package untouched', async () => {
+      const { customerTurn, pkg, attempt } = await afterFirstBonus();
+      await customerTurn('osea me regalas otro curso?\ndos por uno?');
+      const before = await pkg();
+      await expect(attempt('', offerProposal('ask_course_information', 'price_objection', 'dos por uno?', claims)))
+        .rejects.toMatchObject({ subjects: expect.arrayContaining(['direct_bonus:ladder_step_pending', 'bonus_ladder:missing:current_message_motive']) });
+      expect(await pkg()).toEqual(before);
+    });
+
+    it('a payment question never opens a bonus', async () => {
+      const { customerTurn, pkg, attempt } = await afterFirstBonus();
+      const before = await pkg();
+      await customerTurn('¿cómo sería el pago?');
+      const paymentCommit = await attempt('', offerProposal('ask_payment_options', 'price_objection', '¿cómo sería el pago?', noClaim));
+      expect(paymentCommit.status).toBe('committed');
+      expect(await pkg()).toEqual(before);
+    });
+
+    it('explicit_promotion_request whose quote is not in the current batch is rejected', async () => {
+      const { customerTurn, pkg, attempt } = await afterFirstBonus();
+      const before = await pkg();
+      await customerTurn('dale, quiero pagar');
+      await expect(attempt('', offerProposal('explicit_promotion_request', 'better_promotion_request', 'me gustaría otra promo', claims)))
+        .rejects.toMatchObject({ subjects: expect.arrayContaining(['direct_bonus:ladder_step_pending']) });
+      expect(await pkg()).toEqual(before);
+    });
+
+    it('a new price complaint declared as price_objection with its quote adds the second bonus', async () => {
+      const { customerTurn, pkg, attempt } = await afterFirstBonus();
+      await customerTurn('igual sigue siendo caro');
+      const p = offerProposal('price_objection', 'price_objection', 'igual sigue siendo caro',
+        ['Te quedan Introducción al Ecommerce + Fotografía con Celulares para Tiendas Online + Publicidad en Redes Sociales sin costo extra, al mismo precio. Avanzamos?']);
+      p.course_mentions = [{ offering_code: paid, role: 'paid' }, { offering_code: bonus, role: 'bonus' }, { offering_code: nextCode, role: 'bonus' }];
+      const committed = await attempt('', p);
+      expect(committed.status).toBe('committed');
+      expect(await pkg()).toMatchObject([{ offer_version: 2, bonus_count: 2 }]);
+    });
+
+    it('"me bonificas Publicidad en Redes Sociales?" with explicit_promotion_request is allowed within limits', async () => {
+      const { customerTurn, pkg, attempt } = await afterFirstBonus();
+      await customerTurn('me bonificas Publicidad en Redes Sociales?');
+      const p = offerProposal('explicit_promotion_request', 'better_promotion_request', 'me bonificas Publicidad en Redes Sociales?',
+        ['Claro, te sumo Publicidad en Redes Sociales sin costo extra junto a lo que ya tienes. Avanzamos?']);
+      p.course_mentions = [{ offering_code: paid, role: 'paid' }, { offering_code: bonus, role: 'bonus' }, { offering_code: nextCode, role: 'bonus' }];
+      expect((await attempt('', p)).status).toBe('committed');
+      expect(await pkg()).toMatchObject([{ offer_version: 2, bonus_count: 2 }]);
+    });
+  });
+
   it.each(['persisted_selection', 'interest_only'] as const)(
     'automatically seals a delivered offered package in the actual payment-link commit, without accept_promotion (%s)', async identityKind => {
       vi.stubEnv('PAYMENT_LINK_CONTADO', 'https://buy.stripe.com/test_rule_a_auto');
@@ -286,7 +388,8 @@ run('model-owned bonus at the actual commit and transactional boundaries', () =>
       const outbound = randomUUID();
       const offer = await offerDirectCourseBonusV1(db!, { workspace_id: f.workspace_id, contact_id: f.contact_id,
         conversation_id: f.conversation_id, paid_offering_code: paid, source_turn_id: f.turn_id,
-        expected_offer_version: 0, bonus_offering_codes: [bonus], outbound: { id: outbound, content: fixed[1],
+        expected_offer_version: 0, bonus_offering_codes: [bonus], motive: { kind: 'price_objection', quote: 'Hola, soy Ana Pérez' }, declared_moves: ['price_objection'],
+        outbound: { id: outbound, content: fixed[1],
           provider: 'test', integration_id: 'test', channel: 'whatsapp', destination: 'test', idempotency_key: outbound } });
       if (!offer.ok) throw new Error(offer.reason);
       await db!`UPDATE outbound_deliveries SET state='leased' WHERE message_id=${outbound}`;

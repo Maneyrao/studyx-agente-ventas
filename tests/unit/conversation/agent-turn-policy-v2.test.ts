@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import type { AgentATurnProposalV1 } from '@/features/conversation/domain/agent-a-brain';
 import type { CanonicalFactV1, ConversationStateV1 } from '@/features/conversation/domain/conversation-pipeline';
 import { createDefaultConversationStateV1 } from '@/features/conversation/domain/conversation-planner';
-import { deriveCourseBonusLadderV1 } from '@/shared/conversation/bonus-ladder';
 import { authorizeAgentTurnV2 } from '@/features/conversation/domain/agent-turn-policy-v2';
 import marketingBudget from '../fixtures/marketing-budget-natural-59cab80.json';
 import { contactProfileRequestsForPartsV1 } from '@/features/orchestration/domain/physical-outbound-texts';
@@ -17,6 +16,7 @@ const offerings = [
   { code: 'redes_informaticas', display_name: 'Redes Informáticas', aliases: ['redes'] },
   { code: 'excel_integral', display_name: 'Excel Integral', aliases: ['excel'] },
   { code: 'marketing_digital', display_name: 'Marketing Digital', aliases: [] },
+  { code: 'community_manager', display_name: 'Community Manager', aliases: [] },
 ];
 
 const facts: CanonicalFactV1[] = [
@@ -57,6 +57,8 @@ const facts: CanonicalFactV1[] = [
 function state(overrides: Partial<ConversationStateV1> = {}): ConversationStateV1 {
   return { ...createDefaultConversationStateV1(identity), ...overrides };
 }
+
+const PRICE_MOVE = { schema_version: 1 as const, move: 'price_objection' as const, secondary_moves: [] as never[], vetoes: [] as never[], confidence: 0.95 };
 
 function proposal(overrides: Partial<AgentATurnProposalV1> = {}): AgentATurnProposalV1 {
   return {
@@ -213,10 +215,10 @@ describe('plannerless Agent A authority', () => {
         may_schedule_checkin: false, may_request_review: false, may_accept_offer: false, may_send_promoted_payment: false,
         promotion_code: null, interest_offering_code: 'redes_informaticas', bonus_offerings: [],
         bonus_candidates: [{ code: 'excel_integral', display_name: 'Excel Integral' }],
-        ladder: deriveCourseBonusLadderV1({ price_evidence: true, retention_used: false }) };
+        ladder: { retention_used: false, previous_turn_asked_price_question: false } };
       const current = state({ selected_offering_code: 'redes_informaticas', awaiting_reply: awaiting });
       const bonusResult = authorize({ state: current, courseBonus: cap, proposal: proposal({
-        proposed_action: { type: 'offer_course_bonus', interest_offering_code: 'redes_informaticas', bonus_offering_code: 'excel_integral' },
+        proposed_action: { type: 'offer_course_bonus', motive:{kind:'price_objection',quote:'me parece muy caro'}, interest_offering_code: 'redes_informaticas', bonus_offering_code: 'excel_integral' },
         response: { messages: ['Te sumo Excel Integral.'] }, course_mentions: [{ offering_code: 'excel_integral', role: 'bonus' }] }) });
       expect(bonusResult).toMatchObject({ ok: false,
         rejection_subjects: ['forbidden_promise', 'direct_bonus:sale_already_closed'] });
@@ -226,12 +228,12 @@ describe('plannerless Agent A authority', () => {
     });
 
   it('uses the paid identity of a validated bonus effect without inventing a purchase selection',()=>{
-    const result=authorize({state:state(),courseBonus:{enabled:true,max_bonus_courses:3,may_offer_bonus:true,status:'checkin_available',
+    const result=authorize({state:state(),customerText:'me parece muy caro',courseBonus:{enabled:true,max_bonus_courses:3,may_offer_bonus:true,status:'checkin_available',
       may_schedule_checkin:false,may_request_review:false,may_accept_offer:false,may_send_promoted_payment:false,promotion_code:null,
-      interest_offering_code:'redes_informaticas',bonus_offerings:[],bonus_candidates:[{code:'excel_integral',display_name:'Excel Integral'}],ladder:deriveCourseBonusLadderV1({price_evidence:true,retention_used:false})},
-      proposal:proposal({response:{messages:['Redes Informáticas e Excel Integral pueden servirte.']},
+      interest_offering_code:'redes_informaticas',bonus_offerings:[],bonus_candidates:[{code:'excel_integral',display_name:'Excel Integral'}],ladder:{retention_used:false,previous_turn_asked_price_question:false}},
+      proposal:proposal({move:PRICE_MOVE,response:{messages:['Redes Informáticas e Excel Integral pueden servirte.']},
         course_mentions:[{offering_code:'redes_informaticas',role:'paid'},{offering_code:'excel_integral',role:'bonus'}],
-        proposed_action:{type:'offer_course_bonus',interest_offering_code:'redes_informaticas',bonus_offering_code:'excel_integral'}})});
+        proposed_action:{type:'offer_course_bonus',motive:{kind:'price_objection',quote:'me parece muy caro'}, interest_offering_code:'redes_informaticas',bonus_offering_code:'excel_integral'}})});
     expect(result).toMatchObject({ok:true,action:{type:'offer_course_bonus'},transition:{selected_offering_code:null}});
   });
   it.each(['offered','cancelled','expired'] as const)('uses only a delivered current package identity for a selectionless recap (%s)',status=>{
@@ -239,7 +241,7 @@ describe('plannerless Agent A authority', () => {
       may_schedule_checkin:false,may_request_review:false,may_accept_offer:false,may_send_promoted_payment:false,promotion_code:'p',
       interest_offering_code:'redes_informaticas',bonus_offerings:[{code:'excel_integral',display_name:'Excel Integral',position:1}],
       delivered_bonus_offerings:[{code:'excel_integral',display_name:'Excel Integral',position:1}]},
-      proposal:proposal({response:{messages:['Redes Informáticas e Excel Integral pueden servirte.']},
+      proposal:proposal({move:PRICE_MOVE,response:{messages:['Redes Informáticas e Excel Integral pueden servirte.']},
         course_mentions:[{offering_code:'redes_informaticas',role:'paid'},{offering_code:'excel_integral',role:'bonus'}]})});
     expect(result.ok).toBe(status==='offered');
   });
@@ -609,17 +611,17 @@ describe('plannerless Agent A authority', () => {
       : {ok:true,action:{type:'send_payment_link',offering_code:to,payment_plan:'one_time'}});
   });
   it('authorizes exactly one active direct course only with the capability', () => {
-    const p = proposal({ response: { messages: ['Te sumo Excel Integral y el precio sigue igual.'] },
+    const p = proposal({ move: PRICE_MOVE, response: { messages: ['Te sumo Excel Integral y el precio sigue igual.'] },
       course_mentions: [{ offering_code: 'redes_informaticas', role: 'paid' }, { offering_code: 'excel_integral', role: 'bonus' }],
       proposed_action: { type: 'offer_course_bonus',
-      interest_offering_code: 'redes_informaticas', bonus_offering_code: 'excel_integral' } });
+      motive:{kind:'price_objection',quote:'me parece muy caro'}, interest_offering_code: 'redes_informaticas', bonus_offering_code: 'excel_integral' } });
     const cap: NonNullable<Parameters<typeof authorizeAgentTurnV2>[0]['course_bonus']> = { status: 'checkin_available', enabled: true, max_bonus_courses: 2,
-      ladder: deriveCourseBonusLadderV1({ price_evidence: true, retention_used: false }),
+      ladder: { retention_used: false, previous_turn_asked_price_question: false },
       may_offer_bonus: true, may_schedule_checkin: false, may_request_review: false,
       may_accept_offer: false, may_send_promoted_payment: false, promotion_code: null,
       interest_offering_code: 'redes_informaticas', bonus_offerings: [],
       bonus_candidates: [{ code: 'excel_integral', display_name: 'Excel Integral' }] };
-    expect(authorize({ proposal: p, state: state({selected_offering_code:'redes_informaticas'}),
+    expect(authorize({ proposal: p, state: state({selected_offering_code:'redes_informaticas'}), customerText: 'me parece muy caro',
       courseBonus: cap })).toMatchObject({ok:true, action:p.proposed_action});
     const neutral = { ...p, response: { messages: ['Seguimos con tu curso.'] }, course_mentions: [] };
     expect(authorize({ proposal:neutral, state:state({selected_offering_code:'redes_informaticas'}),
@@ -635,104 +637,151 @@ describe('plannerless Agent A authority', () => {
       courseBonus:{...cap,bonus_candidates:[{code:'camaras_seguridad',display_name:'Cámaras'}]} }))
       .toMatchObject({ok:true, action:{type:'none'}});
   });
-  // Model-owned bonus (AGENTS.md "Venta interpretada por el modelo"): the model proposes, the backend validates.
-  const ruleCap=(evidence:boolean,extra:Record<string,unknown>={})=>({status:'checkin_available' as const,enabled:true,max_bonus_courses:2 as const,may_offer_bonus:true,
-    ladder:deriveCourseBonusLadderV1({price_evidence:evidence,retention_used:false}),
-    may_schedule_checkin:false,may_request_review:false,may_accept_offer:false,may_send_promoted_payment:false,
-    promotion_code:null,interest_offering_code:'redes_informaticas',bonus_offerings:[],
-    bonus_candidates:[{code:'excel_integral',display_name:'Excel Integral'}],...extra});
-  const bonusProposal=(memory:Array<{type:string;key:string;value:string;source_quote:string;confidence:number}>=[])=>proposal({
-    response:{messages:['Te sumo Excel Integral sin costo; el precio de Redes Informáticas sigue igual. Avanzamos?']},
-    course_mentions:[{offering_code:'redes_informaticas',role:'paid'},{offering_code:'excel_integral',role:'bonus'}],
-    proposed_action:{type:'offer_course_bonus',interest_offering_code:'redes_informaticas',bonus_offering_code:'excel_integral'},
-    memory_candidates:memory as never});
-  const objection={type:'objection',key:'price_objection',value:'caro',source_quote:'me sigue pareciendo caro',confidence:1};
-  const decline={type:'objection',key:'purchase_decline',value:'no',source_quote:'no gracias, lo dejo',confidence:1};
-  const rejectedBy=(reason:string)=>({ok:false,rejection_subjects:expect.arrayContaining([`direct_bonus:${reason}`])});
-  const selected=()=>state({selected_offering_code:'redes_informaticas'});
-  it('no instant trigger: a promo request with no price evidence is pending, whatever the customer text says', () => {
-    expect(authorize({state:selected(),customerText:'me hacés un descuento?',proposal:bonusProposal(),courseBonus:ruleCap(false)}))
-      .toMatchObject(rejectedBy('ladder_step_pending'));
+  // Bonus by current-message motive (AGENTS.md "Bonificación por motivo actual"): the model proposes with
+  // motive {kind, quote}; the backend validates structure and literal facts of the CURRENT batch only.
+  type Kind = 'price_objection' | 'promotion_rejection' | 'better_promotion_request' | 'purchase_decline';
+  const MOVE = (move: string, secondary: string[] = []) => ({ schema_version: 1 as const, move: move as never, secondary_moves: secondary as never[], vetoes: [] as never[], confidence: 0.9 });
+  const DELIVERED = { bonus_offerings: [{ code: 'camaras_seguridad', display_name: 'Cámaras', position: 1 }],
+    delivered_bonus_offerings: [{ code: 'camaras_seguridad', display_name: 'Cámaras', position: 1 }],
+    status: 'offer_available', package_status: 'offered', promotion_code: 'p' };
+  const ruleCap = (delivered: boolean, extra: Record<string, unknown> = {}) => ({ status: 'checkin_available' as const, enabled: true, max_bonus_courses: 3 as const, may_offer_bonus: true,
+    ladder: { retention_used: false, previous_turn_asked_price_question: false },
+    may_schedule_checkin: false, may_request_review: false, may_accept_offer: false, may_send_promoted_payment: false,
+    promotion_code: null, interest_offering_code: 'redes_informaticas', bonus_offerings: [],
+    bonus_candidates: [{ code: 'excel_integral', display_name: 'Excel Integral' }, { code: 'community_manager', display_name: 'Community Manager' }],
+    ...(delivered ? DELIVERED : {}), ...extra });
+  const bonusProposal = (o: { kind?: Kind; quote?: string; move?: ReturnType<typeof MOVE>; text?: string;
+    code?: string; mentions?: Array<{ offering_code: string; role: 'paid' | 'bonus' }>; memory?: Array<{ type: string; key: string; value: string; source_quote: string; confidence: number }> } = {}) => {
+    const code = o.code ?? 'excel_integral';
+    const name = code === 'community_manager' ? 'Community Manager' : 'Excel Integral';
+    return proposal({
+      move: o.move ?? PRICE_MOVE,
+      response: { messages: [o.text ?? `Te sumo ${name} sin costo; el precio de Redes Informáticas sigue igual. Avanzamos?`] },
+      course_mentions: o.mentions ?? [{ offering_code: 'redes_informaticas', role: 'paid' }, { offering_code: code, role: 'bonus' }],
+      proposed_action: { type: 'offer_course_bonus', motive: { kind: o.kind ?? 'price_objection', quote: o.quote ?? 'me parece muy caro' },
+        interest_offering_code: 'redes_informaticas', bonus_offering_code: code },
+      memory_candidates: (o.memory ?? []) as never });
+  };
+  const decline = { type: 'objection', key: 'purchase_decline', value: 'no', source_quote: 'no gracias, lo dejo', confidence: 1 };
+  const rejectedBy = (reason: string) => ({ ok: false, rejection_subjects: expect.arrayContaining([`direct_bonus:${reason}`]) });
+  const motiveRejected = { ok: false, rejection_subjects: expect.arrayContaining(['direct_bonus:ladder_step_pending', 'bonus_ladder:missing:current_message_motive']) };
+  const selected = () => state({ selected_offering_code: 'redes_informaticas' });
+  const run = (customerText: string, p: AgentATurnProposalV1, courseBonus: unknown) =>
+    authorize({ state: selected(), customerText, proposal: p, courseBonus: courseBonus as never });
+  const noClaim = 'Entiendo, te explico cómo funciona lo que ya tienes incluido.';
+
+  it('a price complaint in the current message authorizes the first bonus', () => {
+    expect(run('me parece muy caro', bonusProposal(), ruleCap(false))).toMatchObject({ ok: true, action: { type: 'offer_course_bonus' } });
+  });
+  it('no instant trigger: a promo request whose quote is not in the current message is rejected', () => {
+    expect(run('me hacés un descuento?', bonusProposal(), ruleCap(false))).toMatchObject(motiveRejected);
+  });
+  it('REAL TRACE: after the first bonus, a clarification ("me regalas otro curso?", "dos por uno?") is not a motive', () => {
+    const batch = 'osea me regalas otro curso? dos por uno?';
+    const clarification = MOVE('ask_course_information');
+    // The model proposed a price_objection motive quoting the clarification, with move ask_course_information.
+    expect(run(batch, bonusProposal({ move: clarification, quote: 'osea me regalas otro curso?', code: 'community_manager' }), ruleCap(true)))
+      .toMatchObject(motiveRejected);
+    // Whatever kind it declares, a clarification move never matches.
+    for (const kind of ['price_objection', 'promotion_rejection', 'better_promotion_request', 'purchase_decline'] as const)
+      expect(run(batch, bonusProposal({ move: clarification, kind, quote: 'dos por uno?' }), ruleCap(true))).toMatchObject(motiveRejected);
+    // Conversational text that makes no bonus claim is kept: only the effect is dropped.
+    const kept = run(batch, bonusProposal({ move: clarification, quote: 'dos por uno?', text: noClaim, mentions: [], code: 'community_manager' }), ruleCap(true));
+    expect(kept).toMatchObject({ ok: true, action: { type: 'none' }, response: noClaim });
+  });
+  it('explicit_promotion_request whose quote is not in the current batch is rejected', () => {
+    expect(run('dos por uno?', bonusProposal({ move: MOVE('explicit_promotion_request'), kind: 'better_promotion_request',
+      quote: 'quiero una mejor promo' }), ruleCap(true))).toMatchObject(motiveRejected);
+  });
+  it('a payment question never opens a bonus, whatever motive the proposal declares', () => {
+    const question = '¿cómo sería el pago?';
+    expect(run(question, bonusProposal({ move: MOVE('ask_payment_options'), quote: question, code: 'community_manager' }), ruleCap(true))).toMatchObject(motiveRejected);
+    expect(run(question, bonusProposal({ move: MOVE('ask_payment_options', ['price_objection']), quote: question }), ruleCap(true))).toMatchObject(motiveRejected);
+    expect(run(question, bonusProposal({ move: MOVE('ask_payment_options', ['explicit_promotion_request']), kind: 'better_promotion_request', quote: question }), ruleCap(true))).toMatchObject(motiveRejected);
+    expect(run(question, bonusProposal({ move: MOVE('ask_payment_options'), quote: question, text: noClaim, mentions: [] }), ruleCap(true)))
+      .toMatchObject({ ok: true, action: { type: 'none' } });
+  });
+  it('second step: a new complaint declared as price_objection with its quote is allowed', () => {
+    expect(run('igual sigue siendo caro', bonusProposal({ quote: 'igual sigue siendo caro', code: 'community_manager' }), ruleCap(true)))
+      .toMatchObject({ ok: true, action: { type: 'offer_course_bonus' } });
+  });
+  it('"dale, quiero pagar" is a buying signal, not a motive', () => {
+    expect(run('dale, quiero pagar', bonusProposal({ move: MOVE('request_payment_link'), quote: 'dale, quiero pagar' }), ruleCap(true))).toMatchObject(rejectedBy('sale_already_closed'));
+  });
+  it('a persisted price objection alone never authorizes: any later reply without a motive in it is rejected', () => {
+    // The old path read a persisted objection; the capability now carries no such evidence at all.
+    for (const reply of ['ok', 'listo', 'y cuánto dura?'])
+      expect(run(reply, bonusProposal({ quote: 'me sigue pareciendo caro' }), ruleCap(true))).toMatchObject(motiveRejected);
+    expect(run('ok', bonusProposal({ move: MOVE('ask_course_information'), quote: 'ok' }), ruleCap(false))).toMatchObject(motiveRejected);
+  });
+  it('"sí, pero…": a bare "sí" quote needs the previous turn\'s structured price question and a whole fragment', () => {
+    const asked = ruleCap(false, { ladder: { retention_used: false, previous_turn_asked_price_question: true } });
+    const sí = bonusProposal({ quote: 'sí' });
+    const síUpper = bonusProposal({ quote: 'Sí' });
+    expect(authorize({ state: selected(), proposal: sí, courseBonus: ruleCap(false) as never, customerText: 'sí' })).toMatchObject(motiveRejected);
+    expect(authorize({ state: selected(), proposal: sí, courseBonus: ruleCap(false) as never, customerText: 'sí, pero lo voy a pensar' })).toMatchObject(motiveRejected);
+    expect(authorize({ state: selected(), proposal: sí, courseBonus: asked as never, customerText: 'sí, pero lo voy a pensar' })).toMatchObject(motiveRejected);
+    expect(authorize({ state: selected(), proposal: sí, courseBonus: asked as never, customerText: 'sí' })).toMatchObject({ ok: true, action: { type: 'offer_course_bonus' } });
+    expect(authorize({ state: selected(), proposal: síUpper, courseBonus: asked as never, customerText: 'Sí.' })).toMatchObject({ ok: true });
+  });
+  it('a question is never a price objection even with a coherent move', () => {
+    expect(run('es muy caro?', bonusProposal({ quote: 'es muy caro' }), ruleCap(false))).toMatchObject(motiveRejected);
+  });
+  it('"me bonificas Community Manager?" with explicit_promotion_request is allowed within the limits', () => {
+    const p = bonusProposal({ move: MOVE('explicit_promotion_request'), kind: 'better_promotion_request',
+      quote: 'me bonificas Community Manager?', code: 'community_manager' });
+    expect(run('me bonificas Community Manager?', p, ruleCap(true))).toMatchObject({ ok: true, action: { type: 'offer_course_bonus', bonus_offering_code: 'community_manager' } });
+    // First bonus: a promotion request without price in between goes back to the price question.
+    expect(run('me bonificas Community Manager?', p, ruleCap(false))).toMatchObject(motiveRejected);
+    // Same limits: an inactive/unauthorized course is still rejected.
+    expect(run('me bonificas Community Manager?', p, ruleCap(true, { bonus_candidates: [] }))).toMatchObject(rejectedBy('invalid_offering'));
+  });
+  it('promotion_rejection needs a delivered offer and a coherent move', () => {
+    const p = bonusProposal({ move: MOVE('price_objection'), kind: 'promotion_rejection', quote: 'eso no me sirve' });
+    expect(run('eso no me sirve', p, ruleCap(true))).toMatchObject({ ok: true, action: { type: 'offer_course_bonus' } });
+    expect(run('eso no me sirve', p, ruleCap(false))).toMatchObject(motiveRejected);
+    expect(run('eso no me sirve', bonusProposal({ move: MOVE('ask_course_information'), kind: 'promotion_rejection', quote: 'eso no me sirve' }), ruleCap(true))).toMatchObject(motiveRejected);
   });
   it('H1: a bonus effect whose copy does not name the bonus course rejects only the effect', () => {
     const unnamed = proposal({ ...bonusProposal(), course_mentions: [], response: { messages: ['Te sumo otro curso sin costo; el precio sigue igual. Avanzamos?'] } });
-    expect(authorize({state:selected(),customerText:'ok',proposal:unnamed,courseBonus:ruleCap(true)}))
-      .toMatchObject({ok:true,action:{type:'none'}});
-    const earlier = proposal({ ...bonusProposal(), course_mentions: [], response: { messages: ['Ya tienes Word con tu curso, cualquier duda me dices.'] } });
-    expect(authorize({state:selected(),customerText:'ok',proposal:earlier,courseBonus:ruleCap(true)}))
-      .toMatchObject({ok:true,action:{type:'none'}});
+    expect(run('me parece muy caro', unnamed, ruleCap(false))).toMatchObject({ ok: true, action: { type: 'none' } });
     const accented = proposal({ ...bonusProposal(), response: { messages: ['Te sumo EXCEL INTEGRAL sin costo.'] } });
-    expect(authorize({state:selected(),customerText:'ok',proposal:accented,courseBonus:ruleCap(true)}))
-      .toMatchObject({ok:true,action:{type:'offer_course_bonus'}});
+    expect(run('me parece muy caro', accented, ruleCap(false))).toMatchObject({ ok: true, action: { type: 'offer_course_bonus' } });
   });
-  it('persisted price evidence (one objection, no count of two, no call prerequisite) authorizes a candidate', () => {
-    expect(authorize({state:selected(),customerText:'ok',proposal:bonusProposal(),courseBonus:ruleCap(true)}))
-      .toMatchObject({ok:true,action:{type:'offer_course_bonus'}});
+  it('retention: a declared purchase decline with its memory authorizes once per conversation', () => {
+    const p = (extra = {}) => bonusProposal({ move: MOVE('decline_purchase'), kind: 'purchase_decline', quote: 'no gracias, lo dejo', memory: [decline], ...extra });
+    expect(run('no gracias, lo dejo', p(), ruleCap(false))).toMatchObject({ ok: true, action: { type: 'offer_course_bonus' } });
+    expect(run('no gracias, lo dejo', p(), ruleCap(false, { ladder: { retention_used: true, previous_turn_asked_price_question: false } }))).toMatchObject(motiveRejected);
+    expect(run('no gracias, lo dejo', p({ memory: [] }), ruleCap(false))).toMatchObject(motiveRejected);
+    expect(run('no gracias', p(), ruleCap(false))).toMatchObject(motiveRejected);
+    expect(run('no gracias, lo dejo', p({ move: MOVE('ask_course_information') }), ruleCap(false))).toMatchObject(motiveRejected);
   });
-  it('this turn\'s objection memory with a literal quote is price evidence on the first objection', () => {
-    expect(authorize({state:selected(),customerText:'me sigue pareciendo caro',
-      proposal:bonusProposal([objection]),courseBonus:ruleCap(false)})).toMatchObject({ok:true,action:{type:'offer_course_bonus'}});
+  it('affinity is set membership; the paid course is never a bonus', () => {
+    expect(run('me parece muy caro', bonusProposal(), ruleCap(false, { bonus_candidates: [{ code: 'camaras_seguridad', display_name: 'Cámaras' }] }))).toMatchObject(rejectedBy('invalid_offering'));
+    expect(run('me parece muy caro', bonusProposal(), ruleCap(false, { bonus_candidates: [] }))).toMatchObject(rejectedBy('invalid_offering'));
+    const paid = proposal({ move: PRICE_MOVE, proposed_action: { type: 'offer_course_bonus', motive: { kind: 'price_objection', quote: 'me parece muy caro' },
+      interest_offering_code: 'redes_informaticas', bonus_offering_code: 'redes_informaticas' } });
+    expect(run('me parece muy caro', paid, ruleCap(false))).toMatchObject({ ok: true, action: { type: 'none' } });
   });
-  it('a quote that is not in the customer text, a question or a negation does not count', () => {
-    expect(authorize({state:selected(),customerText:'ok',proposal:bonusProposal([objection]),courseBonus:ruleCap(false)})).toMatchObject({ok:false});
-    expect(authorize({state:selected(),customerText:'es caro?',proposal:bonusProposal([{...objection,source_quote:'caro'}]),courseBonus:ruleCap(false)})).toMatchObject({ok:false});
+  it('limits: three bonuses reached rejects the fourth; repeated course; one per action', () => {
+    const three = [1, 2, 3].map(position => ({ code: `c${position}`, display_name: `C${position}`, position }));
+    expect(run('igual sigue siendo caro', bonusProposal({ quote: 'igual sigue siendo caro' }),
+      ruleCap(true, { bonus_offerings: three, delivered_bonus_offerings: three }))).toMatchObject(rejectedBy('bonus_limit_reached'));
+    expect(run('me parece muy caro', bonusProposal(), ruleCap(true, { max_bonus_courses: 1 }))).toMatchObject(rejectedBy('bonus_limit_reached'));
+    const dup = [{ code: 'excel_integral', display_name: 'Excel Integral', position: 1 }];
+    expect(run('me parece muy caro', bonusProposal(), ruleCap(true, { bonus_offerings: dup, delivered_bonus_offerings: dup }))).toMatchObject(rejectedBy('duplicate_bonus'));
   });
-  it('a confirmed price-only barrier authorizes on the first objection', () => {
-    expect(authorize({state:selected(),customerText:'si, solo el precio',
-      proposal:bonusProposal([{type:'constraint',key:'price_only_barrier',value:'confirmed',source_quote:'solo el precio',confidence:1}]),
-      courseBonus:ruleCap(false)})).toMatchObject({ok:true});
+  it('never in checkout (state only), even with a valid motive', () => {
+    for (const awaiting of ['payment_plan', 'payment_confirmation', 'contact_details'] as const)
+      expect(authorize({ state: state({ selected_offering_code: 'redes_informaticas', awaiting_reply: awaiting }), customerText: 'me parece muy caro',
+        proposal: bonusProposal(), courseBonus: ruleCap(true) as never })).toMatchObject(rejectedBy('sale_already_closed'));
   });
-  it('retention: a quoted purchase decline authorizes without price evidence, once per conversation', () => {
-    expect(authorize({state:selected(),customerText:'no gracias, lo dejo',proposal:bonusProposal([decline]),courseBonus:ruleCap(false)}))
-      .toMatchObject({ok:true,action:{type:'offer_course_bonus'}});
-    const used=ruleCap(false,{ladder:deriveCourseBonusLadderV1({price_evidence:false,retention_used:true})});
-    expect(authorize({state:selected(),customerText:'no gracias, lo dejo',proposal:bonusProposal([decline]),courseBonus:used}))
-      .toMatchObject(rejectedBy('ladder_step_pending'));
-    expect(authorize({state:selected(),customerText:'no gracias',proposal:bonusProposal([decline]),courseBonus:ruleCap(false)}))
-      .toMatchObject(rejectedBy('ladder_step_pending'));
-  });
-  it('a used retention does not block a bonus backed by price evidence', () => {
-    const used=ruleCap(true,{ladder:deriveCourseBonusLadderV1({price_evidence:true,retention_used:true})});
-    expect(authorize({state:selected(),customerText:'ok',proposal:bonusProposal(),courseBonus:used})).toMatchObject({ok:true});
-  });
-  it('affinity is set membership: a candidate is accepted, anything else is not; the paid course is never a bonus', () => {
-    expect(authorize({state:selected(),customerText:'ok',proposal:bonusProposal(),
-      courseBonus:ruleCap(true,{bonus_candidates:[{code:'camaras_seguridad',display_name:'Cámaras'}]})})).toMatchObject(rejectedBy('invalid_offering'));
-    expect(authorize({state:selected(),customerText:'ok',proposal:bonusProposal(),
-      courseBonus:ruleCap(true,{bonus_candidates:[]})})).toMatchObject(rejectedBy('invalid_offering'));
-    expect(authorize({state:selected(),customerText:'ok',proposal:bonusProposal(),courseBonus:ruleCap(true)})).toMatchObject({ok:true});
-    const paid=proposal({proposed_action:{type:'offer_course_bonus',interest_offering_code:'redes_informaticas',bonus_offering_code:'redes_informaticas'}});
-    expect(authorize({state:selected(),customerText:'ok',proposal:paid,courseBonus:ruleCap(true)})).toMatchObject({ok:true,action:{type:'none'}});
-  });
-  it('limits: max reached and repeated course', () => {
-    const one={bonus_offerings:[{code:'camaras_seguridad',display_name:'Cámaras',position:1}],status:'offer_available',package_status:'offered',promotion_code:'p'};
-    expect(authorize({state:selected(),customerText:'ok',proposal:bonusProposal(),
-      courseBonus:ruleCap(true,{...one,max_bonus_courses:1}) as never})).toMatchObject(rejectedBy('bonus_limit_reached'));
-    expect(authorize({state:selected(),customerText:'ok',proposal:bonusProposal(),
-      courseBonus:ruleCap(true,{...one,bonus_offerings:[{code:'excel_integral',display_name:'Excel Integral',position:1}]}) as never}))
-      .toMatchObject(rejectedBy('duplicate_bonus'));
-  });
-  it('escalation after a delivered offer uses the same permission: persisted evidence is enough, no new objection required', () => {
-    const delivered={bonus_offerings:[{code:'camaras_seguridad',display_name:'Cámaras',position:1}],
-      status:'offer_available',package_status:'offered',promotion_code:'p'};
-    expect(authorize({state:selected(),customerText:'ok',proposal:bonusProposal(),courseBonus:ruleCap(true,delivered) as never}))
-      .toMatchObject({ok:true,action:{type:'offer_course_bonus'}});
-    expect(authorize({state:selected(),customerText:'ok',proposal:bonusProposal(),courseBonus:ruleCap(false,delivered) as never}))
-      .toMatchObject(rejectedBy('ladder_step_pending'));
-  });
-  it('never in checkout (state only), even with price evidence or a quoted decline', () => {
-    for (const awaiting of ['payment_plan','payment_confirmation','contact_details'] as const)
-      expect(authorize({state:state({selected_offering_code:'redes_informaticas',awaiting_reply:awaiting}),customerText:'me sigue pareciendo caro',
-        proposal:bonusProposal([objection]),courseBonus:ruleCap(true)})).toMatchObject(rejectedBy('sale_already_closed'));
-  });
-  it('a literal swap of the single bonus needs no price evidence', () => {
-    const swap={ok:true,action:{type:'offer_course_bonus'}};
-    const swapCap=ruleCap(false,{bonus_offerings:[{code:'camaras_seguridad',display_name:'Cámaras',position:1}],status:'offer_available',
-      package_status:'offered',promotion_code:'p',bonus_candidates:[],
-      rule_bonus:{paid_offering_code:'redes_informaticas',paid_display_name:'Redes Informáticas',bonus_offering_code:'excel_integral',
-        display_name:'Excel Integral',position:1,source:'customer_request',replaces_offering_code:'camaras_seguridad',replaces_display_name:'Cámaras'}});
-    expect(authorize({state:selected(),customerText:'cambiame cámaras por excel integral',
-      proposal:bonusProposal(),courseBonus:swapCap as never})).toMatchObject(swap);
+  it('a literal swap of the single bonus adds no course and needs no motive', () => {
+    const swapCap = ruleCap(true, { bonus_candidates: [],
+      rule_bonus: { paid_offering_code: 'redes_informaticas', paid_display_name: 'Redes Informáticas', bonus_offering_code: 'excel_integral',
+        display_name: 'Excel Integral', position: 1, source: 'customer_request', replaces_offering_code: 'camaras_seguridad', replaces_display_name: 'Cámaras' } });
+    expect(run('cambiame cámaras por excel integral', bonusProposal({ move: MOVE('ask_course_information'), quote: 'zzz' }), swapCap))
+      .toMatchObject({ ok: true, action: { type: 'offer_course_bonus' } });
   });
   it('replaces a stale course before handing an exact current course to the call', () => {
     const result = authorizeAgentTurnV2({

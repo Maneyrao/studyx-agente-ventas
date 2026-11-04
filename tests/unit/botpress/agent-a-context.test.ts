@@ -10,7 +10,6 @@ import { resolveAgentAPlannerlessProposalV2 } from '../../../botpress-agent/src/
 import { authorizeAgentTurnV2 } from '@/features/conversation/domain/agent-turn-policy-v2';
 import { createDefaultConversationStateV1 } from '@/features/conversation/domain/conversation-planner';
 import type { AgentATurnProposalV1 } from '../../../botpress-agent/src/schemas/agent-a-brain';
-import { deriveCourseBonusLadderV1 } from '@/shared/conversation/bonus-ladder';
 
 const UUID = '18a823e8-27c2-4279-9956-058f45f33cd5';
 const NOW = '2026-08-28T12:00:00.000Z';
@@ -364,7 +363,7 @@ describe('buildAgentAContextV1', () => {
   });
   it('preserves the backend ladder facts in the model context', () => {
     const claimed = claimedTurn();
-    const ladder = deriveCourseBonusLadderV1({ price_evidence: true, retention_used: false });
+    const ladder = { retention_used: false, previous_turn_asked_price_question: true };
     claimed.course_bonus_capability = {
       status: 'not_eligible', may_schedule_checkin: false, may_request_review: false,
       may_accept_offer: false, may_send_promoted_payment: false,
@@ -2648,15 +2647,16 @@ describe('Agent A structured commercial context (sales_profile and fichas)', () 
       const context = buildAgentAContextV1(claimed)!;
       expect(context.capabilities.course_bonus?.sales_flow).toEqual({ retention_used: true, promo_expires_at: null });
     });
-    it('advertises it with price evidence, labels it without, and omits it in checkout', () => {
-      const evidence = { eligible: true, price_evidence: true, retention_decline: false, retention_used: false, missing_steps: [] };
-      const none = { eligible: false, price_evidence: false, retention_decline: false, retention_used: false, missing_steps: ['price_evidence'] };
-      expect(effects(cap(evidence))).toContain('offer_course_bonus');
-      const labelled = effects(cap(none));
-      expect(labelled).not.toContain('offer_course_bonus');
-      expect(labelled).toContain('offer_course_bonus_needs_price_evidence');
+    it('labels it as a capability that needs a current-message motive, whatever the persisted ledger says, and omits it in checkout', () => {
+      const label = 'offer_course_bonus_requires_current_motive';
+      for (const ladder of [{ retention_used: false, previous_turn_asked_price_question: false },
+        { retention_used: true, previous_turn_asked_price_question: true }, undefined]) {
+        const listed = effects(cap(ladder));
+        expect(listed).toContain(label);
+        expect(listed).not.toContain('offer_course_bonus');
+      }
       for (const awaiting_reply of ['contact_details', 'payment_plan', 'payment_confirmation']) {
-        const inCheckout = effects(cap(evidence), { awaiting_reply });
+        const inCheckout = effects(cap(undefined), { awaiting_reply });
         expect(inCheckout.some((effect) => effect.startsWith('offer_course_bonus'))).toBe(false);
       }
     });

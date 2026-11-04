@@ -1,7 +1,7 @@
+import { offerBonusWithMotive } from '../helpers/offer-bonus';
 import { randomUUID } from 'node:crypto';
 import { afterAll,afterEach,describe,it,expect,vi } from 'vitest';
 import { commitAgentDecision } from '@/lib/services/decision.service';
-import { offerDirectCourseBonusV1 } from '@/features/promotions/application/direct-course-bonus-service';
 import { seedConversationForAgentTurn } from '../helpers/agent-turn-fixtures';
 import { seedPriorModelNegotiation } from '../helpers/record-model-negotiation-facts';
 import { openLocalTestDatabase } from '../helpers/db';
@@ -56,7 +56,7 @@ run('mandatory course role commit boundary (authority prompt:123,129; spec:59-71
     vi.stubEnv('CENTRAL_CARGA_BONUS_ENABLED','true');vi.stubEnv('COURSE_BONUS_FLOW_MODE','direct');vi.stubEnv('COURSE_BONUS_MAX_COURSES','3');
     const f=await seedConversationForAgentTurn({selected_offering_code:'entrenamiento_funcional',intake_complete:true});
     await seedPriorModelNegotiation(db!,f);
-    const id=randomUUID();const offer=await offerDirectCourseBonusV1(db!,{...f,paid_offering_code:'entrenamiento_funcional',source_turn_id:f.turn_id,expected_offer_version:0,
+    const id=randomUUID();const offer=await offerBonusWithMotive(db!,{...f,paid_offering_code:'entrenamiento_funcional',source_turn_id:f.turn_id,expected_offer_version:0,
       bonus_offering_codes:['nutricion_alimentacion'],outbound:{id,content:'Paquete autorizado',provider:'test',integration_id:'test',channel:'whatsapp',destination:'test',idempotency_key:id}});
     if(!offer.ok) throw new Error(offer.reason);
     if(status==='delivered') {

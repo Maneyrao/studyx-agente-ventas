@@ -15,11 +15,8 @@ import {
 
 /** Zod 3 mirror of shared/conversation/bonus-ladder CourseBonusLadderV1. */
 export const CourseBonusLadderV1Schema = z.object({
-  eligible: z.boolean(),
-  price_evidence: z.boolean(),
-  retention_decline: z.boolean(),
   retention_used: z.boolean(),
-  missing_steps: z.array(z.literal('price_evidence')).readonly(),
+  previous_turn_asked_price_question: z.boolean(),
 }).strict();
 
 // Zui uses Zod 3; construct the ADK mirror locally from the portable constants.
@@ -414,6 +411,10 @@ export const AgentAProposedActionSchema = z.discriminatedUnion('type', [
     type: z.literal('offer_course_bonus'),
     bonus_offering_code: IdentifierSchema,
     interest_offering_code: IdentifierSchema,
+    motive: z.object({
+      kind: z.enum(['price_objection', 'promotion_rejection', 'better_promotion_request', 'purchase_decline']),
+      quote: z.string().trim().min(1).max(2_048),
+    }).strict(),
   }).strict(),
   z.object({
     type: z.literal('accept_promotion'),

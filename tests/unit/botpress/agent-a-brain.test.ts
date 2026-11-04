@@ -195,7 +195,7 @@ describe('Agent A Brain V1', () => {
     ] as const) {
       const parsed = parseAgentATurnProposalV1(proposal({
         response: { messages: [message], call_offer: null }, used_fact_ids: [], used_memory_ids: [],
-        proposed_action: { type: 'offer_course_bonus', interest_offering_code: 'redes-informaticas', bonus_offering_code: 'word' },
+        proposed_action: { type: 'offer_course_bonus', motive:{kind:'price_objection',quote:'es caro'}, interest_offering_code: 'redes-informaticas', bonus_offering_code: 'word' },
       }), current);
       const rejection = validateAgentATurnProposalV1({ proposal: parsed, context: current, planned_fact_ids: [],
         rejection_id: '00000000-0000-4000-8000-000000000001' });
@@ -225,7 +225,7 @@ describe('Agent A Brain V1', () => {
       bonus_offerings: [], delivered_bonus_offerings: [],
     };
     const action = { type: 'offer_course_bonus' as const,
-      interest_offering_code: 'fotografia_profesional',
+      motive:{kind:'price_objection',quote:'es caro'}, interest_offering_code: 'fotografia_profesional',
       bonus_offering_code: 'fotografia_celulares_tiendas_online' };
     for (const [message, forbidden] of [
       ['Perfecto, seguimos por acá. Te sumo Fotografía con Celulares para Tiendas Online sin costo extra, para que puedas resolver fotos de producto. El precio de Fotografía Profesional no cambia.', false],
@@ -258,7 +258,7 @@ describe('Agent A Brain V1', () => {
       promotion_code: null, interest_offering_code: 'fotografia_profesional',
       bonus_offerings: [], delivered_bonus_offerings: [{ code: 'ingles_1', display_name: 'Inglés 1', position: 1 }],
     };
-    const action = { type: 'offer_course_bonus' as const, interest_offering_code: 'fotografia_profesional',
+    const action = { type: 'offer_course_bonus' as const, motive:{kind:'price_objection',quote:'es caro'}, interest_offering_code: 'fotografia_profesional',
       bonus_offering_code: 'instagram_emprendedores' };
     for (const [message, rejected] of [
       ['Ya tienes Inglés 1 sin costo, y te sumo otro más. El precio no cambia.', true],
@@ -307,7 +307,7 @@ describe('Agent A Brain V1', () => {
     };
     const parsed = parseAgentATurnProposalV1(proposal({
       response: { messages: ['Te sumo Word sin costo.'], call_offer: null },
-      proposed_action: { type: 'offer_course_bonus', interest_offering_code: 'redes-informaticas', bonus_offering_code: 'word' } }), current);
+      proposed_action: { type: 'offer_course_bonus', motive:{kind:'price_objection',quote:'es caro'}, interest_offering_code: 'redes-informaticas', bonus_offering_code: 'word' } }), current);
     const rejection = validateAgentATurnProposalV1({ proposal: parsed, context: current, planned_fact_ids: [],
       rejection_id: '00000000-0000-4000-8000-000000000001' });
     expect(rejection?.rejections).toContainEqual({ code: 'MISSING_INTAKE', subject: 'correo' });

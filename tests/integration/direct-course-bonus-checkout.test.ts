@@ -1,8 +1,9 @@
+import { offerBonusWithMotive } from '../helpers/offer-bonus';
 import { recordModelPriceObjection, seedPriorModelNegotiation } from '../helpers/record-model-negotiation-facts';
 import { randomUUID } from 'node:crypto';
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { openIndependentLocalTestDatabases, openLocalTestDatabase } from '../helpers/db';
-import { acceptDirectCourseBonusV1, offerDirectCourseBonusV1 } from '@/features/promotions/application/direct-course-bonus-service';
+import {acceptDirectCourseBonusV1 } from '@/features/promotions/application/direct-course-bonus-service';
 import { cancelOpenCourseBonusOffersForCourseChangeV1 } from '@/features/promotions/application/commercial-followup-service';
 import { createValidatedPaymentLinkCourseSelectionV1, reservePaymentLink } from '@/features/payments/application/reserve-payment-link';
 import { recordPaymentEvent } from '@/features/payments/application/record-payment-event';
@@ -36,7 +37,7 @@ async function fixture(count = 1, accepted = true) {
     VALUES (${w.id},${v.id},${c.id},${courses[0].code})`;
   async function inbound(prior = false) {
     const [m] = await db!`INSERT INTO messages(conversation_id,contact_id,direction,content,created_at)
-      VALUES (${v.id},${c.id},'inbound','Customer',now() - ${prior ? 10 : 0} * interval '1 second') RETURNING id`;
+      VALUES (${v.id},${c.id},'inbound','me parece muy caro',now() - ${prior ? 10 : 0} * interval '1 second') RETURNING id`;
     // Model-recorded current reply supports Rule A escalation; text alone does not.
     if (!prior) await recordModelPriceObjection(db!, m.id);
     return m.id as string;
@@ -50,7 +51,7 @@ async function fixture(count = 1, accepted = true) {
   let offer: {offer_id:string;promotion_code:string;promotion_cycle_id:string;offer_version:number} | undefined;
   for(let n=1;n<=count;n++) {
     const id=randomUUID();
-    const result=await offerDirectCourseBonusV1(db!,{...identity,source_turn_id:await inbound(),expected_offer_version:n-1,
+    const result=await offerBonusWithMotive(db!,{...identity,source_turn_id:await inbound(),expected_offer_version:n-1,
       ...(offer ? {promotion_code:offer.promotion_code,promotion_cycle_id:offer.promotion_cycle_id} : {}),
       bonus_offering_codes:[courses[n].code as string],outbound:{id,content:'Bonus',provider:'test',integration_id:'test',channel:'whatsapp',destination:'test',idempotency_key:id}});
     if(!result.ok) throw new Error(result.reason);
@@ -85,7 +86,7 @@ run('direct bonus checkout exact accepted package',()=>{
     vi.stubEnv('CENTRAL_CARGA_BONUS_CANARY_CONTACT_IDS', '');
     vi.stubEnv('CENTRAL_CARGA_BONUS_CANARY_PHONE_E164S', '');
     const id = randomUUID();
-    const extended = await offerDirectCourseBonusV1(db!, { ...f.identity,
+    const extended = await offerBonusWithMotive(db!, { ...f.identity,
       source_turn_id: await f.inbound(), expected_offer_version: 1,
       promotion_code: f.offer.promotion_code, promotion_cycle_id: f.offer.promotion_cycle_id,
       bonus_offering_codes: [f.courses[2].code], outbound: { id, content: 'Second bonus', provider: 'test',
@@ -105,7 +106,7 @@ run('direct bonus checkout exact accepted package',()=>{
     vi.stubEnv('CENTRAL_CARGA_BONUS_CANARY_CONTACT_IDS', '');
     vi.stubEnv('CENTRAL_CARGA_BONUS_CANARY_PHONE_E164S', contact.phone);
     const id = randomUUID();
-    const extended = await offerDirectCourseBonusV1(db!, { ...f.identity,
+    const extended = await offerBonusWithMotive(db!, { ...f.identity,
       source_turn_id: await f.inbound(), expected_offer_version: 1,
       promotion_code: f.offer.promotion_code, promotion_cycle_id: f.offer.promotion_cycle_id,
       bonus_offering_codes: [f.courses[2].code], outbound: { id, content: 'Second bonus', provider: 'test',
@@ -127,7 +128,7 @@ run('direct bonus checkout exact accepted package',()=>{
       VALUES (${f.contact_id},${f.conversation_id},${prior.id},'active','objection','price_objection','expensive','Expensive',0.9,${'a'.repeat(64)})`;
     await seedPriorModelNegotiation(db!,f);
     const id=randomUUID();const identity={workspace_id:f.workspace_id,contact_id:f.contact_id,conversation_id:f.conversation_id,paid_offering_code:'entrenamiento_funcional'};
-    const offer=await offerDirectCourseBonusV1(db!,{...identity,source_turn_id:f.turn_id,expected_offer_version:0,bonus_offering_codes:['nutricion_alimentacion'],
+    const offer=await offerBonusWithMotive(db!,{...identity,source_turn_id:f.turn_id,expected_offer_version:0,bonus_offering_codes:['nutricion_alimentacion'],
       outbound:{id,content:'Bonus',provider:'test',integration_id:'test',channel:'whatsapp',destination:'test',idempotency_key:id}});
     if(!offer.ok) throw new Error(offer.reason);
     await db!`UPDATE outbound_deliveries SET state='leased' WHERE message_id=${id}`;

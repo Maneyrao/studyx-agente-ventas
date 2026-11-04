@@ -1,5 +1,4 @@
-import { recordModelPriceObjection, seedPriorModelNegotiation } from '../helpers/record-model-negotiation-facts';
-import { deriveCourseBonusLadderV1 } from '@/shared/conversation/bonus-ladder';
+import { seedPriorModelNegotiation } from '../helpers/record-model-negotiation-facts';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { commitAgentDecision, recordDeliveryReport } from '@/lib/services/decision.service';
 import * as capability from '@/features/promotions/application/read-course-bonus-capability';
@@ -12,15 +11,16 @@ import { processInboundMessage } from '@/lib/services/ingestion.service';
 
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllEnvs(); });
 const run = process.env.TEST_DATABASE_URL ? describe : describe.skip;
+const PRICE_MOVE = { schema_version: 1 as const, move: 'price_objection' as const, secondary_moves: [] as never[], vetoes: [] as never[], confidence: 1 };
 run('direct decision atomic repair', () => {
-  it('a legacy semantic memory without a committed model observation is not price evidence', async () => {
+  it('a legacy semantic memory is not evidence: the capability ledger carries no price evidence at all', async () => {
     vi.stubEnv('CENTRAL_CARGA_BONUS_ENABLED','true');vi.stubEnv('COURSE_BONUS_FLOW_MODE','direct');vi.stubEnv('COURSE_BONUS_MAX_COURSES','2');
     const f=await seedConversationForAgentTurn({selected_offering_code:'entrenamiento_funcional',intake_complete:true});
     await sql`INSERT INTO selected_memories(contact_id,conversation_id,source_message_id,status,memory_type,memory_key,value_normalized,source_quote,confidence,dedupe_hash)
       VALUES (${f.contact_id},${f.conversation_id},${f.turn_id},'active','objection','price_objection','caro','Me parece caro',1,${'c'.repeat(64)})`;
     expect(await capability.readCourseBonusCapabilityV1({workspace_slug:'studyx',contact_id:f.contact_id,
       conversation_id:f.conversation_id,channel:'text',selected_offering_code:'entrenamiento_funcional',source_turn_id:f.turn_id},{db:sql}))
-      .toMatchObject({enabled:true,max_bonus_courses:2,may_request_review:false,ladder:{price_evidence:false,eligible:false}});
+      .toMatchObject({enabled:true,max_bonus_courses:2,may_request_review:false,ladder:{retention_used:false,previous_turn_asked_price_question:false}});
   });
   it.each(['direct','review','review_pending'] as const)('preserves multi-part delivery authority and the exact gift receipt in %s mode', async mode => {
     vi.stubEnv('CENTRAL_CARGA_BONUS_ENABLED','true');vi.stubEnv('COURSE_BONUS_FLOW_MODE','direct');vi.stubEnv('COURSE_BONUS_MAX_COURSES','2');
@@ -30,8 +30,8 @@ run('direct decision atomic repair', () => {
       VALUES (${f.conversation_id},${f.contact_id},'inbound','Me parece caro',now()-interval '1 hour') RETURNING id`;
     await sql`INSERT INTO selected_memories(contact_id,conversation_id,source_message_id,status,memory_type,memory_key,value_normalized,source_quote,confidence,dedupe_hash)
       VALUES (${f.contact_id},${f.conversation_id},${prior.id},'active','objection','price_objection','caro','Me parece caro',1,${'b'.repeat(64)})`;
-    const proposal = {...f.proposalWithCallOfferAndFalsePrice,response:{messages:['El total es USD 360.','Entrenamiento Funcional e Nutrición y Alimentación Saludable quedan incluidos en el paquete.'],call_offer:'Si querés, puedo llamarte para asesorarte.'},
-      course_mentions:[{offering_code:'nutricion_alimentacion',role:'bonus'}],proposed_action:{type:'offer_course_bonus',interest_offering_code:'entrenamiento_funcional',bonus_offering_code:'nutricion_alimentacion'}};
+    const proposal = {...f.proposalWithCallOfferAndFalsePrice,move:PRICE_MOVE,response:{messages:['El total es USD 360.','Entrenamiento Funcional e Nutrición y Alimentación Saludable quedan incluidos en el paquete.'],call_offer:'Si querés, puedo llamarte para asesorarte.'},
+      course_mentions:[{offering_code:'nutricion_alimentacion',role:'bonus'}],proposed_action:{type:'offer_course_bonus',motive:{kind:'price_objection',quote:'Hola, soy Ana Pérez'}, interest_offering_code:'entrenamiento_funcional',bonus_offering_code:'nutricion_alimentacion'}};
     const input = {turn_id:f.turn_id,trace_id:f.trace_id,supports_multi_outbound:true,
       authorized_offering_code:'entrenamiento_funcional',authorized_payment_plan:null,
       agent_turn_v2:{schema_version:2 as const,proposal:proposal as never},decision:f.placeholderDecision as never,model:f.model as never};
@@ -60,7 +60,8 @@ run('direct decision atomic repair', () => {
       {type:'accept_promotion',offer_version:1},
       {type:'accept_promotion',promotion_code:'p',promotion_cycle_id:pending.promotion_cycle_id,
         interest_offering_code:'entrenamiento_funcional',offer_version:1,unknown:true},
-      {type:'offer_course_bonus',interest_offering_code:'entrenamiento_funcional'},
+      {type:'offer_course_bonus', interest_offering_code:'entrenamiento_funcional'},
+      {type:'offer_course_bonus', interest_offering_code:'entrenamiento_funcional',bonus_offering_code:'nutricion_alimentacion',motive:{kind:'price_objection',quote:'x'}},
     ]) await expect(cloneWithAction(action)).rejects.toMatchObject({code:'23514',constraint_name:'agent_decisions_business_action_check'});
     for (const promotion_code of ['   ','\t','\n',' \t\n ']) {
       await expect(cloneWithAction({type:'accept_promotion',promotion_code,promotion_cycle_id:pending.promotion_cycle_id,
@@ -99,11 +100,11 @@ run('direct decision atomic repair', () => {
     expect(delivered).toMatchObject({may_accept_offer:true,may_offer_bonus:true,offer_version:1,
       delivered_bonus_offerings:[{code:'nutricion_alimentacion'}]});
     if(mode==='review_pending') {
-      await recordModelPriceObjection(sql, f.second_turn_id, { source_quote: 'Dale' });
       const secondId=randomUUID();
       const second=await offerDirectCourseBonusV1(sql,{workspace_id:f.workspace_id,contact_id:f.contact_id,conversation_id:f.conversation_id,
         source_turn_id:f.second_turn_id,paid_offering_code:'entrenamiento_funcional',promotion_code:delivered.promotion_code,
         promotion_cycle_id:delivered.promotion_cycle_id,expected_offer_version:1,bonus_offering_codes:['estrategias_emprender'],
+        motive:{kind:'price_objection',quote:'Dale, seguimos'},declared_moves:['price_objection'],
         outbound:{id:secondId,content:'Estrategias para Emprender de regalo.',provider:'test',integration_id:'test',channel:'whatsapp',destination:'test',idempotency_key:secondId}});
       expect(second,JSON.stringify(second)).toMatchObject({ok:true,offer_version:2});
       const [contact]=await sql`SELECT phone FROM contacts WHERE id=${f.contact_id}`;
@@ -126,7 +127,7 @@ run('direct decision atomic repair', () => {
     vi.spyOn(capability,'readCourseBonusCapabilityV1').mockResolvedValue(delivered);
     vi.stubEnv('COURSE_BONUS_MAX_COURSES','1');
     await expect(commitAgentDecision({...input,turn_id:f.second_turn_id,agent_turn_v2:{schema_version:2,
-      proposal:{...proposal,memory_candidates:[{type:'objection',key:'price_objection',value:'precio',source_quote:'Dale',confidence:1}],proposed_action:{type:'offer_course_bonus',interest_offering_code:'entrenamiento_funcional',bonus_offering_code:'estrategias_emprender'},
+      proposal:{...proposal,memory_candidates:[],proposed_action:{type:'offer_course_bonus',motive:{kind:'price_objection',quote:'Dale, seguimos'}, interest_offering_code:'entrenamiento_funcional',bonus_offering_code:'estrategias_emprender'},
         course_mentions:[{offering_code:'nutricion_alimentacion',role:'bonus'},{offering_code:'estrategias_emprender',role:'bonus'}],response:{messages:['Nutrición y Alimentación Saludable sigue incluido. Estrategias para Emprender queda bonificado.'],call_offer:null}} as never}}))
       .rejects.toMatchObject({subjects:['forbidden_promise','direct_bonus:bonus_limit_reached']});
     expect((await sql`SELECT count(*)::int n FROM messages WHERE in_reply_to=${f.second_turn_id}`)[0].n).toBe(0);
@@ -157,22 +158,22 @@ run('direct decision atomic repair', () => {
     // Simulate a capability that became stale before final transactional validation.
     vi.spyOn(capability,'readCourseBonusCapabilityV1').mockResolvedValue({
       status:'checkin_available', enabled:true, max_bonus_courses:2, may_offer_bonus:true,
-      ladder:deriveCourseBonusLadderV1({price_evidence:true,retention_used:false}),
+      ladder:{retention_used:false,previous_turn_asked_price_question:false},
       may_schedule_checkin:false,may_request_review:false,may_accept_offer:false,
       may_send_promoted_payment:false,promotion_code:null,interest_offering_code:'entrenamiento_funcional',
       bonus_candidates:[{code:'nutricion_alimentacion',display_name:'Nutrición y Alimentación Saludable'}],
       offer_version:0,bonus_offerings:[],delivered_bonus_offerings:[],
     });
-    const proposal = {...f.proposalWithCallOfferAndFalsePrice,
+    const proposal = {...f.proposalWithCallOfferAndFalsePrice,move:PRICE_MOVE,
       response:{messages:['El total es USD 360. Nutrición y Alimentación Saludable queda bonificado.'],call_offer:null},
-      course_mentions:[{offering_code:'nutricion_alimentacion',role:'bonus'}],proposed_action:{type:'offer_course_bonus',interest_offering_code:'entrenamiento_funcional',bonus_offering_code:'nutricion_alimentacion'}};
+      course_mentions:[{offering_code:'nutricion_alimentacion',role:'bonus'}],proposed_action:{type:'offer_course_bonus',motive:{kind:'price_objection',quote:'es caro'}, interest_offering_code:'entrenamiento_funcional',bonus_offering_code:'nutricion_alimentacion'}};
     const input = {turn_id:f.turn_id,trace_id:f.trace_id,supports_multi_outbound:true,
       authorized_offering_code:'entrenamiento_funcional',authorized_payment_plan:null,
       agent_turn_v2:{schema_version:2 as const,proposal:proposal as never},
       decision:f.placeholderDecision as never,model:f.model as never};
     await expect(commitAgentDecision(input)).rejects.toMatchObject({
       reason:'AGENT_TURN_V2_REJECTED:COMMERCIAL_TRUTH_VIOLATION',
-      subjects:['forbidden_promise','direct_bonus:ladder_step_pending','bonus_ladder:missing:price_evidence'],
+      subjects:['forbidden_promise','direct_bonus:ladder_step_pending','bonus_ladder:missing:current_message_motive','bonus_motive:motive_quote_not_in_batch'],
     });
     expect((await sql`SELECT count(*)::int n FROM agent_decisions WHERE turn_id=${f.turn_id}`)[0].n).toBe(0);
     expect((await sql`SELECT count(*)::int n FROM messages WHERE in_reply_to=${f.turn_id}`)[0].n).toBe(0);

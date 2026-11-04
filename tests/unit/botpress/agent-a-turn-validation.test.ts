@@ -162,7 +162,7 @@ describe('validación de la propuesta del turno', () => {
         },
         proposed_action: {
           type: 'offer_course_bonus',
-          interest_offering_code: 'redes-informaticas',
+          motive:{kind:'price_objection',quote:'es caro'}, interest_offering_code: 'redes-informaticas',
           bonus_offering_code: 'excel-integral',
         },
         used_fact_ids: [],

@@ -44,8 +44,7 @@ function contextWithCapability(courseBonus: unknown) {
   };
 }
 
-const canonical = { eligible: false, price_evidence: false, retention_decline: false, retention_used: false,
-  missing_steps: ['price_evidence'] };
+const canonical = { retention_used: false, previous_turn_asked_price_question: false };
 
 describe('claim-only legacy bonus ladder compatibility', () => {
   it('decodes the raw claim response and remains canonical on the workflow second parse', () => {
@@ -68,13 +67,13 @@ describe('claim-only legacy bonus ladder compatibility', () => {
     const decoded = ClaimResponseSchema.parse(raw);
     expect(decoded.outcome).toBe('claimed');
     if (decoded.outcome !== 'claimed') throw new Error('CLAIM_FIXTURE_NOT_CLAIMED');
-    expect(decoded.course_bonus_capability?.ladder).toEqual({ ...canonical, eligible: true, price_evidence: true, missing_steps: [] });
+    expect(decoded.course_bonus_capability?.ladder).toEqual(canonical);
     expect(ClaimedTurnSchema.parse(decoded)).toEqual(decoded);
     expect(raw.course_bonus_capability.ladder).toEqual(legacyLadder);
   });
 
   it('passes the canonical ladder and all existing capability values through unchanged', () => {
-    const ladder = { ...canonical, eligible: true, price_evidence: true, missing_steps: [] };
+    const ladder = canonical;
     const input = capability(ladder, { enabled: false, may_offer_bonus: false,
       rule_bonus: { paid_offering_code: paid, paid_display_name: 'Introducción al Ecommerce',
         bonus_offering_code: 'publicidad_redes_sociales', display_name: 'Publicidad en Redes Sociales', position: 1 } });
@@ -83,13 +82,13 @@ describe('claim-only legacy bonus ladder compatibility', () => {
     expect(input).toEqual(before);
   });
 
-  it('maps a legacy count to price evidence only; thresholds, call fields and instant triggers grant nothing', () => {
+  it('collapses every legacy ladder to the persisted facts that remain; counts, thresholds and instant triggers grant nothing', () => {
     expect(claimCapability.parse(capability({ ...legacyLadder, observed_price_objection_count: 0, eligible: true,
       instant_trigger: true }))?.ladder).toEqual(canonical);
     expect(claimCapability.parse(capability({ ...legacyLadder, observed_price_objection_count: 1,
-      required_price_objection_count: 2 }))?.ladder).toEqual({ ...canonical, eligible: true, price_evidence: true, missing_steps: [] });
+      required_price_objection_count: 2 }))?.ladder).toEqual(canonical);
     expect(claimCapability.parse(capability({ ...legacyLadder, observed_price_objection_count: 0,
-      price_only_barrier_confirmed: true }))?.ladder).toMatchObject({ eligible: true, price_evidence: true });
+      price_only_barrier_confirmed: true }))?.ladder).toEqual(canonical);
   });
 
   it.each([false, true])('never changes enabled=%s or a denied bonus permission and cannot invent candidates', enabled => {

@@ -10,7 +10,7 @@ const outputPaths = [
 ];
 // v109: v108 plus the 2026-11-04 bonus motive rules (motive from the current message; owner-authorized edit).
 // v108: v107 plus the owner's 03-04/11 price guidance moved from retired runtime rules to model guidance (owner-authorized edit)
-const expectedSha256 = '7b3da4520b8eba9155f6cd328e4e6b3eabcf1bb081d818e81d2a7b3e9dceba3b';
+const expectedSha256 = '743f153dc982d8681de12d9c9b2bf34f019997d028d9ddb2c0b5fa1cd6330323';
 const prompt = readFileSync(sourcePath, 'utf8');
 const sha256 = createHash('sha256').update(prompt).digest('hex');
 const lineCount = prompt.match(/\n/g)?.length ?? 0;

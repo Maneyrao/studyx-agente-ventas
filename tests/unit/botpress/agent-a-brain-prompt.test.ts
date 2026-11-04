@@ -282,8 +282,9 @@ describe('Agent A Brain prompt', () => {
     expect(guidance).toContain('delivered_bonus_offerings');
     expect(guidance).toContain('does not choose when or which course');
     expect(guidance).toContain('Agent A applies canonical_sales_behavior');
-    expect(guidance).toContain('The backend validates the effect');
-    expect(guidance).toContain('price evidence');
+    expect(guidance).toContain('The effect requires proposed_action.motive');
+    expect(guidance).toContain('CURRENT message');
+    expect(guidance).not.toContain('price evidence');
     expect(guidance).toContain('purchase_decline');
     expect(guidance).not.toContain('request_promotion_review');
     expect(guidance).not.toContain('the customer has replied with the same price objection');
@@ -519,12 +520,12 @@ describe('Agent A Brain prompt', () => {
     expect(instructions).not.toContain('Choose the wording and structure yourself');
   });
 
-  it.each([false,true])('forbids every bonus mention while repairing ladder_step_pending (price evidence=%s)', evidence=>{
+  it.each([false,true])('forbids every bonus mention while repairing ladder_step_pending (retention used=%s)', evidence=>{
     const current=context();
     current.capabilities.course_bonus={enabled:true,max_bonus_courses:3,may_offer_bonus:false,status:'not_eligible',
       may_schedule_checkin:false,may_request_review:false,may_accept_offer:false,may_send_promoted_payment:false,
-      promotion_code:null,interest_offering_code:'redes-informaticas',bonus_offerings:[],ladder:{eligible:evidence,
-        price_evidence:evidence,retention_decline:false,retention_used:false,missing_steps:evidence?[]:['price_evidence']}};
+      promotion_code:null,interest_offering_code:'redes-informaticas',bonus_offerings:[],ladder:{retention_used:evidence,
+        previous_turn_asked_price_question:false}};
     current.turn_rejection={schema_version:1,rejection_id:'r',attempt:1,
       rejections:[{code:'FACT_VALUE_MISMATCH',subject:'direct_bonus:ladder_step_pending'}],
       authorized_alternatives:{fact_ids:[],actions:['none'],missing_information:[]}};

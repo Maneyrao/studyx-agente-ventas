@@ -263,6 +263,10 @@ export const AgentAProposedActionSchema = z.discriminatedUnion('type', [
     type: z.literal('offer_course_bonus'),
     bonus_offering_code: IdentifierSchema,
     interest_offering_code: IdentifierSchema,
+    motive: z.object({
+      kind: z.enum(['price_objection', 'promotion_rejection', 'better_promotion_request', 'purchase_decline']),
+      quote: z.string().trim().min(1).max(2_048),
+    }).strict(),
   }).strict(),
   z.object({
     type: z.literal('accept_promotion'),

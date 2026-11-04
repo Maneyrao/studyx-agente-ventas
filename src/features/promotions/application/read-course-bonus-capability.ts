@@ -403,8 +403,8 @@ export function deriveDirectCourseBonusCapabilityV1(input: {
     ...hidden(accepted ? 'accepted' : offer ? 'offer_available' : 'checkin_available'),
     enabled: true, max_bonus_courses: input.max_bonus_courses,
     ...(input.ladder ? {ladder:input.ladder} : {}),
-    // Structural availability. The price/retention evidence is validated per
-    // proposal (this turn's quoted memory may complete it), never decided here.
+    // Structural availability only. The motive is validated per proposal
+    // against the current message, never decided here.
     may_offer_bonus: open && ready && (offer?.courses.length ?? 0) < input.max_bonus_courses
       && (candidates.length > 0 || swapBonus !== null),
     may_accept_offer: offer?.status === 'offered' && ready && !expired,
@@ -632,7 +632,9 @@ async function readDirectCapability(input: {
     WHERE w.slug=${input.workspace_slug} AND w.status='active'
   `;
   if (!row) return {...hidden('unavailable'),enabled:false,max_bonus_courses:max};
-  const ladder=await readCourseBonusLadderV1(input,db);
+  const evidence=await readCourseBonusLadderV1(input,db);
+  const ladder: CourseBonusLadderV1 | null = evidence ? {retention_used:evidence.retention_used,
+    previous_turn_asked_price_question:evidence.previous_turn_asked_price_question} : null;
   const activeCourses=await db<Array<{code:string;display_name:string;aliases:string[]|null}>>`
     SELECT o.code,o.display_name,ARRAY(SELECT jsonb_array_elements_text(CASE WHEN jsonb_typeof(o.metadata->'aliases')='array'
       THEN o.metadata->'aliases' ELSE '[]'::jsonb END)) aliases

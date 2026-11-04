@@ -46,7 +46,8 @@ describe('AgentATurnProposalV1Schema', () => {
     promotion_cycle_id: 'cycle-1', offer_version: 2,
   };
   const actions = [
-    { type: 'offer_course_bonus', bonus_offering_code: 'ingles_1', interest_offering_code: 'redes' },
+    { type: 'offer_course_bonus', bonus_offering_code: 'ingles_1', interest_offering_code: 'redes',
+      motive: { kind: 'price_objection', quote: 'es caro' } },
     directAcceptance,
     { type: 'accept_promotion' },
   ];
@@ -55,7 +56,16 @@ describe('AgentATurnProposalV1Schema', () => {
     for (const schema of [AgentATurnProposalV1Schema, BotpressAgentATurnProposalV1Schema]) {
       expect(schema.parse(proposal({ proposed_action })).proposed_action).toEqual(proposed_action);
     }
-    expect(DecisionBusinessActionSchema.parse(proposed_action)).toEqual(proposed_action);
+    // The persisted business action never carries the motive (it is validated in memory and in the bonus transaction).
+    const persisted = Object.fromEntries(Object.entries(proposed_action).filter(([key]) => key !== 'motive'));
+    expect(DecisionBusinessActionSchema.parse(persisted)).toEqual(persisted);
+  });
+  it('requires a well-formed motive on offer_course_bonus at every boundary', () => {
+    const base = { type: 'offer_course_bonus', bonus_offering_code: 'ingles_1', interest_offering_code: 'redes' };
+    for (const motive of [undefined, { kind: 'price_objection' }, { kind: 'cheap', quote: 'x' }, { kind: 'price_objection', quote: '' },
+      { kind: 'price_objection', quote: 'x', extra: 1 }])
+      for (const schema of [AgentATurnProposalV1Schema, BotpressAgentATurnProposalV1Schema])
+        expect(schema.safeParse(proposal({ proposed_action: { ...base, motive } as never })).success).toBe(false);
   });
 
   it.each([

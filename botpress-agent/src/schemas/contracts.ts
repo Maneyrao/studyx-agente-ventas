@@ -581,19 +581,22 @@ export const CatalogIndexSchema = z.object({
   injection_suspected_count: z.number().int().nonnegative().default(0),
 }).strict().nullable().default(null)
 
-// Claim transport compatibility for a bot-first rollout: the previous backend
-// sent a count-based ladder. Only its factual evidence survives: a recorded
-// price objection or a confirmed price-only barrier is price evidence; the old
-// call/threshold/instant fields carry no permission any more, and retention was
-// never persisted. A malformed legacy ladder falls through to the strict canonical parser.
+// Claim transport compatibility for a bot-first rollout: earlier backends sent
+// a count-based ladder, then an evidence ladder (eligible/price_evidence/...).
+// Neither carries permission any more: a persisted price objection no longer
+// authorizes a bonus (motive comes from the current message). Both collapse to
+// the persisted facts that remain. A malformed ladder falls through to the strict parser.
 const LegacyClaimCourseBonusLadderV1Schema = z.object({
   eligible: z.boolean(),
-  observed_price_objection_count: z.number().int().nonnegative(),
-  required_price_objection_count: z.union([z.literal(2), z.literal(3)]),
-  call_invitation_status: z.enum(['not_offered', 'offered', 'accepted', 'declined']),
-  call_offer_count: z.number().int().nonnegative(),
-  may_offer_call: z.boolean(),
-  missing_steps: z.array(z.enum(['recorded_price_objections', 'call_invitation'])),
+  observed_price_objection_count: z.number().int().nonnegative().optional(),
+  required_price_objection_count: z.union([z.literal(2), z.literal(3)]).optional(),
+  call_invitation_status: z.enum(['not_offered', 'offered', 'accepted', 'declined']).optional(),
+  call_offer_count: z.number().int().nonnegative().optional(),
+  may_offer_call: z.boolean().optional(),
+  missing_steps: z.array(z.enum(['recorded_price_objections', 'call_invitation', 'price_evidence'])),
+  price_evidence: z.boolean().optional(),
+  retention_decline: z.boolean().optional(),
+  retention_used: z.boolean().optional(),
   price_only_barrier_confirmed: z.boolean().optional(),
   current_turn_price_objection: z.boolean().optional(),
   instant_trigger: z.boolean().optional(),
@@ -602,9 +605,7 @@ const LegacyClaimCourseBonusLadderV1Schema = z.object({
 const IncomingClaimCourseBonusLadderV1Schema = z.preprocess((raw) => {
   const legacy = LegacyClaimCourseBonusLadderV1Schema.safeParse(raw)
   if (!legacy.success) return raw
-  const priceEvidence = legacy.data.observed_price_objection_count > 0 || legacy.data.price_only_barrier_confirmed === true
-  return { eligible: priceEvidence, price_evidence: priceEvidence, retention_decline: false, retention_used: false,
-    missing_steps: priceEvidence ? [] : ['price_evidence'] }
+  return { retention_used: legacy.data.retention_used ?? false, previous_turn_asked_price_question: false }
 }, CourseBonusLadderV1Schema)
 
 export const ClaimedTurnSchema = z.object({

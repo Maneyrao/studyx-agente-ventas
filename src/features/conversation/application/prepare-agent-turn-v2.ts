@@ -11,6 +11,7 @@ import { activeSessionRecentTurnsV1, deriveConversationCourseFocusV1 } from '@/f
 import { classifyBatchSalesSignal } from '@/features/orchestration/domain/sales-signal';
 import { loadConversationSessionConfig } from '@/lib/config';
 import type { AgentAProposedActionV1, AgentATurnProposalV1 } from '../domain/agent-a-brain';
+import type { BonusMotiveV1 } from '@/shared/conversation/bonus-motive';
 import { authorizeAgentTurnV2 } from '../domain/agent-turn-policy-v2';
 import {
   buildCanonicalFactRegistry,
@@ -161,7 +162,12 @@ function decisionFromAuthorizedTurn(input: {
         ? { type: 'send_test_payment_link', offering_sku: action.offering_code }
         : action.type === 'schedule_price_objection_checkin'
           ? action
-          : action.type === 'request_promotion_review' || action.type === 'offer_course_bonus'
+          : action.type === 'offer_course_bonus'
+            // The motive is validated in memory and rechecked in the bonus
+            // transaction; the persisted business_action keeps only identity.
+            ? { type: 'offer_course_bonus', interest_offering_code: action.interest_offering_code,
+                bonus_offering_code: action.bonus_offering_code }
+          : action.type === 'request_promotion_review'
             ? action
             : action.type === 'accept_promotion'
               ? action
@@ -250,6 +256,8 @@ export async function prepareAgentTurnV2(input: {
   readonly resets_promotion_context: boolean;
   /** Explicit course switch retires open packages and prior unpaid intents. */
   readonly abandons_course_bonus_offer: boolean;
+  /** The authorized offer_course_bonus motive and declared moves, for the transactional recheck. */
+  readonly bonus_motive: { readonly motive: BonusMotiveV1; readonly declared_moves: readonly string[] } | null;
 }> {
   const nowMs = deps.now?.() ?? Date.now();
   const [loaded, callFacts, contactIntake, strictCallIntakeReadiness] = await Promise.all([
@@ -542,5 +550,9 @@ export async function prepareAgentTurnV2(input: {
     auto_accept_promotion: authority.auto_accept_promotion === true,
     resets_promotion_context: resetsPromotionContext,
     abandons_course_bonus_offer: abandonsCourseBonusOffer,
+    bonus_motive: authority.action.type === 'offer_course_bonus'
+      ? { motive: authority.action.motive,
+          declared_moves: [effectiveProposal.move.move, ...effectiveProposal.move.secondary_moves] }
+      : null,
   };
 }

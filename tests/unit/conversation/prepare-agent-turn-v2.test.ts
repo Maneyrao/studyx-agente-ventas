@@ -1,4 +1,3 @@
-import { deriveCourseBonusLadderV1 } from '@/shared/conversation/bonus-ladder';
 import { describe, expect, it } from 'vitest';
 import type { AgentATurnProposalV1 } from '@/features/conversation/domain/agent-a-brain';
 import type { ConversationStateV1 } from '@/features/conversation/domain/conversation-pipeline';
@@ -163,20 +162,22 @@ describe('prepareAgentTurnV2', () => {
   });
 
   it('retains an authorized direct bonus as the committed business action', async () => {
-    const action = {type:'offer_course_bonus',interest_offering_code:'redes_informaticas',bonus_offering_code:'excel_integral'} as const;
+    const action = {type:'offer_course_bonus',motive:{kind:'price_objection',quote:'me parece muy caro'}, interest_offering_code:'redes_informaticas',bonus_offering_code:'excel_integral'} as const;
     const prepared = await prepareAgentTurnV2({
       turn:{id:ids.turn,workspace_id:ids.workspace,conversation_id:ids.conversation,contact_id:ids.contact},
       workspace_slug:'studyx',business_context:business,
       catalog_index:{...index,offerings:[...index.offerings,{code:'excel_integral',display_name:'Excel Integral',aliases:[],academy:'Tecnología'}]},
-      proposal:proposal({proposed_action:action,course_mentions:[{offering_code:'excel_integral',role:'bonus'}],response:{messages:['Te regalo Excel Integral.']}}),
+      current_customer_messages:['me parece muy caro'],
+      proposal:proposal({move:{schema_version:1,move:'price_objection',secondary_moves:[],vetoes:[],confidence:1},proposed_action:action,course_mentions:[{offering_code:'excel_integral',role:'bonus'}],response:{messages:['Te regalo Excel Integral.']}}),
       course_bonus_capability:{status:'checkin_available',enabled:true,max_bonus_courses:2,may_offer_bonus:true,
-        ladder:deriveCourseBonusLadderV1({price_evidence:true,retention_used:false}),
+        ladder:{retention_used:false,previous_turn_asked_price_question:false},
         may_schedule_checkin:false,may_request_review:false,may_accept_offer:false,may_send_promoted_payment:false,
         promotion_code:null,interest_offering_code:'redes_informaticas',bonus_offerings:[],
         // The model chooses among the backend's authorized set.
         bonus_candidates:[{code:'excel_integral',display_name:'Excel Integral'}]},
     },{state_store:store(state({selected_offering_code:'redes_informaticas'})),contact_intake:completeIntake});
-    expect(prepared.decision.business_action).toEqual(action);
+    expect(prepared.decision.business_action).toEqual({type:'offer_course_bonus',interest_offering_code:'redes_informaticas',bonus_offering_code:'excel_integral'});
+    expect(prepared.bonus_motive).toEqual({motive:action.motive,declared_moves:['price_objection']});
   });
   it.each(['missing', 'complete'] as const)('keeps the original explicit tool intent while continuation sends only prose: %s intake', async intakeCase => {
     const messages = ['Para avanzar, vemos los datos necesarios.'];

@@ -1848,12 +1848,14 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
               expected_offer_version:courseBonusCapability?.offer_version ?? 0,
               promotion_code:courseBonusCapability?.promotion_code,promotion_cycle_id:courseBonusCapability?.promotion_cycle_id,
               bonus_offering_codes:[committedBusinessAction.bonus_offering_code],
+              ...(preparedAgentTurn?.bonus_motive ? {motive:preparedAgentTurn.bonus_motive.motive,
+                declared_moves:preparedAgentTurn.bonus_motive.declared_moves} : {}),
               outbound:{id:randomUUID(),content,part_index:partIndex,provider:turn.provider,integration_id:turn.integration_id,
                 channel:turn.channel,destination:turn.phone,
                 idempotency_key:validatedInput.supports_multi_outbound ? `outbound:${decisionId}:part:${partIndex}` : `outbound:${decisionId}`},
             });
             if (!result.ok) throw new DecisionPolicyError('AGENT_TURN_V2_REJECTED:COMMERCIAL_TRUTH_VIOLATION',
-              result.reason === 'ladder_step_pending' ? courseBonusLadderRejectionSubjectsV1(result.ladder)
+              result.reason === 'ladder_step_pending' ? courseBonusLadderRejectionSubjectsV1(result.motive_reason)
                 : ['forbidden_promise',`direct_bonus:${result.reason}`]);
             const rows = await db<Message[]>`UPDATE messages SET metadata=${jsonbParam(db,{
               decision_id:decisionId,response_type:decision.response_type,model:validatedInput.model,

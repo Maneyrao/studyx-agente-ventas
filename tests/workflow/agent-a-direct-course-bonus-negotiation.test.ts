@@ -134,7 +134,7 @@ run('repairs pending delivery acceptance, rejects a pre-confirmation reply, and 
     {memory_candidates:[{type:'objection',key:'price_objection',value:'precio alto',source_quote:'Me parece caro',confidence:1}]}));
   await seedRemainingPriorNegotiation(objection.turnId!);
   const offered=await s.send('El monto sigue frenándome',proposal('Te regalo Inglés 1 al comprar Entrenamiento Funcional.',
-    {type:'offer_course_bonus',interest_offering_code:'entrenamiento_funcional',bonus_offering_code:'ingles_1'},{course_mentions:[{offering_code:'ingles_1',role:'bonus'}]}));
+    {type:'offer_course_bonus',motive:{kind:'price_objection',quote:'es caro'}, interest_offering_code:'entrenamiento_funcional',bonus_offering_code:'ingles_1'},{course_mentions:[{offering_code:'ingles_1',role:'bonus'}]}));
   const [offer]=await db!`SELECT o.*,p.promotion_code FROM promotion_offers o JOIN promotions p ON p.id=o.promotion_id WHERE o.conversation_id=${offered.conversation_id}`;
   const early=await s.send('Sí, acepto',context=>context.turn_rejection
     ? proposal('Estoy verificando el paquete para poder avanzar. ¿Querés repasar el contenido mientras tanto?')
@@ -183,7 +183,7 @@ run.each(['complete','partial'] as const)('carries interest-only discovery, 1→
   await seedRemainingPriorNegotiation(first.turnId!);
   await projectAgentAMemories({limit:100},{db:db!});
   const result = await send('El monto me sigue frenando',proposal('Te regalo Inglés 1 al comprar Entrenamiento Funcional.',
-    {type:'offer_course_bonus',interest_offering_code:'entrenamiento_funcional',bonus_offering_code:'ingles_1'},{course_mentions:[{offering_code:'ingles_1',role:'bonus'}]}));
+    {type:'offer_course_bonus',motive:{kind:'price_objection',quote:'es caro'}, interest_offering_code:'entrenamiento_funcional',bonus_offering_code:'ingles_1'},{course_mentions:[{offering_code:'ingles_1',role:'bonus'}]}));
   expect(result.authorizedMessages.join(' ')).toContain('Inglés 1');
   expect((await db!`SELECT selected_offering_code FROM conversation_sales_context_states_v1
     WHERE conversation_id=(SELECT conversation_id FROM messages WHERE id=${result.turnId}::uuid)`)[0])
@@ -203,15 +203,15 @@ run.each(['complete','partial'] as const)('carries interest-only discovery, 1→
   }
   await confirm(result);
   const second=await send('Sigo dudando por el monto',proposal('Te regalo Inglés 1 y Excel Integral al comprar Entrenamiento Funcional.',
-    {type:'offer_course_bonus',interest_offering_code:'entrenamiento_funcional',bonus_offering_code:'excel_integral'},{course_mentions:[{offering_code:'ingles_1',role:'bonus'},{offering_code:'excel_integral',role:'bonus'}]}));
+    {type:'offer_course_bonus',motive:{kind:'price_objection',quote:'es caro'}, interest_offering_code:'entrenamiento_funcional',bonus_offering_code:'excel_integral'},{course_mentions:[{offering_code:'ingles_1',role:'bonus'},{offering_code:'excel_integral',role:'bonus'}]}));
   await confirm(second);
   const third=await send('¿Podés sumar otra formación?',proposal('Te regalo Inglés 1, Excel Integral e Inglés 2 al comprar Entrenamiento Funcional.',
-    {type:'offer_course_bonus',interest_offering_code:'entrenamiento_funcional',bonus_offering_code:'ingles_2'},{course_mentions:[{offering_code:'ingles_1',role:'bonus'},{offering_code:'excel_integral',role:'bonus'},{offering_code:'ingles_2',role:'bonus'}]}));
+    {type:'offer_course_bonus',motive:{kind:'price_objection',quote:'es caro'}, interest_offering_code:'entrenamiento_funcional',bonus_offering_code:'ingles_2'},{course_mentions:[{offering_code:'ingles_1',role:'bonus'},{offering_code:'excel_integral',role:'bonus'},{offering_code:'ingles_2',role:'bonus'}]}));
   await confirm(third);
   const fourth=await send('¿Y Redes también?',context=>context.turn_rejection
     ? proposal('El paquete incluye Inglés 1, Excel Integral e Inglés 2 de regalo. ¿Te sirve para avanzar con tu objetivo?',{type:'none'},{course_mentions:[{offering_code:'ingles_1',role:'bonus'},{offering_code:'excel_integral',role:'bonus'},{offering_code:'ingles_2',role:'bonus'}]})
     : proposal('Te regalo Redes Informáticas al comprar Entrenamiento Funcional.',
-      {type:'offer_course_bonus',interest_offering_code:'entrenamiento_funcional',bonus_offering_code:'redes_informaticas'},{course_mentions:[{offering_code:'redes_informaticas',role:'bonus'}]}));
+      {type:'offer_course_bonus',motive:{kind:'price_objection',quote:'es caro'}, interest_offering_code:'entrenamiento_funcional',bonus_offering_code:'redes_informaticas'},{course_mentions:[{offering_code:'redes_informaticas',role:'bonus'}]}));
   expect(fourth.authorizedMessages.join(' ')).not.toContain('Redes Informáticas');
   expect(fourth.authorizedMessages.join(' ')).toContain('Te sirve');
   const [offer]=await db!`SELECT o.*,p.promotion_code FROM promotion_offers o JOIN promotions p ON p.id=o.promotion_id

@@ -4,7 +4,6 @@ import {
   CourseBonusLadderV1Schema,
 } from '../../../botpress-agent/src/schemas/agent-a-brain';
 import { ClaimedTurnSchema } from '../../../botpress-agent/src/schemas/contracts';
-import { deriveCourseBonusLadderV1 } from '@/shared/conversation/bonus-ladder';
 
 const capability = {
   status: 'not_eligible',
@@ -18,12 +17,9 @@ const capability = {
 
 describe('Botpress course bonus permission contract', () => {
   it.each([
-    { price_evidence: false, retention_used: false },
-    { price_evidence: true, retention_used: false },
-    { price_evidence: false, retention_decline: true, retention_used: false },
-    { price_evidence: false, retention_decline: true, retention_used: true },
-  ])('preserves shared committed facts at both strict boundaries (%j)', input => {
-    const ladder = deriveCourseBonusLadderV1(input);
+    { retention_used: false, previous_turn_asked_price_question: false },
+    { retention_used: true, previous_turn_asked_price_question: true },
+  ])('preserves shared committed facts at both strict boundaries (%j)', ladder => {
     expect(CourseBonusLadderV1Schema.parse(ladder)).toEqual(ladder);
     for (const schema of [
       ClaimedTurnSchema.shape.course_bonus_capability,
@@ -44,11 +40,12 @@ describe('Botpress course bonus permission contract', () => {
   });
 
   it('rejects malformed ladder facts instead of silently dropping them', () => {
-    const ladder = deriveCourseBonusLadderV1({ price_evidence: true, retention_used: false });
+    const ladder = { retention_used: false, previous_turn_asked_price_question: false };
     for (const invalid of [
       { required_price_objection_count: 2 },
       { instant_trigger: true },
-      { price_evidence: 'yes' },
+      { retention_used: 'yes' },
+      { price_evidence: true },
       { missing_steps: ['sales_copy'] },
       { prescribed_response: 'texto fijo' },
     ]) expect(CourseBonusLadderV1Schema.safeParse({ ...ladder, ...invalid }).success).toBe(false);

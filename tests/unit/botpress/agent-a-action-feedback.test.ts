@@ -197,7 +197,7 @@ describe('Agent A conversation from action feedback', () => {
       ...draft.proposal,
       proposed_action: {
         type: 'offer_course_bonus' as const,
-        interest_offering_code: 'fotografia_profesional',
+        motive:{kind:'price_objection' as const,quote:'es caro'}, interest_offering_code: 'fotografia_profesional',
         bonus_offering_code: 'diseno_photoshop',
       },
       repair_of: { rejection_id: rejection.rejection_id, attempt: 1 as const },
