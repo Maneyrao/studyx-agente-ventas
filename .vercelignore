@@ -21,7 +21,7 @@ tests/
 scripts/
 specs/
 docs/
-data/
+/data/
 .superpowers/
 .claude/
 tsconfig.tsbuildinfo
