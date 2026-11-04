@@ -130,3 +130,16 @@ describe('claim-only legacy bonus ladder compatibility', () => {
     expect(AgentAContextV1Schema.safeParse(contextWithCapability(claimCapability.parse(capability(legacyLadder)))).success).toBe(true);
   });
 });
+
+describe('H4: claim parsing tolerates the pre-model-owned sales_flow shape', () => {
+  it('accepts and drops price_probe / gift_request_pending_probe', () => {
+    const parsed = claimCapability.parse(capability(undefined, {
+      sales_flow: { price_probe: 'asked', retention_used: false, promo_expires_at: null, gift_request_pending_probe: null },
+    }));
+    expect(parsed?.sales_flow).toEqual({ retention_used: false, promo_expires_at: null });
+  });
+  it('still rejects unknown sales_flow keys', () => {
+    expect(() => claimCapability.parse(capability(undefined, {
+      sales_flow: { retention_used: false, promo_expires_at: null, surprise: 1 } }))).toThrow();
+  });
+});

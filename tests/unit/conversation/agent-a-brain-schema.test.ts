@@ -164,3 +164,11 @@ describe('backend course_mentions wire contract',()=>{
       expect(AgentATurnProposalV1Schema.safeParse(proposal({course_mentions:[declaration]})).success).toBe(false);
   });
 });
+
+describe('H4: turn_reasoning crosses the backend boundary', () => {
+  it('the backend proposal schema accepts the Botpress turn_reasoning', () => {
+    const turn_reasoning = { phase: 'valor', customer_now: 'duda precio', already_said: 'precio', customer_goal: 'trabajar', next_step: 'value' };
+    expect(BotpressAgentATurnProposalV1Schema.safeParse(proposal({ turn_reasoning })).success).toBe(true);
+    expect(AgentATurnProposalV1Schema.safeParse(proposal({ turn_reasoning })).success).toBe(true);
+  });
+});
