@@ -6,6 +6,7 @@ import type {
 } from './conversation-pipeline';
 import { canonicalReferenceKey } from './conversation-planner';
 import { fichaFactIdV1, fichaFactValueV1 } from '@/shared/catalog/gabi-fichas';
+import { STUDYX_GENERAL_FACTS_V1 } from '@/shared/catalog/studyx-general-facts';
 
 export interface CanonicalFactRegistryV1 {
   readonly facts: ReadonlyMap<string, CanonicalFactV1>;
@@ -40,6 +41,9 @@ export function buildCanonicalFactRegistry(input: {
     source: 'payment_config',
     value: 'Prueba temporal de pago de USD 0,50',
   });
+  for (const general of STUDYX_GENERAL_FACTS_V1) {
+    facts.set(general.id, { id: general.id, kind: general.kind, source: 'business_snapshot', value: general.value });
+  }
   const areas = new Map<string, string>();
   for (const offering of input.catalog_index?.offerings ?? []) {
     if (!offering.academy) continue;

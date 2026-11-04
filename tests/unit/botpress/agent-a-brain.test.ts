@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { STUDYX_GENERAL_FACTS_V1 } from '../../../src/shared/catalog/studyx-general-facts';
 import { AgentATurnCommitV2Schema } from '../../../botpress-agent/src/schemas/agent-turn-v2';
 import { AgentATurnProposalV1Schema } from '../../../botpress-agent/src/schemas/agent-a-brain';
 import { AgentATurnProposalV1Schema as BackendProposalSchema } from '@/features/conversation/adapters/agent-a-brain-schema';
@@ -1625,6 +1626,22 @@ describe('Agent A Brain V1', () => {
       .not.toContainEqual(expect.objectContaining({ subject: 'course_logistics' }));
     expect(validate('No tengo confirmado si son grabadas, pero lo haces a tu ritmo.')?.rejections)
       .toContainEqual({ code: 'FACT_VALUE_MISMATCH', subject: 'course_logistics.self_paced' });
+  });
+
+  it('accepts manual-verified general logistics only when the general facts are in context, never a schedule', () => {
+    const validate = (text: string, withFacts: boolean) => {
+      const current = context();
+      current.capabilities.may_offer_call = false;
+      if (withFacts) current.catalog.general_facts = STUDYX_GENERAL_FACTS_V1.map((fact) => ({ ...fact }));
+      const parsed = parseAgentATurnProposalV1(proposal({ response: { messages: [text], call_offer: null } }), current);
+      return validateAgentATurnProposalV1({ proposal: parsed, context: current,
+        planned_fact_ids: parsed.used_fact_ids, rejection_id: '00000000-0000-4000-8000-000000000006' })?.rejections ?? [];
+    };
+    const claim = 'Tienes clases en vivo y clases grabadas, y avanzas a tu ritmo.';
+    expect(validate(claim, false)).toContainEqual({ code: 'FACT_VALUE_MISMATCH', subject: 'course_logistics.self_paced' });
+    expect(validate(claim, true)).not.toContainEqual(expect.objectContaining({ subject: 'course_logistics' }));
+    expect(validate('Las clases en vivo son todos los martes a las 19 h.', true))
+      .toContainEqual({ code: 'FACT_VALUE_MISMATCH', subject: 'course_logistics.fixed_schedule' });
   });
 
   it('compacts multiline model copy before canonical assembly', () => {

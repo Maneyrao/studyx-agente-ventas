@@ -293,6 +293,8 @@ export const AgentAContextV1Schema = z.object({
       display_name: z.string().trim().min(1).max(240),
     }).strict()).max(24),
     // Gabi's ficha of each current bonus candidate: reasons to choose, not permission.
+    // Manual-verified facts valid for every course (benefits, how it works).
+    general_facts: z.array(AgentAFactSchema).max(4).optional(),
     bonus_candidate_fichas: z.array(z.object({
       code: IdentifierSchema,
       fact: AgentAFactSchema,

@@ -1,3 +1,4 @@
+import { STUDYX_GENERAL_FACTS_V1 } from '../../../shared/catalog/studyx-general-facts';
 import { courseLogisticsInV1 as courseLogisticsIn, type CourseLogisticsFactV1 } from '../../../shared/conversation/course-logistics';
 import { hardClaimKindsInSentenceV1 } from '../../../shared/conversation/hard-claims';
 import { inspectCourseBonusClaimsV1 } from '../../../shared/conversation/course-bonus-claim';
@@ -493,6 +494,8 @@ export function canonicalTruthSetFromOfferingsV1(input: {
   const paymentTerms: { months: number; price: string }[] = [];
   const paymentPlans: { installments: number; price: string }[] = [];
   const courseLogistics = new Set<CourseLogisticsFactV1>();
+  // Manual-verified general facts hold for every course (never schedules or dates).
+  for (const general of STUDYX_GENERAL_FACTS_V1) for (const fact of courseLogisticsIn(general.value)) courseLogistics.add(fact);
   for (const offering of scope) {
     const currency = offering.currency?.trim() ?? '';
     if (offering.price_type === 'fixed' && offering.price_amount && currency.length > 0) {

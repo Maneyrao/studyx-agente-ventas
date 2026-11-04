@@ -7,6 +7,7 @@ import type { ConversationMoveV1 } from '../../schemas/conversation-pipeline';
 import { classifyBatchSalesSignal } from '../../../../src/features/orchestration/domain/sales-signal';
 import { supportsChatPreferenceV1 } from './channel-preference-evidence';
 import { mayOfferCallV1 } from '../../../../src/shared/conversation/bonus-ladder';
+import { STUDYX_GENERAL_FACTS_V1 } from '../../../../src/shared/catalog/studyx-general-facts';
 import { currentFactualCourseReferencesV1, latestAgentTurnMessages,
   type FactualCourseReferenceV1 } from '../../../../src/features/orchestration/domain/course-focus';
 
@@ -861,6 +862,7 @@ export function buildAgentAContextV1(
         fact_id: `area:${code}:name:v1`,
         display_name,
       })),
+      general_facts: STUDYX_GENERAL_FACTS_V1.map((fact) => ({ ...fact })),
       ...(bonusCandidateFichas.length ? { bonus_candidate_fichas: bonusCandidateFichas } : {}),
       // Con una venta enfocada las alternativas distraen, así que no viajan.
       // Pero si la persona dejó de apuntar a algo concreto y no hay paso

@@ -4,6 +4,7 @@ import { inspectCourseBonusClaimsV1 } from '@/shared/conversation/course-bonus-c
 import { validateCourseMentionsV1 } from '@/shared/conversation/course-mentions';
 import { messagesWithoutExactCallOfferV1 } from '@/shared/conversation/call-offer-format';
 import { fichaFactIdV1 } from '@/shared/catalog/gabi-fichas';
+import { STUDYX_GENERAL_FACT_IDS_V1 } from '@/shared/catalog/studyx-general-facts';
 import { courseBonusLadderRejectionSubjectsV1 } from '@/shared/conversation/bonus-ladder-rejection';
 import { supportsChatPreferenceV1 } from './channel-preference-evidence';
 import type { AgentAProposedActionV1, AgentATurnProposalV1 } from './agent-a-brain';
@@ -326,7 +327,8 @@ export function authorizeAgentTurnV2(input: {
     // (a reason to choose it; permission stays with the bonus validation).
     const bonusCandidateFicha = fact !== undefined && fact.id === fichaFactIdV1(fact.offering_code ?? '')
       && input.course_bonus?.bonus_candidates?.some(candidate => candidate.code === fact.offering_code) === true;
-    if (fact && (navigationFact || browsingCourseDetail || selectedOfferingFact || workspacePlanFact || temporaryTestPaymentFact || bonusCandidateFicha)) {
+    const studyxGeneralFact = fact !== undefined && STUDYX_GENERAL_FACT_IDS_V1.has(fact.id);
+    if (fact && (studyxGeneralFact || navigationFact || browsingCourseDetail || selectedOfferingFact || workspacePlanFact || temporaryTestPaymentFact || bonusCandidateFicha)) {
       authorizedFactIds.push(factId);
     }
     else reasons.push('FACT_NOT_AUTHORIZED');

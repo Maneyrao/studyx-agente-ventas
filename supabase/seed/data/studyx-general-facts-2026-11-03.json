@@ -1,0 +1,30 @@
+{
+  "source": "docs/authority/material-gabi-2026-11-03/Manual_Capacitacion_Studyx_2026.txt",
+  "facts": [
+    {
+      "id": "studyx:benefits:v1",
+      "value": "Studyx es 100% en español: no hace falta saber inglés. Aprendizaje flexible: hay clases en vivo y clases grabadas, y el alumno avanza a su ritmo. Formato completo: material de lectura, videos explicativos, seminarios complementarios de distintas áreas y actividades prácticas. Profesores expertos, con acompañamiento durante toda la cursada y espacio de Consultas al Profesor dentro de cada curso. Las clases en vivo (charlas y masterclass) tienen horarios adaptados a cada ciudad. Al completar y aprobar el diplomado se recibe el certificado digital de Studyx. App móvil Moodle (Android y iPhone) para ver las clases, los desafíos y las correcciones. 4,7 estrellas en Google y testimonios reales de egresados.",
+      "source_quotes": [
+        "100% en español: no necesita saber inglés para estudiar.",
+        "clases online en vivo y grabadas; avanza a su ritmo.",
+        "material de lectura, videos explicativos, seminarios complementarios de distintas áreas y actividades prácticas.",
+        "espacio de Consultas al Profesor dentro de cada curso.",
+        "charlas y masterclass con horarios adaptados a cada ciudad.",
+        "recibe su certificado digital.",
+        "desde la app Moodle (Android y iPhone).",
+        "4,7 estrellas en Google y testimonios reales de egresados."
+      ]
+    },
+    {
+      "id": "studyx:how_it_works:v1",
+      "value": "Todos los diplomados se cursan igual: el alumno se inscribe y recibe su usuario y contraseña del Campus Virtual. Accede a las clases precargadas y avanza a su ritmo. Se anota a las clases en vivo que le interesan y ve las clases grabadas cuando quiere. Hace los ejercicios, los trabajos prácticos y los exámenes parciales de cada módulo. Aprueba el examen final y recibe su certificado.",
+      "source_quotes": [
+        "recibe su usuario y contraseña del Campus Virtual.",
+        "Accede a las clases precargadas y avanza a su ritmo.",
+        "Se anota a las clases en vivo que le interesan y ve las grabadas cuando quiere.",
+        "Hace los ejercicios, trabajos prácticos y exámenes parciales de cada módulo.",
+        "Aprueba el examen final y recibe su certificado."
+      ]
+    }
+  ]
+}
