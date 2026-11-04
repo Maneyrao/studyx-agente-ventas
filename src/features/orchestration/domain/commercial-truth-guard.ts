@@ -111,7 +111,7 @@ const DURATION_PATTERN =
   /\b(\d+(?:[.,]\d+)?)\s*(minutos?|horas?|d[ií]as?|semanas?|mes(?:es)?|a[nñ]os?|clases?|m[oó]dulos?)\b/giu;
 
 const ONLINE_MODALITY = /\b(?:online|virtual(?:es)?|remot[oa]s?|a distancia|en linea|asincronic[oa]s?)\b/u;
-const PRESENTIAL_MODALITY = /\b(?:presencial(?:es)?|en sede|en el campus)\b/u;
+const PRESENTIAL_MODALITY = /\b(?:presencial(?:es)?|en sede)\b/u;
 
 const CERTIFICATION_NOUN = /\b(?:certificad[oa]s?|certificacion(?:es)?|diplomas?|titulos?)\b/u;
 const NEGATION = /\b(?:no|sin|tampoco)\b/u;

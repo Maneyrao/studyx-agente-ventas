@@ -1,4 +1,5 @@
 import * as brainValidation from '../../../botpress-agent/src/lib/conversation/agent-a-brain';
+import { STUDYX_GENERAL_FACTS_V1 } from '@/shared/catalog/studyx-general-facts';
 import { describe, expect, it, vi } from 'vitest';
 import { resolveAgentAPlannerlessProposalV2 } from '../../../botpress-agent/src/lib/conversation/resolve-agent-a-plannerless';
 import { AgentABrainError, parseAgentATurnProposalV1 } from '../../../botpress-agent/src/lib/conversation/agent-a-brain';
@@ -3655,5 +3656,47 @@ describe('natural sales regression: deterministic machinery (fixed proposals are
         repair_of: { rejection_id: rejection.rejection_id, attempt: 1 } })),
       semantic_rejections: 'advisory', rejection_id: '00000000-0000-4000-8000-0000000000c3' });
     expect(result.effective.proposal.response.messages).toEqual([OLDER]);
+  });
+  it('keeps the thank-you answer after enrollment when the repaired draft cites the general facts (real golden 12 draft)', async () => {
+    const current = context();
+    current.catalog.general_facts = STUDYX_GENERAL_FACTS_V1.map(fact => ({ ...fact })) as never;
+    const real = proposal({
+      response: { messages: [
+        'Qué bueno, Ana. Ya con el acceso activo puedes entrar al campus cuando quieras y avanzar a tu ritmo con Fotografía Profesional.',
+        'Cuéntame, ya pudiste abrir el curso o tienes alguna duda con la plataforma?',
+      ], call_offer: null },
+      used_fact_ids: [NAME_FACT, 'studyx:how_it_works:v1'],
+    });
+    const repair = vi.fn(async (rejection) => generated({
+      ...real, repair_of: { rejection_id: rejection.rejection_id, attempt: 1 },
+    }));
+    const result = await resolveAgentAPlannerlessProposalV2({
+      initial: generated(real), context: current, repair_enabled: true,
+      rejection_id: '00000000-0000-4000-8000-0000000000f2', repair,
+    });
+    expect(repair.mock.calls[0]![0].rejections.map((r: { code: string }) => r.code)).not.toContain('FACT_NOT_AUTHORIZED');
+    expect(result.effective.proposal.response.messages.length).toBeGreaterThan(0);
+    expect(result.effective.proposal.response.messages.join(' ')).toContain('Cuéntame');
+  });
+
+  it('does not reject a citation of the general facts the context itself sends (golden 12 thank-you after enrollment)', async () => {
+    const current = context();
+    current.catalog.general_facts = STUDYX_GENERAL_FACTS_V1.map(fact => ({ ...fact })) as never;
+    const messages = [
+      'Qué bueno, Ana. Ya con el acceso activo puedes avanzar a tu ritmo con Fotografía Profesional.',
+      'Cuéntame, ya pudiste abrir el curso o tienes alguna duda con la plataforma?',
+    ];
+    const repair = vi.fn();
+    const result = await resolveAgentAPlannerlessProposalV2({
+      initial: generated(proposal({
+        response: { messages, call_offer: null },
+        used_fact_ids: [NAME_FACT, 'studyx:how_it_works:v1'],
+      })),
+      context: current, repair_enabled: true,
+      rejection_id: '00000000-0000-4000-8000-0000000000f1',
+      repair,
+    });
+    expect(repair).not.toHaveBeenCalled();
+    expect(result.effective.proposal.response.messages).toEqual(messages);
   });
 });

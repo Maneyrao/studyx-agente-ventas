@@ -413,6 +413,13 @@ describe('restricciones comerciales firmes', () => {
     expect(verdict.violations.map((violation) => violation.code)).toContain('DURATION_NOT_CANONICAL');
   });
 
+  it('no confunde el campus virtual con una sede presencial (golden 12, acuse post-alta)', () => {
+    const content = 'Qué bueno, Ana. Si ya ves los tres cursos en el campus, tu acceso está funcionando bien.';
+    const verdict = enforce(content);
+
+    expect(verdict.violations.map((violation) => violation.code)).not.toContain('MODALITY_CONTRADICTS_CANONICAL');
+  });
+
   it('veta una modalidad contradictoria', () => {
     const content = 'Las clases son presenciales en nuestra sede. Te espero.';
     const verdict = enforce(content);
