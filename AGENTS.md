@@ -151,7 +151,7 @@ Reemplaza en el runtime las Reglas B, C, D y E, la promo instantánea, la tarea 
 - El modelo interpreta, identifica la fase, decide la estrategia (descubrimiento, valor, objeciones, cierre, momento de llamada y de promoción, curso bonificado) y redacta. Ningún regex del backend decide si una respuesta vende, avanza, insiste, cierra bien o debe ofrecer una llamada.
 - Prompt :120 («el backend decide el momento y el curso»): se lee como «el backend valida el permiso». El modelo propone `offer_course_bonus`; el backend valida:
   1. bonificación habilitada;
-  2. evidencia de precio (spec :60): memoria `objection/price_objection` o `constraint/price_only_barrier` persistida, o del turno actual con `source_quote` literal presente en el lote;
+  2. motivo del mensaje actual (reemplazado 2026-11-04, ver «Bonificación por motivo actual» al final): `motive.kind` coherente con el `move` declarado y `motive.quote` literal del lote entrante actual; una memoria persistida ya no autoriza;
   3. curso activo y distinto del pago;
   4. no repetido;
   5. máximo 3, uno por turno;
@@ -160,7 +160,7 @@ Reemplaza en el runtime las Reglas B, C, D y E, la promo instantánea, la tarea 
   8. fuera del checkout (por estado);
   9. afinidad como pertenencia al conjunto: «Combinalo con» de la ficha del curso pago y rutas de carrera que lo contienen (datos de las fichas de Gabi), fila de la tabla de afinidades como respaldo, puentes universales o curso nombrado literalmente por el cliente; siempre activos, sin el pago ni los ya ofrecidos. Una sola función para el permiso y para los candidatos del modelo.
 
-  El «sí» a la pregunta del precio es guía del prompt, no un permiso.
+  El «sí» a la pregunta del precio autoriza sólo si el turno anterior del agente declaró estructuradamente que hizo esa pregunta (2026-11-04).
 - Retención: un rechazo de compra declarado por el modelo, con cita literal en el lote, habilita UNA bonificación de retención por conversación aunque no haya objeción de precio. Redacta el modelo; sin texto fijo.
 - Respuesta y efectos independientes: un efecto no permitido se rechaza solo (se poda la acción). Si el texto afirma el efecto: una reparación y, si falla, se quitan las burbujas que lo afirman. Un hecho incorrecto: una reparación; si falla, se quita sólo la oración afectada (excepción a la regla de no recortar dentro de una burbuja de «Adaptaciones técnicas»), se agrega el hecho canónico y se revalida contra la guarda del backend. Nunca sale el dato incorrecto; nunca silencio, salvo opt-out, supresión o manipulación detectada por el egreso.
 - Estado comercial estructurado para el modelo (`commercial_state.sales_profile`), proyectado desde datos persistidos (memorias de `agent_decisions`, estado de venta, promoción), nunca desde frases del agente ni desde audit_log.
@@ -176,7 +176,7 @@ Manual, 57 fichas e `indice_para_el_agente.csv`. Es conocimiento para el modelo,
 - **Prompt de autoridad:** se suman argumentos de valor, preguntas de descubrimiento, tabla de objeciones, tácticas de cierre (alternativa, complemento que multiplica ingresos, escalera descendente = bajar de bonificados y nunca de precio, testimonio, resumen) y el ejemplo de conversación, en nuestra voz (tú, sin «¡», una pregunta por turno). Testimonios sólo los reales del manual (Felipe Serrano; Cristian y Ana María; Amparo y Edson), elegidos por afinidad. «Inicio de clases» y «tiempo limitado» sólo con fecha real en el backend.
 - **Precio:** USD 360 (1 pago, 6 × USD 60, 12 × USD 30). El USD 699 del manual no se menciona nunca. La Beca Studyx nunca se menciona ni se ofrece; se quitan el «cierre con beca» y la beca de la objeción «es caro».
 - **Controles duros (validación factual del backend; se repara sólo la oración, Fase 4):** nunca título oficial, universitario o acreditado por el gobierno; nunca empleo ni ingresos determinados; en oficios con licencia estatal en EE. UU., el diplomado da la base pero no reemplaza la licencia; nunca cupos, descuentos, fechas ni precios distintos de USD 360.
-- **Pendiente, fuera de alcance:** enviar imágenes, fichas PDF o videos por WhatsApp; venta cruzada a alumnos actuales.
+- **Pendiente, fuera de alcance:** enviar imágenes o videos por WhatsApp; venta cruzada a alumnos actuales. (El programa en PDF pasó a alcance el 2026-11-04: `send_course_program`.)
 
 ### Cierre sin invasión (feedback de Gabi, 03/11)
 - «Cada respuesta avanza» significa que la conversación avanza (descubrir, dar valor, resolver la duda), no que cada turno pida la inscripción.
@@ -198,3 +198,14 @@ Manual, 57 fichas e `indice_para_el_agente.csv`. Es conocimiento para el modelo,
 
 ## Excepción del dueño: despliegue a prueba sin aceptación formal (2026-11-04)
 - El dueño autorizó desplegar `claude/agent-a-model-owned-sales` (brain v162, canónico v108) a su entorno de prueba (Botpress STUDYX + su Vercel personal) aunque la aceptación golden formal no llegó a 41/48 (corridas: 35/48 y 33/48). Es una excepción puntual para probar por WhatsApp; no habilita producción ni otros entornos.
+
+## Bonificación por motivo actual, intención del turno y programas PDF (decisión del dueño, 2026-11-04)
+- **Runtime canónico:** Agent A brain plannerless V2 (`claude/agent-a-model-owned-sales`, base `9987e2a`). Decision v4 queda fuera del camino vivo; no se copia runtime de `codex/bot-a-lean-g1-g2`.
+- **Intención del mensaje actual:** el modelo clasifica el mensaje actual (`ask_payment_options`, `select_payment_plan`, `request_payment_link`, `price_objection`, `explicit_promotion_request`, `decline_purchase`, `request_course_program`, entre otros). El historial sólo resuelve referencias breves; una objeción anterior no vuelve a ser una objeción nueva. Una pregunta de aclaración sobre la oferta vigente («me regalas otro curso?», «dos por uno?») no pide otro curso.
+- **Motivo de bonificación:** `offer_course_bonus` lleva `motive { kind, quote }`. Motivos válidos: nueva objeción de precio (`price_objection`), rechazo o cuestionamiento de la promo vigente (`promotion_rejection`), pedido explícito de una mejor promo (`better_promotion_request`), rechazo de compra después de trabajar el valor (`purchase_decline`, una vez). El backend valida sin leer texto comercial: `motive.kind` coherente con el `move`/`secondary_moves` declarado, `quote` literal del lote actual, y los límites de siempre (curso pago, activo y distinto, máx. 3, uno por acción, afinidad, oferta anterior respondida, paquete no aceptado ni pagado, idempotencia). No son motivos: consulta de pago o cuotas, pedido de link, elección de plan, entrega de datos, aceptación, señal de compra, saludo o retoma. En esos turnos el paquete queda igual (ciclo, versión, cantidad y cursos). `may_offer_bonus` es capacidad, nunca orden. El backend no escribe la promo, no elige el curso y no dispara escalones.
+- **Pedido de un curso puntual** («me bonificas X?») es `better_promotion_request` con su cita, dentro de los mismos límites. El **cambio** con un solo bonificado no suma cursos y no requiere motivo de escalón.
+- **Consulta de pago:** explica sólo los planes canónicos, conserva curso y promo, no elige plan ni manda link, no ofrece otro curso y hace a lo sumo una pregunta. Con un plan elegido recién se avanza al link.
+- **Sin CTA prefabricados** en la ruta comercial: el backend entrega datos, el modelo redacta. Se conservan sólo el respaldo P0 y los acuses operativos (solicitud de llamada, link post-llamada).
+- **Programa PDF:** acción `send_course_program { offering_code }`. El backend resuelve el PDF oficial (registro con sha256, nunca URL del modelo), lo envía como documento de WhatsApp y registra la entrega de forma idempotente. Si falla, no se afirma el envío. Los PDF se sirven desde el backend.
+- **Real Estate:** curso activo a USD 360 (1, 6×60, 12×30) con su programa oficial. El alta en la base compartida se aplica con el OK del dueño al desplegar.
+- El pedido del dueño del 2026-11-04 autoriza la edición del prompt de autoridad para estas reglas.
