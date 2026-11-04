@@ -768,6 +768,17 @@ describe('offering list guard: a colon after a canonical name introduces its des
   ])('does not flag %s', (content) => {
     expect(enforce(content, canonical).violations.map((v) => v.code)).not.toContain('OFFERING_NOT_CANONICAL');
   });
+  it('passes a lowercase description after the colon', () => {
+    expect(enforce('Te recomiendo Marketing Digital: aprenderás estrategias y métricas.', canonical).violations.map((v) => v.code))
+      .not.toContain('OFFERING_NOT_CANONICAL');
+  });
+  it.each([
+    'Te recomiendo Marketing Digital: Diplomado en Criptomonedas.',
+    'Te recomiendo Marketing Digital: Criptomonedas Avanzadas.',
+    'Te recomiendo Marketing Digital: curso de Criptomonedas.',
+  ])('keeps checking course names after the colon: %s', (content) => {
+    expect(enforce(content, canonical).violations.map((v) => v.code)).toContain('OFFERING_NOT_CANONICAL');
+  });
   it('still flags an invented course', () => {
     expect(enforce('Te recomiendo Marketing Cuántico Avanzado.', canonical).violations.map((v) => v.code)).toContain('OFFERING_NOT_CANONICAL');
   });

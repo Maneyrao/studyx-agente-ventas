@@ -181,9 +181,19 @@ function containsUnknownOffering(sentence: string, names: readonly string[], are
         && !/\p{L}/u.test(remainder.slice(candidate.length, candidate.length + 1)));
       if (!name) return true;
       remainder = remainder.slice(name.length).trim();
-      // "Te recomiendo Marketing Digital: trabajas contenidos…" — a colon after a
-      // canonical name introduces its description, not another offering.
-      if (remainder.startsWith(':')) break;
+      // After a canonical name a colon usually introduces its description
+      // ("Marketing Digital: trabajas contenidos…"). It only stays a description
+      // when it is one; an explicit course ("Diplomado en…") or a capitalized
+      // proper noun is another course object and keeps being checked.
+      if (remainder.startsWith(':')) {
+        const after = remainder.slice(1).trim();
+        const original = namedObject.slice(namedObject.indexOf(':') + 1).trim();
+        const isAnotherObject = after.length > 0 && !OFFERING_DESCRIPTION.test(after)
+          && (EXPLICIT_COURSE.test(after) || /^\p{Lu}/u.test(original));
+        if (!isAnotherObject) break;
+        remainder = after.replace(EXPLICIT_COURSE, '');
+        continue;
+      }
       const descriptor = remainder.replace(OFFERING_LIST_SEPARATOR, '');
       const membership = descriptor.match(AREA_MEMBERSHIP)
         ?? descriptor.match(COLLECTIVE_AREA_MEMBERSHIP);
