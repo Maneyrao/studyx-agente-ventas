@@ -70,6 +70,21 @@ describe('sales profile memories (persisted model interpretation)', () => {
     expect(profile?.objections).toEqual([]);
   });
 
+  // 2026-11-05 owner test (6bcc8efa): the reply answered a superseded batch
+  // («no lo sé aún» / «es formarme») plus the newer one; evidence was only the newer.
+  it('accepts a quote from customer messages the reply answered across superseded batches', async () => {
+    const id = identity();
+    await inbound(id, 'no lo sé aún');
+    await inbound(id, 'es formarme');
+    const answered = await inbound(id, 'son confiables?');
+    await commitAgentDecision(input(answered.turn_id, [
+      { type: 'study_goal', key: 'objective', value: 'formarse, aún sin definir el uso', source_quote: 'no lo sé aún\nes formarme', confidence: 0.7 }]));
+    const next = await inbound(id, 'hay testimonios?');
+    const profile = await readSalesProfileMemoriesV1({ workspace_slug: 'studyx', contact_id: next.contact.id,
+      conversation_id: next.conversation_id, source_turn_id: next.turn_id }, { db });
+    expect(profile?.objective).toEqual([{ key: 'objective', value: 'formarse, aún sin definir el uso', source_quote: 'no lo sé aún\nes formarme' }]);
+  });
+
   it('is scoped to the workspace, the conversation and earlier turns', async () => {
     const id = identity();
     const first = await inbound(id, 'Prefiero seguir por acá, no por llamada.');

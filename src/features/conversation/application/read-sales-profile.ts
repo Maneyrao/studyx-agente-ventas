@@ -13,10 +13,17 @@ export async function readSalesProfileMemoriesV1(input: {
 }, deps: { db: DbClient }): Promise<SalesProfileMemoriesV1 | null> {
   const rows = await deps.db<Array<{ memory_candidates: Array<Record<string, unknown>>; evidence: string[] }>>`
     SELECT decision.memory_candidates,
+      -- Every customer message this reply answered: its own batch plus any
+      -- superseded batch since the previous agent message (owner test 6bcc8efa).
       ARRAY(SELECT evidence.content FROM messages evidence
         WHERE evidence.contact_id=source.contact_id AND evidence.conversation_id=source.conversation_id
           AND evidence.direction='inbound'
-          AND (evidence.id=source.id OR (source.batch_id IS NOT NULL AND evidence.batch_id=source.batch_id))) evidence
+          AND (evidence.id=source.id OR (source.batch_id IS NOT NULL AND evidence.batch_id=source.batch_id)
+            OR (evidence.created_at < source.created_at AND NOT EXISTS (
+              SELECT 1 FROM messages reply WHERE reply.conversation_id=source.conversation_id
+                AND reply.direction='outbound' AND reply.created_at > evidence.created_at
+                AND reply.created_at < source.created_at)))
+        ORDER BY evidence.created_at, evidence.id) evidence
     FROM workspaces w
     JOIN workspace_contacts membership ON membership.workspace_id=w.id AND membership.contact_id=${input.contact_id}::uuid
     JOIN messages source ON source.contact_id=membership.contact_id AND source.conversation_id=${input.conversation_id}::uuid

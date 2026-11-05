@@ -45,7 +45,11 @@ export function projectSalesProfileMemoriesV1(rows: readonly SalesProfileDecisio
     preferences: [], timeline: [], contact_preference: [],
   };
   for (const row of rows) {
-    const evidence = row.evidence.map(norm);
+    const messages = row.evidence.map(norm);
+    // A quote may span consecutive messages of the reply (WhatsApp splits one
+    // thought: «no lo sé aún» / «es formarme»); never non-adjacent ones.
+    const evidence = messages.flatMap((_, start) => messages.slice(start)
+      .map((__, length) => messages.slice(start, start + length + 1).join(' ')));
     for (const candidate of row.memory_candidates) {
       const { type, key, value, source_quote: quote } = candidate;
       if (typeof type !== 'string' || typeof key !== 'string' || typeof value !== 'string' || typeof quote !== 'string') continue;

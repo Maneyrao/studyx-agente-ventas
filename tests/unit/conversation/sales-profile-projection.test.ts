@@ -17,6 +17,19 @@ describe('sales profile memory projection', () => {
     expect(profile.experience).toEqual([{ key: 'experience', value: 'hace uñas a amigas', source_quote: 'hago a mis amigas' }]);
   });
 
+  // 2026-11-05 owner test (6bcc8efa): «no lo sé aún» + «es formarme» were two
+  // WhatsApp messages; the model quoted both and the objective was dropped.
+  it('keeps a quote that spans consecutive customer messages of the same reply', () => {
+    const profile = projectSalesProfileMemoriesV1([
+      row([{ type: 'study_goal', key: 'objective', value: 'formarse, aún sin definir el uso', source_quote: 'no lo sé aún\nes formarme' }],
+        ['no lo sé aún', 'es formarme', 'son confiables?']),
+    ]);
+    expect(profile.objective).toEqual([{ key: 'objective', value: 'formarse, aún sin definir el uso', source_quote: 'no lo sé aún\nes formarme' }]);
+    // Joining never manufactures text across non-adjacent messages.
+    expect(projectSalesProfileMemoriesV1([row([{ type: 'study_goal', key: 'objective', value: 'x',
+      source_quote: 'no lo sé aún son confiables?' }], ['no lo sé aún', 'es formarme', 'son confiables?'])]).objective).toEqual([]);
+  });
+
   it('drops a memory whose quote is not literal customer text (never from agent phrases)', () => {
     const profile = projectSalesProfileMemoriesV1([
       row([{ type: 'study_goal', key: 'goal', value: 'ser influencer', source_quote: 'quiero ser influencer' }],
