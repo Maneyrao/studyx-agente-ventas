@@ -1213,4 +1213,17 @@ describe('cases 29-41 hard rules (current-message bonus motive, package, program
     expect(codes(linkTurn, link('one_time'))).toContain('LINK_PLAN_MISMATCH');
     expect(codes(turnWith('x', [{ type: 'no_prefab_cta' }]), observation({ response: 'Con cuál plan te gustaría avanzar?' }))).toContain('PREFAB_CTA_PRESENT');
   });
+  it('program_document_exactly_once: sent now XOR sent in the previous turn', () => {
+    const turn = turnWith('x', [{ type: 'program_document_exactly_once', value: 'real_estate' }]);
+    const sent = observation({ programDocuments: ['real_estate'] });
+    expect(codes(turn, sent, observation())).toEqual([]);
+    expect(codes(turn, observation(), sent)).toEqual([]);
+    expect(codes(turn, sent, sent)).toContain('PROGRAM_DOCUMENT_DUPLICATED');
+    expect(codes(turn, observation(), observation())).toContain('PROGRAM_DOCUMENT_MISSING');
+  });
+  it('a turn whose prior promotion precondition is not met is not judged (case 41 clarification)', () => {
+    const turn = { ...turnWith('osea me regalas otro curso?', [{ type: 'package_unchanged' }]),
+      priorPromotion: { status: ['offer_available'], bonusCount: [1, 2, 3] } };
+    expect(codes(turn, observation(), observation())).toEqual(['TURN_PRECONDITION_NOT_REACHED']);
+  });
 });

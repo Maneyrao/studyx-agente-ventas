@@ -412,6 +412,12 @@ export function evaluateHardRules(
     if (rule.type === 'program_document_sent' && !(observation.programDocuments ?? []).includes(rule.value)) {
       add(failures, 'PROGRAM_DOCUMENT_MISSING', `Falta el PDF de ${rule.value}; enviados ${(observation.programDocuments ?? []).join('|') || 'ninguno'}.`);
     }
+    if (rule.type === 'program_document_exactly_once') {
+      const now = (observation.programDocuments ?? []).includes(rule.value);
+      const before = (previousObservation?.programDocuments ?? []).includes(rule.value);
+      if (now && before) add(failures, 'PROGRAM_DOCUMENT_DUPLICATED', `El PDF de ${rule.value} se envió dos veces.`);
+      if (!now && !before) add(failures, 'PROGRAM_DOCUMENT_MISSING', `El PDF de ${rule.value} no se envió en este turno ni en el anterior.`);
+    }
     if (rule.type === 'no_program_document' && (observation.programDocuments ?? []).length > 0) {
       add(failures, 'PROGRAM_DOCUMENT_UNEXPECTED', `Se envió ${(observation.programDocuments ?? []).join('|')}.`);
     }

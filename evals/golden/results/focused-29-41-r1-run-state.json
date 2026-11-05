@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "status": "interrupted",
+  "evaluated_sha": "b51d019018bc7aa046929cf49429219a63148a61",
+  "provider": "deepseek",
+  "model": "deepseek-v4-flash",
+  "judge_model": "deepseek-v4-flash",
+  "case_selection": "29,30,31,32,33,34,35,36,37,38,39,40,41",
+  "suite_invocations": 1,
+  "started_at": "2026-11-05T02:14:22.647Z",
+  "updated_at": "2026-11-05T02:15:32.834Z",
+  "error_code": "GOLDEN_BACKEND_NOT_READY"
+}

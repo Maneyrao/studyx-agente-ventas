@@ -73,6 +73,8 @@ export type HardRuleV1 =
   /** The official PDF of this offering was handed to the delivery client this turn. */
   | { readonly type: 'program_document_sent'; readonly value: string }
   | { readonly type: 'no_program_document' }
+  /** The PDF of this offering goes out in this turn XOR it already went out in the previous turn (exactly once across the pair). */
+  | { readonly type: 'program_document_exactly_once'; readonly value: string }
   | { readonly type: 'no_link_delivered' }
   /** A proposed send_payment_link carries exactly one of these plans. */
   | { readonly type: 'link_plan_in'; readonly values: readonly string[] }

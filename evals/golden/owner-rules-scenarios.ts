@@ -620,7 +620,7 @@ OWNER_PROMOTION_MODE_REPLAY_CASES_MUTABLE.push(
     turns: [
       mdInterest(),
       mdBase('how_to_pay', 'cómo puedo pagarlo?', {
-        must: ['Presentar los tres planes canónicos y preguntar cuál le conviene, sin elegir por él.'],
+        must: ['Presentar los tres planes canónicos sin elegir por el cliente; puede cerrar con una sola pregunta o con ninguna.'],
         mustNot: ['No elegir un plan, no mandar link, no ofrecer bonificado ni llamada.'],
         authority: [paymentRef, intentRef, noPrefabRef],
         expected: { move: ['ask_payment_options'], action: ['none'], state: { plan: [null], promotion: { status: [null, 'none'], bonusCount: [0] } } },
@@ -743,7 +743,7 @@ OWNER_PROMOTION_MODE_REPLAY_CASES_MUTABLE.push(
         mustNot: ['No inventar contenidos, no prometer licencia, empleo ni ingresos, no ofrecer una llamada.'],
         authority: [realEstateRef, intentRef, noPrefabRef],
         expected: { move: intentMoves, action: ['none'], state: {} },
-        hard: [{ type: 'workflow_committed' }, noPrefab, { type: 'contains', value: 'Real Estate' }, { type: 'question_count_at_most', value: 1 },
+        hard: [{ type: 'workflow_committed' }, noPrefab, { type: 'no_program_document' }, { type: 'contains', value: 'Real Estate' }, { type: 'question_count_at_most', value: 1 },
           { type: 'no_call_offer' }, ...noBeca],
       }),
       mdBase('real_estate_modules', 'qué módulos tiene?', {
@@ -754,11 +754,11 @@ OWNER_PROMOTION_MODE_REPLAY_CASES_MUTABLE.push(
         hard: [{ type: 'workflow_committed' }, noPrefab, { type: 'no_call_offer' }, ...noBeca],
       }),
       mdBase('real_estate_pdf', 'me pasás el programa en PDF?', {
-        must: ['Presentar el programa con una introducción corta; el PDF es la respuesta.'],
-        mustNot: ['No resumir el programa en lugar de enviarlo, no escribir enlaces, no ofrecer una llamada.'],
+        must: ['Si el PDF todavía no salió: presentarlo con una introducción corta (el PDF es la respuesta). Si ya salió en el turno anterior: decir con naturalidad que ya se lo compartió, sin reenviarlo.'],
+        mustNot: ['No resumir el programa en lugar de enviarlo, no escribir enlaces, no prometer un reenvío, no ofrecer una llamada.'],
         authority: [programRef, realEstateRef, noPrefabRef],
-        expected: { move: ['request_course_program'], action: ['send_course_program'], state: {} },
-        hard: [{ type: 'workflow_committed' }, noPrefab, { type: 'program_document_sent', value: 'real_estate' },
+        expected: { move: ['request_course_program', 'ask_course_information'], action: ['none', 'send_course_program'], state: {} },
+        hard: [{ type: 'workflow_committed' }, noPrefab, { type: 'program_document_exactly_once', value: 'real_estate' },
           { type: 'not_contains', value: 'http' }, { type: 'no_call_offer' }, ...noBeca],
       }),
     ],
@@ -767,11 +767,15 @@ OWNER_PROMOTION_MODE_REPLAY_CASES_MUTABLE.push(
     id: '41_real_trace_a96de4bf_20261104',
     title: 'Traza real a96de4bf: tras la primera bonificación, «osea me regalas otro curso?» + «dos por uno?» aclara la promo vigente y no suma otro curso',
     reconstructed: true,
-    note: 'El lote de dos mensajes se envía como un único texto con salto de línea.',
+    note: 'El lote de dos mensajes se envía como un único texto con salto de línea. La aclaración sólo se juzga si ya existe un paquete (TURN_PRECONDITION_NOT_REACHED si no).',
     turns: [
       mdInterest(),
       mdObjection('expensive', 'es caro', [0, 1]),
+      // The real conversation: the bonus landed after the price question was answered. It may land on either of
+      // these two turns; the clarification below is judged only once a package exists.
+      mdObjection('yes_price', 'sí, es el precio, es bastante caro', [0, 1, 2]),
       mdBase('clarification', 'osea me regalas otro curso?\ndos por uno?', {
+        priorPromotion: { status: ['offer_available'], bonusCount: [1, 2, 3], paidCourse: ['marketing_digital'] },
         must: ['Aclarar la promo vigente (qué incluye lo ya ofrecido, el 2×1 actual) con naturalidad y a lo sumo una pregunta útil.'],
         mustNot: ['No ofrecer ni nombrar otro curso bonificado nuevo, no tratarlo como una queja de precio, no ofrecer una llamada.'],
         authority: [intentRef, motiveRef, noPrefabRef],
