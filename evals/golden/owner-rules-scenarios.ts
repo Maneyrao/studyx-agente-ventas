@@ -967,7 +967,7 @@ OWNER_PROMOTION_MODE_REPLAY_CASES_MUTABLE.push({
 
 // Owner test 6bcc8efa (2026-11-05 21:05–22:07Z, brain v171): discovery asked «¿trabajar o invertir?» three times,
 // including after «no lo sé aún»; «quiero pagar» never selected the course. Evaluation only, never a backend gate.
-const discoverOnceRef = owner(234, 238, 'Descubrir una vez y cerrar');
+const discoverOnceRef = owner(234, 239, 'Descubrir una vez y cerrar');
 const sameFamily = 'No volver a preguntar si quiere trabajar con una inmobiliaria o invertir (ni otra variante de esa elección): el cliente ya dijo que no lo sabe.';
 OWNER_PROMOTION_MODE_REPLAY_CASES_MUTABLE.push({
   id: '47_discover_once_6bcc8efa_20261105',
@@ -999,7 +999,7 @@ OWNER_PROMOTION_MODE_REPLAY_CASES_MUTABLE.push({
       expected: { move: ['request_payment_link', 'select_course', 'provide_contact_details'], action: ['none'], state: {} },
       hard: [{ type: 'workflow_committed' }, noPrefab, { type: 'selected_course_equals', value: 'real_estate' }, { type: 'no_link_delivered' }, ...noBeca],
     }),
-    traceBase('g08_data', 'thiago meiniero\ntmaneyro@gmail.com', { authority: [discoverOnceRef, paymentRef, noPrefabRef],
+    traceBase('g08_data', 'thiago meiniero\ntmaneyro@gmail.com\n+54 9 11 6900 4497', { authority: [discoverOnceRef, paymentRef, noPrefabRef],
       expected: { move: ['provide_contact_details', 'request_payment_link'], action: ['none'], state: {} },
       hard: [{ type: 'workflow_committed' }, noPrefab, { type: 'selected_course_equals', value: 'real_estate' }, ...noBeca],
     }),

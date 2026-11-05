@@ -1,5 +1,5 @@
 import { validateBonusMotiveV1 } from '@/shared/conversation/bonus-motive';
-import { draftDeclinesPurchaseV1, isCheckoutV1 } from '@/shared/conversation/deterministic-sales-rules';
+import { draftDeclinesPurchaseV1, isBonusCheckoutV1, isCheckoutV1 } from '@/shared/conversation/deterministic-sales-rules';
 import { copyNamesCourseV1, inspectCourseBonusClaimsV1 } from '@/shared/conversation/course-bonus-claim';
 import { validateCourseMentionsV1 } from '@/shared/conversation/course-mentions';
 import { messagesWithoutExactCallOfferV1 } from '@/shared/conversation/call-offer-format';
@@ -76,6 +76,8 @@ export type AgentTurnAuthorityResultV2 = {
   readonly discussed_offering_code: string | null;
   /** Rule A: the link carries the offered package, accepted in the same commit. */
   readonly auto_accept_promotion?: boolean;
+  /** Why a proposed link was withheld when no rule failed: the sale has no open checkout checkpoint. */
+  readonly payment_link_refusal?: 'confirmation_required';
   /** Present when semantic checks run as diagnostics instead of a copy veto. */
   readonly advisory_reasons?: readonly AgentTurnRejectionReasonV2[];
   readonly rejection_subjects?: readonly string[];
@@ -503,6 +505,7 @@ export function authorizeAgentTurnV2(input: {
       ? { type: 'request_call_now', reason: 'direct_request' }
       : proposal.proposed_action;
   }
+  let paymentLinkRefusal: 'confirmation_required' | null = null;
   if (proposal.proposed_action.type === 'send_payment_link') {
     const matchesState = selectedOffering !== null
       && proposal.proposed_action.offering_code === selectedOffering
@@ -527,6 +530,8 @@ export function authorizeAgentTurnV2(input: {
         payment_plan: selectedPlan,
         ...(authorizedPromotionCode ? { promotion_code: authorizedPromotionCode } : {}),
       };
+    } else {
+      paymentLinkRefusal = 'confirmation_required';
     }
   }
   if (proposal.proposed_action.type === 'send_test_payment_link') {
@@ -612,7 +617,7 @@ export function authorizeAgentTurnV2(input: {
       retention_used: cap?.ladder?.retention_used ?? false,
       purchase_decline_recorded: draftDeclinesPurchaseV1(draftEvidence, batch),
       previous_turn_asked_price_question: cap?.ladder?.previous_turn_asked_price_question ?? false });
-    const checkout = isCheckoutV1({ stage: state.stage, awaiting_reply: state.awaiting_reply,
+    const checkout = isBonusCheckoutV1({ stage: state.stage, awaiting_reply: state.awaiting_reply,
       payment_link_request_pending: state.payment_link_request?.status === 'pending' }, draftEvidence);
     // Owner 2026-11-03: a literal swap of the single offered bonus is not a new
     // gift, so it needs no price evidence; naming the course is its subject, not a course change.
@@ -849,6 +854,20 @@ export function authorizeAgentTurnV2(input: {
     stage = 'plan_selected';
     awaitingReply = 'payment_confirmation';
   }
+  // Purchase intent with the intake already recorded and no plan yet: the
+  // next canonical plan choice answers this checkpoint (architect F3).
+  if (
+    paymentLinkRequestedNow
+    && selectedOffering !== null
+    && selectedPlan === null
+    && stateFacts.has('state:intake_recorded:v1')
+    && !moves.has('provide_contact_details')
+    && awaitingReply !== 'contact_details'
+  ) {
+    nextOffering = selectedOffering;
+    stage = 'course_selected';
+    awaitingReply = 'payment_plan';
+  }
   if (
     moves.has('provide_contact_details')
     && selectedOffering !== null
@@ -885,13 +904,14 @@ export function authorizeAgentTurnV2(input: {
     if (callOfferStatus !== 'not_offered') callOfferStatus = 'declined';
     if (awaitingReply === 'call_or_chat' || callIntakePending) awaitingReply = 'none';
     // Back from a call with the course and the whole intake already recorded:
-    // the sale resumes at its checkout checkpoint, so the customer's plan
-    // choice is the payment confirmation (2026-11-05 owner test: «el de 12
-    // cuotas» twice, link only after «y el link?»).
+    // the sale resumes at the plan checkpoint, which authorizes only a
+    // canonical plan choice (2026-11-05 owner test: «el de 12 cuotas» twice,
+    // link only after «y el link?»). Only a link request already pending
+    // resumes the payment confirmation; nothing else becomes consent.
     if (state.stage === 'handoff' && awaitingReply === 'none' && nextOffering !== null
       && stateFacts.has('state:intake_recorded:v1') && !selectedPurchasePaid
       && paymentLinkRequest?.status !== 'consumed') {
-      awaitingReply = 'payment_confirmation';
+      awaitingReply = paymentLinkRequest?.status === 'pending' ? 'payment_confirmation' : 'payment_plan';
     }
   }
   if (callOfferCanAdvanceState && !supportedChannelChoice) {
@@ -949,6 +969,7 @@ export function authorizeAgentTurnV2(input: {
     authorized_fact_ids: unique(authorizedFactIds),
     state_facts: stateFacts,
     auto_accept_promotion: autoAcceptsOfferedPackage && action.type === 'send_payment_link',
+    ...(paymentLinkRefusal ? { payment_link_refusal: paymentLinkRefusal } : {}),
     discussed_offering_code: acceptsPresentedPromotion
       ? capabilityInterestOffering
       : requestedOffering,

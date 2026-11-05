@@ -181,13 +181,17 @@ run('model-owned bonus at the actual commit and transactional boundaries', () =>
     expect(gifts).toHaveLength(0);
   });
 
-  it('M5: the capability stops advertising a new bonus once the sale is in checkout', async () => {
+  // Owner 2026-11-05: still advertised while collecting data; stops once the link is sent.
+  it('M5: the capability stops advertising a new bonus once the link is sent', async () => {
     const f = await seedConversationForAgentTurn({ selected_offering_code: paid, first_message: 'me sigue pareciendo caro' });
     await seedPriorModelNegotiation(db!, f, 1);
     const read = () => readCourseBonusCapabilityV1({ workspace_slug: 'studyx', contact_id: f.contact_id,
       conversation_id: f.conversation_id, channel: 'text', selected_offering_code: paid, source_turn_id: f.turn_id }, { db: db! });
     expect((await read()).may_offer_bonus).toBe(true);
     await db!`UPDATE conversation_sales_context_states_v1 SET awaiting_reply='contact_details'
+      WHERE conversation_id=${f.conversation_id}::uuid`;
+    expect((await read()).may_offer_bonus).toBe(true);
+    await db!`UPDATE conversation_sales_context_states_v1 SET stage='payment_link_sent', awaiting_reply='none'
       WHERE conversation_id=${f.conversation_id}::uuid`;
     expect((await read()).may_offer_bonus).toBe(false);
   });
@@ -479,8 +483,9 @@ run('model-owned bonus at the actual commit and transactional boundaries', () =>
       expect((await db!`SELECT id FROM payments WHERE idempotency_key=${`agent-a-payment-link:${next.turn_id}`}`).length).toBe(1);
     });
 
-  it.each(['payment_plan', 'payment_confirmation', 'contact_details', 'pending_link', 'payment_link_sent', 'handoff'])(
-    'rejects a new transactional bonus throughout checkout: %s', async boundary => {
+  // Owner 2026-11-05: data, plan, confirmation and a pending link request no longer close the sale for the bonus.
+  it.each(['payment_link_sent', 'handoff'])(
+    'rejects a new transactional bonus once the link is sent or during an open handoff: %s', async boundary => {
       const f = await seedConversationForAgentTurn({ selected_offering_code: paid });
       await seedPriorModelNegotiation(db!, f);
       if (boundary === 'pending_link') await db!`UPDATE conversation_sales_context_states_v1 SET payment_link_request=${db!.json({

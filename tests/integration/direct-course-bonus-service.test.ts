@@ -581,12 +581,17 @@ run('atomic direct bonus service', () => {
     expect(await offerWithMotive(db!,{...ok,outbound:{...ok.outbound,idempotency_key:ok.outbound.id}})).toMatchObject({ok:true,offer_version:2});
   });
 
-  it.each(['payment_plan','payment_confirmation','contact_details'] as const)('never offers during checkout, decided by state only, even with price evidence and a promo wording (%s)',async awaiting=>{
+  // Owner 2026-11-05: before the link, a price complaint during checkout may open the bonus.
+  it.each(['payment_plan','payment_confirmation','contact_details'] as const)('checkout before the link is not a closed sale for the bonus (%s)',async awaiting=>{
+    const f=await fixture();
+    await db!`UPDATE conversation_sales_context_states_v1 SET awaiting_reply=${awaiting} WHERE conversation_id=${f.v.id}`;
+    expect(await offerWithMotive(db!,f.input())).toMatchObject({ok:true,offer_version:1});
+  });
+  it.each(['payment_link_sent','closed'] as const)('never offers once the link is sent or the sale is closed, decided by state only, even with price evidence (%s)',async stage=>{
     const f=await fixture();
     await db!`UPDATE messages SET content='me hacés un descuento? es caro' WHERE id=${f.source}`;
-    await db!`UPDATE conversation_sales_context_states_v1 SET awaiting_reply=${awaiting} WHERE conversation_id=${f.v.id}`;
-    const input=f.input();
-    expect(await offerWithMotive(db!,input)).toEqual({ok:false,reason:'sale_already_closed'});
+    await db!`UPDATE conversation_sales_context_states_v1 SET stage=${stage} WHERE conversation_id=${f.v.id}`;
+    expect(await offerWithMotive(db!,f.input())).toEqual({ok:false,reason:'sale_already_closed'});
     expect(await db!`SELECT id FROM promotion_offers WHERE conversation_id=${f.v.id}`).toHaveLength(0);
   });
   it('retention: a quoted purchase decline offers one bonus without a price complaint, once per conversation',async()=>{

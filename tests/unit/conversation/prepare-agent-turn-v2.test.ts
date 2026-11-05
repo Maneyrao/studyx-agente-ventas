@@ -903,6 +903,36 @@ describe('prepareAgentTurnV2', () => {
     });
   });
 
+  // Architect F4 (owner test 6bcc8efa): a link refused for a missing checkout checkpoint while a package
+  // offer is live is not a pending promotion acceptance; the repair must see the real cause.
+  it('names a missing checkout checkpoint instead of promotion acceptance when the package would auto-accept', async () => {
+    const attempt = prepareAgentTurnV2({
+      turn: { id: ids.turn, workspace_id: ids.workspace, conversation_id: ids.conversation, contact_id: ids.contact },
+      workspace_slug: 'studyx', business_context: business, catalog_index: index,
+      current_customer_messages: ['me interesa'],
+      course_bonus_capability: {
+        status: 'offer_available', may_schedule_checkin: false, may_request_review: false,
+        may_accept_offer: true, may_send_promoted_payment: false,
+        promotion_code: 'redes_con_excel', interest_offering_code: 'redes_informaticas',
+        promotion_cycle_id: 'cycle-1', offer_version: 1,
+        bonus_offerings: [{ code: 'excel_integral', display_name: 'Excel Integral', position: 1 }],
+      } as never,
+      proposal: proposal({
+        move: { schema_version: 1, move: 'unknown', secondary_moves: [], vetoes: [], confidence: 1 },
+        response: { messages: ['Perfecto, te paso el link.'] },
+        proposed_action: { type: 'send_payment_link', offering_code: 'redes_informaticas', payment_plan: 'monthly_6' },
+      }),
+    }, {
+      state_store: store(state({ selected_offering_code: 'redes_informaticas', selected_payment_plan: 'monthly_6',
+        stage: 'plan_selected', awaiting_reply: 'none' })),
+      contact_intake: completeIntake,
+      now: () => Date.parse(index.as_of),
+    });
+    const rejection = await attempt.catch((error: unknown) => error);
+    expect(rejection).toMatchObject({ code: 'AGENT_TURN_V2_REJECTED', reasons: ['ACTION_NOT_AUTHORIZED'],
+      rejectionSubjects: ['payment_confirmation_required'] });
+  });
+
   it('carries a current explicit plan selected as a secondary move while intake is still incomplete', async () => {
     const prepared = await prepareAgentTurnV2({
       turn: { id: ids.turn, workspace_id: ids.workspace, conversation_id: ids.conversation, contact_id: ids.contact },

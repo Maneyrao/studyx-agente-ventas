@@ -419,9 +419,12 @@ export async function prepareAgentTurnV2(input: {
     && input.course_bonus_capability.may_accept_offer
     && effectiveProposal.proposed_action.type === 'send_payment_link'
     && authority.action.type === 'none') {
+    // Name the real cause (architect F4, owner test 6bcc8efa): a missing
+    // checkout checkpoint is not a pending promotion acceptance.
     throw new AgentTurnV2RejectedError(
       ['ACTION_NOT_AUTHORIZED'],
-      ['promotion_acceptance_required'],
+      [authority.payment_link_refusal === 'confirmation_required'
+        ? 'payment_confirmation_required' : 'promotion_acceptance_required'],
     );
   }
 

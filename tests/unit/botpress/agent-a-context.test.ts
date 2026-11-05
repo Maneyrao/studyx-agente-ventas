@@ -2684,7 +2684,8 @@ describe('Agent A structured commercial context (sales_profile and fichas)', () 
       const context = buildAgentAContextV1(claimed)!;
       expect(context.capabilities.course_bonus?.sales_flow).toEqual({ retention_used: true, promo_expires_at: null });
     });
-    it('labels it as a capability that needs a current-message motive, whatever the persisted ledger says, and omits it in checkout', () => {
+    // Owner 2026-11-05: still advertised during checkout before the link; omitted once the link is sent.
+    it('labels it as a capability that needs a current-message motive, whatever the persisted ledger says, and omits it after the link', () => {
       const label = 'offer_course_bonus_requires_current_motive';
       for (const ladder of [{ retention_used: false, previous_turn_asked_price_question: false },
         { retention_used: true, previous_turn_asked_price_question: true }, undefined]) {
@@ -2694,7 +2695,11 @@ describe('Agent A structured commercial context (sales_profile and fichas)', () 
       }
       for (const awaiting_reply of ['contact_details', 'payment_plan', 'payment_confirmation']) {
         const inCheckout = effects(cap(undefined), { awaiting_reply });
-        expect(inCheckout.some((effect) => effect.startsWith('offer_course_bonus'))).toBe(false);
+        expect(inCheckout).toContain(label);
+      }
+      for (const stage of ['payment_link_sent', 'closed']) {
+        const afterLink = effects(cap(undefined), { stage });
+        expect(afterLink.some((effect) => effect.startsWith('offer_course_bonus'))).toBe(false);
       }
     });
   });

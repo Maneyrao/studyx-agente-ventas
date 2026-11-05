@@ -168,17 +168,31 @@ type CheckoutStateV1 = {
   readonly handoff_call_settled?: boolean;
 };
 
-/** Checkout by durable state only; no customer-text exception. */
+/** Whole checkout by durable state only (data, summary, plan, link); no customer-text exception. */
+export function isCheckoutStateV1(context: CheckoutStateV1): boolean {
+  return isBonusCheckoutStateV1(context)
+    || context.payment_link_request_pending || CHECKOUT_AWAITING.has(context.awaiting_reply);
+}
+
+/** Owner 2026-11-05: a price complaint during checkout may open the bonus
+ * until the link is sent. Blocked only after the link, once closed, or while
+ * the handoff's own call is still open. Durable state only. */
 export function isBonusCheckoutStateV1(context: CheckoutStateV1): boolean {
   return ['payment_link_sent', 'closed'].includes(context.stage)
-    || (context.stage === 'handoff' && context.handoff_call_settled !== true)
-    || context.payment_link_request_pending || CHECKOUT_AWAITING.has(context.awaiting_reply);
+    || (context.stage === 'handoff' && context.handoff_call_settled !== true);
+}
+
+function draftIsCheckoutV1(draft: RuleDraftV1): boolean {
+  return [...draftMoves(draft)].some(move => CHECKOUT_MOVES.has(move))
+    || ['send_payment_link', 'send_test_payment_link', 'accept_promotion'].includes(draft.proposed_action.type);
 }
 
 /** State, or an actual link/plan/payment effect in the draft (used for call offers). */
 export function isCheckoutV1(context: CheckoutStateV1, draft?: RuleDraftV1): boolean {
-  if (isBonusCheckoutStateV1(context)) return true;
-  if (!draft) return false;
-  return [...draftMoves(draft)].some(move => CHECKOUT_MOVES.has(move))
-    || ['send_payment_link', 'send_test_payment_link', 'accept_promotion'].includes(draft.proposed_action.type);
+  return isCheckoutStateV1(context) || (draft !== undefined && draftIsCheckoutV1(draft));
+}
+
+/** Bonus counterpart of isCheckoutV1: the bonus state rule, or a checkout effect in the same draft. */
+export function isBonusCheckoutV1(context: CheckoutStateV1, draft?: RuleDraftV1): boolean {
+  return isBonusCheckoutStateV1(context) || (draft !== undefined && draftIsCheckoutV1(draft));
 }

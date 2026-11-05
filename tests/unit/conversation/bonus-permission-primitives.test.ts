@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   BONUS_AFFINITY_TABLE_V1, authorizedBonusCodesV1, courseCodesNamedInBatchV1, declineQuoteInBatchV1,
-  draftConfirmsPriceOnlyBarrierV1, draftDeclinesPurchaseV1, draftRecordsPriceObjectionV1, isBonusCheckoutStateV1,
+  draftConfirmsPriceOnlyBarrierV1, draftDeclinesPurchaseV1, draftRecordsPriceObjectionV1, isBonusCheckoutStateV1, isCheckoutStateV1,
   isCheckoutV1, priceObservationQuoteInBatchV1, type RuleDraftV1,
 } from '@/shared/conversation/deterministic-sales-rules';
 
@@ -103,11 +103,16 @@ describe('rechazo de compra declarado por el modelo (retención)', () => {
 
 describe('checkout por estado', () => {
   const idle = { stage: 'course_selected', awaiting_reply: 'none', payment_link_request_pending: false };
-  it('es checkout sólo por estado: link enviado, cerrado, traspaso, pedido de link o datos/plan/confirmación pendientes', () => {
+  // Owner 2026-11-05: la promo puede abrirse durante el checkout hasta que sale el link; la llamada no.
+  it('bonificación bloqueada sólo con link enviado, cerrado o traspaso con la llamada abierta; checkout completo para llamadas', () => {
     expect(isBonusCheckoutStateV1(idle)).toBe(false);
     for (const stage of ['payment_link_sent', 'closed', 'handoff']) expect(isBonusCheckoutStateV1({ ...idle, stage })).toBe(true);
-    for (const awaiting_reply of ['payment_plan', 'payment_confirmation', 'contact_details']) expect(isBonusCheckoutStateV1({ ...idle, awaiting_reply })).toBe(true);
-    expect(isBonusCheckoutStateV1({ ...idle, payment_link_request_pending: true })).toBe(true);
+    for (const awaiting_reply of ['payment_plan', 'payment_confirmation', 'contact_details']) {
+      expect(isBonusCheckoutStateV1({ ...idle, awaiting_reply })).toBe(false);
+      expect(isCheckoutStateV1({ ...idle, awaiting_reply })).toBe(true);
+    }
+    expect(isBonusCheckoutStateV1({ ...idle, payment_link_request_pending: true })).toBe(false);
+    expect(isCheckoutStateV1({ ...idle, payment_link_request_pending: true })).toBe(true);
   });
   it('un efecto de link, plan o pago del borrador también cuenta (ofertas de llamada)', () => {
     expect(isCheckoutV1(idle, draft([], { proposed_action: { type: 'send_payment_link' } }))).toBe(true);
