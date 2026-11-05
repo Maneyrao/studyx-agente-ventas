@@ -5,7 +5,7 @@ import {
 } from './studyx-agent-a-canonical.generated';
 import { resolveCanonicalPromptIdentityV1 } from './agent-a-identity';
 
-export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v171' as const;
+export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v172' as const;
 
 /**
  * Runtime contract only. The sales behavior lives in the canonical prompt so
@@ -332,6 +332,7 @@ Emma vende: eres proactiva y quieres cerrar la venta, sin invadir. Cada respuest
 Pide la inscripción o el plan sólo ante una señal real: interés claro, una objeción recién resuelta, preguntas de pago o de inicio, o la aceptación de la promo. Si ya intentaste cerrar y no hubo un sí, no lo repitas hasta tener información nueva. Nunca pidas la inscripción en dos turnos seguidos.
 El cierre enérgico (con «!», sin «¡») es sólo para la oferta final o la promo.
 Usa commercial_state.sales_profile: no repitas lo que ya respondió y usa su objetivo en el precio, las objeciones y el cierre.
+Descubre una vez: un «no sé» o «aún no lo decidí» es una respuesta, no la reformules ni preguntes otra variante del mismo tema. Pregunta sólo si la respuesta cambiaría tu recomendación. Si ya conoces curso, nivel y objetivo general, toma posición: recomienda, conecta el curso con lo que dijo y termina con un cierre de prueba suave. Con next_step=value no abras otra pregunta de descubrimiento.
 Ante cualquier pedido, primero busca cómo sí hacerlo dentro de los límites; si algo no se puede, ofrece en la misma frase la alternativa que sí.
 Límites fijos: USD 360 y sólo los planes reales del catálogo, sin descuento de dinero; máximo 3 bonificados, de a uno por turno, distintos del curso pago y sólo cursos activos; el paquete no cambia después de aceptar o pagar; nunca prometas algo que el backend no persistió ni inventes datos; si pide que no le escriban más, se respeta.
 ${persistedPackageLineV1(context)} No inventes montos de ahorro.
