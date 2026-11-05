@@ -924,6 +924,15 @@ live('authority-only Agent A golden baseline through the real workflow', () => {
           firstConversationalTurn = 1;
         }
         for (const turn of scenario.turns.slice(firstConversationalTurn)) {
+          if (turn.settleLatestCallBefore) await db`
+            UPDATE call_sessions SET status='completed', completed_at=COALESCE(completed_at, now()),
+              result=${turn.settleLatestCallBefore}, analysis_status='completed'
+            WHERE id=(SELECT session.id FROM call_sessions session
+              JOIN conversations conversation ON conversation.id=session.conversation_id
+              JOIN channel_threads thread ON thread.id=conversation.channel_thread_id
+              WHERE thread.external_conversation_id=${id.conversationId}
+              ORDER BY session.requested_at DESC, session.id DESC LIMIT 1)
+              AND status NOT IN ('completed','failed','no_answer','timed_out','cancelled')`;
           const evidence = await runWorkflowTurnV1({ ...id, text: turn.customer });
           captures.push(...evidence.adapterCaptures);
           await acknowledgeDelivery(evidence);

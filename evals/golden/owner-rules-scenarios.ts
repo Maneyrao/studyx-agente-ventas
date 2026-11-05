@@ -843,4 +843,87 @@ OWNER_PROMOTION_MODE_REPLAY_CASES_MUTABLE.push(
   },
 );
 
+// Real conversation 5b138536 (2026-11-05 18:17–18:32Z, brain v168): 29 customer batches, in order. Calls are
+// settled as voicemail before the next turn exactly as recorded; call 4 is still open when the customer says
+// «sigamos por aca» (order-2 race) and is settled only before the following turn.
+const traceRef = owner(222, 228, 'Recibos de datos, estado posllamada');
+const traceBase = (id: string, customer: string, override: Partial<GoldenTurnV1> = {}) => turn(id, customer, {
+  must: ['Responder al mensaje actual con hechos autorizados y un próximo paso apropiado.'],
+  mustNot: ['No afirmar datos, llamadas, envíos ni promociones que no ocurrieron; no negar material disponible.'],
+  authority: [traceRef, intentRef, noPrefabRef],
+  expected: { move: [...intentMoves, 'ask_course_information', 'request_course_program', 'request_call', 'provide_contact_details',
+    'continue_by_chat', 'decline_call', 'ask_current_state', 'select_course', 'browse_catalog', 'greeting'],
+    action: ['none', 'send_course_program', 'request_call_now', 'offer_course_bonus'], state: {} },
+  hard: [{ type: 'workflow_committed' }, noPrefab, { type: 'not_contains', value: 'no tengo el archivo' }, ...noBeca],
+  ...override,
+});
+OWNER_PROMOTION_MODE_REPLAY_CASES_MUTABLE.push({
+  id: '45_real_trace_5b138536_20261105',
+  title: 'Traza real 5b138536: programa en el mismo turno, correo con coma, corrección de teléfono, llamadas a buzón, «sigamos por acá» y promo',
+  note: 'Lotes reales del cliente en orden; la identidad de canal es sintética. Las llamadas se cierran como buzón antes del turno siguiente.',
+  turns: [
+    traceBase('t02_greeting', 'buenas\nde los cursos\nquiero info'),
+    traceBase('t03_business', 'negoicos, qué tenes disponible?'),
+    traceBase('t04_real_estate', 'algo vinculado con\nreal state?'),
+    traceBase('t05_real_estate_confirm', 'real state tenes entonces?'),
+    traceBase('t06_contents', 'nada, capacitarme\nsabes qué dan?', {
+      must: ['Explicar brevemente qué se estudia en Real Estate y, en el mismo turno, compartir el programa (imagen + PDF), salvo que ya se haya enviado.'],
+      mustNot: ['No decir que no tiene el archivo del programa.'],
+      expected: { move: ['ask_course_information', 'request_course_program'], action: ['send_course_program', 'none'], state: {} },
+    }),
+    traceBase('t07_payment', 'dale\njoya\nche y el pago?\npero no estoy seguro'),
+    traceBase('t08_trust', 'no sé si es seguro este medio\nstudyx\nhay testimonios?'),
+    traceBase('t09_testimonials', 'tenes algun testiminio de otro alumno\nde algun otro rubro?'),
+    traceBase('t10_felipe', 'mandame el testiminio de felipe\nsa er\nno lo tenes?'),
+    traceBase('t11_why_payment', 'y xq antes me dijiste que no lo tenias?\npor otro lado, qué métodos de pago hay?'),
+    traceBase('t12_call_request', 'me pueden llamar?'),
+    traceBase('t13_comma_email', 'dale, THIAGO MANEYRO 1169004497 tmaneyro@gmail,com', {
+      must: ['Registrar nombre y apellido; ante el correo con coma, pedir que lo reenvíe completo, sin corregirlo por su cuenta.'],
+      mustNot: ['No escribir el correo corregido («tmaneyro@gmail.com») ni darlo por registrado.'],
+      hard: [{ type: 'workflow_committed' }, noPrefab, { type: 'not_contains', value: 'tmaneyro@gmail.com' }, ...noBeca],
+    }),
+    traceBase('t14_yes', 'sii esta bien'),
+    traceBase('t15_insists', 'ahi me lo dijiste\nestaba bien como lo escribiste', {
+      mustNot: ['No dar por registrado un correo que el cliente no escribió literalmente.'],
+      hard: [{ type: 'workflow_committed' }, noPrefab, { type: 'not_contains', value: 'tmaneyro@gmail.com' }, ...noBeca],
+    }),
+    traceBase('t16_call_again', 'dale, me llamas?'),
+    traceBase('t17_email', 'tmaneyro@gmail.com'),
+    traceBase('t18_call_now', 'sii\nllamame'),
+    traceBase('t19_retry', 'me llamas neuvamente?\nasi probamos', { settleLatestCallBefore: 'buzon_de_voz' }),
+    traceBase('t20_ok', 'oki', { settleLatestCallBefore: 'buzon_de_voz' }),
+    traceBase('t21_phone_correction', 'ah sabes que me confundi, mi número termina en 8, no en 7', {
+      must: ['Escribir el número completo corregido y pedir que lo confirme.'],
+      mustNot: ['No decir que el número quedó registrado o cambiado antes de la confirmación; no llamar.'],
+      expected: { move: [...intentMoves, 'provide_contact_details', 'request_call'], action: ['none'], state: {} },
+    }),
+    traceBase('t22_call_unconfirmed', 'me volves a llamar?', {
+      must: ['Si el número corregido no se confirmó, pedir la confirmación antes de llamar.'],
+      mustNot: ['No llamar al número cuestionado ni decir que llama al número corregido sin confirmación.'],
+    }),
+    traceBase('t23_ok', 'oki', { settleLatestCallBefore: 'buzon_de_voz' }),
+    traceBase('t24_cannot_call', 'dale, osea que ahora no me podes llamar?', { settleLatestCallBefore: 'buzon_de_voz' }),
+    traceBase('t25_chat_while_call_open', 'pero no me estas llamando\nokay sigamos por aca\nme parece caro'),
+    traceBase('t26_very_expensive', 'noo\nme parece muy caro', { settleLatestCallBefore: 'buzon_de_voz',
+      must: ['Trabajar el valor; el modelo puede ofrecer un bonificado afín con la cita de este mensaje como motivo.'],
+      hard: [{ type: 'workflow_committed' }, noPrefab, { type: 'not_contains', value: 'no tengo el archivo' },
+        { type: 'course_bonus_preconditions' }, { type: 'bonus_motive_current_message' }, { type: 'promotion_bonus_count_at_most', value: 3 }, ...noBeca],
+    }),
+    traceBase('t27_promo', 'qué ormo me podes ofrecer?\na er\na ver', {
+      hard: [{ type: 'workflow_committed' }, noPrefab, { type: 'course_bonus_preconditions' }, { type: 'promotion_bonus_count_at_most', value: 3 }, ...noBeca],
+    }),
+    traceBase('t28_promo_again', 'pero digo que promo me podes ofrecer\nme ibas a ofrecer una promocion', {
+      hard: [{ type: 'workflow_committed' }, noPrefab, { type: 'course_bonus_preconditions' }, { type: 'promotion_bonus_count_at_most', value: 3 }, ...noBeca],
+    }),
+    traceBase('t29_price_is_the_problem', 'porque el problema SI es el precio', {
+      must: ['Con la llamada terminada y el cliente en chat, la queja de precio actual puede abrir un bonificado afín (o el siguiente escalón) con la cita de este mensaje.'],
+      hard: [{ type: 'workflow_committed' }, noPrefab, { type: 'course_bonus_preconditions' }, { type: 'bonus_motive_current_message' },
+        { type: 'promotion_bonus_count_at_most', value: 3 }, ...noBeca],
+    }),
+    traceBase('t30_decline', 'okay, no no voy a comprar\ngracias', {
+      expected: { move: [...intentMoves, 'decline_purchase'], action: ['none', 'offer_course_bonus'], state: {} },
+    }),
+  ],
+});
+
 export const OWNER_PROMOTION_MODE_REPLAY_CASES: readonly GoldenCaseV1[] = OWNER_PROMOTION_MODE_REPLAY_CASES_MUTABLE;

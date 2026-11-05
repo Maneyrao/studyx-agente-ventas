@@ -94,6 +94,9 @@ export interface GoldenTurnV1 {
   readonly authority: readonly AuthorityReference[];
   readonly expected: ExpectedTurnV1;
   readonly hard?: readonly HardRuleV1[];
+  /** Before this customer turn, the runner settles the conversation's latest call session on the disposable
+   * local database (Retell's terminal result, e.g. IVR/voicemail, as recorded in the real trace). */
+  readonly settleLatestCallBefore?: 'buzon_de_voz';
   /** Estado que debe haber dejado el turno anterior para que este turno mida su regla aislada. */
   readonly priorPromotion?: {
     readonly status: readonly (string | null)[];
