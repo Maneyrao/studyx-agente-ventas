@@ -24,21 +24,22 @@ export function textMentionsRejectedValueV1(text: string, update: RejectedUpdate
   return false
 }
 
-/**
- * Rejected values the reply repeats. A phone candidate may be shown only while
- * the same proposal asks the customer to confirm it (structured clarify request);
- * a rejected email is never echoed back: the customer must resend it.
- */
+/** Rejected values the reply repeats outside a structured request for the same field. */
 export function rejectedProfileValuesInReplyV1(input: {
   readonly proposal: AgentATurnProposalV1
   readonly context: AgentAContextV1
 }): RejectedUpdateV1[] {
   const rejected = input.context.customer?.contact_profile?.rejected_updates ?? []
   if (rejected.length === 0) return []
-  const clarifiesPhone = (input.proposal.profile_requests ?? [])
-    .some((request) => request.mode === 'clarify' && request.fields.includes('telefono'))
+  // Asking for the field again is not a claim that it was saved: a phone may be
+  // shown inside that request; an email only as the customer wrote it (never
+  // an agent-made correction such as gmail,com → gmail.com).
+  const requested = new Set((input.proposal.profile_requests ?? []).flatMap((request) => request.fields))
+  const customerTexts = (input.context.turn?.batch_messages ?? []).map((message) => message.text.toLowerCase())
+  const exempt = (update: RejectedUpdateV1) => requested.has(update.field) && (update.field === 'telefono'
+    || customerTexts.some((text) => text.includes(update.value.trim().toLowerCase())))
   const texts = [...input.proposal.response.messages, input.proposal.response.call_offer ?? '']
-  return rejected.filter((update) => !(update.field === 'telefono' && clarifiesPhone)
+  return rejected.filter((update) => !exempt(update)
     && !sameProfileValueV1(update.field, input.context.customer.contact_intake?.[update.field], update.value)
     && texts.some((text) => textMentionsRejectedValueV1(text, update)))
 }

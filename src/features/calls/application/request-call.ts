@@ -270,26 +270,31 @@ export async function reserveCallForDecision(
   // number silently (2026-11-05: «termina en 8» → llamó al 4497). A confirmation
   // in this same turn already moved the profile phone before this check.
   const latestConsentId = input.consent_messages[input.consent_messages.length - 1]!.id;
-  const [lastReply] = await db<Array<{ content: string }>>`
+  // Every delivered reply since the profile phone last changed: the agent may
+  // ask again without repeating the number (golden replay c05–c07).
+  const replies = await db<Array<{ content: string }>>`
     SELECT reply.content FROM messages current
+    JOIN contacts contact ON contact.id = current.contact_id
     JOIN messages reply ON reply.conversation_id = current.conversation_id
       AND reply.contact_id = current.contact_id AND reply.direction = 'outbound'
       AND reply.created_at < current.created_at
     JOIN outbound_deliveries delivery ON delivery.message_id = reply.id
       AND delivery.state IN ('submitted', 'delivered')
+    LEFT JOIN messages phone_source ON phone_source.id::text = contact.contact_profile_v1->'fields'->'telefono'->>'source_message_id'
     WHERE current.id = ${latestConsentId}::uuid
+      AND (phone_source.created_at IS NULL OR reply.created_at > phone_source.created_at)
     ORDER BY reply.created_at DESC, reply.id DESC
-    LIMIT 1
+    LIMIT 8
   `;
   // Only a correction of the number on file counts: same 8-digit local
   // block except its last 4 digits. An amount or another contact number is
   // not a pending correction.
   const tail = (phone: string) => phone.replace(/\D/gu, '').slice(-8);
   const callTail = tail(callPhone);
-  if (lastReply && extractDeclaredPhones(lastReply.content).some((phone) => {
+  if (replies.some((reply) => extractDeclaredPhones(reply.content).some((phone) => {
     const candidate = tail(phone);
     return candidate.length === 8 && candidate !== callTail && candidate.slice(0, 4) === callTail.slice(0, 4);
-  })) {
+  }))) {
     throw new CallRequestRejectedError('CALL_PHONE_CONFIRMATION_PENDING');
   }
 

@@ -2774,6 +2774,19 @@ describe('contact profile receipt is respected by the reply', () => {
       .not.toContain('contact_profile_rejected:telefono');
   });
 
+  it('golden replay t13: asking again for the phone may quote what the customer wrote; an invented email stays blocked', () => {
+    const phone = withRejected('telefono', '1169004497');
+    phone.customer.contact_intake!.telefono = null;
+    expect(subjects(phone, { response: { messages: ['El 1169004497 no me sirve así: ¿me lo pasás con código de país?'] },
+      profile_requests: [{ message_index: 0, fields: ['telefono'], purpose: 'call', mode: 'collect' }] }))
+      .not.toContain('contact_profile_rejected:telefono');
+    const mail = withRejected('correo', 'tmaneyro@gmail.com');
+    mail.turn.batch_messages = [{ id: 'current', text: 'THIAGO MANEYRO tmaneyro@gmail,com' }];
+    expect(subjects(mail, { response: { messages: ['¿Tu correo es tmaneyro@gmail.com? Confirmame.'] },
+      profile_requests: [{ message_index: 0, fields: ['correo'], purpose: 'call', mode: 'clarify' }] }))
+      .toContain('contact_profile_rejected:correo');
+  });
+
   it('compares canonically: a local-format or case-changed canonical value is not a refused one', () => {
     const phone = withRejected('telefono', '11 6900 4497');
     expect(subjects(phone, { response: { messages: ['Te llamo al 11 6900-4497.'] } })).not.toContain('contact_profile_rejected:telefono');

@@ -676,6 +676,30 @@ run('agent a call handoff — refusals reserve nothing', () => {
     expect(JSON.stringify(claim)).not.toContain(`"${identity.phone}"`);
   });
 
+  // Golden replay 7448925 c05–c07: the correction was proposed, the next reply asked
+  // «¿Puedes atender ahora?» without the number, and the call went to the old one.
+  it('a correction proposed two replies ago still blocks the call until confirmed', async () => {
+    const identity = newIdentity();
+    const corrected = `${identity.phone.slice(0, -1)}${identity.phone.endsWith('8') ? '7' : '8'}`;
+    const deliver = async (afterTurn: string, content: string) => {
+      const [turn] = await db!<Array<{ conversation_id: string; contact_id: string; phone: string }>>`
+        SELECT m.conversation_id, m.contact_id, c.phone FROM messages m JOIN contacts c ON c.id = m.contact_id WHERE m.id = ${afterTurn}::uuid`;
+      const [reply] = await db!<Array<{ id: string }>>`
+        INSERT INTO messages (conversation_id, contact_id, direction, content, in_reply_to)
+        VALUES (${turn.conversation_id}::uuid, ${turn.contact_id}::uuid, 'outbound', ${content}, ${afterTurn}::uuid) RETURNING id`;
+      await db!`INSERT INTO outbound_deliveries (message_id, conversation_id, contact_id, provider, integration_id,
+        channel, destination, idempotency_key, state, provider_message_id, submitted_at)
+        VALUES (${reply.id}::uuid, ${turn.conversation_id}::uuid, ${turn.contact_id}::uuid, 'botpress', 'vitest-call-handoff',
+          'whatsapp', ${turn.phone}, ${randomUUID()}, 'submitted', ${randomUUID()}, now())`;
+    };
+    const correction = await seedTurn(identity, `termina en ${corrected.slice(-1)}, no en ${identity.phone.slice(-1)}`);
+    await deliver(correction, `Entonces tu número correcto es ${corrected}, ¿me lo confirmás?`);
+    const again = await seedTurn(identity, 'me volves a llamar?');
+    await deliver(again, 'Claro. ¿Puedes atender ahora?');
+    const callTurn = await seedTurn(identity, 'Llamame ahora');
+    await expectRejected(callTurn, callConfirmation('direct_request'), 'CALL_PHONE_CONFIRMATION_PENDING');
+  });
+
   it('a delivered price reply never counts as a pending phone correction', async () => {
     const identity = newIdentity();
     const priceTurn = await seedTurn(identity, 'cuánto sale?');
