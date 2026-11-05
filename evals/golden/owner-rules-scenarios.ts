@@ -965,4 +965,56 @@ OWNER_PROMOTION_MODE_REPLAY_CASES_MUTABLE.push({
   ],
 });
 
+// Owner test 6bcc8efa (2026-11-05 21:05–22:07Z, brain v171): discovery asked «¿trabajar o invertir?» three times,
+// including after «no lo sé aún»; «quiero pagar» never selected the course. Evaluation only, never a backend gate.
+const discoverOnceRef = owner(234, 238, 'Descubrir una vez y cerrar');
+const sameFamily = 'No volver a preguntar si quiere trabajar con una inmobiliaria o invertir (ni otra variante de esa elección): el cliente ya dijo que no lo sabe.';
+OWNER_PROMOTION_MODE_REPLAY_CASES_MUTABLE.push({
+  id: '47_discover_once_6bcc8efa_20261105',
+  title: 'Prueba del dueño 6bcc8efa: «no sé» cuenta como respuesta, tomar posición, cierre de prueba y checkout hasta el link',
+  note: 'Lotes reales del cliente en orden hasta el pedido de pago; el correo va correcto para aislar el cierre.',
+  turns: [
+    traceBase('g01_greeting', 'buenas\nde los cursos\nquiero info', { authority: [discoverOnceRef, intentRef, noPrefabRef] }),
+    traceBase('g02_real_estate', 'y no sé\nalgo vinculado con real state\ntienen cursos de real state\n?', { authority: [discoverOnceRef, intentRef, noPrefabRef] }),
+    traceBase('g03_from_zero', 'sería para iniciar de 0', { authority: [discoverOnceRef, intentRef, noPrefabRef],
+      must: ['Afirmar con seguridad por qué Real Estate sirve para empezar de cero; como máximo una pregunta nueva.'] }),
+    traceBase('g04_undecided_trust', 'no lo sé aún\nes formarme\nche y cómo seq ue funciona studyx\nson confiables?', {
+      authority: [discoverOnceRef, intentRef, noPrefabRef],
+      must: ['Aceptar que todavía no decidió y vender la formación general; responder cómo funciona Studyx y la confianza con hechos autorizados.'],
+      mustNot: [sameFamily],
+      hard: [{ type: 'workflow_committed' }, noPrefab, { type: 'question_count_at_most', value: 1 }, ...noBeca],
+    }),
+    traceBase('g05_students', 'hay gente que haya cursado con ustedes?', { authority: [discoverOnceRef, intentRef, noPrefabRef],
+      mustNot: [sameFamily, 'No inventar un testimonio de Real Estate.'],
+      hard: [{ type: 'workflow_committed' }, noPrefab, { type: 'question_count_at_most', value: 1 }, ...noBeca],
+    }),
+    traceBase('g06_does_it_help', 'tenes los testimonios?\nme gustaría entender como se mueve el negocio, me sirve?', {
+      authority: [discoverOnceRef, intentRef, noPrefabRef],
+      must: ['Responder que sí con seguridad, conectar el curso con entender cómo se mueve el negocio y terminar con un único cierre de prueba suave.'],
+      mustNot: [sameFamily, 'No abrir otra pregunta de descubrimiento.'],
+      hard: [{ type: 'workflow_committed' }, noPrefab, { type: 'question_count_at_most', value: 1 }, ...noBeca],
+    }),
+    traceBase('g07_wants_to_pay', 'no sé\nquiero pagar', { authority: [discoverOnceRef, paymentRef, noPrefabRef],
+      must: ['Avanzar con la inscripción a Real Estate pidiendo sólo los datos que faltan.'],
+      expected: { move: ['request_payment_link', 'select_course', 'provide_contact_details'], action: ['none'], state: {} },
+      hard: [{ type: 'workflow_committed' }, noPrefab, { type: 'selected_course_equals', value: 'real_estate' }, { type: 'no_link_delivered' }, ...noBeca],
+    }),
+    traceBase('g08_data', 'thiago meiniero\ntmaneyro@gmail.com', { authority: [discoverOnceRef, paymentRef, noPrefabRef],
+      expected: { move: ['provide_contact_details', 'request_payment_link'], action: ['none'], state: {} },
+      hard: [{ type: 'workflow_committed' }, noPrefab, { type: 'selected_course_equals', value: 'real_estate' }, ...noBeca],
+    }),
+    traceBase('g09_confirm', 'sí, están bien', { authority: [discoverOnceRef, paymentRef, noPrefabRef],
+      expected: { move: ['provide_contact_details', 'request_payment_link', 'ask_payment_options', 'select_payment_plan'], action: ['none', 'send_payment_link'], state: {} },
+      hard: [{ type: 'workflow_committed' }, noPrefab, ...noBeca],
+    }),
+    traceBase('g10_plan', 'el de 12 cuotas', { authority: [discoverOnceRef, paymentRef, noPrefabRef],
+      must: ['Entregar el link del plan elegido en este turno, sin pedir otra confirmación.'],
+      mustNot: ['No decir «no te entendí».'],
+      expected: { move: ['select_payment_plan', 'request_payment_link'], action: ['send_payment_link'], state: {} },
+      hard: [{ type: 'workflow_committed' }, { type: 'payment_link_delivered' }, { type: 'link_plan_in', values: ['monthly_12'] },
+        { type: 'not_contains', value: 'no te entendí' }, ...noBeca],
+    }),
+  ],
+});
+
 export const OWNER_PROMOTION_MODE_REPLAY_CASES: readonly GoldenCaseV1[] = OWNER_PROMOTION_MODE_REPLAY_CASES_MUTABLE;
