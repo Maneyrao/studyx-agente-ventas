@@ -6,7 +6,7 @@ import ts from 'typescript';
 // Last commit of claude/agent-a-model-owned-sales that changed deployable code (brain v174, prompt v109).
 // Anything committed after it must be docs/evals/tests only (see assertOnlyNonCodeChangesSinceBaseV1), so a release
 // prepared from the branch HEAD runs exactly this code. Re-pin whenever a code file changes.
-export const BOT_RELEASE_BASE_SHA = 'cd847213eea532ec587d72195c9789c2f54d7083';
+export const BOT_RELEASE_BASE_SHA = '5d834a67642987f58ea1ccc4d58b9b9ef686ffc3';
 export const BOT_RELEASE_BRAIN_VERSION = 'studyx-agent-a-brain-v174';
 export const BOT_RELEASE_PROMPT_VERSION = 'studyx-agent-a-canonical-v109';
 export const BOT_RELEASE_INSTRUMENTATION_VERSION = 'studyx-release-provenance-v1';
