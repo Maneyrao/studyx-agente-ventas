@@ -110,6 +110,9 @@ describe('send_course_program authorization', () => {
     expect(authorize(available, { move: 'ask_course_information' })).toMatchObject({ ok: true, action: { type: 'send_course_program' } });
     expect(authorize(available, { move: 'request_course_program' })).toMatchObject({ ok: true, action: { type: 'send_course_program' } });
   });
+  it('choosing a course while it is explained (select_course) also sends the material (replay 9397adf t04)', () => {
+    expect(authorize(available, { move: 'select_course' })).toMatchObject({ ok: true, action: { type: 'send_course_program' } });
+  });
   it('already sent: the action is dropped (not an error) and the text stays', () => {
     expect(authorize({ available_offering_codes: ['real_estate'], sent_offering_codes: ['real_estate'] }))
       .toMatchObject({ ok: true, action: { type: 'none' } });

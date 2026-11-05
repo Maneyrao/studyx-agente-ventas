@@ -538,7 +538,9 @@ export function authorizeAgentTurnV2(input: {
       && input.course_programs?.available_offering_codes.includes(code) === true;
     // Owner 2026-11-05: explaining the classes/temario/content of a course (ask_course_information) or asking for the
     // programme (request_course_program) sends the image + PDF; never on a price/payment/checkout turn.
-    const materialTurn = moves.has('request_course_program') || moves.has('ask_course_information');
+    // Choosing a course while it is explained is a content turn too (replay 9397adf t04: select_course
+    // + temario fell to the technical fallback because the send was refused as not_requested).
+    const materialTurn = moves.has('request_course_program') || moves.has('ask_course_information') || moves.has('select_course');
     const commercialTurn = ['ask_payment_options', 'select_payment_plan', 'request_payment_link', 'price_objection', 'defer_payment',
       'decline_purchase', 'report_payment'].some(move => moves.has(move));
     if (!known || !materialTurn || (commercialTurn && !moves.has('request_course_program'))) reasons.push('ACTION_NOT_AUTHORIZED');
