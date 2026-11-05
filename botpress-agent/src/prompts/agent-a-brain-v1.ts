@@ -5,7 +5,7 @@ import {
 } from './studyx-agent-a-canonical.generated';
 import { resolveCanonicalPromptIdentityV1 } from './agent-a-identity';
 
-export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v170' as const;
+export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v171' as const;
 
 /**
  * Runtime contract only. The sales behavior lives in the canonical prompt so
@@ -169,6 +169,8 @@ For PROGRAM_SEND_REQUIRED or program_send_not_executed:not_proposed, the course 
   const profileReceiptRepair = rejectedProfileFields.length || rejection.rejections.some(reason => reason.subject === 'phone_confirmation_pending') ? `
 For contact_profile_rejected or phone_confirmation_pending, the value was NOT recorded (${[...rejectedProfileFields, ...(rejection.rejections.some(reason => reason.subject === 'phone_confirmation_pending') ? ['telefono'] : [])].join(', ')}). Never say it is saved, registered or used.
 ${rejectedProfileFields.includes('correo') ? 'Email: do not repeat or correct it; ask once for the email to be resent complete, exactly as the customer uses it.\n' : ''}${rejectedProfileFields.includes('telefono') || rejection.rejections.some(reason => reason.subject === 'phone_confirmation_pending') ? 'Phone: write the complete number you understood and ask the customer to confirm it, with profile_requests [{fields:["telefono"],mode:"clarify",purpose:"call"}]; use proposed_action=none until it is confirmed.' : ''}` : ''
+  const firstBonusMotiveRepair = rejection.rejections.some(reason => reason.subject === 'bonus_motive:motive_needs_delivered_offer') ? `
+For motive_needs_delivered_offer, a first bonus needs a current price complaint or purchase decline. If the current message complains about the price, offer it again with motive {kind:"price_objection", quote: that exact fragment} and price_objection in the move or secondary_moves; otherwise ask whether price is what holds them back. Never answer that the price does not move.` : ''
   const repairsBonusNaming = rejection.rejections.some(reason => reason.subject === 'bonus_not_named');
   const bonusNamingRepair = repairsBonusNaming ? `
 For bonus_not_named, name the course you're adding: write the bonus course's exact display_name in the customer-visible copy where you offer it (do not name only an earlier bonus), or use proposed_action=none and do not present a new gift.` : '';
@@ -182,7 +184,7 @@ ${courseDeclarationRepair}
 ${offeringRepair}
 ${courseLogisticsRepair}
 ${forbiddenPromiseRepair}
-${bonusNamingRepair}${programSendRepair}${programRequiredRepair}${profileReceiptRepair}
+${bonusNamingRepair}${programSendRepair}${programRequiredRepair}${profileReceiptRepair}${firstBonusMotiveRepair}
 If an action did not occur, do not claim it; continue naturally from the permitted facts and effects.
 Do not repeat confirmed data or an earlier opening or question. Ask only for truly missing information.
 Keep prose and metadata consistent. Preserve accepted observations. Never expose validation to the customer.
