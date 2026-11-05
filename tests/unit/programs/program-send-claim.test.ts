@@ -9,6 +9,10 @@ describe('program-send effect claim', () => {
     ['Ahí va el PDF del programa.', true],
     ['Te mando el plan de estudio completo.', true],
     ['Te dejo el programa acá.', true],
+    ['Acá va el PDF.', true],
+    ['Ahí tenés el temario.', true],
+    ['Listo, te envié el PDF.', true],
+    ['Ahí te mando el programa.', true],
   ])('claims a send happening now: %s', (text, expected) => {
     expect(claimsProgramSendNowV1(text, { programTopic: true })).toBe(expected);
   });
@@ -22,6 +26,12 @@ describe('program-send effect claim', () => {
     '¿Te comparto el programa?',
     'El programa tiene 8 módulos y se cursa online.',
     'Puedo compartirte el programa si lo necesitas.',
+    'Te paso el link de pago del programa de Marketing Digital.',
+    'Aquí tienes el detalle de los módulos del programa: son 8.',
+    'Programa online de 16 clases con certificado de Studyx.',
+    'Te comparto el enlace para inscribirte al programa.',
+    'Ya te envié el programa hace un rato.',
+    'Ya te lo compartí, está más arriba.',
   ])('does not claim: %s', (text) => {
     expect(claimsProgramSendNowV1(text, { programTopic: true })).toBe(false);
   });

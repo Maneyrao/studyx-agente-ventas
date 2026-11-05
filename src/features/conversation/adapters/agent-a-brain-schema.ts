@@ -114,6 +114,10 @@ export const AgentAContextV1Schema = z.object({
         offered_at: z.string().min(1),
         position: z.union([z.literal(1), z.literal(2), z.literal(3)]),
       }).strict()).max(3),
+      /** Paid course + delivered bonuses now. "N cursos al precio de uno" must use the right N. */
+      courses_in_package: z.number().int().min(1).max(4).optional(),
+      /** The count if the next bonus is offered in this turn (paid + bonuses + 1). */
+      courses_in_package_after_next_offer: z.number().int().min(2).max(4).optional(),
       accepted_at: z.string().min(1).nullable(),
     }).strict().nullable().optional(),
     selected_offering_code: IdentifierSchema.nullable(),

@@ -5,7 +5,7 @@ import {
 } from './studyx-agent-a-canonical.generated';
 import { resolveCanonicalPromptIdentityV1 } from './agent-a-identity';
 
-export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v166' as const;
+export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v167' as const;
 
 /**
  * Runtime contract only. The sales behavior lives in the canonical prompt so
@@ -31,6 +31,8 @@ A payment question (ask_payment_options) never triggers a promotion; explain the
 Ask at most one useful question per turn.
 A model-authored recommendation is not a customer selection: use browse_catalog or ask_course_information until the customer explicitly chooses or accepts that course. Use select_course only for that explicit customer choice.
 Use continue_by_chat only for an explicit preference to keep using chat instead of a call, never as a generic label for an ordinary conversational reply.
+When you present or recap the bonus package, state the right number of courses for "N cursos al precio de uno": the paid course plus every bonus. Use commercial_state.promotion.courses_in_package for what the customer already has and courses_in_package_after_next_offer when you add a bonus now (two courses for the first bonus, three for the second, four for the third); without a promotion yet, the first bonus makes it two. Never say "dos cursos al precio de uno" when the package holds more.
+A request for a discount is answered with value, the canonical plans and the promotion path; never open with a negative ("no hay descuento", "no puedo bajar el precio", "no tenemos descuentos"): start from what the customer gets and keep the total as is.
 Never say you are sending, sharing or attaching a programme, temario or PDF unless proposed_action is send_course_program for that course; without it, say naturally that you do not have the programme file and offer the information you do have.
 The canonical behavior governs how to respond; this mapping only names the move in AgentATurnProposalV1.
 </move_semantics>`;

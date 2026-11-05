@@ -412,7 +412,7 @@ describe('Agent A Brain prompt', () => {
     expect(JSON.parse(encoded)).toEqual(current);
     expect(instructions).not.toContain('<current_turn_guidance>');
     expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v109');
-    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v166');
+    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v167');
   });
 
   it('maps recommendations and generic continuation without persisting a customer choice', () => {
@@ -930,5 +930,12 @@ describe('Agent A Brain prompt', () => {
       expect(contract).toContain('Already delivered in this conversation: barista');
       expect(contract).toContain('never replace it with a summary');
     });
+  });
+
+  it('v167: states the right package count and forbids opening a discount answer with a negative', () => {
+    const text = buildAgentABrainInstructionsV1(context());
+    expect(text).toContain('courses_in_package_after_next_offer');
+    expect(text).toContain('Never say "dos cursos al precio de uno" when the package holds more');
+    expect(text).toContain('never open with a negative ("no hay descuento"');
   });
 });

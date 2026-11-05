@@ -4,12 +4,34 @@
 -- and an idempotent delivery ledger per (conversation, offering, asset version).
 BEGIN;
 
-ALTER TABLE public.agent_decision_outbound_parts
-  DROP CONSTRAINT IF EXISTS agent_decision_outbound_parts_part_index_check;
+-- The original CHECK (20260906170927) was unnamed: drop every CHECK that bounds part_index, whatever its name.
+DO $$
+DECLARE constraint_row record;
+BEGIN
+  FOR constraint_row IN
+    SELECT conname FROM pg_constraint
+    WHERE conrelid = 'public.agent_decision_outbound_parts'::regclass AND contype = 'c'
+      AND pg_get_constraintdef(oid) ~ 'part_index'
+  LOOP
+    EXECUTE format('ALTER TABLE public.agent_decision_outbound_parts DROP CONSTRAINT %I', constraint_row.conname);
+  END LOOP;
+END $$;
 ALTER TABLE public.agent_decision_outbound_parts
   ADD CONSTRAINT agent_decision_outbound_parts_part_index_check CHECK (part_index >= 0 AND part_index <= 3);
 
-ALTER TABLE public.agent_decisions DROP CONSTRAINT agent_decisions_business_action_check;
+-- Drop the action-shape CHECK by definition, not only by name; the scope check (decision_kind <> 'suppress') stays.
+DO $$
+DECLARE constraint_row record;
+BEGIN
+  FOR constraint_row IN
+    SELECT conname FROM pg_constraint
+    WHERE conrelid = 'public.agent_decisions'::regclass AND contype = 'c'
+      AND (conname = 'agent_decisions_business_action_check'
+        OR (pg_get_constraintdef(oid) ~ 'business_action' AND pg_get_constraintdef(oid) ~ 'send_payment_link'))
+  LOOP
+    EXECUTE format('ALTER TABLE public.agent_decisions DROP CONSTRAINT %I', constraint_row.conname);
+  END LOOP;
+END $$;
 ALTER TABLE public.agent_decisions ADD CONSTRAINT agent_decisions_business_action_check CHECK (
   business_action IS NULL OR COALESCE(
     jsonb_typeof(business_action)='object' AND (
@@ -43,7 +65,7 @@ ALTER TABLE public.agent_decisions ADD CONSTRAINT agent_decisions_business_actio
     ),false)
 );
 
-CREATE TABLE public.course_program_deliveries (
+CREATE TABLE IF NOT EXISTS public.course_program_deliveries (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   workspace_id uuid NOT NULL REFERENCES public.workspaces(id),
   conversation_id uuid NOT NULL REFERENCES public.conversations(id),
@@ -58,10 +80,11 @@ CREATE TABLE public.course_program_deliveries (
   updated_at timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT course_program_deliveries_once UNIQUE (conversation_id, offering_code, asset_version)
 );
-CREATE INDEX course_program_deliveries_outbound_idx ON public.course_program_deliveries (outbound_message_id);
+CREATE INDEX IF NOT EXISTS course_program_deliveries_outbound_idx ON public.course_program_deliveries (outbound_message_id);
 
 ALTER TABLE public.course_program_deliveries ENABLE ROW LEVEL SECURITY;
 GRANT SELECT, INSERT, UPDATE ON public.course_program_deliveries TO orchestrator_role;
+DROP POLICY IF EXISTS orchestrator_access ON public.course_program_deliveries;
 CREATE POLICY orchestrator_access ON public.course_program_deliveries FOR ALL TO orchestrator_role USING (true) WITH CHECK (true);
 
 COMMIT;

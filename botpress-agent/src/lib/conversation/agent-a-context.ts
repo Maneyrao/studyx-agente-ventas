@@ -809,6 +809,8 @@ export function buildAgentAContextV1(
             ? 'accepted' : claimed.course_bonus_capability.package_status === 'expired' ? 'expired'
               : claimed.course_bonus_capability.package_status === 'cancelled' ? 'cancelled' : 'offer_available',
           accepted_at:claimed.course_bonus_capability.accepted_at ?? null,
+          courses_in_package:1+claimed.course_bonus_capability.bonus_offerings.length,
+          courses_in_package_after_next_offer:Math.min(4,2+claimed.course_bonus_capability.bonus_offerings.length),
           bonus_offerings:claimed.course_bonus_capability.bonus_offerings.map(course => ({
             offering_code:course.code,name:course.display_name,offered_at:course.offered_at!,position:course.position,
           })),

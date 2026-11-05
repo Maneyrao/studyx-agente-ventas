@@ -356,7 +356,7 @@ describe('buildAgentAContextV1', () => {
     const projected=buildAgentAContextV1(claimed)!;
     expect(projected.commercial_state.promotion).toEqual({promotion_code:'direct-package',promotion_cycle_id:UUID,
       offer_version:1,status:status==='offered'?'offer_available':'accepted',interest_offering_code:'redes-informaticas',
-      accepted_at:status==='offered'?null:NOW,
+      accepted_at:status==='offered'?null:NOW,courses_in_package:2,courses_in_package_after_next_offer:3,
       bonus_offerings:[{offering_code:'ingles_1',name:'Inglés 1',position:1,offered_at:NOW}]});
     expect(projected.capabilities.course_bonus).toMatchObject({enabled:false,may_offer_bonus:false,
       may_accept_offer:status==='offered',package_status:status});
@@ -382,7 +382,8 @@ describe('buildAgentAContextV1', () => {
       delivered_bonus_offerings:[{code:'ingles_1',display_name:'Inglés 1',position:1}]};
     expect(buildAgentAContextV1(claimed)!.commercial_state.promotion).toEqual({promotion_code:'p',
       promotion_cycle_id:UUID,offer_version:1,status:'offer_available',interest_offering_code:'redes-informaticas',
-      accepted_at:null,bonus_offerings:[{offering_code:'ingles_1',name:'Inglés 1',position:1,offered_at:NOW}]});
+      accepted_at:null,courses_in_package:2,courses_in_package_after_next_offer:3,
+      bonus_offerings:[{offering_code:'ingles_1',name:'Inglés 1',position:1,offered_at:NOW}]});
   });
   it('projects durable summary memory and twenty logical interventions to Agent A', () => {
     const claimed = claimedTurn();
@@ -2706,5 +2707,15 @@ describe('Agent A structured commercial context (sales_profile and fichas)', () 
       id: 'offering:redes-informaticas:ficha:v1', kind: 'offering_syllabus', value: 'Ficha de redes-informaticas' });
     expect(catalog.bonus_candidate_fichas).toEqual([{ code: 'otro-curso',
       fact: { id: 'offering:otro-curso:ficha:v1', kind: 'offering_syllabus', value: 'Ficha de otro-curso' } }]);
+  });
+
+  it('counts the courses of the package (paid + delivered bonuses) and after the next offer', () => {
+    const claimed = claimedTurn();
+    const bonuses = ['ingles_1', 'excel', 'word'].slice(0, 2).map((code, index) => ({ code, display_name: code, position: index + 1, offered_at: NOW }));
+    claimed.course_bonus_capability = { enabled: true, max_bonus_courses: 3, may_offer_bonus: true, status: 'offer_available',
+      may_schedule_checkin: false, may_request_review: false, may_accept_offer: true, may_send_promoted_payment: false,
+      promotion_code: 'p', promotion_cycle_id: UUID, offer_version: 2, package_status: 'offered', interest_offering_code: 'redes-informaticas',
+      accepted_at: null, bonus_offerings: bonuses, delivered_bonus_offerings: bonuses.map(({ code, display_name, position }) => ({ code, display_name, position })) } as never;
+    expect(buildAgentAContextV1(claimed)!.commercial_state.promotion).toMatchObject({ courses_in_package: 3, courses_in_package_after_next_offer: 4 });
   });
 });

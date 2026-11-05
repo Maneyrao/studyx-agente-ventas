@@ -230,7 +230,7 @@ export const GOLDEN_CASES: readonly GoldenCaseV1[] = [
         must: ['Reconocer la duda, demostrar valor con el objetivo de ofrecer sesiones y reencuadrar con USD 30 mensuales. Preguntar si el precio es el único inconveniente es opcional (una vez por conversación, con redacción propia) y la llamada sólo se ofrece si hay una razón concreta; ninguna es obligatoria.'],
         mustNot: ['No descontar, no repetir un argumento genérico, no prometer ingresos, no ejecutar una bonificación todavía y no forzar una llamada.'],
         authority: [ref(PROMPT, 86, 94, 'con lo que ya sabes de él'), ref(PROMPT, 116, 127, 'Valor percibido'), ref(PROMPT, 125, 125, 'una sola vez por conversación')],
-        expected: { move: ['ask_payment_options', 'ask_course_information', 'unknown'], action: ['none'], state: state({ promotion: promotion() }) },
+        expected: { move: ['price_objection', 'ask_payment_options', 'ask_course_information', 'unknown'], action: ['none'], state: state({ promotion: promotion() }) },
         hard: [{ type: 'contains', value: 'USD 30' }, { type: 'promotion_bonus_count_at_most', value: 0 },
           { type: 'current_price_objection_recorded' }],
       },
@@ -253,7 +253,7 @@ export const GOLDEN_CASES: readonly GoldenCaseV1[] = [
         must: ['Reconocer la limitación sin presionar y presentar 12 cuotas de USD 30 como la forma más accesible del mismo total, sin bajar el precio. La oferta de un curso bonificado es opcional: el momento lo decide el modelo dentro de los permisos y, si ofrece, debe ser un curso de los autorizados.'],
         mustNot: ['No culpabilizar, no inventar urgencia, no reducir USD 360 y no ofrecer un curso fuera de los autorizados.'],
         authority: [ref(PROMPT, 117, 121, 'Presupuesto real'), ref(ROOT, 13, 13, 'plan de 12 como el más accesible'), ref(PROMPT, 135, 135, 'Tú eliges el momento y el curso')],
-        expected: { move: ['defer_payment', 'ask_payment_options', 'ask_course_information', 'unknown'], action: ['none', 'offer_course_bonus'], state: state({ promotion: promotion(['offer_available', null, 'none'], [0, 1], ['marketing_digital', null]) }) },
+        expected: { move: ['price_objection', 'defer_payment', 'ask_payment_options', 'ask_course_information', 'unknown'], action: ['none', 'offer_course_bonus'], state: state({ promotion: promotion(['offer_available', null, 'none'], [0, 1], ['marketing_digital', null]) }) },
         hard: [{ type: 'contains', value: 'USD 30' }, { type: 'not_contains', value: 'descuento' },
           { type: 'current_price_objection_recorded' }, { type: 'course_bonus_preconditions' },
           { type: 'bonus_in_when_offered', values: MARKETING_BONUS }, { type: 'offered_bonus_named' }],
@@ -519,10 +519,10 @@ export const GOLDEN_CASES: readonly GoldenCaseV1[] = [
     turns: [
       {
         id: 'syllabus', customer: 'Pasame el temario de Fotografía Profesional.',
-        must: ['Responder con el temario real de Fotografía Profesional recibido como dato autorizado y mantener la respuesta útil.'],
+        must: ['Responder con el temario real de Fotografía Profesional recibido como dato autorizado o, desde el 2026-11-04, enviando el PDF oficial del programa (send_course_program) con una introducción corta, y mantener la respuesta útil.'],
         mustNot: ['No negar que existe si llegó al contexto, no inventar módulos y no responder sólo con generalidades.'],
         authority: [ref(ROOT, 29, 29, 'Temarios'), ref(PROMPT, 52, 52, 'Contenido, duración, modalidad'), ref(PROMPT, 203, 203, 'Cita sólo lo usado')],
-        expected: { move: ['ask_course_information'], action: ['none'], state: state() },
+        expected: { move: ['ask_course_information', 'request_course_program'], action: ['none', 'send_course_program'], state: state() },
         hard: [{ type: 'response_uses_authorized_syllabus' }],
       },
       {
@@ -635,7 +635,7 @@ export const GOLDEN_CASES: readonly GoldenCaseV1[] = [
         must: ['Responder al pedido de descuento con amabilidad y valor, sin bajar USD 360. Ofrecer un curso afín de los autorizados es opcional (lo decide el modelo dentro de los permisos); la objeción de precio debe quedar registrada.'],
         mustNot: ['No abrir con una negativa defensiva («No hay descuento…»), no usar “no te lo puedo ofrecer”, “es lo que hay”, “no te lo voy a inventar”, “eso no lo puedo cambiar” ni cortar la venta.'],
         authority: [ref(PROMPT, 19, 22, 'no uses frases defensivas'), ref(PROMPT, 113, 124, 'El precio total no se baja'), ref(PROMPT, 135, 135, 'Tú eliges el momento y el curso')],
-        expected: { move: ['defer_payment', 'ask_payment_options', 'ask_course_information', 'unknown'], action: ['none', 'offer_course_bonus'], state: state({ promotion: promotion(['offer_available', null, 'none'], [0, 1], ['marketing_digital', null]) }) },
+        expected: { move: ['price_objection', 'defer_payment', 'ask_payment_options', 'ask_course_information', 'unknown'], action: ['none', 'offer_course_bonus'], state: state({ promotion: promotion(['offer_available', null, 'none'], [0, 1], ['marketing_digital', null]) }) },
         hard: [
           { type: 'not_contains', value: 'no hay descuento' },
           { type: 'not_contains', value: 'no te lo puedo ofrecer' },

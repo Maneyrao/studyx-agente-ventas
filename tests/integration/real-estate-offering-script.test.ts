@@ -40,6 +40,18 @@ run('upsert-real-estate-offering against the local cluster', () => {
       expect(script.planChanges(await script.readCurrent(tx), script.buildOffering()).action).toBe('unchanged');
       await tx`UPDATE offerings SET status='inactive' WHERE workspace_id=${script.WORKSPACE_ID}::uuid AND code='real_estate'`;
       expect(script.planChanges(await script.readCurrent(tx), script.buildOffering())).toEqual({ action: 'update', fields: ['status'] });
+      // The programme sources are linked to the offering code, idempotently.
+      await tx`UPDATE knowledge_sources SET metadata = metadata || '{"offering_code": null}'::jsonb
+        WHERE workspace_id=${script.WORKSPACE_ID}::uuid AND metadata->>'course_slug'='real-estate'`;
+      const unlinkedBefore = await script.countUnlinkedProgramSources(tx);
+      expect(unlinkedBefore).toBeGreaterThan(0);
+      await script.applyUpsert(tx);
+      expect(await script.countUnlinkedProgramSources(tx)).toBe(0);
+      const linked = await tx`SELECT count(*)::int n FROM knowledge_sources WHERE workspace_id=${script.WORKSPACE_ID}::uuid
+        AND metadata->>'course_slug'='real-estate' AND metadata->>'offering_code'='real_estate'`;
+      expect(linked[0]!.n).toBe(unlinkedBefore);
+      await script.applyUpsert(tx);
+      expect(await script.countUnlinkedProgramSources(tx)).toBe(0);
       throw new Error('ROLLBACK_FIXTURE');
     })).rejects.toThrow('ROLLBACK_FIXTURE');
     expect((await db!`SELECT count(*)::int n FROM offerings WHERE code='real_estate'`)[0]!.n).toBe(0);

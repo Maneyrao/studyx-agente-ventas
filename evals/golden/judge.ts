@@ -302,7 +302,8 @@ export function evaluateHardRules(
       const missing = expectedCodes.filter((code) => !includesText(observation.response, offeringName(observation, code)));
       if (missing.length > 0) add(failures, 'PROMOTION_RECAP_MISSING', `No recapitula ${missing.join(', ')}.`);
     }
-    if (rule.type === 'response_uses_authorized_syllabus') {
+    // The official PDF itself is the answer when it was sent (owner 2026-11-04): the text need not restate the syllabus.
+    if (rule.type === 'response_uses_authorized_syllabus' && !((observation.programDocuments ?? []).length > 0)) {
       const cited = observation.selectedOfferingFacts.filter((fact) => observation.usedFactIds.includes(fact.id));
       if (observation.selectedOfferingFacts.length === 0) {
         add(failures, 'SYLLABUS_CONTEXT_MISSING', 'El modelo no recibió hechos de temario del curso pedido.');

@@ -72,6 +72,15 @@ export async function readCurrent(sql) {
   return current ?? null;
 }
 
+/** Programme knowledge sources (official PDF text) not yet linked to the offering code, as the seed does. */
+export async function countUnlinkedProgramSources(sql) {
+  const [row] = await sql`SELECT count(*)::int AS n FROM knowledge_sources
+    WHERE workspace_id = ${WORKSPACE_ID}::uuid AND source_type = 'offering'
+      AND metadata->>'source' = 'official_program_pdf' AND metadata->>'course_slug' = ${PROGRAM_SLUG}
+      AND metadata->>'offering_code' IS DISTINCT FROM ${OFFERING_CODE}`;
+  return row.n;
+}
+
 const FIELDS = ['display_name', 'offering_type', 'status', 'price_type', 'price_amount', 'currency', 'billing_interval',
   'description', 'audience', 'delivery', 'guardrails', 'metadata'];
 
@@ -108,6 +117,10 @@ export async function applyUpsert(sql, desired = buildOffering()) {
         price_amount = EXCLUDED.price_amount, currency = EXCLUDED.currency, billing_interval = EXCLUDED.billing_interval,
         audience = EXCLUDED.audience, delivery = EXCLUDED.delivery, guardrails = EXCLUDED.guardrails,
         metadata = EXCLUDED.metadata, updated_at = now()`;
+    await tx`UPDATE knowledge_sources SET metadata = metadata || jsonb_build_object('offering_code', ${OFFERING_CODE}::text), updated_at = now()
+      WHERE workspace_id = ${WORKSPACE_ID}::uuid AND source_type = 'offering'
+        AND metadata->>'source' = 'official_program_pdf' AND metadata->>'course_slug' = ${PROGRAM_SLUG}
+        AND metadata->>'offering_code' IS DISTINCT FROM ${OFFERING_CODE}`;
     return readCurrent(tx);
   });
 }
@@ -132,9 +145,11 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
     const desired = buildOffering();
     const plan = planChanges(await readCurrent(sql), desired);
     console.log(`target: ${describeTarget(targetUrl)}  mode: ${apply ? 'APPLY' : 'dry-run'}`);
+    const unlinked = await countUnlinkedProgramSources(sql);
+    console.log(`programme sources to link to real_estate: ${unlinked}`);
     console.log(`real_estate: ${plan.action}${plan.fields.length && plan.action !== 'unchanged' ? ` (${plan.fields.join(', ')})` : ''}`);
     if (!apply) { console.log('dry-run: nothing written. Re-run with --apply to write.'); return 0; }
-    if (plan.action === 'unchanged') { console.log('already up to date.'); return 0; }
+    if (plan.action === 'unchanged' && unlinked === 0) { console.log('already up to date.'); return 0; }
     await applyUpsert(sql, desired);
     console.log('applied.');
     return 0;
