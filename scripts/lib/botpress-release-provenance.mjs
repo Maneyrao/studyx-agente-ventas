@@ -6,7 +6,7 @@ import ts from 'typescript';
 // Last commit of claude/agent-a-model-owned-sales that changed deployable code (brain v168, prompt v109).
 // Anything committed after it must be docs/evals/tests only (see assertOnlyNonCodeChangesSinceBaseV1), so a release
 // prepared from the branch HEAD runs exactly this code. Re-pin whenever a code file changes.
-export const BOT_RELEASE_BASE_SHA = 'a8111a34337e610713966744acaa80f9f33d7ba3';
+export const BOT_RELEASE_BASE_SHA = '5a0b38ad1b5f4dacc74804223687794409b30340';
 export const BOT_RELEASE_BRAIN_VERSION = 'studyx-agent-a-brain-v168';
 export const BOT_RELEASE_PROMPT_VERSION = 'studyx-agent-a-canonical-v109';
 export const BOT_RELEASE_INSTRUMENTATION_VERSION = 'studyx-release-provenance-v1';
@@ -17,7 +17,7 @@ export const BOT_RELEASE_SOURCE_PATHS = Object.freeze([
 ]);
 const REVIEWED_SOURCE_HASHES = Object.freeze({
   [BOT_RELEASE_SOURCE_PATHS[0]]: 'c1a85e1d95000cd56f885e02d3cf900d7900ea5102b08ed51910500387c2de93',
-  [BOT_RELEASE_SOURCE_PATHS[1]]: '1db742e58d55a14a74815404dee9e3cc410d616b792bd932360f7da4d6649106',
+  [BOT_RELEASE_SOURCE_PATHS[1]]: '061641753112905318c596dd98c316d5e2ac3a2fdb0fcfbe36404ef54ce21720',
   [BOT_RELEASE_SOURCE_PATHS[2]]: '77809dcfbf8e605affe2eeb746f56bcf5ce91ca07ef05726ec5fe20111c07fd2',
 });
 // Paths that may change after the pinned base without altering what is deployed.
