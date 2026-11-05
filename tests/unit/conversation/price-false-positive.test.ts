@@ -12,6 +12,10 @@ describe('"cuesta un/una <noun>" is a comparison, not a price', () => {
       expect(prices('El curso cuesta 360 dólares')).toHaveLength(1);
       expect(prices('El curso cuesta USD 360')).toHaveLength(1);
       expect(prices('cuesta trescientos sesenta dólares')).toHaveLength(1);
+      // Security review: the comparison exclusion must not hide number words after un/una.
+      expect(prices('El curso cuesta un millón')).toHaveLength(1);
+      expect(prices('cuesta uno noventa y nueve')).toHaveLength(1);
+      expect(prices('cuesta una trescientos')).toHaveLength(1);
     });
   }
 });
