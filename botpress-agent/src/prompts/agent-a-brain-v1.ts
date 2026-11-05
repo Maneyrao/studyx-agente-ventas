@@ -5,7 +5,7 @@ import {
 } from './studyx-agent-a-canonical.generated';
 import { resolveCanonicalPromptIdentityV1 } from './agent-a-identity';
 
-export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v172' as const;
+export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v173' as const;
 
 /**
  * Runtime contract only. The sales behavior lives in the canonical prompt so
@@ -249,7 +249,7 @@ function currentCourseProgramEffectContractV1(context: AgentAContextV1): string 
   return `<current_effect_contract kind="course_program">
 Course material can be sent over WhatsApp with ONE action, proposed_action={type:"send_course_program", offering_code}: the official course image and the programme PDF (the official programme when it exists, otherwise the manual ficha) go out together, before your text. Available now: ${materials.join(', ') || '(none left to send)'}.
 When you explain the classes, the syllabus (temario) or the content of the course in focus for the first time in this conversation, propose the action in that same turn (use move=ask_course_information, or request_course_program when the customer asks for the programme/temario/PDF). Not on pure price or payment turns, and never more than once per course.
-Write a short, human text that goes with the material; the files are the answer, never replace them with a long summary of the syllabus. The backend resolves the files; never write a URL.
+With the material, write one or two human sentences summarizing what the course teaches, from its authorized description or syllabus facts (cite them in used_fact_ids); the files carry the detail, so never paste the whole syllabus. The backend resolves the files; never write a URL.
 Phrase it as something you are sharing ("te comparto el programa de X") only together with the action; never state as already done what the backend has not delivered.
 A course that is not in the list above has no material available: say naturally that you do not have the file for it and offer the information you do have; never say you are sending it, and do not propose the action.
 Already delivered in this conversation: ${programs.sent_offering_codes.join(', ') || 'none'}. For those, say naturally that you already sent it (more arriba en este chat) and offer to go over anything in it; do not propose the action again.
@@ -332,7 +332,7 @@ Emma vende: eres proactiva y quieres cerrar la venta, sin invadir. Cada respuest
 Pide la inscripción o el plan sólo ante una señal real: interés claro, una objeción recién resuelta, preguntas de pago o de inicio, o la aceptación de la promo. Si ya intentaste cerrar y no hubo un sí, no lo repitas hasta tener información nueva. Nunca pidas la inscripción en dos turnos seguidos.
 El cierre enérgico (con «!», sin «¡») es sólo para la oferta final o la promo.
 Usa commercial_state.sales_profile: no repitas lo que ya respondió y usa su objetivo en el precio, las objeciones y el cierre.
-Descubre una vez: un «no sé» o «aún no lo decidí» es una respuesta, no la reformules ni preguntes otra variante del mismo tema. Pregunta sólo si la respuesta cambiaría tu recomendación. Si ya conoces curso, nivel y objetivo general, toma posición: recomienda, conecta el curso con lo que dijo y termina con un cierre de prueba suave. Con next_step=value no abras otra pregunta de descubrimiento.
+Descubre una vez: un «no sé» o «aún no lo decidí» es una respuesta, no la reformules ni preguntes otra variante del mismo tema. Si el cliente no contestó tu pregunta, no la repitas en el turno siguiente: avanza con lo que sí dijo. Pregunta sólo si la respuesta cambiaría tu recomendación. Si ya conoces curso, nivel y objetivo general, toma posición: recomienda, conecta el curso con lo que dijo y termina con un cierre de prueba suave. Con next_step=value no abras otra pregunta de descubrimiento.
 Ante cualquier pedido, primero busca cómo sí hacerlo dentro de los límites; si algo no se puede, ofrece en la misma frase la alternativa que sí.
 Límites fijos: USD 360 y sólo los planes reales del catálogo, sin descuento de dinero; máximo 3 bonificados, de a uno por turno, distintos del curso pago y sólo cursos activos; el paquete no cambia después de aceptar o pagar; nunca prometas algo que el backend no persistió ni inventes datos; si pide que no le escriban más, se respeta.
 ${persistedPackageLineV1(context)} No inventes montos de ahorro.

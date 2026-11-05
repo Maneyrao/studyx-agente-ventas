@@ -967,7 +967,7 @@ OWNER_PROMOTION_MODE_REPLAY_CASES_MUTABLE.push({
 
 // Owner test 6bcc8efa (2026-11-05 21:05–22:07Z, brain v171): discovery asked «¿trabajar o invertir?» three times,
 // including after «no lo sé aún»; «quiero pagar» never selected the course. Evaluation only, never a backend gate.
-const discoverOnceRef = owner(234, 239, 'Descubrir una vez y cerrar');
+const discoverOnceRef = owner(234, 240, 'Descubrir una vez y cerrar');
 const sameFamily = 'No volver a preguntar si quiere trabajar con una inmobiliaria o invertir (ni otra variante de esa elección): el cliente ya dijo que no lo sabe.';
 OWNER_PROMOTION_MODE_REPLAY_CASES_MUTABLE.push({
   id: '47_discover_once_6bcc8efa_20261105',
@@ -975,9 +975,12 @@ OWNER_PROMOTION_MODE_REPLAY_CASES_MUTABLE.push({
   note: 'Lotes reales del cliente en orden hasta el pedido de pago; el correo va correcto para aislar el cierre.',
   turns: [
     traceBase('g01_greeting', 'buenas\nde los cursos\nquiero info', { authority: [discoverOnceRef, intentRef, noPrefabRef] }),
-    traceBase('g02_real_estate', 'y no sé\nalgo vinculado con real state\ntienen cursos de real state\n?', { authority: [discoverOnceRef, intentRef, noPrefabRef] }),
+    traceBase('g02_real_estate', 'y no sé\nalgo vinculado con real state\ntienen cursos de real state\n?', { authority: [discoverOnceRef, programRef, noPrefabRef],
+      must: ['Compartir el programa (imagen + PDF) con una o dos frases que resuman qué se estudia en Real Estate, en el mismo turno.'],
+      expected: { move: ['ask_course_information', 'request_course_program', 'select_course', 'browse_catalog'], action: ['send_course_program'], state: {} } }),
     traceBase('g03_from_zero', 'sería para iniciar de 0', { authority: [discoverOnceRef, intentRef, noPrefabRef],
-      must: ['Afirmar con seguridad por qué Real Estate sirve para empezar de cero; como máximo una pregunta nueva.'] }),
+      must: ['Afirmar con seguridad por qué Real Estate sirve para empezar de cero; como máximo una pregunta nueva.'],
+      mustNot: ['No repetir la pregunta del turno anterior que el cliente no contestó (por ejemplo, trabajar con una inmobiliaria o invertir).'] }),
     traceBase('g04_undecided_trust', 'no lo sé aún\nes formarme\nche y cómo seq ue funciona studyx\nson confiables?', {
       authority: [discoverOnceRef, intentRef, noPrefabRef],
       must: ['Aceptar que todavía no decidió y vender la formación general; responder cómo funciona Studyx y la confianza con hechos autorizados.'],
@@ -1014,6 +1017,46 @@ OWNER_PROMOTION_MODE_REPLAY_CASES_MUTABLE.push({
       hard: [{ type: 'workflow_committed' }, { type: 'payment_link_delivered' }, { type: 'link_plan_in', values: ['monthly_12'] },
         { type: 'not_contains', value: 'no te entendí' }, ...noBeca],
     }),
+  ],
+});
+
+// Owner test 6bcc8efa, checkout → price → bonus → voicemail → chat → plan (2026-11-05). Owner decision: a price
+// complaint during checkout may open the bonus until the link is sent; back on chat the plan choice sends the link.
+OWNER_PROMOTION_MODE_REPLAY_CASES_MUTABLE.push({
+  id: '48_checkout_promo_call_6bcc8efa_20261105',
+  title: 'Prueba del dueño 6bcc8efa: promo durante el checkout, llamada a buzón, «sigo por acá» y link con el paquete',
+  reconstructed: true,
+  note: 'Lotes reales del cliente desde el pedido de pago; la llamada se cierra como buzón antes del turno siguiente.',
+  turns: [
+    traceBase('p01_interest', 'hola, quiero info de real state', { authority: [discoverOnceRef, intentRef, noPrefabRef] }),
+    traceBase('p02_wants_to_pay', 'quiero pagar', { authority: [discoverOnceRef, paymentRef, noPrefabRef],
+      expected: { move: ['request_payment_link', 'select_course', 'provide_contact_details'], action: ['none'], state: {} },
+      hard: [{ type: 'workflow_committed' }, noPrefab, { type: 'selected_course_equals', value: 'real_estate' }, ...noBeca] }),
+    traceBase('p03_data', 'thiago meiniero\ntmaneyro@gmail.com\n+54 9 11 6900 4497', { authority: [discoverOnceRef, paymentRef, noPrefabRef],
+      expected: { move: ['provide_contact_details', 'request_payment_link'], action: ['none'], state: {} } }),
+    traceBase('p04_confirm', 'yesss', { authority: [discoverOnceRef, paymentRef, noPrefabRef],
+      expected: { move: ['provide_contact_details', 'request_payment_link', 'ask_payment_options', 'select_payment_plan'], action: ['none'], state: {} } }),
+    traceBase('p05_expensive', 'uuuf\nes bastante caro', { authority: [discoverOnceRef, motiveRef, noPrefabRef],
+      must: ['Trabajar el valor y preguntar, con sus palabras, si el precio es lo único que lo frena; o, si ya lo dijo, ofrecer un bonificado afín con efecto real.'],
+      mustNot: ['No responder que el precio no baja; no prometer un regalo sin la acción.'],
+      expected: { move: ['price_objection'], action: ['none', 'offer_course_bonus'], state: {} },
+      hard: [{ type: 'workflow_committed' }, noPrefab, { type: 'course_bonus_preconditions' }, { type: 'no_link_delivered' }, ...noBeca] }),
+    traceBase('p06_price_only', 'solo el precio es el problema', { authority: [discoverOnceRef, motiveRef, noPrefabRef],
+      must: ['Ofrecer un bonificado afín a Real Estate con efecto real, citando este mensaje como motivo.'],
+      expected: { move: ['price_objection', 'explicit_promotion_request'], action: ['offer_course_bonus'], state: {} },
+      hard: [{ type: 'workflow_committed' }, noPrefab, { type: 'course_bonus_preconditions' }, { type: 'bonus_motive_current_message' },
+        { type: 'offered_bonus_named' }, { type: 'promotion_bonus_count_at_most', value: 3 }, ...noBeca] }),
+    traceBase('p07_call', 'me podrian llamar?\nme sirve, pero quiero q me llamen', { authority: [traceRef, intentRef, noPrefabRef],
+      expected: { move: ['request_call'], action: ['request_call_now', 'none'], state: {} } }),
+    traceBase('p08_chat', 'nada, prefiero seguir por acá', { settleLatestCallBefore: 'buzon_de_voz', authority: [traceRef, discoverOnceRef, noPrefabRef],
+      must: ['Seguir por chat con el paquete ofrecido y los planes reales.'],
+      expected: { move: ['continue_by_chat', 'decline_call'], action: ['none'], state: {} } }),
+    traceBase('p09_plan', 'el de 12 cuotas', { authority: [discoverOnceRef, paymentRef, noPrefabRef],
+      must: ['Entregar en este turno el link del plan elegido con el paquete aceptado.'],
+      mustNot: ['No decir «no te entendí» ni pedir otra confirmación.'],
+      expected: { move: ['select_payment_plan', 'request_payment_link'], action: ['send_payment_link'], state: {} },
+      hard: [{ type: 'workflow_committed' }, { type: 'payment_link_delivered' }, { type: 'link_plan_in', values: ['monthly_12'] },
+        { type: 'not_contains', value: 'no te entendí' }, ...noBeca] }),
   ],
 });
 
