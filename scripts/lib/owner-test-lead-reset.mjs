@@ -60,7 +60,10 @@ export function classifyOwnerReset(snapshot, botpress) {
   ensure(indirect.course_bonus_followups.every(row => ['sent', 'cancelled', 'expired', 'dead_letter'].includes(row.status)), 'RESET_ACTIVE_COMMERCIAL_FOLLOWUP');
   ensure(related.retell_followup_requests.length === 0 && related.retell_handoff_requests.length === 0
     && related.conversation_history_recovery_links.length === 0, 'RESET_VOICE_OR_RECOVERY_LINK_EXISTS');
-  ensure(indirect.agent_a_memory_projection_jobs.every(row => row.status === 'completed'), 'RESET_ACTIVE_MEMORY_PROJECTION');
+  // An unleased pending/failed job is held by no worker; the reset retires it
+  // in its own transaction. Only a job a worker is processing blocks the reset.
+  ensure(indirect.agent_a_memory_projection_jobs.every(row => row.status === 'completed'
+    || (['pending', 'failed'].includes(row.status) && !row.lease_until)), 'RESET_ACTIVE_MEMORY_PROJECTION');
   ensure(indirect.sheet_projection_rows.every(row => ['projected', 'superseded', 'cancelled'].includes(row.state) && !row.lease_until), 'RESET_ACTIVE_SHEET_PROJECTION');
   const pendingOutboxes = indirect.outbox_events.filter(row => row.state === 'pending');
   ensure(indirect.outbox_events.every(row => ['published', 'pending', 'cancelled', 'dead_letter'].includes(row.state) && !row.lease_until), 'RESET_ACTIVE_OUTBOX_LEASE');

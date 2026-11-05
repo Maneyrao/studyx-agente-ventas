@@ -88,6 +88,11 @@ async function swapInsideTransaction(tx, before, plan, resetId) {
       AND state='pending' RETURNING decision_id`);
   await count('outboxEvents', tx`UPDATE outbox_events SET state='cancelled',lease_until=NULL,leased_by=NULL,last_error_code='OWNER_TEST_LEAD_RESET'
     WHERE id=ANY(${tx.array(plan.cancelOutboxIds)}::uuid[]) AND state='pending' RETURNING id`);
+  // Retire the old contact's unprojected memory jobs: never project them onto a reset lead.
+  await count('memoryProjectionJobsRetired', tx`UPDATE agent_a_memory_projection_jobs
+    SET status='failed', attempt_count=3, last_error_code='OWNER_TEST_LEAD_RESET', updated_at=now()
+    WHERE turn_id IN (SELECT id FROM messages WHERE contact_id=${scope.contactId}::uuid)
+      AND status IN ('pending', 'failed') AND lease_until IS NULL RETURNING decision_id`);
   for (const table of ['conversation_promotion_context_v1', 'selected_memories', 'lead_course_interests',
     'conversation_sales_context_state_events_v1', 'conversation_sales_context_states_v1', 'sales_context_state_events',
     'sales_context_states', 'contact_channel_permissions']) await count(table, tx`DELETE FROM ${tx(table)} WHERE contact_id=${scope.contactId}::uuid RETURNING *`);
