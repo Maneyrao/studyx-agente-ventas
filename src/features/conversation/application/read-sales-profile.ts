@@ -2,6 +2,8 @@ import type { DbClient } from '@/lib/db/types';
 import { projectSalesProfileMemoriesV1, type SalesProfileMemoriesV1 } from '@/shared/conversation/sales-profile';
 
 const DECISION_WINDOW = 60;
+// Most recent customer messages one reply may cite (bounded evidence).
+const EVIDENCE_WINDOW = 12;
 
 /**
  * Latest model-recorded memory per (type, key) of this conversation, read from
@@ -15,7 +17,7 @@ export async function readSalesProfileMemoriesV1(input: {
     SELECT decision.memory_candidates,
       -- Every customer message this reply answered: its own batch plus any
       -- superseded batch since the previous agent message (owner test 6bcc8efa).
-      ARRAY(SELECT evidence.content FROM messages evidence
+      ARRAY(SELECT answered.content FROM (SELECT evidence.content, evidence.created_at, evidence.id FROM messages evidence
         WHERE evidence.contact_id=source.contact_id AND evidence.conversation_id=source.conversation_id
           AND evidence.direction='inbound'
           AND (evidence.id=source.id OR (source.batch_id IS NOT NULL AND evidence.batch_id=source.batch_id)
@@ -23,7 +25,8 @@ export async function readSalesProfileMemoriesV1(input: {
               SELECT 1 FROM messages reply WHERE reply.conversation_id=source.conversation_id
                 AND reply.direction='outbound' AND reply.created_at > evidence.created_at
                 AND reply.created_at < source.created_at)))
-        ORDER BY evidence.created_at, evidence.id) evidence
+        ORDER BY evidence.created_at DESC, evidence.id DESC LIMIT ${EVIDENCE_WINDOW}) answered
+        ORDER BY answered.created_at, answered.id) evidence
     FROM workspaces w
     JOIN workspace_contacts membership ON membership.workspace_id=w.id AND membership.contact_id=${input.contact_id}::uuid
     JOIN messages source ON source.contact_id=membership.contact_id AND source.conversation_id=${input.conversation_id}::uuid

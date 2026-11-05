@@ -34,6 +34,7 @@ export interface SalesProfileDecisionRowV1 {
 }
 
 const MAX_PER_BUCKET = 4;
+const MAX_QUOTE_SPAN = 4;
 const SALES_PROFILE_KEY = /^[a-z][a-z0-9_]{0,63}$/u;
 const norm = (text: string) => text.toLowerCase().replace(/\s+/gu, ' ').trim();
 
@@ -48,8 +49,10 @@ export function projectSalesProfileMemoriesV1(rows: readonly SalesProfileDecisio
     const messages = row.evidence.map(norm);
     // A quote may span consecutive messages of the reply (WhatsApp splits one
     // thought: «no lo sé aún» / «es formarme»); never non-adjacent ones.
-    const evidence = messages.flatMap((_, start) => messages.slice(start)
-      .map((__, length) => messages.slice(start, start + length + 1).join(' ')));
+    // Bounded: windows of at most MAX_QUOTE_SPAN messages.
+    const evidence = messages.flatMap((_, start) => Array.from(
+      { length: Math.min(MAX_QUOTE_SPAN, messages.length - start) },
+      (__, length) => messages.slice(start, start + length + 1).join(' ')));
     for (const candidate of row.memory_candidates) {
       const { type, key, value, source_quote: quote } = candidate;
       if (typeof type !== 'string' || typeof key !== 'string' || typeof value !== 'string' || typeof quote !== 'string') continue;
