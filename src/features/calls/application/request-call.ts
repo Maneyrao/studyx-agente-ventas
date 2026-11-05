@@ -9,7 +9,7 @@ import {
   inferCallCountryFromPhoneE164,
   parseCallContext,
 } from '../domain/call-context';
-import { splitFullName } from '@/lib/heuristics/contact-identity';
+import { extractDeclaredPhones, splitFullName } from '@/lib/heuristics/contact-identity';
 import { CALL_START_TIMEOUT_SECONDS } from '../domain/call-timeouts';
 import { callIntakeRejectionReasonV1 } from '../domain/call-intake-readiness';
 
@@ -263,6 +263,28 @@ export async function reserveCallForDecision(
   const callPhone = callIntake.intake.telefono;
   if (callPhone === null || !E164.test(callPhone)) {
     throw new CallRequestRejectedError('CALL_PHONE_INVALID');
+  }
+
+  // A number the agent proposed in its last delivered reply and the customer
+  // has not confirmed yet is a pending correction: never dial the questioned
+  // number silently (2026-11-05: «termina en 8» → llamó al 4497). A confirmation
+  // in this same turn already moved the profile phone before this check.
+  const latestConsentId = input.consent_messages[input.consent_messages.length - 1]!.id;
+  const [lastReply] = await db<Array<{ content: string }>>`
+    SELECT reply.content FROM messages current
+    JOIN messages reply ON reply.conversation_id = current.conversation_id
+      AND reply.contact_id = current.contact_id AND reply.direction = 'outbound'
+      AND reply.created_at < current.created_at
+    JOIN outbound_deliveries delivery ON delivery.message_id = reply.id
+      AND delivery.state IN ('submitted', 'delivered')
+    WHERE current.id = ${latestConsentId}::uuid
+    ORDER BY reply.created_at DESC, reply.id DESC
+    LIMIT 1
+  `;
+  const tail = (phone: string) => phone.replace(/\D/gu, '').slice(-8);
+  if (lastReply && extractDeclaredPhones(lastReply.content)
+    .some((phone) => tail(phone).length === 8 && tail(phone) !== tail(callPhone))) {
+    throw new CallRequestRejectedError('CALL_PHONE_CONFIRMATION_PENDING');
   }
 
   // Xendra can acknowledge creation without ever delivering a lifecycle

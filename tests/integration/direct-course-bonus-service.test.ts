@@ -143,18 +143,29 @@ run('atomic direct bonus service', () => {
     const input=f.input();input.outbound.content='Si querés, podemos hablar por teléfono. Te regalo el curso.';
     expect(await offerWithMotive(db!,input)).toMatchObject({ok:true});
   });
-  it.each(['terminal_call','expired_session'] as const)('does not reopen a bonus while persisted state remains in handoff (%s)',async kind=>{
+  // 2026-11-05 (5b138536): a handoff protects the sale only while its own
+  // call can still ring or talk. Once the conversation's latest call session
+  // is terminal, a current, explicit promotion request may be served again.
+  it.each([
+    ['no_call', null, false],
+    ['expired_session', null, false],
+    ['active_call', 'in_progress', false],
+    ['stale_provider_accepted', 'provider_accepted', false],
+    ['terminal_call', 'completed', true],
+  ] as const)('handoff blocks a bonus until the latest call is terminal (%s)',async (kind,status,reopens)=>{
     const f=await fixture();
-    await db!`UPDATE conversation_sales_context_states_v1 SET call_preference='call',call_offer_status='accepted',call_offer_count=0,
+    await db!`UPDATE conversation_sales_context_states_v1 SET call_preference='chat',call_offer_status='declined',call_offer_count=0,
       stage='handoff',awaiting_reply='none',updated_at=${kind==='expired_session'?new Date(Date.now()-25*60*60*1000):new Date()}
       WHERE conversation_id=${f.v.id}`;
-    if(kind==='terminal_call') {
+    if(status) {
       await db!`INSERT INTO call_sessions(workspace_id,source_turn_id,contact_id,conversation_id,provider,request_idempotency_key,status,
         consent_source_message_id,context_snapshot,context_hash,prompt_version,completed_at)
-        VALUES (${f.w.id},${f.objectionTurns[0]},${f.c.id},${f.v.id},'telegram_sandbox',${randomUUID()},'completed',
-          ${f.objectionTurns[0]},'{}'::jsonb,decode(repeat('00',32),'hex'),'fixture',now())`;
+        VALUES (${f.w.id},${f.objectionTurns[0]},${f.c.id},${f.v.id},'telegram_sandbox',${randomUUID()},${status},
+          ${f.objectionTurns[0]},'{}'::jsonb,decode(repeat('00',32),'hex'),'fixture',${status==='completed'?new Date():null})`;
     }
-    expect(await offerWithMotive(db!,f.input())).toEqual({ok:false,reason:'sale_already_closed'});
+    const result=await offerWithMotive(db!,f.input());
+    if(reopens) expect(result).toMatchObject({ok:true});
+    else expect(result).toEqual({ok:false,reason:'sale_already_closed'});
   });
   it('keeps blocked-contact safety ahead of call-unavailable ladder eligibility without writing effects',async()=>{
     const f=await fixture();const input=f.input();

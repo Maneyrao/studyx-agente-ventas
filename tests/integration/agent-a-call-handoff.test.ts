@@ -643,6 +643,39 @@ run('agent a call handoff — refusals reserve nothing', () => {
     expect(await sessionsByTurn(turnId)).toHaveLength(0);
   });
 
+  // 2026-11-05 (5b138536): «termina en 8, no en 7» y la llamada salió al 4497.
+  it('a proposed phone correction blocks the call until confirmed, then the dispatch carries the corrected number', async () => {
+    const identity = newIdentity();
+    const corrected = `${identity.phone.slice(0, -1)}${identity.phone.endsWith('8') ? '7' : '8'}`;
+    const correctionTurn = await seedTurn(identity, `me confundí, mi número termina en ${corrected.slice(-1)}`);
+    const suggest = async (afterTurn: string) => {
+      const [turn] = await db!<Array<{ conversation_id: string; contact_id: string; phone: string }>>`
+        SELECT m.conversation_id, m.contact_id, c.phone FROM messages m JOIN contacts c ON c.id = m.contact_id
+        WHERE m.id = ${afterTurn}::uuid`;
+      const [reply] = await db!<Array<{ id: string }>>`
+        INSERT INTO messages (conversation_id, contact_id, direction, content, in_reply_to)
+        VALUES (${turn.conversation_id}::uuid, ${turn.contact_id}::uuid, 'outbound',
+          ${`Entonces sería ${corrected}, ¿me confirmás?`}, ${afterTurn}::uuid) RETURNING id`;
+      await db!`INSERT INTO outbound_deliveries (message_id, conversation_id, contact_id, provider, integration_id,
+        channel, destination, idempotency_key, state, provider_message_id, submitted_at)
+        VALUES (${reply.id}::uuid, ${turn.conversation_id}::uuid, ${turn.contact_id}::uuid, 'botpress', 'vitest-call-handoff',
+          'whatsapp', ${turn.phone}, ${randomUUID()}, 'submitted', ${randomUUID()}, now())`;
+    };
+    await suggest(correctionTurn);
+    const callAgain = await seedTurn(identity, 'Llamame ahora');
+    await expectRejected(callAgain, callConfirmation('direct_request'), 'CALL_PHONE_CONFIRMATION_PENDING');
+
+    const yes = await seedTurn(identity, 'sí');
+    const { confirmDeliveredContactPhone } = await import('@/lib/repositories/contact-phone-confirmation.repository');
+    expect(await db!.begin(tx => confirmDeliveredContactPhone({ turnId: yes, phone: corrected }, tx))).toBe(true);
+    const callNow = await seedTurn(identity, 'Llamame ahora');
+    const committed = await commit(callNow, callConfirmation('direct_request'));
+    expect(committed.call_request).not.toBeNull();
+    const claim = await new PostgresCallStore(db!).claimDispatch(committed.call_request!.call_id, 'vitest-worker');
+    expect(JSON.stringify(claim)).toContain(corrected);
+    expect(JSON.stringify(claim)).not.toContain(`"${identity.phone}"`);
+  });
+
   it('an active call blocks a second reservation for the same contact', async () => {
     const identity = newIdentity();
     const firstTurn = await seedTurn(identity, 'Llamame ahora');

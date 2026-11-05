@@ -2739,3 +2739,75 @@ describe('Agent A Brain V1', () => {
     })).rejects.toEqual(expect.objectContaining<Partial<AgentABrainError>>({ code: 'BRAIN_INVALID_JSON' }));
   });
 });
+
+// 2026-11-05 (conversación 5b138536): el recibo rechazó «gmail,com» y «termina en 8»,
+// pero la respuesta presentó el valor como registrado.
+describe('contact profile receipt is respected by the reply', () => {
+  const id = '00000000-0000-4000-8000-000000000001';
+  const withRejected = (field: 'correo' | 'telefono', value: string) => {
+    const current = context();
+    current.customer.contact_intake = { nombre: 'Thiago', apellido: 'Maneyro', correo: null, telefono: '+5491169004497' };
+    current.customer.contact_profile = { version: 2, sources: [], pending_requests: [],
+      rejected_updates: [{ field, value, code: 'VALUE_MISMATCH' }] };
+    return current;
+  };
+  const subjects = (current: AgentAContextV1, overrides: Record<string, unknown>) => {
+    const parsed = parseAgentATurnProposalV1(proposal(overrides), current);
+    return validateAgentATurnProposalV1({ proposal: parsed, context: current, planned_fact_ids: [], rejection_id: id })
+      ?.rejections.map((r) => r.subject) ?? [];
+  };
+
+  it('rejects an autocorrected email the receipt refused', () => {
+    const current = withRejected('correo', 'tmaneyro@gmail.com');
+    expect(subjects(current, { response: { messages: ['Te confirmo: correo TMANEYRO@gmail.com. ¿Está bien?'] } }))
+      .toContain('contact_profile_rejected:correo');
+    expect(subjects(current, { response: { messages: ['¿Me lo reenviás completo, tal como lo usás?'] } }))
+      .not.toContain('contact_profile_rejected:correo');
+  });
+
+  it('rejects a refused phone stated as recorded, allows it inside a structured confirmation request', () => {
+    const current = withRejected('telefono', '+5491169004498');
+    expect(subjects(current, { response: { messages: ['Perfecto, tu número queda en +54 9 11 6900-4498.'] } }))
+      .toContain('contact_profile_rejected:telefono');
+    expect(subjects(current, { response: { messages: ['Entonces sería +5491169004498, ¿me confirmás?'] },
+      profile_requests: [{ message_index: 0, fields: ['telefono'], purpose: 'call', mode: 'clarify' }] }))
+      .not.toContain('contact_profile_rejected:telefono');
+  });
+
+  it('does not flag a value that is already the current canonical one', () => {
+    const current = withRejected('telefono', '+5491169004497');
+    expect(subjects(current, { response: { messages: ['Te llamo al +5491169004497.'] } }))
+      .not.toContain('contact_profile_rejected:telefono');
+  });
+});
+
+// 2026-11-05 18:19Z (5b138536): «sabes qué dan?» sobre Real Estate (material
+// disponible) respondió el temario sin enviar imagen + PDF.
+describe('a contents answer for the course in focus carries its material', () => {
+  const id = '00000000-0000-4000-8000-000000000001';
+  const withProgram = (sent: string[] = []) => {
+    const current = context();
+    current.catalog.selected_offering!.facts.push({ id: 'knowledge-source:redes', kind: 'offering_syllabus', value: '11 clases' });
+    current.capabilities.course_programs = { available_offering_codes: ['redes-informaticas'], sent_offering_codes: sent };
+    return current;
+  };
+  const codes = (current: AgentAContextV1, overrides: Record<string, unknown>) => {
+    const parsed = parseAgentATurnProposalV1(proposal(overrides), current);
+    return validateAgentATurnProposalV1({ proposal: parsed, context: current, planned_fact_ids: [], rejection_id: id })
+      ?.rejections.map((r) => `${r.code}:${r.subject}`) ?? [];
+  };
+  const contents = { used_fact_ids: ['offering:redes-informaticas:name:v1', 'knowledge-source:redes'], used_memory_ids: [] };
+
+  it('requires send_course_program when the syllabus of the focus course is explained and the material is unsent', () => {
+    expect(codes(withProgram(), contents)).toContain('PROGRAM_SEND_REQUIRED:send_course_program:redes-informaticas');
+    expect(codes(withProgram(), { ...contents, proposed_action: { type: 'send_course_program', offering_code: 'redes-informaticas' } }))
+      .not.toContain('PROGRAM_SEND_REQUIRED:send_course_program:redes-informaticas');
+  });
+  it('does not require it once sent, without the syllabus, or on a price turn', () => {
+    expect(codes(withProgram(['redes-informaticas']), contents).some((c) => c.startsWith('PROGRAM_SEND_REQUIRED'))).toBe(false);
+    expect(codes(withProgram(), { used_memory_ids: [] }).some((c) => c.startsWith('PROGRAM_SEND_REQUIRED'))).toBe(false);
+    expect(codes(withProgram(), { ...contents, move: { schema_version: 1, move: 'ask_course_information',
+      secondary_moves: ['price_objection'], vetoes: [], course_reference: 'Redes Informáticas', confidence: 0.9 } })
+      .some((c) => c.startsWith('PROGRAM_SEND_REQUIRED'))).toBe(false);
+  });
+});

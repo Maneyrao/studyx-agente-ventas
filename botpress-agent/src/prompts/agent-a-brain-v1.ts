@@ -5,7 +5,7 @@ import {
 } from './studyx-agent-a-canonical.generated';
 import { resolveCanonicalPromptIdentityV1 } from './agent-a-identity';
 
-export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v168' as const;
+export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v169' as const;
 
 /**
  * Runtime contract only. The sales behavior lives in the canonical prompt so
@@ -33,7 +33,8 @@ A model-authored recommendation is not a customer selection: use browse_catalog 
 Use continue_by_chat only for an explicit preference to keep using chat instead of a call, never as a generic label for an ordinary conversational reply.
 When you present or recap the bonus package, state the right number of courses for "N cursos al precio de uno": the paid course plus every bonus. Use commercial_state.promotion.courses_in_package for what the customer already has and courses_in_package_after_next_offer when you add a bonus now (two courses for the first bonus, three for the second, four for the third); without a promotion yet, the first bonus makes it two. Never say "dos cursos al precio de uno" when the package holds more.
 A request for a discount is answered with value, the canonical plans and the promotion path; never open with a negative ("no hay descuento", "no puedo bajar el precio", "no tenemos descuentos"): start from what the customer gets and keep the total as is.
-Never say you are sending, sharing or attaching a programme, temario or PDF unless proposed_action is send_course_program for that course; without it, say naturally that you do not have the programme file and offer the information you do have.
+Never say you are sending, sharing or attaching a programme, temario or PDF unless proposed_action is send_course_program for that course. When capabilities.course_programs lists the course as available, the material exists: never say you do not have it; propose the action or offer to share it. Only when it is not listed, say naturally that you do not have the programme file and offer the information you do have.
+Contact data is recorded only by the profile receipt. Copy an email exactly as the customer wrote it; never fix its format yourself. When customer.contact_profile.rejected_updates lists a value, it was NOT recorded: never present it as saved. For an email, ask once for it to be resent complete. For a phone correction ("termina en 8"), write the complete corrected number, ask the customer to confirm it (profile_requests clarify telefono) and, when they confirm, use confirmed_phone; do not call until it is confirmed.
 The canonical behavior governs how to respond; this mapping only names the move in AgentATurnProposalV1.
 </move_semantics>`;
 
@@ -156,9 +157,17 @@ Continue naturally with the paid course under canonical_sales_behavior; never in
 Do not claim a discount, promotion, gift, approval, income or result. Preserve the rest of the response only when its facts and effects remain authorized.` : '';
   const repairsProgramSend = rejection.rejections.some(reason => reason.subject.startsWith('program_send_not_executed'))
   const programSendReason = rejection.rejections.map(reason => reason.subject).find(subject => subject.startsWith('program_send_not_executed'))?.split(':')[1] ?? 'unavailable'
-  const programSendRepair = repairsProgramSend ? `
+  const programSendRepair = repairsProgramSend && programSendReason !== 'not_proposed' ? `
 For program_send_not_executed, the programme PDF was NOT sent in this turn (${programSendReason}).
 Remove every sentence saying you are sending, sharing, re-sending or attaching it now, including "te lo comparto otra vez" and "te lo mando de nuevo". ${programSendReason === 'already_sent' ? 'It was already delivered earlier in this chat and it is not sent twice: say so ("el programa te lo envié más arriba en este chat"), point to that earlier message and offer to go through it together.' : 'There is no PDF file for this course: say you do not have the programme file and offer the information you do have.'} Use proposed_action=none.` : ''
+  const programNotProposed = programSendReason === 'not_proposed' || rejection.rejections.some(reason => reason.code === 'PROGRAM_SEND_REQUIRED')
+  const programRequiredRepair = programNotProposed ? `
+For PROGRAM_SEND_REQUIRED or program_send_not_executed:not_proposed, the course material IS available and was not sent yet: keep your short summary of what the course teaches, say you are sharing the full programme, and set proposed_action={type:"send_course_program", offering_code} for the course in focus. Never say you do not have the file.` : ''
+  const rejectedProfileFields = rejection.rejections.map(reason => reason.subject)
+    .filter(subject => subject.startsWith('contact_profile_rejected:')).map(subject => subject.split(':')[1])
+  const profileReceiptRepair = rejectedProfileFields.length || rejection.rejections.some(reason => reason.subject === 'phone_confirmation_pending') ? `
+For contact_profile_rejected or phone_confirmation_pending, the value was NOT recorded (${[...rejectedProfileFields, ...(rejection.rejections.some(reason => reason.subject === 'phone_confirmation_pending') ? ['telefono'] : [])].join(', ')}). Never say it is saved, registered or used.
+${rejectedProfileFields.includes('correo') ? 'Email: do not repeat or correct it; ask once for the email to be resent complete, exactly as the customer uses it.\n' : ''}${rejectedProfileFields.includes('telefono') || rejection.rejections.some(reason => reason.subject === 'phone_confirmation_pending') ? 'Phone: write the complete number you understood and ask the customer to confirm it, with profile_requests [{fields:["telefono"],mode:"clarify",purpose:"call"}]; use proposed_action=none until it is confirmed.' : ''}` : ''
   const repairsBonusNaming = rejection.rejections.some(reason => reason.subject === 'bonus_not_named');
   const bonusNamingRepair = repairsBonusNaming ? `
 For bonus_not_named, name the course you're adding: write the bonus course's exact display_name in the customer-visible copy where you offer it (do not name only an earlier bonus), or use proposed_action=none and do not present a new gift.` : '';
@@ -172,7 +181,7 @@ ${courseDeclarationRepair}
 ${offeringRepair}
 ${courseLogisticsRepair}
 ${forbiddenPromiseRepair}
-${bonusNamingRepair}${programSendRepair}
+${bonusNamingRepair}${programSendRepair}${programRequiredRepair}${profileReceiptRepair}
 If an action did not occur, do not claim it; continue naturally from the permitted facts and effects.
 Do not repeat confirmed data or an earlier opening or question. Ask only for truly missing information.
 Keep prose and metadata consistent. Preserve accepted observations. Never expose validation to the customer.

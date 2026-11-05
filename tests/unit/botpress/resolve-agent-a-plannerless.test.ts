@@ -919,7 +919,7 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
     });
     expect(result.effective.proposal.response.messages).toEqual(messages);
     expect(result.effective.proposal.proposed_action).toEqual({ type: 'request_call_now', reason: 'direct_request' });
-    expect(result.evidence).toMatchObject({ repair_attempted: false, rejection_codes: ['FACT_NOT_AUTHORIZED'] });
+    expect(result.evidence).toMatchObject({ repair_attempted: false, rejection_codes: ['FACT_NOT_AUTHORIZED:offering:unknown:name:v1'] });
   });
 
   it('repairs an empty delivery announcement even with advisory semantics', async () => {
@@ -1499,7 +1499,7 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
     expect(result.effective.proposal.response.messages).toEqual([
       'Los dos sirven, pero uno apunta a campañas y el otro a manejar una comunidad.',
     ]);
-    expect(result.evidence.rejection_codes).toEqual(['FACT_VALUE_MISMATCH']);
+    expect(result.evidence.rejection_codes).toEqual(['FACT_VALUE_MISMATCH:candidate_course_detail']);
   });
 
   it('preserves a confirmed call action and its model-authored acknowledgement after an offer', async () => {
@@ -2060,7 +2060,7 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
     expect(repair).not.toHaveBeenCalled();
     expect(result.effective).toBe(initial);
     expect(result.evidence).toMatchObject({
-      rejection_codes: ['MISSING_INTAKE'], repair_attempted: false, repaired: false,
+      rejection_codes: ['MISSING_INTAKE:apellido'], repair_attempted: false, repaired: false,
     });
   });
 
@@ -2217,7 +2217,7 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
     expect(repair).toHaveBeenCalledTimes(1);
     expect(result.effective).toBe(repaired);
     expect(result.evidence).toMatchObject({
-      rejection_codes: ['FACT_VALUE_MISMATCH'], repair_attempted: true,
+      rejection_codes: ['FACT_VALUE_MISMATCH:price'], repair_attempted: true,
       repaired: true, proposal_generation_calls: 2,
     });
   });
@@ -2464,7 +2464,7 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
     expect(result.effective.proposal.response.messages).toEqual(messages);
     expect(result.effective.proposal.proposed_action).toEqual({ type: 'none' });
     expect(result.evidence).toMatchObject({
-      rejection_codes: ['FACT_VALUE_MISMATCH'],
+      rejection_codes: ['FACT_VALUE_MISMATCH:candidate_course_detail'],
       repair_attempted: false, repaired: false,
       proposal_generation_calls: 1,
     });
@@ -2675,7 +2675,7 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
     });
 
     expect(repair).toHaveBeenCalledTimes(1);
-    expect(result.evidence.rejection_codes).toContain('PLAN_NOT_SELECTED');
+    expect(result.evidence.rejection_codes).toContain('PLAN_NOT_SELECTED:payment_plan');
     expect(result.effective.proposal.response.messages).toEqual([
       'Prefieres 12 cuotas, 6 cuotas o un solo pago?',
     ]);
@@ -2724,7 +2724,7 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
     expect(repair).toHaveBeenCalledTimes(1);
     expect(result.effective).toBe(initial);
     expect(result.evidence).toMatchObject({
-      rejection_codes: ['PLAN_NOT_SELECTED'], repair_attempted: true, repaired: false,
+      rejection_codes: ['PLAN_NOT_SELECTED:payment_plan'], repair_attempted: true, repaired: false,
     });
     expect(result.effective.proposal.proposed_action).toEqual({ type: 'none' });
   });
@@ -2835,7 +2835,7 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
     expect(result.effective.proposal.proposed_action).toEqual({ type: 'none' });
     expect(result.effective.proposal.response).toEqual(initial.proposal.response);
     expect(result.evidence).toMatchObject({
-      rejection_codes: ['ACTION_NOT_AUTHORIZED'], repair_attempted: false,
+      rejection_codes: ['ACTION_NOT_AUTHORIZED:send_payment_link'], repair_attempted: false,
       repaired: false, proposal_generation_calls: 1,
     });
   });
@@ -2877,7 +2877,7 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
     expect(result.effective.proposal.proposed_action).toEqual({ type: 'none' });
     expect(result.effective.proposal.response).toEqual(initial.proposal.response);
     expect(result.evidence).toMatchObject({
-      rejection_codes: ['MISSING_INTAKE'], repair_attempted: false,
+      rejection_codes: ['MISSING_INTAKE:correo'], repair_attempted: false,
       repaired: false, proposal_generation_calls: 1,
     });
   });
@@ -2916,7 +2916,7 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
     expect(result.effective.proposal.proposed_action).toEqual({ type: 'none' });
     expect(result.effective.proposal.response).toEqual(initial.proposal.response);
     expect(result.evidence).toMatchObject({
-      rejection_codes: ['MISSING_INTAKE'], repair_attempted: false,
+      rejection_codes: ['MISSING_INTAKE:correo'], repair_attempted: false,
       repaired: false, proposal_generation_calls: 1,
     });
   });
@@ -3509,7 +3509,7 @@ it.each(['narrative', 'dedicated'] as const)('repairs a third invitation in %s w
     repair_enabled: true, repair, rejection_id: '00000000-0000-4000-8000-000000000001' });
   expect(repair).toHaveBeenCalledOnce();
   expect(result.effective.proposal.response.messages).toEqual(['La formación tiene 38 clases.']);
-  expect(result.evidence.rejection_codes).toContain('CALL_BUDGET_EXHAUSTED');
+  expect(result.evidence.rejection_codes).toContain('CALL_BUDGET_EXHAUSTED:call_offer');
 });
 
 it('does not downgrade an unrepaired third invitation into advisory guidance', async () => {

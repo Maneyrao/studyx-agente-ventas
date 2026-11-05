@@ -27,6 +27,7 @@ export const TurnRejectionCodeSchema = z.enum([
   'COURSE_NOT_RESOLVED',
   'COURSE_ROLE_UNDECLARED',
   'REPEATED_AGENT_REPLY',
+  'PROGRAM_SEND_REQUIRED',
 ])
 
 /** Identificador o código. Nunca una frase para el cliente (A4). */

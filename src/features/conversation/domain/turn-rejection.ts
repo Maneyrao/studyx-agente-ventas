@@ -39,6 +39,7 @@ export const TURN_REJECTION_CODES_V1 = [
   'COURSE_ROLE_UNDECLARED',
   /** Devolvió el mismo mensaje que ya había mandado. */
   'REPEATED_AGENT_REPLY',
+  'PROGRAM_SEND_REQUIRED',
 ] as const;
 
 export type TurnRejectionCodeV1 = typeof TURN_REJECTION_CODES_V1[number];

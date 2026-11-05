@@ -50,6 +50,13 @@ export const ContactProfileContextV1Schema = z.object({
     purpose: z.enum(CONTACT_PROFILE_PURPOSES_V1),
     mode: z.enum(CONTACT_PROFILE_MODES_V1),
   }).strict()).max(CONTACT_PROFILE_MAX_PENDING_REQUESTS_V1),
+  /** Values Agent A proposed in this turn that the profile receipt refused. The
+   * reply must not present them as recorded (2026-11-05, gmail,com / 4498). */
+  rejected_updates: z.array(z.object({
+    field: ProfileFieldSchema,
+    value: z.string().min(1).max(320),
+    code: z.string().min(1).max(64),
+  }).strict()).max(8).optional(),
 }).strict();
 
 const PaymentPlanSchema = z.enum(['monthly_12', 'monthly_6', 'one_time']);

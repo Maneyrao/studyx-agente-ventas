@@ -87,7 +87,7 @@ import {
   runAgentADeepSeekAttemptV1,
 } from '../lib/conversation/agent-a-attempt'
 import { resolveAgentAProposalV1 } from '../lib/conversation/resolve-agent-a-proposal'
-import { resolveAgentAPlannerlessProposalV2 } from '../lib/conversation/resolve-agent-a-plannerless'
+import { diagnosticRejectionCodesV1, resolveAgentAPlannerlessProposalV2 } from '../lib/conversation/resolve-agent-a-plannerless'
 import { preserveRuleTriggerEvidenceV1 } from '../lib/conversation/preserve-bonus-evidence'
 import { bindCustomerCallInterpretationV1, type CustomerCallInterpretationV1 } from '../lib/conversation/customer-call-interpretation'
 import { authorizedPromotionActionsV1, continueAgentAAfterActionFeedbackV1, fencedAgentARequestV1, plannerlessActionFeedbackV1 } from '../lib/conversation/agent-a-action-feedback'
@@ -512,7 +512,8 @@ function backendCommitTurnRejectionV1(input: {
             push('ACTION_NOT_AUTHORIZED', 'request_call_now')
             push('ACTION_NOT_AUTHORIZED', 'call_consent_revoked')
           } else if (detailedSubjects.some(subject => subject.startsWith('program_send_not_executed'))) {
-            push('ACTION_NOT_AUTHORIZED', 'send_course_program')
+            // not_proposed: the material exists and was not sent; the repair may propose it.
+            if (detailedSubjects.includes('send_course_program')) push('ACTION_NOT_AUTHORIZED', 'send_course_program')
             detailedSubjects.filter(subject => subject.startsWith('program_send_not_executed'))
               .forEach(subject => push('ACTION_NOT_AUTHORIZED', subject))
           } else push('ACTION_NOT_AUTHORIZED', actionSubject)
@@ -533,6 +534,10 @@ function backendCommitTurnRejectionV1(input: {
   } else if (['PAYMENT_PLAN_MISMATCH', 'PAYMENT_OFFERING_REQUIRED', 'OFFERING_MISMATCH', 'OFFERING_NOT_FOUND'].includes(reason)) {
     push('ACTION_NOT_AUTHORIZED', 'send_payment_link')
     if (reason !== 'PAYMENT_PLAN_MISMATCH') push('COURSE_NOT_RESOLVED', 'course_reference')
+  } else if (reason === 'CALL_PHONE_CONFIRMATION_PENDING') {
+    // The last reply proposed another number: confirm it before any call.
+    push('ACTION_NOT_AUTHORIZED', 'request_call_now')
+    push('ACTION_NOT_AUTHORIZED', 'phone_confirmation_pending')
   } else if (reason === 'CALL_PHONE_INVALID') {
     push('MISSING_INTAKE', 'telefono')
   } else if (reason.startsWith('CALL_') || reason === 'ACTIVE_CALL_IN_PROGRESS') {
@@ -1385,7 +1390,21 @@ export const processInboundTurn = new Workflow({
           : { status: 'unknown', requirements: [] }
         owned.contact.name = currentValues.nombre
           ? [currentValues.nombre, currentValues.apellido].filter(Boolean).join(' ') : null
+        // Refused values stay visible to the validator for the rest of this
+        // turn (repairs, continuation, floor): a reply cannot present them as
+        // recorded. Accumulated per turn, never persisted.
+        const refused = receipt.rejections.flatMap(rejection => {
+          const proposed = rejection.field === 'telefono' && rejection.code === 'PHONE_CONFIRMATION_NOT_AUTHORIZED'
+            ? proposal.confirmed_phone
+            : updates.find(update => update.field === rejection.field)?.value
+          return typeof proposed === 'string' && proposed.trim()
+            ? [{ field: rejection.field, value: proposed.trim().slice(0, 320), code: rejection.code.slice(0, 64) }] : []
+        })
+        const rejectedUpdates = [...(owned.contact_profile.rejected_updates ?? []), ...refused]
+          .filter((item, index, all) => all.findIndex(other => other.field === item.field && other.value === item.value) === index)
+          .slice(-8)
         owned.contact_profile = { ...owned.contact_profile, version: currentVersion,
+          ...(rejectedUpdates.length ? { rejected_updates: rejectedUpdates } : {}),
           pending_requests: owned.contact_profile.pending_requests.flatMap(request => {
             const fields = request.mode === 'clarify' ? request.fields.filter(field => !receipt.accepted_fields.includes(field))
               : request.fields.filter(field => currentValues[field] === null)
@@ -1614,7 +1633,7 @@ export const processInboundTurn = new Workflow({
               turnDiagnostics = {
                 schema_version: 1, generation_attempts: agentAGenerationAttempts,
                 failure_stage: 'action_authorization',
-                failure_codes: resolved.action_rejection.codes.slice(0, 8), action_status: 'needs_input',
+                failure_codes: diagnosticRejectionCodesV1(resolved.rejection!.rejections), action_status: 'needs_input',
               }
               } catch (continuationError) {
       if (isTurnEvidencePersistenceError(continuationError)) throw continuationError
@@ -1641,9 +1660,9 @@ export const processInboundTurn = new Workflow({
                 generation_attempts: agentAGenerationAttempts,
                 failure_stage: 'proposal_validation',
                 failure_codes: [...new Set([
-                  ...(turnDiagnostics?.failure_codes ?? []),
                   ...resolved.evidence.rejection_codes,
-                ])].filter((code) => /^[A-Z0-9_:.-]+$/u.test(code)).slice(0, 8),
+                  ...(turnDiagnostics?.failure_codes ?? []),
+                ])].filter((code) => /^[A-Z0-9_:.-]+$/iu.test(code)).slice(0, 8),
                 action_status: effectiveGenerated.proposal.proposed_action.type === 'none'
                   ? 'none' : 'authorized',
               }
@@ -1664,9 +1683,9 @@ export const processInboundTurn = new Workflow({
                   schema_version: 1,
                   generation_attempts: agentAGenerationAttempts,
                   failure_stage: 'action_authorization',
-                  failure_codes: resolved.action_rejection.codes
-                    .filter((code) => /^[A-Z0-9_:.-]+$/u.test(code))
-                    .slice(0, 8),
+                  failure_codes: resolved.rejection
+                    ? diagnosticRejectionCodesV1(resolved.rejection.rejections)
+                    : resolved.action_rejection.codes.slice(0, 8),
                   action_status: 'needs_input',
                 }
             const policy = evaluateCallOfferTurnPolicyV1({
@@ -2378,7 +2397,7 @@ export const processInboundTurn = new Workflow({
     // claim token so it cannot duplicate a send or an effect.
     const recoverRejectedTurn = async (): Promise<WorkflowResult> => {
       try {
-        const recoveryCause = turnDiagnostics?.failure_codes.find(
+        const recoveryCause = turnDiagnostics?.failure_codes.map((code) => code.split(':', 1)[0]!).find(
           (code) => /^[A-Z0-9_]{1,128}$/u.test(code),
         ) ?? 'AGENT_A_CONTINUATION_REJECTED'
         const recovery = await step('schedule-rejected-turn-recovery-v1', () =>
@@ -2545,9 +2564,7 @@ export const processInboundTurn = new Workflow({
             proposal,
           )
         )
-        let rejectionCodes = [...new Set(
-          rejection.rejections.map((item) => item.code),
-        )].slice(0, 8)
+        let rejectionCodes = diagnosticRejectionCodesV1(rejection.rejections)
         const rejectedEffectRemainsAuthorized = (
           proposal: AgentATurnProposalV1,
           receipt: typeof currentBackendRejection,
@@ -2657,9 +2674,7 @@ export const processInboundTurn = new Workflow({
               if (renewedRejection !== null) {
                 currentBackendRejection = renewedRejection
                 latestRejection = renewedRejection
-                rejectionCodes = [...new Set(
-                  renewedRejection.rejections.map((item) => item.code),
-                )].slice(0, 8)
+                rejectionCodes = diagnosticRejectionCodesV1(renewedRejection.rejections)
                 repairEffectsAllowed = renewedRejection.authorized_alternatives.actions
                   .some((action) => action !== 'none')
               }
@@ -2747,9 +2762,7 @@ export const processInboundTurn = new Workflow({
               if (renewedRejection !== null) {
                 currentBackendRejection = renewedRejection
                 latestRejection = renewedRejection
-                rejectionCodes = [...new Set(
-                  renewedRejection.rejections.map((item) => item.code),
-                )].slice(0, 8)
+                rejectionCodes = diagnosticRejectionCodesV1(renewedRejection.rejections)
                 repairEffectsAllowed = renewedRejection.authorized_alternatives.actions
                   .some((action) => action !== 'none')
               }
@@ -2920,9 +2933,7 @@ export const processInboundTurn = new Workflow({
                 if (floorRejection !== null) {
                   currentBackendRejection = floorRejection
                   latestRejection = floorRejection
-                  rejectionCodes = [...new Set(
-                    floorRejection.rejections.map((item) => item.code),
-                  )].slice(0, 8)
+                  rejectionCodes = diagnosticRejectionCodesV1(floorRejection.rejections)
                   safeLog('studyx.turn.agent_a_conversational_floor_rejected', {
                     trace_id: input.trace_id,
                     turn_id: owned.turn_id,

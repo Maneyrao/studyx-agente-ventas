@@ -7,6 +7,7 @@ import { loadCentralCargaBonusConfig } from '@/features/fulfillment/central-carg
 import { isCentralCargaBonusEnabledForStoredContact } from '@/features/fulfillment/central-carga/bonus-contact-permission';
 import { loadCourseBonusFlowConfig } from './course-bonus-flow-config';
 import { authorizedBonusCodesV1, courseCodesNamedInBatchV1, isBonusCheckoutStateV1 } from '@/shared/conversation/deterministic-sales-rules';
+import { latestCallSettledSqlV1 } from '@/features/calls/adapters/latest-call-settled-sql';
 
 export type DirectCourseBonusRejectionV1 = 'bonus_disabled' | 'no_price_objection' | 'invalid_offering'
   | 'same_as_paid_course' | 'duplicate_bonus' | 'bonus_limit_reached' | 'multiple_bonus_in_turn'
@@ -131,8 +132,9 @@ async function validateExistingPackage(tx: DbClient, offer: OfferRow): Promise<v
   if (!snapshot.valid) reject('stale_offer_version');
 }
 async function lockIdentity(tx: DbClient, input: Identity) {
-  const [context] = await tx<Array<{stage: string; awaiting_reply: string; payment_link_request: {status?: string}|null; selected_offering_code: string | null; paid_id: string; paid_status: string; paid_type: string}>>`
-    SELECT s.stage,s.awaiting_reply,s.payment_link_request,s.selected_offering_code,paid.id AS paid_id,paid.status AS paid_status,paid.offering_type AS paid_type
+  const [context] = await tx<Array<{stage: string; awaiting_reply: string; payment_link_request: {status?: string}|null; selected_offering_code: string | null; paid_id: string; paid_status: string; paid_type: string; handoff_call_settled: boolean}>>`
+    SELECT s.stage,s.awaiting_reply,s.payment_link_request,s.selected_offering_code,paid.id AS paid_id,paid.status AS paid_status,paid.offering_type AS paid_type,
+      ${latestCallSettledSqlV1(tx, 's')} AS handoff_call_settled
     FROM conversation_sales_context_states_v1 s
     JOIN conversations c ON c.id=s.conversation_id AND c.contact_id=s.contact_id
     JOIN workspace_contacts wc ON wc.workspace_id=s.workspace_id AND wc.contact_id=s.contact_id
@@ -284,7 +286,8 @@ export async function offerDirectCourseBonusV1(db: DbClient, input: OfferDirectC
         AND current.contact_id=${input.contact_id}::uuid
       ORDER BY fragment.conversation_seq`).map(row => row.content);
     if (isBonusCheckoutStateV1({ stage: context.stage, awaiting_reply: context.awaiting_reply,
-      payment_link_request_pending: context.payment_link_request?.status === 'pending' })) reject('sale_already_closed');
+      payment_link_request_pending: context.payment_link_request?.status === 'pending',
+      handoff_call_settled: context.handoff_call_settled })) reject('sale_already_closed');
     await validateOpen(tx,input,context,offer);
     if (input.bonus_offering_codes[0]===input.paid_offering_code) reject('same_as_paid_course');
     const [bonus]=await tx`SELECT id FROM offerings WHERE workspace_id=${input.workspace_id}::uuid

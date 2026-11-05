@@ -186,7 +186,8 @@ describe('prepareAgentTurnV2', () => {
       workspace_slug: 'studyx', business_context: business, catalog_index: index, current_customer_messages: ['me lo mandás de nuevo?'],
       proposal: proposal({ move: programMove, response: { messages: [text] }, proposed_action: action as never }),
       course_programs: programs,
-    }, { state_store: store(state({ selected_offering_code: 'redes_informaticas' })), contact_intake: completeIntake });
+    }, { state_store: store(state({ selected_offering_code: 'redes_informaticas' })), contact_intake: completeIntake,
+      now: () => Date.parse(index.as_of) });
     const reasons = async (promise: Promise<unknown>) => promise.then(() => null, (error: { rejectionSubjects?: string[] }) => error.rejectionSubjects ?? []);
     const SEND = { type: 'send_course_program', offering_code: 'redes_informaticas' };
 
@@ -199,6 +200,17 @@ describe('prepareAgentTurnV2', () => {
       expect(await reasons(run('Claro, te comparto el programa del curso.', { type: 'none' },
         { available_offering_codes: [], sent_offering_codes: [] })))
         .toEqual(['send_course_program', 'program_send_not_executed:unavailable']);
+    });
+    // 2026-11-05 18:20Z: the material existed; «unavailable» made the repair deny it.
+    it('available, unsent material and no proposed action: not_proposed, and the action stays authorized', async () => {
+      expect(await reasons(run('Claro, te comparto el programa del curso.', { type: 'none' },
+        { available_offering_codes: ['redes_informaticas'], sent_offering_codes: [] })))
+        .toEqual(['program_send_not_executed:not_proposed']);
+    });
+    it('already sent and no proposed action: already_sent, not unavailable', async () => {
+      expect(await reasons(run('Claro, te comparto el programa del curso.', { type: 'none' },
+        { available_offering_codes: ['redes_informaticas'], sent_offering_codes: ['redes_informaticas'] })))
+        .toEqual(['send_course_program', 'program_send_not_executed:already_sent']);
     });
     it('honest wording passes: a past reference, a negation or no claim at all', async () => {
       const programs = { available_offering_codes: ['redes_informaticas'], sent_offering_codes: ['redes_informaticas'] };

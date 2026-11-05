@@ -167,4 +167,56 @@ run('owned contact profile phone confirmation provenance', () => {
     await db!`UPDATE inbound_batches SET state = 'completed', completed_at = now() WHERE id = ${confirmation.batch.id}::uuid`;
     expect(await withSerializableTransactionOn(db!, tx => applyContactProfileUpdatesV1(tx, input))).toEqual(receipt);
   });
+  // 2026-11-05: «mi número termina en 8, no en 7». El agente arma el número
+  // completo a partir del conocido y el cliente lo confirma por escrito.
+  async function suggestText(first: InboundEnvelope, context: IngestContext, content: string) {
+    const { message } = await registerMessage({ conversation_id: context.conversation_id,
+      direction: 'outbound', content, in_reply_to: context.turn_id }, { db: db!, embedding: 'skip' });
+    await db!`INSERT INTO outbound_deliveries (message_id, conversation_id, contact_id, provider, integration_id,
+      channel, destination, idempotency_key, state, provider_message_id, submitted_at)
+      VALUES (${message.id}::uuid, ${context.conversation_id}::uuid, ${context.contact.id}::uuid, 'telegram_sandbox',
+        ${first.integration_id}, 'whatsapp', ${first.phone_e164}, ${randomUUID()}, 'submitted', ${randomUUID()}, now())`;
+    return message.id;
+  }
+
+  it('confirms a corrected known number when the customer confirms the complete delivered candidate', async () => {
+    const CORRECTED = '+5491155550108';
+    const first = envelope();
+    const original = await processInboundMessage(first);
+    await suggested(first, original);
+    const confirmation = await processInboundMessage(next(first, 'Sí'));
+    expect(await confirm(confirmation.turn_id)).toBe(true);
+    const correction = await processInboundMessage(next(first, 'me confundí, termina en 8, no en 1'));
+    const suggestionId = await suggestText(first, correction, 'Entonces sería +5491155550108, me confirmás?');
+    const yes = await processInboundMessage(next(first, 'sí'));
+    expect(await withSerializableTransactionOn(db!, tx => confirmDeliveredContactPhone({ turnId: yes.turn_id, phone: CORRECTED }, tx))).toBe(true);
+    expect((await loadContactIntakeV1(original.contact.id, db!)).telefono).toBe(CORRECTED);
+    expect((await db!`SELECT declared_phone FROM contacts WHERE id = ${original.contact.id}::uuid`)[0].declared_phone).toBe(CORRECTED);
+    expect((await loadContactProfileV1(original.contact.id, db!))?.fields.telefono.confirmation_evidence)
+      .toMatchObject({ kind: 'delivered_phone_correction_v1', suggested_message_id: suggestionId });
+  });
+
+  it('rejects a corrected candidate whose changed digits the customer never wrote', async () => {
+    const first = envelope();
+    const original = await processInboundMessage(first);
+    await suggested(first, original);
+    expect(await confirm((await processInboundMessage(next(first, 'Sí'))).turn_id)).toBe(true);
+    const correction = await processInboundMessage(next(first, 'creo que está mal'));
+    await suggestText(first, correction, 'Entonces sería +5491155550108, me confirmás?');
+    const yes = await processInboundMessage(next(first, 'sí'));
+    expect(await withSerializableTransactionOn(db!, tx => confirmDeliveredContactPhone({ turnId: yes.turn_id, phone: '+5491155550108' }, tx))).toBe(false);
+    expect((await loadContactIntakeV1(original.contact.id, db!)).telefono).toBe(PHONE);
+  });
+
+  it('rejects a confirmed candidate that rewrites more than the last four digits of the known number', async () => {
+    const first = envelope();
+    const original = await processInboundMessage(first);
+    await suggested(first, original);
+    expect(await confirm((await processInboundMessage(next(first, 'Sí'))).turn_id)).toBe(true);
+    const correction = await processInboundMessage(next(first, 'es otro, termina en 0108'));
+    await suggestText(first, correction, 'Entonces sería +5491266660108, me confirmás?');
+    const yes = await processInboundMessage(next(first, 'sí'));
+    expect(await withSerializableTransactionOn(db!, tx => confirmDeliveredContactPhone({ turnId: yes.turn_id, phone: '+5491266660108' }, tx))).toBe(false);
+    expect((await loadContactIntakeV1(original.contact.id, db!)).telefono).toBe(PHONE);
+  });
 });

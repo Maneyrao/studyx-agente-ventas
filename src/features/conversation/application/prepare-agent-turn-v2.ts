@@ -478,10 +478,16 @@ export async function prepareAgentTurnV2(input: {
   if (authority.action.type !== 'send_course_program'
     && claimsProgramSendNowV1(authority.response, { programTopic: [effectiveProposal.move.move, ...effectiveProposal.move.secondary_moves].includes('request_course_program') })) {
     const proposed = effectiveProposal.proposed_action.type === 'send_course_program' ? effectiveProposal.proposed_action.offering_code : null;
-    const why = proposed !== null && input.course_programs?.sent_offering_codes.includes(proposed) ? 'already_sent'
+    // Without a proposed action, judge availability on the course in focus:
+    // existing, unsent material is `not_proposed` (the repair may propose it),
+    // never `unavailable` (2026-11-05: that made the repair deny the PDF).
+    const focus = proposed ?? authority.transition.selected_offering_code ?? state.selected_offering_code;
+    const why = focus !== null && input.course_programs?.sent_offering_codes.includes(focus) ? 'already_sent'
       : proposed !== null && input.course_programs?.available_offering_codes.includes(proposed) ? 'not_requested'
+      : proposed === null && focus !== null && input.course_programs?.available_offering_codes.includes(focus) ? 'not_proposed'
       : 'unavailable';
-    throw new AgentTurnV2RejectedError(['ACTION_NOT_AUTHORIZED'], ['send_course_program', `program_send_not_executed:${why}`]);
+    throw new AgentTurnV2RejectedError(['ACTION_NOT_AUTHORIZED'],
+      why === 'not_proposed' ? [`program_send_not_executed:${why}`] : ['send_course_program', `program_send_not_executed:${why}`]);
   }
   if (authority.action.type !== 'request_call_now'
     && claimsImmediateCallDispatchV1(authority.response, callFacts?.active_call?.status)) {

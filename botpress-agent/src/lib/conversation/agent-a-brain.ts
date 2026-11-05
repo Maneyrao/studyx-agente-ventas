@@ -1,3 +1,4 @@
+import { rejectedProfileValuesInReplyV1 } from './contact-profile-receipt-claims';
 import { COURSE_MENTION_ROLES_V1 } from '../../../../src/shared/conversation/course-mentions';
 import { messagesWithoutExactCallOfferV1 } from '../../../../src/shared/conversation/call-offer-format';
 import type { ModelObservation } from '../observability/turn-evidence';
@@ -2010,6 +2011,11 @@ export function validateAgentATurnProposalV1(input: {
   if (claimsIncompleteIntakeAsRecorded) {
     rejections.push({ code: 'UNSUPPORTED_OPERATIONAL_CLAIM', subject: 'contact_details' });
   }
+  // The profile receipt refused these values: the reply must not present
+  // them as recorded or as the agent's own correction (2026-11-05).
+  for (const update of rejectedProfileValuesInReplyV1({ proposal: input.proposal, context: input.context })) {
+    rejections.push({ code: 'UNSUPPORTED_OPERATIONAL_CLAIM', subject: `contact_profile_rejected:${update.field}` });
+  }
 
   // A known field is evidence, not a conversational suggestion. Return a
   // redundant request to Agent A so it can rewrite its own words; never let
@@ -2076,6 +2082,21 @@ export function validateAgentATurnProposalV1(input: {
   }
   if (action.type === 'send_course_program' && !sendableProgramCodesV1(input.context).includes(action.offering_code)) {
     rejections.push({ code: 'ACTION_NOT_AUTHORIZED', subject: 'send_course_program' })
+  }
+  // Explaining the content of the course in focus for the first time comes
+  // with its material in the same turn (summary + image + PDF). Structured:
+  // the move, the cited syllabus fact and the programme capability.
+  {
+    const focus = input.context.catalog.selected_offering
+    const turnMoves = new Set([input.proposal.move.move, ...input.proposal.move.secondary_moves])
+    const asksContents = turnMoves.has('request_course_program') || (turnMoves.has('ask_course_information')
+      && (focus?.facts ?? []).some((fact) => fact.kind === 'offering_syllabus' && input.proposal.used_fact_ids.includes(fact.id)))
+    const commercialTurn = ['price_objection', 'ask_payment_options', 'select_payment_plan', 'request_payment_link',
+      'explicit_promotion_request', 'decline_purchase', 'request_call', 'provide_contact_details'].some((move) => turnMoves.has(move as never))
+    if (focus && action.type === 'none' && asksContents && !commercialTurn
+      && sendableProgramCodesV1(input.context).includes(focus.code)) {
+      rejections.push({ code: 'PROGRAM_SEND_REQUIRED', subject: `send_course_program:${focus.code}` })
+    }
   }
   if (action.type === 'send_test_payment_link') {
     for (const field of input.context.capabilities.intake_missing ?? []) {

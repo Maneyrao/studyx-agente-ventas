@@ -1,3 +1,4 @@
+import { rejectedProfileValuesInReplyV1, textMentionsRejectedValueV1 } from './contact-profile-receipt-claims'
 import { claimsImmediatePaymentLinkDeliveryV1 } from '../../../../src/shared/conversation/payment-link-claim'
 import { claimsProgramSendNowV1 } from '../../../../src/shared/conversation/program-send-claim'
 import { inspectCourseBonusClaimsV1 } from '../../../../src/shared/conversation/course-bonus-claim'
@@ -207,14 +208,20 @@ export function salvageProgramSendClaimsV1(input: {
     ?? context.catalog.selected_offering?.display_name ?? null
   const programs = context.capabilities.course_programs
   const alreadySent = code !== null && programs?.sent_offering_codes.includes(code) === true
+  // Structured availability, never prose: material the capability lists for
+  // this course exists. A removed claim must not become "no tengo el archivo"
+  // (2026-11-05, 18:20Z: Real Estate had image + PDF available).
+  const available = code !== null && programs?.available_offering_codes.includes(code) === true
   const label = name === null ? 'El programa' : `El programa de ${name}`
   const fact = alreadySent
     ? `${label} te lo envié más arriba en este chat.`
+    : available ? `${label} lo tengo disponible; si querés, te lo comparto.`
     : name === null ? 'No tengo el archivo del programa para enviarte, pero te cuento lo que incluye el curso.'
       : `No tengo el archivo del programa de ${name} para enviarte, pero te cuento lo que incluye el curso.`
   // The canonical fact always replaces what was removed, so the reply states the true situation once.
+  // An available, unsent programme needs no statement when other copy remains.
   const statesDelivery = kept.some(message => /\bya\s+te\s+(?:lo\s+|la\s+)?(?:envi|mand|compart|pas|dej)\p{L}*|\bte\s+(?:lo|la)\s+hab[ií]a\s+\p{L}+|m[aá]s\s+arriba\b/iu.test(message))
-  const messages = statesDelivery ? kept : [fact, ...kept]
+  const messages = statesDelivery || (available && !alreadySent && kept.length > 0) ? kept : [fact, ...kept]
   return {
     ...proposal,
     proposed_action: { type: 'none' },
@@ -243,11 +250,13 @@ export function removeEffectClaimBubblesV1(input: {
     ? context.catalog.available_offerings.find((offering) => offering.code === input.bonus_offering_code)?.display_name ?? null
     : null
   const status = context.commercial_state.active_call?.status
+  const rejectedValues = rejectedProfileValuesInReplyV1({ proposal, context })
   const programTopic = [proposal.move?.move, ...(proposal.move?.secondary_moves ?? [])].includes('request_course_program')
   const claims = (message: string) => claimsImmediatePaymentLinkDeliveryV1(message)
     || claimsProgramSendNowV1(message, { programTopic })
     || claimsImmediateCallDispatchV1(message, status)
     || (bonusName !== null && normalizedIncludes(message, bonusName))
+    || rejectedValues.some((update) => textMentionsRejectedValueV1(message, update))
   const keptIndices = proposal.response.messages.flatMap((message, index) => (claims(message) ? [] : [index]))
   const messages = keptIndices.map((index) => proposal.response.messages[index]!)
   const offer = proposal.response.call_offer

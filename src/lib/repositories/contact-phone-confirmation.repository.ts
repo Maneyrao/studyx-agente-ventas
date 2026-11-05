@@ -81,13 +81,30 @@ export async function confirmDeliveredContactPhone(input: {
     `;
     numberEvidence = priorNumbers.find(message => extractDeclaredPhones(message.content)
       .some(number => input.phone.endsWith(number.replace(/\D/gu, ''))));
-    if (!numberEvidence && (declared.length < 8 || !input.phone.endsWith(declared))) return false;
+    // A corrected known number: the customer wrote the changed tail ("termina
+    // en 8"), saw the complete candidate in the delivered reply and confirmed
+    // it. Only the last four digits may change; country and area stay those of
+    // the callable number already on the profile.
+    const known = profile.fields.telefono.status === 'retracted' ? null : profile.fields.telefono.value;
+    let correctionEvidence: { id: string; content: string } | undefined;
+    if (!numberEvidence && known !== null && known !== input.phone && isCallablePhoneE164V1(known)
+      && known.length === input.phone.length && known.slice(0, -4) === input.phone.slice(0, -4)) {
+      let firstChanged = 0;
+      while (known[firstChanged] === input.phone[firstChanged]) firstChanged += 1;
+      const changedTail = input.phone.slice(firstChanged);
+      correctionEvidence = priorNumbers.find(message => (message.content.match(/\d+/gu) ?? [])
+        .some(run => run.length >= changedTail.length && input.phone.endsWith(run)));
+    }
+    if (!numberEvidence && !correctionEvidence && (declared.length < 8 || !input.phone.endsWith(declared))) return false;
+    const evidenceKind = correctionEvidence && !(declared.length >= 8 && input.phone.endsWith(declared))
+      ? 'delivered_phone_correction_v1' as const : 'delivered_phone_confirmation_v1' as const;
+    numberEvidence ??= correctionEvidence;
     const nextProfile = structuredClone(profile);
     nextProfile.version += 1;
     nextProfile.fields.telefono = { value: input.phone, status: 'confirmed', source: 'legacy',
       source_message_id: input.turnId, source_conversation_id: recorded.conversation_id,
       source_quote: recorded.content, source_seq: Number(recorded.conversation_seq), version: nextProfile.version,
-      confirmation_evidence: { kind: 'delivered_phone_confirmation_v1', suggested_message_id: source.id,
+      confirmation_evidence: { kind: evidenceKind, suggested_message_id: source.id,
         suggested_quote: source.content, local_phone_message_id: numberEvidence?.id ?? null,
         local_phone_quote: numberEvidence?.content ?? null } };
     await db`UPDATE contacts SET contact_profile_v1 = ${jsonbParam(db, nextProfile)},

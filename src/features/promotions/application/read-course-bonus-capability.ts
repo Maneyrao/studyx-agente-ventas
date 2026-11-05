@@ -1,4 +1,5 @@
 import { readCourseBonusLadderV1 } from './read-course-bonus-ladder';
+import { latestCallSettledSqlV1 } from '@/features/calls/adapters/latest-call-settled-sql';
 import { authorizedBonusCodesV1, courseCodesNamedInBatchV1, isBonusCheckoutStateV1 } from '@/shared/conversation/deterministic-sales-rules';
 import { currentFactualCourseReferencesV1 } from '@/features/orchestration/domain/course-focus';
 import { customerBonusRequestV1, type CustomerBonusRequestV1 } from '@/features/promotions/domain/customer-bonus-request';
@@ -645,12 +646,14 @@ async function readDirectCapability(input: {
       row.status === 'offered' ? (row.courses ?? []).map(course => course.code) : [], max);
   const namedCodes = courseCodesNamedInBatchV1(await currentBatchTexts(input, db), activeCourses);
   // Checkout (by durable state) closes new gifts: never advertise the effect there.
-  const [salesState] = await db<Array<{stage:string;awaiting_reply:string|null;link_status:string|null}>>`
-    SELECT stage,awaiting_reply,payment_link_request->>'status' AS link_status
-    FROM conversation_sales_context_states_v1
-    WHERE conversation_id=${input.conversation_id}::uuid AND contact_id=${input.contact_id}::uuid LIMIT 1`;
+  const [salesState] = await db<Array<{stage:string;awaiting_reply:string|null;link_status:string|null;handoff_call_settled:boolean}>>`
+    SELECT state.stage,state.awaiting_reply,state.payment_link_request->>'status' AS link_status,
+      ${latestCallSettledSqlV1(db)} AS handoff_call_settled
+    FROM conversation_sales_context_states_v1 state
+    WHERE state.conversation_id=${input.conversation_id}::uuid AND state.contact_id=${input.contact_id}::uuid LIMIT 1`;
   const inCheckout = salesState !== undefined && isBonusCheckoutStateV1({stage:salesState.stage,
-    awaiting_reply:salesState.awaiting_reply ?? 'none',payment_link_request_pending:salesState.link_status==='pending'});
+    awaiting_reply:salesState.awaiting_reply ?? 'none',payment_link_request_pending:salesState.link_status==='pending',
+    handoff_call_settled:salesState.handoff_call_settled});
   const derived = deriveDirectCourseBonusCapabilityV1({interest_offering_code:input.selected_offering_code!,
     active_courses:activeCourses,named_codes:namedCodes,
     ...(ladder ? {ladder} : {}),

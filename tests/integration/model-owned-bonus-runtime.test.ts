@@ -377,6 +377,39 @@ run('model-owned bonus at the actual commit and transactional boundaries', () =>
     });
   });
 
+  // 2026-11-05 (5b138536): llamada terminal, el cliente siguió por chat y pidió
+  // una promo explícita. Antes: stage=handoff → may_offer_bonus=false, sin oferta.
+  it.each([['completed', true], ['in_progress', false]] as const)(
+    'after a call (%s) and "sigamos por acá", a current price objection creates exactly one affine offer only once the call is terminal',
+    async (callStatus, creates) => {
+      // 18:31:54Z: la queja actual de precio (motivo válido del primer bonificado,
+      // AGENTS.md:212) tampoco generó oferta mientras el stage seguía en handoff.
+      const quote = 'porque el problema SI es el precio';
+      const f = await seedConversationForAgentTurn({ selected_offering_code: paid, first_message: quote });
+      await seedPriorModelNegotiation(db!, f, 2);
+      await db!`UPDATE conversation_sales_context_states_v1 SET stage='handoff',call_preference='chat',call_offer_status='declined',
+        awaiting_reply='none' WHERE conversation_id=${f.conversation_id}::uuid`;
+      await db!`INSERT INTO call_sessions(workspace_id,source_turn_id,contact_id,conversation_id,provider,request_idempotency_key,status,
+        consent_source_message_id,context_snapshot,context_hash,prompt_version,completed_at)
+        VALUES (${f.workspace_id},${f.turn_id},${f.contact_id},${f.conversation_id},'telegram_sandbox',${randomUUID()},${callStatus},
+          ${f.turn_id},'{}'::jsonb,decode(repeat('00',32),'hex'),'fixture',${callStatus === 'completed' ? new Date() : null})`;
+      const capability = await readCourseBonusCapabilityV1({ workspace_slug: 'studyx', contact_id: f.contact_id,
+        conversation_id: f.conversation_id, selected_offering_code: paid, source_turn_id: f.turn_id, channel: 'text' }, { db: db! });
+      expect(capability?.may_offer_bonus).toBe(creates);
+      const p = proposal();
+      p.move = { schema_version: 1, move: 'price_objection', secondary_moves: [], vetoes: [], confidence: 0.9 };
+      p.proposed_action = { type: 'offer_course_bonus', motive: { kind: 'price_objection', quote },
+        interest_offering_code: paid, bonus_offering_code: bonus };
+      p.memory_candidates = [];
+      const commit = () => commitAgentDecision({ turn_id: f.turn_id, trace_id: randomUUID(), supports_multi_outbound: true,
+        agent_turn_v2: { schema_version: 2 as const, proposal: p }, decision: f.placeholderDecision as never, model: f.model as never });
+      if (creates) expect((await commit()).status).toBe('committed');
+      else await commit().catch(() => undefined);
+      const offers = await db!`SELECT o.id,(SELECT count(*)::int FROM promotion_offer_bonus_offerings b WHERE b.offer_id=o.id) bonus_count
+        FROM promotion_offers o WHERE o.conversation_id=${f.conversation_id}::uuid`;
+      expect(offers.map(o => o.bonus_count)).toEqual(creates ? [1] : []);
+    });
+
   it.each(['persisted_selection', 'interest_only'] as const)(
     'automatically seals a delivered offered package in the actual payment-link commit, without accept_promotion (%s)', async identityKind => {
       vi.stubEnv('PAYMENT_LINK_CONTADO', 'https://buy.stripe.com/test_rule_a_auto');

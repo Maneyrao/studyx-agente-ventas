@@ -333,7 +333,7 @@ function requiresModelCorrection(
     return proposal.proposed_action.type === 'none'
   }
   return ['UNSUPPORTED_OPERATIONAL_CLAIM', 'COURSE_ROLE_UNDECLARED',
-    'REPEATED_AGENT_REPLY', 'CALL_OFFER_MESSAGE_BOUNDARY_INVALID'].includes(reason.code)
+    'REPEATED_AGENT_REPLY', 'CALL_OFFER_MESSAGE_BOUNDARY_INVALID', 'PROGRAM_SEND_REQUIRED'].includes(reason.code)
 }
 
 function isNonBlockingGuidanceReason(
@@ -377,8 +377,11 @@ function mayDegradeToBackendBoundary(
   ))) return false
   // A failed style repair must not silence a factually safe answer. Actual
   // commercial/operational contradictions never enter this fallback.
+  // A missing programme send is guidance: one repair asks for it; a reply
+  // that still omits it is safe to deliver without the material.
   return rejection.rejections.every(reason => reason.code === 'REPEATED_AGENT_REPLY'
     || reason.code === 'PLAN_NOT_SELECTED'
+    || reason.code === 'PROGRAM_SEND_REQUIRED'
     || isNonBlockingGuidanceReason(reason))
 }
 
@@ -479,6 +482,14 @@ function actionRejectionV1(
  * facts/actions were rejected and allows one rewrite before the backend
  * performs the same authoritative checks against durable state.
  */
+/** Durable diagnostics name what was rejected: `CODE:subject`, deduped, at
+ * most 8 of 128 chars (2026-11-05: a FACT_VALUE_MISMATCH lost its subject). */
+export function diagnosticRejectionCodesV1(
+  rejections: readonly { readonly code: string; readonly subject: string }[],
+): string[] {
+  return [...new Set(rejections.map((reason) => `${reason.code}:${reason.subject}`.slice(0, 128)))].slice(0, 8)
+}
+
 export async function resolveAgentAPlannerlessProposalV2<
   T extends AgentAProposalEnvelopeV1,
 >(input: {
@@ -519,7 +530,7 @@ export async function resolveAgentAPlannerlessProposalV2<
     return {
       effective: advisoryEffective,
       evidence: {
-        rejection_codes: originalRejection?.rejections.map((reason) => reason.code) ?? [],
+        rejection_codes: diagnosticRejectionCodesV1(originalRejection?.rejections ?? []),
         repair_attempted: false, repaired: false, proposal_generation_calls: 1,
       },
       rejection: originalRejection,
@@ -536,7 +547,7 @@ export async function resolveAgentAPlannerlessProposalV2<
     if (prunedFirst !== null) {
       return {
         effective: prunedFirst,
-        evidence: { rejection_codes: [...new Set((originalRejection ?? rejection).rejections.map((reason) => reason.code))],
+        evidence: { rejection_codes: diagnosticRejectionCodesV1((originalRejection ?? rejection).rejections),
           repair_attempted: false, repaired: false, proposal_generation_calls: 1 },
         rejection: originalRejection ?? rejection,
         action_rejection: initialActionRejection,
@@ -544,10 +555,8 @@ export async function resolveAgentAPlannerlessProposalV2<
     }
   }
   let terminalRejection = rejection
-  const rejectedCodes = () => [...new Set([
-    ...(originalRejection?.rejections.map((reason) => reason.code) ?? []),
-    ...terminalRejection.rejections.map((reason) => reason.code),
-  ])]
+  const rejectedCodes = () => diagnosticRejectionCodesV1([
+    ...(originalRejection?.rejections ?? []), ...terminalRejection.rejections])
   const degraded = (repair_attempted: boolean) => ({
     effective: initial,
     evidence: {

@@ -33,6 +33,7 @@ describe('TurnRejectionV1', () => {
       'PASSIVE_CLOSING_FORBIDDEN',
       'PLAN_NOT_SELECTED',
       'PRICE_PROBE_REQUIRED',
+      'PROGRAM_SEND_REQUIRED',
       'PROPOSAL_SCHEMA_INVALID',
       // V8: devolver el mismo mensaje que ya se mandó no es contestar.
       'REPEATED_AGENT_REPLY',

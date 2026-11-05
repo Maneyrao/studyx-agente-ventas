@@ -161,8 +161,20 @@ describe('focused-29-41-r3 recorded attempts: salvage instead of the P0 sentence
     expect(salvageProgramSendClaimsV1({ proposal: p(['Ya te lo compartí antes, está arriba en el chat.']), context: withPrograms(['marketing_digital']) })).toBeNull();
   });
   it('a course without a PDF gets the "no tengo el archivo" fact, never a sending claim', () => {
-    const fixed = salvageProgramSendClaimsV1({ proposal: p(['Claro, te comparto el programa de Excel Integral.'], { type: 'none' }), context: withPrograms([]) });
+    const none = withPrograms([]);
+    (none.capabilities.course_programs as { available_offering_codes: string[] }).available_offering_codes = [];
+    const fixed = salvageProgramSendClaimsV1({ proposal: p(['Claro, te comparto el programa de Excel Integral.'], { type: 'none' }), context: none });
     expect(fixed!.response.messages[0]).toMatch(/^No tengo el archivo del programa de Marketing Digital/u);
+  });
+  // 2026-11-05 18:20Z (5b138536): Real Estate tenía imagen + PDF disponibles y la
+  // reparación terminó diciendo «No tengo el archivo del programa…».
+  it('never denies material the capability lists as available and unsent', () => {
+    const kept = salvageProgramSendClaimsV1({ proposal: p(['Te comparto el programa.', 'Son 11 clases online sobre el mercado de EE. UU.'], { type: 'none' }),
+      context: withPrograms([]) });
+    expect(kept!.response.messages).toEqual(['Son 11 clases online sobre el mercado de EE. UU.']);
+    const alone = salvageProgramSendClaimsV1({ proposal: p(['Te comparto el programa.'], { type: 'none' }), context: withPrograms([]) });
+    expect(alone!.response.messages).toEqual(['El programa de Marketing Digital lo tengo disponible; si querés, te lo comparto.']);
+    for (const fixed of [kept, alone]) expect(fixed!.response.messages.join(' ')).not.toMatch(/no tengo el archivo/iu);
   });
   it('40/real_estate_pdf: a duration mismatch never appends the canonical PLANS sentence', () => {
     const proposal = p(['Ya te lo envié hace un momento por acá, con los 11 módulos de Real Estate. Si quieres, te resumo alguno.'], { type: 'none' });

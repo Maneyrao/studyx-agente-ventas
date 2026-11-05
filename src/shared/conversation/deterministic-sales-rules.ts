@@ -161,11 +161,17 @@ export function declineQuoteInBatchV1(quote: string, batch: readonly string[]): 
   return exact.length > 0 && batch.some(text => text.includes(exact));
 }
 
-type CheckoutStateV1 = { readonly stage: string; readonly awaiting_reply: string; readonly payment_link_request_pending: boolean };
+type CheckoutStateV1 = {
+  readonly stage: string; readonly awaiting_reply: string; readonly payment_link_request_pending: boolean;
+  /** Durable: the conversation's latest call session is terminal. A handoff
+   * whose own call already ended no longer owns the sale (2026-11-05). */
+  readonly handoff_call_settled?: boolean;
+};
 
 /** Checkout by durable state only; no customer-text exception. */
 export function isBonusCheckoutStateV1(context: CheckoutStateV1): boolean {
-  return ['payment_link_sent', 'closed', 'handoff'].includes(context.stage)
+  return ['payment_link_sent', 'closed'].includes(context.stage)
+    || (context.stage === 'handoff' && context.handoff_call_settled !== true)
     || context.payment_link_request_pending || CHECKOUT_AWAITING.has(context.awaiting_reply);
 }
 
