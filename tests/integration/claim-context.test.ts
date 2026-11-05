@@ -589,6 +589,36 @@ run('sales_context at claim time', () => {
     expect(result.deterministic_route).toBe('call_direct_request');
   });
 
+  // Replay 25dc2ab c06: «me volves a llamar?» with a correction pending was forced
+  // into the direct-call route and Agent A's confirmation question was replaced.
+  it('withholds the call action and route while a proposed phone correction is unconfirmed', async () => {
+    const firstEnvelope = envelope({ message: {
+      type: 'text', text: 'mi número termina en 8', occurred_at: new Date().toISOString(), reply_to_external_message_id: null,
+    } });
+    if (!firstEnvelope.phone_e164) throw new Error('fixture phone missing');
+    await seedWrittenCallIntakeV1({ phone: firstEnvelope.phone_e164 }, db!);
+    const seeded = await processInboundMessage(firstEnvelope);
+    const [identity] = await db!<Array<{ contact_id: string; conversation_id: string; telefono: string }>>`
+      SELECT m.contact_id, m.conversation_id, c.contact_profile_v1->'fields'->'telefono'->>'value' AS telefono
+      FROM messages m JOIN contacts c ON c.id = m.contact_id WHERE m.id = ${seeded.turn_id}::uuid`;
+    const known = identity.telefono ?? firstEnvelope.phone_e164;
+    const corrected = `${known.slice(0, -1)}${known.endsWith('8') ? '7' : '8'}`;
+    const [reply] = await db!<Array<{ id: string }>>`
+      INSERT INTO messages (conversation_id, contact_id, direction, content, in_reply_to)
+      VALUES (${identity.conversation_id}::uuid, ${identity.contact_id}::uuid, 'outbound',
+        ${`Entonces tu número es ${corrected}, ¿me confirmás?`}, ${seeded.turn_id}::uuid) RETURNING id`;
+    await db!`INSERT INTO outbound_deliveries (message_id, conversation_id, contact_id, provider, integration_id,
+      channel, destination, idempotency_key, state, provider_message_id, submitted_at)
+      SELECT ${reply.id}::uuid, ${identity.conversation_id}::uuid, ${identity.contact_id}::uuid, 'botpress', 'vitest',
+        'whatsapp', c.phone, ${randomUUID()}, 'submitted', ${randomUUID()}, now() FROM contacts c WHERE c.id = ${identity.contact_id}::uuid`;
+    const callAgain = await processInboundMessage(followUp(firstEnvelope, 'me volves a llamar?'));
+    await forceDue(callAgain.batch.id);
+    const result = await claimBatch({ batch_id: callAgain.batch.id, claimed_by: 'workflow-pending-phone', trace_id: randomUUID() }, deps);
+    if (result.outcome !== 'claimed') throw new Error('expected a claim');
+    expect(result.sales_context.allowed_actions).not.toContain('request_call_now');
+    expect(result.deterministic_route).not.toBe('call_direct_request');
+  });
+
   it('enforces the 30-minute decline cooldown across turns from the durable decision log', async () => {
     // A call-specific decline keeps the written channel open. The reply
     // decision becomes the durable marker that suppresses another call offer.

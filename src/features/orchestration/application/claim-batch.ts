@@ -121,6 +121,8 @@ export interface ClaimBatchDependencies {
     contactId: string,
     conversationId: string,
   ) => Promise<CallIntakeReadinessV1>;
+  /** A delivered reply proposed a corrected phone the customer has not confirmed. */
+  readonly phoneCorrectionPending?: (input: { latest_message_id: string; call_phone: string }) => Promise<boolean>;
   /** Canonical Stripe ledger projection; customer text never supplies it. */
   readonly paymentVerification?: (contactId: string, purchase?: {
     offering_code: string | null;
@@ -1207,6 +1209,28 @@ export async function claimBatch(
       || deterministic_route === 'call_accepted_offer')
   ) {
     deterministic_route = 'call_phone_required';
+  }
+  // A proposed phone correction the customer has not confirmed: no call
+  // action and no forced call route, so Agent A's own reply asks to confirm
+  // the number (replay 25dc2ab c06: the forced route replaced that reply with
+  // «Claro. Puedes atender ahora?» and the confirmation could never land).
+  const callPhone = contactIntake.telefono;
+  if (callPhone && (salesContext.allowed_actions.includes('request_call_now')
+    || deterministic_route === 'call_direct_request' || deterministic_route === 'call_accepted_offer')) {
+    const readPending = deps.phoneCorrectionPending ?? (deps.contactIntake ? async () => false
+      : async (pendingInput: { latest_message_id: string; call_phone: string }) => {
+          const [{ hasPendingPhoneCorrectionV1 }, { sql }] = await Promise.all([
+            import('@/lib/repositories/pending-phone-correction.repository'), import('@/lib/db/orchestrator')]);
+          return hasPendingPhoneCorrectionV1(sql, pendingInput);
+        });
+    const latest = batchMessages[batchMessages.length - 1];
+    if (latest && await readPending({ latest_message_id: latest.id, call_phone: callPhone }).catch(() => false)) {
+      salesContext = { ...salesContext,
+        allowed_actions: salesContext.allowed_actions.filter((action) => action !== 'request_call_now') };
+      if (deterministic_route === 'call_direct_request' || deterministic_route === 'call_accepted_offer') {
+        deterministic_route = 'call_phone_required';
+      }
+    }
   }
 
   return {

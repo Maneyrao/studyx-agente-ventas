@@ -913,6 +913,8 @@ OWNER_PROMOTION_MODE_REPLAY_CASES_MUTABLE.push({
       hard: [{ type: 'workflow_committed' }, noPrefab, { type: 'course_bonus_preconditions' }, { type: 'promotion_bonus_count_at_most', value: 3 }, ...noBeca],
     }),
     traceBase('t28_promo_again', 'pero digo que promo me podes ofrecer\nme ibas a ofrecer una promocion', {
+      must: ['Si todavía no hay bonificado: preguntar con sus palabras (sin frase fija) si el precio es lo único que lo frena; si ya hay uno, presentarlo o sumar otro con efecto real.'],
+      mustNot: ['No responder que el precio no baja ni prometer un regalo sin efecto.'],
       hard: [{ type: 'workflow_committed' }, noPrefab, { type: 'course_bonus_preconditions' }, { type: 'promotion_bonus_count_at_most', value: 3 }, ...noBeca],
     }),
     traceBase('t29_price_is_the_problem', 'porque el problema SI es el precio', {
