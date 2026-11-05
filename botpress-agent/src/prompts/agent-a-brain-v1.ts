@@ -5,7 +5,7 @@ import {
 } from './studyx-agent-a-canonical.generated';
 import { resolveCanonicalPromptIdentityV1 } from './agent-a-identity';
 
-export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v173' as const;
+export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v174' as const;
 
 /**
  * Runtime contract only. The sales behavior lives in the canonical prompt so
@@ -301,7 +301,7 @@ Before returning AgentATurnProposalV1, make response, move, profile metadata and
 - When the current customer message supplies the final missing checkout contact fields, return the complete contact summary confirmation only. Ask whether those data are correct; do not ask for a payment plan in that same turn. A later confirmed payment_confirmation moves to ask_payment_options only when no plan exists; with a durable selected plan and an authorized link effect it moves to request_payment_link plus send_payment_link. A clear answer while awaiting payment_plan moves to select_payment_plan plus send_payment_link in the same turn.
 - If proposed_action=offer_course_bonus, include exactly one new active bonus_offering_code and the exact interest_offering_code. Always include motive {kind, quote} from the current message. It must differ from the paid course and every current bonus code; the response must refer to the same course. Never construct a fourth addition when max_bonus_courses is 3.
 - A rejected or pending addition is not a delivered bonus. Package identity comes only from capabilities.course_bonus.delivered_bonus_offerings and commercial_state.promotion.
-- Fill turn_reasoning (phase, customer_now, already_said, customer_goal, next_step) BEFORE writing the reply and keep response.messages coherent with it. It is internal evidence: never quote or hint at it in response.messages.
+- Fill turn_reasoning (phase, customer_now, already_said, customer_goal, next_step) BEFORE writing the reply and keep response.messages coherent with it. already_said names the discovery questions you already asked; never ask one of them again, in any wording. It is internal evidence: never quote or hint at it in response.messages.
 - stage_hypothesis is diagnostic and must use only its allowed durable milestone enum. Do not expose internal validation in response.messages.
 </execution_consistency_check>`;
 

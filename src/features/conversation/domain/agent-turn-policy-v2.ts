@@ -903,12 +903,13 @@ export function authorizeAgentTurnV2(input: {
     callPreference = 'chat';
     if (callOfferStatus !== 'not_offered') callOfferStatus = 'declined';
     if (awaitingReply === 'call_or_chat' || callIntakePending) awaitingReply = 'none';
-    // Back from a call with the course and the whole intake already recorded:
-    // the sale resumes at the plan checkpoint, which authorizes only a
-    // canonical plan choice (2026-11-05 owner test: «el de 12 cuotas» twice,
-    // link only after «y el link?»). Only a link request already pending
-    // resumes the payment confirmation; nothing else becomes consent.
-    if (state.stage === 'handoff' && awaitingReply === 'none' && nextOffering !== null
+    // Choosing chat with the course and the whole intake already recorded
+    // (typically back from a call, whether or not the terminal call already
+    // released the handoff): the sale resumes at the plan checkpoint, which
+    // authorizes only a canonical plan choice (2026-11-05 owner test and
+    // golden case48: «el de 12 cuotas» → «no te entendí»). Only a link request
+    // already pending resumes the payment confirmation; nothing else becomes consent.
+    if (['handoff', 'course_selected', 'plan_selected'].includes(stage) && awaitingReply === 'none' && nextOffering !== null
       && stateFacts.has('state:intake_recorded:v1') && !selectedPurchasePaid
       && paymentLinkRequest?.status !== 'consumed') {
       awaitingReply = paymentLinkRequest?.status === 'pending' ? 'payment_confirmation' : 'payment_plan';

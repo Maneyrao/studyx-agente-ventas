@@ -967,7 +967,7 @@ OWNER_PROMOTION_MODE_REPLAY_CASES_MUTABLE.push({
 
 // Owner test 6bcc8efa (2026-11-05 21:05–22:07Z, brain v171): discovery asked «¿trabajar o invertir?» three times,
 // including after «no lo sé aún»; «quiero pagar» never selected the course. Evaluation only, never a backend gate.
-const discoverOnceRef = owner(234, 240, 'Descubrir una vez y cerrar');
+const discoverOnceRef = owner(234, 241, 'Descubrir una vez y cerrar');
 const sameFamily = 'No volver a preguntar si quiere trabajar con una inmobiliaria o invertir (ni otra variante de esa elección): el cliente ya dijo que no lo sabe.';
 OWNER_PROMOTION_MODE_REPLAY_CASES_MUTABLE.push({
   id: '47_discover_once_6bcc8efa_20261105',
@@ -976,8 +976,8 @@ OWNER_PROMOTION_MODE_REPLAY_CASES_MUTABLE.push({
   turns: [
     traceBase('g01_greeting', 'buenas\nde los cursos\nquiero info', { authority: [discoverOnceRef, intentRef, noPrefabRef] }),
     traceBase('g02_real_estate', 'y no sé\nalgo vinculado con real state\ntienen cursos de real state\n?', { authority: [discoverOnceRef, programRef, noPrefabRef],
-      must: ['Compartir el programa (imagen + PDF) con una o dos frases que resuman qué se estudia en Real Estate, en el mismo turno.'],
-      expected: { move: ['ask_course_information', 'request_course_program', 'select_course', 'browse_catalog'], action: ['send_course_program'], state: {} } }),
+      must: ['Confirmar que hay Real Estate; si comparte el programa (imagen + PDF), acompañarlo con una o dos frases que resuman qué se estudia.'],
+      expected: { move: ['ask_course_information', 'request_course_program', 'select_course', 'browse_catalog'], action: ['send_course_program', 'none'], state: {} } }),
     traceBase('g03_from_zero', 'sería para iniciar de 0', { authority: [discoverOnceRef, intentRef, noPrefabRef],
       must: ['Afirmar con seguridad por qué Real Estate sirve para empezar de cero; como máximo una pregunta nueva.'],
       mustNot: ['No repetir la pregunta del turno anterior que el cliente no contestó (por ejemplo, trabajar con una inmobiliaria o invertir).'] }),

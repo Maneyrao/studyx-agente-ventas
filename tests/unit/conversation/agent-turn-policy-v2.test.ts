@@ -2450,6 +2450,16 @@ describe('payment link consent across intake', () => {
         action: { type: 'send_payment_link', offering_code: 'redes_informaticas', payment_plan: 'monthly_12' } });
     },
   );
+  // Golden case48-1f58fad p08/p09: the terminal-call reconciliation had already released the handoff
+  // (course_selected, call_preference unknown) when the customer chose chat, so «el de 12 cuotas» failed again.
+  it('chat choice after the call was reconciled still opens the plan checkpoint', () => {
+    const resumed = authorize({ customerText: 'nada, prefiero seguir por acá', intake: completeIntake,
+      state: state({ selected_offering_code: 'redes_informaticas', stage: 'course_selected', call_preference: 'unknown',
+        call_offer_status: 'not_offered', awaiting_reply: 'none' }),
+      proposal: proposal({ move: { schema_version: 1, move: 'continue_by_chat', secondary_moves: [], vetoes: ['call'], confidence: 0.93 },
+        response: { messages: ['Perfecto, seguimos por acá. Cómo prefieres pagar?'] } }) });
+    expect(resumed).toMatchObject({ ok: true, transition: { awaiting_reply: 'payment_plan' } });
+  });
   // Architect F1: the resumed checkpoint authorizes only a plan choice, never an unrequested link.
   it('a resumed plan checkpoint never authorizes a link the customer did not choose', () => {
     const resumed = authorize({ customerText: 'prefiero por acá, lo estoy pensando', intake: completeIntake,
