@@ -2774,6 +2774,20 @@ describe('contact profile receipt is respected by the reply', () => {
       .not.toContain('contact_profile_rejected:telefono');
   });
 
+  it('compares canonically: a local-format or case-changed canonical value is not a refused one', () => {
+    const phone = withRejected('telefono', '11 6900 4497');
+    expect(subjects(phone, { response: { messages: ['Te llamo al 11 6900-4497.'] } })).not.toContain('contact_profile_rejected:telefono');
+    const mail = withRejected('correo', 'Thiago@Example.com');
+    mail.customer.contact_intake!.correo = 'thiago@example.com';
+    expect(subjects(mail, { response: { messages: ['Te escribo a thiago@example.com.'] } })).not.toContain('contact_profile_rejected:correo');
+  });
+
+  it('finds a refused phone even when an amount follows it', () => {
+    const current = withRejected('telefono', '+5491169004498');
+    expect(subjects(current, { response: { messages: ['Queda el 11 6900 4498 - 12 cuotas de USD 30.'] } }))
+      .toContain('contact_profile_rejected:telefono');
+  });
+
   it('does not flag a value that is already the current canonical one', () => {
     const current = withRejected('telefono', '+5491169004497');
     expect(subjects(current, { response: { messages: ['Te llamo al +5491169004497.'] } }))

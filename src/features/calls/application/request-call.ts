@@ -281,9 +281,15 @@ export async function reserveCallForDecision(
     ORDER BY reply.created_at DESC, reply.id DESC
     LIMIT 1
   `;
+  // Only a correction of the number on file counts: same 8-digit local
+  // block except its last 4 digits. An amount or another contact number is
+  // not a pending correction.
   const tail = (phone: string) => phone.replace(/\D/gu, '').slice(-8);
-  if (lastReply && extractDeclaredPhones(lastReply.content)
-    .some((phone) => tail(phone).length === 8 && tail(phone) !== tail(callPhone))) {
+  const callTail = tail(callPhone);
+  if (lastReply && extractDeclaredPhones(lastReply.content).some((phone) => {
+    const candidate = tail(phone);
+    return candidate.length === 8 && candidate !== callTail && candidate.slice(0, 4) === callTail.slice(0, 4);
+  })) {
     throw new CallRequestRejectedError('CALL_PHONE_CONFIRMATION_PENDING');
   }
 

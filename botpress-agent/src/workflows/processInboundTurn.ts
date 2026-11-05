@@ -6,6 +6,7 @@ import { getOrCreateEvidenceWorkflow } from '../lib/observability/evidence-workf
 import { commitDecisionWithRejectionReceiptV1, backendDecisionRejectionReason, backendDecisionRejectionSubjects, backendDecisionRejectionSentences } from '../lib/delivery/commit-decision-receipt'
 import { removeEffectClaimBubblesV1, repairCourseMentionRolesV1, salvageFactClaimsV1, salvageProgramSendClaimsV1 } from '../lib/conversation/agent-a-claim-repair'
 import { eligibleContactRequestFieldsV1 } from '../lib/conversation/contact-profile-request-policy'
+import { rejectedProfileValuesInReplyV1 } from '../lib/conversation/contact-profile-receipt-claims'
 import { scheduleTurnRecovery } from '../actions/scheduleTurnRecovery'
 import { bindRecoveryFeedbackV1 } from '../lib/conversation/recovery-feedback'
 import { captureContactProfile, ContactProfileReceiptSchema } from '../actions/captureContactProfile'
@@ -1400,7 +1401,10 @@ export const processInboundTurn = new Workflow({
           return typeof proposed === 'string' && proposed.trim()
             ? [{ field: rejection.field, value: proposed.trim().slice(0, 320), code: rejection.code.slice(0, 64) }] : []
         })
+        // A field accepted later in the turn (e.g. the repair's E.164 form)
+        // retires its refused entries: the canonical value now speaks.
         const rejectedUpdates = [...(owned.contact_profile.rejected_updates ?? []), ...refused]
+          .filter(item => !receipt.accepted_fields.includes(item.field))
           .filter((item, index, all) => all.findIndex(other => other.field === item.field && other.value === item.value) === index)
           .slice(-8)
         owned.contact_profile = { ...owned.contact_profile, version: currentVersion,
@@ -1630,6 +1634,11 @@ export const processInboundTurn = new Workflow({
                 }), { maxAttempts: 1 })
               precommitModelAuthoredCandidates.push(effectiveGenerated)
               await persistProfileProposal(effectiveGenerated.proposal, resolved.rejection!)
+              // The continuation skips the resolver: it may not repeat a value
+              // the receipt refused. Fall back to the validated first draft.
+              if (rejectedProfileValuesInReplyV1({ proposal: effectiveGenerated.proposal, context: agentABrainContext }).length > 0) {
+                throw new Error('PLANNERLESS_PROPOSAL_REJECTED:UNSUPPORTED_OPERATIONAL_CLAIM:contact_profile_rejected')
+              }
               turnDiagnostics = {
                 schema_version: 1, generation_attempts: agentAGenerationAttempts,
                 failure_stage: 'action_authorization',

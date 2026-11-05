@@ -3700,3 +3700,45 @@ describe('natural sales regression: deterministic machinery (fixed proposals are
     expect(result.effective.proposal.response.messages).toEqual(messages);
   });
 });
+
+// Architect review 2026-11-05: PROGRAM_SEND_REQUIRED asks for one repair and never costs the reply.
+describe('PROGRAM_SEND_REQUIRED never silences the turn', () => {
+  const SYLLABUS = 'knowledge-source:maquillaje';
+  const withProgram = () => {
+    const current = context();
+    current.catalog.selected_offering!.facts.push({ id: SYLLABUS, kind: 'offering_syllabus', value: 'Piel, ojos y labios' });
+    current.capabilities.course_programs = { available_offering_codes: ['maquillaje-profesional'], sent_offering_codes: [] };
+    return current;
+  };
+  const contents = proposal({ response: { messages: ['Vas a ver piel, ojos y labios en 38 clases.'], call_offer: null },
+    used_fact_ids: [NAME_FACT, DURATION_FACT, SYLLABUS] });
+
+  it('asks for the action once; a repair that still omits it is delivered', async () => {
+    let repairs = 0;
+    const result = await resolveAgentAPlannerlessProposalV2({ initial: generated(contents), context: withProgram(), repair_enabled: true,
+      rejection_id: '00000000-0000-4000-8000-000000000901',
+      repair: async (rejection) => { repairs += 1;
+        expect(rejection.rejections.map((r) => r.code)).toContain('PROGRAM_SEND_REQUIRED');
+        return generated({ ...contents, repair_of: { rejection_id: rejection.rejection_id, attempt: 1 } } as AgentATurnProposalV1); } });
+    expect(repairs).toBe(1);
+    expect(result.effective.proposal.response.messages).toEqual(contents.response.messages);
+  });
+  it('a repair that proposes the material is accepted with the action', async () => {
+    const result = await resolveAgentAPlannerlessProposalV2({ initial: generated(contents), context: withProgram(), repair_enabled: true,
+      rejection_id: '00000000-0000-4000-8000-000000000902',
+      repair: async (rejection) => generated({ ...contents, proposed_action: { type: 'send_course_program', offering_code: 'maquillaje-profesional' },
+        response: { messages: ['Vas a ver piel, ojos y labios en 38 clases. Te comparto el programa completo.'], call_offer: null },
+        repair_of: { rejection_id: rejection.rejection_id, attempt: 1 } } as AgentATurnProposalV1) });
+    expect(result.effective.proposal.proposed_action).toEqual({ type: 'send_course_program', offering_code: 'maquillaje-profesional' });
+  });
+  it('without repair, a send claim without the action is salvaged into a reply, never thrown', async () => {
+    const claim = proposal({ move: { schema_version: 1, move: 'request_course_program', secondary_moves: [], vetoes: [],
+      course_reference: 'Maquillaje Profesional', confidence: 1 },
+      response: { messages: ['Te comparto el programa.', 'Vas a ver piel, ojos y labios en 38 clases.'], call_offer: null },
+      used_fact_ids: [NAME_FACT, DURATION_FACT, SYLLABUS] });
+    const result = await resolveAgentAPlannerlessProposalV2({ initial: generated(claim), context: withProgram(), repair_enabled: false,
+      rejection_id: '00000000-0000-4000-8000-000000000903', repair: async () => { throw Error('Repair is disabled'); } });
+    expect(result.effective.proposal.response.messages.join(' ')).not.toMatch(/no tengo el archivo/iu);
+    expect(result.effective.proposal.response.messages.length).toBeGreaterThan(0);
+  });
+});

@@ -212,6 +212,16 @@ describe('prepareAgentTurnV2', () => {
         { available_offering_codes: ['redes_informaticas'], sent_offering_codes: ['redes_informaticas'] })))
         .toEqual(['send_course_program', 'program_send_not_executed:already_sent']);
     });
+    it('without a selected course, the only material sent in the chat is the focus (2026-11-05 replay t27)', async () => {
+      const run2 = (text: string) => prepareAgentTurnV2({
+        turn: { id: ids.turn, workspace_id: ids.workspace, conversation_id: ids.conversation, contact_id: ids.contact },
+        workspace_slug: 'studyx', business_context: business, catalog_index: index, current_customer_messages: ['qué promo?'],
+        proposal: proposal({ move: programMove, response: { messages: [text] }, proposed_action: { type: 'none' } as never }),
+        course_programs: { available_offering_codes: ['redes_informaticas'], sent_offering_codes: ['redes_informaticas'] },
+      }, { state_store: store(state({ selected_offering_code: null })), contact_intake: completeIntake, now: () => Date.parse(index.as_of) });
+      expect(await reasons(run2('Claro, te comparto el programa del curso.')))
+        .toEqual(['send_course_program', 'program_send_not_executed:already_sent']);
+    });
     it('honest wording passes: a past reference, a negation or no claim at all', async () => {
       const programs = { available_offering_codes: ['redes_informaticas'], sent_offering_codes: ['redes_informaticas'] };
       for (const text of ['Ya te lo compartí hace un rato, está arriba en el chat.', 'No tengo el archivo del programa, pero te cuento lo que incluye.'])

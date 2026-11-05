@@ -481,7 +481,9 @@ export async function prepareAgentTurnV2(input: {
     // Without a proposed action, judge availability on the course in focus:
     // existing, unsent material is `not_proposed` (the repair may propose it),
     // never `unavailable` (2026-11-05: that made the repair deny the PDF).
-    const focus = proposed ?? authority.transition.selected_offering_code ?? state.selected_offering_code;
+    const sentCodes = input.course_programs?.sent_offering_codes ?? [];
+    const focus = proposed ?? authority.transition.selected_offering_code ?? state.selected_offering_code
+      ?? (sentCodes.length === 1 ? sentCodes[0]! : null);
     const why = focus !== null && input.course_programs?.sent_offering_codes.includes(focus) ? 'already_sent'
       : proposed !== null && input.course_programs?.available_offering_codes.includes(proposed) ? 'not_requested'
       : proposed === null && focus !== null && input.course_programs?.available_offering_codes.includes(focus) ? 'not_proposed'

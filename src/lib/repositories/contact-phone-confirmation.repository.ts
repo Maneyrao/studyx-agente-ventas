@@ -92,7 +92,37 @@ export async function confirmDeliveredContactPhone(input: {
       let firstChanged = 0;
       while (known[firstChanged] === input.phone[firstChanged]) firstChanged += 1;
       const changedTail = input.phone.slice(firstChanged);
-      correctionEvidence = priorNumbers.find(message => (message.content.match(/\d+/gu) ?? [])
+      // Only the customer's batch answering the reply before the suggestion,
+      // newer than the known phone's own source, and only standalone digits
+      // (never an amount, a time, a percentage or a decimal).
+      const knownSeq = profile.fields.telefono.source_conversation_id === recorded.conversation_id
+        ? profile.fields.telefono.source_seq ?? -1 : -1;
+      // The batch is the one answered by the FIRST reply proposing this number:
+      // the agent may repeat the question while the customer has not confirmed.
+      const proposals = await db<Array<{ id: string; content: string }>>`
+        SELECT reply.id, reply.content FROM messages reply JOIN messages suggestion ON suggestion.id = ${source.id}::uuid
+        WHERE reply.conversation_id = suggestion.conversation_id AND reply.direction = 'outbound'
+          AND reply.created_at <= suggestion.created_at
+        ORDER BY reply.created_at DESC, reply.id DESC LIMIT 6
+      `;
+      let firstProposalId = source.id;
+      for (const reply of proposals) {
+        if (!extractDeclaredPhones(reply.content).includes(input.phone)) break;
+        firstProposalId = reply.id;
+      }
+      const correctionBatch = await db<Array<{ id: string; content: string }>>`
+        SELECT supplied.id, supplied.content FROM messages supplied JOIN messages suggestion ON suggestion.id = ${firstProposalId}::uuid
+        WHERE supplied.contact_id = ${recorded.contact_id}::uuid AND supplied.conversation_id = ${recorded.conversation_id}::uuid
+          AND supplied.direction = 'inbound' AND supplied.created_at < suggestion.created_at
+          AND supplied.conversation_seq > ${knownSeq}
+          AND COALESCE(supplied.metadata->>'message_type', 'text') <> 'unsupported'
+          AND NOT EXISTS (SELECT 1 FROM messages earlier WHERE earlier.conversation_id = suggestion.conversation_id
+            AND earlier.direction = 'outbound' AND earlier.id <> suggestion.id
+            AND earlier.created_at > supplied.created_at AND earlier.created_at < suggestion.created_at
+            AND earlier.in_reply_to IS DISTINCT FROM suggestion.in_reply_to)
+        ORDER BY supplied.conversation_seq DESC LIMIT 8
+      `;
+      correctionEvidence = correctionBatch.find(message => (message.content.match(/(?<![\d$%:/.,])\d+(?![\d%:/]|[.,]\d)/gu) ?? [])
         .some(run => run.length >= changedTail.length && input.phone.endsWith(run)));
     }
     if (!numberEvidence && !correctionEvidence && (declared.length < 8 || !input.phone.endsWith(declared))) return false;

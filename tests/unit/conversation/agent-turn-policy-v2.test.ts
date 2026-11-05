@@ -2364,6 +2364,20 @@ describe('payment link consent across intake', () => {
     },
   );
 
+  // 2026-11-05 replay (5b138536): the call intake stayed as a checkout after «sigamos por acá».
+  it.each(['continue_by_chat', 'decline_call'] as const)('%s releases contact details owed only to a call', (chatMove) => {
+    const result = authorize({
+      customerText: 'okay sigamos por aca',
+      state: state({ selected_offering_code: 'redes_informaticas', call_preference: 'call', call_offer_status: 'accepted',
+        awaiting_reply: 'contact_details' }),
+      proposal: proposal({
+        move: { schema_version: 1, move: chatMove, secondary_moves: [], vetoes: [], confidence: 1 },
+        response: { messages: ['Dale, seguimos por acá.'] },
+      }),
+    });
+    expect(result).toMatchObject({ ok: true, transition: { call_preference: 'chat', awaiting_reply: 'none' } });
+  });
+
   it('changing course clears the former plan and pending link consent', () => {
     const result = authorize({
       mayOfferCall: false, // This fixture isolates course/fact authority when a call is unavailable.

@@ -482,6 +482,12 @@ function actionRejectionV1(
  * facts/actions were rejected and allows one rewrite before the backend
  * performs the same authoritative checks against durable state.
  */
+/** PROGRAM_SEND_REQUIRED alone asks for one repair; it never blocks a reply. */
+function onlyProgramSendGuidanceV1(rejection: TurnRejectionV1): boolean {
+  return rejection.rejections.length > 0
+    && rejection.rejections.every((reason) => reason.code === 'PROGRAM_SEND_REQUIRED')
+}
+
 /** Durable diagnostics name what was rejected: `CODE:subject`, deduped, at
  * most 8 of 128 chars (2026-11-05: a FACT_VALUE_MISMATCH lost its subject). */
 export function diagnosticRejectionCodesV1(
@@ -574,7 +580,7 @@ export async function resolveAgentAPlannerlessProposalV2<
   const salvageable = (value: TurnRejectionV1) => value.rejections.length > 0
     && value.rejections.every((reason) => reason.code === 'FACT_VALUE_MISMATCH'
       || (reason.code === 'ACTION_NOT_AUTHORIZED' || reason.code === 'MISSING_INTAKE' || reason.code === 'PLAN_NOT_SELECTED'
-        || reason.code === 'UNSUPPORTED_OPERATIONAL_CLAIM'))
+        || reason.code === 'UNSUPPORTED_OPERATIONAL_CLAIM' || reason.code === 'PROGRAM_SEND_REQUIRED'))
   const salvage = (candidates: readonly T[]): PlannerlessResolutionV2<T> | null => {
     for (const source of candidates) {
       const variants: AgentATurnProposalV1[] = []
@@ -590,7 +596,9 @@ export async function resolveAgentAPlannerlessProposalV2<
           initial: cleaned, context: input.context, authorized_fact_ids: factIds,
           rejection_id: rejection.rejection_id, semantic_rejections: input.semantic_rejections ?? 'blocking',
         })
-        if (checked.rejection !== null) continue
+        // A missing programme send is guidance, never a reason to lose the
+        // reply: salvaged variants carry no action and would re-raise it.
+        if (checked.rejection !== null && !onlyProgramSendGuidanceV1(checked.rejection)) continue
         return { effective: checked.effective,
           evidence: { rejection_codes: rejectedCodes(), repair_attempted: source !== initial, repaired: false,
             proposal_generation_calls: source !== initial ? 2 : 1 },
@@ -623,7 +631,7 @@ export async function resolveAgentAPlannerlessProposalV2<
         rejection_id: rejection.rejection_id,
         semantic_rejections: input.semantic_rejections ?? 'blocking',
       })
-      if (repaired.rejection === null) {
+      if (repaired.rejection === null || onlyProgramSendGuidanceV1(repaired.rejection)) {
         // The first draft may have had an action-specific rejection that the
         // continuation has now corrected. Carrying that stale receipt forward
         // makes the workflow erase the repaired, independently authorized

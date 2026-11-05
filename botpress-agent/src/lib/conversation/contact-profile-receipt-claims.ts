@@ -2,17 +2,25 @@ import type { AgentAContextV1, AgentATurnProposalV1 } from '../../schemas/agent-
 
 type RejectedUpdateV1 = NonNullable<NonNullable<AgentAContextV1['customer']['contact_profile']>['rejected_updates']>[number]
 
-function digitRuns(text: string): string[] {
-  return (text.match(/\+?\d[\d\s().-]{6,}\d/gu) ?? []).map((run) => run.replace(/\D/gu, ''))
+const phoneTail = (value: string): string => value.replace(/\D/gu, '').slice(-8)
+
+/** Same value under the field's canonical comparison (phone by last 8 digits, email case-folded). */
+export function sameProfileValueV1(field: RejectedUpdateV1['field'], left: string | null | undefined, right: string): boolean {
+  if (typeof left !== 'string') return false
+  if (field === 'telefono') return phoneTail(left).length === 8 && phoneTail(left) === phoneTail(right)
+  return left.trim().toLowerCase() === right.trim().toLowerCase()
 }
 
 /** Value comparison against the profile receipt, never phrase matching. */
 export function textMentionsRejectedValueV1(text: string, update: RejectedUpdateV1): boolean {
   if (update.field === 'telefono') {
-    const tail = update.value.replace(/\D/gu, '').slice(-8)
-    return tail.length === 8 && digitRuns(text).some((run) => run.length >= 8 && run.endsWith(tail))
+    const tail = phoneTail(update.value)
+    // Separators removed per number-like run; `includes` so an adjacent
+    // amount ("…4498 - 12 cuotas") cannot hide the number.
+    return tail.length === 8 && (text.match(/\d[\d\s().-]*\d/gu) ?? [])
+      .some((run) => run.replace(/\D/gu, '').includes(tail))
   }
-  if (update.field === 'correo') return text.toLowerCase().includes(update.value.toLowerCase())
+  if (update.field === 'correo') return text.toLowerCase().includes(update.value.trim().toLowerCase())
   return false
 }
 
@@ -31,6 +39,6 @@ export function rejectedProfileValuesInReplyV1(input: {
     .some((request) => request.mode === 'clarify' && request.fields.includes('telefono'))
   const texts = [...input.proposal.response.messages, input.proposal.response.call_offer ?? '']
   return rejected.filter((update) => !(update.field === 'telefono' && clarifiesPhone)
-    && input.context.customer.contact_intake?.[update.field] !== update.value
+    && !sameProfileValueV1(update.field, input.context.customer.contact_intake?.[update.field], update.value)
     && texts.some((text) => textMentionsRejectedValueV1(text, update)))
 }

@@ -187,7 +187,10 @@ run('owned contact profile phone confirmation provenance', () => {
     const confirmation = await processInboundMessage(next(first, 'Sí'));
     expect(await confirm(confirmation.turn_id)).toBe(true);
     const correction = await processInboundMessage(next(first, 'me confundí, termina en 8, no en 1'));
-    const suggestionId = await suggestText(first, correction, 'Entonces sería +5491155550108, me confirmás?');
+    await suggestText(first, correction, 'Entonces sería +5491155550108, me confirmás?');
+    // The agent repeats the question once before the customer confirms.
+    const again = await processInboundMessage(next(first, 'me volvés a llamar?'));
+    const suggestionId = await suggestText(first, again, 'Antes confirmame: ¿+5491155550108 está bien?');
     const yes = await processInboundMessage(next(first, 'sí'));
     expect(await withSerializableTransactionOn(db!, tx => confirmDeliveredContactPhone({ turnId: yes.turn_id, phone: CORRECTED }, tx))).toBe(true);
     expect((await loadContactIntakeV1(original.contact.id, db!)).telefono).toBe(CORRECTED);
@@ -206,6 +209,29 @@ run('owned contact profile phone confirmation provenance', () => {
     const yes = await processInboundMessage(next(first, 'sí'));
     expect(await withSerializableTransactionOn(db!, tx => confirmDeliveredContactPhone({ turnId: yes.turn_id, phone: '+5491155550108' }, tx))).toBe(false);
     expect((await loadContactIntakeV1(original.contact.id, db!)).telefono).toBe(PHONE);
+  });
+
+  it('an unrelated digit from an older batch or an amount never counts as the written correction', async () => {
+    for (const older of ['a las 8 me viene bien', 'son 8 cuotas?']) {
+      const first = envelope();
+      const original = await processInboundMessage(first);
+      await suggested(first, original);
+      expect(await confirm((await processInboundMessage(next(first, 'Sí'))).turn_id)).toBe(true);
+      const unrelated = await processInboundMessage(next(first, older));
+      await suggestText(first, unrelated, 'Dale, lo vemos.');
+      const later = await processInboundMessage(next(first, 'ok'));
+      await suggestText(first, later, '¿Tu número es +5491155550108?');
+      const yes = await processInboundMessage(next(first, 'sí'));
+      expect(await withSerializableTransactionOn(db!, tx => confirmDeliveredContactPhone({ turnId: yes.turn_id, phone: '+5491155550108' }, tx))).toBe(false);
+    }
+    const first = envelope();
+    const original = await processInboundMessage(first);
+    await suggested(first, original);
+    expect(await confirm((await processInboundMessage(next(first, 'Sí'))).turn_id)).toBe(true);
+    const amount = await processInboundMessage(next(first, 'pago USD 8.000, termina en 1 creo'));
+    await suggestText(first, amount, '¿Tu número es +5491155550108?');
+    const yes = await processInboundMessage(next(first, 'sí'));
+    expect(await withSerializableTransactionOn(db!, tx => confirmDeliveredContactPhone({ turnId: yes.turn_id, phone: '+5491155550108' }, tx))).toBe(false);
   });
 
   it('rejects a confirmed candidate that rewrites more than the last four digits of the known number', async () => {

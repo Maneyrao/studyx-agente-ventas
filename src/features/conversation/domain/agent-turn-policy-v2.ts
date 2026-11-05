@@ -866,9 +866,14 @@ export function authorizeAgentTurnV2(input: {
     // Keep the customer on chat and preserve the offer ledger so one different,
     // situational reminder may still happen later. Explicit opt-out is handled
     // by the channel consent boundary before this policy runs.
+    // Data requested for that call is no longer owed (2026-11-05 replay:
+    // contact_details stuck as checkout and closed the bonus). Data for a
+    // pending payment link keeps its checkpoint.
+    const callIntakePending = state.call_preference === 'call' && state.awaiting_reply === 'contact_details'
+      && awaitingReply === 'contact_details' && paymentLinkRequest?.status !== 'pending';
     callPreference = 'chat';
     if (callOfferStatus !== 'not_offered') callOfferStatus = 'declined';
-    if (awaitingReply === 'call_or_chat') awaitingReply = 'none';
+    if (awaitingReply === 'call_or_chat' || callIntakePending) awaitingReply = 'none';
   }
   if (callOfferCanAdvanceState && !supportedChannelChoice) {
     callOfferCount = Math.min(2, callOfferCount + 1) as 1 | 2;

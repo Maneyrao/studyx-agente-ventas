@@ -926,4 +926,41 @@ OWNER_PROMOTION_MODE_REPLAY_CASES_MUTABLE.push({
   ],
 });
 
+// Call segment of 5b138536 with a complete number (the harness identity is a +999 sandbox phone, so the real
+// local «1169004497» cannot match it): call → voicemail → «termina en 8» → confirm → voicemail → «sigamos por aca»
+// while the call is still open → price → promo. Exercises receipts, pending correction, the order-2 race and the bonus.
+OWNER_PROMOTION_MODE_REPLAY_CASES_MUTABLE.push({
+  id: '46_call_segment_5b138536_20261105',
+  title: 'Tramo de llamadas de 5b138536: corrección de teléfono confirmada, buzón, «sigamos por acá» con la llamada abierta y promo',
+  reconstructed: true,
+  note: 'El número se da completo con código de país; el resto del texto es el del cliente real.',
+  turns: [
+    traceBase('c01_interest', 'hola, quiero info de real state'),
+    traceBase('c02_call', 'me pueden llamar?'),
+    traceBase('c03_data', 'dale, THIAGO MANEYRO +54 9 11 6900 4497 tmaneyro@gmail.com'),
+    traceBase('c04_call_now', 'sii\nllamame'),
+    traceBase('c05_correction', 'ah sabes que me confundi, mi número termina en 8, no en 7', { settleLatestCallBefore: 'buzon_de_voz',
+      must: ['Escribir el número completo corregido y pedir que lo confirme.'],
+      mustNot: ['No decir que el número quedó registrado o cambiado antes de la confirmación; no llamar.'],
+      expected: { move: [...intentMoves, 'provide_contact_details', 'request_call'], action: ['none'], state: {} },
+    }),
+    traceBase('c06_unconfirmed_call', 'me volves a llamar?', {
+      must: ['Pedir la confirmación del número corregido antes de llamar.'],
+      expected: { move: [...intentMoves, 'provide_contact_details', 'request_call'], action: ['none'], state: {} },
+    }),
+    traceBase('c07_confirm', 'sii ese es, llamame'),
+    traceBase('c08_chat_while_open', 'pero no me estas llamando\nokay sigamos por aca'),
+    traceBase('c09_expensive', 'me parece muy caro', { settleLatestCallBefore: 'buzon_de_voz',
+      must: ['Con la llamada terminada y el cliente en chat, trabajar el valor; puede ofrecer un bonificado afín con la cita de este mensaje.'],
+      hard: [{ type: 'workflow_committed' }, noPrefab, { type: 'course_bonus_preconditions' }, { type: 'bonus_motive_current_message' },
+        { type: 'promotion_bonus_count_at_most', value: 3 }, ...noBeca],
+    }),
+    traceBase('c10_promo', 'pero digo que promo me podes ofrecer\nporque el problema SI es el precio', {
+      must: ['Si todavía no ofreció un bonificado, ofrecer uno afín con efecto real (la cita de la queja de precio actual); nunca prometerlo sin efecto.'],
+      hard: [{ type: 'workflow_committed' }, noPrefab, { type: 'course_bonus_preconditions' }, { type: 'bonus_motive_current_message' },
+        { type: 'offered_bonus_named' }, { type: 'promotion_bonus_count_at_most', value: 3 }, ...noBeca],
+    }),
+  ],
+});
+
 export const OWNER_PROMOTION_MODE_REPLAY_CASES: readonly GoldenCaseV1[] = OWNER_PROMOTION_MODE_REPLAY_CASES_MUTABLE;

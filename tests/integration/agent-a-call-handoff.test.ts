@@ -676,6 +676,23 @@ run('agent a call handoff — refusals reserve nothing', () => {
     expect(JSON.stringify(claim)).not.toContain(`"${identity.phone}"`);
   });
 
+  it('a delivered price reply never counts as a pending phone correction', async () => {
+    const identity = newIdentity();
+    const priceTurn = await seedTurn(identity, 'cuánto sale?');
+    const [turn] = await db!<Array<{ conversation_id: string; contact_id: string; phone: string }>>`
+      SELECT m.conversation_id, m.contact_id, c.phone FROM messages m JOIN contacts c ON c.id = m.contact_id WHERE m.id = ${priceTurn}::uuid`;
+    const [reply] = await db!<Array<{ id: string }>>`
+      INSERT INTO messages (conversation_id, contact_id, direction, content, in_reply_to)
+      VALUES (${turn.conversation_id}::uuid, ${turn.contact_id}::uuid, 'outbound',
+        'Son USD 360.000 (12 x 30.000) o 450.000 - 30 de anticipo.', ${priceTurn}::uuid) RETURNING id`;
+    await db!`INSERT INTO outbound_deliveries (message_id, conversation_id, contact_id, provider, integration_id,
+      channel, destination, idempotency_key, state, provider_message_id, submitted_at)
+      VALUES (${reply.id}::uuid, ${turn.conversation_id}::uuid, ${turn.contact_id}::uuid, 'botpress', 'vitest-call-handoff',
+        'whatsapp', ${turn.phone}, ${randomUUID()}, 'submitted', ${randomUUID()}, now())`;
+    const callTurn = await seedTurn(identity, 'Llamame ahora');
+    expect((await commit(callTurn, callConfirmation('direct_request'))).call_request).not.toBeNull();
+  });
+
   it('an active call blocks a second reservation for the same contact', async () => {
     const identity = newIdentity();
     const firstTurn = await seedTurn(identity, 'Llamame ahora');
