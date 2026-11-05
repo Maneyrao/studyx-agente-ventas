@@ -298,6 +298,42 @@ describe('buildAgentAContextV1', () => {
     });
   });
 
+  it('starts call intake from the current direct request before call preference is persisted', () => {
+    const claimed = claimedTurn();
+    claimed.context.batch_messages[0] = {
+      ...claimed.context.batch_messages[0]!,
+      content: 'Me puedes llamar?',
+    };
+    claimed.conversation_state_v1 = {
+      ...claimed.conversation_state_v1!,
+      call_preference: 'unknown',
+      call_offer_status: 'not_offered',
+      call_offer_count: 0,
+      awaiting_reply: 'none',
+    };
+    claimed.sales_context.open_call_offer = null;
+    claimed.sales_context.allowed_actions = ['offer_call'];
+    claimed.contact_intake_missing = ['nombre', 'apellido', 'correo'];
+    claimed.call_intake_readiness = {
+      status: 'needs_input',
+      requirements: [
+        { field: 'nombre', reason: 'missing' },
+        { field: 'apellido', reason: 'missing' },
+        { field: 'correo', reason: 'missing' },
+      ],
+    };
+
+    const context = buildAgentAContextV1(claimed)!;
+
+    expect(context.capabilities.call_execution).toEqual({
+      next_step: 'collect_contact_details',
+      request_call_now_authorized: false,
+    });
+    expect(context.capabilities.required_contact_fields?.call).toEqual([
+      'nombre', 'apellido', 'correo',
+    ]);
+  });
+
   it('retires the call execution checkpoint when the customer explicitly chooses chat', () => {
     const claimed = claimedTurn();
     claimed.context.batch_messages[0] = {

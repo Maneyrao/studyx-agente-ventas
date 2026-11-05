@@ -5,6 +5,7 @@ import {
   constrainModelToAdvisory,
   modelUnavailableFallback,
   policyRejectedStateFallback,
+  technicalContinuityFallback,
   validationExhaustedNotice,
 } from '../../../botpress-agent/src/utils/decision-policy';
 import type { ClaimedTurn, Decision } from '../../../botpress-agent/src/schemas/contracts';
@@ -302,6 +303,112 @@ describe('applyDecisionPolicy — provider parity', () => {
     );
     expect(decision.response_type).toBe('commercial_reply');
   });
+
+  it('continues a direct call request with the missing intake instead of the generic fallback', () => {
+    const claimed = claimedTurn({
+      allowed_response_types: ['commercial_reply', 'technical_fallback'],
+      batch_message_content: 'Me puedes llamar?',
+    });
+    claimed.deterministic_route = null;
+    claimed.contact_intake_missing = ['nombre', 'apellido', 'correo'];
+    claimed.call_intake_readiness = {
+      status: 'needs_input',
+      requirements: [
+        { field: 'nombre', reason: 'missing' },
+        { field: 'apellido', reason: 'missing' },
+        { field: 'correo', reason: 'missing' },
+      ],
+    };
+
+    const decisions = [
+      technicalContinuityFallback(claimed),
+      validationExhaustedNotice('technical_fallback', {
+        claimed,
+        failure_codes: ['PLANNERLESS_PROPOSAL_REJECTED:ACTION_NOT_AUTHORIZED:request_call_now'],
+      }),
+      modelUnavailableFallback(claimed, 'timeout'),
+      applyDecisionPolicy({
+        ...modelDecision(), response: null, response_type: null,
+      } as never, claimed),
+    ];
+
+    for (const decision of decisions) {
+      expect(decision).toMatchObject({
+        intent: 'commercial',
+        kind: 'reply',
+        response_type: 'commercial_reply',
+        business_action: null,
+        missing_information: ['nombre', 'apellido', 'correo'],
+        next_state: 'waiting_user',
+        reason_code: 'CALL_CONTACT_REQUIRED',
+      });
+      expect(decision.response).toMatch(/nombre/iu);
+      expect(decision.response).toMatch(/apellido/iu);
+      expect(decision.response).toMatch(/correo/iu);
+      expect(decision.response).not.toBe('Perdón, no te entendí bien, a qué te refieres?');
+    }
+  });
+
+  it('does not reopen call intake after the customer explicitly chooses chat', () => {
+    const claimed = claimedTurn({
+      allowed_response_types: ['commercial_reply', 'technical_fallback'],
+      batch_message_content: 'Prefiero seguir por chat',
+    });
+    claimed.conversation_state_v1 = {
+      selected_offering_code: null,
+      selected_payment_plan: null,
+      stage: 'exploring',
+      call_preference: 'call',
+      call_offer_status: 'accepted',
+      call_offer_count: 1,
+      awaiting_reply: 'call_or_chat',
+      version: 2,
+    };
+    claimed.contact_intake_missing = ['nombre', 'apellido', 'correo'];
+    claimed.call_intake_readiness = {
+      status: 'needs_input',
+      requirements: [
+        { field: 'nombre', reason: 'missing' },
+        { field: 'apellido', reason: 'missing' },
+        { field: 'correo', reason: 'missing' },
+      ],
+    };
+
+    const decision = modelUnavailableFallback(claimed, 'timeout');
+
+    expect(decision.reason_code).not.toBe('CALL_CONTACT_REQUIRED');
+    expect(decision.response).toMatch(/seguimos por chat/iu);
+    expect(decision.response).not.toMatch(/nombre|apellido|correo/iu);
+  });
+
+  it.each(['active', 'closed', 'historical'] as const)(
+    'does not reopen a %s call checkpoint after an unrelated provider failure',
+    (callState) => {
+      const claimed = claimedTurn({
+        allowed_response_types: ['commercial_reply', 'technical_fallback'],
+        batch_message_content: 'Mmm, contame otra cosa',
+      });
+      claimed.conversation_state_v1 = {
+        selected_offering_code: null,
+        selected_payment_plan: null,
+        stage: callState === 'closed' ? 'closed' : 'exploring',
+        call_preference: 'call',
+        call_offer_status: 'accepted',
+        call_offer_count: 1,
+        awaiting_reply: callState === 'historical' ? 'none' : 'call_or_chat',
+        version: 2,
+      };
+      claimed.sales_context.active_call = callState === 'active'
+        ? { call_id: UUID, status: 'in_progress' }
+        : null;
+      claimed.call_intake_readiness = { status: 'ready', requirements: [] };
+
+      const decision = modelUnavailableFallback(claimed, 'timeout');
+
+      expect(decision.reason_code).not.toBe('CALL_AVAILABILITY_REQUIRED');
+      expect(decision.response).not.toMatch(/puedes atender ahora/iu);
+    },
+  );
 
   it('normalizes a clarification with no missing field before the backend boundary', () => {
     const decision = applyDecisionPolicy(modelDecision({

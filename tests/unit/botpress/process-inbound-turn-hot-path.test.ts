@@ -2102,9 +2102,15 @@ describe('processInboundTurn hot path', () => {
     if (expectedCommittedMessages === null) {
       expect(actionSpies.commit).toHaveBeenCalledTimes(_case === 'persists revoked consent when repair is unavailable' ? 3 : 2);
       expect(actionSpies.commit.mock.calls.at(-1)![0].input).toMatchObject({
-        agent_turn_v2: null,
-        decision: {
-          kind: 'reply', response_type: 'commercial_reply', reason_code: 'MODEL_UNAVAILABLE',
+        // Authority: prompt line 177 keeps the accepted/requested call as
+        // durable conversational state while the rejected effect stays fenced.
+        agent_turn_v2: {
+          conversation_only: true,
+          proposal: {
+            move: { move: 'request_call' },
+            response: { messages: ['Claro. Puedes atender ahora?'], call_offer: null },
+            proposed_action: { type: 'none' },
+          },
         },
       });
       expect(actionSpies.recovery).not.toHaveBeenCalled();
@@ -5471,6 +5477,122 @@ describe('processInboundTurn hot path', () => {
       } },
     });
     expect(actionSpies.recovery).not.toHaveBeenCalled();
+    expect(actionSpies.dispatch).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    {
+      label: 'exact Gabi direct-call request',
+      message: 'Me puedes llamar?',
+      route: null,
+      phone: '+5491169004497',
+      missing: ['nombre', 'apellido', 'correo'] as const,
+      response: 'Claro. Para llamarte me faltan tu nombre, tu apellido y tu correo. Me los compartes por acá?',
+    },
+    {
+      label: 'direct-call request with no callable phone',
+      message: 'Llámame por favor',
+      route: 'call_phone_required' as const,
+      phone: null,
+      missing: ['telefono'] as const,
+      response: 'De acuerdo. Pásame el número completo con código de país y área, por ejemplo +54 9 11…, para poder llamarte 🙂',
+    },
+  ])('persists $label as intake when the provider is unavailable', async ({
+    message, route, phone, missing, response,
+  }) => {
+    const claimed = claimedResponse() as unknown as ClaimedTurn;
+    claimed.features = {
+      agent_loop_v3_mode: 'off',
+      conversation_pipeline_v1_enabled: false,
+      agent_a_brain_v1_enabled: true,
+      agent_a_brain_v1_shadow: false,
+      agent_a_repair_enabled: true,
+    };
+    claimed.deterministic_route = route;
+    claimed.context.batch_messages[0].content = message;
+    claimed.sales_context.allowed_actions = ['offer_call'];
+    claimed.contact_intake = {
+      nombre: null,
+      apellido: null,
+      correo: null,
+      telefono: phone,
+    };
+    claimed.contact_intake_missing = [...missing];
+    claimed.call_intake_readiness = {
+      status: 'needs_input',
+      requirements: missing.map((field) => ({ field, reason: 'missing' as const })),
+    };
+    claimed.catalog_index = {
+      as_of: NOW,
+      offerings_total: 0,
+      offerings: [],
+      injection_suspected_count: 0,
+    };
+    claimed.business_context = paymentBusinessContext();
+    claimed.business_context_available = true;
+    claimed.conversation_state_v1 = {
+      selected_offering_code: null,
+      selected_payment_plan: null,
+      stage: 'exploring',
+      call_preference: 'unknown',
+      call_offer_status: 'not_offered',
+      call_offer_count: 0,
+      awaiting_reply: 'none',
+      version: 2,
+    };
+    actionSpies.claim.mockResolvedValue(claimed);
+    configuration.agentAPlannerlessV2Enabled = true;
+    actionSpies.agentABrainDeepSeek.mockRejectedValue(new Error('BRAIN_DEEPSEEK_TIMEOUT'));
+    actionSpies.commit.mockResolvedValueOnce({
+      status: 'committed',
+      replayed: false,
+      trace_id: UUID,
+      turn_id: UUID,
+      decision_id: UUID,
+      next_state: 'waiting_user',
+      outbound: null,
+      outbounds: [],
+      call_request: null,
+    });
+    const step = Object.assign(
+      async (_name: string, run: () => Promise<unknown>) => run(),
+      { sleep: vi.fn(async () => undefined) },
+    );
+    const handler = (processInboundTurn as unknown as {
+      definition: { handler: (args: Record<string, unknown>) => Promise<unknown> };
+    }).definition.handler;
+
+    const result = await handler({
+      input: { ...workflowInput(), message: { ...workflowInput().message, text: message } },
+      state: processingState(),
+      step,
+      execute: vi.fn(async () => { throw new Error('LEGACY_MODEL_MUST_NOT_RUN'); }),
+      client: {},
+      signal: new AbortController().signal,
+      workflow: { id: `workflow-call-intake-${route ?? 'model'}` },
+    });
+
+    expect(result).toMatchObject({ status: 'waiting_user', error_code: null });
+    expect(actionSpies.commit).toHaveBeenCalledTimes(1);
+    expect(actionSpies.commit.mock.calls[0]?.[0]?.input).toMatchObject({
+      agent_turn_v2: {
+        conversation_only: true,
+        proposal: {
+          move: { move: 'request_call' },
+          response: {
+            messages: [response],
+            call_offer: null,
+          },
+          proposed_action: { type: 'none' },
+          profile_requests: [{
+            message_index: 0,
+            fields: [...missing],
+            purpose: 'call',
+            mode: 'collect',
+          }],
+        },
+      },
+    });
     expect(actionSpies.dispatch).not.toHaveBeenCalled();
   });
 

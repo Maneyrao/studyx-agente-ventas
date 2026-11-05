@@ -7,6 +7,8 @@ import {
   catalogGuidanceForTurn,
   normalizeCatalogGuidanceText,
 } from './catalog-guidance'
+import { classifyBatchSalesSignal } from '../../../src/features/orchestration/domain/sales-signal'
+import { supportsChatPreferenceV1 } from '../lib/conversation/channel-preference-evidence'
 
 /**
  * Post-model policy: normalization plus the deterministic guardrails a raw
@@ -57,6 +59,89 @@ export function technicalFallback(
   }
 }
 
+function callOperationalContinuityFallback(claimed: ClaimedTurn): Decision | null {
+  const state = claimed.conversation_state_v1
+  if (claimed.sales_context.active_call !== null
+    || state?.stage === 'handoff'
+    || state?.stage === 'closed') return null
+  const acceptedCall = state?.call_preference === 'call'
+    && state.call_offer_status === 'accepted'
+    && (state.awaiting_reply === 'contact_details' || state.awaiting_reply === 'call_or_chat')
+  const currentCallSignal = classifyBatchSalesSignal(
+    claimed.context.batch_messages.map((message) => message.content),
+    { pendingCallReply: state?.awaiting_reply === 'call_or_chat' },
+  )
+  const currentTurnChoosesChat = supportsChatPreferenceV1(
+    claimed.context.batch_messages.map((message) => message.content).join('\n'),
+    acceptedCall && state?.awaiting_reply === 'call_or_chat',
+  )
+  if (currentCallSignal.type === 'call_decline'
+    || currentCallSignal.type === 'opt_out'
+    || currentTurnChoosesChat) return null
+  const currentDirectRequest = claimed.deterministic_route === 'call_direct_request'
+    || claimed.deterministic_route === 'call_phone_required'
+    || currentCallSignal.type === 'direct_call_request'
+  if (!currentDirectRequest && !acceptedCall) return null
+
+  const responseType = claimed.policy.allowed_response_types.includes('commercial_reply')
+    ? 'commercial_reply'
+    : claimed.policy.allowed_response_types.includes('clarification')
+      ? 'clarification'
+      : null
+  if (responseType === null) return null
+
+  const readiness = claimed.call_intake_readiness
+  const requirements = readiness?.status === 'needs_input' ? readiness.requirements : []
+  if (requirements.length > 0) {
+    const fields = [...new Set(requirements.map((requirement) => requirement.field))]
+    const writtenEmailOnly = requirements.length === 1
+      && requirements[0]?.field === 'correo'
+      && requirements[0].reason === 'written_whatsapp_confirmation_required'
+    const labels = fields.map((field) => ({
+      nombre: 'tu nombre',
+      apellido: 'tu apellido',
+      correo: 'tu correo',
+      telefono: 'tu teléfono completo con código de país',
+    })[field])
+    const missingText = labels.length === 1
+      ? labels[0]
+      : `${labels.slice(0, -1).join(', ')} y ${labels.at(-1)}`
+    const response = writtenEmailOnly
+      ? 'Claro. Antes de llamarte, necesito que escribas tu correo por este chat para confirmarlo.'
+      : `Claro. Para llamarte me ${fields.length === 1 ? 'falta' : 'faltan'} ${missingText}. Me ${fields.length === 1 ? 'lo' : 'los'} compartes por acá?`
+    return {
+      schema_version: 4,
+      intent: 'commercial',
+      kind: responseType === 'clarification' ? 'clarify' : 'reply',
+      response,
+      response_type: responseType,
+      business_action: null,
+      memory_candidates: [],
+      missing_information: fields,
+      next_state: 'waiting_user',
+      reason_code: 'CALL_CONTACT_REQUIRED',
+      confidence: 1,
+      retrieval_used: null,
+    }
+  }
+
+  if (readiness?.status !== 'ready') return null
+  return {
+    schema_version: 4,
+    intent: 'commercial',
+    kind: responseType === 'clarification' ? 'clarify' : 'reply',
+    response: 'Claro. Puedes atender ahora?',
+    response_type: responseType,
+    business_action: null,
+    memory_candidates: [],
+    missing_information: ['call_availability'],
+    next_state: 'waiting_user',
+    reason_code: 'CALL_AVAILABILITY_REQUIRED',
+    confidence: 1,
+    retrieval_used: null,
+  }
+}
+
 /**
  * Last-resort continuity after Agent A prose and effects have both crossed
  * their dedicated repair budget. It reuses the fact-free technical reply and
@@ -66,7 +151,10 @@ export function technicalContinuityFallback(claimed: ClaimedTurn): Decision {
   const responseType = claimed.policy.allowed_response_types.includes('commercial_reply')
     ? 'commercial_reply'
     : 'technical_fallback'
-  return applyDecisionPolicy(technicalFallback(responseType), claimed)
+  return applyDecisionPolicy(
+    callOperationalContinuityFallback(claimed) ?? technicalFallback(responseType),
+    claimed,
+  )
 }
 
 /** Customer-safe clarification after Agent A exhausts its one correction. */
@@ -77,6 +165,8 @@ export function validationExhaustedNotice(
     readonly failure_codes: readonly string[]
   },
 ): Decision {
+  const callContinuity = recovery ? callOperationalContinuityFallback(recovery.claimed) : null
+  if (callContinuity !== null) return callContinuity
   const paymentActionRejected = recovery?.failure_codes.some((code) => (
     code.includes('ACTION_NOT_AUTHORIZED:send_payment_link')
     || code.includes('PLAN_NOT_SELECTED:payment_plan')
@@ -291,6 +381,8 @@ export function modelUnavailableFallback(
   if (claimed.deterministic_route === 'call_phone_required') {
     return callPhoneRequiredFallback(claimed)
   }
+  const callContinuity = callOperationalContinuityFallback(claimed)
+  if (callContinuity !== null) return callContinuity
   const allowed = claimed.policy.allowed_response_types
   if (!allowed.includes('commercial_reply')) return technicalFallback()
   const guidance = catalogGuidanceForTurn(claimed)
@@ -398,6 +490,8 @@ function canonicalPriceLineV1(claimed: ClaimedTurn): string | null {
 }
 
 function allowedTextFallback(claimed: ClaimedTurn, reasonCode: string): Decision {
+  const callContinuity = callOperationalContinuityFallback(claimed)
+  if (callContinuity !== null) return callContinuity
   const allowed = claimed.policy.allowed_response_types
   const responseType = allowed.includes('technical_fallback')
     ? 'technical_fallback'

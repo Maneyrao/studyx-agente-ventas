@@ -677,7 +677,8 @@ export function buildAgentAContextV1(
   const callExecutionNextStep = mayRequestCallNow
     ? 'dispatch_authorized' as const
     : callIntentRemainsActive
-      && effectiveCallPreference === 'call' && effectiveCallOfferStatus === 'accepted'
+      && (currentCallAuthorization
+        || (effectiveCallPreference === 'call' && effectiveCallOfferStatus === 'accepted'))
       && requiredContactFields.call.length > 0
       ? 'collect_contact_details' as const
       : callIntentRemainsActive && awaitingCallAvailability

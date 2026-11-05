@@ -217,6 +217,52 @@ export function whatsappReplyTargetLatencyMs(externalMessageId: string): number 
     + stableJitterMs(externalMessageId, WHATSAPP_REPLY_LATENCY_RANGE_MS)
 }
 
+const CALL_PROFILE_FIELDS_V1 = ['nombre', 'apellido', 'correo', 'telefono'] as const
+type CallProfileFieldV1 = typeof CALL_PROFILE_FIELDS_V1[number]
+
+function isCallProfileFieldV1(value: string): value is CallProfileFieldV1 {
+  return (CALL_PROFILE_FIELDS_V1 as readonly string[]).includes(value)
+}
+
+/**
+ * A call-specific operational fallback must keep the requested call durable
+ * without materializing the rejected call effect. The next customer message
+ * (contact data or availability) can then continue the same workflow.
+ */
+function callContinuityAgentTurnV2(decision: Decision): AgentATurnCommitV2 | null {
+  if (decision.reason_code !== 'CALL_CONTACT_REQUIRED'
+    && decision.reason_code !== 'CALL_PHONE_REQUIRED'
+    && decision.reason_code !== 'CALL_AVAILABILITY_REQUIRED') return null
+  if (typeof decision.response !== 'string' || decision.response.trim() === '') return null
+
+  const requestedFields = decision.missing_information.filter(isCallProfileFieldV1)
+  return {
+    schema_version: 2,
+    conversation_only: true,
+    proposal: {
+      schema_version: 1,
+      move: {
+        schema_version: 1,
+        move: 'request_call',
+        secondary_moves: [],
+        vetoes: [],
+        confidence: 1,
+      },
+      response: { messages: [decision.response], call_offer: null },
+      proposed_action: { type: 'none' },
+      course_mentions: [],
+      used_fact_ids: [],
+      used_memory_ids: [],
+      memory_candidates: [],
+      profile_updates: [],
+      profile_requests: requestedFields.length > 0
+        ? [{ message_index: 0, fields: requestedFields, purpose: 'call', mode: 'collect' }]
+        : [],
+      repair_of: null,
+    },
+  }
+}
+
 const DecisionExit = new Autonomous.Exit({
   name: 'turn_decision',
   description: 'Return exactly one safe, structured decision for the current sales turn.',
@@ -2308,6 +2354,19 @@ export const processInboundTurn = new Workflow({
     if (decisionWasModel) decision = constrainModelToAdvisory(decision, owned)
     decision = applyDecisionPolicy(decision, owned)
 
+    const initialCallContinuity = agentTurnV2Commit === null && pipelineCommit === null
+      ? callContinuityAgentTurnV2(decision)
+      : null
+    if (initialCallContinuity !== null) {
+      agentTurnV2Commit = initialCallContinuity
+      pipelineFailureDecision = null
+      pipelineMemoryCandidates = []
+      decision = pipelinePlaceholder()
+      decisionProvider = 'botpress'
+      decisionModel = 'policy:call-operational-continuity'
+      pipelinePromptVersion = AGENT_A_BRAIN_PROMPT_VERSION
+    }
+
     if (Number.isFinite(occurredAtMs)) {
       timings.event_to_decision_ms = Math.max(0, Date.now() - occurredAtMs)
     }
@@ -2894,6 +2953,12 @@ export const processInboundTurn = new Workflow({
           decision = technicalContinuityFallback(owned)
           decisionProvider = 'botpress'
           decisionModel = 'policy:agent-a-authorized-floor-unavailable'
+          const rejectedCallContinuity = callContinuityAgentTurnV2(decision)
+          if (rejectedCallContinuity !== null) {
+            agentTurnV2Commit = rejectedCallContinuity
+            decision = pipelinePlaceholder()
+            decisionModel = 'policy:call-operational-continuity'
+          }
           if (currentBackendRejection.rejections.some(reason => reason.subject === 'call_consent_revoked')) {
             agentTurnV2Commit = {
               schema_version: 2, conversation_only: true, operational_continuity: 'call_consent_revoked',
