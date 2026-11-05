@@ -50,8 +50,12 @@ export interface GoldenTurnObservationV1 {
       readonly bonusCount: number;
       readonly paidCourse: string | null;
       readonly bonusCourses: readonly string[];
+      readonly cycleId?: string | null;
+      readonly offerVersion?: number | null;
     };
   };
+  /** Offering codes whose official PDF was delivered as a document this turn. */
+  readonly programDocuments?: readonly string[];
   readonly deliveredLinks: readonly string[];
   readonly authorizedFactIds: readonly string[];
   readonly authorizedFacts: readonly { readonly id: string; readonly kind: string; readonly value: string }[];
@@ -378,6 +382,48 @@ export function evaluateHardRules(
         add(failures, 'CURRENT_PRICE_OBJECTION_NOT_RECORDED',
           'La objeción clara del turno actual no aparece entre los sourceMessageIds nuevos.');
       }
+    }
+    if (rule.type === 'bonus_motive_current_message' && actualAction === 'offer_course_bonus') {
+      const motive = observation.proposedAction?.motive as { kind?: unknown; quote?: unknown } | undefined;
+      const quote = typeof motive?.quote === 'string' ? motive.quote : '';
+      if (!quote.trim() || !includesText(turn.customer, quote)) {
+        add(failures, 'BONUS_MOTIVE_NOT_IN_CURRENT_MESSAGE', `motive.quote ${JSON.stringify(quote)} no está en el mensaje actual.`);
+      }
+      const KIND_MOVES: Record<string, readonly string[]> = { price_objection: ['price_objection'],
+        better_promotion_request: ['explicit_promotion_request'], purchase_decline: ['decline_purchase'],
+        promotion_rejection: ['price_objection', 'explicit_promotion_request', 'decline_purchase'] };
+      const kindMoves = KIND_MOVES[String(motive?.kind)] ?? [];
+      if (!kindMoves.some(move => observedMoves.includes(move))) {
+        add(failures, 'BONUS_MOTIVE_MOVE_INCOHERENT', `motive.kind ${String(motive?.kind)} vs moves ${observedMoves.join('+')}.`);
+      }
+    }
+    if (rule.type === 'package_unchanged' && previousObservation) {
+      const before = previousObservation.state.promotion;
+      const after = observation.state.promotion;
+      const same = before.status === after.status && before.paidCourse === after.paidCourse
+        && before.bonusCount === after.bonusCount && before.bonusCourses.join() === after.bonusCourses.join()
+        && (before.cycleId ?? null) === (after.cycleId ?? null) && (before.offerVersion ?? null) === (after.offerVersion ?? null);
+      if (!same) add(failures, 'PACKAGE_CHANGED', `Antes ${JSON.stringify(before)}; después ${JSON.stringify(after)}.`);
+    }
+    if (rule.type === 'no_new_bonus' && previousObservation
+      && observation.state.promotion.bonusCount > previousObservation.state.promotion.bonusCount) {
+      add(failures, 'NEW_BONUS_UNEXPECTED', `Antes ${previousObservation.state.promotion.bonusCount}; ahora ${observation.state.promotion.bonusCount}.`);
+    }
+    if (rule.type === 'program_document_sent' && !(observation.programDocuments ?? []).includes(rule.value)) {
+      add(failures, 'PROGRAM_DOCUMENT_MISSING', `Falta el PDF de ${rule.value}; enviados ${(observation.programDocuments ?? []).join('|') || 'ninguno'}.`);
+    }
+    if (rule.type === 'no_program_document' && (observation.programDocuments ?? []).length > 0) {
+      add(failures, 'PROGRAM_DOCUMENT_UNEXPECTED', `Se envió ${(observation.programDocuments ?? []).join('|')}.`);
+    }
+    if (rule.type === 'no_link_delivered' && observation.deliveredLinks.length > 0) {
+      add(failures, 'LINK_UNEXPECTED', 'Se entregó un link de pago sin plan elegido.');
+    }
+    if (rule.type === 'link_plan_in' && observation.proposedAction?.type === 'send_payment_link'
+      && !rule.values.includes(String(observation.proposedAction.payment_plan))) {
+      add(failures, 'LINK_PLAN_MISMATCH', `Plan ${String(observation.proposedAction.payment_plan)}; esperado ${rule.values.join('|')}.`);
+    }
+    if (rule.type === 'no_prefab_cta' && /Con cuál plan te gustaría avanzar\?|Así te cuento todo sobre ese|Hubo un problema|Con cuál quieres avanzar\?|Cuál prefieres\?/u.test(observation.response)) {
+      add(failures, 'PREFAB_CTA_PRESENT', 'La respuesta contiene un CTA prefabricado retirado.');
     }
     if (rule.type === 'selected_course_equals'
       && observation.state.selectedCourse !== rule.value) {

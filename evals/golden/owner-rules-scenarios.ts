@@ -14,10 +14,10 @@ const gabi = (start: number, end: number, contains: string): AuthorityReference 
 const owner = (start: number, end: number, contains: string): AuthorityReference => ({
   file: 'AGENTS.md', start, end, contains,
 });
-const permission = owner(154, 154, 'evidencia de precio');
+const permission = owner(154, 154, 'motivo del mensaje actual');
 const limits = owner(157, 157, 'máximo 3, uno por turno');
 const affinity = owner(161, 161, 'afinidad como pertenencia');
-const yesIsGuide = owner(163, 163, 'guía del prompt, no un permiso');
+const yesIsGuide = owner(163, 163, 'autoriza sólo si el turno anterior');
 const retention = owner(164, 164, 'Retención');
 const effectsApart = owner(165, 165, 'Respuesta y efectos independientes');
 const noForcedRules = owner(168, 168, 'fuerce llamadas o preguntas de precio');
@@ -517,5 +517,270 @@ OWNER_PROMOTION_MODE_REPLAY_CASES_MUTABLE.push({
     }),
   ],
 });
+
+/**
+ * Cases 29-41 (owner decision 2026-11-04, AGENTS.md lines 204-210): bonus by current-message motive, turn intent,
+ * payment consultation, official programme PDFs and Real Estate. Structural expectations (move, action, effects,
+ * package before/after, document part) plus a few text rules; strategy and wording stay the model's.
+ */
+const mdSet = affinitySet('marketing_digital');
+const intentRef = owner(204, 204, 'Intención del mensaje actual');
+const motiveRef = owner(205, 205, 'Motivo de bonificación');
+const paymentRef = owner(207, 207, 'Consulta de pago');
+const noPrefabRef = owner(208, 208, 'Sin CTA prefabricados');
+const programRef = owner(209, 209, 'Programa PDF');
+const realEstateRef = owner(210, 210, 'Real Estate');
+const intentMoves = [...marketingMoves, 'price_objection', 'explicit_promotion_request', 'request_course_program'];
+const noPrefab = { type: 'no_prefab_cta' } as const;
+const mdBase = (id: string, customer: string, override: Partial<GoldenTurnV1> = {}) => turn(id, customer, {
+  expected: { move: intentMoves, action: ['none'], state: {} },
+  authority: [intentRef, noPrefabRef, noForcedRules],
+  hard: [{ type: 'workflow_committed' }, noPrefab, { type: 'no_call_offer' }, ...noBeca],
+  ...override,
+});
+const mdInterest = (id = 'interest') => mdBase(id, 'Hola, quiero hacer el curso de Marketing Digital', {
+  must: ['Identificar Marketing Digital y descubrir lo justo con una sola pregunta.'],
+  mustNot: ['No ofrecer una llamada, no pedir inscripción ni plan, no ofrecer ningún bonificado.'],
+  expected: { move: intentMoves, action: ['none'], state: { promotion: { status: [null, 'none'], bonusCount: [0] } } },
+  hard: [{ type: 'workflow_committed' }, noPrefab, { type: 'selected_course_equals', value: 'marketing_digital' },
+    { type: 'no_call_offer' }, { type: 'question_count_at_most', value: 1 }, ...noBeca],
+});
+/** «es caro»-style turn: the model may offer (never required); when it does, the motive quotes this message. */
+const mdObjection = (id: string, customer: string, counts: readonly number[]) => mdBase(id, customer, {
+  must: ['Trabajar el valor ligado a su objetivo; el modelo decide si ofrece ya un bonificado afín (con la cita de este mensaje como motivo) o primero pregunta.'],
+  mustNot: ['No bajar el precio, no ofrecer más de un bonificado en el turno, no ofrecer una llamada, no mencionar beca ni 699.'],
+  authority: [motiveRef, permission, limits, noPrefabRef],
+  expected: { move: intentMoves, action: ['none', 'offer_course_bonus'], state: {
+    promotion: { status: ['offer_available', null, 'none'], bonusCount: counts, paidCourse: ['marketing_digital', null] } } },
+  hard: [{ type: 'workflow_committed' }, noPrefab, { type: 'course_bonus_preconditions' }, { type: 'bonus_motive_current_message' },
+    { type: 'bonus_in_when_offered', values: mdSet }, { type: 'offered_bonus_named' },
+    { type: 'promotion_bonus_count_at_most', value: 3 }, { type: 'no_call_offer' }, ...noBeca],
+});
+const programMoves = [...intentMoves, 'ask_course_information'];
+
+OWNER_PROMOTION_MODE_REPLAY_CASES_MUTABLE.push(
+  {
+    id: '29_current_motive_first_bonus_20261104',
+    title: '«es caro» tras el precio: la primera bonificación sale con motivo price_objection citado del mensaje actual',
+    turns: [
+      mdInterest(),
+      mdBase('informative_price', 'cuánto sale?', {
+        must: ['Dar el precio con los planes canónicos (USD 360; 12 × USD 30, 6 × USD 60 o un pago) sin promoción ni bonificado.'],
+        mustNot: ['No tratarla como objeción, no ofrecer ni insinuar bonificado, no cerrar con un CTA fijo.'],
+        authority: [intentRef, noPrefabRef, owner(195, 195, 'Consulta de precio sola')],
+        expected: { move: intentMoves, action: ['none'], state: { promotion: { status: [null, 'none'], bonusCount: [0] } } },
+        hard: [{ type: 'workflow_committed' }, noPrefab, { type: 'contains', value: '360' }, { type: 'no_call_offer' }, ...noBeca],
+      }),
+      mdObjection('expensive', 'es caro', [0, 1]),
+    ],
+  },
+  {
+    id: '30_bonus_then_payment_question_20261104',
+    title: 'Tras la bonificación, «¿cómo sería el pago?» es una consulta de pago: planes canónicos, sin otro curso, paquete igual, sin link',
+    turns: [
+      mdInterest(),
+      mdObjection('expensive', 'es caro, no me alcanza', [0, 1]),
+      mdBase('payment_question', '¿cómo sería el pago?', {
+        must: ['Explicar sólo los planes canónicos (12 cuotas de USD 30, 6 de USD 60 o un pago de USD 360), conservando el curso y la promo ya ofrecida; a lo sumo una pregunta útil.'],
+        mustNot: ['No ofrecer otro curso ni bonificado, no elegir plan por el cliente, no mandar link, no ofrecer una llamada.'],
+        authority: [paymentRef, intentRef, noPrefabRef, motiveRef],
+        expected: { move: ['ask_payment_options'], action: ['none'], state: { plan: [null] } },
+        hard: [{ type: 'workflow_committed' }, noPrefab, { type: 'package_unchanged' }, { type: 'no_link_delivered' },
+          { type: 'contains', value: 'USD 30' }, { type: 'question_count_at_most', value: 1 }, { type: 'no_call_offer' }, ...noBeca],
+      }),
+    ],
+  },
+  {
+    id: '31_second_step_new_complaint_20261104',
+    title: '«igual sigue siendo caro» tras una bonificación: el modelo puede proponer el 2.º paso (permitido, no obligatorio) con motivo del mensaje actual',
+    turns: [
+      mdInterest(),
+      mdObjection('expensive', 'es caro', [0, 1]),
+      mdObjection('still_expensive', 'igual sigue siendo caro', [0, 1, 2]),
+    ],
+  },
+  {
+    id: '32_buying_signal_no_new_course_20261104',
+    title: '«dale, quiero pagar» es señal de compra, no motivo: avanza al checkout sin sumar cursos',
+    turns: [
+      mdInterest(),
+      mdObjection('expensive', 'es caro', [0, 1]),
+      mdBase('buying_signal', 'dale, quiero pagar', {
+        must: ['Avanzar al checkout: preguntar el plan de pago o pedir los datos que faltan, una sola cosa a la vez.'],
+        mustNot: ['No ofrecer otro curso ni bonificado, no volver a vender beneficios, no ofrecer una llamada.'],
+        authority: [motiveRef, intentRef, noInvasion, noPrefabRef],
+        expected: { move: [...replayMoves, 'select_payment_plan', 'ask_payment_options'], action: ['none', 'accept_promotion', 'send_payment_link'], state: {} },
+        hard: [{ type: 'workflow_committed' }, noPrefab, { type: 'no_new_bonus' }, { type: 'no_call_offer' }, ...noBeca],
+      }),
+    ],
+  },
+  {
+    id: '33_payment_question_without_plan_20261104',
+    title: 'Pregunta de pago sin plan: presenta las opciones canónicas, no elige plan, no manda link',
+    turns: [
+      mdInterest(),
+      mdBase('how_to_pay', 'cómo puedo pagarlo?', {
+        must: ['Presentar los tres planes canónicos y preguntar cuál le conviene, sin elegir por él.'],
+        mustNot: ['No elegir un plan, no mandar link, no ofrecer bonificado ni llamada.'],
+        authority: [paymentRef, intentRef, noPrefabRef],
+        expected: { move: ['ask_payment_options'], action: ['none'], state: { plan: [null], promotion: { status: [null, 'none'], bonusCount: [0] } } },
+        hard: [{ type: 'workflow_committed' }, noPrefab, { type: 'no_link_delivered' }, { type: 'contains', value: 'USD 30' },
+          { type: 'question_count_at_most', value: 1 }, { type: 'no_call_offer' }, ...noBeca],
+      }),
+    ],
+  },
+  {
+    id: '34_explicit_plan_only_that_link_20261104',
+    title: 'Plan explícito («12 cuotas»): sólo el link de ese plan, nunca otro',
+    turns: [
+      mdInterest(),
+      mdBase('explicit_plan', 'quiero pagarlo en 12 cuotas', {
+        must: ['Registrar el plan de 12 cuotas y avanzar: pedir los datos que faltan o enviar el link de ESE plan.'],
+        mustNot: ['No ofrecer otro plan, otro curso ni bonificado, no mandar el link de otro plan.'],
+        authority: [paymentRef, intentRef, noPrefabRef],
+        expected: { move: [...replayMoves, 'select_payment_plan', 'ask_payment_options'], action: ['none', 'send_payment_link'],
+          state: { plan: ['monthly_12'], promotion: { status: [null, 'none'], bonusCount: [0] } } },
+        hard: [{ type: 'workflow_committed' }, noPrefab, { type: 'link_plan_in', values: ['monthly_12'] }, { type: 'no_call_offer' }, ...noBeca],
+      }),
+    ],
+  },
+  {
+    id: '35_program_pdf_request_20261104',
+    title: '«me pasás el temario?» (Marketing Digital): send_course_program y la parte documento presente',
+    turns: [
+      mdInterest(),
+      mdBase('syllabus_request', 'me pasás el temario?', {
+        must: ['Presentar el programa con una introducción corta y humana; el PDF es la respuesta, no un resumen que lo reemplace; sin escribir ninguna URL.'],
+        mustNot: ['No resumir el temario en lugar de enviar el PDF, no escribir enlaces, no afirmar que ya llegó, no ofrecer una llamada.'],
+        authority: [programRef, intentRef, noPrefabRef],
+        expected: { move: ['request_course_program'], action: ['send_course_program'], state: {} },
+        hard: [{ type: 'workflow_committed' }, noPrefab, { type: 'program_document_sent', value: 'marketing_digital' },
+          { type: 'not_contains', value: 'http' }, { type: 'question_count_at_most', value: 1 }, { type: 'no_call_offer' }, ...noBeca],
+      }),
+    ],
+  },
+  {
+    id: '36_program_pdf_second_request_20261104',
+    title: 'Segundo pedido del mismo PDF: sin segundo documento y con respuesta natural',
+    turns: [
+      mdInterest(),
+      mdBase('syllabus_request', 'me pasás el temario?', {
+        expected: { move: ['request_course_program'], action: ['send_course_program'], state: {} },
+        authority: [programRef, intentRef, noPrefabRef],
+        hard: [{ type: 'workflow_committed' }, noPrefab, { type: 'program_document_sent', value: 'marketing_digital' }, { type: 'no_call_offer' }, ...noBeca],
+      }),
+      mdBase('syllabus_again', 'me lo mandás de nuevo?', {
+        must: ['Decir con naturalidad que ya se lo compartió y ofrecer repasarlo juntos o resolver una duda, sin reenviarlo.'],
+        mustNot: ['No afirmar que lo reenvía ni prometer un nuevo envío, no repetir literalmente la respuesta anterior, no ofrecer una llamada.'],
+        authority: [programRef, intentRef, noPrefabRef],
+        expected: { move: programMoves, action: ['none'], state: {} },
+        hard: [{ type: 'workflow_committed' }, noPrefab, { type: 'no_program_document' }, { type: 'not_repeat_previous_reply' },
+          { type: 'no_call_offer' }, ...noBeca],
+      }),
+    ],
+  },
+  {
+    id: '37_three_bonuses_never_fourth_20261104',
+    title: 'Tres bonificaciones como máximo: ante nuevas quejas y un pedido de «otro curso más», nunca una cuarta',
+    turns: [
+      mdInterest(),
+      mdObjection('complaint_1', 'es caro', [0, 1]),
+      mdObjection('complaint_2', 'igual sigue siendo caro', [0, 1, 2]),
+      mdObjection('complaint_3', 'sigue siendo mucho para mí', [0, 1, 2, 3]),
+      { ...mdObjection('fourth_request', 'y otro curso más de regalo también?', [0, 1, 2, 3]), negotiationProbe: 'fourth_bonus_request' },
+    ],
+  },
+  {
+    id: '38_rejected_actions_conversational_20261104',
+    title: 'Acción rechazada (PDF sin programa oficial, link sin plan): respuesta conversacional, nunca silencio ni afirmación del efecto',
+    turns: [
+      mdBase('other_course', 'Hola, quiero el curso de Excel Integral', {
+        must: ['Identificar Excel Integral y descubrir lo justo.'],
+        hard: [{ type: 'workflow_committed' }, noPrefab, { type: 'no_call_offer' }, ...noBeca],
+      }),
+      mdBase('syllabus_unavailable', 'me pasás el temario de Excel Integral?', {
+        must: ['Responder con naturalidad con lo que sí se sabe del curso; si no puede enviar un PDF, no inventar que lo envía.'],
+        mustNot: ['No afirmar que envía o adjunta un documento, no escribir enlaces, no quedar en silencio.'],
+        authority: [programRef, effectsApart, noPrefabRef],
+        expected: { move: programMoves, action: ['none'], state: {} },
+        hard: [{ type: 'workflow_committed' }, noPrefab, { type: 'no_program_document' }, { type: 'not_contains', value: 'http' },
+          { type: 'no_call_offer' }, ...noBeca],
+      }),
+      mdBase('link_without_plan', 'mandame el link de pago', {
+        must: ['Pedir con naturalidad el plan (o los datos que falten) antes del link.'],
+        mustNot: ['No afirmar que el link fue enviado, no elegir plan por el cliente.'],
+        authority: [paymentRef, effectsApart, noPrefabRef],
+        expected: { move: [...replayMoves, 'select_payment_plan', 'ask_payment_options'], action: ['none'], state: { plan: [null] } },
+        hard: [{ type: 'workflow_committed' }, noPrefab, { type: 'no_link_delivered' }, { type: 'no_call_offer' }, ...noBeca],
+      }),
+    ],
+  },
+  {
+    id: '39_no_repeated_cta_20261104',
+    title: 'Dos turnos seguidos: ni el mismo CTA ni la misma explicación repetidos',
+    turns: [
+      mdInterest(),
+      mdBase('duration', 'y cuánto dura?', {
+        must: ['Responder con los hechos autorizados de duración; a lo sumo una pregunta.'],
+        authority: [intentRef, noInvasion, noPrefabRef],
+        hard: [{ type: 'workflow_committed' }, noPrefab, { type: 'question_count_at_most', value: 1 }, { type: 'no_call_offer' }, ...noBeca],
+      }),
+      mdBase('includes', 'ok, y qué más incluye?', {
+        must: ['Aportar información nueva, no repetir la explicación ni el cierre del turno anterior.'],
+        mustNot: ['No repetir el mismo cierre o invitación a inscribirse del turno anterior, no ofrecer una llamada.'],
+        authority: [intentRef, noInvasion, noPrefabRef],
+        hard: [{ type: 'workflow_committed' }, noPrefab, { type: 'not_repeat_previous_reply' }, { type: 'no_consecutive_enrollment_ask' },
+          { type: 'question_count_at_most', value: 1 }, { type: 'no_call_offer' }, ...noBeca],
+      }),
+    ],
+  },
+  {
+    id: '40_real_estate_20261104',
+    title: '«quiero algo de real estate»: reconoce Real Estate, informa con el programa oficial y manda el PDF si lo piden',
+    turns: [
+      mdBase('real_estate_interest', 'Hola, quiero algo de real estate', {
+        must: ['Reconocer el curso Real Estate (curso activo del catálogo) y descubrir lo justo con una sola pregunta.'],
+        mustNot: ['No inventar contenidos, no prometer licencia, empleo ni ingresos, no ofrecer una llamada.'],
+        authority: [realEstateRef, intentRef, noPrefabRef],
+        expected: { move: intentMoves, action: ['none'], state: {} },
+        hard: [{ type: 'workflow_committed' }, noPrefab, { type: 'contains', value: 'Real Estate' }, { type: 'question_count_at_most', value: 1 },
+          { type: 'no_call_offer' }, ...noBeca],
+      }),
+      mdBase('real_estate_modules', 'qué módulos tiene?', {
+        must: ['Responder con los módulos del programa oficial de Real Estate (hechos autorizados), sin agregar contenidos inventados.'],
+        mustNot: ['No prometer licencia estatal, empleo ni ingresos; si menciona la licencia, aclarar que el curso da la base pero no la reemplaza.'],
+        authority: [realEstateRef, owner(178, 178, 'licencia estatal'), noPrefabRef],
+        expected: { move: programMoves, action: ['none', 'send_course_program'], state: {} },
+        hard: [{ type: 'workflow_committed' }, noPrefab, { type: 'no_call_offer' }, ...noBeca],
+      }),
+      mdBase('real_estate_pdf', 'me pasás el programa en PDF?', {
+        must: ['Presentar el programa con una introducción corta; el PDF es la respuesta.'],
+        mustNot: ['No resumir el programa en lugar de enviarlo, no escribir enlaces, no ofrecer una llamada.'],
+        authority: [programRef, realEstateRef, noPrefabRef],
+        expected: { move: ['request_course_program'], action: ['send_course_program'], state: {} },
+        hard: [{ type: 'workflow_committed' }, noPrefab, { type: 'program_document_sent', value: 'real_estate' },
+          { type: 'not_contains', value: 'http' }, { type: 'no_call_offer' }, ...noBeca],
+      }),
+    ],
+  },
+  {
+    id: '41_real_trace_a96de4bf_20261104',
+    title: 'Traza real a96de4bf: tras la primera bonificación, «osea me regalas otro curso?» + «dos por uno?» aclara la promo vigente y no suma otro curso',
+    reconstructed: true,
+    note: 'El lote de dos mensajes se envía como un único texto con salto de línea.',
+    turns: [
+      mdInterest(),
+      mdObjection('expensive', 'es caro', [0, 1]),
+      mdBase('clarification', 'osea me regalas otro curso?\ndos por uno?', {
+        must: ['Aclarar la promo vigente (qué incluye lo ya ofrecido, el 2×1 actual) con naturalidad y a lo sumo una pregunta útil.'],
+        mustNot: ['No ofrecer ni nombrar otro curso bonificado nuevo, no tratarlo como una queja de precio, no ofrecer una llamada.'],
+        authority: [intentRef, motiveRef, noPrefabRef],
+        expected: { move: ['ask_course_information', 'unknown', 'continue_by_chat'], action: ['none'], state: {} },
+        hard: [{ type: 'workflow_committed' }, noPrefab, { type: 'package_unchanged' }, { type: 'no_new_bonus' },
+          { type: 'question_count_at_most', value: 1 }, { type: 'no_call_offer' }, ...noBeca],
+      }),
+    ],
+  },
+);
 
 export const OWNER_PROMOTION_MODE_REPLAY_CASES: readonly GoldenCaseV1[] = OWNER_PROMOTION_MODE_REPLAY_CASES_MUTABLE;

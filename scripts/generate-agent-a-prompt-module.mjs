@@ -10,12 +10,12 @@ const outputPaths = [
 ];
 // v109: v108 plus the 2026-11-04 bonus motive rules (motive from the current message; owner-authorized edit).
 // v108: v107 plus the owner's 03-04/11 price guidance moved from retired runtime rules to model guidance (owner-authorized edit)
-const expectedSha256 = '743f153dc982d8681de12d9c9b2bf34f019997d028d9ddb2c0b5fa1cd6330323';
+const expectedSha256 = 'a1a6b2874d025820ae727909462cb063adfac3db58608f74a75152ed7eecc142';
 const prompt = readFileSync(sourcePath, 'utf8');
 const sha256 = createHash('sha256').update(prompt).digest('hex');
 const lineCount = prompt.match(/\n/g)?.length ?? 0;
 
-if (lineCount !== 212) {
+if (lineCount !== 211) {
   throw new Error(`AGENT_A_CANONICAL_PROMPT_LINE_COUNT:${lineCount}`);
 }
 if (sha256 !== expectedSha256) {

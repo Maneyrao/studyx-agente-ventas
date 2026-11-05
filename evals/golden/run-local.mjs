@@ -147,6 +147,10 @@ const environment = {
   TEST_DATABASE_URL: databaseUrl,
   STUDYX_EVAL_API_BASE_URL: apiBaseUrl,
   STUDYX_GOLDEN_LIVE: 'true',
+  // Official-programme PDFs: the harness records the `file` part instead of sending it. Dummy https
+  // base (never fetched) and the emulator channel allowed for documents, local evaluation only.
+  STUDYX_PUBLIC_ASSET_BASE_URL: 'https://assets.golden.invalid',
+  STUDYX_COURSE_PROGRAM_CHANNELS: 'whatsapp,emulator',
   STUDYX_GOLDEN_EVALUATED_SHA: evaluatedSha,
   STUDYX_GOLDEN_REUSE_OBSERVATIONS: reuseObservations ? 'true' : 'false',
   STUDYX_GOLDEN_DEEPSEEK_MODEL: 'deepseek-v4-flash',
@@ -244,6 +248,10 @@ for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => {
 try {
   command('bash', [bootstrapScript, POSTGRES_PORT, '--seed'], { env: environment });
   ownsPostgres = true;
+  // Real Estate exists only in the database: add it to THIS disposable runner database (never any other).
+  command('node', ['scripts/upsert-real-estate-offering.mjs', '--apply'], {
+    env: { ...environment, STUDYX_CATALOG_TARGET_URL: databaseUrl },
+  });
   backend = spawn('npx', ['next', 'dev', '--hostname', '127.0.0.1', '--port', BACKEND_PORT], {
     env: environment,
     stdio: ['ignore', 'inherit', 'inherit'],

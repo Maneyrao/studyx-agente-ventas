@@ -63,7 +63,21 @@ export type HardRuleV1 =
   | { readonly type: 'early_call_previously_recorded' }
   | { readonly type: 'rule_outcomes_recorded' }
   | { readonly type: 'current_course_facts_present'; readonly value: string }
-  | { readonly type: 'selected_course_equals'; readonly value: string };
+  | { readonly type: 'selected_course_equals'; readonly value: string }
+  /** An executed offer_course_bonus must quote the CURRENT customer message (motive.quote literal, kind coherent with the move). */
+  | { readonly type: 'bonus_motive_current_message' }
+  /** Same cycle, offer_version, paid course, bonus count and bonus courses as the previous turn. */
+  | { readonly type: 'package_unchanged' }
+  /** No bonus course was added compared with the previous turn. */
+  | { readonly type: 'no_new_bonus' }
+  /** The official PDF of this offering was handed to the delivery client this turn. */
+  | { readonly type: 'program_document_sent'; readonly value: string }
+  | { readonly type: 'no_program_document' }
+  | { readonly type: 'no_link_delivered' }
+  /** A proposed send_payment_link carries exactly one of these plans. */
+  | { readonly type: 'link_plan_in'; readonly values: readonly string[] }
+  /** No removed prefab CTA / technical text of the live path. */
+  | { readonly type: 'no_prefab_cta' };
 
 export interface GoldenTurnV1 {
   readonly negotiationProbe?: 'fourth_bonus_request' | 'paid_course_change';

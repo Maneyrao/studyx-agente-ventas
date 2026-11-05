@@ -1,5 +1,5 @@
 import type { DbClient } from '@/lib/db/types';
-import { COURSE_PROGRAM_ASSETS_V1, courseProgramUrlV1 } from '@/shared/catalog/course-programs';
+import { COURSE_PROGRAM_ASSETS_V1, courseProgramChannelsV1, courseProgramUrlV1 } from '@/shared/catalog/course-programs';
 
 /**
  * Programme PDF capability (owner decision 2026-11-04). Data only; wording is
@@ -21,7 +21,7 @@ export async function readCourseProgramsCapabilityV1(input: {
   const env = input.env ?? process.env;
   const [conversation] = await deps.db<Array<{ channel: string }>>`
     SELECT channel FROM conversations WHERE id=${input.conversation_id}::uuid`;
-  if (!conversation || conversation.channel !== 'whatsapp') return null;
+  if (!conversation || !courseProgramChannelsV1(env).includes(conversation.channel)) return null;
   const sent = await deps.db<Array<{ offering_code: string }>>`
     SELECT offering_code FROM course_program_deliveries
     WHERE conversation_id=${input.conversation_id}::uuid AND status IN ('pending','submitted')`;

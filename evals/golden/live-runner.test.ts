@@ -54,6 +54,7 @@ import {
 } from './runner-support';
 import { GOLDEN_BASE_SHA, GOLDEN_CASES, type GoldenCaseV1 } from './scenarios';
 import { selectGoldenCasesV1 } from './run-config.mjs';
+import { COURSE_PROGRAM_ASSETS_V1 } from '../../src/shared/catalog/course-programs';
 import { OWNER_GOLDEN_CASES, OWNER_PROMOTION_MODE_REPLAY_CASES, OWNER_REPLAY_CASES } from './owner-rules-scenarios';
 
 const live = process.env.STUDYX_GOLDEN_LIVE === 'true' ? describe : describe.skip;
@@ -75,12 +76,15 @@ const evaluatedSha = process.env.STUDYX_GOLDEN_EVALUATED_SHA ?? '';
 const resultStem = process.env.STUDYX_GOLDEN_RESULT_STEM ?? 'baseline-v9';
 
 type Sql = ReturnType<typeof openLocalTestDatabase>;
+const PROGRAM_CODE_BY_SLUG = new Map([...COURSE_PROGRAM_ASSETS_V1.values()].map(asset => [asset.slug, asset.offering_code]));
 
 interface PromotionEvidenceV1 {
   readonly status: string | null;
   readonly bonusCount: number;
   readonly paidCourse: string | null;
   readonly bonusCourses: readonly string[];
+  readonly cycleId?: string | null;
+  readonly offerVersion?: number | null;
 }
 
 interface TurnResultV1 {
@@ -206,9 +210,9 @@ async function acknowledgeDelivery(evidence: WorkflowTurnEvidenceV1): Promise<vo
 
 async function promotionEvidence(externalConversationId: string): Promise<PromotionEvidenceV1> {
   const rows = await db<Array<{
-    id: string; status: string; paid_code: string; created_at: Date;
+    id: string; status: string; paid_code: string; created_at: Date; promotion_cycle_id: string | null; offer_version: number | null;
   }>>`
-    SELECT offer.id, offer.status, paid.code AS paid_code, offer.created_at
+    SELECT offer.id, offer.status, paid.code AS paid_code, offer.created_at, offer.promotion_cycle_id, offer.offer_version
     FROM channel_threads thread
     JOIN conversations conversation ON conversation.channel_thread_id=thread.id
     JOIN promotion_offers offer ON offer.conversation_id=conversation.id
@@ -227,6 +231,8 @@ async function promotionEvidence(externalConversationId: string): Promise<Promot
     bonusCount: bonuses.length,
     paidCourse: offer.paid_code,
     bonusCourses: bonuses.map((bonus) => bonus.offering_code_snapshot),
+    cycleId: offer.promotion_cycle_id,
+    offerVersion: offer.offer_version,
   };
 }
 
@@ -352,6 +358,9 @@ async function observeTurn(input: {
       promotion,
     },
     deliveredLinks: persisted.deliveredLinks,
+    programDocuments: input.evidence.documentMessages
+      .map(document => /\/programas\/([a-z0-9-]+)\.pdf$/u.exec(document.fileUrl)?.[1] ?? '')
+      .map(slug => PROGRAM_CODE_BY_SLUG.get(slug) ?? slug),
     authorizedFactIds: context.authorizedFactIds,
     authorizedFacts: context.authorizedFacts,
     usedFactIds: proposal.usedFactIds,

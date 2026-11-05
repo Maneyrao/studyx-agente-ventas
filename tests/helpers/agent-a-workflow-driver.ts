@@ -67,6 +67,8 @@ export interface WorkflowTurnEvidenceV1 {
   };
   /** Texto que quedó autorizado y salió por el cliente de entrega. */
   readonly authorizedMessages: readonly string[];
+  /** Official-programme documents handed to the delivery client (`type: 'file'`). */
+  readonly documentMessages: readonly { readonly fileUrl: string; readonly filename: string | null }[];
   readonly steps: readonly string[];
   readonly actions: readonly { readonly name: string; readonly ok: boolean }[];
   readonly status: string | null;
@@ -129,6 +131,7 @@ async function executeWorkflowTurnV1(
   if (!shared) resetRecordedActionInvocationsV1();
   const steps: string[] = [];
   const authorizedMessages: string[] = [];
+  const documentMessages: Array<{ fileUrl: string; filename: string | null }> = [];
   const adapterCaptures: WorkflowAdapterCaptureV1[] = [];
   const httpExchanges = shared?.httpExchanges ?? [];
   const workflowEvents = shared?.workflowEvents ?? [];
@@ -211,12 +214,16 @@ async function executeWorkflowTurnV1(
       client: {
         async createMessage(message: {
           conversationId?: string;
-          payload?: { text?: string };
+          type?: string;
+          payload?: { text?: string; fileUrl?: string; filename?: string };
           tags?: { studyxOutboundId?: string; studyxTraceId?: string };
         }) {
           // Se captura DESPUÉS de autorización y commit: es el texto que el
           // cliente habría recibido, no la propuesta del modelo.
           const providerMessageId = randomUUID();
+          if (message.type === 'file' && message.payload?.fileUrl) {
+            documentMessages.push({ fileUrl: message.payload.fileUrl, filename: message.payload.filename ?? null });
+          }
           if (message.payload?.text) {
             authorizedMessages.push(message.payload.text);
             adapterCaptures.push({
@@ -278,6 +285,7 @@ async function executeWorkflowTurnV1(
       advisorName: configuration.agentAAdvisorName,
     },
     authorizedMessages,
+    documentMessages,
     steps,
     actions,
     status,
@@ -368,6 +376,7 @@ export async function runWorkflowBurstV1(input: {
     httpExchanges: shared.httpExchanges,
     workflowEvents: shared.workflowEvents,
     authorizedMessages: invocations.flatMap((invocation) => invocation.authorizedMessages),
+    documentMessages: invocations.flatMap((invocation) => invocation.documentMessages),
     steps: invocations.flatMap((invocation) => invocation.steps),
     actions,
     elapsedMs: Date.now() - startedAt,

@@ -91,6 +91,7 @@ import { preserveRuleTriggerEvidenceV1 } from '../lib/conversation/preserve-bonu
 import { bindCustomerCallInterpretationV1, type CustomerCallInterpretationV1 } from '../lib/conversation/customer-call-interpretation'
 import { authorizedPromotionActionsV1, continueAgentAAfterActionFeedbackV1, fencedAgentARequestV1, plannerlessActionFeedbackV1 } from '../lib/conversation/agent-a-action-feedback'
 import { evaluateCallOfferTurnPolicyV1 } from '../lib/conversation/call-offer-turn-policy'
+import { courseProgramChannelsV1 } from '../../../src/shared/catalog/course-programs'
 import { sendableProgramCodesV1 } from '../lib/conversation/agent-a-brain'
 import type { AgentATurnProposalV1 } from '../schemas/agent-a-brain'
 import type { AgentATurnCommitV2 } from '../schemas/agent-turn-v2'
@@ -3346,7 +3347,8 @@ export const processInboundTurn = new Workflow({
                   }
                 }
                 await stopWhatsAppTyping()
-                if (outboundPart.document && (input.channel !== 'whatsapp' || input.sandbox_provider === 'telegram_sandbox')) {
+                if (outboundPart.document && (!courseProgramChannelsV1(typeof process === 'undefined' ? {} : process.env).includes(input.channel)
+                  || input.sandbox_provider === 'telegram_sandbox')) {
                   // Only the WhatsApp integration supports `file`: confirmed not sent.
                   const unsupported = new Error('COURSE_PROGRAM_CHANNEL_UNSUPPORTED')
                   unsupported.name = 'COURSE_PROGRAM_CHANNEL_UNSUPPORTED'

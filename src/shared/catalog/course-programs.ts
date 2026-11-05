@@ -45,6 +45,15 @@ export const COURSE_PROGRAM_ASSETS_V1: ReadonlyMap<string, CourseProgramAssetV1>
   { offering_code, slug, sha256, version: sha256.slice(0, 12), filename: `Programa ${display.replace(/[\\/]/gu, "-")} - Studyx.pdf`, mime: 'application/pdf' as const },
 ]));
 
+/**
+ * Channels whose integration can deliver a `file`. Production: WhatsApp only. The local golden
+ * evaluator widens it through STUDYX_COURSE_PROGRAM_CHANNELS (never set in a deployment).
+ */
+export function courseProgramChannelsV1(env: Readonly<Record<string, string | undefined>>): readonly string[] {
+  const configured = env['STUDYX_COURSE_PROGRAM_CHANNELS']?.split(',').map(value => value.trim()).filter(Boolean);
+  return configured?.length ? configured : ['whatsapp'];
+}
+
 export function courseProgramAssetV1(offeringCode: string): CourseProgramAssetV1 | null {
   return COURSE_PROGRAM_ASSETS_V1.get(offeringCode) ?? null;
 }

@@ -8,7 +8,7 @@ import {
   judgeCaseSemantically,
   type GoldenTurnObservationV1,
 } from './judge';
-import { GOLDEN_CASES } from './scenarios';
+import { GOLDEN_CASES, type GoldenTurnV1 } from './scenarios';
 
 const extraClosingBraceFixture = JSON.parse(readFileSync(new URL(
   './fixtures/judge-trailing-closing-brace-06-bonus-2.json', import.meta.url,
@@ -1174,5 +1174,43 @@ describe('semantic judge delivered-outcome boundary', () => {
       } } });
       if (gift) expect(result[0]?.failures).toHaveLength(1);
     } finally { mock.mockRestore(); }
+  });
+});
+
+describe('cases 29-41 hard rules (current-message bonus motive, package, programme documents)', () => {
+  const turnWith = (customer: string, hard: GoldenTurnV1['hard'], over: Partial<GoldenTurnV1['expected']> = {}): GoldenTurnV1 => ({
+    id: 't', customer, must: [], mustNot: [], authority: [],
+    expected: { move: ['greeting', 'price_objection', 'ask_course_information'], action: ['none', 'offer_course_bonus', 'send_course_program'], state: {}, ...over }, hard });
+  const codes = (turn: GoldenTurnV1, current: GoldenTurnObservationV1, previous: GoldenTurnObservationV1 | null = null) =>
+    evaluateHardRules(turn, current, previous).failures.map(failure => failure.code);
+  const offering = (quote: string, kind = 'price_objection', move = 'price_objection') => observation({
+    move, backendAction: 'offer_course_bonus', response: 'Te sumo Community Manager.',
+    proposedAction: { type: 'offer_course_bonus', bonus_offering_code: 'community_manager', interest_offering_code: 'marketing_digital', motive: { kind, quote } } });
+
+  it('bonus_motive_current_message: the quote must be literal in this message and agree with the move', () => {
+    const turn = turnWith('igual sigue siendo caro', [{ type: 'bonus_motive_current_message' }]);
+    expect(codes(turn, offering('sigue siendo caro'))).toEqual([]);
+    expect(codes(turn, offering('es caro, no me alcanza'))).toContain('BONUS_MOTIVE_NOT_IN_CURRENT_MESSAGE');
+    expect(codes(turn, offering('sigue siendo caro', 'price_objection', 'ask_course_information'))).toContain('BONUS_MOTIVE_MOVE_INCOHERENT');
+    expect(codes(turn, observation({ move: 'price_objection' }))).toEqual([]);
+  });
+  it('package_unchanged and no_new_bonus compare with the previous turn (cycle, version, courses)', () => {
+    const promotion = (over: object) => ({ status: 'offer_available', bonusCount: 1, paidCourse: 'marketing_digital', bonusCourses: ['community_manager'], cycleId: 'c1', offerVersion: 1, ...over });
+    const before = observation({ state: { ...observation().state, promotion: promotion({}) } });
+    const turn = turnWith('x', [{ type: 'package_unchanged' }, { type: 'no_new_bonus' }]);
+    expect(codes(turn, before, before)).toEqual([]);
+    const bumped = observation({ state: { ...observation().state, promotion: promotion({ bonusCount: 2, bonusCourses: ['community_manager', 'oratoria'], offerVersion: 2 }) } });
+    expect(codes(turn, bumped, before)).toEqual(expect.arrayContaining(['PACKAGE_CHANGED', 'NEW_BONUS_UNEXPECTED']));
+  });
+  it('program documents, links, plans and prefab CTAs', () => {
+    expect(codes(turnWith('x', [{ type: 'program_document_sent', value: 'marketing_digital' }]), observation())).toContain('PROGRAM_DOCUMENT_MISSING');
+    expect(codes(turnWith('x', [{ type: 'program_document_sent', value: 'marketing_digital' }]), observation({ programDocuments: ['marketing_digital'] }))).toEqual([]);
+    expect(codes(turnWith('x', [{ type: 'no_program_document' }]), observation({ programDocuments: ['marketing_digital'] }))).toContain('PROGRAM_DOCUMENT_UNEXPECTED');
+    expect(codes(turnWith('x', [{ type: 'no_link_delivered' }]), observation({ deliveredLinks: ['https://pay.example/1'] }))).toContain('LINK_UNEXPECTED');
+    const link = (plan: string) => observation({ proposedAction: { type: 'send_payment_link', payment_plan: plan } });
+    const linkTurn = turnWith('x', [{ type: 'link_plan_in', values: ['monthly_12'] }], { action: ['send_payment_link'] });
+    expect(codes(linkTurn, link('monthly_12'))).toEqual([]);
+    expect(codes(linkTurn, link('one_time'))).toContain('LINK_PLAN_MISMATCH');
+    expect(codes(turnWith('x', [{ type: 'no_prefab_cta' }]), observation({ response: 'Con cuál plan te gustaría avanzar?' }))).toContain('PREFAB_CTA_PRESENT');
   });
 });

@@ -248,4 +248,13 @@ describe('owner-rule supplementary golden campaign', () => {
     expect(current.mustNot.join(' ')).toContain('No forzar una llamada');
     expect(negotiationSemanticTurnV1(turn, true).must.join(' ')).toContain('nunca se exigen');
   });
+
+  it('cases 29-41 are selectable on their own with STUDYX_GOLDEN_CASE_IDS and exist exactly once', () => {
+    const registry = [...GOLDEN_CASES, ...OWNER_GOLDEN_CASES, ...OWNER_REPLAY_CASES, ...OWNER_PROMOTION_MODE_REPLAY_CASES];
+    const ids = Array.from({ length: 13 }, (_, index) => String(29 + index));
+    const selected = selectGoldenCasesV1(ids.join(','), registry);
+    expect(selected.map(scenario => scenario.id.slice(0, 2))).toEqual(ids);
+    expect(selected.every(scenario => scenario.id.endsWith('20261104'))).toBe(true);
+    expect(new Set(registry.map(scenario => scenario.id.slice(0, 2))).size).toBe(registry.length);
+  });
 });
