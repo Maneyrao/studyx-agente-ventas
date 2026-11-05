@@ -92,7 +92,10 @@ run('send_course_program at the commit boundary', () => {
     vi.stubEnv('STUDYX_PUBLIC_ASSET_BASE_URL', '');
     const f = await seedConversationForAgentTurn({ selected_offering_code: CODE, intake_complete: true });
     expect((await readCourseProgramsCapabilityV1({ workspace_slug: 'studyx', conversation_id: f.conversation_id }, { db: sql }))?.available_offering_codes).toEqual([]);
-    const result = await commit(f, f.turn_id, proposal(['Te comparto el programa.'], null, SEND));
+    // Without the capability the action is pruned; a reply that claimed the send is rejected for repair (never delivered).
+    await expect(commit(f, f.turn_id, proposal(['Te comparto el programa.'], null, SEND))).rejects.toMatchObject({
+      subjects: expect.arrayContaining(['program_send_not_executed:unavailable']) });
+    const result = await commit(f, f.turn_id, proposal(['No tengo el archivo del programa a mano, pero te cuento lo que incluye.'], null, SEND));
     expect(result.outbounds.some(part => part.document)).toBe(false);
     expect(result.outbounds).toHaveLength(1);
     expect(await ledger(f.conversation_id)).toHaveLength(0);
