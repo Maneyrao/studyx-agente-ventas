@@ -128,6 +128,8 @@ run('StudyX official manual catalog', () => {
 
   it('does not truncate the complete active catalog from Agent A context', async () => {
     expect(DEFAULT_BUSINESS_CONTEXT_LIMITS.maxOfferings).toBeGreaterThanOrEqual(40);
+    // 2026-11-04: 40 active + Real Estate must fit (readiness probe catalog_truncated).
+    expect(DEFAULT_BUSINESS_CONTEXT_LIMITS.maxOfferings).toBeGreaterThanOrEqual(41);
     const raw = await new PostgresBusinessContextStore(db!).loadBusinessContext(WS);
     expect(raw).not.toBeNull();
     const view = buildBusinessContextView(raw!);
