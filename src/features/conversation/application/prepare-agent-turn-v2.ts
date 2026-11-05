@@ -11,6 +11,7 @@ import { activeSessionRecentTurnsV1, deriveConversationCourseFocusV1 } from '@/f
 import { classifyBatchSalesSignal } from '@/features/orchestration/domain/sales-signal';
 import { loadConversationSessionConfig } from '@/lib/config';
 import type { AgentAProposedActionV1, AgentATurnProposalV1 } from '../domain/agent-a-brain';
+import { claimsProgramSendNowV1 } from '@/shared/conversation/program-send-claim';
 import type { BonusMotiveV1 } from '@/shared/conversation/bonus-motive';
 import { authorizeAgentTurnV2 } from '../domain/agent-turn-policy-v2';
 import {
@@ -471,6 +472,16 @@ export async function prepareAgentTurnV2(input: {
   if (authority.action.type !== 'send_payment_link' && authority.action.type !== 'send_test_payment_link'
     && claimsImmediatePaymentLinkDelivery(authority.response)) {
     throw new AgentTurnV2RejectedError(['ACTION_NOT_AUTHORIZED']);
+  }
+  // A programme "being sent now" is an effect: it needs an accepted send_course_program.
+  // Pruned (already sent / unavailable / not requested) or never proposed: repair the copy.
+  if (authority.action.type !== 'send_course_program'
+    && claimsProgramSendNowV1(authority.response, { programTopic: [effectiveProposal.move.move, ...effectiveProposal.move.secondary_moves].includes('request_course_program') })) {
+    const proposed = effectiveProposal.proposed_action.type === 'send_course_program' ? effectiveProposal.proposed_action.offering_code : null;
+    const why = proposed !== null && input.course_programs?.sent_offering_codes.includes(proposed) ? 'already_sent'
+      : proposed !== null && input.course_programs?.available_offering_codes.includes(proposed) ? 'not_requested'
+      : 'unavailable';
+    throw new AgentTurnV2RejectedError(['ACTION_NOT_AUTHORIZED'], ['send_course_program', `program_send_not_executed:${why}`]);
   }
   if (authority.action.type !== 'request_call_now'
     && claimsImmediateCallDispatchV1(authority.response, callFacts?.active_call?.status)) {

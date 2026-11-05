@@ -1,6 +1,7 @@
 import type { ModelObservation } from '../observability/turn-evidence'
 import { isTurnEvidencePersistenceError } from '../observability/turn-evidence'
 import type { TurnRejectionV1 } from '../../schemas/turn-rejection'
+import { claimsProgramSendNowV1 } from '../../../../src/shared/conversation/program-send-claim'
 import { claimsImmediatePaymentLinkDeliveryV1 } from '../../../../src/shared/conversation/payment-link-claim'
 import { messagesWithoutExactCallOfferV1 } from '../../../../src/shared/conversation/call-offer-format'
 import { AgentATurnProposalV1Schema, type AgentAContextV1, type AgentATurnProposalV1 } from '../../schemas/agent-a-brain'
@@ -210,6 +211,13 @@ function claimsImmediatePaymentLinkDelivery(proposal: AgentATurnProposalV1): boo
   return claimsImmediatePaymentLinkDeliveryV1(proposal.response.messages.join('\n\n'))
 }
 
+/** "Te comparto el programa" without an accepted send_course_program action is a false effect claim. */
+function claimsProgramSendWithoutEffect(proposal: AgentATurnProposalV1): boolean {
+  return proposal.proposed_action.type !== 'send_course_program'
+    && claimsProgramSendNowV1(proposal.response.messages.join('\n\n'), {
+      programTopic: [proposal.move?.move, ...(proposal.move?.secondary_moves ?? [])].includes('request_course_program') })
+}
+
 function hasUnbackedCallDispatchClaim(
   proposal: AgentATurnProposalV1,
   rejection: TurnRejectionV1,
@@ -360,7 +368,7 @@ function mayDegradeToBackendBoundary(
 ): boolean {
   // Afirmar un efecto que no ocurrió no es un hecho que el egress pueda podar:
   // la oración entera es la mentira. Eso sigue siendo un rechazo duro.
-  if (claimsImmediatePaymentLinkDelivery(proposal)) return false
+  if (claimsImmediatePaymentLinkDelivery(proposal) || claimsProgramSendWithoutEffect(proposal)) return false
   if (hasUnbackedCallDispatchClaim(proposal, rejection, context)) return false
   if (isMissingRequiredIntakeForRequestedCall(proposal, rejection)) return false
   if ((proposal.proposed_action.type === 'send_payment_link'
@@ -379,7 +387,7 @@ function hasOnlyNonBlockingGuidance(
   rejection: TurnRejectionV1,
   context: AgentAContextV1,
 ): boolean {
-  if (claimsImmediatePaymentLinkDelivery(proposal)) return false
+  if (claimsImmediatePaymentLinkDelivery(proposal) || claimsProgramSendWithoutEffect(proposal)) return false
   if (hasUnbackedCallDispatchClaim(proposal, rejection, context)) return false
   if (isMissingRequiredIntakeForRequestedCall(proposal, rejection)) return false
   if ((proposal.proposed_action.type === 'send_payment_link'

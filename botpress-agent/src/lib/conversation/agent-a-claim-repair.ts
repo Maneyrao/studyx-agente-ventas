@@ -1,4 +1,5 @@
 import { claimsImmediatePaymentLinkDeliveryV1 } from '../../../../src/shared/conversation/payment-link-claim'
+import { claimsProgramSendNowV1 } from '../../../../src/shared/conversation/program-send-claim'
 import { inspectCourseBonusClaimsV1 } from '../../../../src/shared/conversation/course-bonus-claim'
 import { courseLogisticsInV1 } from '../../../../src/shared/conversation/course-logistics'
 import { hardClaimKindsInSentenceV1, splitClaimSentencesV1 } from '../../../../src/shared/conversation/hard-claims'
@@ -176,7 +177,7 @@ function normalizedIncludes(message: string, name: string): boolean {
 
 /**
  * An effect that did not happen cannot be claimed. Remove only the bubbles that
- * claim it (payment link delivered, call dispatched, gift named as bonus) and
+ * claim it (payment link delivered, programme PDF being sent, call dispatched, gift named as bonus) and
  * drop the action. Returns null when no bubble claims anything or nothing remains.
  */
 export function removeEffectClaimBubblesV1(input: {
@@ -189,7 +190,9 @@ export function removeEffectClaimBubblesV1(input: {
     ? context.catalog.available_offerings.find((offering) => offering.code === input.bonus_offering_code)?.display_name ?? null
     : null
   const status = context.commercial_state.active_call?.status
+  const programTopic = [proposal.move?.move, ...(proposal.move?.secondary_moves ?? [])].includes('request_course_program')
   const claims = (message: string) => claimsImmediatePaymentLinkDeliveryV1(message)
+    || claimsProgramSendNowV1(message, { programTopic })
     || claimsImmediateCallDispatchV1(message, status)
     || (bonusName !== null && normalizedIncludes(message, bonusName))
   const keptIndices = proposal.response.messages.flatMap((message, index) => (claims(message) ? [] : [index]))

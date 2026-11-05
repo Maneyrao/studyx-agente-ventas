@@ -99,3 +99,33 @@ describe('salvage and effect-claim removal keep the structured fields (acceptanc
     expect(fixed?.memory_candidates).toEqual(real.memory_candidates);
   });
 });
+
+describe('programme-send claim removal (traces 36 and 38 of focused-29-41-r2)', () => {
+  const catalog = { commercial_state: {}, capabilities: { course_bonus: { delivered_bonus_offerings: [] } },
+    catalog: { selected_offering: null, available_offerings: [], candidate_offerings: [], payment_plans: [] } } as unknown as AgentAContextV1;
+  const programProposal = (messages: string[], move = 'request_course_program') => ({
+    schema_version: 1, move: { schema_version: 1, move, secondary_moves: [], vetoes: [], confidence: 1 },
+    response: { messages, call_offer: null }, proposed_action: { type: 'none' }, course_mentions: [],
+  }) as unknown as AgentATurnProposalV1;
+  it('drops only the bubble that says the programme is being sent, keeps the rest, never silences', () => {
+    const fixed = removeEffectClaimBubblesV1({
+      proposal: programProposal(['Claro, te lo comparto de nuevo por acá.', 'Si querés lo repasamos juntos, qué parte te interesa?']),
+      context: catalog,
+    });
+    expect(fixed?.response.messages).toEqual(['Si querés lo repasamos juntos, qué parte te interesa?']);
+    expect(fixed?.proposed_action).toEqual({ type: 'none' });
+  });
+  it('removes "te comparto el programa de Excel Integral" when no PDF exists', () => {
+    const fixed = removeEffectClaimBubblesV1({
+      proposal: programProposal(['Claro, te comparto el programa de Excel Integral.', 'El curso es online y de 8 clases.']),
+      context: catalog,
+    });
+    expect(fixed?.response.messages).toEqual(['El curso es online y de 8 clases.']);
+  });
+  it('keeps honest wording (past reference) untouched', () => {
+    expect(removeEffectClaimBubblesV1({ proposal: programProposal(['Ya te lo compartí antes, está arriba en el chat.']), context: catalog })).toBeNull();
+  });
+  it('returns null when every bubble is a claim (the caller falls back to the repair, never to silence)', () => {
+    expect(removeEffectClaimBubblesV1({ proposal: programProposal(['Te comparto el programa.']), context: catalog })).toBeNull();
+  });
+});

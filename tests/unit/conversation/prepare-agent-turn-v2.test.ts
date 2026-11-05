@@ -179,6 +179,38 @@ describe('prepareAgentTurnV2', () => {
     expect(prepared.decision.business_action).toEqual({type:'offer_course_bonus',interest_offering_code:'redes_informaticas',bonus_offering_code:'excel_integral'});
     expect(prepared.bonus_motive).toEqual({motive:action.motive,declared_moves:['price_objection']});
   });
+  describe('program-send claims need an executed send_course_program (traces 36 and 38 of focused-29-41-r2)', () => {
+    const programMove = { schema_version: 1 as const, move: 'request_course_program' as const, secondary_moves: [] as never[], vetoes: [] as never[], confidence: 1 };
+    const run = (text: string, action: unknown, programs: { available_offering_codes: string[]; sent_offering_codes: string[] }) => prepareAgentTurnV2({
+      turn: { id: ids.turn, workspace_id: ids.workspace, conversation_id: ids.conversation, contact_id: ids.contact },
+      workspace_slug: 'studyx', business_context: business, catalog_index: index, current_customer_messages: ['me lo mandás de nuevo?'],
+      proposal: proposal({ move: programMove, response: { messages: [text] }, proposed_action: action as never }),
+      course_programs: programs,
+    }, { state_store: store(state({ selected_offering_code: 'redes_informaticas' })), contact_intake: completeIntake });
+    const reasons = async (promise: Promise<unknown>) => promise.then(() => null, (error: { rejectionSubjects?: string[] }) => error.rejectionSubjects ?? []);
+    const SEND = { type: 'send_course_program', offering_code: 'redes_informaticas' };
+
+    it('already sent: the pruned action cannot ride with "te lo comparto de nuevo"', async () => {
+      expect(await reasons(run('Claro, te lo comparto de nuevo por acá.', SEND,
+        { available_offering_codes: ['redes_informaticas'], sent_offering_codes: ['redes_informaticas'] })))
+        .toEqual(['send_course_program', 'program_send_not_executed:already_sent']);
+    });
+    it('no PDF for the course: "te comparto el programa" without an action is rejected for repair', async () => {
+      expect(await reasons(run('Claro, te comparto el programa del curso.', { type: 'none' },
+        { available_offering_codes: [], sent_offering_codes: [] })))
+        .toEqual(['send_course_program', 'program_send_not_executed:unavailable']);
+    });
+    it('honest wording passes: a past reference, a negation or no claim at all', async () => {
+      const programs = { available_offering_codes: ['redes_informaticas'], sent_offering_codes: ['redes_informaticas'] };
+      for (const text of ['Ya te lo compartí hace un rato, está arriba en el chat.', 'No tengo el archivo del programa, pero te cuento lo que incluye.'])
+        expect(await reasons(run(text, { type: 'none' }, programs))).toBeNull();
+    });
+    it('an accepted send_course_program may say it is sharing the programme', async () => {
+      const prepared = await run('Te comparto el programa del curso.', SEND,
+        { available_offering_codes: ['redes_informaticas'], sent_offering_codes: [] });
+      expect(prepared.decision.business_action).toEqual(SEND);
+    });
+  });
   it.each(['missing', 'complete'] as const)('keeps the original explicit tool intent while continuation sends only prose: %s intake', async intakeCase => {
     const messages = ['Para avanzar, vemos los datos necesarios.'];
     const prepared = await prepareAgentTurnV2({

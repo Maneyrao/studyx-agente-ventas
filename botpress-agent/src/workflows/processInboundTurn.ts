@@ -80,6 +80,7 @@ import {
   type GeneratedAgentATurnProposalV1,
 } from '../lib/conversation/agent-a-brain'
 import { claimsImmediatePaymentLinkDeliveryV1 } from '../../../src/shared/conversation/payment-link-claim'
+import { claimsProgramSendNowV1 } from '../../../src/shared/conversation/program-send-claim'
 import {
   classifyAgentAAttemptFailure,
   isAgentAProviderFailure,
@@ -2749,6 +2750,9 @@ export const processInboundTurn = new Workflow({
               const rejectedPaymentEffect = currentBackendRejection.rejections.some((reason) => (
                 reason.subject === 'send_payment_link' || reason.subject.startsWith('payment')
               ))
+              const rejectedProgramEffect = currentBackendRejection.rejections.some((reason) => (
+                reason.subject === 'send_course_program' || reason.subject.startsWith('program_send')
+              ))
               const candidateCopy = [
                 ...candidateProposal.response.messages,
                 candidateProposal.response.call_offer ?? '',
@@ -2772,6 +2776,8 @@ export const processInboundTurn = new Workflow({
                   )
                 ))
                 || rejectedPaymentEffect && candidateCopy.some(claimsImmediatePaymentLinkDeliveryV1)
+                || rejectedProgramEffect && candidateCopy.some(message => claimsProgramSendNowV1(message, {
+                  programTopic: [candidateProposal.move.move, ...candidateProposal.move.secondary_moves].includes('request_course_program') }))
                 || repeatsRejectedBonus
               )) continue
               const conversationCandidate = {

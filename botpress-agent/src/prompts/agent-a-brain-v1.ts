@@ -5,7 +5,7 @@ import {
 } from './studyx-agent-a-canonical.generated';
 import { resolveCanonicalPromptIdentityV1 } from './agent-a-identity';
 
-export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v164' as const;
+export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v165' as const;
 
 /**
  * Runtime contract only. The sales behavior lives in the canonical prompt so
@@ -31,6 +31,7 @@ A payment question (ask_payment_options) never triggers a promotion; explain the
 Ask at most one useful question per turn.
 A model-authored recommendation is not a customer selection: use browse_catalog or ask_course_information until the customer explicitly chooses or accepts that course. Use select_course only for that explicit customer choice.
 Use continue_by_chat only for an explicit preference to keep using chat instead of a call, never as a generic label for an ordinary conversational reply.
+Never say you are sending, sharing or attaching a programme, temario or PDF unless proposed_action is send_course_program for that course; without it, say naturally that you do not have the programme file and offer the information you do have.
 The canonical behavior governs how to respond; this mapping only names the move in AgentATurnProposalV1.
 </move_semantics>`;
 
@@ -151,6 +152,10 @@ Do not mention, suggest or imply any bonus in this rewrite, including a generic,
 Use proposed_action=none for bonus effects; do not offer, accept or request review of a bonus in this rewrite. Keep delivered_bonus_offerings and existing obligations in durable state without mentioning them; never delete them. Pending additions remain pending and unconfirmed.
 Continue naturally with the paid course under canonical_sales_behavior; never invent objections or completed steps.
 Do not claim a discount, promotion, gift, approval, income or result. Preserve the rest of the response only when its facts and effects remain authorized.` : '';
+  const repairsProgramSend = rejection.rejections.some(reason => reason.subject.startsWith('program_send_not_executed'))
+  const programSendRepair = repairsProgramSend ? `
+For program_send_not_executed, the programme PDF was NOT sent in this turn (${rejection.rejections.map(reason => reason.subject).find(subject => subject.startsWith('program_send_not_executed'))?.split(':')[1] ?? 'unavailable'}).
+Remove every sentence saying you are sending, sharing or attaching it now. If it was already sent earlier, say so naturally ("ya te lo compartí") and offer to go through it together; if there is no PDF for this course, say you do not have the file and offer the information you do have. Use proposed_action=none.` : ''
   const repairsBonusNaming = rejection.rejections.some(reason => reason.subject === 'bonus_not_named');
   const bonusNamingRepair = repairsBonusNaming ? `
 For bonus_not_named, name the course you're adding: write the bonus course's exact display_name in the customer-visible copy where you offer it (do not name only an earlier bonus), or use proposed_action=none and do not present a new gift.` : '';
@@ -164,7 +169,7 @@ ${courseDeclarationRepair}
 ${offeringRepair}
 ${courseLogisticsRepair}
 ${forbiddenPromiseRepair}
-${bonusNamingRepair}
+${bonusNamingRepair}${programSendRepair}
 If an action did not occur, do not claim it; continue naturally from the permitted facts and effects.
 Do not repeat confirmed data or an earlier opening or question. Ask only for truly missing information.
 Keep prose and metadata consistent. Preserve accepted observations. Never expose validation to the customer.
@@ -227,6 +232,7 @@ function currentCourseProgramEffectContractV1(context: AgentAContextV1): string 
 The official programme PDF of a course can be sent over WhatsApp. When the current message asks for the programme, syllabus, temario or PDF (move=request_course_program), propose proposed_action={type:"send_course_program", offering_code} for the course in focus, chosen from: ${sendable.join(', ') || '(none left to send)'}.
 Write a short, human introduction; the PDF itself is the answer, never replace it with a summary of the syllabus. The backend resolves the file; never write a URL.
 The document is delivered before your text. Phrase it as something you are sharing ("te comparto el programa de X") only together with the action; never state as already done what the backend has not delivered.
+A course that is not in the list above has no PDF file available: say naturally that you do not have the programme file for it and offer the information you do have; never say you are sending it, and do not propose the action.
 Already delivered in this conversation: ${programs.sent_offering_codes.join(', ') || 'none'}. If the customer asks again for one of those, say naturally that you already sent it and offer to go over anything in it; do not propose the action again.
 </current_effect_contract>`
 }
