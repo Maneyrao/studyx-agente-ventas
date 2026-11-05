@@ -87,6 +87,7 @@ export interface AgentAContextV1 {
       readonly call_id: string;
       readonly result: string | null;
       readonly ended_at: string;
+      readonly announced_to_customer?: boolean;
     } | null;
     readonly awaiting_reply: 'none' | 'area_choice' | 'course_choice' | 'call_or_chat' | 'payment_plan' | 'payment_confirmation' | 'contact_details';
     readonly payment_link_request?: {

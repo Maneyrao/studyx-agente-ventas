@@ -447,6 +447,7 @@ export const SalesContextSchema = z.object({
       call_id: z.string().uuid(),
       result: z.string().nullable(),
       ended_at: z.string(),
+      announced_to_customer: z.boolean().optional(),
     })
     .nullable(),
 })

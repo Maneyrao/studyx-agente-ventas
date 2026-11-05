@@ -516,7 +516,28 @@ run('sales_context at claim time', () => {
     expect(salesContext.last_call_result).toMatchObject({
       call_id: callId,
       result: 'seguimiento_agendado',
+      // 2026-11-05 (5b138536): calls 2–4 ended in voicemail and nobody told the
+      // customer; Agent A now knows whether the outcome was communicated.
+      announced_to_customer: false,
     });
+  });
+
+  it('marks the last call result as announced once a reply was delivered after it ended', async () => {
+    const seeded = await seedTurnWithIds('oki');
+    const callId = await insertCallSession({
+      turnId: seeded.turn_id, contactId: seeded.contact_id, conversationId: seeded.conversation_id,
+      status: 'completed', result: 'buzon_de_voz', completedAt: new Date(Date.now() - 60_000).toISOString(),
+    });
+    const [reply] = await db!<Array<{ id: string }>>`
+      INSERT INTO messages (conversation_id, contact_id, direction, content, in_reply_to)
+      VALUES (${seeded.conversation_id}::uuid, ${seeded.contact_id}::uuid, 'outbound', 'Te llamé y entró el buzón.', ${seeded.turn_id}::uuid)
+      RETURNING id`;
+    await db!`INSERT INTO outbound_deliveries (message_id, conversation_id, contact_id, provider, integration_id,
+      channel, destination, idempotency_key, state, provider_message_id, submitted_at)
+      SELECT ${reply.id}::uuid, ${seeded.conversation_id}::uuid, ${seeded.contact_id}::uuid, 'botpress', 'vitest',
+        'whatsapp', c.phone, ${randomUUID()}, 'submitted', ${randomUUID()}, now() FROM contacts c WHERE c.id = ${seeded.contact_id}::uuid`;
+    const salesContext = await claimSalesContext(seeded.batch.id);
+    expect(salesContext.last_call_result).toMatchObject({ call_id: callId, announced_to_customer: true });
   });
 
   it('projects a delivered post-call retry prompt into a fresh callable turn', async () => {

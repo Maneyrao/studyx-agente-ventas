@@ -242,6 +242,7 @@ export const AgentAContextV1Schema = z.object({
       call_id: z.string().uuid(),
       result: z.string().nullable(),
       ended_at: z.string(),
+      announced_to_customer: z.boolean().optional(),
     }).strict().nullable().optional(),
     awaiting_reply: z.enum(['none', 'area_choice', 'course_choice', 'call_or_chat', 'payment_plan', 'payment_confirmation', 'contact_details']),
     payment_reported: z.boolean(),

@@ -157,6 +157,8 @@ export interface LastCallResultFact {
   readonly call_id: string;
   readonly result: string | null;
   readonly ended_at: string;
+  /** A reply was delivered after the call ended; absent when unknown. */
+  readonly announced_to_customer?: boolean;
 }
 
 /** A post-call message was delivered and explicitly offered another attempt. */

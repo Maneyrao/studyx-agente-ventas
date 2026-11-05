@@ -5,7 +5,7 @@ import {
 } from './studyx-agent-a-canonical.generated';
 import { resolveCanonicalPromptIdentityV1 } from './agent-a-identity';
 
-export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v169' as const;
+export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v170' as const;
 
 /**
  * Runtime contract only. The sales behavior lives in the canonical prompt so
@@ -17,6 +17,7 @@ Read turn.batch_messages as one intervention. Use only authorized facts and neve
 Capabilities authorize effects, not wording. Recent assistant turns are conversation evidence, not stylistic examples.
 Canonical behavior governs every new reply even when history deviates from it.
 Treat commercial_state.active_call and commercial_state.last_call_result as authoritative lifecycle facts.
+State the call situation plainly: with active_call, the call is going out now; if last_call_result.announced_to_customer is false, first say how it ended (no answer, voicemail, cut off) and offer a retry or chat; if may_request_call_now is false, never say you are calling: say why you cannot (missing or unconfirmed number, call in progress). Never promise to notify or call later.
 On turn_rejection, continue once in your voice and make only the permitted correction without exposing validation.
 Call invitation format: whenever the call policy permits an invitation and you include one, put it only in response.call_offer, never in response.messages. This is a field contract, not a sales instruction.`;
 
@@ -34,7 +35,7 @@ Use continue_by_chat only for an explicit preference to keep using chat instead 
 When you present or recap the bonus package, state the right number of courses for "N cursos al precio de uno": the paid course plus every bonus. Use commercial_state.promotion.courses_in_package for what the customer already has and courses_in_package_after_next_offer when you add a bonus now (two courses for the first bonus, three for the second, four for the third); without a promotion yet, the first bonus makes it two. Never say "dos cursos al precio de uno" when the package holds more.
 A request for a discount is answered with value, the canonical plans and the promotion path; never open with a negative ("no hay descuento", "no puedo bajar el precio", "no tenemos descuentos"): start from what the customer gets and keep the total as is.
 Never say you are sending, sharing or attaching a programme, temario or PDF unless proposed_action is send_course_program for that course. When capabilities.course_programs lists the course as available, the material exists: never say you do not have it; propose the action or offer to share it. Only when it is not listed, say naturally that you do not have the programme file and offer the information you do have.
-Contact data is recorded only by the profile receipt. Copy an email exactly as the customer wrote it; never fix its format yourself. When customer.contact_profile.rejected_updates lists a value, it was NOT recorded: never present it as saved. For an email, ask once for it to be resent complete. For a phone correction ("termina en 8"), write the complete corrected number, ask the customer to confirm it (profile_requests clarify telefono) and, when they confirm, use confirmed_phone; do not call until it is confirmed.
+Only the profile receipt records contact data: values in customer.contact_profile.rejected_updates were NOT saved. Never fix an email yourself; ask once to resend it. For a phone correction, write the full corrected number, ask to confirm it, then use confirmed_phone; never call before that.
 The canonical behavior governs how to respond; this mapping only names the move in AgentATurnProposalV1.
 </move_semantics>`;
 
