@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { assertsUnsupportedPrerequisitesV1, withoutUnsupportedPrerequisiteClausesV1 } from '../../../botpress-agent/src/lib/conversation/agent-a-brain';
+import { splitClaimSentencesV1 } from '@/shared/conversation/hard-claims';
 
 /** Live 2026-11-02 19:23: three drafts answering "y el programa?" were all
  * rejected only for an unsupported "desde cero" clause → technical contingency. */
@@ -17,6 +18,15 @@ describe('salvage of an unsupported prerequisite clause', () => {
   });
   it('drops a sentence that is only the claim', () => {
     expect(withoutUnsupportedPrerequisiteClausesV1('Podés empezar desde cero. Son 12 clases online.')).toBe('Son 12 clases online.');
+  });
+  // Golden case47-540670f g03 delivered «Perfecto. UU. y va sumando…»: «EE. UU.» was cut as two sentences.
+  it('never cuts an abbreviation such as «EE. UU.» and keeps the supported part after a colon', () => {
+    const draft = 'Perfecto, no necesitas experiencia previa: el programa de Real Estate arranca desde los conceptos básicos del negocio inmobiliario en EE. UU. y va sumando lo legal, lo financiero y el marketing.';
+    expect(splitClaimSentencesV1(draft)).toEqual([draft]);
+    const salvaged = withoutUnsupportedPrerequisiteClausesV1(draft);
+    expect(salvaged).toBe('Perfecto, el programa de Real Estate arranca desde los conceptos básicos del negocio inmobiliario en EE. UU. y va sumando lo legal, lo financiero y el marketing.');
+    expect(assertsUnsupportedPrerequisitesV1(salvaged)).toBe(false);
+    expect(splitClaimSentencesV1('Son 12 clases. Te sirve?')).toEqual(['Son 12 clases.', ' Te sirve?']);
   });
   it('leaves supported text untouched', () => {
     const text = 'Son 12 clases online. Cómo preferís pagarlo?';

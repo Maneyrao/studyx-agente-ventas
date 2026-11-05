@@ -184,9 +184,20 @@ export function hardClaimKindsInSentenceV1(sentence: string, context?: HardClaim
   return kinds;
 }
 
-/** Sentences are cut after . ! ? or a newline; decimals such as 30.5 stay whole. */
+/** Sentences are cut after . ! ? or a newline; decimals such as 30.5 stay whole.
+ * A period followed by a lowercase word or by another short capital
+ * abbreviation («EE. UU.») does not end the sentence (golden case47 g03). */
 export function splitClaimSentencesV1(message: string): string[] {
-  return message.split(/(?<=[.!?\n])(?=\s|$)/u).filter((part) => part.trim().length > 0);
+  const parts: string[] = [];
+  let start = 0;
+  for (const boundary of message.matchAll(/(?<=[.!?\n])(?=\s|$)/gu)) {
+    const index = boundary.index;
+    if (message[index - 1] === '.' && /^\s+(?:\p{Ll}|\p{Lu}{1,2}\.)/u.test(message.slice(index))) continue;
+    parts.push(message.slice(start, index));
+    start = index;
+  }
+  parts.push(message.slice(start));
+  return parts.filter((part) => part.trim().length > 0);
 }
 
 /** Every offending sentence of one bubble. `tradeText` widens trade detection to the whole bubble. */

@@ -7,7 +7,7 @@ import { copyNamesCourseV1, inspectCourseBonusClaimsV1 } from '../../../../src/s
 import { eligibleContactRequestFieldsV1 } from './contact-profile-request-policy';
 import { supportsChatPreferenceV1 } from './channel-preference-evidence';
 import type { TurnRejectionV1 } from '../../schemas/turn-rejection'
-import { hardClaimKindsInTextV1 } from '../../../../src/shared/conversation/hard-claims';
+import { hardClaimKindsInTextV1, splitClaimSentencesV1 } from '../../../../src/shared/conversation/hard-claims';
 import {
   AgentATurnProposalV1Schema,
   TURN_REASONING_NEXT_STEPS_V1,
@@ -1574,11 +1574,11 @@ export function assertsUnsupportedPrerequisitesV1(message: string): boolean {
  * desde cero"), keeping the model's factual answer around it. A sentence that
  * still asserts it after clause removal is dropped whole. */
 export function withoutUnsupportedPrerequisiteClausesV1(message: string): string {
-  return message.split(/(?<=[.!?\n])/u).map((sentence) => {
+  return splitClaimSentencesV1(message).map((sentence) => {
     if (!assertsUnsupportedPrerequisitesV1(sentence)) return sentence;
     const ending = /[.!?\n]\s*$/u.exec(sentence)?.[0] ?? '';
     const body = sentence.slice(0, sentence.length - ending.length);
-    const kept = body.split(/,\s+/u).filter((clause) => !assertsUnsupportedPrerequisitesV1(clause));
+    const kept = body.split(/[,:]\s+/u).filter((clause) => !assertsUnsupportedPrerequisitesV1(clause));
     const rebuilt = kept.join(', ').trim();
     return rebuilt && !assertsUnsupportedPrerequisitesV1(rebuilt) ? `${sentence.match(/^\s*/u)![0]}${rebuilt}${ending}` : '';
   }).join('').replace(/\s{2,}/gu, ' ').trim();
