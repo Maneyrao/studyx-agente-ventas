@@ -8,11 +8,12 @@ import { recordModelPriceObjection, seedPriorModelNegotiation } from '../helpers
 import { commitAgentDecision } from '@/lib/services/decision.service';
 import { offerDirectCourseBonusV1 } from '@/features/promotions/application/direct-course-bonus-service';
 import { readNegotiationFactsV1 } from '@/features/conversation/application/read-negotiation-facts';
+import { sql as runtimeSql } from '@/lib/db/orchestrator';
 import type { AgentATurnProposalV1 } from '../../botpress-agent/src/schemas/agent-a-brain';
 
 const run = process.env.TEST_DATABASE_URL ? describe : describe.skip;
 const db = process.env.TEST_DATABASE_URL ? openLocalTestDatabase() : null;
-afterAll(async () => db?.end());
+afterAll(async () => { await db?.end(); await runtimeSql.end(); });
 beforeEach(() => {
   vi.stubEnv('COURSE_BONUS_FLOW_MODE', 'direct');
   vi.stubEnv('COURSE_BONUS_MAX_COURSES', '3');
@@ -396,6 +397,12 @@ run('model-owned bonus at the actual commit and transactional boundaries', () =>
       const capability = await readCourseBonusCapabilityV1({ workspace_slug: 'studyx', contact_id: f.contact_id,
         conversation_id: f.conversation_id, selected_offering_code: paid, source_turn_id: f.turn_id, channel: 'text' }, { db: db! });
       expect(capability?.may_offer_bonus).toBe(creates);
+      // The claim route reads through the resilient runtime client, which runs
+      // every tagged call eagerly (replay 8a87f03: a nested fragment broke it).
+      const viaRuntime = await readCourseBonusCapabilityV1({ workspace_slug: 'studyx', contact_id: f.contact_id,
+        conversation_id: f.conversation_id, selected_offering_code: paid, source_turn_id: f.turn_id, channel: 'text' },
+        { db: runtimeSql as never });
+      expect(viaRuntime?.may_offer_bonus).toBe(creates);
       const p = proposal();
       p.move = { schema_version: 1, move: 'price_objection', secondary_moves: [], vetoes: [], confidence: 0.9 };
       p.proposed_action = { type: 'offer_course_bonus', motive: { kind: 'price_objection', quote },

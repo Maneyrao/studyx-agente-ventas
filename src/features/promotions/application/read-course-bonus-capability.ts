@@ -1,5 +1,5 @@
 import { readCourseBonusLadderV1 } from './read-course-bonus-ladder';
-import { latestCallSettledSqlV1 } from '@/features/calls/adapters/latest-call-settled-sql';
+import { TERMINAL_CALL_STATUSES } from '@/features/calls/domain/call-state';
 import { authorizedBonusCodesV1, courseCodesNamedInBatchV1, isBonusCheckoutStateV1 } from '@/shared/conversation/deterministic-sales-rules';
 import { currentFactualCourseReferencesV1 } from '@/features/orchestration/domain/course-focus';
 import { customerBonusRequestV1, type CustomerBonusRequestV1 } from '@/features/promotions/domain/customer-bonus-request';
@@ -648,7 +648,9 @@ async function readDirectCapability(input: {
   // Checkout (by durable state) closes new gifts: never advertise the effect there.
   const [salesState] = await db<Array<{stage:string;awaiting_reply:string|null;link_status:string|null;handoff_call_settled:boolean}>>`
     SELECT state.stage,state.awaiting_reply,state.payment_link_request->>'status' AS link_status,
-      ${latestCallSettledSqlV1(db)} AS handoff_call_settled
+      COALESCE((SELECT latest.status = ANY(${TERMINAL_CALL_STATUSES as unknown as string[]}::text[]) FROM call_sessions latest
+        WHERE latest.conversation_id = state.conversation_id AND latest.contact_id = state.contact_id
+        ORDER BY latest.requested_at DESC, latest.id DESC LIMIT 1), false) AS handoff_call_settled
     FROM conversation_sales_context_states_v1 state
     WHERE state.conversation_id=${input.conversation_id}::uuid AND state.contact_id=${input.contact_id}::uuid LIMIT 1`;
   const inCheckout = salesState !== undefined && isBonusCheckoutStateV1({stage:salesState.stage,

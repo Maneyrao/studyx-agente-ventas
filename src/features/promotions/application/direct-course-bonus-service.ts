@@ -7,7 +7,7 @@ import { loadCentralCargaBonusConfig } from '@/features/fulfillment/central-carg
 import { isCentralCargaBonusEnabledForStoredContact } from '@/features/fulfillment/central-carga/bonus-contact-permission';
 import { loadCourseBonusFlowConfig } from './course-bonus-flow-config';
 import { authorizedBonusCodesV1, courseCodesNamedInBatchV1, isBonusCheckoutStateV1 } from '@/shared/conversation/deterministic-sales-rules';
-import { latestCallSettledSqlV1 } from '@/features/calls/adapters/latest-call-settled-sql';
+import { TERMINAL_CALL_STATUSES } from '@/features/calls/domain/call-state';
 
 export type DirectCourseBonusRejectionV1 = 'bonus_disabled' | 'no_price_objection' | 'invalid_offering'
   | 'same_as_paid_course' | 'duplicate_bonus' | 'bonus_limit_reached' | 'multiple_bonus_in_turn'
@@ -134,7 +134,9 @@ async function validateExistingPackage(tx: DbClient, offer: OfferRow): Promise<v
 async function lockIdentity(tx: DbClient, input: Identity) {
   const [context] = await tx<Array<{stage: string; awaiting_reply: string; payment_link_request: {status?: string}|null; selected_offering_code: string | null; paid_id: string; paid_status: string; paid_type: string; handoff_call_settled: boolean}>>`
     SELECT s.stage,s.awaiting_reply,s.payment_link_request,s.selected_offering_code,paid.id AS paid_id,paid.status AS paid_status,paid.offering_type AS paid_type,
-      ${latestCallSettledSqlV1(tx, 's')} AS handoff_call_settled
+      COALESCE((SELECT latest.status = ANY(${TERMINAL_CALL_STATUSES as unknown as string[]}::text[]) FROM call_sessions latest
+        WHERE latest.conversation_id = s.conversation_id AND latest.contact_id = s.contact_id
+        ORDER BY latest.requested_at DESC, latest.id DESC LIMIT 1), false) AS handoff_call_settled
     FROM conversation_sales_context_states_v1 s
     JOIN conversations c ON c.id=s.conversation_id AND c.contact_id=s.contact_id
     JOIN workspace_contacts wc ON wc.workspace_id=s.workspace_id AND wc.contact_id=s.contact_id
