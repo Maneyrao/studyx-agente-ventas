@@ -1,6 +1,6 @@
 -- send_course_program (owner decision 2026-11-04): the official programme PDF is a
 -- document part of the reply. Additive: one more physical part (the three text
--- bubbles keep indexes 0-2, the document takes 3), one more committed action,
+-- bubbles keep indexes 0-2; the course image and the PDF take the next two: 0-4), one more committed action,
 -- and an idempotent delivery ledger per (conversation, offering, asset version).
 BEGIN;
 
@@ -17,7 +17,7 @@ BEGIN
   END LOOP;
 END $$;
 ALTER TABLE public.agent_decision_outbound_parts
-  ADD CONSTRAINT agent_decision_outbound_parts_part_index_check CHECK (part_index >= 0 AND part_index <= 3);
+  ADD CONSTRAINT agent_decision_outbound_parts_part_index_check CHECK (part_index >= 0 AND part_index <= 4);
 
 -- Drop the action-shape CHECK by definition, not only by name; the scope check (decision_kind <> 'suppress') stays.
 DO $$
@@ -76,10 +76,12 @@ CREATE TABLE IF NOT EXISTS public.course_program_deliveries (
   status text NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','submitted','failed')),
   decision_id uuid REFERENCES public.agent_decisions(id),
   outbound_message_id uuid REFERENCES public.messages(id),
+  image_outbound_message_id uuid REFERENCES public.messages(id),
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT course_program_deliveries_once UNIQUE (conversation_id, offering_code, asset_version)
 );
+ALTER TABLE public.course_program_deliveries ADD COLUMN IF NOT EXISTS image_outbound_message_id uuid REFERENCES public.messages(id);
 CREATE INDEX IF NOT EXISTS course_program_deliveries_outbound_idx ON public.course_program_deliveries (outbound_message_id);
 
 ALTER TABLE public.course_program_deliveries ENABLE ROW LEVEL SECURITY;

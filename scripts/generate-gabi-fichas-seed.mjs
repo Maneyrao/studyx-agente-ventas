@@ -10,7 +10,7 @@
  * parsed here. Mirrors scripts/generate-temarios-seed.mjs.
  *
  * Mapping manual name -> catalog offering code is explicit below. A manual
- * course with no code is listed under `unmapped` and is never activated;
+ * course with no code is listed under `unmapped` and is never activated (since 2026-11-05 all 57 are mapped);
  * the runtime also projects a ficha only for an ACTIVE offering.
  */
 import { readFileSync, writeFileSync } from 'node:fs';
@@ -30,14 +30,14 @@ export const OFFERING_CODE_BY_MANUAL_NAME = Object.freeze({
   'Introducción al Vino, la Cata y el Maridaje': 'vino_cata_maridaje',
   'Introducción al Catering': 'introduccion_catering',
   'Sushi para Principiantes': 'sushi_principiantes',
-  'Introducción a la Pastelería y Repostería': null,
+  'Introducción a la Pastelería y Repostería': 'introduccion_pasteleria_reposteria',
   'Barista': 'barista',
   'Entrenamiento Funcional': 'entrenamiento_funcional',
   'Nutrición y Alimentación Saludable': 'nutricion_alimentacion',
   'Masoterapia': 'masoterapia',
   'Asistente y Cuidador de Adultos Mayores': 'cuidador_adultos_mayores',
-  'Auxiliar de Farmacia': null,
-  'Auxiliar de Educación Especial': null,
+  'Auxiliar de Farmacia': 'auxiliar_farmacia',
+  'Auxiliar de Educación Especial': 'auxiliar_educacion_especial',
   'Marketing Digital': 'marketing_digital',
   'Community Manager': 'community_manager',
   'Especialista en Marketing': 'especialista_marketing',
@@ -55,18 +55,18 @@ export const OFFERING_CODE_BY_MANUAL_NAME = Object.freeze({
   'Armado y Reparación de PC': 'armado_reparacion_pc',
   'Reparación de Celulares': 'reparacion_celulares',
   'Redes Informáticas': 'redes_informaticas',
-  'Curso de Electricista': null,
-  'Estudios Bíblicos para la Vida Diaria': null,
-  'Real Estate': null,
+  'Curso de Electricista': 'electricista',
+  'Estudios Bíblicos para la Vida Diaria': 'estudios_biblicos',
+  'Real Estate': 'real_estate',
   'Decoración de Interiores': 'decoracion_de_interiores',
   'Fotografía Profesional': 'fotografia_profesional',
   'Organizador Profesional de Eventos Sociales': 'organizador_eventos_sociales',
   'Organización de Baby Showers': 'organizacion_baby_shower',
   'Estrategias para Emprender': 'estrategias_emprender',
-  'Diseño de Vidrieras y Stand': null,
+  'Diseño de Vidrieras y Stand': 'diseno_vidrieras_stand',
   'Instagram para Emprendedores': 'instagram_emprendedores',
-  'Plomería': null,
-  'Home Maintenance': null,
+  'Plomería': 'plomeria',
+  'Home Maintenance': 'home_maintenance',
   'Paisajismo y Jardinería': 'paisajismo_jardineria',
   'Diseño Gráfico con CorelDRAW': 'diseno_corel_draw',
   'Diseño Gráfico con Photoshop': 'diseno_photoshop',
@@ -77,13 +77,13 @@ export const OFFERING_CODE_BY_MANUAL_NAME = Object.freeze({
   'Coaching y Liderazgo': 'coaching_liderazgo',
   'Comunicación Interna en Empresas': 'comunicacion_interna_empresas',
   'Introducción a las Criptomonedas': 'introduccion_criptomonedas',
-  'Word': null,
+  'Word': 'word',
   'Oratoria': 'oratoria',
   'Inglés I (Básico)': 'ingles_1',
   'Inglés II (Intermedio)': 'ingles_2',
   'Inglés III': 'ingles_3',
-  'Inglés IV': null,
-  'Ceremonial y Protocolo': null,
+  'Inglés IV': 'ingles_4',
+  'Ceremonial y Protocolo': 'ceremonial_protocolo',
 });
 
 const clean = (value) => value.replace(/\s+/gu, ' ').trim();

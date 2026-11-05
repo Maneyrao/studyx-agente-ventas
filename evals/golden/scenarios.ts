@@ -73,6 +73,10 @@ export type HardRuleV1 =
   /** The official PDF of this offering was handed to the delivery client this turn. */
   | { readonly type: 'program_document_sent'; readonly value: string }
   | { readonly type: 'no_program_document' }
+  /** The course image of this offering was handed to the delivery client this turn. */
+  | { readonly type: 'program_image_sent'; readonly value: string }
+  /** The delivered PDF is the official programme or the manual ficha. */
+  | { readonly type: 'program_document_kind'; readonly value: 'program' | 'ficha' }
   /** The PDF of this offering goes out in this turn XOR it already went out in the previous turn (exactly once across the pair). */
   | { readonly type: 'program_document_exactly_once'; readonly value: string }
   | { readonly type: 'no_link_delivered' }

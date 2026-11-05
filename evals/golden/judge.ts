@@ -56,6 +56,10 @@ export interface GoldenTurnObservationV1 {
   };
   /** Offering codes whose official PDF was delivered as a document this turn. */
   readonly programDocuments?: readonly string[];
+  /** Offering codes whose course image was delivered this turn. */
+  readonly programImages?: readonly string[];
+  /** Kind of each delivered PDF: the official programme or the manual ficha. */
+  readonly programDocumentKinds?: readonly ('program' | 'ficha')[];
   readonly deliveredLinks: readonly string[];
   readonly authorizedFactIds: readonly string[];
   readonly authorizedFacts: readonly { readonly id: string; readonly kind: string; readonly value: string }[];
@@ -416,10 +420,20 @@ export function evaluateHardRules(
     if (rule.type === 'program_document_exactly_once') {
       const now = (observation.programDocuments ?? []).includes(rule.value);
       const before = (previousObservation?.programDocuments ?? []).includes(rule.value);
+      const imageNow = (observation.programImages ?? []).includes(rule.value);
+      const imageBefore = (previousObservation?.programImages ?? []).includes(rule.value);
       if (now && before) add(failures, 'PROGRAM_DOCUMENT_DUPLICATED', `El PDF de ${rule.value} se envió dos veces.`);
+      if (imageNow && imageBefore) add(failures, 'PROGRAM_IMAGE_DUPLICATED', `La imagen de ${rule.value} se envió dos veces.`);
+      if (now !== imageNow) add(failures, 'PROGRAM_MATERIAL_INCOMPLETE', `PDF e imagen de ${rule.value} deben salir juntos (PDF ${now}, imagen ${imageNow}).`);
       if (!now && !before) add(failures, 'PROGRAM_DOCUMENT_MISSING', `El PDF de ${rule.value} no se envió en este turno ni en el anterior.`);
     }
-    if (rule.type === 'no_program_document' && (observation.programDocuments ?? []).length > 0) {
+    if (rule.type === 'program_image_sent' && !(observation.programImages ?? []).includes(rule.value)) {
+      add(failures, 'PROGRAM_IMAGE_MISSING', `Falta la imagen de ${rule.value}; enviadas ${(observation.programImages ?? []).join('|') || 'ninguna'}.`);
+    }
+    if (rule.type === 'program_document_kind' && !(observation.programDocumentKinds ?? []).includes(rule.value)) {
+      add(failures, 'PROGRAM_DOCUMENT_KIND_MISMATCH', `Se esperaba un PDF ${rule.value}; enviados ${(observation.programDocumentKinds ?? []).join('|') || 'ninguno'}.`);
+    }
+    if (rule.type === 'no_program_document' && ((observation.programDocuments ?? []).length > 0 || (observation.programImages ?? []).length > 0)) {
       add(failures, 'PROGRAM_DOCUMENT_UNEXPECTED', `Se envió ${(observation.programDocuments ?? []).join('|')}.`);
     }
     if (rule.type === 'no_link_delivered' && observation.deliveredLinks.length > 0) {

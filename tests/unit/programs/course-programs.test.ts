@@ -3,7 +3,8 @@ import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { COURSE_PROGRAM_ASSETS_V1, courseProgramAssetV1, courseProgramUrlV1 } from '@/shared/catalog/course-programs';
+import { COURSE_PROGRAM_ASSETS_V1, courseProgramAssetV1, courseProgramImageUrlV1, courseProgramUrlV1 } from '@/shared/catalog/course-programs';
+import { COURSE_MATERIAL_ROWS_V1 } from '@/shared/catalog/course-material.generated';
 import { authorizeAgentTurnV2 } from '@/features/conversation/domain/agent-turn-policy-v2';
 import { createDefaultConversationStateV1 } from '@/features/conversation/domain/conversation-planner';
 import { AgentATurnProposalV1Schema } from '@/features/conversation/adapters/agent-a-brain-schema';
@@ -15,24 +16,49 @@ import { OFFERING_CODES } from '../../../scripts/generate-studyx-programs-seed.m
 
 const ENV = { STUDYX_PUBLIC_ASSET_BASE_URL: 'https://assets.example.com/' };
 
-describe('course program registry', () => {
-  it('equals the official programme PDFs plus the offering-code mapping', () => {
-    const data = JSON.parse(readFileSync('supabase/seed/data/programas-studyx-pdf.json', 'utf8')) as { programs: Array<{ slug: string; sha256: string }> };
-    const expected = data.programs.filter(program => (OFFERING_CODES as Record<string, string>)[program.slug])
-      .map(program => [(OFFERING_CODES as Record<string, string>)[program.slug]!, program.slug, program.sha256]);
-    const actual = [...COURSE_PROGRAM_ASSETS_V1.values()].map(asset => [asset.offering_code, asset.slug, asset.sha256]);
-    expect(actual.sort()).toEqual(expected.sort());
-    expect(courseProgramAssetV1('real_estate')).toMatchObject({ slug: 'real-estate', mime: 'application/pdf',
-      filename: 'Programa Real Estate - Studyx.pdf', version: 'f7631135a630' });
-    for (const asset of COURSE_PROGRAM_ASSETS_V1.values()) expect(asset.filename).not.toMatch(/[\\/]/u);
+describe('course material registry', () => {
+  it('registers the 57 manual courses: image + ficha for each, the official programme PDF where it exists', () => {
+    const csv = readFileSync('docs/authority/material-gabi-2026-11-03/indice_para_el_agente.csv', 'utf8').replace(/^\uFEFF/u, '').split(/\r?\n/u).filter(Boolean).slice(1);
+    const fichas = JSON.parse(readFileSync('supabase/seed/data/fichas-gabi-2026-11-03.json', 'utf8')) as { courses: Array<{ manual_name: string; offering_code: string }> };
+    const programs = JSON.parse(readFileSync('supabase/seed/data/programas-studyx-pdf.json', 'utf8')) as { programs: Array<{ slug: string; sha256: string }> };
+    expect(COURSE_PROGRAM_ASSETS_V1.size).toBe(57);
+    expect(csv.filter(line => !line.includes('Beneficios')).length).toBe(57);
+    expect(new Set(fichas.courses.map(course => course.offering_code))).toEqual(new Set(COURSE_PROGRAM_ASSETS_V1.keys()));
+    for (const program of programs.programs) {
+      const code = (OFFERING_CODES as Record<string, string>)[program.slug]!;
+      expect(code, program.slug).toBeTruthy();
+      expect(courseProgramAssetV1(code)).toMatchObject({ has_program_pdf: true, document: { kind: 'program', sha256: program.sha256, path: `programas/${program.slug}.pdf` } });
+    }
+    const withoutProgram = [...COURSE_PROGRAM_ASSETS_V1.values()].filter(asset => !asset.has_program_pdf);
+    expect(withoutProgram.length).toBe(57 - programs.programs.length);
+    for (const asset of withoutProgram) expect(asset.document).toMatchObject({ kind: 'ficha', path: `material/fichas/${asset.offering_code}.pdf` });
+    for (const asset of COURSE_PROGRAM_ASSETS_V1.values()) {
+      expect(asset.image.path).toBe(`material/imagenes/${asset.offering_code}.png`);
+      expect(asset.image.sha256).toMatch(/^[0-9a-f]{64}$/u);
+      expect(asset.version).toMatch(/^[0-9a-f]{12}$/u);
+      expect(asset.filename).not.toMatch(/[\\/]/u);
+    }
+    expect(courseProgramAssetV1('real_estate')).toMatchObject({ mime: 'application/pdf', filename: 'Programa Real Estate - Studyx.pdf' });
+    expect(courseProgramAssetV1('barista')).toMatchObject({ has_program_pdf: true });
+    expect(courseProgramAssetV1('ingles_4')).toMatchObject({ has_program_pdf: false, filename: 'Ficha Inglés IV - Studyx.pdf' });
   });
-  it('builds the public URL only from env + registry slug, https only; no env means unavailable', () => {
+  it('the ficha PDFs in git match their registered sha256', () => {
+    for (const row of COURSE_MATERIAL_ROWS_V1) {
+      const bytes = readFileSync(`docs/authority/material-gabi-2026-11-03/fichas_pdf/${row[4]}`);
+      expect(createHash('sha256').update(bytes).digest('hex'), row[0]).toBe(row[5]);
+    }
+  });
+  it('builds the public URLs only from env + registry paths, https only; no env means unavailable', () => {
     expect(courseProgramUrlV1('real_estate', ENV)).toBe('https://assets.example.com/programas/real-estate.pdf');
-    expect(courseProgramUrlV1('real_estate', {})).toBeNull();
-    expect(courseProgramUrlV1('real_estate', { STUDYX_PUBLIC_ASSET_BASE_URL: 'http://assets.example.com' })).toBeNull();
-    expect(courseProgramUrlV1('real_estate', { STUDYX_PUBLIC_ASSET_BASE_URL: 'not a url' })).toBeNull();
-    expect(courseProgramUrlV1('curso_inventado', ENV)).toBeNull();
-    expect(courseProgramUrlV1('../../etc/passwd', ENV)).toBeNull();
+    expect(courseProgramUrlV1('ingles_4', ENV)).toBe('https://assets.example.com/material/fichas/ingles_4.pdf');
+    expect(courseProgramImageUrlV1('real_estate', ENV)).toBe('https://assets.example.com/material/imagenes/real_estate.png');
+    for (const build of [courseProgramUrlV1, courseProgramImageUrlV1]) {
+      expect(build('real_estate', {})).toBeNull();
+      expect(build('real_estate', { STUDYX_PUBLIC_ASSET_BASE_URL: 'http://assets.example.com' })).toBeNull();
+      expect(build('real_estate', { STUDYX_PUBLIC_ASSET_BASE_URL: 'not a url' })).toBeNull();
+      expect(build('curso_inventado', ENV)).toBeNull();
+      expect(build('../../etc/passwd', ENV)).toBeNull();
+    }
   });
 });
 
@@ -74,10 +100,15 @@ describe('send_course_program authorization', () => {
     ['capability missing (env/channel)', undefined, {}],
     ['not registered / unavailable offering', available, { code: 'barista' }],
     ['unknown offering', available, { code: 'curso_inventado' }],
-    ['the current message is not a programme request', available, { move: 'ask_course_information' }],
+    ['the current message is a price objection, not course information', available, { move: 'price_objection' }],
+    ['the current message is a payment question', available, { move: 'ask_payment_options' }],
   ] as const)('prunes the action without silencing the reply: %s', (_name, programs, over) => {
     const result = authorize(programs as never, over);
     expect(result).toMatchObject({ ok: true, action: { type: 'none' }, response: 'Te comparto el programa.' });
+  });
+  it('class/temario explanations (ask_course_information) send the material in the same turn; a price or payment turn does not', () => {
+    expect(authorize(available, { move: 'ask_course_information' })).toMatchObject({ ok: true, action: { type: 'send_course_program' } });
+    expect(authorize(available, { move: 'request_course_program' })).toMatchObject({ ok: true, action: { type: 'send_course_program' } });
   });
   it('already sent: the action is dropped (not an error) and the text stays', () => {
     expect(authorize({ available_offering_codes: ['real_estate'], sent_offering_codes: ['real_estate'] }))
@@ -121,5 +152,16 @@ describe('programme-stated module count', () => {
     expect(programModuleCountV1([texts[0]!])).toBe(3);          // callers pass the whole programme, never one page
     expect(programModuleCountV1(['Módulo 1 - a', 'Módulo 3 - c'])).toBeNull();
     expect(programModuleCountV1([])).toBeNull();
+  });
+});
+
+describe('stage-course-material', () => {
+  it('fails on a missing image directory and on a hash mismatch, and stages nothing partial as success', async () => {
+    const { stageCourseMaterial } = await import('../../../scripts/stage-course-programs.mjs');
+    const images = mkdtempSync(join(tmpdir(), 'images-src-'));
+    const target = mkdtempSync(join(tmpdir(), 'images-out-'));
+    expect(() => stageCourseMaterial(target, images)).toThrow(/STAGING_FAILED:.*MISSING_IMAGE:/u);
+    for (const row of COURSE_MATERIAL_ROWS_V1) writeFileSync(join(images, row[2]), 'not the real image');
+    expect(() => stageCourseMaterial(target, images)).toThrow(/SHA256_MISMATCH_IMAGE:vino_cata_maridaje/u);
   });
 });

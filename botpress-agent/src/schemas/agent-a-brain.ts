@@ -342,6 +342,10 @@ export const AgentAContextV1Schema = z.object({
     course_programs: z.object({
       available_offering_codes: z.array(IdentifierSchema).max(60),
       sent_offering_codes: z.array(IdentifierSchema).max(60),
+      /** What goes out per available course: the PDF kind (official programme or manual ficha) and the course image. */
+      materials: z.array(z.object({
+        offering_code: IdentifierSchema, has_program_pdf: z.boolean(), has_ficha_pdf: z.boolean(), has_image: z.boolean(),
+      }).strict()).max(60).optional(),
     }).strict().optional(),
     course_bonus: z.object({
       ladder: CourseBonusLadderV1Schema.optional(),

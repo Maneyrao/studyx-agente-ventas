@@ -17,12 +17,13 @@ describe('Gabi fichas generator', () => {
     const built = buildFichas(manual, index);
     expect(built.courses).toHaveLength(57);
     expect(JSON.parse(JSON.stringify(built))).toEqual(data);
-    expect(built.unmapped).toContain('Real Estate');
+    expect(built.unmapped).toEqual([]);
     expect(JSON.stringify(built)).not.toMatch(/\b699\b|beca|\$|USD/iu);
   });
 
   it('maps only to real catalog codes and lists the rest as unmapped', () => {
-    const seed = readFileSync('supabase/seed/studyx.sql', 'utf8') + readFileSync('supabase/seed/studyx-manual.sql', 'utf8');
+    const seed = readFileSync('supabase/seed/studyx.sql', 'utf8') + readFileSync('supabase/seed/studyx-manual.sql', 'utf8')
+      + readFileSync('scripts/upsert-manual-2026-offerings.mjs', 'utf8');
     const codes = (Object.values(OFFERING_CODE_BY_MANUAL_NAME) as Array<string | null>).filter((code): code is string => code !== null);
     for (const code of codes) expect(seed, code).toContain(`'${code}'`);
     expect(data.unmapped.length).toBe((Object.values(OFFERING_CODE_BY_MANUAL_NAME) as Array<string | null>).filter((code) => code === null).length);
@@ -39,7 +40,7 @@ describe('ficha facts', () => {
       expect(value).not.toMatch(/\b699\b|beca|\$|USD/iu);
     }
     expect(fichaFactValueV1('unas_gelificadas', { activeCodes: new Set(['maquillaje_profesional']) })).toBeNull();
-    expect(fichaFactValueV1('real_estate', { activeCodes: active })).toBeNull();
+    expect(fichaFactValueV1('real_estate', { activeCodes: new Set(['marketing_digital']) })).toBeNull();
     const nails = fichaFactValueV1('unas_gelificadas', { activeCodes: active })!;
     expect(nails).toContain('Beauty freelance: Maquillaje Profesional + Uñas Gelificadas + Instagram para Emprendedores');
   });

@@ -5,7 +5,7 @@ import {
 } from './studyx-agent-a-canonical.generated';
 import { resolveCanonicalPromptIdentityV1 } from './agent-a-identity';
 
-export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v167' as const;
+export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v168' as const;
 
 /**
  * Runtime contract only. The sales behavior lives in the canonical prompt so
@@ -231,12 +231,15 @@ function currentCourseProgramEffectContractV1(context: AgentAContextV1): string 
   if (!programs) return ''
   const sendable = programs.available_offering_codes.filter(code => !programs.sent_offering_codes.includes(code))
   if (sendable.length === 0 && programs.sent_offering_codes.length === 0) return ''
+  const materials = (programs.materials ?? []).filter(item => sendable.includes(item.offering_code))
+    .map(item => `${item.offering_code}(${item.has_program_pdf ? 'official programme PDF' : 'manual ficha PDF'}${item.has_image ? ' + course image' : ''})`)
   return `<current_effect_contract kind="course_program">
-The official programme PDF of a course can be sent over WhatsApp. When the current message asks for the programme, syllabus, temario or PDF (move=request_course_program), propose proposed_action={type:"send_course_program", offering_code} for the course in focus, chosen from: ${sendable.join(', ') || '(none left to send)'}.
-Write a short, human introduction; the PDF itself is the answer, never replace it with a summary of the syllabus. The backend resolves the file; never write a URL.
-The document is delivered before your text. Phrase it as something you are sharing ("te comparto el programa de X") only together with the action; never state as already done what the backend has not delivered.
-A course that is not in the list above has no PDF file available: say naturally that you do not have the programme file for it and offer the information you do have; never say you are sending it, and do not propose the action.
-Already delivered in this conversation: ${programs.sent_offering_codes.join(', ') || 'none'}. If the customer asks again for one of those, say naturally that you already sent it and offer to go over anything in it; do not propose the action again.
+Course material can be sent over WhatsApp with ONE action, proposed_action={type:"send_course_program", offering_code}: the official course image and the programme PDF (the official programme when it exists, otherwise the manual ficha) go out together, before your text. Available now: ${materials.join(', ') || '(none left to send)'}.
+When you explain the classes, the syllabus (temario) or the content of the course in focus for the first time in this conversation, propose the action in that same turn (use move=ask_course_information, or request_course_program when the customer asks for the programme/temario/PDF). Not on pure price or payment turns, and never more than once per course.
+Write a short, human text that goes with the material; the files are the answer, never replace them with a long summary of the syllabus. The backend resolves the files; never write a URL.
+Phrase it as something you are sharing ("te comparto el programa de X") only together with the action; never state as already done what the backend has not delivered.
+A course that is not in the list above has no material available: say naturally that you do not have the file for it and offer the information you do have; never say you are sending it, and do not propose the action.
+Already delivered in this conversation: ${programs.sent_offering_codes.join(', ') || 'none'}. For those, say naturally that you already sent it (more arriba en este chat) and offer to go over anything in it; do not propose the action again.
 </current_effect_contract>`
 }
 

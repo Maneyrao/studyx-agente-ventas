@@ -1215,11 +1215,15 @@ describe('cases 29-41 hard rules (current-message bonus motive, package, program
   });
   it('program_document_exactly_once: sent now XOR sent in the previous turn', () => {
     const turn = turnWith('x', [{ type: 'program_document_exactly_once', value: 'real_estate' }]);
-    const sent = observation({ programDocuments: ['real_estate'] });
+    const sent = observation({ programDocuments: ['real_estate'], programImages: ['real_estate'] });
     expect(codes(turn, sent, observation())).toEqual([]);
     expect(codes(turn, observation(), sent)).toEqual([]);
-    expect(codes(turn, sent, sent)).toContain('PROGRAM_DOCUMENT_DUPLICATED');
+    expect(codes(turn, sent, sent)).toEqual(expect.arrayContaining(['PROGRAM_DOCUMENT_DUPLICATED', 'PROGRAM_IMAGE_DUPLICATED']));
     expect(codes(turn, observation(), observation())).toContain('PROGRAM_DOCUMENT_MISSING');
+    expect(codes(turn, observation({ programDocuments: ['real_estate'] }), observation())).toContain('PROGRAM_MATERIAL_INCOMPLETE');
+    const kinds = turnWith('x', [{ type: 'program_image_sent', value: 'word' }, { type: 'program_document_kind', value: 'ficha' }]);
+    expect(codes(kinds, observation({ programImages: ['word'], programDocumentKinds: ['ficha'] }))).toEqual([]);
+    expect(codes(kinds, observation({ programDocumentKinds: ['program'] }))).toEqual(expect.arrayContaining(['PROGRAM_IMAGE_MISSING', 'PROGRAM_DOCUMENT_KIND_MISMATCH']));
   });
   it('a turn whose prior promotion precondition is not met is not judged (case 41 clarification)', () => {
     const turn = { ...turnWith('osea me regalas otro curso?', [{ type: 'package_unchanged' }]),

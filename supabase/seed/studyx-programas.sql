@@ -351,7 +351,7 @@ A lo largo de este curso, recorrerás de manera práctica y progresiva todos los
 conocimientos y habilidades que necesita un auxiliar de farmacia para desempeñarse
 con éxito.
 Programa completo: https://mystudyx.com/diplomado/auxiliar-de-farmacia/',
- 'active',1,'{"source":"official_program_pdf","course_slug":"auxiliar-de-farmacia","offering_code":null,"catalog_url":"https://mystudyx.com/diplomado/auxiliar-de-farmacia/","pdf_sha256":"22292cca6a30dd040a35c97be5ceb7f2115fb75f6dbbff865b946df12137b226","source_page":1,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
+ 'active',1,'{"source":"official_program_pdf","course_slug":"auxiliar-de-farmacia","offering_code":"auxiliar_farmacia","catalog_url":"https://mystudyx.com/diplomado/auxiliar-de-farmacia/","pdf_sha256":"22292cca6a30dd040a35c97be5ceb7f2115fb75f6dbbff865b946df12137b226","source_page":1,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
 ('95eb98da-a8d4-4f26-a31f-00ac4db45fbd','b0000000-0000-4000-8000-000000000001','offering',
  'Programa — Auxiliar de Farmacia en Estados Unidos — página 1 — parte 2',
  'Curso: Auxiliar de Farmacia en Estados Unidos.
@@ -375,14 +375,14 @@ Módulo 3 – Prescripción Médica y Recetas
  Características de la receta y datos requeridos.
  Rol del auxiliar en la recepción, verificación preliminar y registro.
 Programa completo: https://mystudyx.com/diplomado/auxiliar-de-farmacia/',
- 'active',1,'{"source":"official_program_pdf","course_slug":"auxiliar-de-farmacia","offering_code":null,"catalog_url":"https://mystudyx.com/diplomado/auxiliar-de-farmacia/","pdf_sha256":"22292cca6a30dd040a35c97be5ceb7f2115fb75f6dbbff865b946df12137b226","source_page":1,"source_part":2,"extracted_at":"2026-10-29"}'::jsonb),
+ 'active',1,'{"source":"official_program_pdf","course_slug":"auxiliar-de-farmacia","offering_code":"auxiliar_farmacia","catalog_url":"https://mystudyx.com/diplomado/auxiliar-de-farmacia/","pdf_sha256":"22292cca6a30dd040a35c97be5ceb7f2115fb75f6dbbff865b946df12137b226","source_page":1,"source_part":2,"extracted_at":"2026-10-29"}'::jsonb),
 ('23624ab5-c127-4c46-9309-ff519a4e8c63','b0000000-0000-4000-8000-000000000001','offering',
  'Programa — Auxiliar de Farmacia en Estados Unidos — página 1 — parte 3',
  'Curso: Auxiliar de Farmacia en Estados Unidos.
 Fuente oficial: programa StudyX, página 1 de 4.
  Reglas para manejo de prescripciones electrónicas y físicas.
 Programa completo: https://mystudyx.com/diplomado/auxiliar-de-farmacia/',
- 'active',1,'{"source":"official_program_pdf","course_slug":"auxiliar-de-farmacia","offering_code":null,"catalog_url":"https://mystudyx.com/diplomado/auxiliar-de-farmacia/","pdf_sha256":"22292cca6a30dd040a35c97be5ceb7f2115fb75f6dbbff865b946df12137b226","source_page":1,"source_part":3,"extracted_at":"2026-10-29"}'::jsonb),
+ 'active',1,'{"source":"official_program_pdf","course_slug":"auxiliar-de-farmacia","offering_code":"auxiliar_farmacia","catalog_url":"https://mystudyx.com/diplomado/auxiliar-de-farmacia/","pdf_sha256":"22292cca6a30dd040a35c97be5ceb7f2115fb75f6dbbff865b946df12137b226","source_page":1,"source_part":3,"extracted_at":"2026-10-29"}'::jsonb),
 ('79d58d08-1642-4552-83ce-58833f60e7e8','b0000000-0000-4000-8000-000000000001','offering',
  'Programa — Auxiliar de Farmacia en Estados Unidos — página 2 — parte 1',
  'Curso: Auxiliar de Farmacia en Estados Unidos.
@@ -406,7 +406,7 @@ Módulo 6 – Terminología Médica y Química Farmacológica
  Conceptos básicos de química farmacológica: formas, excipientes, interacciones
 simples.
 Programa completo: https://mystudyx.com/diplomado/auxiliar-de-farmacia/',
- 'active',1,'{"source":"official_program_pdf","course_slug":"auxiliar-de-farmacia","offering_code":null,"catalog_url":"https://mystudyx.com/diplomado/auxiliar-de-farmacia/","pdf_sha256":"22292cca6a30dd040a35c97be5ceb7f2115fb75f6dbbff865b946df12137b226","source_page":2,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
+ 'active',1,'{"source":"official_program_pdf","course_slug":"auxiliar-de-farmacia","offering_code":"auxiliar_farmacia","catalog_url":"https://mystudyx.com/diplomado/auxiliar-de-farmacia/","pdf_sha256":"22292cca6a30dd040a35c97be5ceb7f2115fb75f6dbbff865b946df12137b226","source_page":2,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
 ('c644447a-b033-4412-b105-d6ee50aef4d6','b0000000-0000-4000-8000-000000000001','offering',
  'Programa — Auxiliar de Farmacia en Estados Unidos — página 2 — parte 2',
  'Curso: Auxiliar de Farmacia en Estados Unidos.
@@ -423,7 +423,7 @@ Módulo 8 – Medicamentos Controlados y Manejo Correcto
  Registro y documentación obligatoria.
  Prevención de errores y desvíos.
 Programa completo: https://mystudyx.com/diplomado/auxiliar-de-farmacia/',
- 'active',1,'{"source":"official_program_pdf","course_slug":"auxiliar-de-farmacia","offering_code":null,"catalog_url":"https://mystudyx.com/diplomado/auxiliar-de-farmacia/","pdf_sha256":"22292cca6a30dd040a35c97be5ceb7f2115fb75f6dbbff865b946df12137b226","source_page":2,"source_part":2,"extracted_at":"2026-10-29"}'::jsonb),
+ 'active',1,'{"source":"official_program_pdf","course_slug":"auxiliar-de-farmacia","offering_code":"auxiliar_farmacia","catalog_url":"https://mystudyx.com/diplomado/auxiliar-de-farmacia/","pdf_sha256":"22292cca6a30dd040a35c97be5ceb7f2115fb75f6dbbff865b946df12137b226","source_page":2,"source_part":2,"extracted_at":"2026-10-29"}'::jsonb),
 ('8b1ff3c5-9179-4f17-88dd-675f0d6863c4','b0000000-0000-4000-8000-000000000001','offering',
  'Programa — Auxiliar de Farmacia en Estados Unidos — página 3 — parte 1',
  'Curso: Auxiliar de Farmacia en Estados Unidos.
@@ -445,7 +445,7 @@ Módulo 11 – Uso de Tecnología y Gestión en Farmacia
  E-prescriptions, control de stock, códigos de barras.
  Organización de turnos, logística y flujo de trabajo.
 Programa completo: https://mystudyx.com/diplomado/auxiliar-de-farmacia/',
- 'active',1,'{"source":"official_program_pdf","course_slug":"auxiliar-de-farmacia","offering_code":null,"catalog_url":"https://mystudyx.com/diplomado/auxiliar-de-farmacia/","pdf_sha256":"22292cca6a30dd040a35c97be5ceb7f2115fb75f6dbbff865b946df12137b226","source_page":3,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
+ 'active',1,'{"source":"official_program_pdf","course_slug":"auxiliar-de-farmacia","offering_code":"auxiliar_farmacia","catalog_url":"https://mystudyx.com/diplomado/auxiliar-de-farmacia/","pdf_sha256":"22292cca6a30dd040a35c97be5ceb7f2115fb75f6dbbff865b946df12137b226","source_page":3,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
 ('421c1a58-fffb-47ec-b20b-5123899fe727','b0000000-0000-4000-8000-000000000001','offering',
  'Programa — Auxiliar de Farmacia en Estados Unidos — página 3 — parte 2',
  'Curso: Auxiliar de Farmacia en Estados Unidos.
@@ -466,7 +466,7 @@ el ámbito de la salud.
 - Incluye módulos de actualización en tecnología, comunicación y regulaciones, claves
 en el mercado actual.
 Programa completo: https://mystudyx.com/diplomado/auxiliar-de-farmacia/',
- 'active',1,'{"source":"official_program_pdf","course_slug":"auxiliar-de-farmacia","offering_code":null,"catalog_url":"https://mystudyx.com/diplomado/auxiliar-de-farmacia/","pdf_sha256":"22292cca6a30dd040a35c97be5ceb7f2115fb75f6dbbff865b946df12137b226","source_page":3,"source_part":2,"extracted_at":"2026-10-29"}'::jsonb),
+ 'active',1,'{"source":"official_program_pdf","course_slug":"auxiliar-de-farmacia","offering_code":"auxiliar_farmacia","catalog_url":"https://mystudyx.com/diplomado/auxiliar-de-farmacia/","pdf_sha256":"22292cca6a30dd040a35c97be5ceb7f2115fb75f6dbbff865b946df12137b226","source_page":3,"source_part":2,"extracted_at":"2026-10-29"}'::jsonb),
 ('5750bbca-d749-475b-83a2-062a3b0abbf7','b0000000-0000-4000-8000-000000000001','offering',
  'Programa — Auxiliar de Farmacia en Estados Unidos — página 4 — parte 1',
  'Curso: Auxiliar de Farmacia en Estados Unidos.
@@ -480,7 +480,7 @@ crecer profesionalmente en un área con alta demanda laboral.
 Este es el primer paso para tu desarrollo en el sector farmacéutico. ¡Comencemos juntos
 este recorrido hacia tu nueva carrera!
 Programa completo: https://mystudyx.com/diplomado/auxiliar-de-farmacia/',
- 'active',1,'{"source":"official_program_pdf","course_slug":"auxiliar-de-farmacia","offering_code":null,"catalog_url":"https://mystudyx.com/diplomado/auxiliar-de-farmacia/","pdf_sha256":"22292cca6a30dd040a35c97be5ceb7f2115fb75f6dbbff865b946df12137b226","source_page":4,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
+ 'active',1,'{"source":"official_program_pdf","course_slug":"auxiliar-de-farmacia","offering_code":"auxiliar_farmacia","catalog_url":"https://mystudyx.com/diplomado/auxiliar-de-farmacia/","pdf_sha256":"22292cca6a30dd040a35c97be5ceb7f2115fb75f6dbbff865b946df12137b226","source_page":4,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
 ('16a360ec-a12a-4cb2-8ff5-76a635b0e9f2','b0000000-0000-4000-8000-000000000001','offering',
  'Programa — Barista — página 3 — parte 1',
  'Curso: Barista.
@@ -639,7 +639,7 @@ este programa combina teoría, práctica, normativa y herramientas concretas que
 preparan para insertarte en el mercado laboral o iniciar tu propio negocio eléctrico.
 Aprenderás paso a paso los principios fundamentales de la electricidad, cómo instalar,
 Programa completo: https://mystudyx.com/diplomado/curso-de-electricista/',
- 'active',1,'{"source":"official_program_pdf","course_slug":"curso-de-electricista","offering_code":null,"catalog_url":"https://mystudyx.com/diplomado/curso-de-electricista/","pdf_sha256":"d282c0cf3ee207bce062e0731b063b3bf4242827334bcb30b84cbb9e99f0590f","source_page":1,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
+ 'active',1,'{"source":"official_program_pdf","course_slug":"curso-de-electricista","offering_code":"electricista","catalog_url":"https://mystudyx.com/diplomado/curso-de-electricista/","pdf_sha256":"d282c0cf3ee207bce062e0731b063b3bf4242827334bcb30b84cbb9e99f0590f","source_page":1,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
 ('f973df9d-3151-49fa-92e9-07235c04ccf6','b0000000-0000-4000-8000-000000000001','offering',
  'Programa — Curso de Electricista — página 1 — parte 2',
  'Curso: Curso de Electricista.
@@ -663,7 +663,7 @@ potencia.
 🏠 Módulo 3: Sistemas Eléctricos Residenciales
  Tipos de sistemas eléctricos residenciales en EE.UU.
 Programa completo: https://mystudyx.com/diplomado/curso-de-electricista/',
- 'active',1,'{"source":"official_program_pdf","course_slug":"curso-de-electricista","offering_code":null,"catalog_url":"https://mystudyx.com/diplomado/curso-de-electricista/","pdf_sha256":"d282c0cf3ee207bce062e0731b063b3bf4242827334bcb30b84cbb9e99f0590f","source_page":1,"source_part":2,"extracted_at":"2026-10-29"}'::jsonb),
+ 'active',1,'{"source":"official_program_pdf","course_slug":"curso-de-electricista","offering_code":"electricista","catalog_url":"https://mystudyx.com/diplomado/curso-de-electricista/","pdf_sha256":"d282c0cf3ee207bce062e0731b063b3bf4242827334bcb30b84cbb9e99f0590f","source_page":1,"source_part":2,"extracted_at":"2026-10-29"}'::jsonb),
 ('3455c4b8-c843-4bc2-80a0-e7557b3da5b7','b0000000-0000-4000-8000-000000000001','offering',
  'Programa — Curso de Electricista — página 1 — parte 3',
  'Curso: Curso de Electricista.
@@ -673,7 +673,7 @@ Fuente oficial: programa StudyX, página 1 de 3.
  Cableado según el NEC (tipos de cables, calibres, colores).
  Instalación de enchufes, interruptores, lámparas y ventiladores.
 Programa completo: https://mystudyx.com/diplomado/curso-de-electricista/',
- 'active',1,'{"source":"official_program_pdf","course_slug":"curso-de-electricista","offering_code":null,"catalog_url":"https://mystudyx.com/diplomado/curso-de-electricista/","pdf_sha256":"d282c0cf3ee207bce062e0731b063b3bf4242827334bcb30b84cbb9e99f0590f","source_page":1,"source_part":3,"extracted_at":"2026-10-29"}'::jsonb),
+ 'active',1,'{"source":"official_program_pdf","course_slug":"curso-de-electricista","offering_code":"electricista","catalog_url":"https://mystudyx.com/diplomado/curso-de-electricista/","pdf_sha256":"d282c0cf3ee207bce062e0731b063b3bf4242827334bcb30b84cbb9e99f0590f","source_page":1,"source_part":3,"extracted_at":"2026-10-29"}'::jsonb),
 ('82cb5897-c01d-4a07-9c6d-4bad314e046b','b0000000-0000-4000-8000-000000000001','offering',
  'Programa — Curso de Electricista — página 2 — parte 1',
  'Curso: Curso de Electricista.
@@ -696,7 +696,7 @@ Fuente oficial: programa StudyX, página 2 de 3.
  Factores de corrección por temperatura y número de conductores.
  Cálculo de caída de tensión (voltage drop).
 Programa completo: https://mystudyx.com/diplomado/curso-de-electricista/',
- 'active',1,'{"source":"official_program_pdf","course_slug":"curso-de-electricista","offering_code":null,"catalog_url":"https://mystudyx.com/diplomado/curso-de-electricista/","pdf_sha256":"d282c0cf3ee207bce062e0731b063b3bf4242827334bcb30b84cbb9e99f0590f","source_page":2,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
+ 'active',1,'{"source":"official_program_pdf","course_slug":"curso-de-electricista","offering_code":"electricista","catalog_url":"https://mystudyx.com/diplomado/curso-de-electricista/","pdf_sha256":"d282c0cf3ee207bce062e0731b063b3bf4242827334bcb30b84cbb9e99f0590f","source_page":2,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
 ('55ba73a7-5282-4d81-97cd-ae5d5e76060d','b0000000-0000-4000-8000-000000000001','offering',
  'Programa — Curso de Electricista — página 2 — parte 2',
  'Curso: Curso de Electricista.
@@ -714,7 +714,7 @@ Fuente oficial: programa StudyX, página 2 de 3.
  Sistemas de CCTV y seguridad electrónica.
  Redes y cableado estructurado básico.
 Programa completo: https://mystudyx.com/diplomado/curso-de-electricista/',
- 'active',1,'{"source":"official_program_pdf","course_slug":"curso-de-electricista","offering_code":null,"catalog_url":"https://mystudyx.com/diplomado/curso-de-electricista/","pdf_sha256":"d282c0cf3ee207bce062e0731b063b3bf4242827334bcb30b84cbb9e99f0590f","source_page":2,"source_part":2,"extracted_at":"2026-10-29"}'::jsonb),
+ 'active',1,'{"source":"official_program_pdf","course_slug":"curso-de-electricista","offering_code":"electricista","catalog_url":"https://mystudyx.com/diplomado/curso-de-electricista/","pdf_sha256":"d282c0cf3ee207bce062e0731b063b3bf4242827334bcb30b84cbb9e99f0590f","source_page":2,"source_part":2,"extracted_at":"2026-10-29"}'::jsonb),
 ('656bda3b-d7ce-4b5f-9b1c-fcff1c4464d3','b0000000-0000-4000-8000-000000000001','offering',
  'Programa — Curso de Electricista — página 3 — parte 1',
  'Curso: Curso de Electricista.
@@ -735,7 +735,7 @@ Fuente oficial: programa StudyX, página 3 de 3.
 ✔️ Comprender y aplicar los principios eléctricos fundamentales
 ✔️ Realizar instalaciones residenciales y comerciales cumpliendo normas NEC
 Programa completo: https://mystudyx.com/diplomado/curso-de-electricista/',
- 'active',1,'{"source":"official_program_pdf","course_slug":"curso-de-electricista","offering_code":null,"catalog_url":"https://mystudyx.com/diplomado/curso-de-electricista/","pdf_sha256":"d282c0cf3ee207bce062e0731b063b3bf4242827334bcb30b84cbb9e99f0590f","source_page":3,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
+ 'active',1,'{"source":"official_program_pdf","course_slug":"curso-de-electricista","offering_code":"electricista","catalog_url":"https://mystudyx.com/diplomado/curso-de-electricista/","pdf_sha256":"d282c0cf3ee207bce062e0731b063b3bf4242827334bcb30b84cbb9e99f0590f","source_page":3,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
 ('c24cf87c-2e0b-43dd-9cfd-604fb86aa329','b0000000-0000-4000-8000-000000000001','offering',
  'Programa — Curso de Electricista — página 3 — parte 2',
  'Curso: Curso de Electricista.
@@ -750,7 +750,7 @@ Fuente oficial: programa StudyX, página 3 de 3.
 transformar su futuro laboral, mejorar sus ingresos o emprender en uno de los oficios
 más buscados y bien remunerados del país.
 Programa completo: https://mystudyx.com/diplomado/curso-de-electricista/',
- 'active',1,'{"source":"official_program_pdf","course_slug":"curso-de-electricista","offering_code":null,"catalog_url":"https://mystudyx.com/diplomado/curso-de-electricista/","pdf_sha256":"d282c0cf3ee207bce062e0731b063b3bf4242827334bcb30b84cbb9e99f0590f","source_page":3,"source_part":2,"extracted_at":"2026-10-29"}'::jsonb),
+ 'active',1,'{"source":"official_program_pdf","course_slug":"curso-de-electricista","offering_code":"electricista","catalog_url":"https://mystudyx.com/diplomado/curso-de-electricista/","pdf_sha256":"d282c0cf3ee207bce062e0731b063b3bf4242827334bcb30b84cbb9e99f0590f","source_page":3,"source_part":2,"extracted_at":"2026-10-29"}'::jsonb),
 ('56d51752-d353-4d87-8e84-8a3f797deb44','b0000000-0000-4000-8000-000000000001','offering',
  'Programa — Decoración de Interiores — página 3 — parte 1',
  'Curso: Decoración de Interiores.
@@ -2050,7 +2050,7 @@ Inspirar al estudiante a ser luz e influencia en su entorno,
 desde su propia historia.
 Objetivos del diplomado
 Programa completo: https://mystudyx.com/diplomado/estudios-biblicos-para-la-vida-diaria/',
- 'active',1,'{"source":"official_program_pdf","course_slug":"estudios-biblicos-para-la-vida-diaria","offering_code":null,"catalog_url":"https://mystudyx.com/diplomado/estudios-biblicos-para-la-vida-diaria/","pdf_sha256":"4fa3a9f5e3addb88fa824a32d5d68425c79f694c02745aa97a0dddda1adbf76a","source_page":3,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
+ 'active',1,'{"source":"official_program_pdf","course_slug":"estudios-biblicos-para-la-vida-diaria","offering_code":"estudios_biblicos","catalog_url":"https://mystudyx.com/diplomado/estudios-biblicos-para-la-vida-diaria/","pdf_sha256":"4fa3a9f5e3addb88fa824a32d5d68425c79f694c02745aa97a0dddda1adbf76a","source_page":3,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
 ('3dfe9203-bdba-406e-bbdc-34f9e415483a','b0000000-0000-4000-8000-000000000001','offering',
  'Programa — Estudios Bíblicos para la Vida Diaria — página 4 — parte 1',
  'Curso: Estudios Bíblicos para la Vida Diaria.
@@ -2078,7 +2078,7 @@ Acompañar a otros en su
 caminar de fe, con una actitud
 humilde y comprometida.
 Programa completo: https://mystudyx.com/diplomado/estudios-biblicos-para-la-vida-diaria/',
- 'active',1,'{"source":"official_program_pdf","course_slug":"estudios-biblicos-para-la-vida-diaria","offering_code":null,"catalog_url":"https://mystudyx.com/diplomado/estudios-biblicos-para-la-vida-diaria/","pdf_sha256":"4fa3a9f5e3addb88fa824a32d5d68425c79f694c02745aa97a0dddda1adbf76a","source_page":4,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
+ 'active',1,'{"source":"official_program_pdf","course_slug":"estudios-biblicos-para-la-vida-diaria","offering_code":"estudios_biblicos","catalog_url":"https://mystudyx.com/diplomado/estudios-biblicos-para-la-vida-diaria/","pdf_sha256":"4fa3a9f5e3addb88fa824a32d5d68425c79f694c02745aa97a0dddda1adbf76a","source_page":4,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
 ('61fcce55-6be5-4d9b-8ee1-d687ba54f9b5','b0000000-0000-4000-8000-000000000001','offering',
  'Programa — Estudios Bíblicos para la Vida Diaria — página 5 — parte 1',
  'Curso: Estudios Bíblicos para la Vida Diaria.
@@ -2119,7 +2119,7 @@ fortalecer y afirmar conceptos
 fundamentales
 ¿Por que elegirnos?
 Programa completo: https://mystudyx.com/diplomado/estudios-biblicos-para-la-vida-diaria/',
- 'active',1,'{"source":"official_program_pdf","course_slug":"estudios-biblicos-para-la-vida-diaria","offering_code":null,"catalog_url":"https://mystudyx.com/diplomado/estudios-biblicos-para-la-vida-diaria/","pdf_sha256":"4fa3a9f5e3addb88fa824a32d5d68425c79f694c02745aa97a0dddda1adbf76a","source_page":5,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
+ 'active',1,'{"source":"official_program_pdf","course_slug":"estudios-biblicos-para-la-vida-diaria","offering_code":"estudios_biblicos","catalog_url":"https://mystudyx.com/diplomado/estudios-biblicos-para-la-vida-diaria/","pdf_sha256":"4fa3a9f5e3addb88fa824a32d5d68425c79f694c02745aa97a0dddda1adbf76a","source_page":5,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
 ('238cc4d3-55b8-468f-8e92-45778f294cbe','b0000000-0000-4000-8000-000000000001','offering',
  'Programa — Estudios Bíblicos para la Vida Diaria — página 6 — parte 1',
  'Curso: Estudios Bíblicos para la Vida Diaria.
@@ -2143,7 +2143,7 @@ vida en Cristo
 Temario Estudios Bíblicos
 para la Vida Diaria
 Programa completo: https://mystudyx.com/diplomado/estudios-biblicos-para-la-vida-diaria/',
- 'active',1,'{"source":"official_program_pdf","course_slug":"estudios-biblicos-para-la-vida-diaria","offering_code":null,"catalog_url":"https://mystudyx.com/diplomado/estudios-biblicos-para-la-vida-diaria/","pdf_sha256":"4fa3a9f5e3addb88fa824a32d5d68425c79f694c02745aa97a0dddda1adbf76a","source_page":6,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
+ 'active',1,'{"source":"official_program_pdf","course_slug":"estudios-biblicos-para-la-vida-diaria","offering_code":"estudios_biblicos","catalog_url":"https://mystudyx.com/diplomado/estudios-biblicos-para-la-vida-diaria/","pdf_sha256":"4fa3a9f5e3addb88fa824a32d5d68425c79f694c02745aa97a0dddda1adbf76a","source_page":6,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
 ('a690c551-c563-479b-8615-df01269fd651','b0000000-0000-4000-8000-000000000001','offering',
  'Programa — Estudios Bíblicos para la Vida Diaria — página 7 — parte 1',
  'Curso: Estudios Bíblicos para la Vida Diaria.
@@ -2166,7 +2166,7 @@ transformación
 Temario Estudios Bíblicos
 para la Vida Diaria
 Programa completo: https://mystudyx.com/diplomado/estudios-biblicos-para-la-vida-diaria/',
- 'active',1,'{"source":"official_program_pdf","course_slug":"estudios-biblicos-para-la-vida-diaria","offering_code":null,"catalog_url":"https://mystudyx.com/diplomado/estudios-biblicos-para-la-vida-diaria/","pdf_sha256":"4fa3a9f5e3addb88fa824a32d5d68425c79f694c02745aa97a0dddda1adbf76a","source_page":7,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
+ 'active',1,'{"source":"official_program_pdf","course_slug":"estudios-biblicos-para-la-vida-diaria","offering_code":"estudios_biblicos","catalog_url":"https://mystudyx.com/diplomado/estudios-biblicos-para-la-vida-diaria/","pdf_sha256":"4fa3a9f5e3addb88fa824a32d5d68425c79f694c02745aa97a0dddda1adbf76a","source_page":7,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
 ('165b6413-cb80-403f-b7dc-9ad53a85997a','b0000000-0000-4000-8000-000000000001','offering',
  'Programa — Estudios Bíblicos para la Vida Diaria — página 8 — parte 1',
  'Curso: Estudios Bíblicos para la Vida Diaria.
@@ -2193,7 +2193,7 @@ transforma cada área de la vida
 Temario Estudios Bíblicos
 para la Vida Diaria
 Programa completo: https://mystudyx.com/diplomado/estudios-biblicos-para-la-vida-diaria/',
- 'active',1,'{"source":"official_program_pdf","course_slug":"estudios-biblicos-para-la-vida-diaria","offering_code":null,"catalog_url":"https://mystudyx.com/diplomado/estudios-biblicos-para-la-vida-diaria/","pdf_sha256":"4fa3a9f5e3addb88fa824a32d5d68425c79f694c02745aa97a0dddda1adbf76a","source_page":8,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
+ 'active',1,'{"source":"official_program_pdf","course_slug":"estudios-biblicos-para-la-vida-diaria","offering_code":"estudios_biblicos","catalog_url":"https://mystudyx.com/diplomado/estudios-biblicos-para-la-vida-diaria/","pdf_sha256":"4fa3a9f5e3addb88fa824a32d5d68425c79f694c02745aa97a0dddda1adbf76a","source_page":8,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
 ('7c6c8532-f40f-42b7-a2be-f9bf26b0b7b6','b0000000-0000-4000-8000-000000000001','offering',
  'Programa — Estudios Bíblicos para la Vida Diaria — página 9 — parte 1',
  'Curso: Estudios Bíblicos para la Vida Diaria.
@@ -2214,7 +2214,7 @@ las manos
 Temario Estudios Bíblicos
 para la Vida Diaria
 Programa completo: https://mystudyx.com/diplomado/estudios-biblicos-para-la-vida-diaria/',
- 'active',1,'{"source":"official_program_pdf","course_slug":"estudios-biblicos-para-la-vida-diaria","offering_code":null,"catalog_url":"https://mystudyx.com/diplomado/estudios-biblicos-para-la-vida-diaria/","pdf_sha256":"4fa3a9f5e3addb88fa824a32d5d68425c79f694c02745aa97a0dddda1adbf76a","source_page":9,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
+ 'active',1,'{"source":"official_program_pdf","course_slug":"estudios-biblicos-para-la-vida-diaria","offering_code":"estudios_biblicos","catalog_url":"https://mystudyx.com/diplomado/estudios-biblicos-para-la-vida-diaria/","pdf_sha256":"4fa3a9f5e3addb88fa824a32d5d68425c79f694c02745aa97a0dddda1adbf76a","source_page":9,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
 ('f574bfdc-7416-45d1-9ced-c3dcdb316a23','b0000000-0000-4000-8000-000000000001','offering',
  'Programa — Estudios Bíblicos para la Vida Diaria — página 10 — parte 1',
  'Curso: Estudios Bíblicos para la Vida Diaria.
@@ -2246,7 +2246,7 @@ comunidad de fe
 Temario Estudios Bíblicos
 para la Vida Diaria
 Programa completo: https://mystudyx.com/diplomado/estudios-biblicos-para-la-vida-diaria/',
- 'active',1,'{"source":"official_program_pdf","course_slug":"estudios-biblicos-para-la-vida-diaria","offering_code":null,"catalog_url":"https://mystudyx.com/diplomado/estudios-biblicos-para-la-vida-diaria/","pdf_sha256":"4fa3a9f5e3addb88fa824a32d5d68425c79f694c02745aa97a0dddda1adbf76a","source_page":10,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
+ 'active',1,'{"source":"official_program_pdf","course_slug":"estudios-biblicos-para-la-vida-diaria","offering_code":"estudios_biblicos","catalog_url":"https://mystudyx.com/diplomado/estudios-biblicos-para-la-vida-diaria/","pdf_sha256":"4fa3a9f5e3addb88fa824a32d5d68425c79f694c02745aa97a0dddda1adbf76a","source_page":10,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
 ('a0d5088f-38f8-4774-9dcc-d33ac7aeb30e','b0000000-0000-4000-8000-000000000001','offering',
  'Programa — Estudios Bíblicos para la Vida Diaria — página 11 — parte 1',
  'Curso: Estudios Bíblicos para la Vida Diaria.
@@ -2275,7 +2275,7 @@ preparados
 Temario Estudios Bíblicos
 para la Vida Diaria
 Programa completo: https://mystudyx.com/diplomado/estudios-biblicos-para-la-vida-diaria/',
- 'active',1,'{"source":"official_program_pdf","course_slug":"estudios-biblicos-para-la-vida-diaria","offering_code":null,"catalog_url":"https://mystudyx.com/diplomado/estudios-biblicos-para-la-vida-diaria/","pdf_sha256":"4fa3a9f5e3addb88fa824a32d5d68425c79f694c02745aa97a0dddda1adbf76a","source_page":11,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
+ 'active',1,'{"source":"official_program_pdf","course_slug":"estudios-biblicos-para-la-vida-diaria","offering_code":"estudios_biblicos","catalog_url":"https://mystudyx.com/diplomado/estudios-biblicos-para-la-vida-diaria/","pdf_sha256":"4fa3a9f5e3addb88fa824a32d5d68425c79f694c02745aa97a0dddda1adbf76a","source_page":11,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
 ('dbe78e1c-478e-4d0a-97d7-cfcf6d19099d','b0000000-0000-4000-8000-000000000001','offering',
  'Programa — Estudios Bíblicos para la Vida Diaria — página 12 — parte 1',
  'Curso: Estudios Bíblicos para la Vida Diaria.
@@ -2304,7 +2304,7 @@ dejar legado
 Temario Estudios Bíblicos
 para la Vida Diaria
 Programa completo: https://mystudyx.com/diplomado/estudios-biblicos-para-la-vida-diaria/',
- 'active',1,'{"source":"official_program_pdf","course_slug":"estudios-biblicos-para-la-vida-diaria","offering_code":null,"catalog_url":"https://mystudyx.com/diplomado/estudios-biblicos-para-la-vida-diaria/","pdf_sha256":"4fa3a9f5e3addb88fa824a32d5d68425c79f694c02745aa97a0dddda1adbf76a","source_page":12,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
+ 'active',1,'{"source":"official_program_pdf","course_slug":"estudios-biblicos-para-la-vida-diaria","offering_code":"estudios_biblicos","catalog_url":"https://mystudyx.com/diplomado/estudios-biblicos-para-la-vida-diaria/","pdf_sha256":"4fa3a9f5e3addb88fa824a32d5d68425c79f694c02745aa97a0dddda1adbf76a","source_page":12,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
 ('14b9be32-fe3a-446b-bc20-e5a2024fe76e','b0000000-0000-4000-8000-000000000001','offering',
  'Programa — Estudios Bíblicos para la Vida Diaria — página 13 — parte 1',
  'Curso: Estudios Bíblicos para la Vida Diaria.
@@ -2317,7 +2317,7 @@ Estudios
 Bíblicos para
 la Vida Diaria
 Programa completo: https://mystudyx.com/diplomado/estudios-biblicos-para-la-vida-diaria/',
- 'active',1,'{"source":"official_program_pdf","course_slug":"estudios-biblicos-para-la-vida-diaria","offering_code":null,"catalog_url":"https://mystudyx.com/diplomado/estudios-biblicos-para-la-vida-diaria/","pdf_sha256":"4fa3a9f5e3addb88fa824a32d5d68425c79f694c02745aa97a0dddda1adbf76a","source_page":13,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
+ 'active',1,'{"source":"official_program_pdf","course_slug":"estudios-biblicos-para-la-vida-diaria","offering_code":"estudios_biblicos","catalog_url":"https://mystudyx.com/diplomado/estudios-biblicos-para-la-vida-diaria/","pdf_sha256":"4fa3a9f5e3addb88fa824a32d5d68425c79f694c02745aa97a0dddda1adbf76a","source_page":13,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
 ('5a036c76-b884-41f1-82a4-a4c3b26d0cbc','b0000000-0000-4000-8000-000000000001','offering',
  'Programa — Fotografía Profesional — página 3 — parte 1',
  'Curso: Fotografía Profesional.
@@ -2588,7 +2588,7 @@ profesionales usan a diario:
 ✅ Cómo organizar el mantenimiento según cada estación del año
 ✅ Cómo arreglar muebles, colocar estanterías y pintar como un experto
 Programa completo: https://mystudyx.com/diplomado/home-maintenance/',
- 'active',1,'{"source":"official_program_pdf","course_slug":"home-maintenance","offering_code":null,"catalog_url":"https://mystudyx.com/diplomado/home-maintenance/","pdf_sha256":"14e4811dd252c98ae7b966c4dde26d3b3382bf7851a17163a2bbefa47013d33e","source_page":1,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
+ 'active',1,'{"source":"official_program_pdf","course_slug":"home-maintenance","offering_code":"home_maintenance","catalog_url":"https://mystudyx.com/diplomado/home-maintenance/","pdf_sha256":"14e4811dd252c98ae7b966c4dde26d3b3382bf7851a17163a2bbefa47013d33e","source_page":1,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
 ('b9d15754-ac9f-4c9c-90a1-ed79cafe2171','b0000000-0000-4000-8000-000000000001','offering',
  'Programa — Home Maintenance — página 1 — parte 2',
  'Curso: Home Maintenance.
@@ -2610,14 +2610,14 @@ EE.UU.
  Organización anual y estacional.
  Electricidad, plomería, electrodomésticos.
 Programa completo: https://mystudyx.com/diplomado/home-maintenance/',
- 'active',1,'{"source":"official_program_pdf","course_slug":"home-maintenance","offering_code":null,"catalog_url":"https://mystudyx.com/diplomado/home-maintenance/","pdf_sha256":"14e4811dd252c98ae7b966c4dde26d3b3382bf7851a17163a2bbefa47013d33e","source_page":1,"source_part":2,"extracted_at":"2026-10-29"}'::jsonb),
+ 'active',1,'{"source":"official_program_pdf","course_slug":"home-maintenance","offering_code":"home_maintenance","catalog_url":"https://mystudyx.com/diplomado/home-maintenance/","pdf_sha256":"14e4811dd252c98ae7b966c4dde26d3b3382bf7851a17163a2bbefa47013d33e","source_page":1,"source_part":2,"extracted_at":"2026-10-29"}'::jsonb),
 ('4bfe26f5-8e64-443e-b95e-bb0827d15a72','b0000000-0000-4000-8000-000000000001','offering',
  'Programa — Home Maintenance — página 1 — parte 3',
  'Curso: Home Maintenance.
 Fuente oficial: programa StudyX, página 1 de 3.
  Techos, ventanas, filtraciones y control de plagas.
 Programa completo: https://mystudyx.com/diplomado/home-maintenance/',
- 'active',1,'{"source":"official_program_pdf","course_slug":"home-maintenance","offering_code":null,"catalog_url":"https://mystudyx.com/diplomado/home-maintenance/","pdf_sha256":"14e4811dd252c98ae7b966c4dde26d3b3382bf7851a17163a2bbefa47013d33e","source_page":1,"source_part":3,"extracted_at":"2026-10-29"}'::jsonb),
+ 'active',1,'{"source":"official_program_pdf","course_slug":"home-maintenance","offering_code":"home_maintenance","catalog_url":"https://mystudyx.com/diplomado/home-maintenance/","pdf_sha256":"14e4811dd252c98ae7b966c4dde26d3b3382bf7851a17163a2bbefa47013d33e","source_page":1,"source_part":3,"extracted_at":"2026-10-29"}'::jsonb),
 ('9a67bb54-545b-4297-b7b8-279a270a962b','b0000000-0000-4000-8000-000000000001','offering',
  'Programa — Home Maintenance — página 2 — parte 1',
  'Curso: Home Maintenance.
@@ -2640,7 +2640,7 @@ Fuente oficial: programa StudyX, página 2 de 3.
  Reparación de puertas, cerraduras y terminaciones básicas.
 🔹 Módulo 5: Reparación de paredes y pintura interior
 Programa completo: https://mystudyx.com/diplomado/home-maintenance/',
- 'active',1,'{"source":"official_program_pdf","course_slug":"home-maintenance","offering_code":null,"catalog_url":"https://mystudyx.com/diplomado/home-maintenance/","pdf_sha256":"14e4811dd252c98ae7b966c4dde26d3b3382bf7851a17163a2bbefa47013d33e","source_page":2,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
+ 'active',1,'{"source":"official_program_pdf","course_slug":"home-maintenance","offering_code":"home_maintenance","catalog_url":"https://mystudyx.com/diplomado/home-maintenance/","pdf_sha256":"14e4811dd252c98ae7b966c4dde26d3b3382bf7851a17163a2bbefa47013d33e","source_page":2,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
 ('1e6a7e0f-1500-49ef-9f88-37c33dd387d0','b0000000-0000-4000-8000-000000000001','offering',
  'Programa — Home Maintenance — página 2 — parte 2',
  'Curso: Home Maintenance.
@@ -2656,7 +2656,7 @@ Fuente oficial: programa StudyX, página 2 de 3.
 🔹 Módulo 7: Carpintería para el hogar – Parte 2: Aplicaciones prácticas
  Instalación de repisas y estanterías.
 Programa completo: https://mystudyx.com/diplomado/home-maintenance/',
- 'active',1,'{"source":"official_program_pdf","course_slug":"home-maintenance","offering_code":null,"catalog_url":"https://mystudyx.com/diplomado/home-maintenance/","pdf_sha256":"14e4811dd252c98ae7b966c4dde26d3b3382bf7851a17163a2bbefa47013d33e","source_page":2,"source_part":2,"extracted_at":"2026-10-29"}'::jsonb),
+ 'active',1,'{"source":"official_program_pdf","course_slug":"home-maintenance","offering_code":"home_maintenance","catalog_url":"https://mystudyx.com/diplomado/home-maintenance/","pdf_sha256":"14e4811dd252c98ae7b966c4dde26d3b3382bf7851a17163a2bbefa47013d33e","source_page":2,"source_part":2,"extracted_at":"2026-10-29"}'::jsonb),
 ('d0ed66f6-de18-41a3-8f20-ac4447dc96a8','b0000000-0000-4000-8000-000000000001','offering',
  'Programa — Home Maintenance — página 3 — parte 1',
  'Curso: Home Maintenance.
@@ -2675,7 +2675,7 @@ Al finalizar el curso, el alumno será capaz de:
  Planificar rutinas preventivas según estación.
  Emprender con servicios básicos de mantenimiento o carpintería ligera.
 Programa completo: https://mystudyx.com/diplomado/home-maintenance/',
- 'active',1,'{"source":"official_program_pdf","course_slug":"home-maintenance","offering_code":null,"catalog_url":"https://mystudyx.com/diplomado/home-maintenance/","pdf_sha256":"14e4811dd252c98ae7b966c4dde26d3b3382bf7851a17163a2bbefa47013d33e","source_page":3,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
+ 'active',1,'{"source":"official_program_pdf","course_slug":"home-maintenance","offering_code":"home_maintenance","catalog_url":"https://mystudyx.com/diplomado/home-maintenance/","pdf_sha256":"14e4811dd252c98ae7b966c4dde26d3b3382bf7851a17163a2bbefa47013d33e","source_page":3,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
 ('579f8ee4-f2f8-48fa-b39b-30f468696e31','b0000000-0000-4000-8000-000000000001','offering',
  'Programa — Introducción a la Pastelería y Repostería — página 3 — parte 1',
  'Curso: Introducción a la Pastelería y Repostería.
@@ -2704,7 +2704,7 @@ diferentes áreas + Actividades prácticas con exámenes
 parciales y Final.
 Módulos
 Programa completo: https://mystudyx.com/diplomado/introduccion-a-la-pasteleria-reposteria/',
- 'active',1,'{"source":"official_program_pdf","course_slug":"introduccion-a-la-pasteleria-reposteria","offering_code":null,"catalog_url":"https://mystudyx.com/diplomado/introduccion-a-la-pasteleria-reposteria/","pdf_sha256":"85144290b01d1e9843d15ae48fc80d81cb9aa5b4936165eaf5290cd05eb1d7f4","source_page":3,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
+ 'active',1,'{"source":"official_program_pdf","course_slug":"introduccion-a-la-pasteleria-reposteria","offering_code":"introduccion_pasteleria_reposteria","catalog_url":"https://mystudyx.com/diplomado/introduccion-a-la-pasteleria-reposteria/","pdf_sha256":"85144290b01d1e9843d15ae48fc80d81cb9aa5b4936165eaf5290cd05eb1d7f4","source_page":3,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
 ('9e7eabf6-45d8-4859-a558-2aa632eee9a1','b0000000-0000-4000-8000-000000000001','offering',
  'Programa — Introducción a la Pastelería y Repostería — página 4 — parte 1',
  'Curso: Introducción a la Pastelería y Repostería.
@@ -2738,7 +2738,7 @@ Serán algunos de los conceptos que
 te ayudarán a lograr tus mejores
 platos.
 Programa completo: https://mystudyx.com/diplomado/introduccion-a-la-pasteleria-reposteria/',
- 'active',1,'{"source":"official_program_pdf","course_slug":"introduccion-a-la-pasteleria-reposteria","offering_code":null,"catalog_url":"https://mystudyx.com/diplomado/introduccion-a-la-pasteleria-reposteria/","pdf_sha256":"85144290b01d1e9843d15ae48fc80d81cb9aa5b4936165eaf5290cd05eb1d7f4","source_page":4,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
+ 'active',1,'{"source":"official_program_pdf","course_slug":"introduccion-a-la-pasteleria-reposteria","offering_code":"introduccion_pasteleria_reposteria","catalog_url":"https://mystudyx.com/diplomado/introduccion-a-la-pasteleria-reposteria/","pdf_sha256":"85144290b01d1e9843d15ae48fc80d81cb9aa5b4936165eaf5290cd05eb1d7f4","source_page":4,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
 ('8d0c4698-f083-4a94-9b34-4b4397c2b599','b0000000-0000-4000-8000-000000000001','offering',
  'Programa — Introducción a la Pastelería y Repostería — página 5 — parte 1',
  'Curso: Introducción a la Pastelería y Repostería.
@@ -2779,14 +2779,14 @@ Los exámenes te ayudaran a
 fortalecer y afirmar conceptos
 fundamentales
 Programa completo: https://mystudyx.com/diplomado/introduccion-a-la-pasteleria-reposteria/',
- 'active',1,'{"source":"official_program_pdf","course_slug":"introduccion-a-la-pasteleria-reposteria","offering_code":null,"catalog_url":"https://mystudyx.com/diplomado/introduccion-a-la-pasteleria-reposteria/","pdf_sha256":"85144290b01d1e9843d15ae48fc80d81cb9aa5b4936165eaf5290cd05eb1d7f4","source_page":5,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
+ 'active',1,'{"source":"official_program_pdf","course_slug":"introduccion-a-la-pasteleria-reposteria","offering_code":"introduccion_pasteleria_reposteria","catalog_url":"https://mystudyx.com/diplomado/introduccion-a-la-pasteleria-reposteria/","pdf_sha256":"85144290b01d1e9843d15ae48fc80d81cb9aa5b4936165eaf5290cd05eb1d7f4","source_page":5,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
 ('3f3b2c65-097c-43be-ae48-58b610e8cc4d','b0000000-0000-4000-8000-000000000001','offering',
  'Programa — Introducción a la Pastelería y Repostería — página 5 — parte 2',
  'Curso: Introducción a la Pastelería y Repostería.
 Fuente oficial: programa StudyX, página 5 de 7.
 ¿Por que elegirnos?
 Programa completo: https://mystudyx.com/diplomado/introduccion-a-la-pasteleria-reposteria/',
- 'active',1,'{"source":"official_program_pdf","course_slug":"introduccion-a-la-pasteleria-reposteria","offering_code":null,"catalog_url":"https://mystudyx.com/diplomado/introduccion-a-la-pasteleria-reposteria/","pdf_sha256":"85144290b01d1e9843d15ae48fc80d81cb9aa5b4936165eaf5290cd05eb1d7f4","source_page":5,"source_part":2,"extracted_at":"2026-10-29"}'::jsonb),
+ 'active',1,'{"source":"official_program_pdf","course_slug":"introduccion-a-la-pasteleria-reposteria","offering_code":"introduccion_pasteleria_reposteria","catalog_url":"https://mystudyx.com/diplomado/introduccion-a-la-pasteleria-reposteria/","pdf_sha256":"85144290b01d1e9843d15ae48fc80d81cb9aa5b4936165eaf5290cd05eb1d7f4","source_page":5,"source_part":2,"extracted_at":"2026-10-29"}'::jsonb),
 ('38808178-0f92-4d54-8243-d9da2f0f9b20','b0000000-0000-4000-8000-000000000001','offering',
  'Programa — Introducción a la Pastelería y Repostería — página 6 — parte 1',
  'Curso: Introducción a la Pastelería y Repostería.
@@ -2814,7 +2814,7 @@ brulee)
 Temario Introducción a
 la Pastelería/Repostería
 Programa completo: https://mystudyx.com/diplomado/introduccion-a-la-pasteleria-reposteria/',
- 'active',1,'{"source":"official_program_pdf","course_slug":"introduccion-a-la-pasteleria-reposteria","offering_code":null,"catalog_url":"https://mystudyx.com/diplomado/introduccion-a-la-pasteleria-reposteria/","pdf_sha256":"85144290b01d1e9843d15ae48fc80d81cb9aa5b4936165eaf5290cd05eb1d7f4","source_page":6,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
+ 'active',1,'{"source":"official_program_pdf","course_slug":"introduccion-a-la-pasteleria-reposteria","offering_code":"introduccion_pasteleria_reposteria","catalog_url":"https://mystudyx.com/diplomado/introduccion-a-la-pasteleria-reposteria/","pdf_sha256":"85144290b01d1e9843d15ae48fc80d81cb9aa5b4936165eaf5290cd05eb1d7f4","source_page":6,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
 ('8f67613f-6f38-4484-94af-09d9f8c2a1ce','b0000000-0000-4000-8000-000000000001','offering',
  'Programa — Introducción a la Pastelería y Repostería — página 7 — parte 1',
  'Curso: Introducción a la Pastelería y Repostería.
@@ -2826,7 +2826,7 @@ mystudyx.com
 instagram.com/studyxacademia
 facebook.com/Studyx-Academia
 Programa completo: https://mystudyx.com/diplomado/introduccion-a-la-pasteleria-reposteria/',
- 'active',1,'{"source":"official_program_pdf","course_slug":"introduccion-a-la-pasteleria-reposteria","offering_code":null,"catalog_url":"https://mystudyx.com/diplomado/introduccion-a-la-pasteleria-reposteria/","pdf_sha256":"85144290b01d1e9843d15ae48fc80d81cb9aa5b4936165eaf5290cd05eb1d7f4","source_page":7,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
+ 'active',1,'{"source":"official_program_pdf","course_slug":"introduccion-a-la-pasteleria-reposteria","offering_code":"introduccion_pasteleria_reposteria","catalog_url":"https://mystudyx.com/diplomado/introduccion-a-la-pasteleria-reposteria/","pdf_sha256":"85144290b01d1e9843d15ae48fc80d81cb9aa5b4936165eaf5290cd05eb1d7f4","source_page":7,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
 ('fa320231-6493-4e01-b3b6-ca0bd878ad1e','b0000000-0000-4000-8000-000000000001','offering',
  'Programa — Introducción al Vino, la Cata y el Maridaje — página 3 — parte 1',
  'Curso: Introducción al Vino, la Cata y el Maridaje.
@@ -4126,7 +4126,7 @@ calentadores de agua, drenaje, ventilación y plomería industrial. También se
 incluyen temas específicos como la instalación de sistemas sépticos, respuestas ante
 emergencias o desastres naturales, y la plomería en edificaciones comerciales y de
 Programa completo: https://mystudyx.com/diplomado/plomeria/',
- 'active',1,'{"source":"official_program_pdf","course_slug":"plomeria","offering_code":null,"catalog_url":"https://mystudyx.com/diplomado/plomeria/","pdf_sha256":"45c4169c5d959f16e51b0adafb01092ff6f5243ee87c04f55b992a18cb099dfb","source_page":1,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
+ 'active',1,'{"source":"official_program_pdf","course_slug":"plomeria","offering_code":"plomeria","catalog_url":"https://mystudyx.com/diplomado/plomeria/","pdf_sha256":"45c4169c5d959f16e51b0adafb01092ff6f5243ee87c04f55b992a18cb099dfb","source_page":1,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
 ('fa2a57aa-737d-49d7-8ac9-fe66a1a22c7b','b0000000-0000-4000-8000-000000000001','offering',
  'Programa — Plomería — página 1 — parte 2',
  'Curso: Plomería.
@@ -4144,7 +4144,7 @@ herramientas necesarias para destacarte en uno de los oficios más demandados de
 Aprende los aspectos clave de la plomería en viviendas residenciales.
 – Modulo 2 - Instalación de Sistemas de Plomería en Remodelaciones
 Programa completo: https://mystudyx.com/diplomado/plomeria/',
- 'active',1,'{"source":"official_program_pdf","course_slug":"plomeria","offering_code":null,"catalog_url":"https://mystudyx.com/diplomado/plomeria/","pdf_sha256":"45c4169c5d959f16e51b0adafb01092ff6f5243ee87c04f55b992a18cb099dfb","source_page":1,"source_part":2,"extracted_at":"2026-10-29"}'::jsonb),
+ 'active',1,'{"source":"official_program_pdf","course_slug":"plomeria","offering_code":"plomeria","catalog_url":"https://mystudyx.com/diplomado/plomeria/","pdf_sha256":"45c4169c5d959f16e51b0adafb01092ff6f5243ee87c04f55b992a18cb099dfb","source_page":1,"source_part":2,"extracted_at":"2026-10-29"}'::jsonb),
 ('91a19cae-6c5d-4ce6-8872-e00eac33007d','b0000000-0000-4000-8000-000000000001','offering',
  'Programa — Plomería — página 1 — parte 3',
  'Curso: Plomería.
@@ -4154,7 +4154,7 @@ y edificios.
 – Modulo 3 - Sistemas de Bombeo y Presurización de Agua
 Aprende a diseñar, instalar y mantener sistemas de bombeo de agua.
 Programa completo: https://mystudyx.com/diplomado/plomeria/',
- 'active',1,'{"source":"official_program_pdf","course_slug":"plomeria","offering_code":null,"catalog_url":"https://mystudyx.com/diplomado/plomeria/","pdf_sha256":"45c4169c5d959f16e51b0adafb01092ff6f5243ee87c04f55b992a18cb099dfb","source_page":1,"source_part":3,"extracted_at":"2026-10-29"}'::jsonb),
+ 'active',1,'{"source":"official_program_pdf","course_slug":"plomeria","offering_code":"plomeria","catalog_url":"https://mystudyx.com/diplomado/plomeria/","pdf_sha256":"45c4169c5d959f16e51b0adafb01092ff6f5243ee87c04f55b992a18cb099dfb","source_page":1,"source_part":3,"extracted_at":"2026-10-29"}'::jsonb),
 ('2d4fde72-9403-46f7-8626-0ad1e9c62798','b0000000-0000-4000-8000-000000000001','offering',
  'Programa — Plomería — página 2 — parte 1',
  'Curso: Plomería.
@@ -4173,7 +4173,7 @@ drenaje y ventilación.
 Aprende los fundamentos y técnicas de la plomería en edificaciones comerciales.
 – Modulo 9 - Plomería para Emergencias y Desastres Naturales
 Programa completo: https://mystudyx.com/diplomado/plomeria/',
- 'active',1,'{"source":"official_program_pdf","course_slug":"plomeria","offering_code":null,"catalog_url":"https://mystudyx.com/diplomado/plomeria/","pdf_sha256":"45c4169c5d959f16e51b0adafb01092ff6f5243ee87c04f55b992a18cb099dfb","source_page":2,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
+ 'active',1,'{"source":"official_program_pdf","course_slug":"plomeria","offering_code":"plomeria","catalog_url":"https://mystudyx.com/diplomado/plomeria/","pdf_sha256":"45c4169c5d959f16e51b0adafb01092ff6f5243ee87c04f55b992a18cb099dfb","source_page":2,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
 ('5a0bfea6-1d63-4911-89e9-74c264ff10e9','b0000000-0000-4000-8000-000000000001','offering',
  'Programa — Plomería — página 2 — parte 2',
  'Curso: Plomería.
@@ -4192,7 +4192,7 @@ de viviendas, edificios comerciales e instalaciones industriales.
  Interpretar planos, seguir normativas locales y aplicar buenas prácticas de
 seguridad.
 Programa completo: https://mystudyx.com/diplomado/plomeria/',
- 'active',1,'{"source":"official_program_pdf","course_slug":"plomeria","offering_code":null,"catalog_url":"https://mystudyx.com/diplomado/plomeria/","pdf_sha256":"45c4169c5d959f16e51b0adafb01092ff6f5243ee87c04f55b992a18cb099dfb","source_page":2,"source_part":2,"extracted_at":"2026-10-29"}'::jsonb),
+ 'active',1,'{"source":"official_program_pdf","course_slug":"plomeria","offering_code":"plomeria","catalog_url":"https://mystudyx.com/diplomado/plomeria/","pdf_sha256":"45c4169c5d959f16e51b0adafb01092ff6f5243ee87c04f55b992a18cb099dfb","source_page":2,"source_part":2,"extracted_at":"2026-10-29"}'::jsonb),
 ('1499c101-c6ce-48f6-a238-69d5275ecb51','b0000000-0000-4000-8000-000000000001','offering',
  'Programa — Plomería — página 3 — parte 1',
  'Curso: Plomería.
@@ -4209,7 +4209,7 @@ mantenimiento, constructoras, compañías de servicios o en proyectos de obra nu
 remodelación. También contará con una base sólida para continuar su especialización o
 certificarse a nivel local según los requisitos estatales.
 Programa completo: https://mystudyx.com/diplomado/plomeria/',
- 'active',1,'{"source":"official_program_pdf","course_slug":"plomeria","offering_code":null,"catalog_url":"https://mystudyx.com/diplomado/plomeria/","pdf_sha256":"45c4169c5d959f16e51b0adafb01092ff6f5243ee87c04f55b992a18cb099dfb","source_page":3,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
+ 'active',1,'{"source":"official_program_pdf","course_slug":"plomeria","offering_code":"plomeria","catalog_url":"https://mystudyx.com/diplomado/plomeria/","pdf_sha256":"45c4169c5d959f16e51b0adafb01092ff6f5243ee87c04f55b992a18cb099dfb","source_page":3,"source_part":1,"extracted_at":"2026-10-29"}'::jsonb),
 ('ac595225-5ec7-4257-8dcf-d45366dc7e29','b0000000-0000-4000-8000-000000000001','offering',
  'Programa — Publicidad en las Redes Sociales — página 3 — parte 1',
  'Curso: Publicidad en las Redes Sociales.

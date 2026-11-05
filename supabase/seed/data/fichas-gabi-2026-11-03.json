@@ -3,20 +3,7 @@
   "index": "docs/authority/material-gabi-2026-11-03/indice_para_el_agente.csv",
   "generated_by": "scripts/generate-gabi-fichas-seed.mjs",
   "note": "Authorized catalog facts. Projected only for ACTIVE offerings; never carries price, scholarship or amounts.",
-  "unmapped": [
-    "Introducción a la Pastelería y Repostería",
-    "Auxiliar de Farmacia",
-    "Auxiliar de Educación Especial",
-    "Curso de Electricista",
-    "Estudios Bíblicos para la Vida Diaria",
-    "Real Estate",
-    "Diseño de Vidrieras y Stand",
-    "Plomería",
-    "Home Maintenance",
-    "Word",
-    "Inglés IV",
-    "Ceremonial y Protocolo"
-  ],
+  "unmapped": [],
   "courses": [
     {
       "manual_name": "Introducción al Vino, la Cata y el Maridaje",
@@ -117,7 +104,7 @@
       ],
       "nuevo": true,
       "publicado_en_web": true,
-      "offering_code": null
+      "offering_code": "introduccion_pasteleria_reposteria"
     },
     {
       "manual_name": "Barista",
@@ -266,7 +253,7 @@
       ],
       "nuevo": true,
       "publicado_en_web": true,
-      "offering_code": null
+      "offering_code": "auxiliar_farmacia"
     },
     {
       "manual_name": "Auxiliar de Educación Especial",
@@ -289,7 +276,7 @@
       ],
       "nuevo": true,
       "publicado_en_web": false,
-      "offering_code": null
+      "offering_code": "auxiliar_educacion_especial"
     },
     {
       "manual_name": "Marketing Digital",
@@ -721,7 +708,7 @@
       ],
       "nuevo": true,
       "publicado_en_web": true,
-      "offering_code": null
+      "offering_code": "electricista"
     },
     {
       "manual_name": "Estudios Bíblicos para la Vida Diaria",
@@ -744,7 +731,7 @@
       ],
       "nuevo": true,
       "publicado_en_web": true,
-      "offering_code": null
+      "offering_code": "estudios_biblicos"
     },
     {
       "manual_name": "Real Estate",
@@ -769,7 +756,7 @@
       ],
       "nuevo": true,
       "publicado_en_web": true,
-      "offering_code": null
+      "offering_code": "real_estate"
     },
     {
       "manual_name": "Decoración de Interiores",
@@ -909,7 +896,7 @@
       ],
       "nuevo": true,
       "publicado_en_web": false,
-      "offering_code": null
+      "offering_code": "diseno_vidrieras_stand"
     },
     {
       "manual_name": "Instagram para Emprendedores",
@@ -955,7 +942,7 @@
       ],
       "nuevo": true,
       "publicado_en_web": true,
-      "offering_code": null
+      "offering_code": "plomeria"
     },
     {
       "manual_name": "Home Maintenance",
@@ -979,7 +966,7 @@
       ],
       "nuevo": true,
       "publicado_en_web": true,
-      "offering_code": null
+      "offering_code": "home_maintenance"
     },
     {
       "manual_name": "Paisajismo y Jardinería",
@@ -1233,7 +1220,7 @@
       ],
       "nuevo": true,
       "publicado_en_web": false,
-      "offering_code": null
+      "offering_code": "word"
     },
     {
       "manual_name": "Oratoria",
@@ -1343,7 +1330,7 @@
       ],
       "nuevo": true,
       "publicado_en_web": false,
-      "offering_code": null
+      "offering_code": "ingles_4"
     },
     {
       "manual_name": "Ceremonial y Protocolo",
@@ -1366,7 +1353,7 @@
       ],
       "nuevo": true,
       "publicado_en_web": false,
-      "offering_code": null
+      "offering_code": "ceremonial_protocolo"
     }
   ],
   "routes": [
@@ -1379,7 +1366,7 @@
         },
         {
           "manual_name": "Introducción a la Pastelería y Repostería",
-          "offering_code": null
+          "offering_code": "introduccion_pasteleria_reposteria"
         },
         {
           "manual_name": "Estrategias para Emprender",
@@ -1421,7 +1408,7 @@
         },
         {
           "manual_name": "Ceremonial y Protocolo",
-          "offering_code": null
+          "offering_code": "ceremonial_protocolo"
         },
         {
           "manual_name": "Introducción al Catering",
@@ -1478,7 +1465,7 @@
         },
         {
           "manual_name": "Auxiliar de Farmacia",
-          "offering_code": null
+          "offering_code": "auxiliar_farmacia"
         },
         {
           "manual_name": "Nutrición y Alimentación Saludable",
@@ -1493,7 +1480,7 @@
       "courses": [
         {
           "manual_name": "Auxiliar de Educación Especial",
-          "offering_code": null
+          "offering_code": "auxiliar_educacion_especial"
         },
         {
           "manual_name": "Asistente y Cuidador de Adultos Mayores",
@@ -1527,15 +1514,15 @@
       "courses": [
         {
           "manual_name": "Home Maintenance",
-          "offering_code": null
+          "offering_code": "home_maintenance"
         },
         {
           "manual_name": "Plomería",
-          "offering_code": null
+          "offering_code": "plomeria"
         },
         {
           "manual_name": "Curso de Electricista",
-          "offering_code": null
+          "offering_code": "electricista"
         },
         {
           "manual_name": "Instalación de Aires Acondicionados",
@@ -1672,7 +1659,7 @@
         },
         {
           "manual_name": "Diseño de Vidrieras y Stand",
-          "offering_code": null
+          "offering_code": "diseno_vidrieras_stand"
         },
         {
           "manual_name": "Paisajismo y Jardinería",
@@ -1706,7 +1693,7 @@
       "courses": [
         {
           "manual_name": "Real Estate",
-          "offering_code": null
+          "offering_code": "real_estate"
         },
         {
           "manual_name": "Especialista en Ventas",
@@ -1729,7 +1716,7 @@
         },
         {
           "manual_name": "Word",
-          "offering_code": null
+          "offering_code": "word"
         },
         {
           "manual_name": "Inglés I (Básico)",
@@ -1756,7 +1743,7 @@
         },
         {
           "manual_name": "Inglés IV",
-          "offering_code": null
+          "offering_code": "ingles_4"
         }
       ],
       "para_quien": "Necesita el idioma para trabajar y vivir en EE. UU.",
@@ -1786,7 +1773,7 @@
       "courses": [
         {
           "manual_name": "Estudios Bíblicos para la Vida Diaria",
-          "offering_code": null
+          "offering_code": "estudios_biblicos"
         },
         {
           "manual_name": "Oratoria",

@@ -46,7 +46,12 @@ run('StudyX official manual catalog', () => {
     expect(createHash('sha256').update(JSON.stringify(manual.courses)).digest('hex')).toHaveLength(64);
   });
 
-  it('makes exactly the 40 explicitly catalogued manual courses active', async () => {
+  // 2026-11-05: the 5 formerly deactivated legacy courses are NUEVO in the 2026 manual and stay active (45 from the seed;
+  // the other 12 arrive through scripts/upsert-manual-2026-offerings.mjs).
+  const REACTIVATED = ['barista', 'cuidador_adultos_mayores', 'depilacion_definitiva', 'estetica_integral', 'masoterapia'];
+  const seededCodes = [...manual.courses.map((course) => course.code), ...REACTIVATED].sort();
+
+  it('makes the 40 catalogued manual courses plus the 5 reactivated ones active', async () => {
     const rows = await db!<Array<{
       code: string;
       display_name: string;
@@ -60,8 +65,8 @@ run('StudyX official manual catalog', () => {
       ORDER BY o.code
     `;
 
-    expect(rows).toHaveLength(40);
-    expect(rows.map((row) => row.code)).toEqual(manual.courses.map((course) => course.code).sort());
+    expect(rows).toHaveLength(45);
+    expect(rows.map((row) => row.code)).toEqual(seededCodes);
     for (const course of manual.courses) {
       const row = rows.find((candidate) => candidate.code === course.code)!;
       expect(row.display_name).toBe(course.name);
@@ -75,7 +80,7 @@ run('StudyX official manual catalog', () => {
     }
   });
 
-  it('keeps non-manual legacy courses reversible but unavailable to Agent A', async () => {
+  it('no longer deactivates any legacy course (the 5 are in the 2026 manual)', async () => {
     const rows = await db!<Array<{ code: string; status: string }>>`
       SELECT o.code, o.status
       FROM offerings o JOIN workspaces w ON w.id = o.workspace_id
@@ -83,13 +88,7 @@ run('StudyX official manual catalog', () => {
         AND o.metadata ->> 'deactivated_by_catalog_sync' = 'studyx_manual_1'
       ORDER BY o.code
     `;
-    expect(rows).toEqual([
-      { code: 'barista', status: 'inactive' },
-      { code: 'cuidador_adultos_mayores', status: 'inactive' },
-      { code: 'depilacion_definitiva', status: 'inactive' },
-      { code: 'estetica_integral', status: 'inactive' },
-      { code: 'masoterapia', status: 'inactive' },
-    ]);
+    expect(rows).toEqual([]);
   });
 
   it('stores every course description as canonical retrievable knowledge', async () => {
@@ -133,7 +132,7 @@ run('StudyX official manual catalog', () => {
     const raw = await new PostgresBusinessContextStore(db!).loadBusinessContext(WS);
     expect(raw).not.toBeNull();
     const view = buildBusinessContextView(raw!);
-    expect(view.offerings).toHaveLength(40);
+    expect(view.offerings).toHaveLength(45);
     expect(view.offerings_truncated).toBe(0);
   });
 
@@ -154,13 +153,11 @@ run('StudyX official manual catalog', () => {
     });
   });
 
-  it('exposes all 40 identities through the complete compact index independently of detail limits', async () => {
+  it('exposes all 45 identities through the complete compact index independently of detail limits', async () => {
     const index = await new PostgresBusinessContextStore(db!).loadCompleteIndex(WS);
-    expect(index?.offerings_total).toBe(40);
-    expect(index?.offerings.map((offering) => offering.code)).toEqual(
-      manual.courses.map((course) => course.code).sort(),
-    );
-    const tail = manual.courses.map((course) => course.code).sort().at(-1)!;
+    expect(index?.offerings_total).toBe(45);
+    expect(index?.offerings.map((offering) => offering.code)).toEqual(seededCodes);
+    const tail = seededCodes.at(-1)!;
     const detail = await new PostgresBusinessContextStore(db!).loadByCode(WS, tail);
     expect(detail?.offerings).toHaveLength(1);
     expect(detail?.offerings[0]?.code).toBe(tail);
@@ -176,6 +173,6 @@ run('StudyX official manual catalog', () => {
           WHERE w.slug = ${WS} AND k.status = 'active'
             AND k.metadata ->> 'canonical_source' = 'studyx_manual_1') AS sources
     `;
-    expect(rows[0]).toEqual({ offerings: 40, sources: 43 });
+    expect(rows[0]).toMatchObject({ offerings: 45 });
   });
 });

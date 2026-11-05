@@ -248,8 +248,8 @@ for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => {
 try {
   command('bash', [bootstrapScript, POSTGRES_PORT, '--seed'], { env: environment });
   ownsPostgres = true;
-  // Real Estate exists only in the database: add it to THIS disposable runner database (never any other).
-  command('node', ['scripts/upsert-real-estate-offering.mjs', '--apply'], {
+  // The 17 NUEVO courses of the 2026 manual exist only in the database: add them to THIS disposable runner database (never any other).
+  command('node', ['scripts/upsert-manual-2026-offerings.mjs', '--apply'], {
     env: { ...environment, STUDYX_CATALOG_TARGET_URL: databaseUrl },
   });
   backend = spawn('npx', ['next', 'dev', '--hostname', '127.0.0.1', '--port', BACKEND_PORT], {

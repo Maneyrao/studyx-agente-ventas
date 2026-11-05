@@ -3257,8 +3257,8 @@ export const processInboundTurn = new Workflow({
 
       // The official-programme document goes first, then the text bubbles. A document that
       // is confirmed NOT sent never silences the reply: its text parts still go out.
-      const orderedOutbounds = [...committed.outbounds].sort((a, b) =>
-        (b.document ? 1 : 0) - (a.document ? 1 : 0) || a.part_index - b.part_index)
+      const mediaRank = (part: { document?: { media: 'file' | 'image' } }) => (part.document ? (part.document.media === 'image' ? 2 : 1) : 0)
+      const orderedOutbounds = [...committed.outbounds].sort((a, b) => mediaRank(b) - mediaRank(a) || a.part_index - b.part_index)
       for (const outboundPart of orderedOutbounds) {
         // A replay may contain parts already acknowledged by Botpress. Their
         // durable delivery state is the fence: never submit those texts again;
@@ -3370,10 +3370,12 @@ export const processInboundTurn = new Workflow({
                 return observedCreateMessage({
                   conversationId: input.botpress_conversation_id,
                   userId: context.get('botId'),
-                  ...(outboundPart.document
-                    ? { type: 'file', payload: { fileUrl: outboundPart.document.file_url,
-                        title: outboundPart.document.title, filename: outboundPart.document.filename } }
-                    : { type: 'text', payload: { text: outboundPart.content } }),
+                  ...(outboundPart.document?.media === 'image'
+                    ? { type: 'image', payload: { imageUrl: outboundPart.document.file_url, title: outboundPart.document.title } }
+                    : outboundPart.document
+                      ? { type: 'file', payload: { fileUrl: outboundPart.document.file_url,
+                          title: outboundPart.document.title, filename: outboundPart.document.filename } }
+                      : { type: 'text', payload: { text: outboundPart.content } }),
                   tags: {
                     studyxOutboundId: outboundPart.id,
                     studyxTraceId: input.trace_id,

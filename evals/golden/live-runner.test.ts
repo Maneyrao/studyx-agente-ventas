@@ -358,9 +358,11 @@ async function observeTurn(input: {
       promotion,
     },
     deliveredLinks: persisted.deliveredLinks,
-    programDocuments: input.evidence.documentMessages
-      .map(document => /\/programas\/([a-z0-9-]+)\.pdf$/u.exec(document.fileUrl)?.[1] ?? '')
-      .map(slug => PROGRAM_CODE_BY_SLUG.get(slug) ?? slug),
+    programDocuments: input.evidence.documentMessages.map(document => (
+      /\/material\/fichas\/([a-z0-9_]+)\.pdf$/u.exec(document.fileUrl)?.[1]
+      ?? PROGRAM_CODE_BY_SLUG.get(/\/programas\/([a-z0-9-]+)\.pdf$/u.exec(document.fileUrl)?.[1] ?? '') ?? document.fileUrl)),
+    programImages: input.evidence.imageMessages.map(image => /\/material\/imagenes\/([a-z0-9_]+)\.png$/u.exec(image.imageUrl)?.[1] ?? image.imageUrl),
+    programDocumentKinds: input.evidence.documentMessages.map(document => (/\/material\/fichas\//u.test(document.fileUrl) ? 'ficha' : 'program')),
     authorizedFactIds: context.authorizedFactIds,
     authorizedFacts: context.authorizedFacts,
     usedFactIds: proposal.usedFactIds,

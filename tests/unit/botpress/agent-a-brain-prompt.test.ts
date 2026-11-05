@@ -412,7 +412,7 @@ describe('Agent A Brain prompt', () => {
     expect(JSON.parse(encoded)).toEqual(current);
     expect(instructions).not.toContain('<current_turn_guidance>');
     expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v109');
-    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v167');
+    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v168');
   });
 
   it('maps recommendations and generic continuation without persisting a customer choice', () => {
@@ -915,20 +915,26 @@ describe('Agent A Brain prompt', () => {
     expect(profileContract).toContain('pending_requests');
   });
 
-  describe('official programme PDF contract (brain v164)', () => {
+  describe('course material contract (brain v168: image + PDF with one action)', () => {
     it('is absent without the capability and states the rules with it', () => {
       expect(buildAgentABrainInstructionsV1(context())).not.toContain('kind="course_program"');
       const current = context();
-      current.capabilities.course_programs = { available_offering_codes: ['real_estate', 'barista'], sent_offering_codes: ['barista'] };
+      current.capabilities.course_programs = { available_offering_codes: ['real_estate', 'barista', 'ingles_4'], sent_offering_codes: ['barista'],
+        materials: [{ offering_code: 'real_estate', has_program_pdf: true, has_ficha_pdf: true, has_image: true },
+          { offering_code: 'barista', has_program_pdf: true, has_ficha_pdf: true, has_image: true },
+          { offering_code: 'ingles_4', has_program_pdf: false, has_ficha_pdf: true, has_image: true }] };
       const text = buildAgentABrainInstructionsV1(current);
       const contract = text.split('<current_effect_contract kind="course_program">')[1]!.split('</current_effect_contract>')[0]!;
       expect(contract).toContain('send_course_program');
-      expect(contract).toContain('move=request_course_program');
-      expect(contract).toContain('chosen from: real_estate');
-      expect(contract).not.toContain('chosen from: real_estate, barista');
+      expect(contract).toContain('request_course_program when the customer asks for the programme');
+      expect(contract).toContain('real_estate(official programme PDF + course image)');
+      expect(contract).toContain('ingles_4(manual ficha PDF + course image)');
+      expect(contract).not.toContain('barista(official');
+      expect(contract).toContain('for the first time in this conversation, propose the action in that same turn');
+      expect(contract).toContain('Not on pure price or payment turns, and never more than once per course');
       expect(contract).toContain('never write a URL');
       expect(contract).toContain('Already delivered in this conversation: barista');
-      expect(contract).toContain('never replace it with a summary');
+      expect(contract).toContain('never replace them with a long summary');
     });
   });
 

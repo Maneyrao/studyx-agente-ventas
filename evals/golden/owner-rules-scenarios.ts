@@ -655,6 +655,7 @@ OWNER_PROMOTION_MODE_REPLAY_CASES_MUTABLE.push(
         authority: [programRef, intentRef, noPrefabRef],
         expected: { move: ['request_course_program'], action: ['send_course_program'], state: {} },
         hard: [{ type: 'workflow_committed' }, noPrefab, { type: 'program_document_sent', value: 'marketing_digital' },
+          { type: 'program_image_sent', value: 'marketing_digital' }, { type: 'program_document_kind', value: 'program' },
           { type: 'not_contains', value: 'http' }, { type: 'question_count_at_most', value: 1 }, { type: 'no_call_offer' }, ...noBeca],
       }),
     ],
@@ -667,7 +668,8 @@ OWNER_PROMOTION_MODE_REPLAY_CASES_MUTABLE.push(
       mdBase('syllabus_request', 'me pasás el temario?', {
         expected: { move: ['request_course_program'], action: ['send_course_program'], state: {} },
         authority: [programRef, intentRef, noPrefabRef],
-        hard: [{ type: 'workflow_committed' }, noPrefab, { type: 'program_document_sent', value: 'marketing_digital' }, { type: 'no_call_offer' }, ...noBeca],
+        hard: [{ type: 'workflow_committed' }, noPrefab, { type: 'program_document_sent', value: 'marketing_digital' },
+          { type: 'program_image_sent', value: 'marketing_digital' }, { type: 'no_call_offer' }, ...noBeca],
       }),
       mdBase('syllabus_again', 'me lo mandás de nuevo?', {
         must: ['Decir con naturalidad que ya se lo compartió y ofrecer repasarlo juntos o resolver una duda, sin reenviarlo.'],
@@ -759,6 +761,60 @@ OWNER_PROMOTION_MODE_REPLAY_CASES_MUTABLE.push(
         authority: [programRef, realEstateRef, noPrefabRef],
         expected: { move: ['request_course_program', 'ask_course_information'], action: ['none', 'send_course_program'], state: {} },
         hard: [{ type: 'workflow_committed' }, noPrefab, { type: 'program_document_exactly_once', value: 'real_estate' },
+          { type: 'not_contains', value: 'http' }, { type: 'no_call_offer' }, ...noBeca],
+      }),
+    ],
+  },
+  {
+    id: '42_class_info_sends_material_barista_20261104',
+    title: '«¿cómo son las clases de Barista?» (curso NUEVO reactivado): el mismo turno manda texto + imagen + PDF del programa oficial',
+    turns: [
+      mdBase('hello', 'Hola', {
+        must: ['Saludar con calidez y preguntar qué le gustaría aprender, sin enviar material.'],
+        expected: { move: [...intentMoves, 'greeting'], action: ['none'], state: {} },
+        hard: [{ type: 'workflow_committed' }, noPrefab, { type: 'no_program_document' }, { type: 'no_call_offer' }, ...noBeca],
+      }),
+      mdBase('classes', '¿cómo son las clases de Barista?', {
+        must: ['Explicar cómo son las clases con hechos autorizados (modalidad, cantidad de clases si el contexto la trae) con una introducción corta y humana; el material oficial (imagen + programa) acompaña el texto.'],
+        mustNot: ['No escribir enlaces, no afirmar que el material llegó, no prometer empleo ni ingresos, no ofrecer una llamada, no hablar de precio ni de plan de pago.'],
+        authority: [programRef, intentRef, noPrefabRef, owner(209, 209, 'Programa PDF')],
+        expected: { move: programMoves, action: ['send_course_program'], state: {} },
+        hard: [{ type: 'workflow_committed' }, noPrefab, { type: 'program_document_sent', value: 'barista' },
+          { type: 'program_image_sent', value: 'barista' }, { type: 'program_document_kind', value: 'program' },
+          { type: 'not_contains', value: 'http' }, { type: 'question_count_at_most', value: 1 }, { type: 'no_call_offer' }, ...noBeca],
+      }),
+    ],
+  },
+  {
+    id: '43_licensed_trade_plomeria_material_20261104',
+    title: 'Plomería (curso NUEVO, oficio con licencia): info de clases con imagen + PDF y sin promesa de licencia',
+    turns: [
+      mdBase('hello', 'Hola', {
+        must: ['Saludar con calidez y preguntar qué le gustaría aprender, sin enviar material.'],
+        expected: { move: [...intentMoves, 'greeting'], action: ['none'], state: {} },
+        hard: [{ type: 'workflow_committed' }, noPrefab, { type: 'no_program_document' }, { type: 'no_call_offer' }, ...noBeca],
+      }),
+      mdBase('plumbing_info', 'Quiero info del curso de Plomería, qué voy a ver en las clases y sirve para trabajar en Estados Unidos?', {
+        must: ['Explicar lo que se ve en las clases con hechos autorizados y mandar el material oficial; ser honesto: el curso da la base pero no reemplaza la licencia estatal que exige Estados Unidos para el oficio.'],
+        mustNot: ['No prometer licencia, habilitación para ejercer, empleo ni ingresos; no escribir enlaces; no ofrecer una llamada.'],
+        authority: [programRef, owner(178, 178, 'licencia estatal'), noPrefabRef],
+        expected: { move: programMoves, action: ['send_course_program'], state: {} },
+        hard: [{ type: 'workflow_committed' }, noPrefab, { type: 'program_document_sent', value: 'plomeria' },
+          { type: 'program_image_sent', value: 'plomeria' }, { type: 'not_contains', value: 'http' }, { type: 'no_call_offer' }, ...noBeca],
+      }),
+    ],
+  },
+  {
+    id: '44_ficha_fallback_word_20261104',
+    title: 'Word (curso NUEVO sin programa oficial): el PDF que acompaña la imagen es la ficha del manual',
+    turns: [
+      mdBase('classes', 'Hola, ¿cómo son las clases del curso de Word?', {
+        must: ['Explicar cómo son las clases con hechos autorizados, sin inventar cantidad de clases ni contenidos; el material (imagen + ficha) acompaña el texto.'],
+        mustNot: ['No inventar la cantidad de clases (el manual la deja a confirmar), no escribir enlaces, no ofrecer una llamada.'],
+        authority: [programRef, intentRef, noPrefabRef],
+        expected: { move: programMoves, action: ['send_course_program'], state: {} },
+        hard: [{ type: 'workflow_committed' }, noPrefab, { type: 'program_document_sent', value: 'word' },
+          { type: 'program_image_sent', value: 'word' }, { type: 'program_document_kind', value: 'ficha' },
           { type: 'not_contains', value: 'http' }, { type: 'no_call_offer' }, ...noBeca],
       }),
     ],

@@ -671,6 +671,9 @@ export const ClaimedTurnSchema = z.object({
   course_programs: z.object({
     available_offering_codes: z.array(z.string().min(1).max(160)).max(60),
     sent_offering_codes: z.array(z.string().min(1).max(160)).max(60),
+    materials: z.array(z.object({
+      offering_code: z.string().min(1).max(160), has_program_pdf: z.boolean(), has_ficha_pdf: z.boolean(), has_image: z.boolean(),
+    }).strict()).max(60).optional(),
   }).strict().optional(),
   course_bonus_capability: z.object({
     ladder: IncomingClaimCourseBonusLadderV1Schema.optional(),
@@ -949,17 +952,18 @@ export const CommitDecisionResponseSchema = z.object({
     .nullable()
     .default(null),
   outbounds: z.array(CommittedOutboundSchema.extend({
-    // Up to three authored text bubbles (0-2) plus the official-programme document (3).
-    part_index: z.number().int().min(0).max(3),
-    part_count: z.number().int().min(1).max(4),
+    // Up to two authored text bubbles with the course image and the official-programme PDF (0-4).
+    part_index: z.number().int().min(0).max(4),
+    part_count: z.number().int().min(1).max(5),
     document: z.object({
       kind: z.literal('course_program'),
+      media: z.enum(['file', 'image']),
       offering_code: z.string().min(1).max(160),
       file_url: z.string().url().refine(value => new URL(value).protocol === 'https:'),
       filename: z.string().min(1).max(200),
       title: z.string().min(1).max(200),
     }).strict().optional(),
-  })).max(4).default([]),
+  })).max(5).default([]),
   // Presente exactamente cuando la decisión reservó una llamada. En replay
   // trae el mismo call_id de la primera reserva; el workflow despacha por
   // call_id y nunca conoce el teléfono.

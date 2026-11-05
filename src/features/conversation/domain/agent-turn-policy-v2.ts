@@ -536,7 +536,12 @@ export function authorizeAgentTurnV2(input: {
     const code = proposal.proposed_action.offering_code;
     const known = input.offerings.some((offering) => offering.code === code)
       && input.course_programs?.available_offering_codes.includes(code) === true;
-    if (!known || !moves.has('request_course_program')) reasons.push('ACTION_NOT_AUTHORIZED');
+    // Owner 2026-11-05: explaining the classes/temario/content of a course (ask_course_information) or asking for the
+    // programme (request_course_program) sends the image + PDF; never on a price/payment/checkout turn.
+    const materialTurn = moves.has('request_course_program') || moves.has('ask_course_information');
+    const commercialTurn = ['ask_payment_options', 'select_payment_plan', 'request_payment_link', 'price_objection', 'defer_payment',
+      'decline_purchase', 'report_payment'].some(move => moves.has(move));
+    if (!known || !materialTurn || (commercialTurn && !moves.has('request_course_program'))) reasons.push('ACTION_NOT_AUTHORIZED');
     // Already delivered in this conversation: not an error, the text stays and the file is not resent.
     else if (!input.course_programs?.sent_offering_codes.includes(code)) action = proposal.proposed_action;
   }

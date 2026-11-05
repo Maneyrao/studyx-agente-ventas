@@ -50,7 +50,9 @@ const COMBINE_ALIASES: Readonly<Record<string, readonly string[]>> = {
   'camaras de seguridad': ['camaras_seguridad'], 'excel': ['excel_integral'], 'coaching': ['coaching_liderazgo'],
   'comunicacion interna': ['comunicacion_interna_empresas'], 'autocad': ['autocad_interiores'],
   'ingles': ['ingles_1'], 'ingles i': ['ingles_1'], 'ingles i y ii': ['ingles_1', 'ingles_2'],
-  'ingles iii y iv': ['ingles_3'], 'ingles i a iv': ['ingles_1', 'ingles_2', 'ingles_3'],
+  'ingles iii y iv': ['ingles_3', 'ingles_4'], 'ingles i a iv': ['ingles_1', 'ingles_2', 'ingles_3', 'ingles_4'],
+  'pasteleria': ['introduccion_pasteleria_reposteria'], 'pasteleria/reposteria': ['introduccion_pasteleria_reposteria'],
+  'electricista': ['electricista'], 'organizador profesional de eventos': ['organizador_eventos_sociales'],
 };
 const CODE_BY_FOLDED_NAME = new Map<string, readonly string[]>([
   ...COURSES.flatMap((course) => course.offering_code ? [[fold(course.manual_name), [course.offering_code]] as const] : []),

@@ -1,5 +1,5 @@
 import type { DbClient } from '@/lib/db/types';
-import { COURSE_PROGRAM_ASSETS_V1, courseProgramChannelsV1, courseProgramUrlV1 } from '@/shared/catalog/course-programs';
+import { COURSE_PROGRAM_ASSETS_V1, courseProgramChannelsV1, courseProgramImageUrlV1, courseProgramUrlV1 } from '@/shared/catalog/course-programs';
 
 /**
  * Programme PDF capability (owner decision 2026-11-04). Data only; wording is
@@ -11,6 +11,7 @@ import { COURSE_PROGRAM_ASSETS_V1, courseProgramChannelsV1, courseProgramUrlV1 }
 export interface CourseProgramsCapabilityV1 {
   readonly available_offering_codes: readonly string[];
   readonly sent_offering_codes: readonly string[];
+  readonly materials: ReadonlyArray<{ readonly offering_code: string; readonly has_program_pdf: boolean; readonly has_ficha_pdf: boolean; readonly has_image: boolean }>;
 }
 
 export async function readCourseProgramsCapabilityV1(input: {
@@ -29,6 +30,10 @@ export async function readCourseProgramsCapabilityV1(input: {
     SELECT o.code FROM offerings o JOIN workspaces w ON w.id=o.workspace_id
     WHERE w.slug=${input.workspace_slug} AND o.status='active' AND o.offering_type='course'`;
   const available = active.map((row) => row.code)
-    .filter((code) => COURSE_PROGRAM_ASSETS_V1.has(code) && courseProgramUrlV1(code, env) !== null);
-  return { available_offering_codes: available, sent_offering_codes: sent.map((row) => row.offering_code) };
+    .filter((code) => COURSE_PROGRAM_ASSETS_V1.has(code) && courseProgramUrlV1(code, env) !== null && courseProgramImageUrlV1(code, env) !== null);
+  const materials = available.map((code) => {
+    const asset = COURSE_PROGRAM_ASSETS_V1.get(code)!;
+    return { offering_code: code, has_program_pdf: asset.has_program_pdf, has_ficha_pdf: true, has_image: true };
+  });
+  return { available_offering_codes: available, sent_offering_codes: sent.map((row) => row.offering_code), materials };
 }

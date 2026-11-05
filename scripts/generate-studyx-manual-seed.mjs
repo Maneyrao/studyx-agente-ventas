@@ -15,9 +15,13 @@ const OUTPUT_PATH = join(ROOT, 'supabase/seed/studyx-manual.sql');
 const WORKSPACE_ID = 'b0000000-0000-4000-8000-000000000001';
 
 const data = JSON.parse(readFileSync(DATA_PATH, 'utf8'));
-// Active offerings that live outside the manual (own source: official programme PDF, see
-// scripts/upsert-real-estate-offering.mjs). The catalog sync must never deactivate them.
-const OUTSIDE_MANUAL_ACTIVE_CODES = ['real_estate'];
+// The 17 courses marked NUEVO in the 2026 manual (12 new + 5 reactivated) are loaded by
+// scripts/upsert-manual-2026-offerings.mjs. This older sync must never deactivate them.
+const OUTSIDE_MANUAL_ACTIVE_CODES = [
+  'introduccion_pasteleria_reposteria', 'auxiliar_farmacia', 'auxiliar_educacion_especial', 'electricista', 'estudios_biblicos',
+  'real_estate', 'diseno_vidrieras_stand', 'plomeria', 'home_maintenance', 'word', 'ingles_4', 'ceremonial_protocolo',
+  'cuidador_adultos_mayores', 'barista', 'masoterapia', 'estetica_integral', 'depilacion_definitiva',
+];
 
 if (data.source_of_truth !== true || data.courses.length !== 40) {
   throw new Error('The StudyX manual must declare exactly 40 explicit catalog courses.');

@@ -8,7 +8,7 @@ import { collectNegotiationObservationsV1 } from '@/features/conversation/applic
 import { offerDirectCourseBonusV1, acceptDirectCourseBonusV1 } from '@/features/promotions/application/direct-course-bonus-service';
 import type { CourseBonusCapabilityV1 } from '@/features/promotions/application/read-course-bonus-capability';
 import { readCourseProgramsCapabilityV1 } from '@/features/programs/application/read-course-programs-capability';
-import { courseProgramAssetV1, courseProgramUrlV1, programModuleCountV1 } from '@/shared/catalog/course-programs';
+import { courseProgramAssetV1, courseProgramImageUrlV1, courseProgramUrlV1, programModuleCountV1 } from '@/shared/catalog/course-programs';
 import { withSerializableTransaction } from '@/lib/db/transaction';
 import { sql } from '@/lib/db/orchestrator';
 import { jsonbParam } from '@/lib/db/json';
@@ -309,6 +309,8 @@ interface DecisionRow {
 
 export interface CourseProgramDocumentV1 {
   readonly kind: 'course_program';
+  /** `image`: the course image (sent first); `file`: the programme PDF. */
+  readonly media: 'file' | 'image';
   readonly offering_code: string;
   readonly file_url: string;
   readonly filename: string;
@@ -317,11 +319,16 @@ export interface CourseProgramDocumentV1 {
 
 /** The document descriptor of a persisted part, rebuilt from registry + env (replay-safe). */
 function courseProgramDocumentOf(metadata: unknown, title: string): CourseProgramDocumentV1 | undefined {
-  const program = (metadata as { course_program?: { offering_code?: unknown } } | null | undefined)?.course_program;
+  const program = (metadata as { course_program?: { offering_code?: unknown; kind?: unknown } } | null | undefined)?.course_program;
   const code = typeof program?.offering_code === 'string' ? program.offering_code : null;
   const asset = code ? courseProgramAssetV1(code) : null;
-  const url = code ? courseProgramUrlV1(code, process.env) : null;
-  return code && asset && url ? { kind: 'course_program', offering_code: code, file_url: url, filename: asset.filename, title } : undefined;
+  if (!code || !asset) return undefined;
+  if (program?.kind === 'image') {
+    const imageUrl = courseProgramImageUrlV1(code, process.env);
+    return imageUrl ? { kind: 'course_program', media: 'image', offering_code: code, file_url: imageUrl, filename: asset.image.filename, title } : undefined;
+  }
+  const url = courseProgramUrlV1(code, process.env);
+  return url ? { kind: 'course_program', media: 'file', offering_code: code, file_url: url, filename: asset.filename, title } : undefined;
 }
 
 interface PersistedOutboundPartRow {
@@ -1850,30 +1857,35 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
       // ledger row is the idempotency fence: an existing pending/submitted row means it
       // was already sent, so the action is dropped and the text stays.
       let programDocument: { readonly offering_code: string; readonly asset_version: string; readonly sha256: string; readonly filename: string; readonly title: string } | null = null;
+      let programHasImage = false;
       if (committedBusinessAction?.type === 'send_course_program') {
         const code = committedBusinessAction.offering_code;
         const asset = courseProgramAssetV1(code);
         const workspace = await db<Array<{ id: string; display_name: string }>>`
           SELECT w.id, o.display_name FROM workspaces w JOIN offerings o ON o.workspace_id=w.id AND o.code=${code} AND o.status='active'
           WHERE w.slug=${workspaceSlug} LIMIT 1`;
-        const reserved = asset && courseProgramUrlV1(code, process.env) !== null && workspace[0]
+        const reserved = asset && courseProgramUrlV1(code, process.env) !== null && courseProgramImageUrlV1(code, process.env) !== null && workspace[0]
           ? await db<Array<{ id: string }>>`
               INSERT INTO course_program_deliveries (workspace_id, conversation_id, contact_id, offering_code, asset_version, sha256, status, decision_id)
               VALUES (${workspace[0].id}::uuid, ${turn.conversation_id}::uuid, ${turn.contact_id}::uuid, ${code}, ${asset.version}, ${asset.sha256}, 'pending', ${decisionId}::uuid)
               ON CONFLICT (conversation_id, offering_code, asset_version) DO UPDATE
-                SET status='pending', decision_id=EXCLUDED.decision_id, outbound_message_id=NULL, updated_at=now()
+                SET status='pending', decision_id=EXCLUDED.decision_id, outbound_message_id=NULL, image_outbound_message_id=NULL, updated_at=now()
                 WHERE course_program_deliveries.status='failed'
               RETURNING id`
           : [];
         if (asset && workspace[0] && reserved[0]) {
           programDocument = { offering_code: code, asset_version: asset.version, sha256: asset.sha256, filename: asset.filename, title: workspace[0].display_name };
+          programHasImage = true;
         } else {
           committedBusinessAction = null;
           await db`UPDATE agent_decisions SET business_action = NULL WHERE id = ${decisionId}::uuid`;
         }
       }
-      const documentContent = programDocument ? `[programa enviado: ${programDocument.title}]` : null;
-      const partsToPersist = documentContent === null ? partTexts : [...partTexts, documentContent];
+      // Order of the media parts: course image first, then the PDF (both before the text bubbles on delivery).
+      const imageIndex = programHasImage ? partTexts.length : -1;
+      const documentIndex = programDocument === null ? -1 : partTexts.length + (programHasImage ? 1 : 0);
+      const partsToPersist = programDocument === null ? partTexts
+        : [...partTexts, ...(programHasImage ? [`[imagen enviada: ${programDocument.title}]`] : []), `[programa enviado: ${programDocument.title}]`];
       const profileRequests = preparedAgentTurn && validatedInput.agent_turn_v2
         ? contactProfileRequestsForPartsV1({
             authored_messages: validatedInput.agent_turn_v2.proposal.response.messages,
@@ -1887,7 +1899,8 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
       const persistedParts: Array<{ message: Message; manifest: AuthorizedEgressV1 }> = [];
 
       for (const [partIndex, content] of partsToPersist.entries()) {
-        const isProgramDocument = programDocument !== null && partIndex === partTexts.length;
+        const isProgramDocument = programDocument !== null && partIndex === documentIndex;
+        const isProgramImage = programDocument !== null && partIndex === imageIndex;
         const partManifest = buildAuthorizedEgress({
           content,
           authorized_urls: authorizedUrls.filter((url) => content.includes(url)),
@@ -1951,8 +1964,8 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
               part_index: partIndex,
               part_count: partsToPersist.length,
               authorized_egress: partManifest,
-              ...(isProgramDocument ? { course_program: { offering_code: programDocument!.offering_code, asset_version: programDocument!.asset_version,
-                sha256: programDocument!.sha256, filename: programDocument!.filename } } : {}),
+              ...(isProgramDocument || isProgramImage ? { course_program: { offering_code: programDocument!.offering_code, asset_version: programDocument!.asset_version,
+                sha256: programDocument!.sha256, filename: programDocument!.filename, kind: isProgramImage ? 'image' : 'document' } } : {}),
               ...(profileRequests[partIndex]?.length ? { contact_profile_requests_v1: profileRequests[partIndex] } : {}),
             },
           }, {
@@ -1980,6 +1993,11 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
           INSERT INTO agent_decision_outbound_parts (decision_id, part_index, message_id)
           VALUES (${decisionId}::uuid, ${partIndex}, ${message.id}::uuid)
         `;
+        if (isProgramImage) {
+          await db`UPDATE course_program_deliveries SET image_outbound_message_id=${message.id}::uuid, updated_at=now()
+            WHERE conversation_id=${turn.conversation_id}::uuid AND offering_code=${programDocument!.offering_code}
+              AND asset_version=${programDocument!.asset_version}`;
+        }
         if (isProgramDocument) {
           await db`UPDATE course_program_deliveries SET outbound_message_id=${message.id}::uuid, updated_at=now()
             WHERE conversation_id=${turn.conversation_id}::uuid AND offering_code=${programDocument!.offering_code}
@@ -1998,7 +2016,7 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
 
       for (const [partIndex, persisted] of persistedParts.entries()) {
         const { message, manifest } = persisted;
-        const isProgramPart = programDocument !== null && partIndex === partTexts.length;
+        const isProgramPart = programDocument !== null && (partIndex === documentIndex || partIndex === imageIndex);
         const outboxPayload = {
           decision_id: decisionId,
           outbound_id: message.id,

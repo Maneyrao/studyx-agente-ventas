@@ -97,3 +97,16 @@ describe('Real Estate is a licensed trade (US state license)', () => {
     expect(kinds('El curso de Real Estate te da la base, pero no reemplaza la licencia estatal que exige Estados Unidos.')).not.toContain('license_claim')
   })
 })
+
+describe('licensed trades of the 2026 manual', () => {
+  it.each([
+    'Con el curso de Plomería quedas habilitado para ejercer legalmente en Estados Unidos.',
+    'El curso de Electricista te da la licencia estatal.',
+    'En Auxiliar de Farmacia no necesitas licencia para trabajar.',
+  ])('flags a license promise: %s', (text) => {
+    expect(kinds(text)).toContain('license_claim')
+  })
+  it('lets the honest statement through', () => {
+    expect(kinds('El curso de Plomería te da la base, pero no reemplaza la licencia estatal que exige tu estado.')).not.toContain('license_claim')
+  })
+})
