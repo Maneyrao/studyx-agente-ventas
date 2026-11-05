@@ -195,6 +195,14 @@ export function authorizeAgentTurnV2(input: {
       && requestedOffering !== null
       // Asking to discuss an included course by phone does not replace the
       // paid course or abandon its checkout. Keep it as discussed context.
+      && !requestedOfferingIsPresentedBonus)
+    // Purchase intent for the exact course under discussion starts its
+    // checkout when nothing is selected yet (2026-11-05 owner test: «quiero
+    // pagar» left no course, so contact_details/payment_confirmation never
+    // opened). It never replaces a different durable selection.
+    || ((moves.has('request_payment_link') || moves.has('select_payment_plan'))
+      && requestedOffering !== null
+      && state.selected_offering_code === null
       && !requestedOfferingIsPresentedBonus));
   const requestedOfferingBelongsToCurrentPackage = requestedOffering !== null
     && (requestedOffering === capabilityInterestOffering || requestedOfferingIsPresentedBonus);
@@ -876,6 +884,15 @@ export function authorizeAgentTurnV2(input: {
     callPreference = 'chat';
     if (callOfferStatus !== 'not_offered') callOfferStatus = 'declined';
     if (awaitingReply === 'call_or_chat' || callIntakePending) awaitingReply = 'none';
+    // Back from a call with the course and the whole intake already recorded:
+    // the sale resumes at its checkout checkpoint, so the customer's plan
+    // choice is the payment confirmation (2026-11-05 owner test: «el de 12
+    // cuotas» twice, link only after «y el link?»).
+    if (state.stage === 'handoff' && awaitingReply === 'none' && nextOffering !== null
+      && stateFacts.has('state:intake_recorded:v1') && !selectedPurchasePaid
+      && paymentLinkRequest?.status !== 'consumed') {
+      awaitingReply = 'payment_confirmation';
+    }
   }
   if (callOfferCanAdvanceState && !supportedChannelChoice) {
     callOfferCount = Math.min(2, callOfferCount + 1) as 1 | 2;

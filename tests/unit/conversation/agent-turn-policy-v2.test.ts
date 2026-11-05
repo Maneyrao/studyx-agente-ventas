@@ -2378,6 +2378,82 @@ describe('payment link consent across intake', () => {
     expect(result).toMatchObject({ ok: true, transition: { call_preference: 'chat', awaiting_reply: 'none' } });
   });
 
+  // 2026-11-05 owner test (6bcc8efa): «quiero pagar» for the course under
+  // discussion left the state at exploring/no course, so the checkout
+  // checkpoints (contact_details → payment_confirmation) never opened.
+  it('purchase intent for an exact course selects it when no course is selected yet', () => {
+    const result = authorize({
+      customerText: 'quiero pagar',
+      state: state({ selected_offering_code: null }),
+      proposal: proposal({
+        move: { schema_version: 1, move: 'request_payment_link', course_reference: 'redes_informaticas',
+          secondary_moves: [], vetoes: [], confidence: 0.9 },
+        response: { messages: ['Perfecto, avanzamos con Redes Informáticas. Necesito tu nombre, apellido y correo.'] },
+        course_mentions: [{ offering_code: 'redes_informaticas', role: 'paid' }],
+        profile_requests: [{ message_index: 0, fields: ['nombre', 'apellido', 'correo'], purpose: 'payment', mode: 'collect' }],
+      }),
+    });
+    expect(result).toMatchObject({ ok: true, action: { type: 'none' },
+      transition: { selected_offering_code: 'redes_informaticas', stage: 'course_selected', awaiting_reply: 'contact_details' } });
+  });
+  it('purchase intent never replaces a different durable course selection', () => {
+    const result = authorize({
+      customerText: 'quiero pagar',
+      state: state({ selected_offering_code: 'excel_integral', stage: 'course_selected' }),
+      proposal: proposal({
+        move: { schema_version: 1, move: 'request_payment_link', course_reference: 'redes_informaticas',
+          secondary_moves: [], vetoes: [], confidence: 0.9 },
+        response: { messages: ['Perfecto. Necesito tu nombre, apellido y correo.'] },
+        profile_requests: [{ message_index: 0, fields: ['nombre', 'apellido', 'correo'], purpose: 'payment', mode: 'collect' }],
+      }),
+    });
+    expect(result).toMatchObject({ ok: true, transition: { selected_offering_code: 'excel_integral' } });
+  });
+
+  // 2026-11-05 owner test (6bcc8efa): after a voicemail the customer chose chat,
+  // then picked «el de 12 cuotas» twice and only got the link on «y el link?».
+  it.each(['continue_by_chat', 'decline_call'] as const)(
+    '%s after a call resumes checkout when course and intake are complete', (chatMove) => {
+      const resumed = authorize({
+        customerText: 'nada, prefiero seguir por acá', intake: completeIntake,
+        state: state({ selected_offering_code: 'redes_informaticas', stage: 'handoff', call_preference: 'call',
+          call_offer_status: 'accepted', awaiting_reply: 'none' }),
+        proposal: proposal({
+          move: { schema_version: 1, move: chatMove, secondary_moves: [], vetoes: ['call'], confidence: 0.93 },
+          response: { messages: ['Perfecto, seguimos por acá. Con cuál plan te acomodás mejor?'] },
+        }),
+      });
+      expect(resumed).toMatchObject({ ok: true, transition: { call_preference: 'chat', awaiting_reply: 'payment_confirmation' } });
+      if (!resumed.ok) throw Error('expected resumed checkout');
+      const picked = authorize({
+        customerText: 'el de 12 cuotas', intake: completeIntake,
+        state: state({ selected_offering_code: 'redes_informaticas', stage: resumed.transition.stage,
+          call_preference: 'chat', awaiting_reply: resumed.transition.awaiting_reply }),
+        proposal: proposal({
+          move: { schema_version: 1, move: 'select_payment_plan', payment_plan: 'monthly_12', course_reference: 'redes_informaticas',
+            secondary_moves: [], vetoes: [], confidence: 0.95 },
+          response: { messages: ['Listo, te paso el link de 12 pagos mensuales de USD 30.'] },
+          used_fact_ids: ['payment:redes_informaticas:monthly_12:label:v1'],
+          proposed_action: { type: 'send_payment_link', offering_code: 'redes_informaticas', payment_plan: 'monthly_12' },
+        }),
+      });
+      expect(picked).toMatchObject({ ok: true,
+        action: { type: 'send_payment_link', offering_code: 'redes_informaticas', payment_plan: 'monthly_12' } });
+    },
+  );
+  it('choosing chat without a complete intake keeps the checkout closed', () => {
+    const result = authorize({
+      customerText: 'prefiero seguir por acá',
+      state: state({ selected_offering_code: 'redes_informaticas', stage: 'handoff', call_preference: 'call',
+        call_offer_status: 'accepted', awaiting_reply: 'none' }),
+      proposal: proposal({
+        move: { schema_version: 1, move: 'continue_by_chat', secondary_moves: [], vetoes: ['call'], confidence: 0.93 },
+        response: { messages: ['Perfecto, seguimos por acá.'] },
+      }),
+    });
+    expect(result).toMatchObject({ ok: true, transition: { awaiting_reply: 'none' } });
+  });
+
   it('changing course clears the former plan and pending link consent', () => {
     const result = authorize({
       mayOfferCall: false, // This fixture isolates course/fact authority when a call is unavailable.
