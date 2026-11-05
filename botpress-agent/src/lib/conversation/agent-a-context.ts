@@ -917,6 +917,7 @@ export function buildAgentAContextV1(
             retention_used: claimed.course_bonus_capability.sales_flow.retention_used,
             promo_expires_at: claimed.course_bonus_capability.sales_flow.promo_expires_at } } }
         : {}),
+      ...(claimed.course_programs ? { course_programs: claimed.course_programs } : {}),
       intake_status: intakeStatus,
       authorized_payment_plan: selectedPlan,
       intake_missing: intakeMissing,

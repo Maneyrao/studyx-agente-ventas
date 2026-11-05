@@ -4342,6 +4342,42 @@ describe('processInboundTurn hot path', () => {
     expect(result).toMatchObject({ status: 'completed', delivery_status: 'submitted_to_botpress' });
   });
 
+  describe('official programme document part (owner 2026-11-04)', () => {
+    const DOC_ID = '38a823e8-27c2-4279-9956-058f45f33cd7';
+    const manifest = (hash: string) => ({ schema_version: 1, content_hash: hash, authorized_urls: [], protected_facts: [] });
+    const parts = () => [
+      { id: UUID, content: 'Primero', status: 'pending', delivery_attempt: 1, authorized_egress: manifest('67d02dfce5ef9a0aa49675a19b9f92983e52abb2cceb96e6e932c26f171e68aa'), part_index: 0, part_count: 3 },
+      { id: '28a823e8-27c2-4279-9956-058f45f33cd6', content: 'Segundo', status: 'pending', delivery_attempt: 1, authorized_egress: manifest('2f50e3d71e066e86ebb03e28f5bac2e90cd0de1982f34ecef3f0753b14b27897'), part_index: 1, part_count: 3 },
+      { id: DOC_ID, content: '[programa enviado: Real Estate]', status: 'pending', delivery_attempt: 1,
+        authorized_egress: buildAuthorizedEgress({ content: '[programa enviado: Real Estate]', authorized_urls: [], protected_facts: [] }), part_index: 2, part_count: 3,
+        document: { kind: 'course_program', offering_code: 'real_estate', file_url: 'https://assets.example.com/programas/real-estate.pdf',
+          filename: 'Programa Real Estate - Studyx.pdf', title: 'Real Estate' } },
+    ];
+    it('sends the PDF first as a file, then the text bubbles', async () => {
+      configuration.whatsappPublicEnabled = true;
+      configuration.whatsappCanaryEnabled = false;
+      configuration.whatsappAllowedBotPhoneNumberId = 'allowed-business-number-75';
+      const createMessage = vi.fn((input: Record<string, unknown>) => Promise.resolve({ message: { id: `bp-${String(input.type)}-${Math.random()}` } }));
+      await runCommittedOutbound({ authorized_egress: parts()[0]!.authorized_egress }, { channel: 'whatsapp',
+        message: { ...workflowInput().message, metadata: { bot_phone_number_id: 'allowed-business-number-75' } } },
+      { createMessage, outbounds: parts() });
+      expect(createMessage.mock.calls.map(([input]) => (input as { type: string }).type)).toEqual(['file', 'text', 'text']);
+      expect(createMessage.mock.calls[0]![0]).toMatchObject({ type: 'file', payload: { fileUrl: 'https://assets.example.com/programas/real-estate.pdf',
+        filename: 'Programa Real Estate - Studyx.pdf', title: 'Real Estate' } });
+      expect(createMessage.mock.calls.slice(1).map(([input]) => (input as { payload: { text: string } }).payload.text)).toEqual(['Primero', 'Segundo']);
+    });
+    it('on a channel without file support the document is reported failed (never sent) and the text bubbles still go out', async () => {
+      const createMessage = vi.fn().mockResolvedValueOnce({ message: { id: 'bp-1' } }).mockResolvedValueOnce({ message: { id: 'bp-2' } });
+      await runCommittedOutbound({ authorized_egress: parts()[0]!.authorized_egress }, { channel: 'emulator' }, { createMessage, outbounds: parts() });
+      expect(createMessage).toHaveBeenCalledTimes(2);
+      expect(createMessage.mock.calls.map(([input]) => (input as { type: string }).type)).toEqual(['text', 'text']);
+      expect(actionSpies.delivery.mock.calls.map(([call]) => call.input)).toContainEqual(
+        expect.objectContaining({ outbound_id: DOC_ID, status: 'failed' }));
+      expect(actionSpies.delivery.mock.calls.map(([call]) => call.input)).toContainEqual(
+        expect.objectContaining({ outbound_id: UUID, status: 'submitted_to_botpress' }));
+    });
+  });
+
   it('paces model-authored bubbles without rewriting or delaying the first one', async () => {
     const submittedAt: number[] = [];
     const submittedTexts: string[] = [];

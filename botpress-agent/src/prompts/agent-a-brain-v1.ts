@@ -5,7 +5,7 @@ import {
 } from './studyx-agent-a-canonical.generated';
 import { resolveCanonicalPromptIdentityV1 } from './agent-a-identity';
 
-export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v163' as const;
+export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v164' as const;
 
 /**
  * Runtime contract only. The sales behavior lives in the canonical prompt so
@@ -218,6 +218,19 @@ Never claim a completed effect before the matching action commits.
 </current_effect_contract>`;
 }
 
+function currentCourseProgramEffectContractV1(context: AgentAContextV1): string {
+  const programs = context.capabilities.course_programs
+  if (!programs) return ''
+  const sendable = programs.available_offering_codes.filter(code => !programs.sent_offering_codes.includes(code))
+  if (sendable.length === 0 && programs.sent_offering_codes.length === 0) return ''
+  return `<current_effect_contract kind="course_program">
+The official programme PDF of a course can be sent over WhatsApp. When the current message asks for the programme, syllabus, temario or PDF (move=request_course_program), propose proposed_action={type:"send_course_program", offering_code} for the course in focus, chosen from: ${sendable.join(', ') || '(none left to send)'}.
+Write a short, human introduction; the PDF itself is the answer, never replace it with a summary of the syllabus. The backend resolves the file; never write a URL.
+The document is delivered before your text. Phrase it as something you are sharing ("te comparto el programa de X") only together with the action; never state as already done what the backend has not delivered.
+Already delivered in this conversation: ${programs.sent_offering_codes.join(', ') || 'none'}. If the customer asks again for one of those, say naturally that you already sent it and offer to go over anything in it; do not propose the action again.
+</current_effect_contract>`
+}
+
 function currentCallEffectContractV1(context: AgentAContextV1): string {
   const execution = context.capabilities.call_execution;
   if (execution?.next_step === 'collect_contact_details') {
@@ -335,6 +348,7 @@ ${currentCatalogResolutionDirectiveV1(context)}
 
 ${currentCourseBonusEffectContractV1(context)}
 
+${currentCourseProgramEffectContractV1(context)}
 ${currentCallEffectContractV1(context)}
 
 ${currentCheckoutEffectContractV1(context)}

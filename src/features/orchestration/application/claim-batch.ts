@@ -134,6 +134,11 @@ export interface ClaimBatchDependencies {
     channel: 'text' | 'voice';
     selected_offering_code: string | null;
   }) => Promise<CourseBonusCapabilityV1 | null>;
+  /** Programme PDFs the agent may send and those already sent. A failure resolves to null. */
+  readonly courseProgramsCapability?: (input: { conversation_id: string }) => Promise<{
+    readonly available_offering_codes: readonly string[];
+    readonly sent_offering_codes: readonly string[];
+  } | null>;
   readonly agentABrainShadow?: boolean;
   /** Runtime rollout resolved after the batch is owned and its contact is canonical. */
   readonly agentLoopRollout?: AgentLoopRolloutReaderV3;
@@ -225,6 +230,7 @@ export interface ClaimedTurn {
   readonly contact_profile?: ContactProfileContextV1 | null;
   readonly payment_verification: PaymentVerificationV1 | null;
   readonly course_bonus_capability?: CourseBonusCapabilityV1 | null;
+  readonly course_programs?: { readonly available_offering_codes: readonly string[]; readonly sent_offering_codes: readonly string[] };
   readonly negotiation_facts?: RecordedNegotiationFactsV1 | null;
   /** Persisted commercial memories (latest per type/key), each with its source quote. */
   readonly sales_profile?: SalesProfileMemoriesV1 | null;
@@ -1145,7 +1151,9 @@ export async function claimBatch(
     });
     return null;
   }) ?? Promise.resolve(null);
-  const [callIntakeReadiness, paymentVerification, contactProfile, courseBonusCapability, negotiationFacts, salesProfile] = await Promise.all([
+  const courseProgramsTask = deps.courseProgramsCapability?.({ conversation_id: claim.conversation_id! })
+    .catch(() => null) ?? Promise.resolve(null);
+  const [callIntakeReadiness, paymentVerification, contactProfile, courseBonusCapability, negotiationFacts, salesProfile, courseProgramsCapability] = await Promise.all([
     readCallIntakeReadiness(facts.contact.id, claim.conversation_id!),
     readPaymentVerification(facts.contact.id, {
       offering_code: conversationStateV1?.selected_offering_code ?? null,
@@ -1166,6 +1174,7 @@ export async function claimBatch(
         error: error instanceof Error ? error.name : 'UNKNOWN' });
       return null;
     }) ?? null,
+    courseProgramsTask,
   ]);
   const contactIntake = callIntakeReadiness.intake;
   const contactIntakeMissing = missingContactIntakeFieldsV1(contactIntake);
@@ -1224,6 +1233,7 @@ export async function claimBatch(
     ...(contactProfile ? { contact_profile: contactProfile } : {}),
     payment_verification: paymentVerification,
     course_bonus_capability: courseBonusCapability,
+    ...(courseProgramsCapability ? { course_programs: courseProgramsCapability } : {}),
     negotiation_facts: negotiationFacts,
     sales_profile: salesProfile,
     catalog_fichas: claimFichasV1({

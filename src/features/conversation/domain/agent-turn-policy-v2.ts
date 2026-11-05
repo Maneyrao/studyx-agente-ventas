@@ -148,6 +148,8 @@ export function authorizeAgentTurnV2(input: {
   /** Canonical server dialogue focus, used only when validating paid mentions. */
   readonly paid_mention_offering_code?: string | null;
   readonly course_bonus?: CourseBonusCapabilityV1;
+  /** Programme PDFs that may be sent / were already sent (backend-derived). */
+  readonly course_programs?: { readonly available_offering_codes: readonly string[]; readonly sent_offering_codes: readonly string[] };
   /** A continuation retains its semantic transition without executing effects. */
   readonly effects_allowed?: boolean;
   /**
@@ -528,6 +530,15 @@ export function authorizeAgentTurnV2(input: {
     if (!explicitlyRequested || !matchesOffering) reasons.push('ACTION_NOT_AUTHORIZED');
     else if (!stateFacts.has('state:intake_recorded:v1')) reasons.push('MISSING_INTAKE');
     else action = proposal.proposed_action;
+  }
+  if (proposal.proposed_action.type === 'send_course_program') {
+    // The model names the course; the backend resolves the official asset (never a model URL).
+    const code = proposal.proposed_action.offering_code;
+    const known = input.offerings.some((offering) => offering.code === code)
+      && input.course_programs?.available_offering_codes.includes(code) === true;
+    if (!known || !moves.has('request_course_program')) reasons.push('ACTION_NOT_AUTHORIZED');
+    // Already delivered in this conversation: not an error, the text stays and the file is not resent.
+    else if (!input.course_programs?.sent_offering_codes.includes(code)) action = proposal.proposed_action;
   }
   if (proposal.proposed_action.type === 'schedule_price_objection_checkin') {
     if (input.course_bonus?.may_schedule_checkin === true && promotionMatchesCurrentInterest) {

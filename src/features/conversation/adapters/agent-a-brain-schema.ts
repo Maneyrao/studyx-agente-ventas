@@ -195,6 +195,10 @@ export const AgentAContextV1Schema = z.object({
     may_present_payment_options: z.boolean(),
     may_send_payment_link: z.boolean(),
     authorized_payment_plan: PaymentPlanSchema.nullable(),
+    course_programs: z.object({
+      available_offering_codes: z.array(IdentifierSchema).max(60),
+      sent_offering_codes: z.array(IdentifierSchema).max(60),
+    }).strict().optional(),
     course_bonus: z.object({
       enabled: z.boolean().optional(),
       may_offer_bonus: z.boolean().optional(),
@@ -274,6 +278,10 @@ export const AgentAProposedActionSchema = z.discriminatedUnion('type', [
     interest_offering_code: IdentifierSchema.optional(),
     promotion_cycle_id: IdentifierSchema.optional(),
     offer_version: z.number().int().min(1).optional(),
+  }).strict(),
+  z.object({
+    type: z.literal('send_course_program'),
+    offering_code: IdentifierSchema,
   }).strict(),
   z.object({
     type: z.literal('send_test_payment_link'),

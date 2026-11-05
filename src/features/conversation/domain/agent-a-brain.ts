@@ -201,6 +201,10 @@ export type AgentAProposedActionV1 =
     }
   | {
       /** Temporary, hidden Stripe verification checkout. Never a commercial plan. */
+      readonly type: 'send_course_program';
+      readonly offering_code: string;
+    }
+  | {
       readonly type: 'send_test_payment_link';
       readonly offering_code: string;
     }

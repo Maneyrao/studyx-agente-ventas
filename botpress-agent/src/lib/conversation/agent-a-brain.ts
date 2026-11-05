@@ -624,6 +624,10 @@ function proposalJsonSchema(context: AgentAContextV1, conversationOnly = false):
       ...promotionReviewAlternatives,
       ...directBonusAlternatives,
       ...acceptanceAlternatives,
+      ...sendableProgramCodesV1(context).length ? [closedObject({
+        type: { type: 'string', enum: ['send_course_program'] },
+        offering_code: { type: 'string', enum: sendableProgramCodesV1(context) },
+      })] : [],
       closedObject(sendPaymentLinkProperties),
       closedObject({
         type: { type: 'string', enum: ['send_test_payment_link'] },
@@ -2070,6 +2074,9 @@ export function validateAgentATurnProposalV1(input: {
       rejections.push({ code: 'MISSING_INTAKE', subject: field })
     }
   }
+  if (action.type === 'send_course_program' && !sendableProgramCodesV1(input.context).includes(action.offering_code)) {
+    rejections.push({ code: 'ACTION_NOT_AUTHORIZED', subject: 'send_course_program' })
+  }
   if (action.type === 'send_test_payment_link') {
     for (const field of input.context.capabilities.intake_missing ?? []) {
       rejections.push({ code: 'MISSING_INTAKE', subject: field })
@@ -2228,8 +2235,16 @@ export function validateAgentATurnProposalV1(input: {
   }
 }
 
+/** Programme PDFs that can be proposed now: available and not already delivered in this conversation. */
+export function sendableProgramCodesV1(context: AgentAContextV1): string[] {
+  const programs = context.capabilities.course_programs
+  if (!programs) return []
+  return programs.available_offering_codes.filter(code => !programs.sent_offering_codes.includes(code))
+}
+
 function authorizedActionsV1(context: AgentAContextV1): string[] {
   const actions: string[] = ['none']
+  if (sendableProgramCodesV1(context).length > 0) actions.push('send_course_program')
   if (context.capabilities.may_send_payment_link) actions.push('send_payment_link')
   if ((context.catalog.test_payment_options?.length ?? 0) > 0) actions.push('send_test_payment_link')
   if (context.capabilities.may_request_call_now) actions.push('request_call_now')

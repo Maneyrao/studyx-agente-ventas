@@ -65,3 +65,6 @@ artifacts/runs/
 /.smoke-budget.json*
 
 /botpress-agent/node_modules
+
+# Official programme PDFs (170 MB): staged at deploy by scripts/stage-course-programs.mjs
+/public/programas/

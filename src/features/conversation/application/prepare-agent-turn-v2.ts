@@ -54,7 +54,8 @@ export class AgentTurnV2RejectedError extends Error {
 
 export interface AgentActionRejectionV1 {
   readonly action: 'request_call_now' | 'send_payment_link' | 'send_test_payment_link'
-    | 'schedule_price_objection_checkin' | 'request_promotion_review' | 'offer_course_bonus' | 'accept_promotion';
+    | 'schedule_price_objection_checkin' | 'request_promotion_review' | 'offer_course_bonus' | 'accept_promotion'
+    | 'send_course_program';
   readonly status: 'needs_input' | 'rejected';
   readonly code: string;
   readonly codes: readonly string[];
@@ -171,7 +172,9 @@ function decisionFromAuthorizedTurn(input: {
             ? action
             : action.type === 'accept_promotion'
               ? action
-              : null;
+              : action.type === 'send_course_program'
+                ? { type: 'send_course_program', offering_code: action.offering_code }
+                : null;
   return {
     schema_version: 4,
     intent: input.proposal.move.move === 'greeting'
@@ -224,6 +227,7 @@ export async function prepareAgentTurnV2(input: {
   /** Canonical knowledge rows reloaded by the backend from cited fact IDs. */
   readonly authorized_knowledge_facts?: readonly CanonicalFactV1[];
   readonly course_bonus_capability?: CourseBonusCapabilityV1;
+  readonly course_programs?: { readonly available_offering_codes: readonly string[]; readonly sent_offering_codes: readonly string[] };
 }, deps: {
   readonly state_store: Pick<ConversationStateStoreV1, 'load'>;
   readonly call_facts?: Pick<OrchestrationStore, 'loadClaimedCallFacts'>;
@@ -371,6 +375,7 @@ export async function prepareAgentTurnV2(input: {
     current_customer_messages: input.current_customer_messages,
     paid_mention_offering_code:mentionFocus.offering_code,
     course_bonus: input.course_bonus_capability,
+    course_programs: input.course_programs,
     semantic_rejections: semanticRejections,
     action_rejections: 'structured',
     effects_allowed: effectsAllowed,

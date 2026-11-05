@@ -62,6 +62,11 @@ export interface RequestCallNowAction {
   course_of_interest?: string;
 }
 
+export interface SendCourseProgramAction {
+  type: 'send_course_program';
+  offering_code: string;
+}
+
 export interface SendTestPaymentLinkAction {
   type: 'send_test_payment_link';
   offering_sku: string;
@@ -98,6 +103,7 @@ export type DecisionV4BusinessAction =
   | { type: 'log_objection'; objection_key: string; quote: string }
   | RequestCallNowAction
   | SendTestPaymentLinkAction
+  | SendCourseProgramAction
   | SchedulePriceObjectionCheckinAction
   | RequestPromotionReviewAction
   | AcceptPromotionAction
@@ -234,6 +240,13 @@ function parseV4BusinessAction(value: unknown): DecisionV4BusinessAction | null 
   }
   if (value.type === 'send_payment_link') {
     return parseSendPaymentLinkAction(value);
+  }
+  if (value.type === 'send_course_program') {
+    if (Object.keys(value).some(key => key !== 'type' && key !== 'offering_code')
+      || typeof value.offering_code !== 'string' || !isCanonicalOfferingSku(value.offering_code)) {
+      throw new DecisionValidationError('INVALID_BUSINESS_ACTION');
+    }
+    return { type: 'send_course_program', offering_code: value.offering_code };
   }
   if (value.type === 'send_test_payment_link') {
     return parseSendTestPaymentLinkAction(value);

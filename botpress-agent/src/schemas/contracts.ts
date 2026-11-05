@@ -167,6 +167,11 @@ export const RequestPromotionReviewActionSchema = z.object({
   bonus_offering_code: z.string().regex(/^[a-z0-9][a-z0-9_-]{0,127}$/).optional(),
 }).strict()
 
+export const SendCourseProgramActionSchema = z.object({
+  type: z.literal('send_course_program'),
+  offering_code: z.string().trim().min(1).max(160),
+}).strict()
+
 export const OfferCourseBonusActionSchema = z.object({
   type: z.literal('offer_course_bonus'),
   bonus_offering_code: z.string().trim().min(1).max(160),
@@ -207,6 +212,7 @@ export const DecisionBusinessActionSchema = z.discriminatedUnion('type', [
   RequestPromotionReviewActionSchema,
   AcceptPromotionActionObjectSchema,
   OfferCourseBonusActionSchema,
+  SendCourseProgramActionSchema,
 ]).refine(hasCompletePromotionAcceptance, 'DIRECT_PROMOTION_ACCEPTANCE_FIELDS_REQUIRED')
 
 export const DecisionResponseTypeSchema = z.enum([
@@ -662,6 +668,10 @@ export const ClaimedTurnSchema = z.object({
   negotiation_facts: RecordedNegotiationFactsV1Schema.nullable().optional(),
   sales_profile: SalesProfileMemoriesV1Schema.nullable().optional(),
   catalog_fichas: z.array(ClaimFichaV1Schema).max(9).optional(),
+  course_programs: z.object({
+    available_offering_codes: z.array(z.string().min(1).max(160)).max(60),
+    sent_offering_codes: z.array(z.string().min(1).max(160)).max(60),
+  }).strict().optional(),
   course_bonus_capability: z.object({
     ladder: IncomingClaimCourseBonusLadderV1Schema.optional(),
     enabled: z.boolean().optional(),
@@ -939,9 +949,17 @@ export const CommitDecisionResponseSchema = z.object({
     .nullable()
     .default(null),
   outbounds: z.array(CommittedOutboundSchema.extend({
-    part_index: z.number().int().min(0).max(2),
-    part_count: z.number().int().min(1).max(3),
-  })).max(3).default([]),
+    // Up to three authored text bubbles (0-2) plus the official-programme document (3).
+    part_index: z.number().int().min(0).max(3),
+    part_count: z.number().int().min(1).max(4),
+    document: z.object({
+      kind: z.literal('course_program'),
+      offering_code: z.string().min(1).max(160),
+      file_url: z.string().url().refine(value => new URL(value).protocol === 'https:'),
+      filename: z.string().min(1).max(200),
+      title: z.string().min(1).max(200),
+    }).strict().optional(),
+  })).max(4).default([]),
   // Presente exactamente cuando la decisión reservó una llamada. En replay
   // trae el mismo call_id de la primera reserva; el workflow despacha por
   // call_id y nunca conoce el teléfono.

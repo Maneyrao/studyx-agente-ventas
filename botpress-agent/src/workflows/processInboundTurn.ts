@@ -91,6 +91,7 @@ import { preserveRuleTriggerEvidenceV1 } from '../lib/conversation/preserve-bonu
 import { bindCustomerCallInterpretationV1, type CustomerCallInterpretationV1 } from '../lib/conversation/customer-call-interpretation'
 import { authorizedPromotionActionsV1, continueAgentAAfterActionFeedbackV1, fencedAgentARequestV1, plannerlessActionFeedbackV1 } from '../lib/conversation/agent-a-action-feedback'
 import { evaluateCallOfferTurnPolicyV1 } from '../lib/conversation/call-offer-turn-policy'
+import { sendableProgramCodesV1 } from '../lib/conversation/agent-a-brain'
 import type { AgentATurnProposalV1 } from '../schemas/agent-a-brain'
 import type { AgentATurnCommitV2 } from '../schemas/agent-turn-v2'
 import type { TurnRejectionV1 } from '../schemas/turn-rejection'
@@ -384,7 +385,7 @@ function errorCode(error: unknown): string {
 export function isConfirmedPreSubmissionBlock(code: string): boolean {
   return ['AUTOMATION_DISABLED', 'WHATSAPP_ROLLOUT_MODE_INVALID', 'WHATSAPP_CANARY_DISABLED',
     'WHATSAPP_CANARY_ALLOWLIST_INVALID', 'WHATSAPP_CANARY_PHONE_NOT_ALLOWED',
-    'WHATSAPP_BOT_PHONE_ALLOWLIST_INVALID', 'WHATSAPP_BOT_PHONE_NOT_ALLOWED'].includes(code)
+    'WHATSAPP_BOT_PHONE_ALLOWLIST_INVALID', 'WHATSAPP_BOT_PHONE_NOT_ALLOWED', 'COURSE_PROGRAM_CHANNEL_UNSUPPORTED'].includes(code)
 }
 
 const PLANNERLESS_REJECTION_PREFIX = 'PLANNERLESS_PROPOSAL_REJECTED:'
@@ -502,6 +503,7 @@ function backendCommitTurnRejectionV1(input: {
     actions.push('send_payment_link')
   }
   if ((input.context.catalog.test_payment_options?.length ?? 0) > 0) actions.push('send_test_payment_link')
+  if (sendableProgramCodesV1(input.context).length > 0) actions.push('send_course_program')
   if (input.context.capabilities.may_request_call_now) actions.push('request_call_now')
   const ladderPending = detailedSubjects.includes('direct_bonus:ladder_step_pending')
   const rejectedActions = new Set(mapped.flatMap((reason) => (
@@ -3239,7 +3241,11 @@ export const processInboundTurn = new Workflow({
       let lastBotpressMessageId: string | null = null
       let submittedPartsThisRun = 0
 
-      for (const outboundPart of committed.outbounds) {
+      // The official-programme document goes first, then the text bubbles. A document that
+      // is confirmed NOT sent never silences the reply: its text parts still go out.
+      const orderedOutbounds = [...committed.outbounds].sort((a, b) =>
+        (b.document ? 1 : 0) - (a.document ? 1 : 0) || a.part_index - b.part_index)
+      for (const outboundPart of orderedOutbounds) {
         // A replay may contain parts already acknowledged by Botpress. Their
         // durable delivery state is the fence: never submit those texts again;
         // continue from the first unfinished part only.
@@ -3252,6 +3258,7 @@ export const processInboundTurn = new Workflow({
           })
           continue
         }
+        if (outboundPart.status === 'failed' && outboundPart.document) continue
         if (outboundPart.status === 'failed') {
           // Retry leasing belongs to the delivery reconciler. A workflow
           // replay has no new attempt token and therefore must not redeliver.
@@ -3309,7 +3316,7 @@ export const processInboundTurn = new Workflow({
         // createMessage threw: never treat that bubble as accepted by the channel.
         let heldAmbiguousPart = false
         try {
-          if (outboundPart.part_index === 0) {
+          if (outboundPart === orderedOutbounds[0]) {
             await waitForNaturalWhatsAppReply(outboundPart.id)
           }
           if (submittedPartsThisRun > 0) {
@@ -3339,11 +3346,19 @@ export const processInboundTurn = new Workflow({
                   }
                 }
                 await stopWhatsAppTyping()
+                if (outboundPart.document && (input.channel !== 'whatsapp' || input.sandbox_provider === 'telegram_sandbox')) {
+                  // Only the WhatsApp integration supports `file`: confirmed not sent.
+                  const unsupported = new Error('COURSE_PROGRAM_CHANNEL_UNSUPPORTED')
+                  unsupported.name = 'COURSE_PROGRAM_CHANNEL_UNSUPPORTED'
+                  throw unsupported
+                }
                 return observedCreateMessage({
                   conversationId: input.botpress_conversation_id,
                   userId: context.get('botId'),
-                  type: 'text',
-                  payload: { text: outboundPart.content },
+                  ...(outboundPart.document
+                    ? { type: 'file', payload: { fileUrl: outboundPart.document.file_url,
+                        title: outboundPart.document.title, filename: outboundPart.document.filename } }
+                    : { type: 'text', payload: { text: outboundPart.content } }),
                   tags: {
                     studyxOutboundId: outboundPart.id,
                     studyxTraceId: input.trace_id,
@@ -3401,6 +3416,14 @@ export const processInboundTurn = new Workflow({
               part_index: outboundPart.part_index,
               error_code: errorCode(reportError),
             })
+          }
+          if (outboundPart.document) {
+            // Failure is recorded (ledger -> failed); the remaining text still goes out.
+            state.deliveryStatus = null
+            state.errorCode = null
+            state.phase = 'decision_committed'
+            safeLog('studyx.turn.course_program_not_sent', { trace_id: input.trace_id, outbound_id: outboundPart.id })
+            continue
           }
           emitTimings()
           return finish()
