@@ -5,7 +5,7 @@ import {
 } from './studyx-agent-a-canonical.generated';
 import { resolveCanonicalPromptIdentityV1 } from './agent-a-identity';
 
-export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v165' as const;
+export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v166' as const;
 
 /**
  * Runtime contract only. The sales behavior lives in the canonical prompt so
@@ -153,9 +153,10 @@ Use proposed_action=none for bonus effects; do not offer, accept or request revi
 Continue naturally with the paid course under canonical_sales_behavior; never invent objections or completed steps.
 Do not claim a discount, promotion, gift, approval, income or result. Preserve the rest of the response only when its facts and effects remain authorized.` : '';
   const repairsProgramSend = rejection.rejections.some(reason => reason.subject.startsWith('program_send_not_executed'))
+  const programSendReason = rejection.rejections.map(reason => reason.subject).find(subject => subject.startsWith('program_send_not_executed'))?.split(':')[1] ?? 'unavailable'
   const programSendRepair = repairsProgramSend ? `
-For program_send_not_executed, the programme PDF was NOT sent in this turn (${rejection.rejections.map(reason => reason.subject).find(subject => subject.startsWith('program_send_not_executed'))?.split(':')[1] ?? 'unavailable'}).
-Remove every sentence saying you are sending, sharing or attaching it now. If it was already sent earlier, say so naturally ("ya te lo compartí") and offer to go through it together; if there is no PDF for this course, say you do not have the file and offer the information you do have. Use proposed_action=none.` : ''
+For program_send_not_executed, the programme PDF was NOT sent in this turn (${programSendReason}).
+Remove every sentence saying you are sending, sharing, re-sending or attaching it now, including "te lo comparto otra vez" and "te lo mando de nuevo". ${programSendReason === 'already_sent' ? 'It was already delivered earlier in this chat and it is not sent twice: say so ("el programa te lo envié más arriba en este chat"), point to that earlier message and offer to go through it together.' : 'There is no PDF file for this course: say you do not have the programme file and offer the information you do have.'} Use proposed_action=none.` : ''
   const repairsBonusNaming = rejection.rejections.some(reason => reason.subject === 'bonus_not_named');
   const bonusNamingRepair = repairsBonusNaming ? `
 For bonus_not_named, name the course you're adding: write the bonus course's exact display_name in the customer-visible copy where you offer it (do not name only an earlier bonus), or use proposed_action=none and do not present a new gift.` : '';

@@ -4,7 +4,7 @@ import { summarizeProviderError } from '../lib/observability/provider-error-summ
 import { persistTurnEvidence } from '../lib/observability/persist-turn-evidence'
 import { getOrCreateEvidenceWorkflow } from '../lib/observability/evidence-workflow'
 import { commitDecisionWithRejectionReceiptV1, backendDecisionRejectionReason, backendDecisionRejectionSubjects, backendDecisionRejectionSentences } from '../lib/delivery/commit-decision-receipt'
-import { removeEffectClaimBubblesV1, repairCourseMentionRolesV1, salvageFactClaimsV1 } from '../lib/conversation/agent-a-claim-repair'
+import { removeEffectClaimBubblesV1, repairCourseMentionRolesV1, salvageFactClaimsV1, salvageProgramSendClaimsV1 } from '../lib/conversation/agent-a-claim-repair'
 import { eligibleContactRequestFieldsV1 } from '../lib/conversation/contact-profile-request-policy'
 import { scheduleTurnRecovery } from '../actions/scheduleTurnRecovery'
 import { bindRecoveryFeedbackV1 } from '../lib/conversation/recovery-feedback'
@@ -465,6 +465,10 @@ function backendCommitTurnRejectionV1(input: {
           if (detailedSubjects.includes('call_consent_revoked')) {
             push('ACTION_NOT_AUTHORIZED', 'request_call_now')
             push('ACTION_NOT_AUTHORIZED', 'call_consent_revoked')
+          } else if (detailedSubjects.some(subject => subject.startsWith('program_send_not_executed'))) {
+            push('ACTION_NOT_AUTHORIZED', 'send_course_program')
+            detailedSubjects.filter(subject => subject.startsWith('program_send_not_executed'))
+              .forEach(subject => push('ACTION_NOT_AUTHORIZED', subject))
           } else push('ACTION_NOT_AUTHORIZED', actionSubject)
           break
         }
@@ -2723,6 +2727,8 @@ export const processInboundTurn = new Workflow({
               // a wrong fact (canonical plans are appended for a wrong price).
               let candidateProposal = originalCandidateProposal
               if (!retainAuthorizedEffect) {
+                const withoutProgramClaims = salvageProgramSendClaimsV1({ proposal: candidateProposal, context: repairContext })
+                if (withoutProgramClaims !== null) candidateProposal = withoutProgramClaims
                 const withoutEffectClaims = removeEffectClaimBubblesV1({
                   proposal: candidateProposal,
                   context: repairContext,
@@ -2741,6 +2747,7 @@ export const processInboundTurn = new Workflow({
                   proposal: candidateProposal,
                   context: repairContext,
                   backend_sentences: backendViolationSentences,
+                  backend_subjects: currentBackendRejection.rejections.map(reason => reason.subject),
                 })
                 if (withoutWrongFacts !== null) candidateProposal = withoutWrongFacts
               }

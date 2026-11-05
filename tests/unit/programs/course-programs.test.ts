@@ -111,3 +111,15 @@ describe('stage-course-programs', () => {
     mkdirSync(source, { recursive: true });
   });
 });
+
+describe('programme-stated module count', () => {
+  it('counts the modules the official Real Estate programme lists (focused-29-41-r3 40/real_estate_pdf: "11 módulos")', async () => {
+    const { programModuleCountV1 } = await import('@/shared/catalog/course-programs');
+    const data = JSON.parse(readFileSync('supabase/seed/data/programas-studyx-pdf.json', 'utf8')) as { programs: Array<{ slug: string; pages: Array<{ text: string }> }> };
+    const texts = data.programs.find(program => program.slug === 'real-estate')!.pages.map(page => page.text);
+    expect(programModuleCountV1(texts)).toBe(11);
+    expect(programModuleCountV1([texts[0]!])).toBe(3);          // callers pass the whole programme, never one page
+    expect(programModuleCountV1(['Módulo 1 - a', 'Módulo 3 - c'])).toBeNull();
+    expect(programModuleCountV1([])).toBeNull();
+  });
+});

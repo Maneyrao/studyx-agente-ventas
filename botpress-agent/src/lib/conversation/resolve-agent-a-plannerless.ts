@@ -5,7 +5,7 @@ import { claimsProgramSendNowV1 } from '../../../../src/shared/conversation/prog
 import { claimsImmediatePaymentLinkDeliveryV1 } from '../../../../src/shared/conversation/payment-link-claim'
 import { messagesWithoutExactCallOfferV1 } from '../../../../src/shared/conversation/call-offer-format'
 import { AgentATurnProposalV1Schema, type AgentAContextV1, type AgentATurnProposalV1 } from '../../schemas/agent-a-brain'
-import { removeEffectClaimBubblesV1, salvageFactClaimsV1 } from './agent-a-claim-repair'
+import { removeEffectClaimBubblesV1, salvageFactClaimsV1, salvageProgramSendClaimsV1 } from './agent-a-claim-repair'
 import {
   AgentABrainError,
   claimsImmediateCallDispatchV1,
@@ -570,10 +570,11 @@ export async function resolveAgentAPlannerlessProposalV2<
     for (const source of candidates) {
       const variants: AgentATurnProposalV1[] = []
       const factFixed = salvageFactClaimsV1({ proposal: source.proposal, context: input.context })
-      const effectFixed = removeEffectClaimBubblesV1({ proposal: factFixed ?? source.proposal, context: input.context })
+      const programFixed = salvageProgramSendClaimsV1({ proposal: factFixed ?? source.proposal, context: input.context })
+      const effectFixed = removeEffectClaimBubblesV1({ proposal: programFixed ?? factFixed ?? source.proposal, context: input.context })
       const dropAction = (value: AgentATurnProposalV1): AgentATurnProposalV1 => (
         initialActionRejection === null ? value : { ...value, proposed_action: { type: 'none' as const } })
-      for (const variant of [effectFixed, factFixed]) if (variant !== null) variants.push(dropAction(variant))
+      for (const variant of [effectFixed, programFixed, factFixed]) if (variant !== null) variants.push(dropAction(variant))
       for (const proposal of variants) {
         const cleaned = { ...source, proposal }
         const checked = preparePlannerlessProposal({

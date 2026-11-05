@@ -2248,6 +2248,11 @@ function authorizedActionsV1(context: AgentAContextV1): string[] {
   if (context.capabilities.may_send_payment_link) actions.push('send_payment_link')
   if ((context.catalog.test_payment_options?.length ?? 0) > 0) actions.push('send_test_payment_link')
   if (context.capabilities.may_request_call_now) actions.push('request_call_now')
+  // A pure wording/fact rejection must not strip an effect the capability still allows: the repair
+  // of valid copy would otherwise be conversation-only and discard the model's authorized bonus.
+  const bonus = context.capabilities.course_bonus
+  if (bonus?.enabled === true && bonus.may_offer_bonus === true) actions.push('offer_course_bonus')
+  if (bonus?.may_accept_offer) actions.push('accept_promotion')
   return actions
 }
 

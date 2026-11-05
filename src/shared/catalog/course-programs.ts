@@ -54,6 +54,18 @@ export function courseProgramChannelsV1(env: Readonly<Record<string, string | un
   return configured?.length ? configured : ['whatsapp'];
 }
 
+/**
+ * Module count stated by the official programme text: the highest "Módulo N" when the
+ * numbers 1..N are all listed. A count the programme itself lists is an authorized fact,
+ * not an invention. Null when the text does not list a contiguous sequence.
+ */
+export function programModuleCountV1(texts: readonly string[]): number | null {
+  const numbers = new Set<number>();
+  for (const text of texts) for (const match of text.matchAll(/m[oó]dulo\s+(\d{1,2})\b/giu)) numbers.add(Number(match[1]));
+  const highest = Math.max(0, ...numbers);
+  return highest >= 2 && Array.from({ length: highest }, (_, index) => index + 1).every(value => numbers.has(value)) ? highest : null;
+}
+
 export function courseProgramAssetV1(offeringCode: string): CourseProgramAssetV1 | null {
   return COURSE_PROGRAM_ASSETS_V1.get(offeringCode) ?? null;
 }

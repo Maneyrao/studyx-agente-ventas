@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { removeEffectClaimBubblesV1, removeOffendingSentencesV1, repairCourseMentionRolesV1, salvageFactClaimsV1 } from '../../../botpress-agent/src/lib/conversation/agent-a-claim-repair';
+import { removeEffectClaimBubblesV1, removeOffendingSentencesV1, repairCourseMentionRolesV1, salvageFactClaimsV1, salvageProgramSendClaimsV1 } from '../../../botpress-agent/src/lib/conversation/agent-a-claim-repair';
 import type { AgentAContextV1, AgentATurnProposalV1 } from '../../../botpress-agent/src/schemas/agent-a-brain';
 import marketingBudget from '../fixtures/marketing-budget-natural-59cab80.json';
 
@@ -127,5 +127,55 @@ describe('programme-send claim removal (traces 36 and 38 of focused-29-41-r2)', 
   });
   it('returns null when every bubble is a claim (the caller falls back to the repair, never to silence)', () => {
     expect(removeEffectClaimBubblesV1({ proposal: programProposal(['Te comparto el programa.']), context: catalog })).toBeNull();
+  });
+});
+
+describe('focused-29-41-r3 recorded attempts: salvage instead of the P0 sentence', () => {
+  const marketing = { code: 'marketing_digital', display_name: 'Marketing Digital' };
+  const withPrograms = (sent: string[]) => ({
+    commercial_state: {},
+    capabilities: { course_bonus: { delivered_bonus_offerings: [] }, course_programs: { available_offering_codes: ['marketing_digital'], sent_offering_codes: sent } },
+    catalog: { selected_offering: marketing, available_offerings: [marketing], candidate_offerings: [], payment_plans: [
+      { code: 'monthly_12', label: '12 pagos mensuales de USD 30', fact_id: 'payment:marketing_digital:monthly_12:label:v1' }] },
+  }) as unknown as AgentAContextV1;
+  const move = (name: string) => ({ schema_version: 1, move: name, secondary_moves: [], vetoes: [], confidence: 1 });
+  const p = (messages: string[], action: unknown = { type: 'send_course_program', offering_code: 'marketing_digital' }) => ({
+    schema_version: 1, move: move('request_course_program'), response: { messages, call_offer: null }, proposed_action: action, course_mentions: [], used_fact_ids: [], profile_requests: [],
+  }) as unknown as AgentATurnProposalV1;
+
+  it('36/syllabus_again attempt 1 and 3: "ya te lo había enviado, pero te lo comparto otra vez" becomes the canonical already-sent fact', () => {
+    for (const recorded of [
+      ['Ya te lo había enviado, pero te lo comparto otra vez por si no te llegó bien.'],
+      ['Ya te lo había enviado, pero te lo comparto de nuevo por acá. Si algo del temario te genera dudas, dime y lo revisamos juntos.'],
+    ]) {
+      const fixed = salvageProgramSendClaimsV1({ proposal: p(recorded), context: withPrograms(['marketing_digital']) });
+      expect(fixed).not.toBeNull();
+      expect(fixed!.proposed_action).toEqual({ type: 'none' });
+      expect(fixed!.response.messages[0]).toBe('El programa de Marketing Digital te lo envié más arriba en este chat.');
+      expect(fixed!.response.messages.join(' ')).not.toMatch(/te lo comparto/u);
+    }
+  });
+  it('keeps the valid rest of the reply and reports nothing to salvage when there is no claim', () => {
+    const fixed = salvageProgramSendClaimsV1({ proposal: p(['Te lo comparto de nuevo ahora.', 'Si quieres lo repasamos juntos.']), context: withPrograms(['marketing_digital']) });
+    expect(fixed!.response.messages).toEqual(['El programa de Marketing Digital te lo envié más arriba en este chat.', 'Si quieres lo repasamos juntos.']);
+    expect(salvageProgramSendClaimsV1({ proposal: p(['Ya te lo compartí antes, está arriba en el chat.']), context: withPrograms(['marketing_digital']) })).toBeNull();
+  });
+  it('a course without a PDF gets the "no tengo el archivo" fact, never a sending claim', () => {
+    const fixed = salvageProgramSendClaimsV1({ proposal: p(['Claro, te comparto el programa de Excel Integral.'], { type: 'none' }), context: withPrograms([]) });
+    expect(fixed!.response.messages[0]).toMatch(/^No tengo el archivo del programa de Marketing Digital/u);
+  });
+  it('40/real_estate_pdf: a duration mismatch never appends the canonical PLANS sentence', () => {
+    const proposal = p(['Ya te lo envié hace un momento por acá, con los 11 módulos de Real Estate. Si quieres, te resumo alguno.'], { type: 'none' });
+    const withoutSubjects = salvageFactClaimsV1({ proposal, context: withPrograms([]),
+      backend_sentences: [{ sentence: 'Ya te lo envié hace un momento por acá, con los 11 módulos de Real Estate.' }] });
+    expect(withoutSubjects).not.toBeNull();
+    const subjectAware = salvageFactClaimsV1({ proposal, context: withPrograms([]),
+      backend_sentences: [{ sentence: 'Ya te lo envié hace un momento por acá, con los 11 módulos de Real Estate.' }],
+      backend_subjects: ['duration_not_canonical'] });
+    expect(subjectAware!.response.messages.join(' ')).not.toMatch(/pagos mensuales|USD 30/u);
+    expect(subjectAware!.response.messages.join(' ')).toContain('Si quieres, te resumo alguno.');
+    const priceCase = salvageFactClaimsV1({ proposal: p(['Son USD 99 al mes.'], { type: 'none' }), context: withPrograms([]),
+      backend_sentences: [{ sentence: 'Son USD 99 al mes.' }], backend_subjects: ['price_not_canonical'] });
+    expect(priceCase!.response.messages.join(' ')).toContain('USD 30');
   });
 });

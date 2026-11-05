@@ -203,6 +203,24 @@ describe('Agent A Brain V1', () => {
     }
   });
 
+  it('29/expensive (focused-29-41-r3): "menos de lo que cuesta una salida a comer" is not a price and a fact rejection keeps the bonus effect available', () => {
+    const current = context();
+    current.turn.batch_messages = [{ id: 'current', text: 'es caro' }];
+    current.capabilities.course_bonus = { enabled: true, status: 'checkin_available', may_offer_bonus: true, max_bonus_courses: 3,
+      may_schedule_checkin: false, may_request_review: false, may_accept_offer: false, may_send_promoted_payment: false,
+      promotion_code: null, interest_offering_code: 'redes-informaticas', bonus_offerings: [], delivered_bonus_offerings: [],
+      bonus_candidates: [{ code: 'excel', display_name: 'Excel' }] } as never;
+    const clean = parseAgentATurnProposalV1(proposal({ response: { messages: [
+      'Te entiendo, es una inversión. Es menos de lo que cuesta una salida a comer al mes, y accedes a las 16 clases.'], call_offer: null },
+      used_fact_ids: [], used_memory_ids: [] }), current);
+    const rejection = validateAgentATurnProposalV1({ proposal: clean, context: current, planned_fact_ids: [], rejection_id: '00000000-0000-4000-8000-000000000001' });
+    expect(rejection?.rejections.some(reason => reason.subject === 'price') ?? false).toBe(false);
+    const wrong = parseAgentATurnProposalV1(proposal({ response: { messages: ['Son USD 99 al mes.'], call_offer: null }, used_fact_ids: [], used_memory_ids: [] }), current);
+    const priceRejection = validateAgentATurnProposalV1({ proposal: wrong, context: current, planned_fact_ids: [], rejection_id: '00000000-0000-4000-8000-000000000001' });
+    expect(priceRejection?.rejections.some(reason => reason.subject === 'price')).toBe(true);
+    expect(priceRejection?.authorized_alternatives.actions).toContain('offer_course_bonus');
+  });
+
   it('accepts the real direct-bonus copy with a course name containing para and rejects an extra gift', () => {
     const current = context();
     current.turn.batch_messages = [{ id: 'current', text: 'Prefiero seguir por chat. El precio sigue siendo lo único que me frena.' }];

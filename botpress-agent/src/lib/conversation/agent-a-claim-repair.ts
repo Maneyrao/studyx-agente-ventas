@@ -87,6 +87,8 @@ export function removeOffendingSentencesV1(input: {
   readonly context: AgentAContextV1
   /** Violating sentences reported by the backend guard. */
   readonly backend_sentences?: readonly BackendSentenceV1[]
+  /** Subjects of the backend rejection: a canonical plans sentence is only owed to price/payment subjects. */
+  readonly backend_subjects?: readonly string[]
 }): { messages: string[]; kept_indices: number[]; call_offer: string | null; removed: RemovedSentenceV1[] } {
   const { proposal, context } = input
   const authorizedPrices = new Set(authorizedValues(context).flatMap((value) => assertedCommercialPricesV1(value)))
@@ -95,6 +97,8 @@ export function removeOffendingSentencesV1(input: {
   const knownNames = context.catalog.available_offerings.map((offering) => offering.display_name)
   const paidNames = context.catalog.selected_offering ? [context.catalog.selected_offering.display_name] : []
   const backend = input.backend_sentences ?? []
+  const backendPriceSubject = input.backend_subjects === undefined
+    || input.backend_subjects.some(subject => /^(?:price|payment|forbidden_price|invented_discount)/u.test(subject))
   const removed: RemovedSentenceV1[] = []
 
   // Segmentation differs between backend and Botpress: match by bubble index plus containment.
@@ -120,7 +124,8 @@ export function removeOffendingSentencesV1(input: {
       const kinds = inspect(sentence, text, bubbleIndex)
       if (kinds.length > 0) {
         removed.push({ sentence: original.trim(), kinds,
-          price_related: kinds.some((kind) => ['price', 'forbidden_price', 'invented_discount', 'backend'].includes(kind))
+          price_related: kinds.some((kind) => ['price', 'forbidden_price', 'invented_discount'].includes(kind)
+            || (kind === 'backend' && backendPriceSubject))
             && /usd|us\$|\$|\d|cuota|pago|precio|valor|descuento|beca/iu.test(original) })
         continue
       }
@@ -146,6 +151,7 @@ export function salvageFactClaimsV1(input: {
   readonly proposal: AgentATurnProposalV1
   readonly context: AgentAContextV1
   readonly backend_sentences?: readonly BackendSentenceV1[]
+  readonly backend_subjects?: readonly string[]
 }): AgentATurnProposalV1 | null {
   const { proposal, context } = input
   const result = removeOffendingSentencesV1(input)
@@ -168,6 +174,53 @@ export function salvageFactClaimsV1(input: {
     used_fact_ids: usedFactIds,
     response: { ...proposal.response, messages: messages as [string, ...string[]], call_offer: result.call_offer },
     profile_requests: remapProfileRequestsV1(proposal.profile_requests, result.kept_indices),
+  }
+}
+
+/**
+ * The only defect is a claim that the programme PDF is being sent now (it was already sent, or the
+ * course has no PDF): drop just the claiming sentences, keep the rest of the reply and, when
+ * nothing is left, state the canonical fact instead (facts, not sales copy). Never silence.
+ */
+export function salvageProgramSendClaimsV1(input: {
+  readonly proposal: AgentATurnProposalV1
+  readonly context: AgentAContextV1
+}): AgentATurnProposalV1 | null {
+  const { proposal, context } = input
+  const moves = [proposal.move?.move, ...(proposal.move?.secondary_moves ?? [])]
+  const programTopic = moves.includes('request_course_program')
+  let removedAny = false
+  const clean = (text: string): string => splitClaimSentencesV1(text)
+    .filter(sentence => {
+      const claims = claimsProgramSendNowV1(sentence, { programTopic })
+      removedAny ||= claims
+      return !claims
+    }).join('').replace(/\s{2,}/gu, ' ').trim()
+  const kept = proposal.response.messages.map(clean).filter(message => message.length > 0)
+  const offer = proposal.response.call_offer
+  const cleanedOffer = typeof offer === 'string' ? clean(offer) : null
+  if (!removedAny) return null
+  const action = proposal.proposed_action
+  const code = action.type === 'send_course_program' ? action.offering_code
+    : context.catalog.selected_offering?.code ?? null
+  const name = (code !== null ? context.catalog.available_offerings.find(offering => offering.code === code)?.display_name : undefined)
+    ?? context.catalog.selected_offering?.display_name ?? null
+  const programs = context.capabilities.course_programs
+  const alreadySent = code !== null && programs?.sent_offering_codes.includes(code) === true
+  const label = name === null ? 'El programa' : `El programa de ${name}`
+  const fact = alreadySent
+    ? `${label} te lo envié más arriba en este chat.`
+    : name === null ? 'No tengo el archivo del programa para enviarte, pero te cuento lo que incluye el curso.'
+      : `No tengo el archivo del programa de ${name} para enviarte, pero te cuento lo que incluye el curso.`
+  // The canonical fact always replaces what was removed, so the reply states the true situation once.
+  const statesDelivery = kept.some(message => /\bya\s+te\s+(?:lo\s+|la\s+)?(?:envi|mand|compart|pas|dej)\p{L}*|\bte\s+(?:lo|la)\s+hab[ií]a\s+\p{L}+|m[aá]s\s+arriba\b/iu.test(message))
+  const messages = statesDelivery ? kept : [fact, ...kept]
+  return {
+    ...proposal,
+    proposed_action: { type: 'none' },
+    response: { ...proposal.response, messages: messages.slice(0, 2) as [string, ...string[]],
+      call_offer: cleanedOffer && cleanedOffer === offer ? offer : null },
+    profile_requests: [],
   }
 }
 

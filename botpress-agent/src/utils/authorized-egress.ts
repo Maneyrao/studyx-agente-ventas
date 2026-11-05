@@ -30,7 +30,7 @@ const NUMBER_WORD_SEQUENCE = String.raw`${NUMBER_WORD}(?:\s+(?:y\s+)?${NUMBER_WO
 const CURRENCY_PRICE = String.raw`(?:(?:\b(?:usd|ars|eur|u\$s)\b|[$€£])\s*${MONEY_AMOUNT}|${MONEY_AMOUNT}\s*(?:\b(?:usd|ars|eur|d[oó]lares?|pesos?|euros?)\b|[$€£]))`
 const WORD_CURRENCY_PRICE = String.raw`(?:(?:\b(?:usd|ars|eur|u\$s)\b)\s+${NUMBER_WORD_SEQUENCE}|${NUMBER_WORD_SEQUENCE}\s+(?:\b(?:usd|ars|eur|d[oó]lares?|pesos?|euros?)\b))`
 const PRICE_PATTERN = new RegExp(
-  String.raw`(?:(?:\b(?:no\s+)?(?:cuesta|sale|vale)\s+)?(?:${CURRENCY_PRICE}|${WORD_CURRENCY_PRICE})|\bprecio(?!\s+de\s+un[oa]?(?:\s+cursos?)?\s*(?:[.!?,;:)]|$))(?:\s+total)?\s*(?::|es|de)?\s*(?:${MONEY_AMOUNT}|${NUMBER_WORD_SEQUENCE})\b|\b(?:no\s+)?cuesta\s+(?:${MONEY_AMOUNT}|${NUMBER_WORD_SEQUENCE})\b)`,
+  String.raw`(?:(?:\b(?:no\s+)?(?:cuesta|sale|vale)\s+)?(?:${CURRENCY_PRICE}|${WORD_CURRENCY_PRICE})|\bprecio(?!\s+de\s+un[oa]?(?:\s+cursos?)?\s*(?:[.!?,;:)]|$))(?:\s+total)?\s*(?::|es|de)?\s*(?:${MONEY_AMOUNT}|${NUMBER_WORD_SEQUENCE})\b|\b(?:no\s+)?cuesta\s+(?:${MONEY_AMOUNT}|(?!un[oa]?\s+\p{L})${NUMBER_WORD_SEQUENCE})\b)`,
   'giu',
 )
 const DURATION_PATTERN = new RegExp(

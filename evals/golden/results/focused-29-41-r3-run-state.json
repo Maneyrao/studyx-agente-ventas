@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "status": "completed",
+  "evaluated_sha": "a652938b93e1b081b41f1d886118d36a0673d32c",
+  "provider": "deepseek",
+  "model": "deepseek-v4-flash",
+  "judge_model": "deepseek-v4-flash",
+  "case_selection": "29,30,31,32,33,34,35,36,37,38,39,40,41",
+  "suite_invocations": 1,
+  "started_at": "2026-11-05T02:32:56.383Z",
+  "updated_at": "2026-11-05T02:41:09.186Z"
+}

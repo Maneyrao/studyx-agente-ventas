@@ -8,7 +8,7 @@ import { collectNegotiationObservationsV1 } from '@/features/conversation/applic
 import { offerDirectCourseBonusV1, acceptDirectCourseBonusV1 } from '@/features/promotions/application/direct-course-bonus-service';
 import type { CourseBonusCapabilityV1 } from '@/features/promotions/application/read-course-bonus-capability';
 import { readCourseProgramsCapabilityV1 } from '@/features/programs/application/read-course-programs-capability';
-import { courseProgramAssetV1, courseProgramUrlV1 } from '@/shared/catalog/course-programs';
+import { courseProgramAssetV1, courseProgramUrlV1, programModuleCountV1 } from '@/shared/catalog/course-programs';
 import { withSerializableTransaction } from '@/lib/db/transaction';
 import { sql } from '@/lib/db/orchestrator';
 import { jsonbParam } from '@/lib/db/json';
@@ -735,6 +735,8 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
     let preparedAgentWorkspaceId: string | null = null;
     let courseBonusCapability: CourseBonusCapabilityV1 | undefined;
     let courseProgramsCapability: Awaited<ReturnType<typeof readCourseProgramsCapabilityV1>> | undefined;
+    /** Durations the official programme text itself states (e.g. its listed modules). */
+    let programStatedDurations: string[] = [];
     // El contador de fallbacks tiene que sobrevivir a la supresión, y
     // `preparedPipeline` no: la rama de egress lo anula y con él se iría la
     // única lectura del estado de la conversación.
@@ -900,6 +902,14 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
             if(row) authorizedKnowledgeFacts.push({id:`knowledge-source:${row.id}`,kind:'offering_syllabus',
               source:'knowledge_base',value:row.content,offering_code:row.offering_code});
           }
+        }
+        if (knowledgeOfferingCode !== null) {
+          const programRows = await db<Array<{ content: string }>>`
+            SELECT content FROM knowledge_sources
+            WHERE workspace_id=${workspaceId}::uuid AND status='active' AND source_type='offering'
+              AND COALESCE(metadata->>'course_code',metadata->>'offering_code')=${knowledgeOfferingCode}`;
+          const modules = programModuleCountV1(programRows.map(row => row.content));
+          programStatedDurations = modules === null ? [] : [`${modules} módulos`];
         }
         courseBonusCapability = await readCourseBonusCapabilityV1({
           workspace_slug: workspaceSlug,
@@ -1436,6 +1446,7 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
           ],
           durations: [
             ...canonicalTruth.durations,
+            ...programStatedDurations,
             ...authorizedProtectedFacts
               .filter((fact) => fact.kind === 'duration')
               .map((fact) => fact.value),
