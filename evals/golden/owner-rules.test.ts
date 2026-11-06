@@ -51,16 +51,16 @@ describe('owner-rule supplementary golden campaign', () => {
     const trust = trace.turns.find(turn => turn.id === 't08_trust')!;
     expect(trust.authority).toContainEqual(expect.objectContaining({
       file: 'docs/authority/prompt-agente-a-studyx-v2.md',
-      start: 64,
-      end: 64,
+      start: 66,
+      end: 66,
     }));
     expect(trust.mustNot.join(' ')).toContain('testimonio genérico de Real Estate');
 
     const felipe = trace.turns.find(turn => turn.id === 't10_felipe')!;
     expect(felipe.authority).toContainEqual(expect.objectContaining({
       file: 'docs/authority/prompt-agente-a-studyx-v2.md',
-      start: 64,
-      end: 64,
+      start: 66,
+      end: 66,
     }));
     expect(felipe.must.join(' ')).toContain('historia real autorizada');
     expect(felipe.must.join(' ')).toContain('no implica que exista un video');
@@ -80,8 +80,8 @@ describe('owner-rule supplementary golden campaign', () => {
     const students = discover.turns.find(turn => turn.id === 'g05_students')!;
     expect(students.authority).toContainEqual(expect.objectContaining({
       file: 'docs/authority/prompt-agente-a-studyx-v2.md',
-      start: 64,
-      end: 64,
+      start: 66,
+      end: 66,
     }));
   });
 

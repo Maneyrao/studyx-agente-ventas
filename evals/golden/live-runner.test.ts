@@ -41,6 +41,7 @@ import {
   extractContextEvidenceV1,
   extractFinalBackendDecisionErrorV1,
   extractCommittedProposalV1,
+  extractCommittedCallIdV1,
   proposalEvidenceV1,
   quotedCurrentPriceEvidenceV1,
   appendEarlyCallOfferEvidenceV1,
@@ -52,6 +53,7 @@ import {
   reportTurnLabelV1,
   noVerdictReasonV1,
 } from './runner-support';
+import { settleGoldenCallOutcomeV1 } from './call-settlement';
 import { GOLDEN_BASE_SHA, GOLDEN_CASES, type GoldenCaseV1 } from './scenarios';
 import { selectGoldenCasesV1 } from './run-config.mjs';
 import { COURSE_PROGRAM_ASSETS_V1 } from '../../src/shared/catalog/course-programs';
@@ -130,6 +132,7 @@ interface PendingCaseV1 {
   readonly observations: GoldenTurnObservationV1[];
   readonly setupEvidence?: unknown;
   readonly executionError?: string;
+  readonly executionErrorTurnIndex?: number;
 }
 
 interface FulfilledSetupV1 {
@@ -848,6 +851,7 @@ live('authority-only Agent A golden baseline through the real workflow', () => {
           readonly observations?: readonly GoldenTurnObservationV1[];
           readonly setupEvidence?: unknown;
           readonly executionError?: string;
+          readonly executionErrorTurnIndex?: number;
         }[];
       };
       expect(raw.base_sha).toBe(evaluatedSha);
@@ -860,6 +864,8 @@ live('authority-only Agent A golden baseline through the real workflow', () => {
           observations: [...(saved?.observations ?? [])],
           ...(saved?.setupEvidence === undefined ? {} : { setupEvidence: saved.setupEvidence }),
           ...(saved?.executionError ? { executionError: saved.executionError } : {}),
+          ...(saved?.executionErrorTurnIndex === undefined
+            ? {} : { executionErrorTurnIndex: saved.executionErrorTurnIndex }),
         });
       }
       expect(pendingCases).toHaveLength(selectedCases.length);
@@ -870,7 +876,10 @@ live('authority-only Agent A golden baseline through the real workflow', () => {
       const captures: WorkflowTurnEvidenceV1['adapterCaptures'][number][] = [];
       let setupEvidence: unknown;
       let executionError: string | undefined;
+      let executionErrorTurnIndex: number | undefined;
+      let activeTurnIndex = 0;
       const observations: GoldenTurnObservationV1[] = [];
+      let lastCommittedCallId: string | null = null;
       try {
         let firstConversationalTurn = 0;
         if (scenario.setup === 'fulfilled_bonus_package') {
@@ -924,15 +933,25 @@ live('authority-only Agent A golden baseline through the real workflow', () => {
           firstConversationalTurn = 1;
         }
         for (const turn of scenario.turns.slice(firstConversationalTurn)) {
-          if (turn.settleLatestCallBefore) await db`
-            UPDATE call_sessions SET status='completed', completed_at=COALESCE(completed_at, now()),
-              result=${turn.settleLatestCallBefore}, analysis_status='completed'
-            WHERE id=(SELECT session.id FROM call_sessions session
-              JOIN conversations conversation ON conversation.id=session.conversation_id
-              JOIN channel_threads thread ON thread.id=conversation.channel_thread_id
-              WHERE thread.external_conversation_id=${id.conversationId}
-              ORDER BY session.requested_at DESC, session.id DESC LIMIT 1)`;
-          const evidence = await runWorkflowTurnV1({ ...id, text: turn.customer });
+          activeTurnIndex = observations.length;
+          if (turn.settleLatestCallBefore) {
+            if (!lastCommittedCallId) {
+              throw new Error(`GOLDEN_CALL_SETTLEMENT_COMMITTED_ID_MISSING:${scenario.id}:${turn.id}`);
+            }
+            await settleGoldenCallOutcomeV1({
+              db,
+              callId: lastCommittedCallId,
+              externalConversationId: id.conversationId,
+              workspaceSlug: process.env.BUSINESS_WORKSPACE_SLUG ?? 'studyx',
+              result: turn.settleLatestCallBefore,
+            });
+          }
+          const evidence = await runWorkflowTurnV1({
+            ...id,
+            text: turn.customer,
+            syntheticCallDispatch: 'provider_accepted',
+          });
+          lastCommittedCallId = extractCommittedCallIdV1(evidence.httpExchanges) ?? lastCommittedCallId;
           captures.push(...evidence.adapterCaptures);
           await acknowledgeDelivery(evidence);
           observations.push(await observeTurn({
@@ -945,8 +964,15 @@ live('authority-only Agent A golden baseline through the real workflow', () => {
         }
       } catch (error) {
         executionError = errorText(error);
+        executionErrorTurnIndex = activeTurnIndex;
       }
-      pendingCases.push({ scenario, observations, setupEvidence, ...(executionError ? { executionError } : {}) });
+      pendingCases.push({
+        scenario,
+        observations,
+        setupEvidence,
+        ...(executionError ? { executionError } : {}),
+        ...(executionErrorTurnIndex === undefined ? {} : { executionErrorTurnIndex }),
+      });
       await writeRawProgress();
     }
     expect(pendingCases).toHaveLength(selectedCases.length);
@@ -956,22 +982,31 @@ live('authority-only Agent A golden baseline through the real workflow', () => {
     expect(pendingCases).toHaveLength(selectedCases.length);
     for (const pending of pendingCases) {
       let semantic: Awaited<ReturnType<typeof judgeCaseSemantically>> = [];
-      let evaluationError = pending.executionError;
-      if (!evaluationError && pending.observations.length === pending.scenario.turns.length) {
+      let semanticEvaluationError: string | undefined;
+      const observationMismatch = pending.observations.length !== pending.scenario.turns.length;
+      const executionError = pending.executionError
+        ?? (observationMismatch
+          ? `OBSERVATION_COUNT_MISMATCH:${pending.observations.length}/${pending.scenario.turns.length}`
+          : undefined);
+      const executionErrorTurnIndex = pending.executionErrorTurnIndex
+        ?? (executionError ? pending.observations.length : undefined);
+      if (pending.observations.length > 0) {
         try {
+          const observedScenario = pending.observations.length === pending.scenario.turns.length
+            ? pending.scenario
+            : { ...pending.scenario, turns: pending.scenario.turns.slice(0, pending.observations.length) };
           semantic = await judgeCaseSemantically({
-            apiKey: secrets.DEEPSEEK_API_KEY!, model: judgeModel, scenario: pending.scenario,
+            apiKey: secrets.DEEPSEEK_API_KEY!, model: judgeModel, scenario: observedScenario,
             observations: pending.observations,
           });
         } catch (error) {
-          evaluationError = errorText(error);
+          semanticEvaluationError = errorText(error);
         }
-      } else if (!evaluationError) {
-        evaluationError = `OBSERVATION_COUNT_MISMATCH:${pending.observations.length}/${pending.scenario.turns.length}`;
       }
       const turns: TurnResultV1[] = [];
       for (const [index, turn] of pending.scenario.turns.entries()) {
         const actualObservation = pending.observations[index];
+        const isExecutionFailureTurn = !actualObservation && index === executionErrorTurnIndex;
         const observation = actualObservation ?? blankObservation();
         const primaryCitation = await primaryAuthorityCitation(turn);
         const hard = actualObservation ? evaluateHardRules(
@@ -993,23 +1028,28 @@ live('authority-only Agent A golden baseline through the real workflow', () => {
           authorityReference: failure.authority_reference,
         }));
         const evaluatorErrors = [
-          ...(evaluationError ? [evaluationError] : []),
-          ...(!evaluationError && !semanticVerdict ? ['GOLDEN_JUDGE_VERDICT_MISSING'] : []),
+          ...(actualObservation && semanticEvaluationError ? [semanticEvaluationError] : []),
+          ...(actualObservation && !semanticEvaluationError && !semanticVerdict ? ['GOLDEN_JUDGE_VERDICT_MISSING'] : []),
           ...(semanticVerdict?.evaluation_error ? [semanticVerdict.evaluation_error] : []),
           ...hard.evaluatorErrors.map((error) => `${error.code}:${error.detail}`),
         ];
-        const technicalFailures: GoldenFailureV1[] = !actualObservation ? [{
-          code: 'TURN_NOT_EXECUTED',
-          detail: evaluationError ?? 'El runner no produjo una observación para este turno.',
-          ...(primaryCitation ? { authorityReference: primaryCitation } : {}),
-        }] : evaluatorErrors.map((detail) => ({
-          code: 'EVALUATOR_ERROR',
-          detail,
-          ...(primaryCitation ? { authorityReference: primaryCitation } : {}),
-        }));
+        const technicalFailures: GoldenFailureV1[] = actualObservation
+          ? evaluatorErrors.map((detail) => ({
+            code: 'EVALUATOR_ERROR',
+            detail,
+            ...(primaryCitation ? { authorityReference: primaryCitation } : {}),
+          }))
+          : [{
+            code: isExecutionFailureTurn ? 'EVALUATOR_ERROR' : 'TURN_NOT_EXECUTED',
+            detail: isExecutionFailureTurn
+              ? executionError ?? 'El runner falló antes de producir la observación de este turno.'
+              : `No ejecutado porque un turno anterior falló: ${executionError ?? 'causa desconocida'}`,
+            ...(primaryCitation ? { authorityReference: primaryCitation } : {}),
+          }];
         const failures = [...hardFailures, ...semanticFailures, ...technicalFailures];
-        const executionStatus: TurnResultV1['execution_status'] = !actualObservation
-          ? 'not_executed' : evaluatorErrors.length > 0 ? 'evaluation_error' : 'executed';
+        const executionStatus: TurnResultV1['execution_status'] = actualObservation
+          ? evaluatorErrors.length > 0 ? 'evaluation_error' : 'executed'
+          : isExecutionFailureTurn ? 'evaluation_error' : 'not_executed';
         const attribution = executionStatus !== 'executed' || failures.length === 0 ? null
           : inferFailureAttribution(turn, observation, failures.map((failure) => failure.code));
         turns.push({

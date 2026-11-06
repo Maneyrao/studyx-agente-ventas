@@ -7,6 +7,7 @@ import {
   inferFailureLayer,
   judgeCaseSemantically,
   asksWorkVsInvestmentChoice,
+  authorizedSuccessStoryObservedV1,
   type GoldenTurnObservationV1,
 } from './judge';
 import { GOLDEN_CASES, type GoldenTurnV1 } from './scenarios';
@@ -46,6 +47,30 @@ describe('discovery repetition detector', () => {
     expect(asksWorkVsInvestmentChoice(
       'Quieres trabajar con una inmobiliaria o invertir por tu cuenta?',
     )).toBe(true);
+  });
+});
+
+describe('authorized success story evidence', () => {
+  const authority = [
+    'docs/authority/prompt-agente-a-studyx-v2.md:66 | Historias de éxito: Amparo y Edson (Diseño Informático) consiguieron empleo como diseñadores gráficos y suman ingresos extra.',
+  ];
+
+  it('accepts an authorized story when the same named people and outcome are in authority', () => {
+    expect(authorizedSuccessStoryObservedV1(
+      'Amparo y Edson estudiaron Diseño Informático y hoy trabajan como diseñadores gráficos, sumando ingresos extra.',
+      authority,
+    )).toBe(true);
+  });
+
+  it('does not authorize an invented student or an invented outcome', () => {
+    expect(authorizedSuccessStoryObservedV1(
+      'María estudió Real Estate y hoy vende diez propiedades por mes.',
+      authority,
+    )).toBe(false);
+    expect(authorizedSuccessStoryObservedV1(
+      'Amparo y Edson ahora tienen una inmobiliaria propia.',
+      authority,
+    )).toBe(false);
   });
 });
 

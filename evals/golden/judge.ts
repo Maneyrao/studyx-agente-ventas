@@ -719,6 +719,31 @@ function onlyCanonicalBackendPaymentLinksAreObserved(
   return visibleUrls.length > 0 && visibleUrls.every((url) => delivered.has(url));
 }
 
+export function authorizedSuccessStoryObservedV1(
+  response: string,
+  authorityCitations: readonly string[],
+): boolean {
+  const responseText = normalized(response);
+  const authorityText = normalized(authorityCitations.join('\n'));
+  const stories = [
+    {
+      subject: ['felipe serrano'],
+      outcome: ['creo su empresa', 'paneles solares'],
+    },
+    {
+      subject: ['cristian y ana maria'],
+      outcome: ['abrieron su negocio gastronomico', 'diplomados de catering'],
+    },
+    {
+      subject: ['amparo y edson'],
+      outcome: ['disenadores graficos', 'ingresos extra'],
+    },
+  ];
+  return stories.some((story) => story.subject.every((signal) => authorityText.includes(signal)
+      && responseText.includes(signal))
+    && story.outcome.some((signal) => authorityText.includes(signal) && responseText.includes(signal)));
+}
+
 function semanticFailureContradictedByObjectiveEvidence(input: {
   readonly failure: RawSemanticTurnVerdictV1['failures'][number];
   readonly requirement: string;
@@ -726,6 +751,7 @@ function semanticFailureContradictedByObjectiveEvidence(input: {
   readonly observation: GoldenTurnObservationV1;
   readonly previousObservation: GoldenTurnObservationV1 | null;
   readonly priorObservations: readonly GoldenTurnObservationV1[];
+  readonly authorityCitations: readonly string[];
 }): boolean {
   if (input.failure.code === 'SEMANTIC_MUST_NOT_FAILED'
     && input.requirement === 'No abrir un menú de cursos ni ofrecer varias opciones.'
@@ -748,6 +774,10 @@ function semanticFailureContradictedByObjectiveEvidence(input: {
     && input.requirement.startsWith('Responder con la historia real autorizada de Felipe')
     && /\bFelipe\s+Serrano\b/iu.test(input.observation.response)
     && /\b(?:paneles\s+solares|aires\s+acondicionados|equipo\s+trabajando|cre[oó]\s+su\s+empresa)\b/iu.test(input.observation.response)) return true;
+  const storyRequirement = normalized(input.requirement);
+  if (authorizedSuccessStoryObservedV1(input.observation.response, input.authorityCitations)
+    && (storyRequirement.includes('historia real autorizada')
+      || storyRequirement.includes('no inventar un testimonio'))) return true;
   if (input.failure.code === 'SEMANTIC_MUST_FAILED'
     && input.requirement === 'Mostrar un resumen que incluya el nombre y apellido recibidos, el correo y el teléfono.'
     && completeContactSummaryIsObserved(input.turn, input.observation)) return true;
@@ -1016,6 +1046,7 @@ async function judgeTurnSemantically(input: {
         if (semanticFailureContradictedByObjectiveEvidence({
           failure: normalizedFailure, requirement, turn: input.turn, observation: input.observation,
           previousObservation: input.previousObservation, priorObservations: input.priorObservations,
+          authorityCitations: citations,
         })) continue;
         failures.push({
           code: normalizedFailure.code,

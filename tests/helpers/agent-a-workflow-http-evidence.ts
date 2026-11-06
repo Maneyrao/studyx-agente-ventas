@@ -25,6 +25,9 @@ export function observeWorkflowFetchV1(
   fetchImplementation: typeof fetch,
   exchanges: WorkflowHttpExchangeV1[],
   backendOrigin: string,
+  options: {
+    readonly syntheticCallDispatch?: 'provider_accepted';
+  } = {},
 ): typeof fetch {
   return async (request, init) => {
     const url = new URL(request instanceof Request ? request.url : String(request));
@@ -37,7 +40,15 @@ export function observeWorkflowFetchV1(
     let requestBody: unknown = body;
     try { if (body) requestBody = JSON.parse(body); } catch { /* Keep non-JSON evidence. */ }
     try {
-      const response = await fetchImplementation(request, init);
+      const callDispatch = /^\/api\/agent\/calls\/([0-9a-f-]{36})\/dispatch$/iu.exec(url.pathname);
+      const response = boundary === 'backend'
+        && options.syntheticCallDispatch === 'provider_accepted'
+        && callDispatch
+        ? new Response(JSON.stringify({
+            status: 'provider_accepted',
+            providerCallId: `golden:${callDispatch[1]}`,
+          }), { status: 200, headers: { 'content-type': 'application/json' } })
+        : await fetchImplementation(request, init);
       const text = await response.clone().text();
       let responseBody: unknown = text;
       try { responseBody = JSON.parse(text); } catch { /* Malformed provider output is evidence too. */ }

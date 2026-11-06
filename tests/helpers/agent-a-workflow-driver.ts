@@ -40,6 +40,8 @@ export interface WorkflowTurnInputV1 {
   readonly externalMessageId?: string;
   readonly occurredAt?: string;
   readonly providerMode?: 'live' | 'fixture';
+  /** Evaluation-only provider boundary. Never enabled by production code. */
+  readonly syntheticCallDispatch?: 'provider_accepted';
 }
 
 export interface WorkflowTurnEvidenceV1 {
@@ -154,7 +156,9 @@ async function executeWorkflowTurnV1(
   const originalFetch = globalThis.fetch;
   const originalConsoleInfo = console.info;
   if (!shared) {
-    globalThis.fetch = observeWorkflowFetchV1(originalFetch, httpExchanges, apiUrl.origin);
+    globalThis.fetch = observeWorkflowFetchV1(originalFetch, httpExchanges, apiUrl.origin, {
+      ...(turn.syntheticCallDispatch ? { syntheticCallDispatch: turn.syntheticCallDispatch } : {}),
+    });
     console.info = observeWorkflowConsoleInfoV1(originalConsoleInfo, traceId, workflowEvents);
   }
 
@@ -320,6 +324,7 @@ export async function runWorkflowBurstV1(input: {
   readonly phoneE164: string;
   readonly messages: readonly { readonly text: string; readonly delayMs: number }[];
   readonly providerMode?: 'live' | 'fixture';
+  readonly syntheticCallDispatch?: 'provider_accepted';
 }): Promise<WorkflowBurstEvidenceV1> {
   if (input.messages.length < 2 || input.messages.some((message) => (
     !message.text.trim() || !Number.isSafeInteger(message.delayMs) || message.delayMs < 0
@@ -331,7 +336,9 @@ export async function runWorkflowBurstV1(input: {
   const originalFetch = globalThis.fetch;
   const originalConsoleInfo = console.info;
   resetRecordedActionInvocationsV1();
-  globalThis.fetch = observeWorkflowFetchV1(originalFetch, shared.httpExchanges, apiUrl.origin);
+  globalThis.fetch = observeWorkflowFetchV1(originalFetch, shared.httpExchanges, apiUrl.origin, {
+    ...(input.syntheticCallDispatch ? { syntheticCallDispatch: input.syntheticCallDispatch } : {}),
+  });
   // Nesting the existing observer once per trace keeps its exact filtering
   // behavior while allowing all concurrent workflow logs into one capture.
   console.info = traceIds.reduce<Console['info']>(
@@ -351,6 +358,7 @@ export async function runWorkflowBurstV1(input: {
         phoneE164: input.phoneE164,
         text: message.text,
         providerMode: input.providerMode,
+        ...(input.syntheticCallDispatch ? { syntheticCallDispatch: input.syntheticCallDispatch } : {}),
       }, shared, traceIds[index]);
     }));
   } finally {

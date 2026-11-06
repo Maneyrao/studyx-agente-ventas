@@ -400,7 +400,7 @@ OWNER_PROMOTION_MODE_REPLAY_CASES_MUTABLE.push({
     marketingTurn('goal_brands', 'Me gustaría trabajar con marcas, llevarles las redes y la publicidad', {
       must: ['Usar el objetivo «trabajar con marcas» para conectar el curso con lo que vería y cómo lo aplicaría; seguir descubriendo o dar valor sin presionar. El modelo registra el objetivo con su cita literal.'],
       mustNot: ['No ofrecer una llamada, no pedir inscripción ni plan, no prometer empleo ni ingresos.'],
-      authority: [noForcedRules, noInvasion, gabi(36, 50, 'Lo que descubres es tu munición')],
+      authority: [noForcedRules, noInvasion, gabi(36, 52, 'Lo que descubres es tu munición')],
       hard: [{ type: 'workflow_committed' }, { type: 'no_call_offer' }, { type: 'no_enrollment_ask' },
         { type: 'question_count_at_most', value: 1 }, { type: 'not_contains', value: '?!' }, ...noBeca],
     }),
@@ -512,7 +512,7 @@ OWNER_PROMOTION_MODE_REPLAY_CASES_MUTABLE.push({
     gabiTurn('testimonial', 'hay alguien que lo haya hecho y le haya servido?', {
       must: ['Contar una historia real elegida por afinidad con el cliente (sólo las del manual: Felipe Serrano; Cristian y Ana María; Amparo y Edson) sin atribuirles resultados que el manual no dice.'],
       mustNot: ['No inventar nombres, historias ni cifras de alumnos; no prometer que obtendrá los mismos resultados.'],
-      authority: [gabi(64, 64, 'Historias de éxito'), owner(176, 176, 'Testimonios sólo los reales')],
+      authority: [gabi(66, 66, 'Historias de éxito'), owner(176, 176, 'Testimonios sólo los reales')],
       hard: [{ type: 'workflow_committed' }, { type: 'no_call_offer' }, ...noBeca],
     }),
   ],
@@ -847,7 +847,8 @@ OWNER_PROMOTION_MODE_REPLAY_CASES_MUTABLE.push(
 // settled as voicemail before the next turn exactly as recorded; call 4 is still open when the customer says
 // «sigamos por aca» (order-2 race) and is settled only before the following turn.
 const traceRef = owner(222, 228, 'Recibos de datos, estado posllamada');
-const storiesRef = gabi(64, 64, 'Historias de éxito');
+const storiesRef = gabi(66, 66, 'Historias de éxito');
+const programSummaryRef = gabi(60, 60, 'Cuando compartas el material de un curso');
 const traceBase = (id: string, customer: string, override: Partial<GoldenTurnV1> = {}) => turn(id, customer, {
   must: ['Responder al mensaje actual con hechos autorizados y un próximo paso apropiado.'],
   mustNot: ['No afirmar datos, llamadas, envíos ni promociones que no ocurrieron; no negar material disponible.'],
@@ -998,7 +999,7 @@ OWNER_PROMOTION_MODE_REPLAY_CASES_MUTABLE.push({
   note: 'Lotes reales del cliente en orden hasta el pedido de pago; el correo va correcto para aislar el cierre.',
   turns: [
     traceBase('g01_greeting', 'buenas\nde los cursos\nquiero info', { authority: [discoverOnceRef, intentRef, noPrefabRef] }),
-    traceBase('g02_real_estate', 'y no sé\nalgo vinculado con real state\ntienen cursos de real state\n?', { authority: [discoverOnceRef, programRef, noPrefabRef],
+    traceBase('g02_real_estate', 'y no sé\nalgo vinculado con real state\ntienen cursos de real state\n?', { authority: [discoverOnceRef, programRef, programSummaryRef, noPrefabRef],
       must: ['Confirmar que hay Real Estate; si comparte el programa (imagen + PDF), acompañarlo con una o dos frases que resuman qué se estudia.'],
       expected: { move: ['ask_course_information', 'request_course_program', 'select_course', 'browse_catalog'], action: ['send_course_program', 'none'], state: {} } }),
     traceBase('g03_from_zero', 'sería para iniciar de 0', { authority: [discoverOnceRef, intentRef, noPrefabRef],

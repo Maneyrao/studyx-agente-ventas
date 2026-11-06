@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   extractAuthorizedContextV1,
   extractCommittedProposalV1,
+  extractCommittedCallIdV1,
   proposalEvidenceV1,
   quotedCurrentPriceEvidenceV1,
   appendEarlyCallOfferEvidenceV1,
@@ -47,6 +48,23 @@ describe('golden live runner evidence extraction', () => {
     expect(extractFinalDeterministicRuleOutcomeV1([first], [exchange])).toBeNull();
     expect(extractFinalDeterministicRuleOutcomeV1(events, [{ ...exchange, responseBody: { status: 'committed', turn_id: 'other-turn' } }])).toBeNull();
     expect(extractFinalDeterministicRuleOutcomeV1([first, { ...last, rule_a_bonus_code: 'wrong-course' }], [exchange])).toBeNull();
+  });
+  it('takes the call id only from the successful committed receipt', () => {
+    const base = {
+      boundary: 'backend' as const,
+      url: 'http://127.0.0.1:3217/turns/t1/decision',
+      status: 200,
+      error: null,
+      requestBody: { turn_id: 't1', agent_turn_v2: { proposal: { proposed_action: { type: 'request_call_now' } } } },
+      responseBody: {
+        status: 'committed',
+        turn_id: 't1',
+        call_request: { status: 'requested', call_id: '11111111-1111-4111-8111-111111111111' },
+      },
+    };
+    expect(extractCommittedCallIdV1([base])).toBe('11111111-1111-4111-8111-111111111111');
+    expect(extractCommittedCallIdV1([{ ...base, status: 422, responseBody: { status: 'rejected' } }])).toBeNull();
+    expect(extractCommittedCallIdV1([{ ...base, responseBody: { status: 'committed', call_request: null } }])).toBeNull();
   });
   it('records an early invitation only after its same-dialogue receipt, exact delivery and persisted count', () => {
     const input = { prior: [], conversationId: 'dialogue', turnId: 'turn-2', callOffer: 'Llamamos?',

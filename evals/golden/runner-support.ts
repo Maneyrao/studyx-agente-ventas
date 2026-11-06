@@ -111,6 +111,14 @@ export function extractCommittedProposalV1(exchanges: readonly ExchangeLikeV1[])
   return record(record(record(exchange?.requestBody)?.agent_turn_v2)?.proposal);
 }
 
+export function extractCommittedCallIdV1(exchanges: readonly ExchangeLikeV1[]): string | null {
+  const receipt = record(committedExchangeV1(exchanges)?.responseBody);
+  const callRequest = record(receipt?.call_request);
+  return callRequest?.status === 'requested' && typeof callRequest.call_id === 'string'
+    ? callRequest.call_id
+    : null;
+}
+
 /** Final repairs can replace an earlier model outcome with a fixed fallback.
  * No proposal hash is emitted: correlate the last event to the successful
  * receipt's exact turn/trace and committed effect identity, retaining raw events. */
