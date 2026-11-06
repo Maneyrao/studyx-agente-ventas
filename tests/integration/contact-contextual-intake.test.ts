@@ -281,6 +281,19 @@ run('contact identity from delivered conversational requests', () => {
       expect((await processInboundMessage(answer(first, 'Lucía Ríos'))).contact.name).toBeNull();
     });
 
+  // Authority line 191: a local phone never authorizes the backend to infer
+  // country/mobile prefixes, even when that inferred candidate was delivered.
+  it('rejects a delivered assistant expansion of a customer local number', async () => {
+    const first = envelope();
+    first.message.text = 'Mi teléfono es 1155550101';
+    const opened = await processInboundMessage(first);
+    await outbound(first, opened, 'El número completo es +54 9 11 5555 0101?');
+    const current = await processInboundMessage(answer(first, 'Si'));
+    expect(await confirmDeliveredContactPhone({ turnId: current.turn_id, phone: '+5491155550101' }, db!)).toBe(false);
+    expect((await db!`SELECT declared_phone FROM contacts WHERE id=${opened.contact.id}::uuid`)[0].declared_phone)
+      .toBe('1155550101');
+  });
+
   it('uses the last sent response, not an older identity request already answered', async () => {
     const first = envelope();
     const opened = await processInboundMessage(first);
@@ -373,7 +386,7 @@ run('confirmed phone delivery provenance', () => {
   it('records the exact source and rolls back the contact update with its surrounding commit', async () => {
     const first = envelope();
     first.identity_owner = 'agent_a_v1';
-    first.message.text = 'Mi teléfono es 1155550101';
+    first.message.text = 'Mi teléfono es +54 9 11 5555 0101';
     const opened = await processInboundMessage(first);
     const beforeProfile = await loadContactProfileV1(opened.contact.id, db!);
     expect(beforeProfile).not.toBeNull();

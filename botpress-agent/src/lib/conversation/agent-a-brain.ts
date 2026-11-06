@@ -1144,16 +1144,17 @@ function canonicalPrerequisiteStatement(
 ): { readonly factId: string; readonly message: string } | null {
   for (const [factId, fact] of facts) {
     if (!['offering_description', 'offering_syllabus'].includes(fact.kind) || !plannedIds.has(factId)) continue;
-    if (/\bno requiere conocimientos previos\b/iu.test(fact.value)) {
+    const value = fact.value.replace(/\s+/gu, ' ').trim();
+    if (/\bno requiere conocimientos previos\b/iu.test(value)) {
       return { factId, message: 'No requiere conocimientos previos.' };
     }
-    if (/\b(?:sin importar (?:su |tu |la )?|no (?:se )?(?:necesita|requiere) )experiencia previa\b/iu.test(fact.value)) {
+    if (/\b(?:sin importar (?:su |tu |la )?|no (?:se )?(?:necesita|requiere) )experiencia previa\b/iu.test(value)) {
       return { factId, message: 'No requiere experiencia previa.' };
     }
-    if (/\b(?:diseñad[oa]|disenad[oa]) para empezar desde cero\b/iu.test(fact.value)) {
+    if (/\b(?:diseñad[oa]|disenad[oa]) para empezar desde cero\b/iu.test(value)) {
       return { factId, message: 'Está diseñado para empezar desde cero.' };
     }
-    if (/\b(?:apuntad[oa]|pensad[oa]|dise[nñ]ad[oa])\b[^.!?]{0,80}\b(?:conocer|aprender|empezar|arrancar)\b[^.!?]{0,32}\bdesde cero\b/iu.test(fact.value)) {
+    if (/\b(?:apuntad[oa]|pensad[oa]|dise[nñ]ad[oa])\b[^.!?]{0,80}\b(?:conocer|aprender|empezar|arrancar)\b[^.!?]{0,32}\bdesde cero\b/iu.test(value)) {
       return { factId, message: 'Está pensado para aprender desde cero.' };
     }
   }

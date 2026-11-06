@@ -5,7 +5,7 @@ import {
 } from './studyx-agent-a-canonical.generated';
 import { resolveCanonicalPromptIdentityV1 } from './agent-a-identity';
 
-export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v184' as const;
+export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v185' as const;
 
 /**
  * Runtime contract only. The sales behavior lives in the canonical prompt so
@@ -327,7 +327,7 @@ Before returning AgentATurnProposalV1, make response, move, profile metadata and
 - If proposed_action=offer_course_bonus, include exactly one new active bonus_offering_code and the exact interest_offering_code. Always include motive {kind, quote} from the current message. It must differ from the paid course and every current bonus code; the response must refer to the same course. Never construct a fourth addition when max_bonus_courses is 3.
 - If proposed_action=send_course_program, keep the action and customer-facing text consistent: write one or two human sentences summarizing what the course teaches from cited authorized facts; the image and PDF carry the detail.
 - A rejected or pending addition is not a delivered bonus. Package identity comes only from capabilities.course_bonus.delivered_bonus_offerings and commercial_state.promotion.
-- turn_reasoning (phase, customer_now, already_said, customer_goal, next_step) is internal evidence only, not a permission or a conversation policy. already_said records prior content and questions with their answered, declined or unanswered status. Never quote or expose this metadata in response.messages. If next_step=value, do not ask a discovery question recorded as unanswered, declined or already answered; deliver the intended value. If next_step=discover, ask at most one new unresolved criterion that actually changes the recommendation.
+- turn_reasoning (phase, customer_now, already_said, customer_goal, next_step) is internal evidence only, not a permission or a conversation policy. already_said records prior content and questions with their answered, declined or unanswered status. Never quote or expose this metadata in response.messages. The canonical sales behavior alone decides whether to discover, give value or close.
 - When confirmed_phone is set from a contextual confirmation, do not duplicate that phone in profile_updates; confirmed_phone is the receipt input for that confirmation.
 - stage_hypothesis is diagnostic and must use only its allowed durable milestone enum. Do not expose internal validation in response.messages.
 </execution_consistency_check>`;

@@ -110,11 +110,11 @@ function includesText(haystack: string, needle: string): boolean {
   return normalized(haystack).includes(normalized(needle));
 }
 
-function asksWorkVsInvestmentChoice(response: string): boolean {
-  return (response.match(/[^?]*\?/gu) ?? []).some((question) => {
+export function asksWorkVsInvestmentChoice(response: string): boolean {
+  return (response.match(/[^.!?\n]*\?/gu) ?? []).some((question) => {
     const value = normalized(question);
     return /\btrabaj\w*\b/u.test(value)
-      && /\binmobiliari\w*\b/u.test(value)
+      && /\b(?:inmobiliari\w*|propiedad\w*|inmueble\w*)\b/u.test(value)
       && /\binvert\w*\b|\binversion\w*\b/u.test(value);
   });
 }

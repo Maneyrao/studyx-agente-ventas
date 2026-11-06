@@ -931,8 +931,7 @@ live('authority-only Agent A golden baseline through the real workflow', () => {
               JOIN conversations conversation ON conversation.id=session.conversation_id
               JOIN channel_threads thread ON thread.id=conversation.channel_thread_id
               WHERE thread.external_conversation_id=${id.conversationId}
-              ORDER BY session.requested_at DESC, session.id DESC LIMIT 1)
-              AND status NOT IN ('completed','failed','no_answer','timed_out','cancelled')`;
+              ORDER BY session.requested_at DESC, session.id DESC LIMIT 1)`;
           const evidence = await runWorkflowTurnV1({ ...id, text: turn.customer });
           captures.push(...evidence.adapterCaptures);
           await acknowledgeDelivery(evidence);

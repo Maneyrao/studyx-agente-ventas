@@ -2838,7 +2838,7 @@ describe('course prerequisites come from any authorized course fact', () => {
     current.catalog.selected_offering!.facts.push({
       id,
       kind: 'offering_syllabus',
-      value: 'Real Estate está diseñado para latinos sin importar su experiencia previa.',
+      value: 'Real Estate está diseñado para latinos sin importar su experiencia\nprevia.',
     });
     expect(validate(current, [id])).not.toContain('prerequisites');
   });

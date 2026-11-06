@@ -15,7 +15,7 @@ const connections = process.env.TEST_DATABASE_URL ? openIndependentLocalTestData
 afterAll(async () => { await Promise.all([...connections.map(c => c.end()), db?.end(), sql.end()]); });
 const PHONE = '+5491155550101';
 
-function envelope(text = '1155550101'): InboundEnvelope {
+function envelope(text = PHONE): InboundEnvelope {
   const id = randomUUID();
   return { schema_version: 1, source: 'botpress', channel: 'whatsapp', identity_owner: 'agent_a_v1',
     integration_id: 'vitest-profile-phone', sandbox_provider: 'telegram_sandbox',
@@ -57,7 +57,7 @@ async function retractPhone(context: IngestContext, quote: string) {
 }
 
 run('owned contact profile phone confirmation provenance', () => {
-  it('persists the delivered confirmation in the canonical phone field using separate literal number and confirmation proofs', async () => {
+  it('persists a customer-authored international number after its delivered confirmation', async () => {
     const first = envelope();
     const original = await processInboundMessage(first);
     const suggestionId = await suggested(first, original);
@@ -76,6 +76,22 @@ run('owned contact profile phone confirmation provenance', () => {
       .toEqual({ phone: PHONE, source_message_id: suggestionId });
     expect(await confirm(confirmation.turn_id)).toBe(true);
     expect((await loadContactProfileV1(original.contact.id, db!))?.version).toBe(1);
+  });
+
+  // Authority line 191: "Un teléfono local requiere formato internacional;
+  // no asumas país." A delivered assistant suggestion cannot manufacture the
+  // missing country/mobile prefix and turn a local number into durable identity.
+  it('rejects confirmation of an assistant-inferred international prefix for a local number', async () => {
+    const first = envelope('1169004497');
+    const original = await processInboundMessage(first);
+    await suggestText(first, original, 'Entonces sería +54 9 11 6900 4497, me confirmás?');
+    const confirmation = await processInboundMessage(next(first, 'Sí'));
+
+    expect(await withSerializableTransactionOn(db!, tx => confirmDeliveredContactPhone({
+      turnId: confirmation.turn_id,
+      phone: '+5491169004497',
+    }, tx))).toBe(false);
+    expect((await loadContactIntakeV1(original.contact.id, db!)).telefono).toBeNull();
   });
 
   it('refuses a newer retraction even if an old writer drifted the legacy declared phone', async () => {
@@ -197,6 +213,32 @@ run('owned contact profile phone confirmation provenance', () => {
     expect((await db!`SELECT declared_phone FROM contacts WHERE id = ${original.contact.id}::uuid`)[0].declared_phone).toBe(CORRECTED);
     expect((await loadContactProfileV1(original.contact.id, db!))?.fields.telefono.confirmation_evidence)
       .toMatchObject({ kind: 'delivered_phone_correction_v1', suggested_message_id: suggestionId });
+  });
+
+  it('accepts the owner trace only after the customer writes the full number, then accepts a last-four correction', async () => {
+    const first = envelope('1169004497');
+    const original = await processInboundMessage(first);
+    await suggestText(first, original, 'Entonces sería +54 11 6900 4497, me confirmás?');
+    const inferred = await processInboundMessage(next(first, 'sii esta bien'));
+    expect(await withSerializableTransactionOn(db!, tx => confirmDeliveredContactPhone({
+      turnId: inferred.turn_id,
+      phone: '+541169004497',
+    }, tx))).toBe(false);
+
+    const authored = await processInboundMessage(next(first, '+54 9 11 6900 4497'));
+    expect(await withSerializableTransactionOn(db!, tx => confirmDeliveredContactPhone({
+      turnId: authored.turn_id,
+      phone: '+5491169004497',
+    }, tx))).toBe(true);
+
+    const correction = await processInboundMessage(next(first, 'mi número termina en 8, no en 7'));
+    await suggestText(first, correction, 'Entonces sería +54 9 11 6900 4498, me confirmás?');
+    const yes = await processInboundMessage(next(first, 'oki'));
+    expect(await withSerializableTransactionOn(db!, tx => confirmDeliveredContactPhone({
+      turnId: yes.turn_id,
+      phone: '+5491169004498',
+    }, tx))).toBe(true);
+    expect((await loadContactIntakeV1(original.contact.id, db!)).telefono).toBe('+5491169004498');
   });
 
   it('rejects a corrected candidate whose changed digits the customer never wrote', async () => {

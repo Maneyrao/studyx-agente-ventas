@@ -6,6 +6,7 @@ import {
   inferFailureAttribution,
   inferFailureLayer,
   judgeCaseSemantically,
+  asksWorkVsInvestmentChoice,
   type GoldenTurnObservationV1,
 } from './judge';
 import { GOLDEN_CASES, type GoldenTurnV1 } from './scenarios';
@@ -33,6 +34,20 @@ function observation(overrides: Partial<GoldenTurnObservationV1> = {}): GoldenTu
     ...overrides,
   };
 }
+
+describe('discovery repetition detector', () => {
+  it('does not treat a descriptive use-case recap followed by a trial close as the old forced choice', () => {
+    expect(asksWorkVsInvestmentChoice(
+      'Te sirve para trabajar con una inmobiliaria o invertir por tu cuenta. Te hace sentido empezar por ahí?',
+    )).toBe(false);
+  });
+
+  it('detects the repeated question when the interrogative clause itself asks the same choice', () => {
+    expect(asksWorkVsInvestmentChoice(
+      'Quieres trabajar con una inmobiliaria o invertir por tu cuenta?',
+    )).toBe(true);
+  });
+});
 
 describe('judge failure kind follows the referenced requirement', () => {
   const evidenceRoot='../../docs/reports/evidence/2026-11-01-formal-acceptance-v149/raw/';

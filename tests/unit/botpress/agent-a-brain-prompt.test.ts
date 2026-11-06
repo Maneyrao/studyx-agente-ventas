@@ -428,7 +428,7 @@ describe('Agent A Brain prompt', () => {
     expect(JSON.parse(encoded)).toEqual(current);
     expect(instructions).not.toContain('<current_turn_guidance>');
     expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v113');
-    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v184');
+    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v185');
   });
 
   it('maps recommendations and generic continuation without persisting a customer choice', () => {
@@ -480,16 +480,16 @@ describe('Agent A Brain prompt', () => {
     expect(instructions).toContain('do not replace that known result with a generic "no pudo completarse"');
   });
 
-  it('makes the internal next_step and already_said evidence binding for reply consistency', () => {
+  it('keeps turn_reasoning as internal evidence while canonical behavior owns sales strategy', () => {
     const instructions = buildAgentABrainInstructionsV1(context());
     const check = instructions
       .split('<execution_consistency_check>')[1]!
       .split('</execution_consistency_check>')[0]!;
 
-    expect(check).toContain('If next_step=value');
-    expect(check).toContain('do not ask a discovery question recorded as unanswered, declined or already answered');
-    expect(check).toContain('If next_step=discover');
-    expect(check).toContain('one new unresolved criterion');
+    expect(check).toContain('internal evidence only, not a permission or a conversation policy');
+    expect(check).toContain('The canonical sales behavior alone decides whether to discover, give value or close');
+    expect(check).not.toContain('If next_step=value');
+    expect(check).not.toContain('If next_step=discover');
   });
 
   it('does not duplicate a contextual phone confirmation as a fresh profile update', () => {

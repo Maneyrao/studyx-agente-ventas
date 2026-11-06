@@ -79,7 +79,7 @@ describe('authorized prerequisite salvage', () => {
         selected_offering: { code: 'real_estate', display_name: 'Real Estate', facts: [{
           id: factId,
           kind: 'offering_syllabus',
-          value: 'Diseñado para latinos sin importar su experiencia previa.',
+          value: 'Diseñado para latinos sin importar su experiencia\nprevia.',
         }] },
         available_offerings: [{ code: 'real_estate', display_name: 'Real Estate' }],
         candidate_offerings: [], payment_plans: [],

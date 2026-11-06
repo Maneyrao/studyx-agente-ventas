@@ -4,9 +4,9 @@ import { isAgentOwnedContactProfileV1, isContactProfileSourceStaleV1, type Store
 import { jsonbParam } from '@/lib/db/json';
 import { withSerializableTransactionOn } from '@/lib/db/transaction';
 
-/** The model interprets confirmation. PostgreSQL proves the number belonged
- * to the immediately preceding, delivered reply and extends the customer's
- * own local number. No country inference or conversational classification. */
+/** The model interprets confirmation. PostgreSQL proves the complete number
+ * came from the customer or is a last-four correction of an already callable
+ * number. A delivered assistant reply never supplies a missing country code. */
 export async function confirmDeliveredContactPhone(input: {
   turnId: string;
   phone: string;
@@ -33,6 +33,29 @@ export async function confirmDeliveredContactPhone(input: {
       source: { id: input.turnId, conversation_id: recorded.conversation_id, conversation_seq: Number(recorded.conversation_seq) },
     }) || profile.fields.telefono.status === 'retracted' && profile.fields.telefono.source_message_id === input.turnId) return false;
   } else if (recorded.declared_phone === input.phone) return true;
+  const customerAuthoredCurrentPhone = extractDeclaredPhones(recorded.content).includes(input.phone);
+  if (customerAuthoredCurrentPhone) {
+    if (profile) {
+      const nextProfile = structuredClone(profile);
+      nextProfile.version += 1;
+      nextProfile.fields.telefono = {
+        value: input.phone,
+        status: 'confirmed',
+        source: 'agent_a_v1',
+        source_message_id: input.turnId,
+        source_conversation_id: recorded.conversation_id,
+        source_quote: recorded.content,
+        source_seq: Number(recorded.conversation_seq),
+        version: nextProfile.version,
+      };
+      await db`UPDATE contacts SET contact_profile_v1 = ${jsonbParam(db, nextProfile)},
+        declared_phone = ${input.phone}, updated_at = now() WHERE id = ${recorded.contact_id}::uuid`;
+    } else {
+      await db`UPDATE contacts SET declared_phone = ${input.phone}, updated_at = now()
+        WHERE id = ${recorded.contact_id}::uuid AND contact_profile_v1 IS NULL`;
+    }
+    return true;
+  }
   const rows = await db<Array<{ id: string; contact_id: string; declared_phone: string | null; content: string }>>`
     SELECT previous.id, current.contact_id, contact.declared_phone, previous.content
     FROM messages current
@@ -65,7 +88,6 @@ export async function confirmDeliveredContactPhone(input: {
   `;
   const source = rows.find(row => extractDeclaredPhones(row.content).includes(input.phone));
   if (!source) return false;
-  const declared = source.declared_phone?.replace(/\D/gu, '') ?? '';
   let numberEvidence: { id: string; content: string } | undefined;
   if (profile) {
     // Literal number provenance survives retirement of semantic ingestion.
@@ -80,7 +102,7 @@ export async function confirmDeliveredContactPhone(input: {
       ORDER BY supplied.conversation_seq DESC LIMIT 32
     `;
     numberEvidence = priorNumbers.find(message => extractDeclaredPhones(message.content)
-      .some(number => input.phone.endsWith(number.replace(/\D/gu, ''))));
+      .includes(input.phone));
     // A corrected known number: the customer wrote the changed tail ("termina
     // en 8"), saw the complete candidate in the delivered reply and confirmed
     // it. Only the last four digits may change; country and area stay those of
@@ -125,8 +147,8 @@ export async function confirmDeliveredContactPhone(input: {
       correctionEvidence = correctionBatch.find(message => (message.content.match(/(?<![\d$%:/.,])\d+(?![\d%:/]|[.,]\d)/gu) ?? [])
         .some(run => run.length >= changedTail.length && input.phone.endsWith(run)));
     }
-    if (!numberEvidence && !correctionEvidence && (declared.length < 8 || !input.phone.endsWith(declared))) return false;
-    const evidenceKind = correctionEvidence && !(declared.length >= 8 && input.phone.endsWith(declared))
+    if (!numberEvidence && !correctionEvidence && source.declared_phone !== input.phone) return false;
+    const evidenceKind = correctionEvidence && source.declared_phone !== input.phone
       ? 'delivered_phone_correction_v1' as const : 'delivered_phone_confirmation_v1' as const;
     numberEvidence ??= correctionEvidence;
     const nextProfile = structuredClone(profile);
@@ -140,7 +162,7 @@ export async function confirmDeliveredContactPhone(input: {
     await db`UPDATE contacts SET contact_profile_v1 = ${jsonbParam(db, nextProfile)},
       declared_phone = ${input.phone}, updated_at = now() WHERE id = ${source.contact_id}::uuid`;
   } else {
-    if (declared.length < 8 || !input.phone.endsWith(declared)) return false;
+    if (source.declared_phone !== input.phone) return false;
     await db`UPDATE contacts SET declared_phone = ${input.phone}, updated_at = now()
       WHERE id = ${source.contact_id}::uuid AND contact_profile_v1 IS NULL`;
   }
