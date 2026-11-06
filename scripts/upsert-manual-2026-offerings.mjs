@@ -54,6 +54,23 @@ const FORBIDDEN_PROMISES = [
   'horarios de clases en vivo', 'política de devoluciones',
 ];
 
+const aliasKey = value => value.normalize('NFD').replace(/\p{Diacritic}/gu, '')
+  .toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim().replace(/\s+/gu, ' ');
+
+/** Keep owner-authored customer phrases, but never emit identities that make
+ * the complete canonical resolver fail closed (canonical or duplicate aliases).
+ * Accentless input still matches because the resolver applies the same fold. */
+export function canonicalAliases(code, displayName, aliases = []) {
+  const reserved = new Set([aliasKey(code), aliasKey(displayName)]);
+  const seen = new Set();
+  return aliases.filter(alias => {
+    const key = aliasKey(alias);
+    if (!key || reserved.has(key) || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 const fichas = JSON.parse(readFileSync(join(ROOT, 'supabase/seed/data/fichas-gabi-2026-11-03.json'), 'utf8'));
 export const MANUAL_COURSES = Object.freeze(fichas.courses.map(course => ({
   code: course.offering_code, name: course.manual_name, academy: course.academia,
@@ -73,7 +90,7 @@ export function buildOffering(code) {
   const program = PROGRAMS.find(item => OFFERING_CODES[item.slug] === code);
   const classes = course.classes_to_confirm ? null : course.classes;
   const description = `${course.academy}. ${classes === null ? '' : `${classes} clases. `}${firstSentence(course.description)}`.slice(0, 390).trim();
-  const aliases = ALIASES[code];
+  const aliases = canonicalAliases(code, course.name, ALIASES[code]);
   return {
     code, display_name: course.name, offering_type: 'course', status: 'active', description, value_proposition: null,
     price_type: 'fixed', price_amount: '360.00', currency: 'USD', billing_interval: 'custom',
@@ -83,7 +100,7 @@ export function buildOffering(code) {
       forbidden_promises: LICENSED.has(code) ? [...FORBIDDEN_PROMISES, 'licencia estatal'] : FORBIDDEN_PROMISES },
     metadata: {
       canonical_source: 'manual_2026', source_file: 'Manual_Capacitacion_Studyx_2026.pdf', source_sha256: MANUAL_SHA256,
-      academy: course.academy, ...(aliases ? { aliases } : {}), ...(classes === null ? {} : { declared_classes: classes }),
+      academy: course.academy, ...(aliases.length ? { aliases } : {}), ...(classes === null ? {} : { declared_classes: classes }),
       ...(program ? { program_pdf_sha256: program.sha256 } : {}),
       total_price_usd: 360, payment_options_owner_confirmed: true, price_source: 'owner-confirmed 2026-11-05',
     },

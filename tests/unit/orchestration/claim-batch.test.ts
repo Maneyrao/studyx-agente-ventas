@@ -28,7 +28,8 @@ import {
 
 describe('default retrieval thresholds', () => {
   it('hydrates Real Estate facts and syllabus from the owner alias "real state"', async () => {
-    const { buildOffering } = await import('../../../scripts/upsert-manual-2026-offerings.mjs');
+    const { buildOffering, NEW_OFFERING_CODES, REACTIVATED_OFFERING_CODES } = await import('../../../scripts/upsert-manual-2026-offerings.mjs');
+    const legacy = (await import('../../../supabase/seed/data/studyx-manual.json')).default;
     const seeded = buildOffering('real_estate');
     const realEstate = {
       ...businessOffering(seeded.code, seeded.display_name, seeded.metadata.academy),
@@ -38,6 +39,16 @@ describe('default retrieval thresholds', () => {
       modality: seeded.delivery.modality,
     };
     const generic = businessContextView({ offerings: [businessOffering('marketing_digital', 'Marketing Digital', 'Marketing')] });
+    const compactIndex = [
+      ...legacy.courses.map(course => ({ code: course.code, display_name: course.name,
+        academy: course.academy, aliases: course.aliases ?? [] })),
+      ...[...NEW_OFFERING_CODES, ...REACTIVATED_OFFERING_CODES].map(code => {
+        const row = buildOffering(code);
+        return { code: row.code, display_name: row.display_name, academy: row.metadata.academy,
+          aliases: row.metadata.aliases ?? [] };
+      }),
+    ];
+    expect(compactIndex).toHaveLength(57);
     const syllabus = 'Mercado inmobiliario, captación de propiedades, negociación y cierre.';
     const result = await claimBatch(input, { ...buildDeps({
       messagesResult: [
@@ -50,8 +61,8 @@ describe('default retrieval thresholds', () => {
       }]) },
     }), business: {
       load: vi.fn().mockResolvedValue(generic),
-      loadCompleteIndex: vi.fn().mockResolvedValue({ as_of: generic.as_of, offerings_total: 2,
-        offerings: [...generic.offerings, realEstate], injection_suspected_count: 0 }),
+      loadCompleteIndex: vi.fn().mockResolvedValue({ as_of: generic.as_of, offerings_total: compactIndex.length,
+        offerings: compactIndex, injection_suspected_count: 0 }),
       loadByCode: vi.fn(async (code: string) => businessContextView({ offerings: code === 'real_estate' ? [realEstate] : [] })),
     } });
     if (result.outcome !== 'claimed') throw new Error('expected claim');
