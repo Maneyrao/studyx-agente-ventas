@@ -708,7 +708,7 @@ function proposalJsonSchema(context: AgentAContextV1, conversationOnly = false):
       ...closedObject({
         phase: { type: 'string', maxLength: 120 },
         customer_now: { type: 'string', maxLength: 400, description: 'What the customer wants or doubts right now.' },
-        already_said: { type: 'string', maxLength: 400, description: 'What you already said and must not repeat.' },
+        already_said: { type: 'string', maxLength: 400, description: 'Internal evidence of prior content and questions, including whether answered, declined or unanswered; not a conversation policy.' },
         customer_goal: { type: 'string', maxLength: 400 },
         next_step: { type: 'string', enum: [...TURN_REASONING_NEXT_STEPS_V1] },
       }),

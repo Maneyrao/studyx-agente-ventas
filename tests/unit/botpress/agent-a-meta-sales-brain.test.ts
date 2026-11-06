@@ -88,15 +88,12 @@ describe('Agent A Meta sales brain', () => {
   it('keeps the instruction surface compact and leaves the real catalog in context', () => {
     const current = context();
     const instructions = buildAgentABrainInstructionsV1(current);
-    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v174');
+    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v180');
     const staticInstructions = instructions.split('<authorized_context>')[0]!;
-    // The approved v2 surface intentionally restores Lisandro's complete
-    // discovery, value, closing, objection, negotiation and affinity system.
-    // Keep that expanded contract bounded without compressing it back into the
-    // summary that caused the production regression. v104 adds Gabi's manual
-    // (value arguments, objections, closes, real testimonies) and drops the
-    // per-area affinity lists the ficha's "Combínalo con" now carries. v107: +100 for Gabi's close-without-invasion corrections and the general facts. v108: +100 for the owner's price guidance ported from the retired runtime rules. v167: +150 for the discount rule, the package count and the programme-send rules. v109/v163: +280 for the current-message bonus motive and turn-intent moves.
-    expect(staticInstructions.trim().split(/\s+/u).length).toBeLessThan(6300);
+    // AGENTS.md:243–248: preserve the complete literal authority; bound only
+    // the technical wrapper so approved behavioral additions do not force truncation.
+    const technical = staticInstructions.replace(/<canonical_sales_behavior[^>]*>[\s\S]*?<\/canonical_sales_behavior>/u, '');
+    expect(technical.trim().split(/\s+/u).length).toBeLessThan(900);
     expect(JSON.parse(instructions.split('<authorized_context>')[1]!.split('</authorized_context>')[0]!)).toEqual(current);
   });
 });

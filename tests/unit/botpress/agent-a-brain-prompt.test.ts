@@ -78,6 +78,22 @@ function courseBonusEffectContract(instructions: string): string {
 }
 
 describe('Agent A Brain prompt', () => {
+  it('keeps commercial strategy exclusively in canonical authority and reasoning as evidence', () => {
+    // AGENTS.md:243–248: canonical strategy; brain contracts/facts/repairs only.
+    const instructions = buildAgentABrainInstructionsV1(context());
+    expect(instructions).toContain(STUDYX_AGENT_A_CANONICAL_PROMPT);
+    const technical = instructions.replace(STUDYX_AGENT_A_CANONICAL_PROMPT, '');
+    for (const duplicate of ['<premisa_de_venta', 'Emma vende:', 'Pide la inscripción o el plan sólo',
+      'Descubre una vez:', 'Ask at most one useful question', 'never open with a negative',
+      'never ask one of them again, in any wording', 'Promotion request before any bonus: ask']) {
+      expect(technical).not.toContain(duplicate);
+    }
+    expect(technical).toContain('<course_mentions_contract>');
+    expect(technical).toContain('<internal_contact_profile_contract>');
+    expect(technical).toContain('stage_hypothesis is diagnostic');
+    expect(technical).toContain('turn_reasoning');
+  });
+
   it.each(['me parece caro', 'es caro?', 'no es caro'])('does not interpret the customer for the model: no backend price hint (%s)', text => {
     const current = context();
     current.turn.batch_messages = [{ id: 'current', text }];
@@ -254,7 +270,7 @@ describe('Agent A Brain prompt', () => {
   it('adapts discovery, trial closes and direct negotiation while preserving early calls', () => {
     const instructions = buildAgentABrainInstructionsV1(context());
     // Authority prompt lines 25-141 and 204-212 are now the literal behavior source.
-    for (const rule of ['cierre de prueba', 'Ante señal de compra',
+    for (const rule of ['cierre de prueba', 'Ante una señal real de compra',
       'Motivo del mensaje actual',
       'hasta un tercero como máximo', 'una pregunta principal',
       'interés expresado o el curso que compra',
@@ -411,8 +427,8 @@ describe('Agent A Brain prompt', () => {
     const encoded = instructions.split('<authorized_context>')[1]!.split('</authorized_context>')[0]!;
     expect(JSON.parse(encoded)).toEqual(current);
     expect(instructions).not.toContain('<current_turn_guidance>');
-    expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v109');
-    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v174');
+    expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v110');
+    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v180');
   });
 
   it('maps recommendations and generic continuation without persisting a customer choice', () => {
@@ -938,10 +954,11 @@ describe('Agent A Brain prompt', () => {
     });
   });
 
-  it('v167: states the right package count and forbids opening a discount answer with a negative', () => {
+  it('keeps package arithmetic factual and leaves discount wording to canonical authority', () => {
     const text = buildAgentABrainInstructionsV1(context());
     expect(text).toContain('courses_in_package_after_next_offer');
     expect(text).toContain('Never say "dos cursos al precio de uno" when the package holds more');
-    expect(text).toContain('never open with a negative ("no hay descuento"');
+    expect(text.replace(STUDYX_AGENT_A_CANONICAL_PROMPT, '')).not.toContain('never open with a negative');
+    expect(STUDYX_AGENT_A_CANONICAL_PROMPT).toContain('no uses frases defensivas');
   });
 });
