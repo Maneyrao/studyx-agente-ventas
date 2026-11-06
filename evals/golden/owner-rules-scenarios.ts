@@ -23,7 +23,7 @@ const effectsApart = owner(165, 165, 'Respuesta y efectos independientes');
 const noForcedRules = owner(168, 168, 'fuerce llamadas o preguntas de precio');
 const singleFallback = owner(169, 169, 'Respaldos fijos');
 const noInvasion = owner(183, 183, 'Nunca dos turnos seguidos pidiendo inscripción');
-const baseAuthority = [gabi(38, 44, 'Una recomendación no es elección'), gabi(102, 123, 'price_objection')];
+const baseAuthority = [gabi(38, 46, 'Una recomendación no es elección'), gabi(104, 125, 'price_objection')];
 const moves = ['greeting', 'browse_catalog', 'select_course', 'ask_course_information', 'ask_payment_options',
   'unknown', 'continue_by_chat', 'defer_payment', 'request_call', 'decline_purchase'];
 const allActions = ['none', 'offer_course_bonus', 'accept_promotion'];
@@ -56,7 +56,7 @@ function bonusTurn(id: string, customer: string, counts: readonly number[], opti
       : 'Responder a la objeción con valor conectado a su objetivo. El modelo decide si ofrece ya un bonificado afín o primero pregunta una vez si el precio es lo único que lo frena; no es obligatorio ofrecer. Si suma uno, recapitular el paquete.'],
     mustNot: ['No cambiar el curso pago, repetir un bonificado, añadir dos nuevos en el mismo turno ni supeditar la oferta a una llamada.',
       'No mencionar beca ni el precio de 699.'],
-    authority: [permission, affinity, limits, gabi(139, 147, 'recuerda en pocas palabras el paquete completo'), gabi(158, 163, 'Mapa de afinidades')],
+    authority: [permission, affinity, limits, gabi(141, 149, 'recuerda en pocas palabras el paquete completo'), gabi(160, 165, 'Mapa de afinidades')],
     expected: { move: moves, action: required ? ['offer_course_bonus'] : ['none', 'offer_course_bonus'], state: {
       promotion: { status: ['offer_available', ...(required ? [] : [null, 'none'])], bonusCount: counts, paidCourse: [paid, ...(required ? [] : [null])] },
     } },
@@ -85,7 +85,7 @@ export const OWNER_GOLDEN_CASES: readonly GoldenCaseV1[] = [
       turn('ecommerce_facts_now', 'Ecommerce me gusta. Cuánto es el total y cuántas clases son?', {
         must: ['Responder el precio total autorizado y la duración de Ecommerce con hechos de ese mismo turno: 8 clases en el fixture local.'],
         mustNot: ['No usar duración o temario de Marketing Digital ni inventar 16 clases para Ecommerce.'],
-        authority: [...baseAuthority, gabi(52, 58, 'duración'), gabi(108, 115, 'USD 360'), noForcedRules],
+        authority: [...baseAuthority, gabi(54, 60, 'duración'), gabi(110, 117, 'USD 360'), noForcedRules],
         hard: [{ type: 'workflow_committed' }, { type: 'current_course_facts_present', value: 'introduccion_ecommerce' }],
       }),
       bonusTurn('first_price_objection', 'Me parece muy caro.', [0, 1], {
@@ -97,7 +97,7 @@ export const OWNER_GOLDEN_CASES: readonly GoldenCaseV1[] = [
       turn('third_bonus', 'El curso me interesa, pero todavía no me alcanza por el precio.', {
         must: ['Mantener el precio y el paquete vigente. Con el permiso concedido puede sumar el 3.º bonificado (un curso pago + tres bonificados es el paquete máximo y es válido: no es un cuarto bonificado); si lo suma, recapitula el paquete completo.'],
         mustNot: ['No ofrecer, insinuar ni materializar un CUARTO bonificado (más de tres bonificados además del curso pago); «cuatro cursos al precio de uno» para 1 pago + 3 bonificados es el registro autorizado.', 'No mencionar beca ni el precio de 699.'],
-        authority: [limits, permission, gabi(136, 142, 'Máximo de cursos bonificados')],
+        authority: [limits, permission, gabi(138, 144, 'Máximo de cursos bonificados')],
         expected: { move: moves, action: ['none', 'offer_course_bonus'], state: {
           promotion: { status: ['offer_available'], bonusCount: [1, 2, 3], paidCourse: ['introduccion_ecommerce'] },
         } },
@@ -106,7 +106,7 @@ export const OWNER_GOLDEN_CASES: readonly GoldenCaseV1[] = [
       turn('no_fourth', 'Y otro curso gratuito más también?', {
         must: ['Mantener el precio y el paquete. Si aún no hay tres bonificados, puede sumar el 3.º en este turno o en el anterior (no se exige un turno concreto); con tres ya entregados, conserva el paquete y propone avanzar o deja la puerta abierta.'],
         mustNot: ['No ofrecer, insinuar ni materializar un CUARTO bonificado (más de tres además del curso pago). Decir «cuatro cursos al precio de uno» para 1 pago + 3 bonificados es el registro de valor autorizado: no es una violación.'],
-        authority: [limits, gabi(136, 142, 'Máximo de cursos bonificados')],
+        authority: [limits, gabi(138, 144, 'Máximo de cursos bonificados')],
         expected: { move: [...moves, 'ask_current_state'], action: ['none', 'offer_course_bonus'], state: { promotion: { status: ['offer_available'], bonusCount: [1, 2, 3], paidCourse: ['introduccion_ecommerce'] } } },
         hard: [{ type: 'workflow_committed' }, { type: 'promotion_bonus_count_at_most', value: 3 }],
       }),
@@ -392,7 +392,7 @@ OWNER_PROMOTION_MODE_REPLAY_CASES_MUTABLE.push({
     marketingTurn('asks_marketing', 'Hola, buenas tardes. Quiero información del curso de Marketing Digital', {
       must: ['Identificar Marketing Digital y empezar por el descubrimiento: una sola pregunta sobre lo que quiere lograr o su situación, sin precio ni cierre todavía.'],
       mustNot: ['No ofrecer una llamada, no pedir inscripción ni plan, no abrir con el precio, no cerrar con «?!».'],
-      authority: [noForcedRules, noInvasion, gabi(36, 44, 'Descubre sólo lo que te sirve para vender')],
+      authority: [noForcedRules, noInvasion, gabi(36, 46, 'Descubre sólo lo que te sirve para vender')],
       hard: [{ type: 'workflow_committed' }, { type: 'contains', value: 'Marketing Digital' },
         { type: 'no_call_offer' }, { type: 'no_enrollment_ask' }, { type: 'question_count_at_most', value: 1 },
         { type: 'not_contains', value: '?!' }, ...noBeca],
@@ -400,14 +400,14 @@ OWNER_PROMOTION_MODE_REPLAY_CASES_MUTABLE.push({
     marketingTurn('goal_brands', 'Me gustaría trabajar con marcas, llevarles las redes y la publicidad', {
       must: ['Usar el objetivo «trabajar con marcas» para conectar el curso con lo que vería y cómo lo aplicaría; seguir descubriendo o dar valor sin presionar. El modelo registra el objetivo con su cita literal.'],
       mustNot: ['No ofrecer una llamada, no pedir inscripción ni plan, no prometer empleo ni ingresos.'],
-      authority: [noForcedRules, noInvasion, gabi(36, 44, 'Lo que descubres es tu munición')],
+      authority: [noForcedRules, noInvasion, gabi(36, 46, 'Lo que descubres es tu munición')],
       hard: [{ type: 'workflow_committed' }, { type: 'no_call_offer' }, { type: 'no_enrollment_ask' },
         { type: 'question_count_at_most', value: 1 }, { type: 'not_contains', value: '?!' }, ...noBeca],
     }),
     marketingTurn('informative_price', 'qué precio tiene?', {
       must: ['Responder el precio con los planes reales (USD 360; 12 cuotas de USD 30, 6 de USD 60 o un pago) conectando el valor con trabajar con marcas. Es una pregunta informativa: la respuesta es corta y natural.'],
       mustNot: ['No tratarla como objeción: no decir que el precio es el único inconveniente ni preguntar si lo es, no ofrecer promoción ni bonificado, no ofrecer una llamada, no pedir inscripción ni plan, no cerrar con «?!», no mencionar beca ni 699.'],
-      authority: [noForcedRules, noInvasion, effectsApart, gabi(108, 115, 'USD 360')],
+      authority: [noForcedRules, noInvasion, effectsApart, gabi(110, 117, 'USD 360')],
       hard: [{ type: 'workflow_committed' }, { type: 'contains', value: '360' }, { type: 'no_call_offer' },
         { type: 'no_enrollment_ask' }, { type: 'not_contains', value: 'único inconveniente' },
         { type: 'not_contains', value: 'unico inconveniente' }, { type: 'not_contains', value: '?!' }, ...noBeca],
@@ -456,7 +456,7 @@ OWNER_PROMOTION_MODE_REPLAY_CASES_MUTABLE.push({
     marketingTurn('buying_signal', 'me convenciste, quiero inscribirme', {
       must: ['Señal real de compra: dejar de argumentar y avanzar a la inscripción (plan de pago o los datos faltantes), usando una vez el objetivo de trabajar con marcas. Es el único turno donde pedir inscripción corresponde.'],
       mustNot: ['No volver a vender beneficios, no ofrecer una llamada, no mencionar beca ni 699.'],
-      authority: [noInvasion, gabi(181, 190, 'Plan, datos y pago')],
+      authority: [noInvasion, gabi(183, 192, 'Plan, datos y pago')],
       expected: { move: [...marketingMoves, 'ask_payment_options', 'select_payment_plan'], action: ['none', 'accept_promotion', 'select_payment_plan', 'send_payment_link'], state: {} },
       hard: [{ type: 'workflow_committed' }, { type: 'no_call_offer' }, ...noBeca],
     }),
@@ -484,7 +484,7 @@ OWNER_PROMOTION_MODE_REPLAY_CASES_MUTABLE.push({
     gabiTurn('expensive', 'es caro', {
       must: ['Responder con valor/inversión por resultado (lo que puede generar trabajando por su cuenta), sin justificarse; la objeción citada habilita el permiso de bonificar y el modelo decide si ofrece ya un bonificado afín o pregunta una vez por el precio. El bonificado, si lo hay, es un curso del conjunto autorizado elegido por el «Combínalo con» de la ficha (Maquillaje Profesional, Estética Integral o Instagram para Emprendedores).'],
       mustNot: ['No mencionar beca, no mencionar el precio de 699, no bajar el precio, no ofrecer una llamada.'],
-      authority: [permission, affinity, gabi(81, 105, 'Manejo de objeciones'), owner(177, 177, 'Beca Studyx')],
+      authority: [permission, affinity, gabi(83, 107, 'Manejo de objeciones'), owner(177, 177, 'Beca Studyx')],
       expected: { move: marketingMoves, action: ['none', 'offer_course_bonus'], state: {
         promotion: { status: ['offer_available', null, 'none'], bonusCount: [0, 1], paidCourse: ['unas_gelificadas', null] } } },
       hard: [{ type: 'workflow_committed' }, { type: 'course_bonus_preconditions' }, { type: 'bonus_in_when_offered', values: gabiSet },
@@ -493,7 +493,7 @@ OWNER_PROMOTION_MODE_REPLAY_CASES_MUTABLE.push({
     gabiTurn('think_about_it', 'lo voy a pensar', {
       must: ['Responder con una pregunta aclaratoria sobre qué quiere pensar (el curso, el precio o el tiempo), sin empujar ni repetir la oferta.'],
       mustNot: ['No pedir inscripción ni plan, no ofrecer una llamada, no repetir la respuesta anterior, no mencionar beca.'],
-      authority: [noInvasion, gabi(81, 105, '«Lo voy a pensar»'), noForcedRules],
+      authority: [noInvasion, gabi(83, 107, '«Lo voy a pensar»'), noForcedRules],
       hard: [{ type: 'workflow_committed' }, { type: 'no_enrollment_ask' }, { type: 'no_call_offer' },
         { type: 'question_count_at_most', value: 1 }, { type: 'not_repeat_previous_reply' }, ...noBeca],
     }),
@@ -512,7 +512,7 @@ OWNER_PROMOTION_MODE_REPLAY_CASES_MUTABLE.push({
     gabiTurn('testimonial', 'hay alguien que lo haya hecho y le haya servido?', {
       must: ['Contar una historia real elegida por afinidad con el cliente (sólo las del manual: Felipe Serrano; Cristian y Ana María; Amparo y Edson) sin atribuirles resultados que el manual no dice.'],
       mustNot: ['No inventar nombres, historias ni cifras de alumnos; no prometer que obtendrá los mismos resultados.'],
-      authority: [gabi(58, 58, 'Historias de éxito'), owner(176, 176, 'Testimonios sólo los reales')],
+      authority: [gabi(60, 60, 'Historias de éxito'), owner(176, 176, 'Testimonios sólo los reales')],
       hard: [{ type: 'workflow_committed' }, { type: 'no_call_offer' }, ...noBeca],
     }),
   ],
@@ -1057,6 +1057,81 @@ OWNER_PROMOTION_MODE_REPLAY_CASES_MUTABLE.push({
       expected: { move: ['select_payment_plan', 'request_payment_link'], action: ['send_payment_link'], state: {} },
       hard: [{ type: 'workflow_committed' }, { type: 'payment_link_delivered' }, { type: 'link_plan_in', values: ['monthly_12'] },
         { type: 'not_contains', value: 'no te entendí' }, ...noBeca] }),
+  ],
+});
+
+// Owner test 2026-11-06: the anti-repetition rule must not confuse an asked question with an answered one.
+// The customer never answered the generic objective question; after naming a broad area and asking for options,
+// Emma answers with a short oriented comparison and one NEW discriminating question instead of a flat catalog.
+OWNER_PROMOTION_MODE_REPLAY_CASES_MUTABLE.push({
+  id: '49_broad_area_unanswered_discovery_20261106',
+  title: 'Pregunta de descubrimiento ignorada: saludar, orientar un área amplia y repreguntar sin repetir como robot',
+  note: 'Reproduce la conversación del dueño del 06/11 que quedó en una lista plana de cuatro cursos sin orientación.',
+  turns: [
+    traceBase('d01_greeting', 'hola, cómo estás?', {
+      authority: [gabi(7, 17, 'En el primer contacto preséntate una vez'), noPrefabRef],
+      must: ['Saludar con naturalidad y presentarse una sola vez como «Soy Emma, asesora de Studyx».'],
+      mustNot: ['No presentarse como administrativa ni usar signos invertidos de apertura.'],
+      hard: [{ type: 'workflow_committed' }, noPrefab, { type: 'contains', value: 'Soy Emma, asesora de Studyx' },
+        { type: 'not_contains', value: 'administrativa' }, { type: 'not_contains', value: '¿' }, { type: 'not_contains', value: '¡' }, ...noBeca],
+    }),
+    traceBase('d02_acknowledgement', 'ah okay', {
+      authority: [gabi(17, 23, 'Varía la estructura'), gabi(32, 32, 'pregunta ligera de descubrimiento'), noPrefabRef],
+      must: ['Retomar con calidez y avanzar con una sola pregunta ligera para conocer qué le interesa.'],
+      mustNot: ['No volver a presentarse, no sonar administrativo ni usar signos invertidos de apertura.'],
+      hard: [{ type: 'workflow_committed' }, noPrefab, { type: 'question_count_at_most', value: 1 },
+        { type: 'not_contains', value: 'Soy Emma' }, { type: 'not_contains', value: '¿' }, { type: 'not_contains', value: '¡' }, ...noBeca],
+    }),
+    traceBase('d03_does_not_remember', 'no se que habia visto', {
+      authority: [gabi(36, 46, 'Descubrir lo justo'), noPrefabRef],
+      must: ['Aceptar que no recuerda el curso y hacer como máximo una pregunta útil, sin formulario ni menú largo.'],
+      mustNot: ['No inventar qué curso vio ni usar signos invertidos de apertura.'],
+      hard: [{ type: 'workflow_committed' }, noPrefab, { type: 'question_count_at_most', value: 1 },
+        { type: 'not_contains', value: '¿' }, { type: 'not_contains', value: '¡' }, ...noBeca],
+    }),
+    traceBase('d04_computers_options', 'algo vinculado con computadoras\nme pasas las opciones?', {
+      authority: [gabi(15, 21, 'Para dos o más opciones usa una lista'), gabi(38, 52, 'Con un objetivo claro, recomienda el mejor curso y por qué'), noPrefabRef],
+      must: ['Responder primero al pedido con caminos realmente vinculados con computadoras en una orientación concisa, diferenciarlos brevemente y terminar con una sola pregunta nueva que ayude a elegir según el último mensaje.'],
+      mustNot: ['No repetir la pregunta genérica sobre conseguir trabajo, sumar ingresos o tener un negocio; no dar una lista larga y plana del catálogo; no pedir inscripción, plan ni llamada; no usar signos invertidos de apertura.'],
+      expected: { move: ['browse_catalog', 'ask_course_information'], action: ['none'], state: {} },
+      hard: [{ type: 'workflow_committed' }, noPrefab, { type: 'question_count_at_most', value: 1 },
+        { type: 'no_call_offer' }, { type: 'no_enrollment_ask' }, { type: 'not_contains', value: '¿' },
+        { type: 'not_contains', value: '¡' }, ...noBeca],
+    }),
+    traceBase('d05_recommendation', 'cual me recomiendas para empezar?', {
+      authority: [owner(245, 247, 'toma posición'), noPrefabRef],
+      must: ['Recomendar un curso activo con seguridad y explicar por qué sirve para empezar; responder al pedido actual con valor verificado.'],
+      mustNot: ['No devolver otro menú plano ni repetir inmediatamente la pregunta genérica ignorada; no iniciar datos, plan o link.'],
+      expected: { move: ['ask_course_information', 'browse_catalog'], action: ['none', 'send_course_program'], state: {} },
+      hard: [{ type: 'workflow_committed' }, noPrefab, { type: 'no_enrollment_ask' }, { type: 'no_link_delivered' }, { type: 'question_count_at_most', value: 1 }, ...noBeca],
+    }),
+  ],
+});
+
+// Plan A midpoint: fit may be checked before purchase consent, while checkout stays operationally gated.
+const midpointRef = owner(243, 248, 'Punto medio de venta natural');
+OWNER_PROMOTION_MODE_REPLAY_CASES_MUTABLE.push({
+  id: '50_trial_close_vs_checkout_20261106',
+  title: 'Real Estate desde cero: valor y cierre de prueba antes del checkout',
+  note: 'Contrasta interés exploratorio y criterio indeciso con la respuesta afirmativa al cierre; no prescribe redacción exacta.',
+  turns: [
+    traceBase('t01_interest', 'hola, quiero información de Real Estate', { authority: [midpointRef, intentRef, noPrefabRef] }),
+    traceBase('t02_starting_level', 'empezaría de cero', { authority: [midpointRef, noPrefabRef],
+      must: ['Conectar Real Estate con empezar de cero usando hechos verificados.'],
+      mustNot: ['No iniciar datos, plan o enlace sin intención de compra.'],
+      hard: [{ type: 'workflow_committed' }, noPrefab, { type: 'no_enrollment_ask' }, { type: 'no_link_delivered' }, ...noBeca] }),
+    traceBase('t03_undecided', 'no sé todavía si trabajar con una inmobiliaria o invertir', { authority: [midpointRef, noPrefabRef],
+      must: ['Respetar que no decidió ese criterio; el no sé no impide responder otra duda útil.'],
+      mustNot: ['No reformular inmediatamente la elección entre inmobiliaria o invertir.'] }),
+    traceBase('t04_general_goal', 'quiero entender cómo se mueve el negocio, me sirve?', { authority: [midpointRef, noPrefabRef],
+      must: ['Responder al pedido actual con seguridad, conectar valor verificado con entender el negocio y hacer un único cierre de prueba suave para comprobar encaje.'],
+      mustNot: ['No volver a preguntar si quiere trabajar con una inmobiliaria o invertir; no seguir entrevistando ni pedir datos, plan o link.'],
+      expected: { move: ['ask_course_information', 'browse_catalog', 'select_course'], action: ['none'], state: {} },
+      hard: [{ type: 'workflow_committed' }, noPrefab, { type: 'no_enrollment_ask' }, { type: 'no_link_delivered' }, { type: 'no_call_offer' }, { type: 'question_count_at_most', value: 1 }, ...noBeca] }),
+    traceBase('t05_affirmative', 'sí, es lo que busco, quiero inscribirme', { authority: [midpointRef, paymentRef, noPrefabRef],
+      must: ['Avanzar al flujo existente de inscripción con Real Estate, pidiendo sólo los datos faltantes.'],
+      expected: { move: ['request_payment_link', 'provide_contact_details', 'select_course'], action: ['none'], state: { checkout: ['contact_details'] } },
+      hard: [{ type: 'workflow_committed' }, noPrefab, { type: 'selected_course_equals', value: 'real_estate' }, { type: 'no_link_delivered' }, ...noBeca] }),
   ],
 });
 

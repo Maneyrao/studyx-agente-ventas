@@ -27,6 +27,24 @@ const measured = (hard: GoldenTurnV1['hard']): GoldenTurnV1 => ({
 });
 
 describe('owner-rule supplementary golden campaign', () => {
+  it('defines the midpoint orientation and trial-close boundary without a fixed catalog limit', () => {
+    const registry = [...GOLDEN_CASES, ...OWNER_GOLDEN_CASES, ...OWNER_REPLAY_CASES, ...OWNER_PROMOTION_MODE_REPLAY_CASES];
+    const selected = selectGoldenCasesV1('49,50', registry);
+    expect(selected.map(item => item.id)).toEqual(['49_broad_area_unanswered_discovery_20261106', '50_trial_close_vs_checkout_20261106']);
+    const area = selected[0]!;
+    expect(area.turns.at(-1)?.id).toBe('d05_recommendation');
+    expect(area.turns.find(turn => turn.id === 'd04_computers_options')?.must.join(' ')).toContain('diferenci');
+    expect(JSON.stringify(area.turns)).not.toMatch(/hasta tres caminos|cuatro o más cursos/u);
+    const trial = selected[1]!;
+    const fit = trial.turns.find(turn => turn.id === 't04_general_goal')!;
+    expect(fit.expected.action).toEqual(['none']);
+    expect(fit.hard).toContainEqual({ type: 'no_enrollment_ask' });
+    expect(fit.hard).toContainEqual({ type: 'no_link_delivered' });
+    expect(fit.must.join(' ')).toContain('cierre de prueba');
+    expect(fit.mustNot.join(' ')).toContain('inmobiliaria o invertir');
+    expect(trial.turns.find(turn => turn.id === 't05_affirmative')?.expected.state.checkout).toEqual(['contact_details']);
+  });
+
   it('preserves the exact formal 16-case/48-turn threshold independently of supplements', () => {
     expect(GOLDEN_CASES).toHaveLength(16);
     expect(GOLDEN_CASES.flatMap(scenario => scenario.turns)).toHaveLength(48);
