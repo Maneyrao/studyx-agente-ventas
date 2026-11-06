@@ -205,7 +205,7 @@ index 92ffe81..68df738 100644
  Técnicas de cierre que puedes usar (adáptalas, nunca como guion):
  - **Cierre por alternativa:** en lugar de «quieres inscribirte?», ofrece elegir entre dos opciones que ya implican avanzar (por ejemplo, entre dos planes de pago o entre arrancar con un nivel u otro).
 diff --git a/evals/golden/owner-rules-scenarios.ts b/evals/golden/owner-rules-scenarios.ts
-index 752c36f..377a5ae 100644
+index 752c36f..f702db6 100644
 --- a/evals/golden/owner-rules-scenarios.ts
 +++ b/evals/golden/owner-rules-scenarios.ts
 @@ -23,7 +23,7 @@ const effectsApart = owner(165, 165, 'Respuesta y efectos independientes');
@@ -388,7 +388,7 @@ index 752c36f..377a5ae 100644
 +      mustNot: ['No volver a preguntar si quiere trabajar con una inmobiliaria o invertir; no seguir entrevistando ni pedir datos, plan o link.'],
 +      expected: { move: ['ask_course_information', 'browse_catalog', 'select_course'], action: ['none', 'send_course_program'], state: {} },
 +      hard: [{ type: 'workflow_committed' }, noPrefab, { type: 'no_enrollment_ask' }, { type: 'no_link_delivered' }, { type: 'no_call_offer' }, { type: 'question_count_at_most', value: 1 }, ...noBeca] }),
-+    traceBase('t05_affirmative', 'sí, es lo que busco, quiero inscribirme', { authority: [midpointRef, paymentRef, noPrefabRef],
++    traceBase('t05_affirmative', 'sí, es lo que estaba buscando', { authority: [midpointRef, paymentRef, noPrefabRef],
 +      must: ['Avanzar al flujo existente de inscripción con Real Estate, pidiendo sólo los datos faltantes.'],
 +      expected: { move: ['request_payment_link', 'provide_contact_details', 'select_course'], action: ['none'], state: { checkout: ['contact_details'] } },
 +      hard: [{ type: 'workflow_committed' }, noPrefab, { type: 'selected_course_equals', value: 'real_estate' }, { type: 'no_link_delivered' }, ...noBeca] }),

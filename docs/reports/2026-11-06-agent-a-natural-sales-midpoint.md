@@ -1,6 +1,6 @@
 # Agent A natural sales midpoint — candidate verification
 
-Status: acceptance blocked by the actual provider preflight HTTP402 (Insufficient Balance). Exactly one synthetic request was sent by the principal; usage was not reported. Focused and formal16 evaluations were NOT RUN. Runtime stays frozen at `541ecf0`, test-only alignment `c6cfb9a`; candidate HEAD at preflight `597c690`. Fixture workflows also remain 8/10 failed. No acceptance, release readiness or deployment claimed.
+Status: acceptance blocked by the actual provider preflight HTTP402 (Insufficient Balance). Exactly one synthetic request was sent by the principal; usage was not reported. Focused and formal16 evaluations were NOT RUN. Runtime stays frozen at `541ecf0`, test-only material alignment `c6cfb9a` plus the final isolated-affirmative customer-input fix; candidate HEAD at preflight `597c690`. Fixture workflows also remain 8/10 failed. No acceptance, release readiness or deployment claimed.
 
 ## Identity and changes
 
@@ -54,7 +54,7 @@ Original v174 evidence was copied byte-identically; `recorded-v174-sha256.json` 
 | Case49 | 2/4 | d03 long area menu; d04 flat seven-course menu. Judge `bonificación` attribution is wrong: backend rejections empty; this is commercial orientation. | 8 calls; 109301 input +1769 output =111070 tokens | Unavailable: preflight402; no candidate observation |
 | Cases47+48 | 15/19 |47g02 missing material summary; g03 repeated agency/invest choice; g06 no trial close.47g05 fabricated-story label is a judge false attribution: Amparo/Edson are authorized real stories.48 passed. |46 calls;845100 input +11535 output =856635 tokens | Unavailable: preflight402; no candidate observation |
 
-Scenario50 is a new behavioral probe; no matching real v174 response is invented. Coverage limitation from final architect review: t05 combines an affirmative fit response with explicit «quiero inscribirme». Even a future pass would prove explicit-purchase checkout, not isolate whether a bare affirmative reply to the trial close alone advances. That isolated branch is untested; no test change was made during this stop. Candidate commercial behavior is unmeasured: the actual preflight returned402 before any focused or formal runner. This is an environment verdict only, with no candidate model response from which to judge copy, schema, backend rejection or media behavior.
+Scenario50 is a new behavioral probe; no matching real v174 response is invented. The final architect found that t05 mixed affirmative fit with explicit purchase intent. The principal required this evaluation gap to be addressed: t05 now says only «sí, es lo que estaba buscando», with no separate purchase intent. Existing contact_details, selected Real Estate and no-link assertions remain unchanged. The relevant structure suites passed21/21 once after this single customer-input change. Coverage is fixed structurally; its model behavior remains unvalidated because402 prevented the run. No model response was authored. Candidate commercial behavior is unmeasured: the actual preflight returned402 before any focused or formal runner. This is an environment verdict only, with no candidate model response from which to judge copy, schema, backend rejection or media behavior.
 
 | Current evaluation | Actual result | Requests / tokens |
 |---|---|---|
@@ -92,4 +92,6 @@ The branch remains **local only; not pushed**. Acceptance/provenance prerequisit
 - `review-source.diff`: source and test changes together; `operational-contract-parity.json` preserves8/8 unchanged operational function hashes.
 - `final-metadata.json`: evaluated source identities, failure layers, NOT RUN statuses, actual versus historical usage, artifact SHA256 values.
 
-Material blockers remain environment402, unmeasured real-model commercial/operational behavior,8 open fixture workflow failures (including unresolved3-vs2 continuations), and the deliberately stale release pin. The final architect review is handled by the principal; its case50 coverage limitation is recorded above.
+Material blockers remain environment402, unmeasured real-model commercial/operational behavior,8 open fixture workflow failures (including unresolved3-vs2 continuations), and the deliberately stale release pin. The final architect review is handled by the principal. Its case50 finding was addressed with the isolated affirmative input and21/21 structure checks; real-model validation remains blocked by402.
+
+Final review record: the architect found structural conformity with Plan A and no new material implementation defect; literal authority/annex, generated modules, hash/213-line pin,118 archive members and14 original v174 files were verified. Backend, operational contracts and fallback builder remain preserved. The case50 evaluation input finding was then corrected as described above; scoped confirmation is requested. This does not establish commercial acceptance or release readiness.
