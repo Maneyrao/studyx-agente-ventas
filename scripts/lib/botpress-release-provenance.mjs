@@ -3,11 +3,11 @@ import { readFileSync, readdirSync, readlinkSync } from 'node:fs';
 import path from 'node:path';
 import ts from 'typescript';
 
-// Last reviewed commit that changed deployable code (brain v184, prompt v113).
+// Last reviewed commit that changed deployable code (brain v185, prompt v113).
 // Anything committed after it must be docs/evals/tests only (see assertOnlyNonCodeChangesSinceBaseV1), so a release
 // prepared from the branch HEAD runs exactly this code. Re-pin whenever a code file changes.
-export const BOT_RELEASE_BASE_SHA = 'e3780c570382fdccb0962720aa89c79a31458fb5';
-export const BOT_RELEASE_BRAIN_VERSION = 'studyx-agent-a-brain-v184';
+export const BOT_RELEASE_BASE_SHA = '9364460f82837e7e5979a234721afab126127b8e';
+export const BOT_RELEASE_BRAIN_VERSION = 'studyx-agent-a-brain-v185';
 export const BOT_RELEASE_PROMPT_VERSION = 'studyx-agent-a-canonical-v113';
 export const BOT_RELEASE_INSTRUMENTATION_VERSION = 'studyx-release-provenance-v1';
 export const BOT_RELEASE_SOURCE_PATHS = Object.freeze([
