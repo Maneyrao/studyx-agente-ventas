@@ -708,7 +708,7 @@ function proposalJsonSchema(context: AgentAContextV1, conversationOnly = false):
       ...closedObject({
         phase: { type: 'string', maxLength: 120 },
         customer_now: { type: 'string', maxLength: 400, description: 'What the customer wants or doubts right now.' },
-        already_said: { type: 'string', maxLength: 400, description: 'Customer-facing facts already communicated and discovery topics the customer actually answered or explicitly declined. "I do not know" declines that concrete topic; do not ask that criterion or an equivalent choice again. A question merely asked or ignored is unresolved; if it matters, use one different narrower question born from the latest customer information.' },
+        already_said: { type: 'string', maxLength: 400, description: 'Customer-facing facts already communicated and discovery topics the customer actually answered or explicitly declined. "I do not know" declines that concrete topic; do not ask that criterion or an equivalent choice again. An ignored question is unresolved but is not repeated in the immediate next turn; only a different useful criterion may be asked from new information.' },
         customer_goal: { type: 'string', maxLength: 400 },
         next_step: { type: 'string', enum: [...TURN_REASONING_NEXT_STEPS_V1] },
       }),
