@@ -37,7 +37,8 @@ describe('owner-rule supplementary golden campaign', () => {
     expect(JSON.stringify(area.turns)).not.toMatch(/hasta tres caminos|cuatro o más cursos/u);
     const trial = selected[1]!;
     const fit = trial.turns.find(turn => turn.id === 't04_general_goal')!;
-    expect(fit.expected.action).toEqual(['none']);
+    // Preserve material delivery while excluding every checkout effect (AGENTS.md:219–225,240,247).
+    expect(fit.expected.action).toEqual(['none', 'send_course_program']);
     expect(fit.hard).toContainEqual({ type: 'no_enrollment_ask' });
     expect(fit.hard).toContainEqual({ type: 'no_link_delivered' });
     expect(fit.must.join(' ')).toContain('cierre de prueba');

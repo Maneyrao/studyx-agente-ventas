@@ -1123,10 +1123,11 @@ OWNER_PROMOTION_MODE_REPLAY_CASES_MUTABLE.push({
     traceBase('t03_undecided', 'no sé todavía si trabajar con una inmobiliaria o invertir', { authority: [midpointRef, noPrefabRef],
       must: ['Respetar que no decidió ese criterio; el no sé no impide responder otra duda útil.'],
       mustNot: ['No reformular inmediatamente la elección entre inmobiliaria o invertir.'] }),
+    // AGENTS.md:219–225,240: first course-content explanation may still send official material.
     traceBase('t04_general_goal', 'quiero entender cómo se mueve el negocio, me sirve?', { authority: [midpointRef, noPrefabRef],
       must: ['Responder al pedido actual con seguridad, conectar valor verificado con entender el negocio y hacer un único cierre de prueba suave para comprobar encaje.'],
       mustNot: ['No volver a preguntar si quiere trabajar con una inmobiliaria o invertir; no seguir entrevistando ni pedir datos, plan o link.'],
-      expected: { move: ['ask_course_information', 'browse_catalog', 'select_course'], action: ['none'], state: {} },
+      expected: { move: ['ask_course_information', 'browse_catalog', 'select_course'], action: ['none', 'send_course_program'], state: {} },
       hard: [{ type: 'workflow_committed' }, noPrefab, { type: 'no_enrollment_ask' }, { type: 'no_link_delivered' }, { type: 'no_call_offer' }, { type: 'question_count_at_most', value: 1 }, ...noBeca] }),
     traceBase('t05_affirmative', 'sí, es lo que busco, quiero inscribirme', { authority: [midpointRef, paymentRef, noPrefabRef],
       must: ['Avanzar al flujo existente de inscripción con Real Estate, pidiendo sólo los datos faltantes.'],
