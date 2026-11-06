@@ -5,7 +5,7 @@ import {
 } from './studyx-agent-a-canonical.generated';
 import { resolveCanonicalPromptIdentityV1 } from './agent-a-identity';
 
-export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v183' as const;
+export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v184' as const;
 
 /**
  * Runtime contract only. The sales behavior lives in the canonical prompt so
@@ -182,9 +182,19 @@ Remove every sentence saying you are sending, sharing, re-sending or attaching i
 For PROGRAM_SEND_REQUIRED or program_send_not_executed:not_proposed, the course material IS available and was not sent yet: keep your short summary of what the course teaches, say you are sharing the full programme, and set proposed_action={type:"send_course_program", offering_code} for the course in focus. Never say you do not have the file.` : ''
   const rejectedProfileFields = rejection.rejections.map(reason => reason.subject)
     .filter(subject => subject.startsWith('contact_profile_rejected:')).map(subject => subject.split(':')[1])
+  const rejectedProfileUpdates = context.customer.contact_profile?.rejected_updates ?? []
+  const invalidFormatPhone = rejectedProfileUpdates.some(update => (
+    update.field === 'telefono' && update.code === 'INVALID_FORMAT'
+  ))
+  const phoneConfirmationPending = rejection.rejections.some(reason => reason.subject === 'phone_confirmation_pending')
+  const phoneReceiptRepair = rejectedProfileFields.includes('telefono') || phoneConfirmationPending
+    ? invalidFormatPhone && !phoneConfirmationPending
+      ? 'Phone: ask the customer to resend the full international number including country code; do not infer a country code, repeat or transform the rejected local number. Use profile_requests [{fields:["telefono"],mode:"collect",purpose:"call"}] and proposed_action=none.'
+      : 'Phone: write the complete number you understood and ask the customer to confirm it, with profile_requests [{fields:["telefono"],mode:"clarify",purpose:"call"}]; use proposed_action=none until it is confirmed.'
+    : ''
   const profileReceiptRepair = rejectedProfileFields.length || rejection.rejections.some(reason => reason.subject === 'phone_confirmation_pending') ? `
 For contact_profile_rejected or phone_confirmation_pending, the value was NOT recorded (${[...rejectedProfileFields, ...(rejection.rejections.some(reason => reason.subject === 'phone_confirmation_pending') ? ['telefono'] : [])].join(', ')}). Never say it is saved, registered or used.
-${rejectedProfileFields.includes('correo') ? 'Email: do not say the rejected email is valid, correct or okay; do not repeat or correct it; ask once for the email to be resent complete, exactly as the customer uses it.\n' : ''}${rejectedProfileFields.includes('telefono') || rejection.rejections.some(reason => reason.subject === 'phone_confirmation_pending') ? 'Phone: write the complete number you understood and ask the customer to confirm it, with profile_requests [{fields:["telefono"],mode:"clarify",purpose:"call"}]; use proposed_action=none until it is confirmed.' : ''}` : ''
+${rejectedProfileFields.includes('correo') ? 'Email: do not say the rejected email is valid, correct or okay; do not repeat or correct it; ask once for the email to be resent complete, exactly as the customer uses it.\n' : ''}${phoneReceiptRepair}` : ''
   const firstBonusMotiveRepair = rejection.rejections.some(reason => reason.subject === 'bonus_motive:motive_needs_delivered_offer') ? `
 For motive_needs_delivered_offer, a first bonus needs a current price complaint or purchase decline. If the current message complains about the price, offer it again with motive {kind:"price_objection", quote: that exact fragment} and price_objection in the move or secondary_moves; otherwise ask in your own words whether price is the only thing holding them back and record memory constraint/price_question_asked. Never answer that the price does not move.` : ''
   const repairsBonusNaming = rejection.rejections.some(reason => reason.subject === 'bonus_not_named');
@@ -315,6 +325,7 @@ Before returning AgentATurnProposalV1, make response, move, profile metadata and
 - An accepted or requested call stays primary move=request_call while collecting contact data and while asking availability. provide_contact_details may be secondary, never the primary replacement for that live call intent.
 - When the current customer message supplies the final missing checkout contact fields, return the complete contact summary confirmation only. Ask whether those data are correct; do not ask for a payment plan in that same turn. A later confirmed payment_confirmation moves to ask_payment_options only when no plan exists; with a durable selected plan and an authorized link effect it moves to request_payment_link plus send_payment_link. A clear answer while awaiting payment_plan moves to select_payment_plan plus send_payment_link in the same turn.
 - If proposed_action=offer_course_bonus, include exactly one new active bonus_offering_code and the exact interest_offering_code. Always include motive {kind, quote} from the current message. It must differ from the paid course and every current bonus code; the response must refer to the same course. Never construct a fourth addition when max_bonus_courses is 3.
+- If proposed_action=send_course_program, keep the action and customer-facing text consistent: write one or two human sentences summarizing what the course teaches from cited authorized facts; the image and PDF carry the detail.
 - A rejected or pending addition is not a delivered bonus. Package identity comes only from capabilities.course_bonus.delivered_bonus_offerings and commercial_state.promotion.
 - turn_reasoning (phase, customer_now, already_said, customer_goal, next_step) is internal evidence only, not a permission or a conversation policy. already_said records prior content and questions with their answered, declined or unanswered status. Never quote or expose this metadata in response.messages. If next_step=value, do not ask a discovery question recorded as unanswered, declined or already answered; deliver the intended value. If next_step=discover, ask at most one new unresolved criterion that actually changes the recommendation.
 - When confirmed_phone is set from a contextual confirmation, do not duplicate that phone in profile_updates; confirmed_phone is the receipt input for that confirmation.

@@ -7,7 +7,11 @@ import { hardClaimKindsInSentenceV1, splitClaimSentencesV1 } from '../../../../s
 import { sentencesOverlapV1 } from '../../../../src/shared/conversation/sentence-locator'
 import { assertedCommercialPricesV1 } from '../../../../src/features/orchestration/domain/commercial-truth-guard'
 import type { AgentAContextV1, AgentATurnProposalV1 } from '../../schemas/agent-a-brain'
-import { claimsImmediateCallDispatchV1, withoutUnsupportedPrerequisiteClausesV1 } from './agent-a-brain'
+import {
+  claimsImmediateCallDispatchV1,
+  hasAuthorizedPrerequisiteStatementV1,
+  withoutUnsupportedPrerequisiteClausesV1,
+} from './agent-a-brain'
 
 /**
  * A wrong claim never silences a turn and never rewrites the model's voice.
@@ -101,6 +105,10 @@ export function removeOffendingSentencesV1(input: {
   const backendPriceSubject = input.backend_subjects === undefined
     || input.backend_subjects.some(subject => /^(?:price|payment|forbidden_price|invented_discount)/u.test(subject))
   const removed: RemovedSentenceV1[] = []
+  const prerequisiteIsAuthorized = hasAuthorizedPrerequisiteStatementV1({
+    context,
+    fact_ids: proposal.used_fact_ids ?? [],
+  })
 
   // Segmentation differs between backend and Botpress: match by bubble index plus containment.
   const inspect = (sentence: string, bubble: string, bubbleIndex: number): string[] => {
@@ -119,8 +127,10 @@ export function removeOffendingSentencesV1(input: {
     const kept: string[] = []
     for (const original of splitClaimSentencesV1(text)) {
       // Unsupported prerequisites: keep the supported part of the sentence when possible.
-      const sentence = withoutUnsupportedPrerequisiteClausesV1(original) === original.trim()
-        ? original : withoutUnsupportedPrerequisiteClausesV1(original)
+      const sentence = prerequisiteIsAuthorized
+        ? original
+        : withoutUnsupportedPrerequisiteClausesV1(original) === original.trim()
+          ? original : withoutUnsupportedPrerequisiteClausesV1(original)
       const prerequisiteTouched = sentence !== original
       const kinds = inspect(sentence, text, bubbleIndex)
       if (kinds.length > 0) {

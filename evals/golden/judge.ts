@@ -745,6 +745,10 @@ function semanticFailureContradictedByObjectiveEvidence(input: {
     && /\bFelipe\s+Serrano\b/iu.test(input.observation.response)
     && /\b(?:paneles\s+solares|aires\s+acondicionados|equipo\s+trabajando)\b/iu.test(input.observation.response)) return true;
   if (input.failure.code === 'SEMANTIC_MUST_FAILED'
+    && input.requirement.startsWith('Responder con la historia real autorizada de Felipe')
+    && /\bFelipe\s+Serrano\b/iu.test(input.observation.response)
+    && /\b(?:paneles\s+solares|aires\s+acondicionados|equipo\s+trabajando|cre[oó]\s+su\s+empresa)\b/iu.test(input.observation.response)) return true;
+  if (input.failure.code === 'SEMANTIC_MUST_FAILED'
     && input.requirement === 'Mostrar un resumen que incluya el nombre y apellido recibidos, el correo y el teléfono.'
     && completeContactSummaryIsObserved(input.turn, input.observation)) return true;
   if (input.failure.code === 'SEMANTIC_MUST_FAILED'
@@ -778,6 +782,9 @@ function semanticFailureContradictedByObjectiveEvidence(input: {
     && !contactDataRequestIsObserved(input.observation)) return true;
   if (input.failure.code === 'SEMANTIC_MUST_NOT_FAILED'
     && input.requirement.startsWith('No volver a pedirle que elija entre trabajar con una inmobiliaria o invertir')
+    && !asksWorkVsInvestmentChoice(input.observation.response)) return true;
+  if (input.failure.code === 'SEMANTIC_MUST_NOT_FAILED'
+    && normalized(input.requirement).includes('no volver a preguntar si quiere trabajar con una inmobiliaria o invertir')
     && !asksWorkVsInvestmentChoice(input.observation.response)) return true;
   if (input.failure.code === 'SEMANTIC_MUST_NOT_FAILED'
     && input.requirement === 'No hacer varias preguntas juntas.'

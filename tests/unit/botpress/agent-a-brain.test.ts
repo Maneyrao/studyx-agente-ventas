@@ -2787,6 +2787,15 @@ describe('contact profile receipt is respected by the reply', () => {
       .toContain('contact_profile_rejected:correo');
   });
 
+  it('allows explaining that a malformed email was not recorded instead of treating it as saved', () => {
+    const current = withRejected('correo', 'tmaneyro@gmail,com');
+    current.capabilities.intake_missing = ['correo', 'telefono'];
+    expect(subjects(current, { response: { messages: [
+      'El correo llegó con una coma y no pude registrarlo. Reenviámelo completo tal como lo usás, y pasame también tu teléfono con código de país.',
+    ] }, profile_requests: [{ message_index: 0, fields: ['correo', 'telefono'], purpose: 'call', mode: 'collect' }] }))
+      .not.toContain('contact_details');
+  });
+
   it('compares canonically: a local-format or case-changed canonical value is not a refused one', () => {
     const phone = withRejected('telefono', '11 6900 4497');
     expect(subjects(phone, { response: { messages: ['Te llamo al 11 6900-4497.'] } })).not.toContain('contact_profile_rejected:telefono');
@@ -2805,6 +2814,56 @@ describe('contact profile receipt is respected by the reply', () => {
     const current = withRejected('telefono', '+5491169004497');
     expect(subjects(current, { response: { messages: ['Te llamo al +5491169004497.'] } }))
       .not.toContain('contact_profile_rejected:telefono');
+  });
+});
+
+describe('course prerequisites come from any authorized course fact', () => {
+  const rejectionId = '00000000-0000-4000-8000-000000000001';
+  const validate = (current: AgentAContextV1, planned: string[]) => {
+    const parsed = parseAgentATurnProposalV1(proposal({
+      response: { messages: ['Podés empezar desde cero: el curso no exige experiencia previa.'] },
+      used_fact_ids: planned,
+    }), current);
+    return validateAgentATurnProposalV1({
+      proposal: parsed,
+      context: current,
+      planned_fact_ids: planned,
+      rejection_id: rejectionId,
+    })?.rejections.map((item) => item.subject) ?? [];
+  };
+
+  it('accepts an authorized syllabus fact that says prior experience is unnecessary', () => {
+    const current = context();
+    const id = 'knowledge-source:real-estate';
+    current.catalog.selected_offering!.facts.push({
+      id,
+      kind: 'offering_syllabus',
+      value: 'Real Estate está diseñado para latinos sin importar su experiencia previa.',
+    });
+    expect(validate(current, [id])).not.toContain('prerequisites');
+  });
+
+  it('still rejects the same claim when the supporting fact was not authorized for the turn', () => {
+    const current = context();
+    current.catalog.selected_offering!.facts.push({
+      id: 'knowledge-source:real-estate',
+      kind: 'offering_syllabus',
+      value: 'Real Estate está diseñado para latinos sin importar su experiencia previa.',
+    });
+    expect(validate(current, [])).toContain('prerequisites');
+  });
+
+  it('does not use a prerequisite fact belonging to another candidate course', () => {
+    const current = context();
+    const id = 'knowledge-source:other-course';
+    current.catalog.candidate_offerings.push({
+      code: 'other-course',
+      display_name: 'Otro Curso',
+      fact_id: 'offering:other-course:name:v1',
+      area_code: null,
+      facts: [{ id, kind: 'offering_syllabus', value: 'No requiere experiencia previa.' }],
+    });
+    expect(validate(current, [id])).toContain('prerequisites');
   });
 });
 

@@ -265,6 +265,27 @@ describe('golden semantic judge cumulative evidence', () => {
     } finally { fetchMock.mockRestore(); }
   });
 
+  it('does not confuse denying an unavailable Felipe asset with denying his authorized story', async () => {
+    const base = OWNER_PROMOTION_MODE_REPLAY_CASES.find((candidate) => candidate.id === '45_real_trace_5b138536_20261105')!;
+    const turn = base.turns.find((candidate) => candidate.id === 't10_felipe')!;
+    const scenario = { ...base, evaluationMode: undefined, turns: [turn] };
+    const response = 'No tengo un video ni un testimonio escrito para enviarte, pero sí su caso real: Felipe Serrano creó su empresa y hoy tiene un equipo que instala paneles solares y aires acondicionados y hace reparaciones.';
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      output_text: JSON.stringify({ verdict: { turn_id: turn.id, approved: false, failures: [{
+        code: 'SEMANTIC_MUST_FAILED', requirement_id: 'must:0', authority_line_index: 0,
+        evidence_source: 'response', observed_evidence: 'No tengo un video ni un testimonio escrito',
+        explanation: 'Niega tener el testimonio de Felipe.',
+      }] } }),
+    }), { status: 200 }));
+    try {
+      const [verdict] = await judgeCaseSemantically({
+        apiKey: 'fixture-only', model: 'deepseek-test', scenario,
+        observations: [observation({ response })],
+      });
+      expect(verdict).toMatchObject({ approved: true, evaluation_error: null, failures: [] });
+    } finally { fetchMock.mockRestore(); }
+  });
+
   it('does not treat explaining both Real Estate paths as re-asking the rejected choice', async () => {
     const base = OWNER_PROMOTION_MODE_REPLAY_CASES.find((candidate) => candidate.id === '50_trial_close_vs_checkout_20261106')!;
     const turn = base.turns.find((candidate) => candidate.id === 't03_undecided')!;
@@ -275,6 +296,27 @@ describe('golden semantic judge cumulative evidence', () => {
         code: 'SEMANTIC_MUST_NOT_FAILED', requirement_id: 'must_not:0', authority_line_index: 0,
         evidence_source: 'response', observed_evidence: 'conocer ambas antes de decidir',
         explanation: 'Reformula la elección entre trabajar e invertir.',
+      }] } }),
+    }), { status: 200 }));
+    try {
+      const [verdict] = await judgeCaseSemantically({
+        apiKey: 'fixture-only', model: 'deepseek-test', scenario,
+        observations: [observation({ response })],
+      });
+      expect(verdict).toMatchObject({ approved: true, evaluation_error: null, failures: [] });
+    } finally { fetchMock.mockRestore(); }
+  });
+
+  it('accepts a future-path explanation followed by a trial close in the general-goal turn', async () => {
+    const base = OWNER_PROMOTION_MODE_REPLAY_CASES.find((candidate) => candidate.id === '50_trial_close_vs_checkout_20261106')!;
+    const turn = base.turns.find((candidate) => candidate.id === 't04_general_goal')!;
+    const scenario = { ...base, evaluationMode: undefined, turns: [turn] };
+    const response = 'Sí, te sirve para entender el negocio completo. Después vas a poder evaluar con calma qué camino te encaja mejor. Te hace sentido empezar así?';
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      output_text: JSON.stringify({ verdict: { turn_id: turn.id, approved: false, failures: [{
+        code: 'SEMANTIC_MUST_NOT_FAILED', requirement_id: 'must_not:0', authority_line_index: 0,
+        evidence_source: 'response', observed_evidence: 'qué camino te encaja mejor',
+        explanation: 'Vuelve a plantear trabajar o invertir.',
       }] } }),
     }), { status: 200 }));
     try {

@@ -1143,9 +1143,12 @@ function canonicalPrerequisiteStatement(
   plannedIds: ReadonlySet<string>,
 ): { readonly factId: string; readonly message: string } | null {
   for (const [factId, fact] of facts) {
-    if (fact.kind !== 'offering_description' || !plannedIds.has(factId)) continue;
+    if (!['offering_description', 'offering_syllabus'].includes(fact.kind) || !plannedIds.has(factId)) continue;
     if (/\bno requiere conocimientos previos\b/iu.test(fact.value)) {
       return { factId, message: 'No requiere conocimientos previos.' };
+    }
+    if (/\b(?:sin importar (?:su |tu |la )?|no (?:se )?(?:necesita|requiere) )experiencia previa\b/iu.test(fact.value)) {
+      return { factId, message: 'No requiere experiencia previa.' };
     }
     if (/\b(?:diseñad[oa]|disenad[oa]) para empezar desde cero\b/iu.test(fact.value)) {
       return { factId, message: 'Está diseñado para empezar desde cero.' };
@@ -1155,6 +1158,23 @@ function canonicalPrerequisiteStatement(
     }
   }
   return null;
+}
+
+/**
+ * Course-scoped prerequisite authorization shared by validation and salvage.
+ * The claim remains tied to an exact fact selected/cited for this turn; a
+ * generic prompt example or a fact from another course never authorizes it.
+ */
+export function hasAuthorizedPrerequisiteStatementV1(input: {
+  readonly context: AgentAContextV1;
+  readonly fact_ids: readonly string[];
+}): boolean {
+  const courseFacts = input.context.catalog.selected_offering?.facts
+    ?? input.context.catalog.candidate_offerings.flatMap((offering) => offering.facts ?? []);
+  const facts = new Map(
+    courseFacts.map((fact) => [fact.id, fact]),
+  );
+  return canonicalPrerequisiteStatement(facts, new Set(input.fact_ids)) !== null;
 }
 
 export function removeUnsupportedCourseLogisticsAssertionsV1(
@@ -1872,8 +1892,11 @@ export function validateAgentATurnProposalV1(input: {
       ...input.context.catalog.candidate_offerings.flatMap((offering) => offering.facts ?? []),
     ].map((fact) => [fact.id, fact]),
   );
+  const prerequisiteFactsById = input.context.catalog.selected_offering === null
+    ? selectedFactsById
+    : new Map(input.context.catalog.selected_offering.facts.map((fact) => [fact.id, fact]));
   if (
-    canonicalPrerequisiteStatement(selectedFactsById, planned) === null
+    canonicalPrerequisiteStatement(prerequisiteFactsById, planned) === null
     && authoredNarrative.some(assertsUnsupportedPrerequisitesV1)
   ) {
     rejections.push({ code: 'FACT_VALUE_MISMATCH', subject: 'prerequisites' });
@@ -1991,7 +2014,9 @@ export function validateAgentATurnProposalV1(input: {
         // or result (registré, quedó registrado, ya tengo).
         const claim = /(?:\b(?:quedo|registre|registrado|registrada|guarde|guardo|guardado|guardada|tengo|tenemos)\w*\b[^.!?]{0,60}\b(?:datos|nombre|apellido|correo|email|telefono|todo)\b|\b(?:datos|nombre|apellido|correo|email|telefono)\b[^.!?]{0,60}\b(?:queda|quedo)(?:\s+como)?\b)/u;
         const negatedClaim = /\b(?:no|aun\s+no|todavia\s+no)\b[^.!?]{0,24}\b(?:quedo|registre|registro|registrado|registrada|guarde|guardo|guardado|guardada|tengo|tenemos)\w*\b/u;
-        if (!claim.test(assertiveClause) || negatedClaim.test(assertiveClause)) return false;
+        const explicitlyNotRecorded = /\b(?:no\s+(?:lo|la)\s+)?(?:pude|pudimos|pudieron)\s+(?:tomar|guardar|registrar|cargar|anotar)(?:lo|la)?\b|\bno\s+(?:quedo|se\s+guardo|se\s+registro)\b/u;
+        if (!claim.test(assertiveClause) || negatedClaim.test(assertiveClause)
+          || explicitlyNotRecorded.test(assertiveClause)) return false;
 
         // Validar por campo, no como un bloque todo-o-nada. Si nombre y
         // teléfono ya son durables, el agente puede confirmarlos aunque aún

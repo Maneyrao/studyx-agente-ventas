@@ -62,6 +62,38 @@ describe('M4: backend-reported sentences match by bubble index plus containment'
   });
 });
 
+describe('authorized prerequisite salvage', () => {
+  const withMessages = (messages: string[], used_fact_ids: string[] = []) => ({
+    schema_version: 1,
+    response: { messages, call_offer: null },
+    proposed_action: { type: 'none' },
+    course_mentions: [],
+    used_fact_ids,
+  }) as unknown as AgentATurnProposalV1;
+
+  it('keeps a from-zero statement backed by the cited syllabus fact', () => {
+    const factId = 'knowledge-source:real-estate';
+    const context = {
+      capabilities: { course_bonus: { delivered_bonus_offerings: [] } },
+      catalog: {
+        selected_offering: { code: 'real_estate', display_name: 'Real Estate', facts: [{
+          id: factId,
+          kind: 'offering_syllabus',
+          value: 'Diseñado para latinos sin importar su experiencia previa.',
+        }] },
+        available_offerings: [{ code: 'real_estate', display_name: 'Real Estate' }],
+        candidate_offerings: [], payment_plans: [],
+      },
+    } as unknown as AgentAContextV1;
+    const result = removeOffendingSentencesV1({
+      proposal: withMessages(['Podés empezar desde cero, no necesitás experiencia previa.'], [factId]),
+      context,
+    });
+    expect(result.messages).toEqual(['Podés empezar desde cero, no necesitás experiencia previa.']);
+    expect(result.removed).toEqual([]);
+  });
+});
+
 describe('salvage and effect-claim removal keep the structured fields (acceptance 82054dd 10_requested_call/request)', () => {
   // Real DeepSeek draft (call-0028): bubble 0 claims the call, bubble 1 asks the data and carries the request.
   const real = {

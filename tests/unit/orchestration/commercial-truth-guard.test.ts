@@ -849,6 +849,7 @@ describe('offering area membership remains factual without rejecting natural wor
   it.each([
     'Sí, tenemos Real Estate, justo dentro del área de Emprendedores.',
     'Sí, tenemos Real Estate: justo dentro del área de Emprendedores.',
+    'Sí, tenemos Real Estate, justo en la Academia de Emprendedores.',
   ])('accepts a canonical course followed by its canonical area: %s', (content) => {
     expect(enforce(content, canonical).violations.map((violation) => violation.code))
       .not.toContain('OFFERING_NOT_CANONICAL');
@@ -856,6 +857,7 @@ describe('offering area membership remains factual without rejecting natural wor
 
   it.each([
     'Sí, tenemos Real Estate, justo dentro del área de Ingeniería Cuántica.',
+    'Sí, tenemos Real Estate, justo en la Academia de Ingeniería Cuántica.',
     'Sí, tenemos Real Estate Pro, justo dentro del área de Emprendedores.',
     'Sí, tenemos Marketing Cuántico, justo dentro del área de Emprendedores.',
   ])('still rejects a non-canonical identity hidden by the same wording: %s', (content) => {

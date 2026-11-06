@@ -427,8 +427,8 @@ describe('Agent A Brain prompt', () => {
     const encoded = instructions.split('<authorized_context>')[1]!.split('</authorized_context>')[0]!;
     expect(JSON.parse(encoded)).toEqual(current);
     expect(instructions).not.toContain('<current_turn_guidance>');
-    expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v112');
-    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v183');
+    expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v113');
+    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v184');
   });
 
   it('maps recommendations and generic continuation without persisting a customer choice', () => {
@@ -665,6 +665,48 @@ describe('Agent A Brain prompt', () => {
     expect(repair).toContain('do not say the rejected email is valid, correct or okay');
     expect(repair).toContain('ask once for the email to be resent complete');
     expect(repair).toContain('do not repeat or correct it');
+  });
+
+  it('asks an invalid local phone again without inventing a country code', () => {
+    const current = context();
+    current.customer.contact_profile = {
+      version: 1,
+      sources: [],
+      pending_requests: [],
+      rejected_updates: [{ field: 'telefono', value: '1169004497', code: 'INVALID_FORMAT' }],
+    };
+    current.turn_rejection = {
+      schema_version: 1,
+      rejection_id: '00000000-0000-4000-8000-000000000001',
+      attempt: 1,
+      rejections: [{ code: 'UNSUPPORTED_OPERATIONAL_CLAIM', subject: 'contact_profile_rejected:telefono' }],
+      authorized_alternatives: { fact_ids: [], actions: ['none'], missing_information: ['telefono'] },
+    };
+    const repair = buildAgentABrainInstructionsV1(current)
+      .split('<mandatory_repair')[1]!
+      .split('</mandatory_repair>')[0]!;
+
+    expect(repair).toContain('ask the customer to resend the full international number');
+    expect(repair).toContain('do not infer a country code');
+    expect(repair).toContain('mode:"collect"');
+    expect(repair).not.toContain('write the complete number you understood');
+  });
+
+  it('keeps full-number clarification for a pending correction', () => {
+    const current = context();
+    current.turn_rejection = {
+      schema_version: 1,
+      rejection_id: '00000000-0000-4000-8000-000000000001',
+      attempt: 1,
+      rejections: [{ code: 'ACTION_NOT_AUTHORIZED', subject: 'phone_confirmation_pending' }],
+      authorized_alternatives: { fact_ids: [], actions: ['none'], missing_information: ['telefono'] },
+    };
+    const repair = buildAgentABrainInstructionsV1(current)
+      .split('<mandatory_repair')[1]!
+      .split('</mandatory_repair>')[0]!;
+
+    expect(repair).toContain('write the complete number you understood');
+    expect(repair).toContain('mode:"clarify"');
   });
 
   it('removes generic future promises when a new bonus promise is rejected', () => {
@@ -1043,6 +1085,9 @@ describe('Agent A Brain prompt', () => {
       expect(contract).toContain('never write a URL');
       expect(contract).toContain('Already delivered in this conversation: barista');
       expect(contract).toContain('summarizing what the course teaches'); expect(contract).toContain('never paste the whole syllabus');
+      const consistency = text.split('<execution_consistency_check>')[1]!.split('</execution_consistency_check>')[0]!;
+      expect(consistency).toContain('If proposed_action=send_course_program');
+      expect(consistency).toContain('one or two human sentences');
     });
   });
 

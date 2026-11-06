@@ -29,7 +29,7 @@ describe('Agent A canonical sales prompt authority', () => {
     expect(`## Anexo técnico\n${annex}`).toBe(TECHNICAL_ANNEX);
   });
 
-  it('keeps both generated modules byte-identical to the canonical source at v112', () => {
+  it('keeps both generated modules byte-identical to the canonical source at v113', () => {
     const prompt = readFileSync(PROMPT_PATH, 'utf8');
     const generated = GENERATED_PATHS.map((path) => readFileSync(path, 'utf8'));
 
@@ -38,7 +38,7 @@ describe('Agent A canonical sales prompt authority', () => {
       `export const STUDYX_AGENT_A_CANONICAL_PROMPT = ${JSON.stringify(prompt)} as const;`,
     );
     expect(generated[0]).toContain(
-      "export const STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION = 'studyx-agent-a-canonical-v112' as const;",
+      "export const STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION = 'studyx-agent-a-canonical-v113' as const;",
     );
   });
 
@@ -53,7 +53,7 @@ describe('Agent A canonical sales prompt authority', () => {
   });
 });
 
-describe('Agent A canonical prompt v112 (Gabi manual integration)', () => {
+describe('Agent A canonical prompt v113 (Gabi manual integration)', () => {
   const prompt = readFileSync(PROMPT_PATH, 'utf8');
   const authority = readFileSync(AUTHORITY_PATH, 'utf8');
 
@@ -100,9 +100,15 @@ describe('Agent A canonical prompt v112 (Gabi manual integration)', () => {
       'nunca «cómo te acomoda pagarlo?»', 'nunca «tenemos egresadas/alumnas que…» genérico']) expect(prompt).toContain(phrase);
   });
 
+  it('does not abandon a broad-options turn as a flat menu', () => {
+    const guidance = 'Si todavía no hay criterio suficiente para recomendar, no cierres después de enumerar: termina con una sola pregunta breve que realmente separe esos caminos.';
+    expect(authority).toContain(guidance);
+    expect(prompt).toContain(guidance);
+  });
+
   it('pins the canonical source in the generator', () => {
     const generator = readFileSync('scripts/generate-agent-a-prompt-module.mjs', 'utf8');
-    expect(generator).toContain('studyx-agent-a-canonical-v112');
+    expect(generator).toContain('studyx-agent-a-canonical-v113');
     expect(generator).toContain(`lineCount !== ${prompt.match(/\n/gu)!.length}`);
   });
 
