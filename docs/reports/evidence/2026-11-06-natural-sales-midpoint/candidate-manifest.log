@@ -1,0 +1,48 @@
+
+[1m[30m[46m RUN [49m[39m[22m [36mv4.1.10 [39m[90m/Users/tmaneyro22/Documents/AGENTE IA/studyx-agente-ventas/.worktrees/agent-a-natural-sales-midpoint[39m
+
+ [31m❯[39m tests/unit/scripts/release-manifest-agent-loop.test.ts [2m([22m[2m9 tests[22m[2m | [22m[31m1 failed[39m[2m)[22m[32m 42[2mms[22m[39m
+     [32m✓[39m carries the effective prompt digest and the tool contract version[32m 1[2mms[22m[39m
+     [32m✓[39m refuses a prompt digest that is not a sha256[32m 0[2mms[22m[39m
+     [32m✓[39m preserves explicit prompt absence but rejects missing prompt evidence[32m 0[2mms[22m[39m
+     [32m✓[39m refuses an empty tool contract version[32m 0[2mms[22m[39m
+[31m     [31m×[31m binds an exact turn prompt and identifies the Agent Loop runtime[39m[32m 20[2mms[22m[39m
+     [32m✓[39m rejects a divergent release model before provider fetch or commit[32m 7[2mms[22m[39m
+     [32m✓[39m refuses to invent a turn prompt digest during release generation[32m 0[2mms[22m[39m
+     [32m✓[39m generates a truthful manifest for an explicit zero-request turn[32m 7[2mms[22m[39m
+     [32m✓[39m fails closed when the deployed Botpress bundle digest is absent[32m 7[2mms[22m[39m
+
+[31m⎯⎯⎯⎯⎯⎯⎯[39m[1m[41m Failed Tests 1 [49m[22m[31m⎯⎯⎯⎯⎯⎯⎯[39m
+
+[41m[1m FAIL [22m[49m tests/unit/scripts/release-manifest-agent-loop.test.ts[2m > [22mrelease manifest for the agent loop[2m > [22mbinds an exact turn prompt and identifies the Agent Loop runtime
+[31m[1mAssertionError[22m: expected { environment: 'test', …(13) } to match object { …(5) }
+(26 matching properties omitted from actual)[39m
+
+[32m- Expected[39m
+[31m+ Received[39m
+
+[2m  {[22m
+[2m    "botpress_artifact_sha": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",[22m
+[2m    "model": "deepseek-v4-flash",[22m
+[2m    "prompt_sha256": "1111111111111111111111111111111111111111111111111111111111111111",[22m
+[32m-   "prompt_version": "studyx-agent-a-brain-v174",[39m
+[31m+   "prompt_version": "studyx-agent-a-brain-v180",[39m
+[2m    "provider": "deepseek-direct",[22m
+[2m  }[22m
+
+[36m [2m❯[22m tests/unit/scripts/release-manifest-agent-loop.test.ts:[2m67:19[22m[39m
+    [90m 65|[39m     })[33m;[39m
+    [90m 66|[39m
+    [90m 67|[39m     [34mexpect[39m(first)[33m.[39m[34mtoMatchObject[39m({
+    [90m   |[39m                   [31m^[39m
+    [90m 68|[39m       botpress_artifact_sha[33m:[39m [32m'f'[39m[33m.[39m[34mrepeat[39m([34m64[39m)[33m,[39m
+    [90m 69|[39m       prompt_sha256[33m:[39m [32m'1'[39m[33m.[39m[34mrepeat[39m([34m64[39m)[33m,[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯[22m[39m
+
+
+[2m Test Files [22m [1m[31m1 failed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[31m1 failed[39m[22m[2m | [22m[1m[32m8 passed[39m[22m[90m (9)[39m
+[2m   Start at [22m 09:03:44
+[2m   Duration [22m 128ms[2m (transform 14ms, setup 12ms, import 10ms, tests 42ms, environment 0ms)[22m
+

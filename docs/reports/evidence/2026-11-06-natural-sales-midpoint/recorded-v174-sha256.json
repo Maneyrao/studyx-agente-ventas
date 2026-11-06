@@ -1,0 +1,72 @@
+[
+  {
+    "file": "docs/reports/evidence/2026-11-06-natural-sales-midpoint/recorded-v174/case49-v174-red-run-state.json",
+    "sha256": "1d43e1f0881b57caec28e37e019ec2513733006326231c0820500fa081ca4e7d",
+    "source": "../agent-a-model-owned-sales/evals/golden/results/case49-v174-red-run-state.json"
+  },
+  {
+    "file": "docs/reports/evidence/2026-11-06-natural-sales-midpoint/recorded-v174/case49-v174-red-provider.partial.json",
+    "sha256": "bcf3334cd6b7a0370a21d1371308c2ce703bc0a3aa597af69d8a3d07b392f67c",
+    "source": "../agent-a-model-owned-sales/evals/golden/results/case49-v174-red-provider.partial.json"
+  },
+  {
+    "file": "docs/reports/evidence/2026-11-06-natural-sales-midpoint/recorded-v174/case49-v174-red-durable-evidence.json",
+    "sha256": "21df07ef458da7e6f76d9fe4e519f0b9b8a575b6f51d60605fbb38bb8c1f70e2",
+    "source": "../agent-a-model-owned-sales/evals/golden/results/case49-v174-red-durable-evidence.json"
+  },
+  {
+    "file": "docs/reports/evidence/2026-11-06-natural-sales-midpoint/recorded-v174/case49-v174-red-observations.partial.json",
+    "sha256": "af5f11b447f97cb85d4dcf230b837baa40bd2d6df460988f77646161af14ca32",
+    "source": "../agent-a-model-owned-sales/evals/golden/results/case49-v174-red-observations.partial.json"
+  },
+  {
+    "file": "docs/reports/evidence/2026-11-06-natural-sales-midpoint/recorded-v174/case49-v174-red.md",
+    "sha256": "7202a4bfe25e54161a3853a4a01cf7636a5eedbcb7635e777e675031cad76083",
+    "source": "../agent-a-model-owned-sales/evals/golden/results/case49-v174-red.md"
+  },
+  {
+    "file": "docs/reports/evidence/2026-11-06-natural-sales-midpoint/recorded-v174/case49-v174-red-provider.json",
+    "sha256": "449ad166cd7d9f785080f8e2f545e2bde818a0c461072e0022a3b0727e5f1e80",
+    "source": "../agent-a-model-owned-sales/evals/golden/results/case49-v174-red-provider.json"
+  },
+  {
+    "file": "docs/reports/evidence/2026-11-06-natural-sales-midpoint/recorded-v174/case49-v174-red.json",
+    "sha256": "394923206ad027ee1fc27ee42602dd4f9798f09df9d4075a3f1a0e14340d4028",
+    "source": "../agent-a-model-owned-sales/evals/golden/results/case49-v174-red.json"
+  },
+  {
+    "file": "docs/reports/evidence/2026-11-06-natural-sales-midpoint/recorded-v174/case4748-9b40a87-r1-durable-evidence.json",
+    "sha256": "eec0f0ec20126fc24c3f33e936d1e280edb66ba796e7cda02f83443ddd4f0d3e",
+    "source": "../agent-a-model-owned-sales/evals/golden/results/case4748-9b40a87-r1-durable-evidence.json"
+  },
+  {
+    "file": "docs/reports/evidence/2026-11-06-natural-sales-midpoint/recorded-v174/case4748-9b40a87-r1.json",
+    "sha256": "a3bfaadd790108cb1e5827c566a054b06a1d1cc12f343e7cddc1d19526abfa53",
+    "source": "../agent-a-model-owned-sales/evals/golden/results/case4748-9b40a87-r1.json"
+  },
+  {
+    "file": "docs/reports/evidence/2026-11-06-natural-sales-midpoint/recorded-v174/case4748-9b40a87-r1-provider.partial.json",
+    "sha256": "91861ef3e2b49f01c472d3652b7f588678e69e2ed5a99566dfb1eccd2939f405",
+    "source": "../agent-a-model-owned-sales/evals/golden/results/case4748-9b40a87-r1-provider.partial.json"
+  },
+  {
+    "file": "docs/reports/evidence/2026-11-06-natural-sales-midpoint/recorded-v174/case4748-9b40a87-r1.md",
+    "sha256": "ceb5bfe0568ee640a534368c3d470d669554142aa51a9264abb5f47e1852b4dc",
+    "source": "../agent-a-model-owned-sales/evals/golden/results/case4748-9b40a87-r1.md"
+  },
+  {
+    "file": "docs/reports/evidence/2026-11-06-natural-sales-midpoint/recorded-v174/case4748-9b40a87-r1-run-state.json",
+    "sha256": "e9f9f8dbbd96f48e0c4f9919937bab9247e6101684cea6efe6507c9264a01aa1",
+    "source": "../agent-a-model-owned-sales/evals/golden/results/case4748-9b40a87-r1-run-state.json"
+  },
+  {
+    "file": "docs/reports/evidence/2026-11-06-natural-sales-midpoint/recorded-v174/case4748-9b40a87-r1-provider.json",
+    "sha256": "db890183de49a1d0a310463bb4d05020c6099c0fc81314e3db9a61cf6fb133ae",
+    "source": "../agent-a-model-owned-sales/evals/golden/results/case4748-9b40a87-r1-provider.json"
+  },
+  {
+    "file": "docs/reports/evidence/2026-11-06-natural-sales-midpoint/recorded-v174/case4748-9b40a87-r1-observations.partial.json",
+    "sha256": "dbb1e2d19ef546057d40852d5ebf45dd5cb9b5bd6b2bad56a7c611a8d5099b75",
+    "source": "../agent-a-model-owned-sales/evals/golden/results/case4748-9b40a87-r1-observations.partial.json"
+  }
+]

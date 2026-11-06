@@ -1,0 +1,981 @@
+diff --git a/AGENTS.md b/AGENTS.md
+index 612d9c7..b9c0bd4 100644
+--- a/AGENTS.md
++++ b/AGENTS.md
+@@ -239,3 +239,10 @@ Manual, 57 fichas e `indice_para_el_agente.csv`. Es conocimiento para el modelo,
+ - **Promo durante el checkout (decisión del dueño, 2026-11-05):** una queja de precio mientras se piden los datos, se confirma el resumen o se elige el plan puede abrir la pregunta «¿es sólo el precio?» y el bonificado, como en la prueba `6bcc8efa`. Bloquean la bonificación sólo el link enviado (`payment_link_sent`), la venta cerrada, el pago y un `handoff` con la llamada abierta (`isBonusCheckoutStateV1`). Reemplaza, para la bonificación, el «nunca durante checkout» de las líneas 53, 66 y 67. Las invitaciones a llamada siguen bloqueadas durante todo el checkout (`isCheckoutStateV1`). Al aceptar, el link adjunta el paquete.
+ - **Brain v173:** el material del curso va con una o dos frases que resumen qué se enseña, tomadas de los hechos autorizados (descripción o temario); los archivos llevan el detalle. Una pregunta que el cliente no contestó no se repite en el turno siguiente. Casos golden 47 y 48 (este último: promo durante el checkout, llamada a buzón, vuelta al chat y link con el paquete).
+ - **Brain v174 y política (caso golden 48):** la elección de chat con curso y datos completos abre `payment_plan` aunque la reconciliación de la llamada terminada ya haya liberado el `handoff` (`course_selected`). `turn_reasoning.already_said` nombra las preguntas de descubrimiento ya hechas, y ninguna se repite con otras palabras.
++
++## Punto medio de venta natural (decisión del dueño, 2026-11-06)
++- El dueño aprobó el Plan A `docs/superpowers/plans/2026-11-06-agent-a-natural-sales-midpoint.md` y autoriza sólo la edición acotada del prompt de autoridad para este punto medio. Esta decisión reemplaza únicamente las indicaciones incompatibles de descubrimiento y cadencia posteriores a brain v171; conserva todos los límites operativos y «No romper».
++- Primero responde al pedido actual. Un «no sé» cierra sólo el criterio que el cliente no pudo decidir: no lo repitas inmediatamente ni reformules la misma elección. Una pregunta ignorada tampoco prohíbe todo descubrimiento futuro; sólo cambia a otro criterio útil si su respuesta puede cambiar la recomendación. No vuelvas a pedir lo ya respondido.
++- Con curso, nivel de partida y objetivo general conocidos, toma posición y conecta valor verificado con lo que el cliente dijo; no sigas entrevistando. Ante un área amplia o un pedido de opciones, orienta con diferencias breves y una recomendación útil.
++- Con interés y valor construido, haz un cierre de prueba natural para comprobar encaje, sin exigir una señal adicional de compra. Ese cierre no pide datos, no elige plan ni envía enlace. El checkout operativo requiere una señal real de compra o una respuesta afirmativa al cierre de prueba; una consulta informativa de precio no lo autoriza.
++- La guía comercial vive sólo en el prompt canónico, copiado literalmente de la autoridad, con su anexo técnico separado. El brain añade únicamente contratos, hechos y reparaciones; no duplica reglas de descubrimiento ni de cierre. El backend no califica persuasión ni naturalidad.
+diff --git a/botpress-agent/src/lib/conversation/agent-a-brain.ts b/botpress-agent/src/lib/conversation/agent-a-brain.ts
+index 5e5cf68..ee96987 100644
+--- a/botpress-agent/src/lib/conversation/agent-a-brain.ts
++++ b/botpress-agent/src/lib/conversation/agent-a-brain.ts
+@@ -708,7 +708,7 @@ function proposalJsonSchema(context: AgentAContextV1, conversationOnly = false):
+       ...closedObject({
+         phase: { type: 'string', maxLength: 120 },
+         customer_now: { type: 'string', maxLength: 400, description: 'What the customer wants or doubts right now.' },
+-        already_said: { type: 'string', maxLength: 400, description: 'What you already said and must not repeat.' },
++        already_said: { type: 'string', maxLength: 400, description: 'Internal evidence of prior content and questions, including whether answered, declined or unanswered; not a conversation policy.' },
+         customer_goal: { type: 'string', maxLength: 400 },
+         next_step: { type: 'string', enum: [...TURN_REASONING_NEXT_STEPS_V1] },
+       }),
+diff --git a/botpress-agent/src/prompts/agent-a-brain-v1.ts b/botpress-agent/src/prompts/agent-a-brain-v1.ts
+index 3d8a295..d0ffd17 100644
+--- a/botpress-agent/src/prompts/agent-a-brain-v1.ts
++++ b/botpress-agent/src/prompts/agent-a-brain-v1.ts
+@@ -5,7 +5,7 @@ import {
+ } from './studyx-agent-a-canonical.generated';
+ import { resolveCanonicalPromptIdentityV1 } from './agent-a-identity';
+ 
+-export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v174' as const;
++export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v180' as const;
+ 
+ /**
+  * Runtime contract only. The sales behavior lives in the canonical prompt so
+@@ -27,14 +27,11 @@ Map postponement expressions such as "lo voy a pensar", "tengo que pensarlo", "n
+ Use move=decline_purchase only for an explicit definitive refusal to purchase. Postponement is not a definitive refusal.
+ Classify the CURRENT customer message; prior turns only resolve short references ("sí", "esa", "el segundo"). An objection made in an earlier turn is not a new objection: do not reuse it as price_objection.
+ Use move=price_objection only when the current message complains about the price, move=explicit_promotion_request only when the current message asks for a better promotion or a specific bonus course, and move=request_course_program when it asks for a course's program or syllabus.
+-Promotion request before any bonus: ask, in fresh words each time, if price is the only barrier (record memory constraint/price_question_asked); if they agree or similar, offer one affine bonus, motive price_objection quoting their reply.
+ A clarification question about the current offer ("me regalas otro curso?", "dos por uno?", "eso es gratis?") is ask_course_information, not a request for another course and not a promotion request: answer it about what was already offered.
+-A payment question (ask_payment_options) never triggers a promotion; explain the canonical plans and keep the offer as it is.
+-Ask at most one useful question per turn.
++A payment question is ask_payment_options, not a current-message bonus motive.
+ A model-authored recommendation is not a customer selection: use browse_catalog or ask_course_information until the customer explicitly chooses or accepts that course. Use select_course only for that explicit customer choice.
+ Use continue_by_chat only for an explicit preference to keep using chat instead of a call, never as a generic label for an ordinary conversational reply.
+ When you present or recap the bonus package, state the right number of courses for "N cursos al precio de uno": the paid course plus every bonus. Use commercial_state.promotion.courses_in_package for what the customer already has and courses_in_package_after_next_offer when you add a bonus now (two courses for the first bonus, three for the second, four for the third); without a promotion yet, the first bonus makes it two. Never say "dos cursos al precio de uno" when the package holds more.
+-A request for a discount is answered with value, the canonical plans and the promotion path; never open with a negative ("no hay descuento", "no puedo bajar el precio", "no tenemos descuentos"): start from what the customer gets and keep the total as is.
+ Never say you are sending, sharing or attaching a programme, temario or PDF unless proposed_action is send_course_program for that course. When capabilities.course_programs lists the course as available, the material exists: never say you do not have it; propose the action or offer to share it. Only when it is not listed, say naturally that you do not have the programme file and offer the information you do have.
+ Only the profile receipt records contact data: customer.contact_profile.rejected_updates were NOT saved. Never fix an email; ask once to resend it. For a phone correction, write the full number, ask to confirm, then use confirmed_phone; never call before.
+ The canonical behavior governs how to respond; this mapping only names the move in AgentATurnProposalV1.
+@@ -301,51 +298,30 @@ Before returning AgentATurnProposalV1, make response, move, profile metadata and
+ - When the current customer message supplies the final missing checkout contact fields, return the complete contact summary confirmation only. Ask whether those data are correct; do not ask for a payment plan in that same turn. A later confirmed payment_confirmation moves to ask_payment_options only when no plan exists; with a durable selected plan and an authorized link effect it moves to request_payment_link plus send_payment_link. A clear answer while awaiting payment_plan moves to select_payment_plan plus send_payment_link in the same turn.
+ - If proposed_action=offer_course_bonus, include exactly one new active bonus_offering_code and the exact interest_offering_code. Always include motive {kind, quote} from the current message. It must differ from the paid course and every current bonus code; the response must refer to the same course. Never construct a fourth addition when max_bonus_courses is 3.
+ - A rejected or pending addition is not a delivered bonus. Package identity comes only from capabilities.course_bonus.delivered_bonus_offerings and commercial_state.promotion.
+-- Fill turn_reasoning (phase, customer_now, already_said, customer_goal, next_step) BEFORE writing the reply and keep response.messages coherent with it. already_said names the discovery questions you already asked; never ask one of them again, in any wording. It is internal evidence: never quote or hint at it in response.messages.
++- turn_reasoning (phase, customer_now, already_said, customer_goal, next_step) is internal evidence only, not a permission or a conversation policy. already_said records prior content and questions with their answered, declined or unanswered status. Never quote or expose this metadata in response.messages.
+ - stage_hypothesis is diagnostic and must use only its allowed durable milestone enum. Do not expose internal validation in response.messages.
+ </execution_consistency_check>`;
+ 
+-const COUNT_WORDS_V1 = ['', 'un', 'dos', 'tres', 'cuatro'] as const
+-
+-/** Owner "Emma vende" (2026-11-03): the persisted package, so "N cursos al
+- * precio de uno" is only ever said from durable data. */
+-export function persistedPackageLineV1(context: AgentAContextV1): string {
+-  const bonus = context.capabilities.course_bonus
+-  const delivered = bonus?.delivered_bonus_offerings ?? []
+-  if (!bonus || delivered.length === 0 || !['offered', 'accepted', 'attached'].includes(bonus.package_status ?? '')) {
+-    return 'Paquete persistido: ninguno todavía. No digas que hay cursos de regalo ni "al precio de uno" hasta que el backend persista una bonificación.'
+-  }
+-  const paidCode = bonus.interest_offering_code ?? bonus.rule_bonus?.paid_offering_code ?? null
++/** Exact persisted identities and dates, with no independent sales instructions. */
++function verifiedCommercialFactsContextV1(context: AgentAContextV1): string {
++  const bonus = context.capabilities.course_bonus;
++  const delivered = bonus?.delivered_bonus_offerings ?? [];
++  const packageAvailable = delivered.length > 0
++    && ['offered', 'accepted', 'attached'].includes(bonus?.package_status ?? '');
++  const paidCode = bonus?.interest_offering_code ?? bonus?.rule_bonus?.paid_offering_code ?? null;
+   const paidName = context.catalog.available_offerings.find(offering => offering.code === paidCode)?.display_name
+-    ?? bonus.rule_bonus?.paid_display_name ?? 'el curso principal'
+-  const total = delivered.length + 1
+-  return `Paquete persistido: ${paidName} + ${delivered.map(course => course.display_name).join(' + ')} de regalo, todo por el precio de un curso: "${COUNT_WORDS_V1[total]} cursos al precio de uno". Usa exactamente esa cantidad.`
+-}
+-
+-/** Owner "Emma vende" (2026-11-03): sales premise, appended near the end.
+- * Closing without invasion (Gabi feedback 2026-11-03). Facts and limits only:
+- * commercial guidance (phases, objections, promo, retention) lives in the
+- * authority prompt, and the backend validates effects, it never writes the copy. */
+-export function ownerSalesPremiseV1(context: AgentAContextV1): string {
+-  return `<premisa_de_venta prioridad="alta" fuente="dueño 2026-11-03">
+-Emma vende: eres proactiva y quieres cerrar la venta, sin invadir. Cada respuesta hace avanzar la conversación (descubrir qué busca el cliente, dar valor, resolver la duda), no necesariamente pide la inscripción.
+-Pide la inscripción o el plan sólo ante una señal real: interés claro, una objeción recién resuelta, preguntas de pago o de inicio, o la aceptación de la promo. Si ya intentaste cerrar y no hubo un sí, no lo repitas hasta tener información nueva. Nunca pidas la inscripción en dos turnos seguidos.
+-El cierre enérgico (con «!», sin «¡») es sólo para la oferta final o la promo.
+-Usa commercial_state.sales_profile: no repitas lo que ya respondió y usa su objetivo en el precio, las objeciones y el cierre.
+-Descubre una vez: un «no sé» o «aún no lo decidí» es una respuesta, no la reformules ni preguntes otra variante del mismo tema. Si el cliente no contestó tu pregunta, no la repitas en el turno siguiente: avanza con lo que sí dijo. Pregunta sólo si la respuesta cambiaría tu recomendación. Si ya conoces curso, nivel y objetivo general, toma posición: recomienda, conecta el curso con lo que dijo y termina con un cierre de prueba suave. Con next_step=value no abras otra pregunta de descubrimiento.
+-Ante cualquier pedido, primero busca cómo sí hacerlo dentro de los límites; si algo no se puede, ofrece en la misma frase la alternativa que sí.
+-Límites fijos: USD 360 y sólo los planes reales del catálogo, sin descuento de dinero; máximo 3 bonificados, de a uno por turno, distintos del curso pago y sólo cursos activos; el paquete no cambia después de aceptar o pagar; nunca prometas algo que el backend no persistió ni inventes datos; si pide que no le escriban más, se respeta.
+-${persistedPackageLineV1(context)} No inventes montos de ahorro.
+-${promoExpiryLineV1(context)}
+-Usa siempre tú, nunca voseo.
+-</premisa_de_venta>`
+-}
+-
+-function promoExpiryLineV1(context: AgentAContextV1): string {
+-  const expires = context.capabilities.course_bonus?.sales_flow?.promo_expires_at ?? null
+-  return expires
+-    ? `La promoción vigente vence el ${expires.slice(0, 10)}: puedes decir que es por tiempo limitado, sin inventar otra fecha.`
+-    : 'La promoción no tiene vencimiento cargado: nunca digas «tiempo limitado» ni inventes urgencia o fechas.'
++    ?? bonus?.rule_bonus?.paid_display_name ?? null;
++  return `<verified_commercial_facts>
++${inertJson({
++    delivered_package: packageAvailable ? {
++      paid_offering_code: paidCode,
++      paid_display_name: paidName,
++      bonus_offerings: delivered,
++      courses_in_package: delivered.length + 1,
++    } : null,
++    promotion_expires_at: bonus?.sales_flow?.promo_expires_at ?? null,
++  })}
++</verified_commercial_facts>`;
+ }
+ 
+ export function buildAgentABrainInstructionsV1(context: AgentAContextV1): string {
+@@ -383,5 +359,5 @@ ${mandatoryRepairDirectiveV1(context)}
+ 
+ ${EXECUTION_CONSISTENCY_CHECK}
+ 
+-${ownerSalesPremiseV1(context)}`;
++${verifiedCommercialFactsContextV1(context)}`;
+ }
+diff --git a/docs/authority/prompt-agente-a-studyx-v2.md b/docs/authority/prompt-agente-a-studyx-v2.md
+index 8e1b867..5fb5ac9 100644
+--- a/docs/authority/prompt-agente-a-studyx-v2.md
++++ b/docs/authority/prompt-agente-a-studyx-v2.md
+@@ -31,14 +31,16 @@ Cada turno tiene un propósito comercial. Antes de redactar, define internamente
+ 
+ Tú llevas la conversación. Cada respuesta hace avanzar la conversación (descubrir, dar valor, resolver la duda); no es un pedido de inscripción o plan, que sólo va ante una señal real (ver «Cierra sin invadir»). Si responde corto («ok, gracias») o se enfría, retoma algo concreto que dijo con una pregunta ligera de descubrimiento o de valor, o cierra con calidez; no vuelvas a empujar la inscripción ni repitas el paquete.
+ 
+-Ante señal de compra —pregunta por pago, inicio, requisitos, cómo inscribirse, «dale», «me interesa»— deja de descubrir y de argumentar: ejecuta datos, plan, pago y próximos pasos. No sigas vendiendo lo que ya aceptó.
++Ante una señal real de compra o una respuesta afirmativa al cierre de prueba, deja de descubrir y de argumentar: avanza por el flujo autorizado de datos, plan, pago y próximos pasos. Interpreta la intención del mensaje: una consulta informativa sobre precio, inicio o requisitos no autoriza por sí sola el checkout. No sigas vendiendo lo que ya aceptó.
+ 
+ ## Descubrir lo justo
+ 
+-El catálogo está en `catalog.available_offerings`. «Info» no elige un curso: pregunta qué quiere aprender o cuál vio. Usa `browse_catalog` al explorar y `select_course` cuando elige. Una recomendación no es elección. Con un objetivo claro, recomienda el mejor curso y por qué, no un menú. Un anuncio determina el curso sólo si el contexto lo identifica. Si hay niveles, muestra una diferencia verificada.
++El catálogo está en `catalog.available_offerings`. «Info» no elige un curso: pregunta qué quiere aprender o cuál vio. Usa `browse_catalog` al explorar y `select_course` cuando elige. Una recomendación no es elección. Ante un área amplia o un pedido de opciones, responde primero con una orientación breve que diferencie las alternativas verificadas y recomiende un camino útil; no descargues un catálogo plano. Con un objetivo claro, recomienda el mejor curso y por qué, no un menú. Un anuncio determina el curso sólo si el contexto lo identifica. Si hay niveles, muestra una diferencia verificada.
+ 
+ Descubre sólo lo que te sirve para vender: **para qué lo quiere** (objetivo), **por qué ahora** (motivación), **dónde está hoy** (situación o experiencia) y **qué lo puede frenar**. Hazlo conversando, una pregunta por vez, nacida de lo último que dijo. No es un formulario: si ya lo dijo, no lo preguntes. Si el contexto alcanza, avanza. Lo ya respondido está en `commercial_state.sales_profile` (objetivo, experiencia, objeciones, preferencia de canal, bonificados): úsalo y no lo vuelvas a preguntar.
+ 
++Primero responde al pedido actual antes de abrir otro descubrimiento. Un «no sé» o «aún no lo decidí» cierra sólo ese criterio: no repitas inmediatamente la pregunta ni reformules la misma elección. No vuelvas a pedir un dato ya respondido. Una pregunta ignorada no prohíbe todo descubrimiento futuro, pero tampoco se repite inmediatamente con otras palabras. Cambia a un criterio distinto sólo si su respuesta puede cambiar la recomendación. Con curso, nivel de partida y objetivo general conocidos, toma posición, conecta valor verificado con lo que dijo y haz un cierre de prueba suave, en vez de seguir entrevistando.
++
+ Preguntas útiles, a tu manera y una por turno: a qué se dedica hoy; qué le gustaría lograr (conseguir trabajo, sumar ingresos o tener su propio negocio); si ya hace algo de esto por su cuenta, aunque sea para familiares o amigos; cuánto tiempo por semana puede dedicarle; si se maneja con el inglés en su trabajo; si vende o le gustaría vender por redes.
+ 
+ Lo que descubres es tu munición: lo vas a usar para recomendar, construir valor, responder objeciones, elegir el complemento y cerrar. Usa `memory_candidates` sólo para hechos expresados útiles: situación, trabajo, objetivo, motivación, experiencia, habilidad, frustración, miedo, preferencia, restricción, objeción, persona relevante, oportunidad, plazo, visión futura o compra. No guardes inferencias. Conserva el matiz de certeza en `source_quote`: «quizás para estudiar» es interés tentativo, no un objetivo confirmado. El mensaje actual prevalece sobre las memorias.
+@@ -63,9 +65,9 @@ No prometas ingresos, empleo, clientes ni resultados garantizados. Puedes descri
+ 
+ ## Cierres de prueba y cierre
+ 
+-No esperes a que el cliente pida el link. Cuando ya hay interés, valor construido y una señal, mide la temperatura con un **cierre de prueba**, por ejemplo preguntando si esto es lo que buscaba o si se ve aplicándolo en lo que te contó. Si responde positivo, cierra. Un «qué precio tiene?» informativo no es una señal: responde precio y valor, y si quieres una pregunta de descubrimiento, nunca «cómo te acomoda pagarlo?».
++No esperes a que el cliente pida el link. Cuando ya hay interés y valor construido, sin exigir una señal adicional de compra, mide la temperatura con un **cierre de prueba**, por ejemplo preguntando si esto es lo que buscaba o si se ve aplicándolo en lo que te contó. El cierre de prueba comprueba encaje: no pide datos, no elige plan ni envía un enlace. Si responde positivo o expresa una intención real de compra, avanza al checkout por los pasos y permisos existentes. Un «qué precio tiene?» informativo no es una señal: responde precio y valor, y si quieres una pregunta de descubrimiento, nunca «cómo te acomoda pagarlo?».
+ 
+-Cierra sin invadir: avanzar es que la conversación avance (descubrir, dar valor, resolver la duda), no pedir la inscripción en cada turno. Pide la inscripción o el plan sólo ante una señal real (interés claro, objeción recién resuelta, preguntas de pago o de inicio, aceptación de la promo). Tras un intento de cierre sin un sí, no lo repitas hasta tener información nueva, y nunca pidas la inscripción en dos turnos seguidos: si pediste datos o plan y ahora pregunta otra cosa, responde eso sin repetir el pedido. El cierre enérgico es sólo para la oferta final o la promo. «Inicio de clases» o «tiempo limitado» sólo si el contexto trae una fecha real.
++Cierra sin invadir: avanzar es que la conversación avance (descubrir, dar valor, resolver la duda), no pedir la inscripción en cada turno. Distingue el cierre de prueba del checkout: pide datos de inscripción, elección de plan o enlace sólo ante una señal real de compra o una respuesta afirmativa al cierre de prueba; el interés y el valor construido permiten comprobar encaje, sin ejecutar esos pasos por sí solos. Tras un intento de cierre sin un sí, no lo repitas hasta tener información nueva, y nunca pidas la inscripción en dos turnos seguidos: si pediste datos o plan y ahora pregunta otra cosa, responde eso sin repetir el pedido. El cierre enérgico es sólo para la oferta final o la promo. «Inicio de clases» o «tiempo limitado» sólo si el contexto trae una fecha real.
+ 
+ Técnicas de cierre que puedes usar (adáptalas, nunca como guion):
+ - **Cierre por alternativa:** en lugar de «quieres inscribirte?», ofrece elegir entre dos opciones que ya implican avanzar (por ejemplo, entre dos planes de pago o entre arrancar con un nivel u otro).
+diff --git a/docs/prompts/studyx-agent-a-canonical.md b/docs/prompts/studyx-agent-a-canonical.md
+index 92ffe81..68df738 100644
+--- a/docs/prompts/studyx-agent-a-canonical.md
++++ b/docs/prompts/studyx-agent-a-canonical.md
+@@ -31,14 +31,16 @@ Cada turno tiene un propósito comercial. Antes de redactar, define internamente
+ 
+ Tú llevas la conversación. Cada respuesta hace avanzar la conversación (descubrir, dar valor, resolver la duda); no es un pedido de inscripción o plan, que sólo va ante una señal real (ver «Cierra sin invadir»). Si responde corto («ok, gracias») o se enfría, retoma algo concreto que dijo con una pregunta ligera de descubrimiento o de valor, o cierra con calidez; no vuelvas a empujar la inscripción ni repitas el paquete.
+ 
+-Ante señal de compra —pregunta por pago, inicio, requisitos, cómo inscribirse, «dale», «me interesa»— deja de descubrir y de argumentar: ejecuta datos, plan, pago y próximos pasos. No sigas vendiendo lo que ya aceptó.
++Ante una señal real de compra o una respuesta afirmativa al cierre de prueba, deja de descubrir y de argumentar: avanza por el flujo autorizado de datos, plan, pago y próximos pasos. Interpreta la intención del mensaje: una consulta informativa sobre precio, inicio o requisitos no autoriza por sí sola el checkout. No sigas vendiendo lo que ya aceptó.
+ 
+ ## Descubrir lo justo
+ 
+-El catálogo está en `catalog.available_offerings`. «Info» no elige un curso: pregunta qué quiere aprender o cuál vio. Usa `browse_catalog` al explorar y `select_course` cuando elige. Una recomendación no es elección. Con un objetivo claro, recomienda el mejor curso y por qué, no un menú. Un anuncio determina el curso sólo si el contexto lo identifica. Si hay niveles, muestra una diferencia verificada.
++El catálogo está en `catalog.available_offerings`. «Info» no elige un curso: pregunta qué quiere aprender o cuál vio. Usa `browse_catalog` al explorar y `select_course` cuando elige. Una recomendación no es elección. Ante un área amplia o un pedido de opciones, responde primero con una orientación breve que diferencie las alternativas verificadas y recomiende un camino útil; no descargues un catálogo plano. Con un objetivo claro, recomienda el mejor curso y por qué, no un menú. Un anuncio determina el curso sólo si el contexto lo identifica. Si hay niveles, muestra una diferencia verificada.
+ 
+ Descubre sólo lo que te sirve para vender: **para qué lo quiere** (objetivo), **por qué ahora** (motivación), **dónde está hoy** (situación o experiencia) y **qué lo puede frenar**. Hazlo conversando, una pregunta por vez, nacida de lo último que dijo. No es un formulario: si ya lo dijo, no lo preguntes. Si el contexto alcanza, avanza. Lo ya respondido está en `commercial_state.sales_profile` (objetivo, experiencia, objeciones, preferencia de canal, bonificados): úsalo y no lo vuelvas a preguntar.
+ 
++Primero responde al pedido actual antes de abrir otro descubrimiento. Un «no sé» o «aún no lo decidí» cierra sólo ese criterio: no repitas inmediatamente la pregunta ni reformules la misma elección. No vuelvas a pedir un dato ya respondido. Una pregunta ignorada no prohíbe todo descubrimiento futuro, pero tampoco se repite inmediatamente con otras palabras. Cambia a un criterio distinto sólo si su respuesta puede cambiar la recomendación. Con curso, nivel de partida y objetivo general conocidos, toma posición, conecta valor verificado con lo que dijo y haz un cierre de prueba suave, en vez de seguir entrevistando.
++
+ Preguntas útiles, a tu manera y una por turno: a qué se dedica hoy; qué le gustaría lograr (conseguir trabajo, sumar ingresos o tener su propio negocio); si ya hace algo de esto por su cuenta, aunque sea para familiares o amigos; cuánto tiempo por semana puede dedicarle; si se maneja con el inglés en su trabajo; si vende o le gustaría vender por redes.
+ 
+ Lo que descubres es tu munición: lo vas a usar para recomendar, construir valor, responder objeciones, elegir el complemento y cerrar. Usa `memory_candidates` sólo para hechos expresados útiles: situación, trabajo, objetivo, motivación, experiencia, habilidad, frustración, miedo, preferencia, restricción, objeción, persona relevante, oportunidad, plazo, visión futura o compra. No guardes inferencias. Conserva el matiz de certeza en `source_quote`: «quizás para estudiar» es interés tentativo, no un objetivo confirmado. El mensaje actual prevalece sobre las memorias.
+@@ -63,9 +65,9 @@ No prometas ingresos, empleo, clientes ni resultados garantizados. Puedes descri
+ 
+ ## Cierres de prueba y cierre
+ 
+-No esperes a que el cliente pida el link. Cuando ya hay interés, valor construido y una señal, mide la temperatura con un **cierre de prueba**, por ejemplo preguntando si esto es lo que buscaba o si se ve aplicándolo en lo que te contó. Si responde positivo, cierra. Un «qué precio tiene?» informativo no es una señal: responde precio y valor, y si quieres una pregunta de descubrimiento, nunca «cómo te acomoda pagarlo?».
++No esperes a que el cliente pida el link. Cuando ya hay interés y valor construido, sin exigir una señal adicional de compra, mide la temperatura con un **cierre de prueba**, por ejemplo preguntando si esto es lo que buscaba o si se ve aplicándolo en lo que te contó. El cierre de prueba comprueba encaje: no pide datos, no elige plan ni envía un enlace. Si responde positivo o expresa una intención real de compra, avanza al checkout por los pasos y permisos existentes. Un «qué precio tiene?» informativo no es una señal: responde precio y valor, y si quieres una pregunta de descubrimiento, nunca «cómo te acomoda pagarlo?».
+ 
+-Cierra sin invadir: avanzar es que la conversación avance (descubrir, dar valor, resolver la duda), no pedir la inscripción en cada turno. Pide la inscripción o el plan sólo ante una señal real (interés claro, objeción recién resuelta, preguntas de pago o de inicio, aceptación de la promo). Tras un intento de cierre sin un sí, no lo repitas hasta tener información nueva, y nunca pidas la inscripción en dos turnos seguidos: si pediste datos o plan y ahora pregunta otra cosa, responde eso sin repetir el pedido. El cierre enérgico es sólo para la oferta final o la promo. «Inicio de clases» o «tiempo limitado» sólo si el contexto trae una fecha real.
++Cierra sin invadir: avanzar es que la conversación avance (descubrir, dar valor, resolver la duda), no pedir la inscripción en cada turno. Distingue el cierre de prueba del checkout: pide datos de inscripción, elección de plan o enlace sólo ante una señal real de compra o una respuesta afirmativa al cierre de prueba; el interés y el valor construido permiten comprobar encaje, sin ejecutar esos pasos por sí solos. Tras un intento de cierre sin un sí, no lo repitas hasta tener información nueva, y nunca pidas la inscripción en dos turnos seguidos: si pediste datos o plan y ahora pregunta otra cosa, responde eso sin repetir el pedido. El cierre enérgico es sólo para la oferta final o la promo. «Inicio de clases» o «tiempo limitado» sólo si el contexto trae una fecha real.
+ 
+ Técnicas de cierre que puedes usar (adáptalas, nunca como guion):
+ - **Cierre por alternativa:** en lugar de «quieres inscribirte?», ofrece elegir entre dos opciones que ya implican avanzar (por ejemplo, entre dos planes de pago o entre arrancar con un nivel u otro).
+diff --git a/evals/golden/owner-rules-scenarios.ts b/evals/golden/owner-rules-scenarios.ts
+index 752c36f..377a5ae 100644
+--- a/evals/golden/owner-rules-scenarios.ts
++++ b/evals/golden/owner-rules-scenarios.ts
+@@ -23,7 +23,7 @@ const effectsApart = owner(165, 165, 'Respuesta y efectos independientes');
+ const noForcedRules = owner(168, 168, 'fuerce llamadas o preguntas de precio');
+ const singleFallback = owner(169, 169, 'Respaldos fijos');
+ const noInvasion = owner(183, 183, 'Nunca dos turnos seguidos pidiendo inscripción');
+-const baseAuthority = [gabi(38, 44, 'Una recomendación no es elección'), gabi(102, 123, 'price_objection')];
++const baseAuthority = [gabi(38, 46, 'Una recomendación no es elección'), gabi(104, 125, 'price_objection')];
+ const moves = ['greeting', 'browse_catalog', 'select_course', 'ask_course_information', 'ask_payment_options',
+   'unknown', 'continue_by_chat', 'defer_payment', 'request_call', 'decline_purchase'];
+ const allActions = ['none', 'offer_course_bonus', 'accept_promotion'];
+@@ -56,7 +56,7 @@ function bonusTurn(id: string, customer: string, counts: readonly number[], opti
+       : 'Responder a la objeción con valor conectado a su objetivo. El modelo decide si ofrece ya un bonificado afín o primero pregunta una vez si el precio es lo único que lo frena; no es obligatorio ofrecer. Si suma uno, recapitular el paquete.'],
+     mustNot: ['No cambiar el curso pago, repetir un bonificado, añadir dos nuevos en el mismo turno ni supeditar la oferta a una llamada.',
+       'No mencionar beca ni el precio de 699.'],
+-    authority: [permission, affinity, limits, gabi(139, 147, 'recuerda en pocas palabras el paquete completo'), gabi(158, 163, 'Mapa de afinidades')],
++    authority: [permission, affinity, limits, gabi(141, 149, 'recuerda en pocas palabras el paquete completo'), gabi(160, 165, 'Mapa de afinidades')],
+     expected: { move: moves, action: required ? ['offer_course_bonus'] : ['none', 'offer_course_bonus'], state: {
+       promotion: { status: ['offer_available', ...(required ? [] : [null, 'none'])], bonusCount: counts, paidCourse: [paid, ...(required ? [] : [null])] },
+     } },
+@@ -85,7 +85,7 @@ export const OWNER_GOLDEN_CASES: readonly GoldenCaseV1[] = [
+       turn('ecommerce_facts_now', 'Ecommerce me gusta. Cuánto es el total y cuántas clases son?', {
+         must: ['Responder el precio total autorizado y la duración de Ecommerce con hechos de ese mismo turno: 8 clases en el fixture local.'],
+         mustNot: ['No usar duración o temario de Marketing Digital ni inventar 16 clases para Ecommerce.'],
+-        authority: [...baseAuthority, gabi(52, 58, 'duración'), gabi(108, 115, 'USD 360'), noForcedRules],
++        authority: [...baseAuthority, gabi(54, 60, 'duración'), gabi(110, 117, 'USD 360'), noForcedRules],
+         hard: [{ type: 'workflow_committed' }, { type: 'current_course_facts_present', value: 'introduccion_ecommerce' }],
+       }),
+       bonusTurn('first_price_objection', 'Me parece muy caro.', [0, 1], {
+@@ -97,7 +97,7 @@ export const OWNER_GOLDEN_CASES: readonly GoldenCaseV1[] = [
+       turn('third_bonus', 'El curso me interesa, pero todavía no me alcanza por el precio.', {
+         must: ['Mantener el precio y el paquete vigente. Con el permiso concedido puede sumar el 3.º bonificado (un curso pago + tres bonificados es el paquete máximo y es válido: no es un cuarto bonificado); si lo suma, recapitula el paquete completo.'],
+         mustNot: ['No ofrecer, insinuar ni materializar un CUARTO bonificado (más de tres bonificados además del curso pago); «cuatro cursos al precio de uno» para 1 pago + 3 bonificados es el registro autorizado.', 'No mencionar beca ni el precio de 699.'],
+-        authority: [limits, permission, gabi(136, 142, 'Máximo de cursos bonificados')],
++        authority: [limits, permission, gabi(138, 144, 'Máximo de cursos bonificados')],
+         expected: { move: moves, action: ['none', 'offer_course_bonus'], state: {
+           promotion: { status: ['offer_available'], bonusCount: [1, 2, 3], paidCourse: ['introduccion_ecommerce'] },
+         } },
+@@ -106,7 +106,7 @@ export const OWNER_GOLDEN_CASES: readonly GoldenCaseV1[] = [
+       turn('no_fourth', 'Y otro curso gratuito más también?', {
+         must: ['Mantener el precio y el paquete. Si aún no hay tres bonificados, puede sumar el 3.º en este turno o en el anterior (no se exige un turno concreto); con tres ya entregados, conserva el paquete y propone avanzar o deja la puerta abierta.'],
+         mustNot: ['No ofrecer, insinuar ni materializar un CUARTO bonificado (más de tres además del curso pago). Decir «cuatro cursos al precio de uno» para 1 pago + 3 bonificados es el registro de valor autorizado: no es una violación.'],
+-        authority: [limits, gabi(136, 142, 'Máximo de cursos bonificados')],
++        authority: [limits, gabi(138, 144, 'Máximo de cursos bonificados')],
+         expected: { move: [...moves, 'ask_current_state'], action: ['none', 'offer_course_bonus'], state: { promotion: { status: ['offer_available'], bonusCount: [1, 2, 3], paidCourse: ['introduccion_ecommerce'] } } },
+         hard: [{ type: 'workflow_committed' }, { type: 'promotion_bonus_count_at_most', value: 3 }],
+       }),
+@@ -392,7 +392,7 @@ OWNER_PROMOTION_MODE_REPLAY_CASES_MUTABLE.push({
+     marketingTurn('asks_marketing', 'Hola, buenas tardes. Quiero información del curso de Marketing Digital', {
+       must: ['Identificar Marketing Digital y empezar por el descubrimiento: una sola pregunta sobre lo que quiere lograr o su situación, sin precio ni cierre todavía.'],
+       mustNot: ['No ofrecer una llamada, no pedir inscripción ni plan, no abrir con el precio, no cerrar con «?!».'],
+-      authority: [noForcedRules, noInvasion, gabi(36, 44, 'Descubre sólo lo que te sirve para vender')],
++      authority: [noForcedRules, noInvasion, gabi(36, 46, 'Descubre sólo lo que te sirve para vender')],
+       hard: [{ type: 'workflow_committed' }, { type: 'contains', value: 'Marketing Digital' },
+         { type: 'no_call_offer' }, { type: 'no_enrollment_ask' }, { type: 'question_count_at_most', value: 1 },
+         { type: 'not_contains', value: '?!' }, ...noBeca],
+@@ -400,14 +400,14 @@ OWNER_PROMOTION_MODE_REPLAY_CASES_MUTABLE.push({
+     marketingTurn('goal_brands', 'Me gustaría trabajar con marcas, llevarles las redes y la publicidad', {
+       must: ['Usar el objetivo «trabajar con marcas» para conectar el curso con lo que vería y cómo lo aplicaría; seguir descubriendo o dar valor sin presionar. El modelo registra el objetivo con su cita literal.'],
+       mustNot: ['No ofrecer una llamada, no pedir inscripción ni plan, no prometer empleo ni ingresos.'],
+-      authority: [noForcedRules, noInvasion, gabi(36, 44, 'Lo que descubres es tu munición')],
++      authority: [noForcedRules, noInvasion, gabi(36, 46, 'Lo que descubres es tu munición')],
+       hard: [{ type: 'workflow_committed' }, { type: 'no_call_offer' }, { type: 'no_enrollment_ask' },
+         { type: 'question_count_at_most', value: 1 }, { type: 'not_contains', value: '?!' }, ...noBeca],
+     }),
+     marketingTurn('informative_price', 'qué precio tiene?', {
+       must: ['Responder el precio con los planes reales (USD 360; 12 cuotas de USD 30, 6 de USD 60 o un pago) conectando el valor con trabajar con marcas. Es una pregunta informativa: la respuesta es corta y natural.'],
+       mustNot: ['No tratarla como objeción: no decir que el precio es el único inconveniente ni preguntar si lo es, no ofrecer promoción ni bonificado, no ofrecer una llamada, no pedir inscripción ni plan, no cerrar con «?!», no mencionar beca ni 699.'],
+-      authority: [noForcedRules, noInvasion, effectsApart, gabi(108, 115, 'USD 360')],
++      authority: [noForcedRules, noInvasion, effectsApart, gabi(110, 117, 'USD 360')],
+       hard: [{ type: 'workflow_committed' }, { type: 'contains', value: '360' }, { type: 'no_call_offer' },
+         { type: 'no_enrollment_ask' }, { type: 'not_contains', value: 'único inconveniente' },
+         { type: 'not_contains', value: 'unico inconveniente' }, { type: 'not_contains', value: '?!' }, ...noBeca],
+@@ -456,7 +456,7 @@ OWNER_PROMOTION_MODE_REPLAY_CASES_MUTABLE.push({
+     marketingTurn('buying_signal', 'me convenciste, quiero inscribirme', {
+       must: ['Señal real de compra: dejar de argumentar y avanzar a la inscripción (plan de pago o los datos faltantes), usando una vez el objetivo de trabajar con marcas. Es el único turno donde pedir inscripción corresponde.'],
+       mustNot: ['No volver a vender beneficios, no ofrecer una llamada, no mencionar beca ni 699.'],
+-      authority: [noInvasion, gabi(181, 190, 'Plan, datos y pago')],
++      authority: [noInvasion, gabi(183, 192, 'Plan, datos y pago')],
+       expected: { move: [...marketingMoves, 'ask_payment_options', 'select_payment_plan'], action: ['none', 'accept_promotion', 'select_payment_plan', 'send_payment_link'], state: {} },
+       hard: [{ type: 'workflow_committed' }, { type: 'no_call_offer' }, ...noBeca],
+     }),
+@@ -484,7 +484,7 @@ OWNER_PROMOTION_MODE_REPLAY_CASES_MUTABLE.push({
+     gabiTurn('expensive', 'es caro', {
+       must: ['Responder con valor/inversión por resultado (lo que puede generar trabajando por su cuenta), sin justificarse; la objeción citada habilita el permiso de bonificar y el modelo decide si ofrece ya un bonificado afín o pregunta una vez por el precio. El bonificado, si lo hay, es un curso del conjunto autorizado elegido por el «Combínalo con» de la ficha (Maquillaje Profesional, Estética Integral o Instagram para Emprendedores).'],
+       mustNot: ['No mencionar beca, no mencionar el precio de 699, no bajar el precio, no ofrecer una llamada.'],
+-      authority: [permission, affinity, gabi(81, 105, 'Manejo de objeciones'), owner(177, 177, 'Beca Studyx')],
++      authority: [permission, affinity, gabi(83, 107, 'Manejo de objeciones'), owner(177, 177, 'Beca Studyx')],
+       expected: { move: marketingMoves, action: ['none', 'offer_course_bonus'], state: {
+         promotion: { status: ['offer_available', null, 'none'], bonusCount: [0, 1], paidCourse: ['unas_gelificadas', null] } } },
+       hard: [{ type: 'workflow_committed' }, { type: 'course_bonus_preconditions' }, { type: 'bonus_in_when_offered', values: gabiSet },
+@@ -493,7 +493,7 @@ OWNER_PROMOTION_MODE_REPLAY_CASES_MUTABLE.push({
+     gabiTurn('think_about_it', 'lo voy a pensar', {
+       must: ['Responder con una pregunta aclaratoria sobre qué quiere pensar (el curso, el precio o el tiempo), sin empujar ni repetir la oferta.'],
+       mustNot: ['No pedir inscripción ni plan, no ofrecer una llamada, no repetir la respuesta anterior, no mencionar beca.'],
+-      authority: [noInvasion, gabi(81, 105, '«Lo voy a pensar»'), noForcedRules],
++      authority: [noInvasion, gabi(83, 107, '«Lo voy a pensar»'), noForcedRules],
+       hard: [{ type: 'workflow_committed' }, { type: 'no_enrollment_ask' }, { type: 'no_call_offer' },
+         { type: 'question_count_at_most', value: 1 }, { type: 'not_repeat_previous_reply' }, ...noBeca],
+     }),
+@@ -512,7 +512,7 @@ OWNER_PROMOTION_MODE_REPLAY_CASES_MUTABLE.push({
+     gabiTurn('testimonial', 'hay alguien que lo haya hecho y le haya servido?', {
+       must: ['Contar una historia real elegida por afinidad con el cliente (sólo las del manual: Felipe Serrano; Cristian y Ana María; Amparo y Edson) sin atribuirles resultados que el manual no dice.'],
+       mustNot: ['No inventar nombres, historias ni cifras de alumnos; no prometer que obtendrá los mismos resultados.'],
+-      authority: [gabi(58, 58, 'Historias de éxito'), owner(176, 176, 'Testimonios sólo los reales')],
++      authority: [gabi(60, 60, 'Historias de éxito'), owner(176, 176, 'Testimonios sólo los reales')],
+       hard: [{ type: 'workflow_committed' }, { type: 'no_call_offer' }, ...noBeca],
+     }),
+   ],
+@@ -1060,4 +1060,80 @@ OWNER_PROMOTION_MODE_REPLAY_CASES_MUTABLE.push({
+   ],
+ });
+ 
++// Owner test 2026-11-06: the anti-repetition rule must not confuse an asked question with an answered one.
++// The customer never answered the generic objective question; after naming a broad area and asking for options,
++// Emma answers with a short oriented comparison and one NEW discriminating question instead of a flat catalog.
++OWNER_PROMOTION_MODE_REPLAY_CASES_MUTABLE.push({
++  id: '49_broad_area_unanswered_discovery_20261106',
++  title: 'Pregunta de descubrimiento ignorada: saludar, orientar un área amplia y repreguntar sin repetir como robot',
++  note: 'Reproduce la conversación del dueño del 06/11 que quedó en una lista plana de cuatro cursos sin orientación.',
++  turns: [
++    traceBase('d01_greeting', 'hola, cómo estás?', {
++      authority: [gabi(7, 17, 'En el primer contacto preséntate una vez'), noPrefabRef],
++      must: ['Saludar con naturalidad y presentarse una sola vez como «Soy Emma, asesora de Studyx».'],
++      mustNot: ['No presentarse como administrativa ni usar signos invertidos de apertura.'],
++      hard: [{ type: 'workflow_committed' }, noPrefab, { type: 'contains', value: 'Soy Emma, asesora de Studyx' },
++        { type: 'not_contains', value: 'administrativa' }, { type: 'not_contains', value: '¿' }, { type: 'not_contains', value: '¡' }, ...noBeca],
++    }),
++    traceBase('d02_acknowledgement', 'ah okay', {
++      authority: [gabi(17, 23, 'Varía la estructura'), gabi(32, 32, 'pregunta ligera de descubrimiento'), noPrefabRef],
++      must: ['Retomar con calidez y avanzar con una sola pregunta ligera para conocer qué le interesa.'],
++      mustNot: ['No volver a presentarse, no sonar administrativo ni usar signos invertidos de apertura.'],
++      hard: [{ type: 'workflow_committed' }, noPrefab, { type: 'question_count_at_most', value: 1 },
++        { type: 'not_contains', value: 'Soy Emma' }, { type: 'not_contains', value: '¿' }, { type: 'not_contains', value: '¡' }, ...noBeca],
++    }),
++    traceBase('d03_does_not_remember', 'no se que habia visto', {
++      authority: [gabi(36, 46, 'Descubrir lo justo'), noPrefabRef],
++      must: ['Aceptar que no recuerda el curso y hacer como máximo una pregunta útil, sin formulario ni menú largo.'],
++      mustNot: ['No inventar qué curso vio ni usar signos invertidos de apertura.'],
++      hard: [{ type: 'workflow_committed' }, noPrefab, { type: 'question_count_at_most', value: 1 },
++        { type: 'not_contains', value: '¿' }, { type: 'not_contains', value: '¡' }, ...noBeca],
++    }),
++    traceBase('d04_computers_options', 'algo vinculado con computadoras\nme pasas las opciones?', {
++      authority: [gabi(15, 21, 'Para dos o más opciones usa una lista'), gabi(38, 52, 'Con un objetivo claro, recomienda el mejor curso y por qué'), noPrefabRef],
++      must: ['Responder primero al pedido con caminos realmente vinculados con computadoras en una orientación concisa, diferenciarlos brevemente y terminar con una sola pregunta nueva que ayude a elegir según el último mensaje.'],
++      mustNot: ['No repetir la pregunta genérica sobre conseguir trabajo, sumar ingresos o tener un negocio; no dar una lista larga y plana del catálogo; no pedir inscripción, plan ni llamada; no usar signos invertidos de apertura.'],
++      expected: { move: ['browse_catalog', 'ask_course_information'], action: ['none'], state: {} },
++      hard: [{ type: 'workflow_committed' }, noPrefab, { type: 'question_count_at_most', value: 1 },
++        { type: 'no_call_offer' }, { type: 'no_enrollment_ask' }, { type: 'not_contains', value: '¿' },
++        { type: 'not_contains', value: '¡' }, ...noBeca],
++    }),
++    traceBase('d05_recommendation', 'cual me recomiendas para empezar?', {
++      authority: [owner(245, 247, 'toma posición'), noPrefabRef],
++      must: ['Recomendar un curso activo con seguridad y explicar por qué sirve para empezar; responder al pedido actual con valor verificado.'],
++      mustNot: ['No devolver otro menú plano ni repetir inmediatamente la pregunta genérica ignorada; no iniciar datos, plan o link.'],
++      expected: { move: ['ask_course_information', 'browse_catalog'], action: ['none', 'send_course_program'], state: {} },
++      hard: [{ type: 'workflow_committed' }, noPrefab, { type: 'no_enrollment_ask' }, { type: 'no_link_delivered' }, { type: 'question_count_at_most', value: 1 }, ...noBeca],
++    }),
++  ],
++});
++
++// Plan A midpoint: fit may be checked before purchase consent, while checkout stays operationally gated.
++const midpointRef = owner(243, 248, 'Punto medio de venta natural');
++OWNER_PROMOTION_MODE_REPLAY_CASES_MUTABLE.push({
++  id: '50_trial_close_vs_checkout_20261106',
++  title: 'Real Estate desde cero: valor y cierre de prueba antes del checkout',
++  note: 'Contrasta interés exploratorio y criterio indeciso con la respuesta afirmativa al cierre; no prescribe redacción exacta.',
++  turns: [
++    traceBase('t01_interest', 'hola, quiero información de Real Estate', { authority: [midpointRef, intentRef, noPrefabRef] }),
++    traceBase('t02_starting_level', 'empezaría de cero', { authority: [midpointRef, noPrefabRef],
++      must: ['Conectar Real Estate con empezar de cero usando hechos verificados.'],
++      mustNot: ['No iniciar datos, plan o enlace sin intención de compra.'],
++      hard: [{ type: 'workflow_committed' }, noPrefab, { type: 'no_enrollment_ask' }, { type: 'no_link_delivered' }, ...noBeca] }),
++    traceBase('t03_undecided', 'no sé todavía si trabajar con una inmobiliaria o invertir', { authority: [midpointRef, noPrefabRef],
++      must: ['Respetar que no decidió ese criterio; el no sé no impide responder otra duda útil.'],
++      mustNot: ['No reformular inmediatamente la elección entre inmobiliaria o invertir.'] }),
++    // AGENTS.md:219–225,240: first course-content explanation may still send official material.
++    traceBase('t04_general_goal', 'quiero entender cómo se mueve el negocio, me sirve?', { authority: [midpointRef, noPrefabRef],
++      must: ['Responder al pedido actual con seguridad, conectar valor verificado con entender el negocio y hacer un único cierre de prueba suave para comprobar encaje.'],
++      mustNot: ['No volver a preguntar si quiere trabajar con una inmobiliaria o invertir; no seguir entrevistando ni pedir datos, plan o link.'],
++      expected: { move: ['ask_course_information', 'browse_catalog', 'select_course'], action: ['none', 'send_course_program'], state: {} },
++      hard: [{ type: 'workflow_committed' }, noPrefab, { type: 'no_enrollment_ask' }, { type: 'no_link_delivered' }, { type: 'no_call_offer' }, { type: 'question_count_at_most', value: 1 }, ...noBeca] }),
++    traceBase('t05_affirmative', 'sí, es lo que busco, quiero inscribirme', { authority: [midpointRef, paymentRef, noPrefabRef],
++      must: ['Avanzar al flujo existente de inscripción con Real Estate, pidiendo sólo los datos faltantes.'],
++      expected: { move: ['request_payment_link', 'provide_contact_details', 'select_course'], action: ['none'], state: { checkout: ['contact_details'] } },
++      hard: [{ type: 'workflow_committed' }, noPrefab, { type: 'selected_course_equals', value: 'real_estate' }, { type: 'no_link_delivered' }, ...noBeca] }),
++  ],
++});
++
+ export const OWNER_PROMOTION_MODE_REPLAY_CASES: readonly GoldenCaseV1[] = OWNER_PROMOTION_MODE_REPLAY_CASES_MUTABLE;
+diff --git a/evals/golden/owner-rules.test.ts b/evals/golden/owner-rules.test.ts
+index b9c3b4b..a4f791d 100644
+--- a/evals/golden/owner-rules.test.ts
++++ b/evals/golden/owner-rules.test.ts
+@@ -27,6 +27,25 @@ const measured = (hard: GoldenTurnV1['hard']): GoldenTurnV1 => ({
+ });
+ 
+ describe('owner-rule supplementary golden campaign', () => {
++  it('defines the midpoint orientation and trial-close boundary without a fixed catalog limit', () => {
++    const registry = [...GOLDEN_CASES, ...OWNER_GOLDEN_CASES, ...OWNER_REPLAY_CASES, ...OWNER_PROMOTION_MODE_REPLAY_CASES];
++    const selected = selectGoldenCasesV1('49,50', registry);
++    expect(selected.map(item => item.id)).toEqual(['49_broad_area_unanswered_discovery_20261106', '50_trial_close_vs_checkout_20261106']);
++    const area = selected[0]!;
++    expect(area.turns.at(-1)?.id).toBe('d05_recommendation');
++    expect(area.turns.find(turn => turn.id === 'd04_computers_options')?.must.join(' ')).toContain('diferenci');
++    expect(JSON.stringify(area.turns)).not.toMatch(/hasta tres caminos|cuatro o más cursos/u);
++    const trial = selected[1]!;
++    const fit = trial.turns.find(turn => turn.id === 't04_general_goal')!;
++    // Preserve material delivery while excluding every checkout effect (AGENTS.md:219–225,240,247).
++    expect(fit.expected.action).toEqual(['none', 'send_course_program']);
++    expect(fit.hard).toContainEqual({ type: 'no_enrollment_ask' });
++    expect(fit.hard).toContainEqual({ type: 'no_link_delivered' });
++    expect(fit.must.join(' ')).toContain('cierre de prueba');
++    expect(fit.mustNot.join(' ')).toContain('inmobiliaria o invertir');
++    expect(trial.turns.find(turn => turn.id === 't05_affirmative')?.expected.state.checkout).toEqual(['contact_details']);
++  });
++
+   it('preserves the exact formal 16-case/48-turn threshold independently of supplements', () => {
+     expect(GOLDEN_CASES).toHaveLength(16);
+     expect(GOLDEN_CASES.flatMap(scenario => scenario.turns)).toHaveLength(48);
+diff --git a/evals/golden/scenarios.ts b/evals/golden/scenarios.ts
+index c586723..c7f60b0 100644
+--- a/evals/golden/scenarios.ts
++++ b/evals/golden/scenarios.ts
+@@ -177,7 +177,7 @@ export const GOLDEN_CASES: readonly GoldenCaseV1[] = [
+           'No pedir nombre, apellido, correo o teléfono.',
+           'No hacer varias preguntas juntas.',
+         ],
+-        authority: [ref(PROMPT, 38, 46, '«Info» no elige un curso'), ref(PROMPT, 17, 17, 'Nunca hagas más de una pregunta principal')],
++        authority: [ref(PROMPT, 38, 48, '«Info» no elige un curso'), ref(PROMPT, 17, 17, 'Nunca hagas más de una pregunta principal')],
+         expected: { move: ['greeting', 'browse_catalog'], action: ['none'], state: state() },
+         hard: [{ type: 'question_count_at_most', value: 1 }],
+       },
+@@ -185,7 +185,7 @@ export const GOLDEN_CASES: readonly GoldenCaseV1[] = [
+         id: 'goal', customer: 'Quiero aprender algo para sacar mejores fotos de los productos de mi tienda online',
+         must: ['Retomar la tienda online y hacer una sola pregunta útil de situación, motivación o freno, o avanzar si el contexto ya alcanza.'],
+         mustNot: ['No repetir qué quiere aprender, no pedir nombre/correo/teléfono y no listar el catálogo.'],
+-        authority: [ref(PROMPT, 40, 46, 'Hazlo conversando, una pregunta por vez')],
++        authority: [ref(PROMPT, 40, 48, 'Hazlo conversando, una pregunta por vez')],
+         expected: { move: ['browse_catalog', 'ask_course_information', 'unknown'], action: ['none'], state: state() },
+         hard: [{ type: 'question_count_at_most', value: 1 }],
+       },
+@@ -208,7 +208,7 @@ export const GOLDEN_CASES: readonly GoldenCaseV1[] = [
+           'No prometer ingresos ni clientes.',
+           'No registrar la recomendación como elección del cliente.',
+         ],
+-        authority: [ref(PROMPT, 50, 58, 'Recomienda **un** curso'), ref(PROMPT, 66, 76, 'cierre de prueba'), ref(PROMPT, 38, 38, 'Una recomendación no es elección')],
++        authority: [ref(PROMPT, 52, 60, 'Recomienda **un** curso'), ref(PROMPT, 68, 78, 'cierre de prueba'), ref(PROMPT, 38, 38, 'Una recomendación no es elección')],
+         expected: { move: ['ask_course_information', 'browse_catalog', 'unknown'], action: ['none'], state: state() },
+         hard: [{ type: 'question_count_at_most', value: 1 }],
+       },
+@@ -216,7 +216,7 @@ export const GOLDEN_CASES: readonly GoldenCaseV1[] = [
+         id: 'test_close_reply', customer: 'Sí, me veo aplicándolo para ofrecer sesiones.',
+         must: ['Tomar el sí como interés y proponer un paso concreto para avanzar.'],
+         mustNot: ['No confundir el cierre de prueba con consentimiento de inscripción ni enviar un enlace.'],
+-        authority: [ref(PROMPT, 66, 76, 'Si responde positivo, cierra')],
++        authority: [ref(PROMPT, 68, 78, 'Si responde positivo o expresa una intención real de compra')],
+         expected: { move: ['ask_course_information', 'select_course', 'request_payment_link', 'unknown'], action: ['none'], state: state() },
+       },
+     ],
+@@ -229,14 +229,14 @@ export const GOLDEN_CASES: readonly GoldenCaseV1[] = [
+         id: 'interest', customer: 'Quiero Fotografía Profesional para ofrecer sesiones y sumar una nueva fuente de ingresos.',
+         must: ['Construir valor desde el objetivo concreto y avanzar con un solo cierre o pregunta útil.'],
+         mustNot: ['No garantizar ingresos, no hablar de promociones y no pedir datos de inscripción todavía.'],
+-        authority: [ref(PROMPT, 52, 64, 'Conecta siempre'), ref(PROMPT, 62, 62, 'No prometas ingresos')],
++        authority: [ref(PROMPT, 54, 66, 'Conecta siempre'), ref(PROMPT, 64, 64, 'No prometas ingresos')],
+         expected: { move: ['select_course', 'ask_course_information'], action: ['none'], state: state() },
+       },
+       {
+         id: 'expensive', customer: 'Está caro, no sé si realmente lo vale.',
+         must: ['Reconocer la duda, demostrar valor con el objetivo de ofrecer sesiones y reencuadrar con USD 30 mensuales. Preguntar si el precio es el único inconveniente es opcional (una vez por conversación, con redacción propia) y la llamada sólo se ofrece si hay una razón concreta; ninguna es obligatoria.'],
+         mustNot: ['No descontar, no repetir un argumento genérico, no prometer ingresos, no ejecutar una bonificación todavía y no forzar una llamada.'],
+-        authority: [ref(PROMPT, 86, 94, 'con lo que ya sabes de él'), ref(PROMPT, 116, 127, 'Valor percibido'), ref(PROMPT, 125, 125, 'una sola vez por conversación')],
++        authority: [ref(PROMPT, 88, 96, 'con lo que ya sabes de él'), ref(PROMPT, 118, 129, 'Valor percibido'), ref(PROMPT, 127, 127, 'una sola vez por conversación')],
+         expected: { move: ['price_objection', 'ask_payment_options', 'ask_course_information', 'unknown'], action: ['none'], state: state({ promotion: promotion() }) },
+         hard: [{ type: 'contains', value: 'USD 30' }, { type: 'promotion_bonus_count_at_most', value: 0 },
+           { type: 'current_price_objection_recorded' }],
+@@ -251,7 +251,7 @@ export const GOLDEN_CASES: readonly GoldenCaseV1[] = [
+         id: 'interest', customer: 'Me interesa Marketing Digital para mover mi emprendimiento, cuánto cuesta?',
+         must: ['Responder el precio de inmediato con los tres planes exactos y conservar el foco en Marketing Digital.'],
+         mustNot: ['No demorar el precio, no inventar descuentos, no seleccionar un plan por el cliente y no preguntar si el precio es el único inconveniente: es una pregunta informativa.'],
+-        authority: [ref(PROMPT, 108, 115, 'Ante una pregunta directa de precio'), ref(PROMPT, 125, 125, 'una pregunta informativa')],
++        authority: [ref(PROMPT, 110, 117, 'Ante una pregunta directa de precio'), ref(PROMPT, 127, 127, 'una pregunta informativa')],
+         expected: { move: ['ask_payment_options', 'select_course', 'ask_course_information'], action: ['none'], state: state({ plan: [null] }) },
+         hard: [{ type: 'not_contains', value: 'único inconveniente' }, { type: 'contains', value: 'Marketing Digital' }],
+       },
+@@ -259,7 +259,7 @@ export const GOLDEN_CASES: readonly GoldenCaseV1[] = [
+         id: 'budget', customer: 'No me alcanza, ahora mismo estoy muy justo.',
+         must: ['Reconocer la limitación sin presionar y presentar 12 cuotas de USD 30 como la forma más accesible del mismo total, sin bajar el precio. La oferta de un curso bonificado es opcional: el momento lo decide el modelo dentro de los permisos y, si ofrece, debe ser un curso de los autorizados.'],
+         mustNot: ['No culpabilizar, no inventar urgencia, no reducir USD 360 y no ofrecer un curso fuera de los autorizados.'],
+-        authority: [ref(PROMPT, 117, 121, 'Presupuesto real'), ref(ROOT, 13, 13, 'plan de 12 como el más accesible'), ref(PROMPT, 135, 135, 'Tú eliges el momento y el curso')],
++        authority: [ref(PROMPT, 119, 123, 'Presupuesto real'), ref(ROOT, 13, 13, 'plan de 12 como el más accesible'), ref(PROMPT, 137, 137, 'Tú eliges el momento y el curso')],
+         expected: { move: ['price_objection', 'defer_payment', 'ask_payment_options', 'ask_course_information', 'unknown'], action: ['none', 'offer_course_bonus'], state: state({ promotion: promotion(['offer_available', null, 'none'], [0, 1], ['marketing_digital', null]) }) },
+         hard: [{ type: 'contains', value: 'USD 30' }, { type: 'not_contains', value: 'descuento' },
+           { type: 'current_price_objection_recorded' }, { type: 'course_bonus_preconditions' },
+@@ -276,14 +276,14 @@ export const GOLDEN_CASES: readonly GoldenCaseV1[] = [
+         id: 'select', customer: 'Quiero Fotografía Profesional para vivir de esto y ofrecer fotos a tiendas y emprendedores.',
+         must: ['Confirmar el foco en Fotografía Profesional y construir valor con su objetivo emprendedor.'],
+         mustNot: ['No ofrecer cuotas ni bonificación antes de que exista una objeción.'],
+-        authority: [ref(PROMPT, 52, 60, 'Conecta siempre')],
++        authority: [ref(PROMPT, 54, 62, 'Conecta siempre')],
+         expected: { move: ['select_course', 'ask_course_information'], action: ['none'], state: state() },
+       },
+       {
+         id: 'value', customer: 'Me interesa, pero está caro.',
+         must: ['Conectar valor con ofrecer fotos a tiendas/emprendedores y reencuadrar con la cuota. La pregunta de si el precio es el único inconveniente es opcional (una vez, redacción propia); la llamada no se fuerza y sólo se ofrece con una razón concreta.'],
+         mustNot: ['No ejecutar una bonificación en esta primera objeción, no bajar el precio y no forzar una llamada.'],
+-        authority: [ref(PROMPT, 116, 122, '**Valor percibido**'), ref(PROMPT, 125, 125, 'una sola vez por conversación'), ref(PROMPT, 173, 173, 'no la ofrezcas en los primeros intercambios')],
++        authority: [ref(PROMPT, 118, 124, '**Valor percibido**'), ref(PROMPT, 127, 127, 'una sola vez por conversación'), ref(PROMPT, 175, 175, 'no la ofrezcas en los primeros intercambios')],
+         expected: { move: ['ask_course_information', 'ask_payment_options', 'unknown'], action: ['none'], state: state({ promotion: promotion() }) },
+         hard: [{ type: 'promotion_bonus_count_at_most', value: 0 },
+           { type: 'current_price_objection_recorded' }],
+@@ -292,7 +292,7 @@ export const GOLDEN_CASES: readonly GoldenCaseV1[] = [
+         id: 'installments', customer: 'Lo veo útil, pero el precio me sigue frenando.',
+         must: ['Con la objeción registrada el modelo puede ofrecer (opcional) un bonificado de los autorizados, nombrándolo por su nombre canónico; máximo tres en total y uno por turno. Mantener USD 360, poder recordar las 12 cuotas de USD 30 y cerrar en el mismo turno.'],
+         mustNot: ['No repetir sólo el valor, no ofrecer dos cursos nuevos y no modificar el total.'],
+-        authority: [ref(ROOT, 45, 54, '2.ª objeción de precio'), ref(PROMPT, 138, 141, 'exactamente un código')],
++        authority: [ref(ROOT, 45, 54, '2.ª objeción de precio'), ref(PROMPT, 140, 143, 'exactamente un código')],
+         expected: { move: ['ask_payment_options', 'ask_course_information', 'unknown'], action: ['none', 'offer_course_bonus'], state: state({ promotion: promotion(['offer_available', null, 'none'], [0, 1], ['fotografia_profesional', null]) }) },
+         hard: [{ type: 'course_bonus_preconditions' }, { type: 'current_price_objection_recorded' },
+           { type: 'bonus_in_when_offered', values: PHOTO_BONUS }, { type: 'offered_bonus_named' }],
+@@ -301,7 +301,7 @@ export const GOLDEN_CASES: readonly GoldenCaseV1[] = [
+         id: 'isolate', customer: 'Aun así me parece caro.',
+         must: ['Un nuevo bonificado sólo es válido con una respuesta del cliente entre ofertas, uno por turno y máximo tres en total; si se suma, nombrarlo y recapitular el paquete completo.'],
+         mustNot: ['No reemplazar el primer bonificado, no duplicarlo y no modificar el precio.'],
+-        authority: [ref(ROOT, 49, 52, 'nueva objeción de precio'), ref(PROMPT, 139, 142, 'paquete completo')],
++        authority: [ref(ROOT, 49, 52, 'nueva objeción de precio'), ref(PROMPT, 141, 144, 'paquete completo')],
+         expected: { move: ['unknown', 'ask_course_information', 'ask_payment_options'], action: ['none', 'offer_course_bonus'], state: state({ promotion: promotion(['offer_available', null, 'none'], [0, 1, 2], ['fotografia_profesional', null]) }) },
+         hard: [{ type: 'bonus_in_when_offered', values: PHOTO_BONUS }, { type: 'offered_bonus_named' }, { type: 'response_mentions_all_promotions' }],
+       },
+@@ -309,7 +309,7 @@ export const GOLDEN_CASES: readonly GoldenCaseV1[] = [
+         id: 'call_step', customer: 'Sí, el precio es el único freno. Si resolvemos eso, avanzo.',
+         must: ['Si el modelo suma otro bonificado (máximo tres en total, uno por turno, con una respuesta del cliente entre ofertas), nombrarlo y recapitular todo el paquete; no es obligatorio ofrecer.'],
+         mustNot: ['No ofrecer un cuarto curso, no borrar los anteriores y no modificar USD 360.'],
+-        authority: [ref(ROOT, 45, 54, 'máximo 3'), ref(PROMPT, 139, 145, 'hasta un tercero como máximo')],
++        authority: [ref(ROOT, 45, 54, 'máximo 3'), ref(PROMPT, 141, 147, 'hasta un tercero como máximo')],
+         expected: { move: ['request_call', 'unknown', 'ask_course_information', 'ask_payment_options'], action: ['none', 'offer_course_bonus'], state: state({ promotion: promotion(['offer_available', null, 'none'], [0, 1, 2, 3], ['fotografia_profesional', null]) }) },
+         hard: [{ type: 'bonus_in_when_offered', values: PHOTO_BONUS }, { type: 'offered_bonus_named' }, { type: 'response_mentions_all_promotions' }],
+       },
+@@ -317,7 +317,7 @@ export const GOLDEN_CASES: readonly GoldenCaseV1[] = [
+         id: 'bonus_1', customer: 'Prefiero seguir por chat. El precio sigue siendo lo único que me frena.',
+         must: ['Respetar la preferencia de seguir por chat y conservar el paquete completo de tres cursos bonificados.'],
+         mustNot: ['No insistir con la llamada rechazada ni ofrecer un cuarto curso.'],
+-        authority: [ref(ROOT, 49, 54, 'máximo 3'), ref(PROMPT, 136, 142, 'Máximo de cursos bonificados')],
++        authority: [ref(ROOT, 49, 54, 'máximo 3'), ref(PROMPT, 138, 144, 'Máximo de cursos bonificados')],
+         expected: { move: ['continue_by_chat', 'unknown', 'ask_payment_options', 'ask_course_information'], action: ['none'], state: state({ promotion: promotion(['offer_available', null, 'none'], [0, 1, 2, 3], ['fotografia_profesional', null]) }) },
+         hard: [{ type: 'promotion_bonus_count_at_most', value: 3 }, { type: 'response_mentions_all_promotions' }],
+       },
+@@ -325,7 +325,7 @@ export const GOLDEN_CASES: readonly GoldenCaseV1[] = [
+         id: 'bonus_2', customer: 'Me suma, pero sigo dudando por el mismo precio.',
+         must: ['Mantener los tres bonificados ya entregados y seguir cerrando sin prometer otra incorporación.'],
+         mustNot: ['No reemplazar, repetir ni ampliar el paquete por encima de tres.'],
+-        authority: [ref(PROMPT, 136, 142, 'Máximo de cursos bonificados'), ref(BONUS, 64, 67, 'bonus_limit_reached')],
++        authority: [ref(PROMPT, 138, 144, 'Máximo de cursos bonificados'), ref(BONUS, 64, 67, 'bonus_limit_reached')],
+         expected: { move: ['unknown', 'ask_payment_options', 'ask_course_information'], action: ['none'], state: state({ promotion: promotion(['offer_available', null, 'none'], [0, 1, 2, 3], ['fotografia_profesional', null]) }) },
+         hard: [{ type: 'promotion_bonus_count_at_most', value: 3 }, { type: 'response_mentions_all_promotions' }],
+       },
+@@ -333,7 +333,7 @@ export const GOLDEN_CASES: readonly GoldenCaseV1[] = [
+         id: 'bonus_3', customer: 'Todavía me cuesta decidir por el precio. Hay algo más que pueda sumar valor?',
+         must: ['Conservar el paquete de tres y responder la duda de precio con valor o cierre, sin insinuar otra bonificación.'],
+         mustNot: ['No duplicar cursos, no modificar USD 360 y no insinuar que existe una cuarta bonificación.'],
+-        authority: [ref(PROMPT, 139, 145, 'hasta un tercero como máximo'), ref(BONUS, 61, 67, 'bonus_limit_reached')],
++        authority: [ref(PROMPT, 141, 147, 'hasta un tercero como máximo'), ref(BONUS, 61, 67, 'bonus_limit_reached')],
+         expected: { move: ['unknown', 'ask_payment_options', 'ask_course_information'], action: ['none'], state: state({ promotion: promotion(['offer_available', null, 'none'], [0, 1, 2, 3], ['fotografia_profesional', null]) }) },
+         hard: [{ type: 'promotion_bonus_count_at_most', value: 3 }, { type: 'response_mentions_all_promotions' }],
+       },
+@@ -341,7 +341,7 @@ export const GOLDEN_CASES: readonly GoldenCaseV1[] = [
+         id: 'never_fourth', negotiationProbe:'fourth_bonus_request', customer: 'Y otro curso más también?',
+         must: ['Mantener el paquete acumulado de tres y cerrar o dejar la puerta abierta con calidez.'],
+         mustNot: ['Nunca ofrecer ni prometer un cuarto curso bonificado.'],
+-        authority: [ref(PROMPT, 136, 142, 'Máximo de cursos bonificados'), ref(BONUS, 64, 67, 'bonus_limit_reached')],
++        authority: [ref(PROMPT, 138, 144, 'Máximo de cursos bonificados'), ref(BONUS, 64, 67, 'bonus_limit_reached')],
+         expected: { move: ['unknown', 'ask_payment_options', 'ask_course_information', 'defer_payment'], action: ['none'], state: state({ promotion: promotion(['offer_available', null, 'none'], [0, 1, 2, 3], ['fotografia_profesional', null]) }) },
+         hard: [{ type: 'promotion_bonus_count_at_most', value: 3 }, { type: 'response_mentions_all_promotions' }],
+         priorPromotion: { status: ['offer_available'], bonusCount: [1, 2, 3], paidCourse: ['fotografia_profesional'] },
+@@ -356,14 +356,14 @@ export const GOLDEN_CASES: readonly GoldenCaseV1[] = [
+         id: 'plans', customer: 'Me interesa Fotografía Profesional. Qué planes de pago tienen?',
+         must: ['Dar los tres planes exactos y preguntar cuál le serviría o qué necesita evaluar.'],
+         mustNot: ['No elegir ni guardar un plan por la persona y no enviar enlace.'],
+-        authority: [ref(PROMPT, 108, 115, 'Los planes suman USD 360'), ref(PROMPT, 183, 187, 'Fuera de una elección pendiente')],
++        authority: [ref(PROMPT, 110, 117, 'Los planes suman USD 360'), ref(PROMPT, 185, 189, 'Fuera de una elección pendiente')],
+         expected: { move: ['ask_payment_options', 'select_course'], action: ['none'], state: state({ plan: [null] }) },
+       },
+       {
+         id: 'think', customer: 'No me quiero inscribir igual ya, tengo que pensarlo.',
+         must: ['Preguntar con naturalidad qué le queda por definir y trabajar ese freno.'],
+         mustNot: ['No decline_purchase, no stage closed, no guardar un plan no elegido, no decir “queda anotado” y no bonificar.'],
+-        authority: [ref(PROMPT, 94, 105, '«Lo voy a pensar»'), ref(PROMPT, 183, 187, 'su elección clara')],
++        authority: [ref(PROMPT, 96, 107, '«Lo voy a pensar»'), ref(PROMPT, 185, 189, 'su elección clara')],
+         expected: { move: ['defer_payment', 'ask_course_information', 'unknown'], action: ['none'], state: state({ closed: false, plan: [null], promotion: promotion() }) },
+         hard: [{ type: 'not_contains', value: 'queda anotado' }, { type: 'promotion_bonus_count_at_most', value: 0 }],
+       },
+@@ -380,14 +380,14 @@ export const GOLDEN_CASES: readonly GoldenCaseV1[] = [
+           'No inventar ingresos.',
+           'No pedir nombre, apellido, correo o teléfono para inscripción o llamada todavía.',
+         ],
+-        authority: [ref(PROMPT, 40, 44, 'Descubre sólo lo que te sirve para vender'), ref(PROMPT, 52, 60, 'cómo lo podría usar')],
++        authority: [ref(PROMPT, 40, 46, 'Descubre sólo lo que te sirve para vender'), ref(PROMPT, 54, 62, 'cómo lo podría usar')],
+         expected: { move: ['select_course', 'ask_course_information'], action: ['none'], state: state() },
+       },
+       {
+         id: 'partner', customer: 'Lo tengo que consultar con mi pareja antes de decidir.',
+         must: ['Darle lo clave para contarle: para qué le sirve y que puede pagarse en 12 cuotas de USD 30; ofrecer resolver dudas de la pareja.'],
+         mustNot: ['No presionar, no desacreditar a la pareja y no despedirse sin ayudar.'],
+-        authority: [ref(PROMPT, 95, 100, 'Lo consulto con mi pareja/familia')],
++        authority: [ref(PROMPT, 97, 102, 'Lo consulto con mi pareja/familia')],
+         expected: { move: ['defer_payment', 'continue_by_chat', 'unknown'], action: ['none'], state: state() },
+         hard: [{ type: 'contains', value: 'USD 30' }],
+       },
+@@ -408,14 +408,14 @@ export const GOLDEN_CASES: readonly GoldenCaseV1[] = [
+         id: 'hidden_friction', customer: 'Lo voy a pensar.',
+         must: ['Preguntar qué le queda por definir antes de cerrar la conversación.'],
+         mustNot: ['No tratarlo aún como rechazo definitivo.'],
+-        authority: [ref(PROMPT, 94, 97, 'casi siempre esconde otro freno')],
++        authority: [ref(PROMPT, 96, 99, 'casi siempre esconde otro freno')],
+         expected: { move: ['defer_payment', 'unknown'], action: ['none'], state: state({ closed: false }) },
+       },
+       {
+         id: 'definitive', customer: 'Ya lo decidí: no quiero comprar ni seguir evaluándolo. Gracias.',
+         must: ['Cerrar con calidez y brevedad, respetando la decisión.'],
+         mustNot: ['No reabrir la venta, no ofrecer llamada, cuotas o bonificación y no hacer otra pregunta comercial.'],
+-        authority: [ref(PROMPT, 5, 5, 'no persigue'), ref(PROMPT, 79, 79, 'entiende qué lo frena'), ref(PROMPT, 94, 94, 'deja la puerta abierta sin presionar')],
++        authority: [ref(PROMPT, 5, 5, 'no persigue'), ref(PROMPT, 81, 81, 'entiende qué lo frena'), ref(PROMPT, 96, 96, 'deja la puerta abierta sin presionar')],
+         expected: { move: ['decline_purchase'], action: ['none'], state: state({ closed: true }) },
+       },
+     ],
+@@ -431,7 +431,7 @@ export const GOLDEN_CASES: readonly GoldenCaseV1[] = [
+           'No exigir un curso exacto para aceptar la llamada.',
+           'No despachar la llamada sin datos completos y consentimiento vigente.',
+         ],
+-        authority: [ref(PROMPT, 177, 183, 'Ante aceptar o pedir una llamada'), ref(ROOT, 12, 12, 'consentimiento, datos completos')],
++        authority: [ref(PROMPT, 179, 185, 'Ante aceptar o pedir una llamada'), ref(ROOT, 12, 12, 'consentimiento, datos completos')],
+         expected: { move: ['request_call'], action: ['none'], state: state({ checkout: ['contact_details'] }) },
+         hard: [{ type: 'requests_only_missing_call_fields' }],
+       },
+@@ -439,7 +439,7 @@ export const GOLDEN_CASES: readonly GoldenCaseV1[] = [
+         id: 'data', customer: 'Soy Ana Pérez, ana.perez@example.test, teléfono +1 305 555 0182.',
+         must: ['Conservar move=request_call, usar proposed_action=none y preguntar una sola vez si puede atender ahora; puede ofrecer seguir más tarde si ahora no puede.'],
+         mustNot: ['No llamar por completar el último dato y no volver a pedir campos ya recibidos.'],
+-        authority: [ref(PROMPT, 177, 177, 'pregunta una vez si puede atender ahora')],
++        authority: [ref(PROMPT, 179, 179, 'pregunta una vez si puede atender ahora')],
+         expected: { move: ['request_call', 'provide_contact_details'], action: ['none'], state: state() },
+         hard: [{ type: 'question_count_at_most', value: 1 }],
+       },
+@@ -450,7 +450,7 @@ export const GOLDEN_CASES: readonly GoldenCaseV1[] = [
+           'No pedir otra confirmación.',
+           'No duplicar la llamada.',
+         ],
+-        authority: [ref(PROMPT, 177, 179, 'sólo su confirmación posterior autoriza')],
++        authority: [ref(PROMPT, 179, 181, 'sólo su confirmación posterior autoriza')],
+         expected: { move: ['request_call', 'none'], action: ['request_call_now'], state: state() },
+       },
+     ],
+@@ -463,7 +463,7 @@ export const GOLDEN_CASES: readonly GoldenCaseV1[] = [
+         id: 'buy', customer: 'Quiero inscribirme en Fotografía Profesional.',
+         must: ['Dejar de vender el curso y pedir sólo los datos de inscripción faltantes.'],
+         mustNot: ['No seguir descubriendo, no enviar link y no seleccionar plan.'],
+-        authority: [ref(PROMPT, 34, 34, 'Ante señal de compra'), ref(PROMPT, 185, 187, 'Solicita sólo nombre')],
++        authority: [ref(PROMPT, 34, 34, 'Ante una señal real de compra'), ref(PROMPT, 187, 189, 'Solicita sólo nombre')],
+         expected: { move: ['request_payment_link', 'select_course'], action: ['none'], state: state({ checkout: ['contact_details'] }) },
+       },
+       {
+@@ -477,21 +477,21 @@ export const GOLDEN_CASES: readonly GoldenCaseV1[] = [
+           'No listar planes junto al resumen.',
+           'No reexplicar el curso.',
+         ],
+-        authority: [ref(PROMPT, 187, 189, 'pasa directo al resumen')],
++        authority: [ref(PROMPT, 189, 191, 'pasa directo al resumen')],
+         expected: { move: ['provide_contact_details', 'request_payment_link'], action: ['none'], state: state({ checkout: ['payment_confirmation'] }) },
+       },
+       {
+         id: 'confirm', customer: 'Sí, los datos están correctos.',
+         must: ['Preguntar cómo prefiere pagar con un cierre por alternativa entre planes reales.'],
+         mustNot: ['No enviar link todavía y no pedir otro dato.'],
+-        authority: [ref(PROMPT, 187, 187, 'pregunta cómo prefiere pagar con un cierre por alternativa')],
++        authority: [ref(PROMPT, 189, 189, 'pregunta cómo prefiere pagar con un cierre por alternativa')],
+         expected: { move: ['ask_payment_options', 'request_payment_link'], action: ['none'], state: state({ checkout: ['payment_plan'] }) },
+       },
+       {
+         id: 'plan_and_link', customer: 'Elijo 12 cuotas de USD 30.',
+         must: ['Seleccionar monthly_12 y entregar el enlace canónico en este mismo turno.'],
+         mustNot: ['No pedir otro “dale”, no repetir el resumen y no escribir una URL inventada.'],
+-        authority: [ref(PROMPT, 183, 189, 'su elección clara completa el pedido de checkout')],
++        authority: [ref(PROMPT, 185, 191, 'su elección clara completa el pedido de checkout')],
+         expected: { move: ['select_payment_plan', 'request_payment_link'], action: ['send_payment_link'], state: state({ checkout: ['link'], plan: ['monthly_12'] }) },
+         hard: [{ type: 'payment_link_delivered' }],
+       },
+@@ -506,7 +506,7 @@ export const GOLDEN_CASES: readonly GoldenCaseV1[] = [
+         id: 'verified_access_event', customer: '[evento verificado: pago confirmado y alta completa]',
+         must: ['El mensaje transaccional generado por el modelo y completado por el backend comunica acceso activo con todos los cursos efectivamente habilitados.'],
+         mustNot: ['No prometer un alta futura, no omitir bonificados, no generar invoice y no afirmar cursos no activados.'],
+-        authority: [ref(PROMPT, 191, 197, 'Sólo `paid` con `paid_at`'), ref(BONUS, 87, 90, 'cada curso de `bonus_offerings`')],
++        authority: [ref(PROMPT, 193, 199, 'Sólo `paid` con `paid_at`'), ref(BONUS, 87, 90, 'cada curso de `bonus_offerings`')],
+         expected: { move: ['none'], action: ['none'], state: state({ plan: ['monthly_12'], promotion: promotion(['accepted'], [2], ['fotografia_profesional']) }) },
+         hard: [{ type: 'access_lists_all_activated_courses' }, { type: 'not_contains', value: 'invoice' }, { type: 'not_contains', value: 'factura' }],
+       },
+@@ -514,7 +514,7 @@ export const GOLDEN_CASES: readonly GoldenCaseV1[] = [
+         id: 'customer_acknowledgement', customer: 'Gracias, ya veo los tres cursos.',
+         must: ['Responder desde el vínculo y celebrar el próximo paso con el curso concreto.'],
+         mustNot: ['No volver a vender, no prometer acceso futuro y no generar invoice.'],
+-        authority: [ref(PROMPT, 197, 197, 'Ante un agradecimiento después del alta')],
++        authority: [ref(PROMPT, 199, 199, 'Ante un agradecimiento después del alta')],
+         expected: { move: ['ask_current_state', 'unknown'], action: ['none'], state: state({ plan: ['monthly_12'], promotion: promotion(['accepted'], [2], ['fotografia_profesional']) }) },
+         hard: [{ type: 'not_contains', value: 'cuando esté listo' }, { type: 'not_contains', value: 'invoice' }],
+       },
+@@ -528,7 +528,7 @@ export const GOLDEN_CASES: readonly GoldenCaseV1[] = [
+         id: 'syllabus', customer: 'Pasame el temario de Fotografía Profesional.',
+         must: ['Responder con el temario real de Fotografía Profesional recibido como dato autorizado o, desde el 2026-11-04, enviando el PDF oficial del programa (send_course_program) con una introducción corta, y mantener la respuesta útil.'],
+         mustNot: ['No negar que existe si llegó al contexto, no inventar módulos y no responder sólo con generalidades.'],
+-        authority: [ref(ROOT, 29, 29, 'Temarios'), ref(PROMPT, 52, 52, 'Contenido, duración, modalidad'), ref(PROMPT, 203, 203, 'Cita sólo lo usado')],
++        authority: [ref(ROOT, 29, 29, 'Temarios'), ref(PROMPT, 54, 54, 'Contenido, duración, modalidad'), ref(PROMPT, 205, 205, 'Cita sólo lo usado')],
+         expected: { move: ['ask_course_information', 'request_course_program'], action: ['none', 'send_course_program'], state: state() },
+         hard: [{ type: 'response_uses_authorized_syllabus' }],
+       },
+@@ -536,7 +536,7 @@ export const GOLDEN_CASES: readonly GoldenCaseV1[] = [
+         id: 'duration_followup', customer: 'Y cuánto dura ese curso?',
+         must: ['Responder la duración real de Fotografía Profesional desde los hechos autorizados.'],
+         mustNot: ['No inventar una duración ni perder el referente del curso.'],
+-        authority: [ref(PROMPT, 52, 52, 'Contenido, duración, modalidad'), ref(PROMPT, 203, 203, 'Cita sólo lo usado')],
++        authority: [ref(PROMPT, 54, 54, 'Contenido, duración, modalidad'), ref(PROMPT, 205, 205, 'Cita sólo lo usado')],
+         expected: { move: ['ask_course_information'], action: ['none'], state: state() },
+       },
+     ],
+@@ -550,14 +550,14 @@ export const GOLDEN_CASES: readonly GoldenCaseV1[] = [
+         id: 'interest', customer: 'Quiero Fotografía Profesional para trabajar con emprendedores y tiendas online.',
+         must: ['Mantener Fotografía Profesional como foco y construir valor.'],
+         mustNot: ['No bonificar todavía.'],
+-        authority: [ref(PROMPT, 144, 148, 'Sin desesperación')],
++        authority: [ref(PROMPT, 146, 150, 'Sin desesperación')],
+         expected: { move: ['select_course', 'ask_course_information'], action: ['none'], state: state() },
+       },
+       {
+         id: 'price_1', customer: 'El precio es lo único que me frena.',
+         must: ['Trabajar valor conectado al objetivo y registrar la objeción. La pregunta del precio es opcional (una vez, redacción propia) y la llamada no se fuerza.'],
+         mustNot: ['No ejecutar una bonificación en la primera objeción y no forzar una llamada.'],
+-        authority: [ref(PROMPT, 102, 102, 'price_objection'), ref(PROMPT, 125, 125, 'una sola vez por conversación'), ref(PROMPT, 173, 173, 'no la ofrezcas en los primeros intercambios')],
++        authority: [ref(PROMPT, 104, 104, 'price_objection'), ref(PROMPT, 127, 127, 'una sola vez por conversación'), ref(PROMPT, 175, 175, 'no la ofrezcas en los primeros intercambios')],
+         expected: { move: ['ask_course_information', 'ask_payment_options', 'unknown'], action: ['none'], state: state() },
+         hard: [{ type: 'current_price_objection_recorded' }],
+       },
+@@ -565,7 +565,7 @@ export const GOLDEN_CASES: readonly GoldenCaseV1[] = [
+         id: 'installments', customer: 'Sigue siendo caro para mí.',
+         must: ['El modelo puede ofrecer (opcional) un bonificado autorizado, nombrándolo por su nombre canónico, y mantiene el total de USD 360; máximo tres, uno por turno.'],
+         mustNot: ['No ofrecer dos cursos nuevos ni cambiar el precio.'],
+-        authority: [ref(ROOT, 45, 54, '2.ª objeción de precio'), ref(PROMPT, 138, 141, 'exactamente un código')],
++        authority: [ref(ROOT, 45, 54, '2.ª objeción de precio'), ref(PROMPT, 140, 143, 'exactamente un código')],
+         expected: { move: ['ask_payment_options', 'ask_course_information', 'unknown'], action: ['none', 'offer_course_bonus'], state: state({ promotion: promotion(['offer_available', null, 'none'], [0, 1], ['fotografia_profesional', null]) }) },
+         hard: [{ type: 'course_bonus_preconditions' }, { type: 'bonus_in_when_offered', values: PHOTO_BONUS }, { type: 'offered_bonus_named' }],
+       },
+@@ -573,7 +573,7 @@ export const GOLDEN_CASES: readonly GoldenCaseV1[] = [
+         id: 'isolate', customer: 'Aun en cuotas me frena el precio.',
+         must: ['Un nuevo bonificado sólo es válido con una respuesta del cliente entre ofertas, uno por turno y máximo tres en total; si se suma, nombrarlo y recapitular el paquete.'],
+         mustNot: ['No reemplazar el primero, no repetirlo y no cambiar el total.'],
+-        authority: [ref(ROOT, 49, 52, 'nueva objeción de precio'), ref(PROMPT, 139, 142, 'paquete completo')],
++        authority: [ref(ROOT, 49, 52, 'nueva objeción de precio'), ref(PROMPT, 141, 144, 'paquete completo')],
+         expected: { move: ['unknown', 'ask_course_information', 'ask_payment_options'], action: ['none', 'offer_course_bonus'], state: state({ promotion: promotion(['offer_available', null, 'none'], [0, 1, 2], ['fotografia_profesional', null]) }) },
+         hard: [{ type: 'bonus_in_when_offered', values: PHOTO_BONUS }, { type: 'offered_bonus_named' }, { type: 'response_mentions_all_promotions' }],
+       },
+@@ -581,7 +581,7 @@ export const GOLDEN_CASES: readonly GoldenCaseV1[] = [
+         id: 'call_step', customer: 'Sí, es el único freno. Si lo resolvemos, avanzo.',
+         must: ['Si el modelo suma otro bonificado (máximo tres, uno por turno, con una respuesta del cliente entre ofertas), nombrarlo y recapitular todo el paquete; no es obligatorio ofrecer.'],
+         mustNot: ['No ofrecer un cuarto curso ni cambiar USD 360.'],
+-        authority: [ref(ROOT, 45, 54, 'máximo 3'), ref(PROMPT, 139, 145, 'hasta un tercero como máximo')],
++        authority: [ref(ROOT, 45, 54, 'máximo 3'), ref(PROMPT, 141, 147, 'hasta un tercero como máximo')],
+         expected: { move: ['request_call', 'unknown', 'ask_course_information', 'ask_payment_options'], action: ['none', 'offer_course_bonus'], state: state({ promotion: promotion(['offer_available', null, 'none'], [0, 1, 2, 3], ['fotografia_profesional', null]) }) },
+         hard: [{ type: 'bonus_in_when_offered', values: PHOTO_BONUS }, { type: 'offered_bonus_named' }, { type: 'response_mentions_all_promotions' }],
+       },
+@@ -597,7 +597,7 @@ export const GOLDEN_CASES: readonly GoldenCaseV1[] = [
+         id: 'change', negotiationProbe:'paid_course_change', customer: 'Cambio de idea: quiero que Marketing Digital sea el curso que pago.',
+         must: ['Cambiar el curso pago a Marketing Digital y empezar cualquier promoción desde cero.'],
+         mustNot: ['No arrastrar bonificados de Fotografía Profesional ni mantener vigente la promoción anterior.'],
+-        authority: [ref(BONUS, 39, 40, 'promoción anterior pasa a `cancelled`'), ref(PROMPT, 195, 195, 'Si cambia de curso, suelta el anterior')],
++        authority: [ref(BONUS, 39, 40, 'promoción anterior pasa a `cancelled`'), ref(PROMPT, 197, 197, 'Si cambia de curso, suelta el anterior')],
+         expected: { move: ['select_course'], action: ['none'], state: state({ promotion: promotion(['cancelled'], [1, 2, 3], ['fotografia_profesional']) }) },
+         hard: [{ type: 'selected_course_equals', value: 'marketing_digital' }],
+         priorPromotion: { status: ['offer_available'], bonusCount: [1, 2, 3], paidCourse: ['fotografia_profesional'] },
+@@ -612,14 +612,14 @@ export const GOLDEN_CASES: readonly GoldenCaseV1[] = [
+         id: 'context', customer: 'Fotografía Profesional me serviría para empezar a ofrecer sesiones.',
+         must: ['Construir valor o medir temperatura sin pedir datos todavía.'],
+         mustNot: ['No asumir que ya compró.'],
+-        authority: [ref(PROMPT, 79, 89, 'Un cierre por turno')],
++        authority: [ref(PROMPT, 81, 91, 'Un cierre por turno')],
+         expected: { move: ['select_course', 'ask_course_information'], action: ['none'], state: state() },
+       },
+       {
+         id: 'signal', customer: 'Dale, cómo me inscribo?',
+         must: ['Dejar de argumentar y pedir únicamente los datos faltantes para ejecutar inscripción/pago.'],
+         mustNot: ['No volver a vender beneficios, no descubrir motivación y no ofrecer llamada.'],
+-        authority: [ref(PROMPT, 34, 34, 'Ante señal de compra'), ref(PROMPT, 185, 191, 'Solicita sólo')],
++        authority: [ref(PROMPT, 34, 34, 'Ante una señal real de compra'), ref(PROMPT, 187, 193, 'Solicita sólo')],
+         expected: { move: ['request_payment_link'], action: ['none'], state: state({ checkout: ['contact_details'] }) },
+       },
+     ],
+@@ -632,7 +632,7 @@ export const GOLDEN_CASES: readonly GoldenCaseV1[] = [
+         id: 'context', customer: 'Quiero Marketing Digital para mejorar las ventas de mi emprendimiento. Cuánto cuesta?',
+         must: ['Responder los planes exactos y conectar el curso con el emprendimiento.'],
+         mustNot: ['No ofrecer descuento de precio ni ejecutar todavía una bonificación, y no preguntar si el precio es el único inconveniente: es una pregunta informativa.'],
+-        authority: [ref(PROMPT, 113, 124, 'El precio total no se baja'), ref(PROMPT, 125, 125, 'una pregunta informativa')],
++        authority: [ref(PROMPT, 115, 126, 'El precio total no se baja'), ref(PROMPT, 127, 127, 'una pregunta informativa')],
+         expected: { move: ['ask_payment_options', 'select_course', 'ask_course_information'], action: ['none'], state: state({ plan: [null] }) },
+         hard: [{ type: 'not_contains', value: 'único inconveniente' }, { type: 'contains', value: 'Marketing Digital' },
+           { type: 'promotion_bonus_count_at_most', value: 0 }],
+@@ -641,7 +641,7 @@ export const GOLDEN_CASES: readonly GoldenCaseV1[] = [
+         id: 'discount', customer: 'No me hacés un descuento? USD 360 me parece caro.',
+         must: ['Responder al pedido de descuento con amabilidad y valor, sin bajar USD 360. Ofrecer un curso afín de los autorizados es opcional (lo decide el modelo dentro de los permisos); la objeción de precio debe quedar registrada.'],
+         mustNot: ['No abrir con una negativa defensiva («No hay descuento…»), no usar “no te lo puedo ofrecer”, “es lo que hay”, “no te lo voy a inventar”, “eso no lo puedo cambiar” ni cortar la venta.'],
+-        authority: [ref(PROMPT, 19, 22, 'no uses frases defensivas'), ref(PROMPT, 113, 124, 'El precio total no se baja'), ref(PROMPT, 135, 135, 'Tú eliges el momento y el curso')],
++        authority: [ref(PROMPT, 19, 22, 'no uses frases defensivas'), ref(PROMPT, 115, 126, 'El precio total no se baja'), ref(PROMPT, 137, 137, 'Tú eliges el momento y el curso')],
+         expected: { move: ['price_objection', 'defer_payment', 'ask_payment_options', 'ask_course_information', 'unknown'], action: ['none', 'offer_course_bonus'], state: state({ promotion: promotion(['offer_available', null, 'none'], [0, 1], ['marketing_digital', null]) }) },
+         hard: [
+           { type: 'not_contains', value: 'no hay descuento' },
+diff --git a/scripts/generate-agent-a-prompt-module.mjs b/scripts/generate-agent-a-prompt-module.mjs
+index ebb4135..4328666 100644
+--- a/scripts/generate-agent-a-prompt-module.mjs
++++ b/scripts/generate-agent-a-prompt-module.mjs
+@@ -8,14 +8,15 @@ const outputPaths = [
+   resolve(root, 'botpress-agent/src/prompts/studyx-agent-a-canonical.generated.ts'),
+   resolve(root, 'src/shared/prompts/studyx-agent-a-canonical.generated.ts'),
+ ];
++// v110: owner-approved natural sales midpoint; literal authority plus unchanged technical annex.
+ // v109: v108 plus the 2026-11-04 bonus motive rules (motive from the current message; owner-authorized edit).
+ // v108: v107 plus the owner's 03-04/11 price guidance moved from retired runtime rules to model guidance (owner-authorized edit)
+-const expectedSha256 = 'a1a6b2874d025820ae727909462cb063adfac3db58608f74a75152ed7eecc142';
++const expectedSha256 = '78a5a903a91728e99a44c20fbe3185c38360a974cd31010aa136f83ef7f354a6';
+ const prompt = readFileSync(sourcePath, 'utf8');
+ const sha256 = createHash('sha256').update(prompt).digest('hex');
+ const lineCount = prompt.match(/\n/g)?.length ?? 0;
+ 
+-if (lineCount !== 211) {
++if (lineCount !== 213) {
+   throw new Error(`AGENT_A_CANONICAL_PROMPT_LINE_COUNT:${lineCount}`);
+ }
+ if (sha256 !== expectedSha256) {
+@@ -26,7 +27,7 @@ const generated = [
+   '// Generated by scripts/generate-agent-a-prompt-module.mjs. Do not edit.',
+   '// Source: docs/prompts/studyx-agent-a-canonical.md',
+   `export const STUDYX_AGENT_A_CANONICAL_PROMPT = ${JSON.stringify(prompt)} as const;`,
+-  "export const STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION = 'studyx-agent-a-canonical-v109' as const;",
++  "export const STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION = 'studyx-agent-a-canonical-v110' as const;",
+   '',
+ ].join('\n');
+ 
+diff --git a/tests/unit/botpress/agent-a-brain-prompt.test.ts b/tests/unit/botpress/agent-a-brain-prompt.test.ts
+index 1260bab..01c3744 100644
+--- a/tests/unit/botpress/agent-a-brain-prompt.test.ts
++++ b/tests/unit/botpress/agent-a-brain-prompt.test.ts
+@@ -78,6 +78,22 @@ function courseBonusEffectContract(instructions: string): string {
+ }
+ 
+ describe('Agent A Brain prompt', () => {
++  it('keeps commercial strategy exclusively in canonical authority and reasoning as evidence', () => {
++    // AGENTS.md:243–248: canonical strategy; brain contracts/facts/repairs only.
++    const instructions = buildAgentABrainInstructionsV1(context());
++    expect(instructions).toContain(STUDYX_AGENT_A_CANONICAL_PROMPT);
++    const technical = instructions.replace(STUDYX_AGENT_A_CANONICAL_PROMPT, '');
++    for (const duplicate of ['<premisa_de_venta', 'Emma vende:', 'Pide la inscripción o el plan sólo',
++      'Descubre una vez:', 'Ask at most one useful question', 'never open with a negative',
++      'never ask one of them again, in any wording', 'Promotion request before any bonus: ask']) {
++      expect(technical).not.toContain(duplicate);
++    }
++    expect(technical).toContain('<course_mentions_contract>');
++    expect(technical).toContain('<internal_contact_profile_contract>');
++    expect(technical).toContain('stage_hypothesis is diagnostic');
++    expect(technical).toContain('turn_reasoning');
++  });
++
+   it.each(['me parece caro', 'es caro?', 'no es caro'])('does not interpret the customer for the model: no backend price hint (%s)', text => {
+     const current = context();
+     current.turn.batch_messages = [{ id: 'current', text }];
+@@ -254,7 +270,7 @@ describe('Agent A Brain prompt', () => {
+   it('adapts discovery, trial closes and direct negotiation while preserving early calls', () => {
+     const instructions = buildAgentABrainInstructionsV1(context());
+     // Authority prompt lines 25-141 and 204-212 are now the literal behavior source.
+-    for (const rule of ['cierre de prueba', 'Ante señal de compra',
++    for (const rule of ['cierre de prueba', 'Ante una señal real de compra',
+       'Motivo del mensaje actual',
+       'hasta un tercero como máximo', 'una pregunta principal',
+       'interés expresado o el curso que compra',
+@@ -411,8 +427,8 @@ describe('Agent A Brain prompt', () => {
+     const encoded = instructions.split('<authorized_context>')[1]!.split('</authorized_context>')[0]!;
+     expect(JSON.parse(encoded)).toEqual(current);
+     expect(instructions).not.toContain('<current_turn_guidance>');
+-    expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v109');
+-    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v174');
++    expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v110');
++    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v180');
+   });
+ 
+   it('maps recommendations and generic continuation without persisting a customer choice', () => {
+@@ -938,10 +954,11 @@ describe('Agent A Brain prompt', () => {
+     });
+   });
+ 
+-  it('v167: states the right package count and forbids opening a discount answer with a negative', () => {
++  it('keeps package arithmetic factual and leaves discount wording to canonical authority', () => {
+     const text = buildAgentABrainInstructionsV1(context());
+     expect(text).toContain('courses_in_package_after_next_offer');
+     expect(text).toContain('Never say "dos cursos al precio de uno" when the package holds more');
+-    expect(text).toContain('never open with a negative ("no hay descuento"');
++    expect(text.replace(STUDYX_AGENT_A_CANONICAL_PROMPT, '')).not.toContain('never open with a negative');
++    expect(STUDYX_AGENT_A_CANONICAL_PROMPT).toContain('no uses frases defensivas');
+   });
+ });
+diff --git a/tests/unit/botpress/agent-a-canonical-prompt.test.ts b/tests/unit/botpress/agent-a-canonical-prompt.test.ts
+index 0ba5267..9c0e58d 100644
+--- a/tests/unit/botpress/agent-a-canonical-prompt.test.ts
++++ b/tests/unit/botpress/agent-a-canonical-prompt.test.ts
+@@ -24,9 +24,12 @@ describe('Agent A canonical sales prompt authority', () => {
+     const prompt = readFileSync(PROMPT_PATH, 'utf8');
+ 
+     expect(prompt).toBe(`${authority}\n${TECHNICAL_ANNEX}`);
++    const [behavior, annex] = prompt.split('\n## Anexo técnico\n');
++    expect(behavior).toBe(authority);
++    expect(`## Anexo técnico\n${annex}`).toBe(TECHNICAL_ANNEX);
+   });
+ 
+-  it('keeps both generated modules byte-identical to the canonical source at v101', () => {
++  it('keeps both generated modules byte-identical to the canonical source at v110', () => {
+     const prompt = readFileSync(PROMPT_PATH, 'utf8');
+     const generated = GENERATED_PATHS.map((path) => readFileSync(path, 'utf8'));
+ 
+@@ -35,7 +38,7 @@ describe('Agent A canonical sales prompt authority', () => {
+       `export const STUDYX_AGENT_A_CANONICAL_PROMPT = ${JSON.stringify(prompt)} as const;`,
+     );
+     expect(generated[0]).toContain(
+-      "export const STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION = 'studyx-agent-a-canonical-v109' as const;",
++      "export const STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION = 'studyx-agent-a-canonical-v110' as const;",
+     );
+   });
+ 
+@@ -50,7 +53,7 @@ describe('Agent A canonical sales prompt authority', () => {
+   });
+ });
+ 
+-describe('Agent A canonical prompt v109 (Gabi manual integration)', () => {
++describe('Agent A canonical prompt v110 (Gabi manual integration)', () => {
+   const prompt = readFileSync(PROMPT_PATH, 'utf8');
+   const authority = readFileSync(AUTHORITY_PATH, 'utf8');
+ 
+@@ -99,7 +102,7 @@ describe('Agent A canonical prompt v109 (Gabi manual integration)', () => {
+ 
+   it('pins the canonical source in the generator', () => {
+     const generator = readFileSync('scripts/generate-agent-a-prompt-module.mjs', 'utf8');
+-    expect(generator).toContain('studyx-agent-a-canonical-v109');
++    expect(generator).toContain('studyx-agent-a-canonical-v110');
+     expect(generator).toContain(`lineCount !== ${prompt.match(/\n/gu)!.length}`);
+   });
+ });
+diff --git a/tests/unit/botpress/agent-a-meta-sales-brain.test.ts b/tests/unit/botpress/agent-a-meta-sales-brain.test.ts
+index ff4d8f5..f41a909 100644
+--- a/tests/unit/botpress/agent-a-meta-sales-brain.test.ts
++++ b/tests/unit/botpress/agent-a-meta-sales-brain.test.ts
+@@ -88,15 +88,12 @@ describe('Agent A Meta sales brain', () => {
+   it('keeps the instruction surface compact and leaves the real catalog in context', () => {
+     const current = context();
+     const instructions = buildAgentABrainInstructionsV1(current);
+-    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v174');
++    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v180');
+     const staticInstructions = instructions.split('<authorized_context>')[0]!;
+-    // The approved v2 surface intentionally restores Lisandro's complete
+-    // discovery, value, closing, objection, negotiation and affinity system.
+-    // Keep that expanded contract bounded without compressing it back into the
+-    // summary that caused the production regression. v104 adds Gabi's manual
+-    // (value arguments, objections, closes, real testimonies) and drops the
+-    // per-area affinity lists the ficha's "Combínalo con" now carries. v107: +100 for Gabi's close-without-invasion corrections and the general facts. v108: +100 for the owner's price guidance ported from the retired runtime rules. v167: +150 for the discount rule, the package count and the programme-send rules. v109/v163: +280 for the current-message bonus motive and turn-intent moves.
+-    expect(staticInstructions.trim().split(/\s+/u).length).toBeLessThan(6300);
++    // AGENTS.md:243–248: preserve the complete literal authority; bound only
++    // the technical wrapper so approved behavioral additions do not force truncation.
++    const technical = staticInstructions.replace(/<canonical_sales_behavior[^>]*>[\s\S]*?<\/canonical_sales_behavior>/u, '');
++    expect(technical.trim().split(/\s+/u).length).toBeLessThan(900);
+     expect(JSON.parse(instructions.split('<authorized_context>')[1]!.split('</authorized_context>')[0]!)).toEqual(current);
+   });
+ });

@@ -1,0 +1,4 @@
+
+> studyx-agente-ventas@0.1.0 generate:agent-a-prompt
+> node scripts/generate-agent-a-prompt-module.mjs
+

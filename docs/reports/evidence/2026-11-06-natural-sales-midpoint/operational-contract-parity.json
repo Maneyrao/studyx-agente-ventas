@@ -1,0 +1,50 @@
+[
+  {
+    "name": "mandatoryRepairDirectiveV1",
+    "baseline_sha256": "83ac98641daf45f7583b5a53c5c11e95cb85a1f4feecbdffc3bf9f85392d0ca7",
+    "candidate_sha256": "83ac98641daf45f7583b5a53c5c11e95cb85a1f4feecbdffc3bf9f85392d0ca7",
+    "byte_identical": true
+  },
+  {
+    "name": "currentCatalogResolutionDirectiveV1",
+    "baseline_sha256": "049482d239e7cc5034ae784401413fec1c283390637b7e3df642ec7272964e98",
+    "candidate_sha256": "049482d239e7cc5034ae784401413fec1c283390637b7e3df642ec7272964e98",
+    "byte_identical": true
+  },
+  {
+    "name": "currentCourseBonusEffectContractV1",
+    "baseline_sha256": "de4b7f3e65b221d949137c888455b400ba9c53fb409603c330ebbcc66f013c3e",
+    "candidate_sha256": "de4b7f3e65b221d949137c888455b400ba9c53fb409603c330ebbcc66f013c3e",
+    "byte_identical": true
+  },
+  {
+    "name": "currentCourseProgramEffectContractV1",
+    "baseline_sha256": "18a11a50262bd7be701d7bed698dc2e4f474eabbbde274fa4cba738c12b5b5d3",
+    "candidate_sha256": "18a11a50262bd7be701d7bed698dc2e4f474eabbbde274fa4cba738c12b5b5d3",
+    "byte_identical": true
+  },
+  {
+    "name": "currentCallEffectContractV1",
+    "baseline_sha256": "3c5d49208ba0f006ee2202ba63236479de652c93fe8a8b7626d3b91b646bfb60",
+    "candidate_sha256": "3c5d49208ba0f006ee2202ba63236479de652c93fe8a8b7626d3b91b646bfb60",
+    "byte_identical": true
+  },
+  {
+    "name": "currentCheckoutEffectContractV1",
+    "baseline_sha256": "4168d663a7676c75a627e94b5505de6bf0cef45792466b39b5ca2cfb37947038",
+    "candidate_sha256": "4168d663a7676c75a627e94b5505de6bf0cef45792466b39b5ca2cfb37947038",
+    "byte_identical": true
+  },
+  {
+    "name": "verifiedPostSalePackageContextV1",
+    "baseline_sha256": "55c7433907bd90c870c2e5743088d20725c73cb1933051cc69e1eceeaa9931d4",
+    "candidate_sha256": "55c7433907bd90c870c2e5743088d20725c73cb1933051cc69e1eceeaa9931d4",
+    "byte_identical": true
+  },
+  {
+    "name": "hasDirectBonusContextV1",
+    "baseline_sha256": "1890b160fab4881911f19ba556eae9084bb02b388d7b8f2686c129f56272d5af",
+    "candidate_sha256": "1890b160fab4881911f19ba556eae9084bb02b388d7b8f2686c129f56272d5af",
+    "byte_identical": true
+  }
+]

@@ -1,0 +1,23 @@
+
+[1m[30m[46m RUN [49m[39m[22m [36mv4.1.10 [39m[90m/Users/tmaneyro22/Documents/AGENTE IA/studyx-agente-ventas/.worktrees/agent-a-natural-sales-midpoint[39m
+
+ [31m❯[39m tests/unit/botpress/agent-a-meta-sales-brain.test.ts [2m([22m[2m1 test[22m[2m | [22m[31m1 failed[39m[2m)[22m[32m 3[2mms[22m[39m
+[31m     [31m×[31m keeps the instruction surface compact and leaves the real catalog in context[39m[32m 3[2mms[22m[39m
+ [32m✓[39m tests/unit/botpress/agent-a-brain-prompt.test.ts [2m([22m[2m69 tests[22m[2m)[22m[32m 10[2mms[22m[39m
+ [32m✓[39m tests/contract/agent-a-brain-parity.test.ts [2m([22m[2m29 tests[22m[2m)[22m[32m 11[2mms[22m[39m
+
+[31m⎯⎯⎯⎯⎯⎯⎯[39m[1m[41m Failed Tests 1 [49m[22m[31m⎯⎯⎯⎯⎯⎯⎯[39m
+
+[41m[1m FAIL [22m[49m tests/unit/botpress/agent-a-meta-sales-brain.test.ts[2m > [22mAgent A Meta sales brain[2m > [22mkeeps the instruction surface compact and leaves the real catalog in context
+[31m[1mAssertionError[22m: expected 6410 to be less than 6300[39m
+[36m [2m❯[22m tests/unit/botpress/agent-a-meta-sales-brain.test.ts:[2m99:60[22m[39m
+
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯[22m[39m
+
+
+[2m Test Files [22m [1m[31m1 failed[39m[22m[2m | [22m[1m[32m2 passed[39m[22m[90m (3)[39m
+[2m      Tests [22m [1m[31m1 failed[39m[22m[2m | [22m[1m[32m98 passed[39m[22m[90m (99)[39m
+[2m   Start at [22m 09:01:54
+[2m   Duration [22m 188ms[2m (transform 137ms, setup 35ms, import 185ms, tests 25ms, environment 0ms)[22m
+

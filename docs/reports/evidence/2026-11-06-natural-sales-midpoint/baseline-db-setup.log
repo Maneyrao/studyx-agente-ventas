@@ -1,0 +1,4 @@
+2026-11-06 08:54:46.505 -03 [15737] FATAL:  no se pudo crear el segmento de memoria compartida: Operation not permitted
+2026-11-06 08:54:46.505 -03 [15737] DETALLE:  La llamada a sistema fallida fue shmget(key=88411296, size=56, 03600).
+el proceso hijo terminó con código de salida 1
+initdb: eliminando el contenido del directorio «/private/tmp/studyx-pg17-55435»

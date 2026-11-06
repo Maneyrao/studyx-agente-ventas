@@ -1,0 +1,315 @@
+
+[1m[30m[46m RUN [49m[39m[22m [36mv4.1.10 [39m[90m/Users/tmaneyro22/Documents/AGENTE IA/studyx-agente-ventas/.worktrees/agent-a-natural-sales-midpoint[39m
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — reservation[2m > [22m[2mpersists a new offer after a terminal call from inherited course-selected state
+[22m[39m{"event":"db.transaction.queued","trace_id":"79bb69d7-2e33-424b-a7b8-0846ef864743","attempt":1}
+
+[90mstderr[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — reservation[2m > [22m[2mpersists a new offer after a terminal call from inherited course-selected state
+[22m[39m{"event":"db.client.generation_rotated","retired_generation":1,"active_generation":2,"reason":"liveness_failed","retired_in_flight":0}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — reservation[2m > [22m[2mpersists a new offer after a terminal call from inherited course-selected state
+[22m[39m{"level":"error","timestamp":"2026-11-06T11:55:54.142Z","event":"stage.failed","stage":"ingest.persist","duration_ms":9,"outcome":"error","error":"OrchestratorDatabaseUnavailableError: ORCHESTRATOR_DATABASE_UNAVAILABLE","trace_id":"79bb69d7-2e33-424b-a7b8-0846ef864743"}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — reservation[2m > [22m[2mthe Agent Turn availability path reserves once and points at the exact affirmative message
+[22m[39m{"event":"db.transaction.queued","trace_id":"0c171ebb-1e33-46e5-b59c-140cca2ec000","attempt":1}
+
+[90mstderr[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — reservation[2m > [22m[2mthe Agent Turn availability path reserves once and points at the exact affirmative message
+[22m[39m{"event":"db.client.generation_rotated","retired_generation":2,"active_generation":3,"reason":"liveness_failed","retired_in_flight":0}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — reservation[2m > [22m[2mthe Agent Turn availability path reserves once and points at the exact affirmative message
+[22m[39m{"level":"error","timestamp":"2026-11-06T11:55:54.145Z","event":"stage.failed","stage":"ingest.persist","duration_ms":1,"outcome":"error","error":"OrchestratorDatabaseUnavailableError: ORCHESTRATOR_DATABASE_UNAVAILABLE","trace_id":"0c171ebb-1e33-46e5-b59c-140cca2ec000"}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — reservation[2m > [22m[2ma direct request reserves exactly one session with derived consent
+[22m[39m{"event":"db.transaction.queued","trace_id":"49186c85-8b8c-405c-b4b4-dd57472a5da2","attempt":1}
+
+[90mstderr[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — reservation[2m > [22m[2ma direct request reserves exactly one session with derived consent
+[22m[39m{"event":"db.client.generation_rotated","retired_generation":3,"active_generation":4,"reason":"liveness_failed","retired_in_flight":0}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — reservation[2m > [22m[2ma direct request reserves exactly one session with derived consent
+[22m[39m{"level":"error","timestamp":"2026-11-06T11:55:54.147Z","event":"stage.failed","stage":"ingest.persist","duration_ms":1,"outcome":"error","error":"OrchestratorDatabaseUnavailableError: ORCHESTRATOR_DATABASE_UNAVAILABLE","trace_id":"49186c85-8b8c-405c-b4b4-dd57472a5da2"}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — reservation[2m > [22m[2mten identical replays return the same call_id and keep one session
+[22m[39m{"event":"db.transaction.queued","trace_id":"c0832a88-7121-4062-aedd-196ea627e0f6","attempt":1}
+
+[90mstderr[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — reservation[2m > [22m[2mten identical replays return the same call_id and keep one session
+[22m[39m{"event":"db.client.generation_rotated","retired_generation":4,"active_generation":5,"reason":"liveness_failed","retired_in_flight":0}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — reservation[2m > [22m[2mten identical replays return the same call_id and keep one session
+[22m[39m{"level":"error","timestamp":"2026-11-06T11:55:54.148Z","event":"stage.failed","stage":"ingest.persist","duration_ms":1,"outcome":"error","error":"OrchestratorDatabaseUnavailableError: ORCHESTRATOR_DATABASE_UNAVAILABLE","trace_id":"c0832a88-7121-4062-aedd-196ea627e0f6"}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — reservation[2m > [22m[2ma direct request buried inside a batch still reserves the call
+[22m[39m{"event":"db.transaction.queued","trace_id":"1297df3e-0b09-4456-82d5-eea0ab89dcfc","attempt":1}
+
+[90mstderr[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — reservation[2m > [22m[2ma direct request buried inside a batch still reserves the call
+[22m[39m{"event":"db.client.generation_rotated","retired_generation":5,"active_generation":6,"reason":"liveness_failed","retired_in_flight":0}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — reservation[2m > [22m[2ma direct request buried inside a batch still reserves the call
+[22m[39m{"level":"error","timestamp":"2026-11-06T11:55:54.150Z","event":"stage.failed","stage":"ingest.persist","duration_ms":2,"outcome":"error","error":"OrchestratorDatabaseUnavailableError: ORCHESTRATOR_DATABASE_UNAVAILABLE","trace_id":"1297df3e-0b09-4456-82d5-eea0ab89dcfc"}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — reservation[2m > [22m[2ma decline after a buried request in the same batch blocks the call
+[22m[39m{"event":"db.transaction.queued","trace_id":"0eed9e4a-dd60-4d2d-9403-b64f2c231d76","attempt":1}
+
+[90mstderr[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — reservation[2m > [22m[2ma decline after a buried request in the same batch blocks the call
+[22m[39m{"event":"db.client.generation_rotated","retired_generation":6,"active_generation":7,"reason":"liveness_failed","retired_in_flight":0}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — reservation[2m > [22m[2ma decline after a buried request in the same batch blocks the call
+[22m[39m{"level":"error","timestamp":"2026-11-06T11:55:54.151Z","event":"stage.failed","stage":"ingest.persist","duration_ms":1,"outcome":"error","error":"OrchestratorDatabaseUnavailableError: ORCHESTRATOR_DATABASE_UNAVAILABLE","trace_id":"0eed9e4a-dd60-4d2d-9403-b64f2c231d76"}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — reservation[2m > [22m[2mtwo concurrent commits agree on one call_id
+[22m[39m{"event":"db.transaction.queued","trace_id":"0e37cb85-485b-48a1-b8f4-0b200864a6e4","attempt":1}
+
+[90mstderr[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — reservation[2m > [22m[2mtwo concurrent commits agree on one call_id
+[22m[39m{"event":"db.client.generation_rotated","retired_generation":7,"active_generation":8,"reason":"liveness_failed","retired_in_flight":0}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — reservation[2m > [22m[2mtwo concurrent commits agree on one call_id
+[22m[39m{"level":"error","timestamp":"2026-11-06T11:55:54.153Z","event":"stage.failed","stage":"ingest.persist","duration_ms":1,"outcome":"error","error":"OrchestratorDatabaseUnavailableError: ORCHESTRATOR_DATABASE_UNAVAILABLE","trace_id":"0e37cb85-485b-48a1-b8f4-0b200864a6e4"}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — reservation[2m > [22m[2man accepted open offer reserves once and links the offer decision
+[22m[39m{"event":"db.transaction.queued","trace_id":"8af4539d-46d8-4997-b932-633999288d6c","attempt":1}
+
+[90mstderr[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — reservation[2m > [22m[2man accepted open offer reserves once and links the offer decision
+[22m[39m{"event":"db.client.generation_rotated","retired_generation":8,"active_generation":9,"reason":"liveness_failed","retired_in_flight":0}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — reservation[2m > [22m[2man accepted open offer reserves once and links the offer decision
+[22m[39m{"level":"error","timestamp":"2026-11-06T11:55:54.155Z","event":"stage.failed","stage":"ingest.persist","duration_ms":2,"outcome":"error","error":"OrchestratorDatabaseUnavailableError: ORCHESTRATOR_DATABASE_UNAVAILABLE","trace_id":"8af4539d-46d8-4997-b932-633999288d6c"}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — refusals reserve nothing[2m > [22m[2ma bare "sí" without an open offer is rejected
+[22m[39m{"event":"db.transaction.queued","trace_id":"c7842d98-c7da-44d9-a631-185c02ce50d2","attempt":1}
+
+[90mstderr[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — refusals reserve nothing[2m > [22m[2ma bare "sí" without an open offer is rejected
+[22m[39m{"event":"db.client.generation_rotated","retired_generation":9,"active_generation":10,"reason":"liveness_failed","retired_in_flight":0}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — refusals reserve nothing[2m > [22m[2ma bare "sí" without an open offer is rejected
+[22m[39m{"level":"error","timestamp":"2026-11-06T11:55:54.156Z","event":"stage.failed","stage":"ingest.persist","duration_ms":1,"outcome":"error","error":"OrchestratorDatabaseUnavailableError: ORCHESTRATOR_DATABASE_UNAVAILABLE","trace_id":"c7842d98-c7da-44d9-a631-185c02ce50d2"}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — refusals reserve nothing[2m > [22m[2ma negation beats any affirmative word
+[22m[39m{"event":"db.transaction.queued","trace_id":"c9afd139-ea1c-4d46-b194-67acc28fe4f3","attempt":1}
+
+[90mstderr[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — refusals reserve nothing[2m > [22m[2ma negation beats any affirmative word
+[22m[39m{"event":"db.client.generation_rotated","retired_generation":10,"active_generation":11,"reason":"liveness_failed","retired_in_flight":0}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — refusals reserve nothing[2m > [22m[2ma negation beats any affirmative word
+[22m[39m{"level":"error","timestamp":"2026-11-06T11:55:54.158Z","event":"stage.failed","stage":"ingest.persist","duration_ms":1,"outcome":"error","error":"OrchestratorDatabaseUnavailableError: ORCHESTRATOR_DATABASE_UNAVAILABLE","trace_id":"c9afd139-ea1c-4d46-b194-67acc28fe4f3"}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — refusals reserve nothing[2m > [22m[2ma trailing short refusal (no) blocks the call and persists no consent
+[22m[39m{"event":"db.transaction.queued","trace_id":"014d6f0c-cec6-42c7-970f-792667f4ddd0","attempt":1}
+
+[90mstderr[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — refusals reserve nothing[2m > [22m[2ma trailing short refusal (no) blocks the call and persists no consent
+[22m[39m{"event":"db.client.generation_rotated","retired_generation":11,"active_generation":12,"reason":"liveness_failed","retired_in_flight":0}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — refusals reserve nothing[2m > [22m[2ma trailing short refusal (no) blocks the call and persists no consent
+[22m[39m{"level":"error","timestamp":"2026-11-06T11:55:54.160Z","event":"stage.failed","stage":"ingest.persist","duration_ms":2,"outcome":"error","error":"OrchestratorDatabaseUnavailableError: ORCHESTRATOR_DATABASE_UNAVAILABLE","trace_id":"014d6f0c-cec6-42c7-970f-792667f4ddd0"}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — refusals reserve nothing[2m > [22m[2ma trailing short refusal (no, mejor no) blocks the call and persists no consent
+[22m[39m{"event":"db.transaction.queued","trace_id":"658ce2f8-c06b-4740-99ac-fe241cebadff","attempt":1}
+
+[90mstderr[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — refusals reserve nothing[2m > [22m[2ma trailing short refusal (no, mejor no) blocks the call and persists no consent
+[22m[39m{"event":"db.client.generation_rotated","retired_generation":12,"active_generation":13,"reason":"liveness_failed","retired_in_flight":0}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — refusals reserve nothing[2m > [22m[2ma trailing short refusal (no, mejor no) blocks the call and persists no consent
+[22m[39m{"level":"error","timestamp":"2026-11-06T11:55:54.161Z","event":"stage.failed","stage":"ingest.persist","duration_ms":1,"outcome":"error","error":"OrchestratorDatabaseUnavailableError: ORCHESTRATOR_DATABASE_UNAVAILABLE","trace_id":"658ce2f8-c06b-4740-99ac-fe241cebadff"}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — refusals reserve nothing[2m > [22m[2mthe Agent Turn availability path honors a later contextual refusal (ahora no)
+[22m[39m{"event":"db.transaction.queued","trace_id":"214e75cb-4df7-4b6c-afa2-f6ab6b650ed9","attempt":1}
+
+[90mstderr[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — refusals reserve nothing[2m > [22m[2mthe Agent Turn availability path honors a later contextual refusal (ahora no)
+[22m[39m{"event":"db.client.generation_rotated","retired_generation":13,"active_generation":14,"reason":"liveness_failed","retired_in_flight":0}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — refusals reserve nothing[2m > [22m[2mthe Agent Turn availability path honors a later contextual refusal (ahora no)
+[22m[39m{"level":"error","timestamp":"2026-11-06T11:55:54.163Z","event":"stage.failed","stage":"ingest.persist","duration_ms":2,"outcome":"error","error":"OrchestratorDatabaseUnavailableError: ORCHESTRATOR_DATABASE_UNAVAILABLE","trace_id":"214e75cb-4df7-4b6c-afa2-f6ab6b650ed9"}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — refusals reserve nothing[2m > [22m[2mthe Agent Turn availability path honors a later contextual refusal (por ahora no)
+[22m[39m{"event":"db.transaction.queued","trace_id":"2a0e1f95-c5d3-4ad5-aa96-09ee6e814784","attempt":1}
+
+[90mstderr[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — refusals reserve nothing[2m > [22m[2mthe Agent Turn availability path honors a later contextual refusal (por ahora no)
+[22m[39m{"event":"db.client.generation_rotated","retired_generation":14,"active_generation":15,"reason":"liveness_failed","retired_in_flight":0}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — refusals reserve nothing[2m > [22m[2mthe Agent Turn availability path honors a later contextual refusal (por ahora no)
+[22m[39m{"level":"error","timestamp":"2026-11-06T11:55:54.164Z","event":"stage.failed","stage":"ingest.persist","duration_ms":1,"outcome":"error","error":"OrchestratorDatabaseUnavailableError: ORCHESTRATOR_DATABASE_UNAVAILABLE","trace_id":"2a0e1f95-c5d3-4ad5-aa96-09ee6e814784"}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — refusals reserve nothing[2m > [22m[2mthe Agent Turn availability path honors a later contextual refusal (prefiero que no)
+[22m[39m{"event":"db.transaction.queued","trace_id":"fe004fa4-7e36-466a-9ba9-af55a87eeb74","attempt":1}
+
+[90mstderr[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — refusals reserve nothing[2m > [22m[2mthe Agent Turn availability path honors a later contextual refusal (prefiero que no)
+[22m[39m{"event":"db.client.generation_rotated","retired_generation":15,"active_generation":16,"reason":"liveness_failed","retired_in_flight":0}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — refusals reserve nothing[2m > [22m[2mthe Agent Turn availability path honors a later contextual refusal (prefiero que no)
+[22m[39m{"level":"error","timestamp":"2026-11-06T11:55:54.166Z","event":"stage.failed","stage":"ingest.persist","duration_ms":2,"outcome":"error","error":"OrchestratorDatabaseUnavailableError: ORCHESTRATOR_DATABASE_UNAVAILABLE","trace_id":"fe004fa4-7e36-466a-9ba9-af55a87eeb74"}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — refusals reserve nothing[2m > [22m[2mpersists revoked consent after exhausted repair and cannot reuse it on a later bare yes
+[22m[39m{"event":"db.transaction.queued","trace_id":"32b7cb0f-b14f-407d-afc7-9e8cb2948bb1","attempt":1}
+
+[90mstderr[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — refusals reserve nothing[2m > [22m[2mpersists revoked consent after exhausted repair and cannot reuse it on a later bare yes
+[22m[39m{"event":"db.client.generation_rotated","retired_generation":16,"active_generation":17,"reason":"liveness_failed","retired_in_flight":0}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — refusals reserve nothing[2m > [22m[2mpersists revoked consent after exhausted repair and cannot reuse it on a later bare yes
+[22m[39m{"level":"error","timestamp":"2026-11-06T11:55:54.167Z","event":"stage.failed","stage":"ingest.persist","duration_ms":1,"outcome":"error","error":"OrchestratorDatabaseUnavailableError: ORCHESTRATOR_DATABASE_UNAVAILABLE","trace_id":"32b7cb0f-b14f-407d-afc7-9e8cb2948bb1"}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — refusals reserve nothing[2m > [22m[2mrejects an outdated revocation receipt after a new availability authorization
+[22m[39m{"event":"db.transaction.queued","trace_id":"02a95c69-46a4-49d5-be00-e1bf60996c1d","attempt":1}
+
+[90mstderr[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — refusals reserve nothing[2m > [22m[2mrejects an outdated revocation receipt after a new availability authorization
+[22m[39m{"event":"db.client.generation_rotated","retired_generation":17,"active_generation":18,"reason":"liveness_failed","retired_in_flight":0}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — refusals reserve nothing[2m > [22m[2mrejects an outdated revocation receipt after a new availability authorization
+[22m[39m{"level":"error","timestamp":"2026-11-06T11:55:54.169Z","event":"stage.failed","stage":"ingest.persist","duration_ms":2,"outcome":"error","error":"OrchestratorDatabaseUnavailableError: ORCHESTRATOR_DATABASE_UNAVAILABLE","trace_id":"02a95c69-46a4-49d5-be00-e1bf60996c1d"}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — refusals reserve nothing[2m > [22m[2mrejects false dispatch prose after later consent was revoked
+[22m[39m{"event":"db.transaction.queued","trace_id":"5a228033-455c-4bf5-b33f-cecb5d5ae6df","attempt":1}
+
+[90mstderr[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — refusals reserve nothing[2m > [22m[2mrejects false dispatch prose after later consent was revoked
+[22m[39m{"event":"db.client.generation_rotated","retired_generation":18,"active_generation":19,"reason":"liveness_failed","retired_in_flight":0}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — refusals reserve nothing[2m > [22m[2mrejects false dispatch prose after later consent was revoked
+[22m[39m{"level":"error","timestamp":"2026-11-06T11:55:54.170Z","event":"stage.failed","stage":"ingest.persist","duration_ms":1,"outcome":"error","error":"OrchestratorDatabaseUnavailableError: ORCHESTRATOR_DATABASE_UNAVAILABLE","trace_id":"5a228033-455c-4bf5-b33f-cecb5d5ae6df"}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — refusals reserve nothing[2m > [22m[2man expired offer no longer authorizes the acceptance
+[22m[39m{"event":"db.transaction.queued","trace_id":"5f8ac5d4-4eb8-4766-86e0-146170475ff5","attempt":1}
+
+[90mstderr[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — refusals reserve nothing[2m > [22m[2man expired offer no longer authorizes the acceptance
+[22m[39m{"event":"db.client.generation_rotated","retired_generation":19,"active_generation":20,"reason":"liveness_failed","retired_in_flight":0}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — refusals reserve nothing[2m > [22m[2man expired offer no longer authorizes the acceptance
+[22m[39m{"level":"error","timestamp":"2026-11-06T11:55:54.172Z","event":"stage.failed","stage":"ingest.persist","duration_ms":2,"outcome":"error","error":"OrchestratorDatabaseUnavailableError: ORCHESTRATOR_DATABASE_UNAVAILABLE","trace_id":"5f8ac5d4-4eb8-4766-86e0-146170475ff5"}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — refusals reserve nothing[2m > [22m[2man explicit direct request overrides a stale accepted-offer label
+[22m[39m{"event":"db.transaction.queued","trace_id":"74a22580-f6a3-4e3f-ad15-6c02c81bb997","attempt":1}
+
+[90mstderr[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — refusals reserve nothing[2m > [22m[2man explicit direct request overrides a stale accepted-offer label
+[22m[39m{"event":"db.client.generation_rotated","retired_generation":20,"active_generation":21,"reason":"liveness_failed","retired_in_flight":0}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — refusals reserve nothing[2m > [22m[2man explicit direct request overrides a stale accepted-offer label
+[22m[39m{"level":"error","timestamp":"2026-11-06T11:55:54.173Z","event":"stage.failed","stage":"ingest.persist","duration_ms":1,"outcome":"error","error":"OrchestratorDatabaseUnavailableError: ORCHESTRATOR_DATABASE_UNAVAILABLE","trace_id":"74a22580-f6a3-4e3f-ad15-6c02c81bb997"}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — refusals reserve nothing[2m > [22m[2man incomplete durable profile is refused even when the caller supplies a spoofed phone argument
+[22m[39m{"event":"db.transaction.queued","trace_id":"af2e7431-f5ff-4477-b889-331c137f0025","attempt":1}
+
+[90mstderr[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — refusals reserve nothing[2m > [22m[2man incomplete durable profile is refused even when the caller supplies a spoofed phone argument
+[22m[39m{"event":"db.client.generation_rotated","retired_generation":21,"active_generation":22,"reason":"liveness_failed","retired_in_flight":0}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — refusals reserve nothing[2m > [22m[2man incomplete durable profile is refused even when the caller supplies a spoofed phone argument
+[22m[39m{"level":"error","timestamp":"2026-11-06T11:55:54.175Z","event":"stage.failed","stage":"ingest.persist","duration_ms":2,"outcome":"error","error":"OrchestratorDatabaseUnavailableError: ORCHESTRATOR_DATABASE_UNAVAILABLE","trace_id":"af2e7431-f5ff-4477-b889-331c137f0025"}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — refusals reserve nothing[2m > [22m[2ma blocked contact cannot request a call
+[22m[39m{"event":"db.transaction.queued","trace_id":"381d2e69-aa04-4b6e-b0f0-6bdf74ac3820","attempt":1}
+
+[90mstderr[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — refusals reserve nothing[2m > [22m[2ma blocked contact cannot request a call
+[22m[39m{"event":"db.client.generation_rotated","retired_generation":22,"active_generation":23,"reason":"liveness_failed","retired_in_flight":0}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — refusals reserve nothing[2m > [22m[2ma blocked contact cannot request a call
+[22m[39m{"level":"error","timestamp":"2026-11-06T11:55:54.176Z","event":"stage.failed","stage":"ingest.persist","duration_ms":1,"outcome":"error","error":"OrchestratorDatabaseUnavailableError: ORCHESTRATOR_DATABASE_UNAVAILABLE","trace_id":"381d2e69-aa04-4b6e-b0f0-6bdf74ac3820"}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — refusals reserve nothing[2m > [22m[2ma proposed phone correction blocks the call until confirmed, then the dispatch carries the corrected number
+[22m[39m{"event":"db.transaction.queued","trace_id":"9ec747c7-fe29-4719-afc1-94faa47acbc9","attempt":1}
+
+[90mstderr[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — refusals reserve nothing[2m > [22m[2ma proposed phone correction blocks the call until confirmed, then the dispatch carries the corrected number
+[22m[39m{"event":"db.client.generation_rotated","retired_generation":23,"active_generation":24,"reason":"liveness_failed","retired_in_flight":0}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — refusals reserve nothing[2m > [22m[2ma proposed phone correction blocks the call until confirmed, then the dispatch carries the corrected number
+[22m[39m{"level":"error","timestamp":"2026-11-06T11:55:54.178Z","event":"stage.failed","stage":"ingest.persist","duration_ms":2,"outcome":"error","error":"OrchestratorDatabaseUnavailableError: ORCHESTRATOR_DATABASE_UNAVAILABLE","trace_id":"9ec747c7-fe29-4719-afc1-94faa47acbc9"}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — refusals reserve nothing[2m > [22m[2ma correction proposed two replies ago still blocks the call until confirmed
+[22m[39m{"event":"db.transaction.queued","trace_id":"b30aca61-458a-44f8-b990-b434a9fa7821","attempt":1}
+
+[90mstderr[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — refusals reserve nothing[2m > [22m[2ma correction proposed two replies ago still blocks the call until confirmed
+[22m[39m{"event":"db.client.generation_rotated","retired_generation":24,"active_generation":25,"reason":"liveness_failed","retired_in_flight":0}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — refusals reserve nothing[2m > [22m[2ma correction proposed two replies ago still blocks the call until confirmed
+[22m[39m{"level":"error","timestamp":"2026-11-06T11:55:54.179Z","event":"stage.failed","stage":"ingest.persist","duration_ms":1,"outcome":"error","error":"OrchestratorDatabaseUnavailableError: ORCHESTRATOR_DATABASE_UNAVAILABLE","trace_id":"b30aca61-458a-44f8-b990-b434a9fa7821"}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — refusals reserve nothing[2m > [22m[2ma delivered price reply never counts as a pending phone correction
+[22m[39m{"event":"db.transaction.queued","trace_id":"0e3ae53e-a57b-4529-bef9-5a70ee0ccc7f","attempt":1}
+
+[90mstderr[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — refusals reserve nothing[2m > [22m[2ma delivered price reply never counts as a pending phone correction
+[22m[39m{"event":"db.client.generation_rotated","retired_generation":25,"active_generation":26,"reason":"liveness_failed","retired_in_flight":0}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — refusals reserve nothing[2m > [22m[2ma delivered price reply never counts as a pending phone correction
+[22m[39m{"level":"error","timestamp":"2026-11-06T11:55:54.180Z","event":"stage.failed","stage":"ingest.persist","duration_ms":0,"outcome":"error","error":"OrchestratorDatabaseUnavailableError: ORCHESTRATOR_DATABASE_UNAVAILABLE","trace_id":"0e3ae53e-a57b-4529-bef9-5a70ee0ccc7f"}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — refusals reserve nothing[2m > [22m[2man active call blocks a second reservation for the same contact
+[22m[39m{"event":"db.transaction.queued","trace_id":"531785ce-6fec-49ba-a48f-2c1b459ca73f","attempt":1}
+
+[90mstderr[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — refusals reserve nothing[2m > [22m[2man active call blocks a second reservation for the same contact
+[22m[39m{"event":"db.client.generation_rotated","retired_generation":26,"active_generation":27,"reason":"liveness_failed","retired_in_flight":0}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — refusals reserve nothing[2m > [22m[2man active call blocks a second reservation for the same contact
+[22m[39m{"level":"error","timestamp":"2026-11-06T11:55:54.181Z","event":"stage.failed","stage":"ingest.persist","duration_ms":1,"outcome":"error","error":"OrchestratorDatabaseUnavailableError: ORCHESTRATOR_DATABASE_UNAVAILABLE","trace_id":"531785ce-6fec-49ba-a48f-2c1b459ca73f"}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — refusals reserve nothing[2m > [22m[2mexpires a provider-accepted call that never started and permits a fresh request
+[22m[39m{"event":"db.transaction.queued","trace_id":"7513ac99-cbc3-402d-b6c6-ea882fc34a6f","attempt":1}
+
+[90mstderr[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — refusals reserve nothing[2m > [22m[2mexpires a provider-accepted call that never started and permits a fresh request
+[22m[39m{"event":"db.client.generation_rotated","retired_generation":27,"active_generation":28,"reason":"liveness_failed","retired_in_flight":0}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a call handoff — refusals reserve nothing[2m > [22m[2mexpires a provider-accepted call that never started and permits a fresh request
+[22m[39m{"level":"error","timestamp":"2026-11-06T11:55:54.183Z","event":"stage.failed","stage":"ingest.persist","duration_ms":2,"outcome":"error","error":"OrchestratorDatabaseUnavailableError: ORCHESTRATOR_DATABASE_UNAVAILABLE","trace_id":"7513ac99-cbc3-402d-b6c6-ea882fc34a6f"}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a → agent b end to end[2m > [22m[2mtwo concurrent dispatches send exactly one Telegram message
+[22m[39m{"event":"db.transaction.queued","trace_id":"c77dde2b-47da-49b4-a823-96900c85030e","attempt":1}
+
+[90mstderr[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a → agent b end to end[2m > [22m[2mtwo concurrent dispatches send exactly one Telegram message
+[22m[39m{"event":"db.client.generation_rotated","retired_generation":28,"active_generation":29,"reason":"liveness_failed","retired_in_flight":0}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a → agent b end to end[2m > [22m[2mtwo concurrent dispatches send exactly one Telegram message
+[22m[39m{"level":"error","timestamp":"2026-11-06T11:55:54.184Z","event":"stage.failed","stage":"ingest.persist","duration_ms":1,"outcome":"error","error":"OrchestratorDatabaseUnavailableError: ORCHESTRATOR_DATABASE_UNAVAILABLE","trace_id":"c77dde2b-47da-49b4-a823-96900c85030e"}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a → agent b end to end[2m > [22m[2man ambiguous dispatch outcome never redials automatically
+[22m[39m{"event":"db.transaction.queued","trace_id":"eceee0e5-a525-41a9-a631-6958bbf19750","attempt":1}
+
+[90mstderr[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a → agent b end to end[2m > [22m[2man ambiguous dispatch outcome never redials automatically
+[22m[39m{"event":"db.client.generation_rotated","retired_generation":29,"active_generation":30,"reason":"liveness_failed","retired_in_flight":0}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a → agent b end to end[2m > [22m[2man ambiguous dispatch outcome never redials automatically
+[22m[39m{"level":"error","timestamp":"2026-11-06T11:55:54.185Z","event":"stage.failed","stage":"ingest.persist","duration_ms":0,"outcome":"error","error":"OrchestratorDatabaseUnavailableError: ORCHESTRATOR_DATABASE_UNAVAILABLE","trace_id":"eceee0e5-a525-41a9-a631-6958bbf19750"}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a → agent b end to end[2m > [22m[2mdispatches the reserved call to Telegram B with a verifiable context hash
+[22m[39m{"event":"db.transaction.queued","trace_id":"5dc8e828-affc-425f-9605-d746b1f220c5","attempt":1}
+
+[90mstderr[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a → agent b end to end[2m > [22m[2mdispatches the reserved call to Telegram B with a verifiable context hash
+[22m[39m{"event":"db.client.generation_rotated","retired_generation":30,"active_generation":31,"reason":"liveness_failed","retired_in_flight":0}
+
+[90mstdout[2m | tests/integration/agent-a-call-handoff.test.ts[2m > [22m[2magent a → agent b end to end[2m > [22m[2mdispatches the reserved call to Telegram B with a verifiable context hash
+[22m[39m{"level":"error","timestamp":"2026-11-06T11:55:54.186Z","event":"stage.failed","stage":"ingest.persist","duration_ms":1,"outcome":"error","error":"OrchestratorDatabaseUnavailableError: ORCHESTRATOR_DATABASE_UNAVAILABLE","trace_id":"5dc8e828-affc-425f-9605-d746b1f220c5"}
+
+ [31m❯[39m tests/integration/agent-a-call-handoff.test.ts [2m([22m[2m30 tests[22m[2m | [22m[31m30 failed[39m[2m)[22m[32m 55[2mms[22m[39m
+[31m     [31m×[31m persists a new offer after a terminal call from inherited course-selected state[39m[32m 11[2mms[22m[39m
+[31m     [31m×[31m the Agent Turn availability path reserves once and points at the exact affirmative message[39m[32m 2[2mms[22m[39m
+[31m     [31m×[31m a direct request reserves exactly one session with derived consent[39m[32m 2[2mms[22m[39m
+[31m     [31m×[31m ten identical replays return the same call_id and keep one session[39m[32m 1[2mms[22m[39m
+[31m     [31m×[31m a direct request buried inside a batch still reserves the call[39m[32m 2[2mms[22m[39m
+[31m     [31m×[31m a decline after a buried request in the same batch blocks the call[39m[32m 2[2mms[22m[39m
+[31m     [31m×[31m two concurrent commits agree on one call_id[39m[32m 2[2mms[22m[39m
+[31m     [31m×[31m an accepted open offer reserves once and links the offer decision[39m[32m 2[2mms[22m[39m
+[31m     [31m×[31m a bare "sí" without an open offer is rejected[39m[32m 2[2mms[22m[39m
+[31m     [31m×[31m a negation beats any affirmative word[39m[32m 2[2mms[22m[39m
+[31m     [31m×[31m a trailing short refusal (no) blocks the call and persists no consent[39m[32m 2[2mms[22m[39m
+[31m     [31m×[31m a trailing short refusal (no, mejor no) blocks the call and persists no consent[39m[32m 2[2mms[22m[39m
+[31m     [31m×[31m the Agent Turn availability path honors a later contextual refusal (ahora no)[39m[32m 2[2mms[22m[39m
+[31m     [31m×[31m the Agent Turn availability path honors a later contextual refusal (por ahora no)[39m[32m 2[2mms[22m[39m
+[31m     [31m×[31m the Agent Turn availability path honors a later contextual refusal (prefiero que no)[39m[32m 2[2mms[22m[39m
+[31m     [31m×[31m persists revoked consent after exhausted repair and cannot reuse it on a later bare yes[39m[32m 2[2mms[22m[39m
+[31m     [31m×[31m rejects an outdated revocation receipt after a new availability authorization[39m[32m 2[2mms[22m[39m
+[31m     [31m×[31m rejects false dispatch prose after later consent was revoked[39m[32m 1[2mms[22m[39m
+[31m     [31m×[31m an expired offer no longer authorizes the acceptance[39m[32m 1[2mms[22m[39m
+[31m     [31m×[31m an explicit direct request overrides a stale accepted-offer label[39m[32m 2[2mms[22m[39m
+[31m     [31m×[31m an incomplete durable profile is refused even when the caller supplies a spoofed phone argument[39m[32m 2[2mms[22m[39m
+[31m     [31m×[31m a blocked contact cannot request a call[39m[32m 1[2mms[22m[39m
+[31m     [31m×[31m a proposed phone correction blocks the call until confirmed, then the dispatch carries the corrected number[39m[32m 2[2mms[22m[39m
+[31m     [31m×[31m a correction proposed two replies ago still blocks the call until confirmed[39m[32m 2[2mms[22m[39m
+[31m     [31m×[31m a delivered price reply never counts as a pending phone correction[39m[32m 0[2mms[22m[39m
+[31m     [31m×[31m an active call blocks a second reservation for the same contact[39m[32m 2[2mms[22m[39m
+[31m     [31m×[31m expires a provider-accepted call that never started and permits a fresh request[39m[32m 2[2mms[22m[39m
+[31m     [31m×[31m two concurrent dispatches send exactly one Telegram message[39m[32m 2[2mms[22m[39m
+[31m     [31m×[31m an ambiguous dispatch outcome never redials automatically[39m[32m 0[2mms[22m[39m
+[31m     [31m×[31m dispatches the reserved call to Telegram B with a verifiable context hash[39m[32m 2[2mms[22m[39m
+[90mstdout[2m | tests/integration/agent-a-memory-projection.test.ts[2m > [22m[2mAgent A memory projection[2m > [22m[2menqueues on commit, projects once across ten sweeps and stays contact-isolated
+[22m[39m{"event":"db.transaction.queued","trace_id":"dfa8743a-c22c-45da-a8ac-77a50bcc202f","attempt":1}
+
+[90mstderr[2m | tests/integration/agent-a-memory-projection.test.ts[2m > [22m[2mAgent A memory projection[2m > [22m[2menqueues on commit, projects once across ten sweeps and stays contact-isolated
+[22m[39m{"event":"db.client.generation_rotated","retired_generation":1,"active_generation":2,"reason":"liveness_failed","retired_in_flight":0}
+
+[90mstdout[2m | tests/integration/agent-a-memory-projection.test.ts[2m > [22m[2mAgent A memory projection[2m > [22m[2menqueues on commit, projects once across ten sweeps and stays contact-isolated
+[22m[39m{"level":"error","timestamp":"2026-11-06T11:55:54.540Z","event":"stage.failed","stage":"ingest.persist","duration_ms":10,"outcome":"error","error":"OrchestratorDatabaseUnavailableError: ORCHESTRATOR_DATABASE_UNAVAILABLE","trace_id":"dfa8743a-c22c-45da-a8ac-77a50bcc202f"}
+
+ [31m❯[39m tests/integration/agent-a-memory-projection.test.ts [2m([22m[2m1 test[22m[2m | [22m[31m1 failed[39m[2m)[22m[32m 13[2mms[22m[39m
+[31m     [31m×[31m enqueues on commit, projects once across ten sweeps and stays contact-isolated[39m[32m 12[2mms[22m[39m
