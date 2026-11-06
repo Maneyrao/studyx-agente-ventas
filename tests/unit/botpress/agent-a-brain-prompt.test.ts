@@ -428,7 +428,27 @@ describe('Agent A Brain prompt', () => {
     expect(JSON.parse(encoded)).toEqual(current);
     expect(instructions).not.toContain('<current_turn_guidance>');
     expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v118');
-    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v186');
+    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v187');
+  });
+
+  it('presents the current conversation after the large factual context without mutating it', () => {
+    const current = context();
+    current.turn.recent_turns = [
+      { id: 'in-1', direction: 'inbound', content: 'No sé si quiero trabajar o invertir.' },
+      { id: 'out-1', direction: 'outbound', content: 'Te cuento cómo funciona.' },
+    ];
+    current.turn.batch_messages = [{ id: 'message-2', text: 'Hay alumnos que lo hayan hecho?' }];
+    const before = structuredClone(current);
+    const instructions = buildAgentABrainInstructionsV1(current);
+    const encoded = instructions.split('<authorized_context>')[1]!.split('</authorized_context>')[0]!;
+    const presented = JSON.parse(encoded);
+
+    expect(presented).toEqual(before);
+    expect(current).toEqual(before);
+    expect(Object.keys(presented).slice(-4)).toEqual(['customer', 'commercial_state', 'continuity', 'turn']);
+    expect(Object.keys(presented.turn).slice(-2)).toEqual(['recent_turns', 'batch_messages']);
+    expect(encoded.indexOf('"available_offerings"')).toBeLessThan(encoded.indexOf('"recent_turns"'));
+    expect(encoded.indexOf('"recent_turns"')).toBeLessThan(encoded.indexOf('"batch_messages"'));
   });
 
   it('maps recommendations and generic continuation without persisting a customer choice', () => {

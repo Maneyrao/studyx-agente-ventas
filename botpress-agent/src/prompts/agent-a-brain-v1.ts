@@ -5,7 +5,7 @@ import {
 } from './studyx-agent-a-canonical.generated';
 import { resolveCanonicalPromptIdentityV1 } from './agent-a-identity';
 
-export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v186' as const;
+export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v187' as const;
 
 /**
  * Runtime contract only. The sales behavior lives in the canonical prompt so
@@ -80,6 +80,25 @@ function inertJson(value: unknown): string {
     .replaceAll('<', '\\u003c')
     .replaceAll('>', '\\u003e')
     .replaceAll('&', '\\u0026');
+}
+
+/** Preserve the complete context while placing the live conversation nearest
+ * to the canonical behavior. This changes prompt presentation only: it does
+ * not derive state, filter facts or mutate the caller-owned context. */
+function promptContextPresentationV1(context: AgentAContextV1): AgentAContextV1 {
+  const { turn, customer, commercial_state, continuity, ...background } = context;
+  const { batch_messages, recent_turns, ...turnBackground } = turn;
+  return {
+    ...background,
+    customer,
+    commercial_state,
+    ...(continuity === undefined ? {} : { continuity }),
+    turn: {
+      ...turnBackground,
+      recent_turns,
+      batch_messages,
+    },
+  };
 }
 
 /** Makes already-verified enrollment identities salient without adding a
@@ -368,7 +387,7 @@ ${INTERNAL_CONTACT_PROFILE_CONTRACT}
 </internal_contact_profile_contract>
 
 <authorized_context>
-${inertJson(context)}
+${inertJson(promptContextPresentationV1(context))}
 </authorized_context>
 
 ${exactLastCallResultDirectiveV1(context)}
