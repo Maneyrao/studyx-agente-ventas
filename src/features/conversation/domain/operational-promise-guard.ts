@@ -333,7 +333,7 @@ const ASSERTION_CLASSES: readonly {
       + `(?:ya\s+)?(?:tengo|tenemos|qued[óo]|quedaron|registr[éeo]|guard[éeo]|anot[éeo]|tom[éeo])${R}`
       + `[^.;]{0,60}${L}(?:datos|nombre|apellido|correo|email|tel[ée]fono|todo)${R}`
       + `|(?:datos|nombre|apellido|correo|email|tel[ée]fono)${R}[^.;]{0,60}`
-      + `${L}(?:registrad[oa]s?|guardad[oa]s?|anotad[oa]s?)${R}`
+      + `${L}(?:(?:queda|qued[óo])(?:\s+como)?|registrad[oa]s?|guardad[oa]s?|anotad[oa]s?)${R}`
       + `)`,
       'iu',
     ),

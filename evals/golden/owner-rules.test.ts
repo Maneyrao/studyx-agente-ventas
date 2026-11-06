@@ -51,13 +51,13 @@ describe('owner-rule supplementary golden campaign', () => {
     const felipe = trace.turns.find(turn => turn.id === 't10_felipe')!;
     expect(felipe.authority).toContainEqual(expect.objectContaining({
       file: 'docs/authority/prompt-agente-a-studyx-v2.md',
-      start: 60,
-      end: 60,
+      start: 64,
+      end: 64,
     }));
     expect(felipe.must.join(' ')).toContain('historia real autorizada');
     expect(felipe.must.join(' ')).toContain('no implica que exista un video');
 
-    const retry = trace.turns.find(turn => turn.id === 't19_retry')!;
+    const retry = trace.turns.find(turn => turn.id === 't20_retry')!;
     expect(retry.must.join(' ')).toContain('buzón de voz');
     expect(retry.must.join(' ')).toContain('reintento solicitado');
     expect(retry.must.join(' ')).not.toContain('o seguir por chat');
@@ -66,8 +66,8 @@ describe('owner-rule supplementary golden campaign', () => {
     const students = discover.turns.find(turn => turn.id === 'g05_students')!;
     expect(students.authority).toContainEqual(expect.objectContaining({
       file: 'docs/authority/prompt-agente-a-studyx-v2.md',
-      start: 60,
-      end: 60,
+      start: 64,
+      end: 64,
     }));
   });
 

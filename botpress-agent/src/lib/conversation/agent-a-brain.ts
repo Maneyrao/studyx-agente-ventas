@@ -1989,7 +1989,7 @@ export function validateAgentATurnProposalV1(input: {
         // "registro" is also a noun for an incomplete process. It is not
         // evidence of a completed write; actual receipt claims use a verb
         // or result (registré, quedó registrado, ya tengo).
-        const claim = /\b(?:quedo|registre|registrado|registrada|guarde|guardo|guardado|guardada|tengo|tenemos)\w*\b[^.!?]{0,60}\b(?:datos|nombre|apellido|correo|email|telefono)\b/u;
+        const claim = /(?:\b(?:quedo|registre|registrado|registrada|guarde|guardo|guardado|guardada|tengo|tenemos)\w*\b[^.!?]{0,60}\b(?:datos|nombre|apellido|correo|email|telefono|todo)\b|\b(?:datos|nombre|apellido|correo|email|telefono)\b[^.!?]{0,60}\b(?:queda|quedo)(?:\s+como)?\b)/u;
         const negatedClaim = /\b(?:no|aun\s+no|todavia\s+no)\b[^.!?]{0,24}\b(?:quedo|registre|registro|registrado|registrada|guarde|guardo|guardado|guardada|tengo|tenemos)\w*\b/u;
         if (!claim.test(assertiveClause) || negatedClaim.test(assertiveClause)) return false;
 

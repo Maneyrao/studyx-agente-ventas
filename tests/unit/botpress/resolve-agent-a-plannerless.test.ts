@@ -80,6 +80,35 @@ function generated(value: AgentATurnProposalV1) {
 }
 
 describe('resolveAgentAPlannerlessProposalV2', () => {
+  it.each([
+    'Perfecto, entonces el teléfono queda como 1169004497.',
+    'Con el correo ya tengo todo para la llamada.',
+  ])('repairs a false completed-intake claim before commit: %s', async (message) => {
+    const current = context();
+    current.commercial_state.awaiting_reply = 'contact_details';
+    current.capabilities.intake_status = 'unknown';
+    current.capabilities.intake_missing = ['correo', 'telefono'];
+    const initial = generated(proposal({
+      move: { schema_version: 1, move: 'provide_contact_details', secondary_moves: ['request_call'], vetoes: [], confidence: 1 },
+      response: { messages: [message], call_offer: null },
+      used_fact_ids: [],
+    }));
+    const repaired = generated(proposal({
+      move: initial.proposal.move,
+      response: { messages: ['Me faltan el correo y el teléfono completo con código de país para poder llamarte.'], call_offer: null },
+      used_fact_ids: [],
+      repair_of: { rejection_id: '00000000-0000-4000-8000-000000000141', attempt: 1 },
+    }));
+    const repair = vi.fn(async () => repaired);
+    const result = await resolveAgentAPlannerlessProposalV2({
+      initial, context: current, repair_enabled: true, semantic_rejections: 'advisory', repair,
+      rejection_id: '00000000-0000-4000-8000-000000000141',
+    });
+    expect(repair).toHaveBeenCalledTimes(1);
+    expect(result.effective.proposal.response.messages).toEqual(repaired.proposal.response.messages);
+    expect(result.evidence.rejection_codes).toContain('UNSUPPORTED_OPERATIONAL_CLAIM:contact_details');
+  });
+
   it.each([true,false])('exact call transport preserves the raw proposal without repair or contingency (only=%s)',async only=>{
     const current=context();
     current.turn.batch_messages=[{id:'price',text:'El precio es lo único que me frena.'}];

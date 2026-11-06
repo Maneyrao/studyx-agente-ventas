@@ -299,6 +299,20 @@ describe('V5 autoriza por estado, no por texto', () => {
       .toHaveLength(1);
   });
 
+  it.each([
+    'Perfecto, entonces el teléfono queda como 1169004497.',
+    'Con el correo ya tengo todo para la llamada.',
+  ])('bloquea confirmaciones de contacto que todavía no son durables: %s', (claim) => {
+    const materialized = materializeStateFactsV1({
+      intake: { nombre: 'Thiago', apellido: 'Maneyro', correo: '', telefono: '' },
+      planned_payment_reported: false,
+    });
+    expect(unsupportedOperationalAssertionsV1(claim, materialized)).toContainEqual({
+      sentence: claim,
+      requires: 'state:intake_recorded:v1',
+    });
+  });
+
   it('autoriza afirmar el pago informado sólo con la transición planificada', () => {
     const text = 'Tengo registrado que informaste el pago.';
     expect(unsupportedOperationalAssertionsV1(text, materializeStateFactsV1({

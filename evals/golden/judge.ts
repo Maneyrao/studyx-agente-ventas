@@ -662,7 +662,8 @@ interface RawSemanticTurnVerdictV1 {
     readonly authority_line_index: number;
     readonly evidence_source: 'response' | 'backend_action' | 'delivery_result'
       | 'state' | 'preconditions' | 'delivered_history' | 'negotiation_ledger'
-      | 'previous_delivery' | 'promotion_delta' | 'early_call_offer_evidence';
+      | 'previous_delivery' | 'program_delivery_history' | 'promotion_delta'
+      | 'early_call_offer_evidence';
     readonly observed_evidence: string;
     readonly explanation: string;
   }[];
@@ -715,10 +716,25 @@ function semanticFailureContradictedByObjectiveEvidence(input: {
   readonly turn: GoldenTurnV1;
   readonly observation: GoldenTurnObservationV1;
   readonly previousObservation: GoldenTurnObservationV1 | null;
+  readonly priorObservations: readonly GoldenTurnObservationV1[];
 }): boolean {
   if (input.failure.code === 'SEMANTIC_MUST_NOT_FAILED'
     && input.requirement === 'No abrir un menú de cursos ni ofrecer varias opciones.'
     && !courseMenuIsObserved(input.observation)) return true;
+  if (input.failure.code === 'SEMANTIC_MUST_FAILED'
+    && input.requirement.includes('salvo que ya se haya enviado')) {
+    const priorDocuments = new Set(input.priorObservations.flatMap(
+      (observation) => observation.programDocuments ?? [],
+    ));
+    const priorImages = new Set(input.priorObservations.flatMap(
+      (observation) => observation.programImages ?? [],
+    ));
+    if ([...priorDocuments].some((code) => priorImages.has(code))) return true;
+  }
+  if (input.failure.code === 'SEMANTIC_MUST_FAILED'
+    && input.requirement === 'Responder con una de las historias reales autorizadas, sin convertirla en testimonio de Real Estate.'
+    && /\bFelipe\s+Serrano\b/iu.test(input.observation.response)
+    && /\b(?:paneles\s+solares|aires\s+acondicionados|equipo\s+trabajando)\b/iu.test(input.observation.response)) return true;
   if (input.failure.code === 'SEMANTIC_MUST_FAILED'
     && input.requirement === 'Mostrar un resumen que incluya el nombre y apellido recibidos, el correo y el teléfono.'
     && completeContactSummaryIsObserved(input.turn, input.observation)) return true;
@@ -802,6 +818,7 @@ async function judgeTurnSemantically(input: {
   readonly turn: GoldenTurnV1;
   readonly observation: GoldenTurnObservationV1;
   readonly previousObservation: GoldenTurnObservationV1 | null;
+  readonly priorObservations: readonly GoldenTurnObservationV1[];
   readonly negotiationHistory?: readonly ReturnType<typeof negotiationEvidenceV1>[];
 }): Promise<SemanticTurnVerdictV1> {
   if (!input.observation.response.trim()) {
@@ -848,6 +865,10 @@ async function judgeTurnSemantically(input: {
     state: input.previousObservation.state,
     delivery_result: input.previousObservation.workflow ?? null,
   } : null;
+  const programDeliveryHistory = input.priorObservations.map((observation) => ({
+    program_documents: observation.programDocuments ?? [],
+    program_images: observation.programImages ?? [],
+  }));
   const promotionDelta = goldenPromotionDeltaV1(input.observation, input.previousObservation);
   const earlyCallEvidence = input.observation.earlyCallOfferEvidence ?? [];
   const payload = {
@@ -863,6 +884,7 @@ async function judgeTurnSemantically(input: {
       negotiation_ledger:negotiationLedger, semantic_scope:'Judge delivered history and the current reply; stage names and move labels do not impose a fixed turn. Earlier completed steps count. Explicit or implicit unauthorized bonus offers fail, including questions and hypotheses. In each ledger entry ladder is the evidence before that turn; promotion and action are its committed outcome. A call offered in that same turn never becomes prior authorization for its bonus.' } : {}),
     customer: input.turn.customer,
     previous_delivery: previousDelivery,
+    program_delivery_history: programDeliveryHistory,
     promotion_delta: promotionDelta,
     early_call_offer_evidence: earlyCallEvidence,
     requirements: [
@@ -888,6 +910,7 @@ async function judgeTurnSemantically(input: {
   ];
   const evidenceSources = {
     previous_delivery: JSON.stringify(previousDelivery),
+    program_delivery_history: JSON.stringify(programDeliveryHistory),
     promotion_delta: JSON.stringify(promotionDelta),
     early_call_offer_evidence: JSON.stringify(earlyCallEvidence),
     ...(deliveredHistory ? { delivered_history:JSON.stringify(deliveredHistory),
@@ -906,7 +929,7 @@ async function judgeTurnSemantically(input: {
         headers: { authorization: `Bearer ${input.apiKey}`, 'content-type': 'application/json' },
         body: JSON.stringify({
           model: input.model,
-          instructions: 'Sos un juez estricto de comportamiento conversacional. Evalúa únicamente la respuesta entregada, la acción efectiva del backend, el estado y las precondiciones suministradas. actual.delivery_result es el resultado final: un intento rechazado que luego se reparó no invalida la entrega final. Los borradores, moves y acciones propuestas no son efectos ni evidencia de entrega. previous_delivery conserva el recibo, invitación y estado entregados en el turno anterior; early_call_offer_evidence conserva invitaciones autorizadas, persistidas y entregadas de la segunda/tercera respuesta en el mismo diálogo. Una invitación ya realizada no se exige de nuevo. promotion_delta compara identidades exactas del paquete anterior y actual: recordar un miembro ya vigente no añade un curso ni constituye por sí solo una nueva promesa. Una promesa nueva explícita o implícita sin efecto sigue siendo un fallo, incluso si el ledger no cambió; comparar lo prometido con los miembros ya vigentes. preconditions.rule_bonus_before_turn identifica únicamente cuál sería el próximo curso si una oferta resulta exigible; jamás demuestra por sí solo que la oferta sea exigible en este turno. Para exigirla deben acreditarse el disparador en negotiation_ladder_before_turn o rule_outcomes.rule_a=model|rewrite|fixed y el efecto final. rule_outcomes.rule_a=not_applicable, mayOfferBonus=false y ladder.eligible=false prueban que no correspondía bonificar, salvo evidencia estructural contradictoria como instant_trigger=true o priceOnlyBarrierConfirmed=true. No premies intención ni inventes hechos. Juzga cada requisito de forma independiente: nunca traslades el incumplimiento de un requisito a otro. Un requisito must falla si no se observa. Un must_not falla ÚNICAMENTE cuando la conducta prohibida sí ocurre; la ausencia de respuesta o de evidencia nunca viola un must_not. Una obligación condicional que comienza con “Si se añade un bonificado” no falla cuando no se añadió ninguno; la exigibilidad de añadirlo se juzga en el requisito de la Regla A. La prohibición de expresiones de la línea 129 está en la sección de bonificación y se interpreta por el objeto y el sentido: ofrecer un bonificado o una excepción personal. Compartir o dejar un enlace de inscripción no constituye por sí mismo regalar un curso. Esto no exime una bonificación explícita o implícita sin efecto, aunque la misma respuesta también comparta un enlace. Después de recomendar exactamente un curso, preguntar por equipo o por una preferencia entre contenidos de ese mismo curso (por ejemplo, cámara o edición) no equivale a abrir un menú de cursos. Un nombre completo como "Ana Pérez" satisface nombre y apellido; no se exige mostrarlos en campos separados. En preconditions.price_objection_memory, present=true prueba que la objeción del turno actual o de la conversación quedó registrada; priorSourceMessageIds prueba exclusivamente que ya existía en un turno anterior. preconditions.negotiation_ladder_before_turn y cada ladder del historial describen hechos previos a ese turno; action y promotion describen su resultado. Una llamada ofrecida en el turno actual no autoriza retroactivamente una bonificación del mismo turno; la Regla A del dueño tampoco exige una llamada previa, y puede coincidir con la Regla B cuando ambas tienen sus propios disparadores autorizados. may_offer_call gobierna una oferta proactiva, no invalida una llamada que el cliente pidió y confirmó; backend_action=request_call_now con actual.delivery_result.commitSucceeded=true prueba que el despacho fue autorizado. Si backend_action=send_payment_link y una URL visible coincide exactamente con actual.delivered_links, esa URL fue añadida por el backend y no fue escrita ni inventada por el agente. Para cada fallo elegí el requirement_id exacto, el authority_line_index y evidence_source. En observed_evidence copia literalmente el fragmento de esa fuente que prueba el fallo; para un must ausente puede quedar vacío, pero para un must_not debe ser un fragmento no vacío presente en la fuente. El runner expande la línea de autoridad; no redactes ni alteres citas. Autoridad vigente (AGENTS.md, «Venta interpretada por el modelo», 2026-11-03): el backend sólo valida PERMISOS; ninguna bonificación, llamada, pregunta de precio ni cierre es exigible por regla del backend, y las menciones de Reglas A/B/C/D/E o de «exigible» en los requisitos antiguos no obligan. Juzga lo que el requisito del turno pide expresamente y los hechos y efectos reales; no exijas una oferta o llamada que el requisito no pida. No juzgues reglas no incluidas.',
+          instructions: 'Sos un juez estricto de comportamiento conversacional. Evalúa únicamente la respuesta entregada, la acción efectiva del backend, el estado y las precondiciones suministradas. actual.delivery_result es el resultado final: un intento rechazado que luego se reparó no invalida la entrega final. Los borradores, moves y acciones propuestas no son efectos ni evidencia de entrega. previous_delivery conserva el recibo, invitación y estado entregados en el turno anterior; program_delivery_history conserva todos los PDF e imágenes de programa entregados antes del turno actual, por lo que un material ya entregado no debe exigirse otra vez; early_call_offer_evidence conserva invitaciones autorizadas, persistidas y entregadas de la segunda/tercera respuesta en el mismo diálogo. Una invitación ya realizada no se exige de nuevo. promotion_delta compara identidades exactas del paquete anterior y actual: recordar un miembro ya vigente no añade un curso ni constituye por sí solo una nueva promesa. Una promesa nueva explícita o implícita sin efecto sigue siendo un fallo, incluso si el ledger no cambió; comparar lo prometido con los miembros ya vigentes. preconditions.rule_bonus_before_turn identifica únicamente cuál sería el próximo curso si una oferta resulta exigible; jamás demuestra por sí solo que la oferta sea exigible en este turno. Para exigirla deben acreditarse el disparador en negotiation_ladder_before_turn o rule_outcomes.rule_a=model|rewrite|fixed y el efecto final. rule_outcomes.rule_a=not_applicable, mayOfferBonus=false y ladder.eligible=false prueban que no correspondía bonificar, salvo evidencia estructural contradictoria como instant_trigger=true o priceOnlyBarrierConfirmed=true. No premies intención ni inventes hechos. Juzga cada requisito de forma independiente: nunca traslades el incumplimiento de un requisito a otro. Un requisito must falla si no se observa. Un must_not falla ÚNICAMENTE cuando la conducta prohibida sí ocurre; la ausencia de respuesta o de evidencia nunca viola un must_not. Una obligación condicional que comienza con “Si se añade un bonificado” no falla cuando no se añadió ninguno; la exigibilidad de añadirlo se juzga en el requisito de la Regla A. La prohibición de expresiones de la línea 129 está en la sección de bonificación y se interpreta por el objeto y el sentido: ofrecer un bonificado o una excepción personal. Compartir o dejar un enlace de inscripción no constituye por sí mismo regalar un curso. Esto no exime una bonificación explícita o implícita sin efecto, aunque la misma respuesta también comparta un enlace. Después de recomendar exactamente un curso, preguntar por equipo o por una preferencia entre contenidos de ese mismo curso (por ejemplo, cámara o edición) no equivale a abrir un menú de cursos. Un nombre completo como "Ana Pérez" satisface nombre y apellido; no se exige mostrarlos en campos separados. En preconditions.price_objection_memory, present=true prueba que la objeción del turno actual o de la conversación quedó registrada; priorSourceMessageIds prueba exclusivamente que ya existía en un turno anterior. preconditions.negotiation_ladder_before_turn y cada ladder del historial describen hechos previos a ese turno; action y promotion describen su resultado. Una llamada ofrecida en el turno actual no autoriza retroactivamente una bonificación del mismo turno; la Regla A del dueño tampoco exige una llamada previa, y puede coincidir con la Regla B cuando ambas tienen sus propios disparadores autorizados. may_offer_call gobierna una oferta proactiva, no invalida una llamada que el cliente pidió y confirmó; backend_action=request_call_now con actual.delivery_result.commitSucceeded=true prueba que el despacho fue autorizado. Si backend_action=send_payment_link y una URL visible coincide exactamente con actual.delivered_links, esa URL fue añadida por el backend y no fue escrita ni inventada por el agente. Para cada fallo elegí el requirement_id exacto, el authority_line_index y evidence_source. En observed_evidence copia literalmente el fragmento de esa fuente que prueba el fallo; para un must ausente puede quedar vacío, pero para un must_not debe ser un fragmento no vacío presente en la fuente. El runner expande la línea de autoridad; no redactes ni alteres citas. Autoridad vigente (AGENTS.md, «Venta interpretada por el modelo», 2026-11-03): el backend sólo valida PERMISOS; ninguna bonificación, llamada, pregunta de precio ni cierre es exigible por regla del backend, y las menciones de Reglas A/B/C/D/E o de «exigible» en los requisitos antiguos no obligan. Juzga lo que el requisito del turno pide expresamente y los hechos y efectos reales; no exijas una oferta o llamada que el requisito no pida. No juzgues reglas no incluidas.',
           input: JSON.stringify(payload),
           reasoning: { effort: 'none' }, temperature: 0, stream: false, max_output_tokens: 1200,
           text: { format: { type: 'json_schema', name: 'studyx_golden_semantic_turn_judge_v3', schema: {
@@ -973,7 +996,7 @@ async function judgeTurnSemantically(input: {
         const requirement = requirements[requirementIndex]!;
         if (semanticFailureContradictedByObjectiveEvidence({
           failure: normalizedFailure, requirement, turn: input.turn, observation: input.observation,
-          previousObservation: input.previousObservation,
+          previousObservation: input.previousObservation, priorObservations: input.priorObservations,
         })) continue;
         failures.push({
           code: normalizedFailure.code,
@@ -1013,6 +1036,7 @@ export async function judgeCaseSemantically(input: {
       apiKey: input.apiKey, model: input.model, turn:input.scenario.evaluationMode==='negotiation_invariants'?negotiationSemanticTurnV1(turn,index===input.scenario.turns.length-1,observation.negotiationFacts?.ladder?.required_price_objection_count===2):turn, observation,
       ...(input.scenario.evaluationMode==='negotiation_invariants'?{negotiationHistory:input.scenario.turns.slice(0,index+1).map((t,i)=>negotiationEvidenceV1(t,input.observations[i]!))}:{}),
       previousObservation: input.observations[index - 1] ?? null,
+      priorObservations: input.observations.slice(0, index),
     }));
   }
   return verdicts;

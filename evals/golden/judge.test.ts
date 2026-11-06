@@ -203,6 +203,68 @@ describe('golden judge recorded JSON boundary', () => {
   });
 });
 
+describe('golden semantic judge cumulative evidence', () => {
+  it('does not require a programme again when image and PDF were delivered earlier than the immediately previous turn', async () => {
+    const base = GOLDEN_CASES.find((candidate) => candidate.id === '45_real_trace_5b138536_20261105')!;
+    const turns = [base.turns[2]!, base.turns[3]!, base.turns[4]!];
+    const scenario = { ...base, evaluationMode: undefined, turns };
+    let finalPayload: { program_delivery_history?: unknown } | null = null;
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (_url, init) => {
+      const request = JSON.parse(String(init?.body)) as { input: string };
+      const payload = JSON.parse(request.input) as { turn_id: string; program_delivery_history?: unknown };
+      if (payload.turn_id === 't06_contents') finalPayload = payload;
+      const verdict = payload.turn_id === 't06_contents'
+        ? { turn_id: payload.turn_id, approved: false, failures: [{
+          code: 'SEMANTIC_MUST_FAILED', requirement_id: 'must:0', authority_line_index: 0,
+          evidence_source: 'program_delivery_history', observed_evidence: '',
+          explanation: 'No volvió a enviar el material.',
+        }] }
+        : { turn_id: payload.turn_id, approved: true, failures: [] };
+      return new Response(JSON.stringify({ output_text: JSON.stringify({ verdict }) }), { status: 200 });
+    });
+    try {
+      const verdicts = await judgeCaseSemantically({
+        apiKey: 'fixture-only', model: 'deepseek-test', scenario,
+        observations: [
+          observation({ programDocuments: ['real_estate'], programImages: ['real_estate'] }),
+          observation({ response: 'Sí, tenemos Real Estate.' }),
+          observation({ response: 'Vas a ver las bases legales, financieras y comerciales del negocio.' }),
+        ],
+      });
+      expect(finalPayload).toMatchObject({ program_delivery_history: [
+        { program_documents: ['real_estate'], program_images: ['real_estate'] },
+        { program_documents: [], program_images: [] },
+      ] });
+      expect(verdicts[2]).toMatchObject({ approved: true, failures: [], evaluation_error: null });
+    } finally { fetchMock.mockRestore(); }
+  });
+
+  it('accepts the exact authorized Felipe story while preserving independent repetition failures', async () => {
+    const base = GOLDEN_CASES.find((candidate) => candidate.id === '47_discover_once_6bcc8efa_20261105')!;
+    const turn = base.turns.find((candidate) => candidate.id === 'g05_students')!;
+    const scenario = { ...base, evaluationMode: undefined, turns: [turn] };
+    const response = 'Felipe Serrano creó su empresa de instalación de paneles solares y aires acondicionados, y hoy tiene un equipo trabajando con él. Qué prefieres: trabajar con propiedades o invertir?';
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      output_text: JSON.stringify({ verdict: { turn_id: turn.id, approved: false, failures: [
+        { code: 'SEMANTIC_MUST_FAILED', requirement_id: 'must:0', authority_line_index: 0,
+          evidence_source: 'response', observed_evidence: '', explanation: 'No contó una historia real.' },
+        { code: 'SEMANTIC_MUST_NOT_FAILED', requirement_id: 'must_not:0', authority_line_index: 0,
+          evidence_source: 'response', observed_evidence: 'trabajar con propiedades o invertir',
+          explanation: 'Repitió la elección ya respondida.' },
+      ] } }),
+    }), { status: 200 }));
+    try {
+      const [verdict] = await judgeCaseSemantically({
+        apiKey: 'fixture-only', model: 'deepseek-test', scenario,
+        observations: [observation({ response })],
+      });
+      expect(verdict).toMatchObject({ approved: false, evaluation_error: null, failures: [
+        { code: 'SEMANTIC_MUST_NOT_FAILED', requirement_index: 0 },
+      ] });
+    } finally { fetchMock.mockRestore(); }
+  });
+});
+
 describe('golden hard judge', () => {
   it('passes the exact identity turn and fails a defensive administrative variant', () => {
     const turn = GOLDEN_CASES[0]!.turns[0]!;
