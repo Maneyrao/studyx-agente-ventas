@@ -27,6 +27,48 @@ import {
  */
 
 describe('default retrieval thresholds', () => {
+  it('hydrates Real Estate facts and syllabus from the owner alias "real state"', async () => {
+    const { buildOffering } = await import('../../../scripts/upsert-manual-2026-offerings.mjs');
+    const seeded = buildOffering('real_estate');
+    const realEstate = {
+      ...businessOffering(seeded.code, seeded.display_name, seeded.metadata.academy),
+      aliases: seeded.metadata.aliases ?? [],
+      description: seeded.description,
+      classes: seeded.delivery.classes ?? null,
+      modality: seeded.delivery.modality,
+    };
+    const generic = businessContextView({ offerings: [businessOffering('marketing_digital', 'Marketing Digital', 'Marketing')] });
+    const syllabus = 'Mercado inmobiliario, captación de propiedades, negociación y cierre.';
+    const result = await claimBatch(input, { ...buildDeps({
+      messagesResult: [
+        { id: 'm1', conversation_seq: 1, content: 'algo vinculado con real state', created_at: '2026-08-11T12:00:00.000Z', message_type: 'text' },
+        { id: 'm2', conversation_seq: 2, content: 'tienen cursos de real state?', created_at: '2026-08-11T12:00:01.000Z', message_type: 'text' },
+      ],
+      knowledge: { search: vi.fn().mockResolvedValue([]), searchByOfferingCode: vi.fn().mockResolvedValue([{
+        source_uri: 'knowledge-source:real-estate', title: 'Programa Real Estate', content: syllabus,
+        offering_code: 'real_estate', similarity: 1,
+      }]) },
+    }), business: {
+      load: vi.fn().mockResolvedValue(generic),
+      loadCompleteIndex: vi.fn().mockResolvedValue({ as_of: generic.as_of, offerings_total: 2,
+        offerings: [...generic.offerings, realEstate], injection_suspected_count: 0 }),
+      loadByCode: vi.fn(async (code: string) => businessContextView({ offerings: code === 'real_estate' ? [realEstate] : [] })),
+    } });
+    if (result.outcome !== 'claimed') throw new Error('expected claim');
+    expect(result.catalog_resolution).toMatchObject({ kind: 'exact', offeringCode: 'real_estate' });
+    const wire = withWireUuids(result) as unknown as BotpressClaimedTurn;
+    wire.conversation_state_v1 = { selected_offering_code: null, selected_payment_plan: null, stage: 'exploring',
+      call_preference: 'unknown', call_offer_status: 'not_offered', call_offer_count: 0, awaiting_reply: 'none', version: 0 };
+    const context = buildAgentAContextV1(wire, 'Emma')!;
+    expect(context.catalog.selected_offering).toEqual(expect.objectContaining({
+      code: 'real_estate',
+      facts: expect.arrayContaining([
+        expect.objectContaining({ id: 'offering:real_estate:description:v1', kind: 'offering_description', value: seeded.description }),
+        expect.objectContaining({ kind: 'offering_syllabus', value: syllabus }),
+      ]),
+    }));
+  });
+
   it('hydrates Ecommerce facts and syllabus in the same two-fragment turn without selecting or authorizing a purchase', async () => {
     const marketing = businessOffering('marketing_digital', 'Marketing Digital', 'Marketing');
     const community = businessOffering('community_manager', 'Community Manager', 'Marketing');

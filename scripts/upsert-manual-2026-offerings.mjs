@@ -39,7 +39,9 @@ const ALIASES = Object.freeze({
   auxiliar_educacion_especial: ['educación especial', 'educacion especial'],
   electricista: ['electricista', 'electricidad'],
   estudios_biblicos: ['biblia', 'estudios bíblicos', 'estudios biblicos'],
-  real_estate: ['real estate', 'bienes raíces', 'bienes raices', 'inmobiliaria'],
+  // The resolver normalizes accents and rejects aliases that duplicate the
+  // canonical display name, so keep one spelling per canonical identity.
+  real_estate: ['real state', 'bienes raíces', 'inmobiliaria'],
   diseno_vidrieras_stand: ['vidrieras', 'stand'],
   plomeria: ['plomería', 'plomero'],
   home_maintenance: ['mantenimiento del hogar', 'home maintenance'],
