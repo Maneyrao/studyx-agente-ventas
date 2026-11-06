@@ -873,7 +873,11 @@ OWNER_PROMOTION_MODE_REPLAY_CASES_MUTABLE.push({
       expected: { move: ['ask_course_information', 'request_course_program'], action: ['send_course_program', 'none'], state: {} },
     }),
     traceBase('t07_payment', 'dale\njoya\nche y el pago?\npero no estoy seguro'),
-    traceBase('t08_trust', 'no sé si es seguro este medio\nstudyx\nhay testimonios?'),
+    traceBase('t08_trust', 'no sé si es seguro este medio\nstudyx\nhay testimonios?', {
+      authority: [traceRef, intentRef, noPrefabRef, storiesRef],
+      must: ['Responder la duda de confianza con hechos autorizados y, si usa una historia, contar sólo una historia real autorizada y nombrar su rubro.'],
+      mustNot: ['No inventar un testimonio genérico de Real Estate ni atribuir resultados a alumnos anónimos.'],
+    }),
     traceBase('t09_testimonials', 'tenes algun testiminio de otro alumno\nde algun otro rubro?'),
     traceBase('t10_felipe', 'mandame el testiminio de felipe\nsa er\nno lo tenes?', {
       authority: [traceRef, intentRef, noPrefabRef, storiesRef],
@@ -912,8 +916,16 @@ OWNER_PROMOTION_MODE_REPLAY_CASES_MUTABLE.push({
       must: ['Si el número corregido no se confirmó, pedir la confirmación antes de llamar.'],
       mustNot: ['No llamar al número cuestionado ni decir que llama al número corregido sin confirmación.'],
     }),
-    traceBase('t23_ok', 'oki', { must: ['Pedir una confirmación inequívoca del número completo corregido antes de volver a llamar.'], mustNot: ['No interpretar un “oki” ambiguo como confirmación del teléfono ni decir que llama.'] }),
-    traceBase('t24_cannot_call', 'dale, osea que ahora no me podes llamar?', { must: ['Decir con claridad que falta confirmar el número corregido y pedir esa confirmación.'], mustNot: ['No prometer avisar, reintentar o llamar más tarde por su cuenta; no decir que llama si no puede llamar.'] }),
+    traceBase('t23_ok', 'oki', {
+      must: ['Tratar el “oki” como confirmación contextual válida del número completo que el turno anterior acaba de escribir y preguntar una sola vez si puede atender ahora.'],
+      mustNot: ['No volver a pedir los dígitos ni ejecutar la llamada en este mismo turno de confirmación.'],
+      expected: { move: ['request_call', 'provide_contact_details'], action: ['none'], state: {} },
+    }),
+    traceBase('t24_cannot_call', 'dale, osea que ahora no me podes llamar?', {
+      must: ['Con el número corregido ya confirmado y la disponibilidad expresada, ejecutar la llamada solicitada ahora.'],
+      mustNot: ['No volver a pedir el teléfono ni afirmar que llama si el efecto no se confirma.'],
+      expected: { move: ['request_call'], action: ['request_call_now'], state: {} },
+    }),
     traceBase('t25_chat_while_call_open', 'pero no me estas llamando\nokay sigamos por aca\nme parece caro'),
     traceBase('t26_very_expensive', 'noo\nme parece muy caro', {
       must: ['Trabajar el valor; el modelo puede ofrecer un bonificado afín con la cita de este mensaje como motivo.'],
@@ -1133,8 +1145,8 @@ OWNER_PROMOTION_MODE_REPLAY_CASES_MUTABLE.push({
       mustNot: ['No iniciar datos, plan o enlace sin intención de compra.'],
       hard: [{ type: 'workflow_committed' }, noPrefab, { type: 'no_enrollment_ask' }, { type: 'no_link_delivered' }, ...noBeca] }),
     traceBase('t03_undecided', 'no sé todavía si trabajar con una inmobiliaria o invertir', { authority: [midpointRef, noPrefabRef],
-      must: ['Respetar que no decidió ese criterio; el no sé no impide responder otra duda útil.'],
-      mustNot: ['No reformular inmediatamente la elección entre inmobiliaria o invertir.'] }),
+      must: ['Respetar que no decidió ese criterio y explicar que el curso cubre ambas bases, con un cierre de prueba natural si ayuda a avanzar.'],
+      mustNot: ['No volver a pedirle que elija entre trabajar con una inmobiliaria o invertir; explicar ambas bases o mencionarlas como contenido no es repetir la pregunta.'] }),
     // AGENTS.md:219–225,240: first course-content explanation may still send official material.
     traceBase('t04_general_goal', 'quiero entender cómo se mueve el negocio, me sirve?', { authority: [midpointRef, noPrefabRef],
       must: ['Responder al pedido actual con seguridad, conectar valor verificado con entender el negocio y hacer un único cierre de prueba suave para comprobar encaje.'],

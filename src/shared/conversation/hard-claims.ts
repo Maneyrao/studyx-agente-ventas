@@ -139,6 +139,7 @@ const TESTIMONIAL = [
   new RegExp(`\\b(?:tenemos|tengo|hay|contamos\\s+con|conozco)\\s+(?:muchos?\\s+|muchas\\s+|varios?\\s+|varias\\s+|algunos?\\s+|algunas\\s+|miles\\s+de\\s+|cientos\\s+de\\s+)?${GRADUATE}\\s+que\\b`, 'u'),
   new RegExp(`\\b(?:muchos?|muchas|varios|varias|miles\\s+de|cientos\\s+de)\\s+(?:de\\s+nuestr[oa]s\\s+)?${GRADUATE}\\b`, 'u'),
   new RegExp(`\\bnuestr[oa]s\\s+${GRADUATE}\\s+(?:ya\\s+|hoy\\s+)?(?:viven|cobran|trabajan|ganan|facturan|abrieron|consiguieron|montaron)\\b`, 'u'),
+  new RegExp(`\\b(?:el|la)\\s+mas\\s+cercan[oa]\\s+es\\s+(?:el|la)\\s+de\\s+(?:otros?\\s+|otras?\\s+)?${GRADUATE}\\s+que\\b`, 'u'),
 ];
 const REAL_STORY = /\b(?:felipe\s+serrano|cristian\s+y\s+ana\s+maria|amparo\s+y\s+edson)\b/u;
 

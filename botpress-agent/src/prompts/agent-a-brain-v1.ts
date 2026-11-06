@@ -5,7 +5,7 @@ import {
 } from './studyx-agent-a-canonical.generated';
 import { resolveCanonicalPromptIdentityV1 } from './agent-a-identity';
 
-export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v182' as const;
+export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v183' as const;
 
 /**
  * Runtime contract only. The sales behavior lives in the canonical prompt so
@@ -20,6 +20,24 @@ Treat commercial_state.active_call and commercial_state.last_call_result as auth
 State the call situation plainly: active_call means it is going out now; if last_call_result.announced_to_customer is false, first say how it ended and offer retry or chat; if may_request_call_now is false, say why you cannot call (e.g. unconfirmed number). Never promise to notify or call later.
 On turn_rejection, continue once in your voice and make only the permitted correction without exposing validation.
 Call invitation format: whenever the call policy permits an invitation and you include one, put it only in response.call_offer, never in response.messages. This is a field contract, not a sales instruction.`;
+
+/** Exact terminal call evidence. This prevents a classified provider result
+ * from being weakened into a different, generic operational claim. */
+function exactLastCallResultDirectiveV1(context: AgentAContextV1): string {
+  const lastCall = context.commercial_state.last_call_result;
+  if (!lastCall || lastCall.announced_to_customer === true || !lastCall.result) return '';
+  const result = lastCall.result.trim().toLocaleLowerCase('es');
+  const resultDirective = result === 'buzon_de_voz' || result === 'voicemail'
+    ? 'say explicitly that it reached voicemail ("buzón de voz"); do not replace that known result with a generic "no pudo completarse".'
+    : result === 'no_answer'
+      ? 'say explicitly that the call was not answered; do not invent another cause.'
+      : result === 'interrupted' || result === 'disconnected'
+        ? 'say explicitly that the call was interrupted; do not invent another cause.'
+        : 'state that it could not be completed without inventing a cause.';
+  return `<exact_last_call_result>
+The exact last call result is ${result}: ${resultDirective}
+</exact_last_call_result>`;
+}
 
 /** Technical move mapping; authority prompt line 81 keeps postponement open. */
 const MOVE_SEMANTICS = `<move_semantics>
@@ -298,7 +316,8 @@ Before returning AgentATurnProposalV1, make response, move, profile metadata and
 - When the current customer message supplies the final missing checkout contact fields, return the complete contact summary confirmation only. Ask whether those data are correct; do not ask for a payment plan in that same turn. A later confirmed payment_confirmation moves to ask_payment_options only when no plan exists; with a durable selected plan and an authorized link effect it moves to request_payment_link plus send_payment_link. A clear answer while awaiting payment_plan moves to select_payment_plan plus send_payment_link in the same turn.
 - If proposed_action=offer_course_bonus, include exactly one new active bonus_offering_code and the exact interest_offering_code. Always include motive {kind, quote} from the current message. It must differ from the paid course and every current bonus code; the response must refer to the same course. Never construct a fourth addition when max_bonus_courses is 3.
 - A rejected or pending addition is not a delivered bonus. Package identity comes only from capabilities.course_bonus.delivered_bonus_offerings and commercial_state.promotion.
-- turn_reasoning (phase, customer_now, already_said, customer_goal, next_step) is internal evidence only, not a permission or a conversation policy. already_said records prior content and questions with their answered, declined or unanswered status. Never quote or expose this metadata in response.messages.
+- turn_reasoning (phase, customer_now, already_said, customer_goal, next_step) is internal evidence only, not a permission or a conversation policy. already_said records prior content and questions with their answered, declined or unanswered status. Never quote or expose this metadata in response.messages. If next_step=value, do not ask a discovery question recorded as unanswered, declined or already answered; deliver the intended value. If next_step=discover, ask at most one new unresolved criterion that actually changes the recommendation.
+- When confirmed_phone is set from a contextual confirmation, do not duplicate that phone in profile_updates; confirmed_phone is the receipt input for that confirmation.
 - stage_hypothesis is diagnostic and must use only its allowed durable milestone enum. Do not expose internal validation in response.messages.
 </execution_consistency_check>`;
 
@@ -330,6 +349,7 @@ export function buildAgentABrainInstructionsV1(context: AgentAContextV1): string
     : resolveCanonicalPromptIdentityV1(STUDYX_AGENT_A_CANONICAL_PROMPT, context.identity).prompt;
 
   return `${EXECUTION_PREAMBLE}
+${exactLastCallResultDirectiveV1(context)}
 ${MOVE_SEMANTICS}
 ${COURSE_MENTIONS_CONTRACT}
 

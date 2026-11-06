@@ -110,6 +110,15 @@ function includesText(haystack: string, needle: string): boolean {
   return normalized(haystack).includes(normalized(needle));
 }
 
+function asksWorkVsInvestmentChoice(response: string): boolean {
+  return (response.match(/[^?]*\?/gu) ?? []).some((question) => {
+    const value = normalized(question);
+    return /\btrabaj\w*\b/u.test(value)
+      && /\binmobiliari\w*\b/u.test(value)
+      && /\binvert\w*\b|\binversion\w*\b/u.test(value);
+  });
+}
+
 function actionType(observation: GoldenTurnObservationV1): string {
   const value = observation.proposedAction?.type;
   return typeof value === 'string' ? value : observation.backendAction ?? 'none';
@@ -767,6 +776,9 @@ function semanticFailureContradictedByObjectiveEvidence(input: {
   if (input.failure.code === 'SEMANTIC_MUST_NOT_FAILED'
     && input.requirement === 'No pedir nombre, apellido, correo o teléfono.'
     && !contactDataRequestIsObserved(input.observation)) return true;
+  if (input.failure.code === 'SEMANTIC_MUST_NOT_FAILED'
+    && input.requirement.startsWith('No volver a pedirle que elija entre trabajar con una inmobiliaria o invertir')
+    && !asksWorkVsInvestmentChoice(input.observation.response)) return true;
   if (input.failure.code === 'SEMANTIC_MUST_NOT_FAILED'
     && input.requirement === 'No hacer varias preguntas juntas.'
     && (input.observation.response.match(/[?]/gu) ?? []).length <= 1) return true;

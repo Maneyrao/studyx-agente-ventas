@@ -53,6 +53,7 @@ describe('invented testimonials (only the manual\'s real stories may be told)', 
     'Tenemos egresadas que hoy cobran por sus servicios de belleza, algunas desde casa.',
     'Muchas alumnas empezaron de cero y hoy trabajan por su cuenta.',
     'Nuestros egresados ya trabajan en agencias.',
+    'En Real Estate el más cercano es el de otros alumnos que se capacitaron para trabajar en el mercado inmobiliario de EE. UU.',
   ])('flags %s', (sentence) => {
     expect(kinds(sentence)).toContain('invented_testimonial')
   })

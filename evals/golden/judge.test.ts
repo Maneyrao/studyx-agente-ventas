@@ -9,6 +9,7 @@ import {
   type GoldenTurnObservationV1,
 } from './judge';
 import { GOLDEN_CASES, type GoldenTurnV1 } from './scenarios';
+import { OWNER_PROMOTION_MODE_REPLAY_CASES } from './owner-rules-scenarios';
 
 const extraClosingBraceFixture = JSON.parse(readFileSync(new URL(
   './fixtures/judge-trailing-closing-brace-06-bonus-2.json', import.meta.url,
@@ -205,7 +206,7 @@ describe('golden judge recorded JSON boundary', () => {
 
 describe('golden semantic judge cumulative evidence', () => {
   it('does not require a programme again when image and PDF were delivered earlier than the immediately previous turn', async () => {
-    const base = GOLDEN_CASES.find((candidate) => candidate.id === '45_real_trace_5b138536_20261105')!;
+    const base = OWNER_PROMOTION_MODE_REPLAY_CASES.find((candidate) => candidate.id === '45_real_trace_5b138536_20261105')!;
     const turns = [base.turns[2]!, base.turns[3]!, base.turns[4]!];
     const scenario = { ...base, evaluationMode: undefined, turns };
     let finalPayload: { program_delivery_history?: unknown } | null = null;
@@ -240,7 +241,7 @@ describe('golden semantic judge cumulative evidence', () => {
   });
 
   it('accepts the exact authorized Felipe story while preserving independent repetition failures', async () => {
-    const base = GOLDEN_CASES.find((candidate) => candidate.id === '47_discover_once_6bcc8efa_20261105')!;
+    const base = OWNER_PROMOTION_MODE_REPLAY_CASES.find((candidate) => candidate.id === '47_discover_once_6bcc8efa_20261105')!;
     const turn = base.turns.find((candidate) => candidate.id === 'g05_students')!;
     const scenario = { ...base, evaluationMode: undefined, turns: [turn] };
     const response = 'Felipe Serrano creó su empresa de instalación de paneles solares y aires acondicionados, y hoy tiene un equipo trabajando con él. Qué prefieres: trabajar con propiedades o invertir?';
@@ -261,6 +262,27 @@ describe('golden semantic judge cumulative evidence', () => {
       expect(verdict).toMatchObject({ approved: false, evaluation_error: null, failures: [
         { code: 'SEMANTIC_MUST_NOT_FAILED', requirement_index: 0 },
       ] });
+    } finally { fetchMock.mockRestore(); }
+  });
+
+  it('does not treat explaining both Real Estate paths as re-asking the rejected choice', async () => {
+    const base = OWNER_PROMOTION_MODE_REPLAY_CASES.find((candidate) => candidate.id === '50_trial_close_vs_checkout_20261106')!;
+    const turn = base.turns.find((candidate) => candidate.id === 't03_undecided')!;
+    const scenario = { ...base, evaluationMode: undefined, turns: [turn] };
+    const response = 'El curso arranca por las dos bases: cómo funciona el negocio inmobiliario y cómo se analiza una inversión. Así puedes conocer ambas antes de decidir. Te hace sentido empezar así?';
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      output_text: JSON.stringify({ verdict: { turn_id: turn.id, approved: false, failures: [{
+        code: 'SEMANTIC_MUST_NOT_FAILED', requirement_id: 'must_not:0', authority_line_index: 0,
+        evidence_source: 'response', observed_evidence: 'conocer ambas antes de decidir',
+        explanation: 'Reformula la elección entre trabajar e invertir.',
+      }] } }),
+    }), { status: 200 }));
+    try {
+      const [verdict] = await judgeCaseSemantically({
+        apiKey: 'fixture-only', model: 'deepseek-test', scenario,
+        observations: [observation({ response })],
+      });
+      expect(verdict).toMatchObject({ approved: true, evaluation_error: null, failures: [] });
     } finally { fetchMock.mockRestore(); }
   });
 });

@@ -48,6 +48,14 @@ describe('owner-rule supplementary golden campaign', () => {
 
   it('grounds testimonial and retry expectations in the facts actually available', () => {
     const trace = OWNER_PROMOTION_MODE_REPLAY_CASES.find(item => item.id.startsWith('45_'))!;
+    const trust = trace.turns.find(turn => turn.id === 't08_trust')!;
+    expect(trust.authority).toContainEqual(expect.objectContaining({
+      file: 'docs/authority/prompt-agente-a-studyx-v2.md',
+      start: 64,
+      end: 64,
+    }));
+    expect(trust.mustNot.join(' ')).toContain('testimonio genérico de Real Estate');
+
     const felipe = trace.turns.find(turn => turn.id === 't10_felipe')!;
     expect(felipe.authority).toContainEqual(expect.objectContaining({
       file: 'docs/authority/prompt-agente-a-studyx-v2.md',
@@ -62,6 +70,12 @@ describe('owner-rule supplementary golden campaign', () => {
     expect(retry.must.join(' ')).toContain('reintento solicitado');
     expect(retry.must.join(' ')).not.toContain('o seguir por chat');
 
+    const phoneConfirmation = trace.turns.find(turn => turn.id === 't23_ok')!;
+    expect(phoneConfirmation.must.join(' ')).toContain('confirmación contextual válida');
+    expect(phoneConfirmation.mustNot.join(' ')).not.toContain('ambiguo');
+    const callAfterConfirmation = trace.turns.find(turn => turn.id === 't24_cannot_call')!;
+    expect(callAfterConfirmation.expected.action).toEqual(['request_call_now']);
+
     const discover = OWNER_PROMOTION_MODE_REPLAY_CASES.find(item => item.id.startsWith('47_'))!;
     const students = discover.turns.find(turn => turn.id === 'g05_students')!;
     expect(students.authority).toContainEqual(expect.objectContaining({
@@ -69,6 +83,14 @@ describe('owner-rule supplementary golden campaign', () => {
       start: 64,
       end: 64,
     }));
+  });
+
+  it('allows explaining both Real Estate paths after no sé without asking the same choice again', () => {
+    const trial = OWNER_PROMOTION_MODE_REPLAY_CASES.find(item => item.id.startsWith('50_'))!;
+    const undecided = trial.turns.find(turn => turn.id === 't03_undecided')!;
+
+    expect(undecided.must.join(' ')).toContain('explicar que el curso cubre ambas bases');
+    expect(undecided.mustNot.join(' ')).toContain('No volver a pedirle que elija');
   });
 
   it('preserves the exact formal 16-case/48-turn threshold independently of supplements', () => {

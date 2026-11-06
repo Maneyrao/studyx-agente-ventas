@@ -428,7 +428,7 @@ describe('Agent A Brain prompt', () => {
     expect(JSON.parse(encoded)).toEqual(current);
     expect(instructions).not.toContain('<current_turn_guidance>');
     expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v112');
-    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v182');
+    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v183');
   });
 
   it('maps recommendations and generic continuation without persisting a customer choice', () => {
@@ -462,6 +462,44 @@ describe('Agent A Brain prompt', () => {
     expect(instructions).toContain('put it only in response.call_offer, never in response.messages');
     expect(instructions).toContain('This is a field contract, not a sales instruction.');
     expect(instructions).not.toContain('briefly explain what the call would help resolve');
+  });
+
+  it('renders the exact authoritative terminal call result instead of a generic failure', () => {
+    const current = context();
+    current.commercial_state.last_call_result = {
+      call_id: 'call-1',
+      result: 'buzon_de_voz',
+      ended_at: '2026-11-06T15:00:00.000Z',
+      announced_to_customer: false,
+    };
+
+    const instructions = buildAgentABrainInstructionsV1(current);
+
+    expect(instructions).toContain('The exact last call result is buzon_de_voz');
+    expect(instructions).toContain('say explicitly that it reached voicemail ("buzón de voz")');
+    expect(instructions).toContain('do not replace that known result with a generic "no pudo completarse"');
+  });
+
+  it('makes the internal next_step and already_said evidence binding for reply consistency', () => {
+    const instructions = buildAgentABrainInstructionsV1(context());
+    const check = instructions
+      .split('<execution_consistency_check>')[1]!
+      .split('</execution_consistency_check>')[0]!;
+
+    expect(check).toContain('If next_step=value');
+    expect(check).toContain('do not ask a discovery question recorded as unanswered, declined or already answered');
+    expect(check).toContain('If next_step=discover');
+    expect(check).toContain('one new unresolved criterion');
+  });
+
+  it('does not duplicate a contextual phone confirmation as a fresh profile update', () => {
+    const instructions = buildAgentABrainInstructionsV1(context());
+    const check = instructions
+      .split('<execution_consistency_check>')[1]!
+      .split('</execution_consistency_check>')[0]!;
+
+    expect(check).toContain('When confirmed_phone is set from a contextual confirmation');
+    expect(check).toContain('do not duplicate that phone in profile_updates');
   });
 
   it('keeps commercial strategy exclusively in the canonical prompt', () => {
