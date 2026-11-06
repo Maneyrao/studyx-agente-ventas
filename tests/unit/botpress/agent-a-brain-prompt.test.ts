@@ -427,8 +427,8 @@ describe('Agent A Brain prompt', () => {
     const encoded = instructions.split('<authorized_context>')[1]!.split('</authorized_context>')[0]!;
     expect(JSON.parse(encoded)).toEqual(current);
     expect(instructions).not.toContain('<current_turn_guidance>');
-    expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v110');
-    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v180');
+    expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v111');
+    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v181');
   });
 
   it('maps recommendations and generic continuation without persisting a customer choice', () => {
@@ -609,6 +609,60 @@ describe('Agent A Brain prompt', () => {
     expect(repair).toContain('Do not claim a discount, promotion, gift, approval, income or result');
     expect(repair).toContain('Preserve the rest of the response only when its facts and effects remain authorized');
     expect(repair).not.toContain('contextual value');
+  });
+
+  it('does not validate or autocorrect a rejected email receipt', () => {
+    const current = context();
+    current.turn_rejection = {
+      schema_version: 1,
+      rejection_id: '00000000-0000-4000-8000-000000000001',
+      attempt: 1,
+      rejections: [{ code: 'UNSUPPORTED_OPERATIONAL_CLAIM', subject: 'contact_profile_rejected:correo' }],
+      authorized_alternatives: { fact_ids: [], actions: ['none'], missing_information: ['correo'] },
+    };
+    const repair = buildAgentABrainInstructionsV1(current)
+      .split('<mandatory_repair')[1]!
+      .split('</mandatory_repair>')[0]!;
+
+    expect(repair).toContain('do not say the rejected email is valid, correct or okay');
+    expect(repair).toContain('ask once for the email to be resent complete');
+    expect(repair).toContain('do not repeat or correct it');
+  });
+
+  it('removes generic future promises when a new bonus promise is rejected', () => {
+    const current = context();
+    current.capabilities.course_bonus = {
+      enabled: true,
+      max_bonus_courses: 3,
+      may_offer_bonus: true,
+      status: 'offer_available',
+      may_schedule_checkin: false,
+      may_request_review: false,
+      may_accept_offer: true,
+      may_send_promoted_payment: false,
+      promotion_code: 'PROMO-1',
+      promotion_cycle_id: 'cycle-1',
+      offer_version: 1,
+      package_status: 'offered',
+      interest_offering_code: 'real_estate',
+      bonus_offerings: [{ code: 'especialista_ventas', display_name: 'Especialista en Ventas', position: 1 }],
+      delivered_bonus_offerings: [{ code: 'especialista_ventas', display_name: 'Especialista en Ventas', position: 1 }],
+      bonus_candidates: [{ code: 'oratoria', display_name: 'Oratoria' }],
+    };
+    current.turn_rejection = {
+      schema_version: 1,
+      rejection_id: '00000000-0000-4000-8000-000000000001',
+      attempt: 1,
+      rejections: [{ code: 'FACT_VALUE_MISMATCH', subject: 'forbidden_promise' }],
+      authorized_alternatives: { fact_ids: [], actions: ['none', 'accept_promotion'], missing_information: [] },
+    };
+    const repair = buildAgentABrainInstructionsV1(current)
+      .split('<mandatory_repair')[1]!
+      .split('</mandatory_repair>')[0]!;
+
+    expect(repair).toContain('Phrases such as "puedo buscarte otra promoción"');
+    expect(repair).toContain('an unnamed future benefit are still promises and must be removed');
+    expect(repair).toContain('including previously delivered bonuses');
   });
 
   it('lets a persistent-objection repair request an authorized review without naming the gift', () => {

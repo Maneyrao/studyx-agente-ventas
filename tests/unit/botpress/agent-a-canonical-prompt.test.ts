@@ -29,7 +29,7 @@ describe('Agent A canonical sales prompt authority', () => {
     expect(`## Anexo técnico\n${annex}`).toBe(TECHNICAL_ANNEX);
   });
 
-  it('keeps both generated modules byte-identical to the canonical source at v110', () => {
+  it('keeps both generated modules byte-identical to the canonical source at v111', () => {
     const prompt = readFileSync(PROMPT_PATH, 'utf8');
     const generated = GENERATED_PATHS.map((path) => readFileSync(path, 'utf8'));
 
@@ -38,7 +38,7 @@ describe('Agent A canonical sales prompt authority', () => {
       `export const STUDYX_AGENT_A_CANONICAL_PROMPT = ${JSON.stringify(prompt)} as const;`,
     );
     expect(generated[0]).toContain(
-      "export const STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION = 'studyx-agent-a-canonical-v110' as const;",
+      "export const STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION = 'studyx-agent-a-canonical-v111' as const;",
     );
   });
 
@@ -53,7 +53,7 @@ describe('Agent A canonical sales prompt authority', () => {
   });
 });
 
-describe('Agent A canonical prompt v110 (Gabi manual integration)', () => {
+describe('Agent A canonical prompt v111 (Gabi manual integration)', () => {
   const prompt = readFileSync(PROMPT_PATH, 'utf8');
   const authority = readFileSync(AUTHORITY_PATH, 'utf8');
 
@@ -102,7 +102,17 @@ describe('Agent A canonical prompt v110 (Gabi manual integration)', () => {
 
   it('pins the canonical source in the generator', () => {
     const generator = readFileSync('scripts/generate-agent-a-prompt-module.mjs', 'utf8');
-    expect(generator).toContain('studyx-agent-a-canonical-v110');
+    expect(generator).toContain('studyx-agent-a-canonical-v111');
     expect(generator).toContain(`lineCount !== ${prompt.match(/\n/gu)!.length}`);
+  });
+
+  it('finishes with one compact natural-sales consistency check', () => {
+    for (const phrase of [
+      'no reformules esa misma elección',
+      'no descargues una lista plana',
+      'un cierre de prueba suave',
+      'no desplaces una consulta, una objeción ni un paso operativo',
+    ]) expect(authority).toContain(phrase);
+    expect(authority).toContain('## Comprobación final antes de responder');
   });
 });

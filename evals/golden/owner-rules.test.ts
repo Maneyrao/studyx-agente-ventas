@@ -46,6 +46,31 @@ describe('owner-rule supplementary golden campaign', () => {
     expect(trial.turns.find(turn => turn.id === 't05_affirmative')?.expected.state.checkout).toEqual(['contact_details']);
   });
 
+  it('grounds testimonial and retry expectations in the facts actually available', () => {
+    const trace = OWNER_PROMOTION_MODE_REPLAY_CASES.find(item => item.id.startsWith('45_'))!;
+    const felipe = trace.turns.find(turn => turn.id === 't10_felipe')!;
+    expect(felipe.authority).toContainEqual(expect.objectContaining({
+      file: 'docs/authority/prompt-agente-a-studyx-v2.md',
+      start: 60,
+      end: 60,
+    }));
+    expect(felipe.must.join(' ')).toContain('historia real autorizada');
+    expect(felipe.must.join(' ')).toContain('no implica que exista un video');
+
+    const retry = trace.turns.find(turn => turn.id === 't19_retry')!;
+    expect(retry.must.join(' ')).toContain('buzón de voz');
+    expect(retry.must.join(' ')).toContain('reintento solicitado');
+    expect(retry.must.join(' ')).not.toContain('o seguir por chat');
+
+    const discover = OWNER_PROMOTION_MODE_REPLAY_CASES.find(item => item.id.startsWith('47_'))!;
+    const students = discover.turns.find(turn => turn.id === 'g05_students')!;
+    expect(students.authority).toContainEqual(expect.objectContaining({
+      file: 'docs/authority/prompt-agente-a-studyx-v2.md',
+      start: 60,
+      end: 60,
+    }));
+  });
+
   it('preserves the exact formal 16-case/48-turn threshold independently of supplements', () => {
     expect(GOLDEN_CASES).toHaveLength(16);
     expect(GOLDEN_CASES.flatMap(scenario => scenario.turns)).toHaveLength(48);

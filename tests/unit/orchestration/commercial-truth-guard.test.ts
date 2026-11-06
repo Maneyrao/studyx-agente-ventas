@@ -838,3 +838,28 @@ describe('offering list guard: a colon after a canonical name introduces its des
     expect(enforce('Te recomiendo Marketing Cuántico Avanzado.', canonical).violations.map((v) => v.code)).toContain('OFFERING_NOT_CANONICAL');
   });
 });
+
+describe('offering area membership remains factual without rejecting natural wording', () => {
+  const canonical = canonicalTruthSetFromOfferingsV1({
+    offerings: [{ code: 'real_estate', display_name: 'Real Estate', price_type: 'fixed', price_amount: '360', currency: 'USD',
+      description: 'x', metadata: { academy: 'Academia de Emprendedores' }, delivery: {} }] as never,
+    selected_offering_code: null,
+  });
+
+  it.each([
+    'Sí, tenemos Real Estate, justo dentro del área de Emprendedores.',
+    'Sí, tenemos Real Estate: justo dentro del área de Emprendedores.',
+  ])('accepts a canonical course followed by its canonical area: %s', (content) => {
+    expect(enforce(content, canonical).violations.map((violation) => violation.code))
+      .not.toContain('OFFERING_NOT_CANONICAL');
+  });
+
+  it.each([
+    'Sí, tenemos Real Estate, justo dentro del área de Ingeniería Cuántica.',
+    'Sí, tenemos Real Estate Pro, justo dentro del área de Emprendedores.',
+    'Sí, tenemos Marketing Cuántico, justo dentro del área de Emprendedores.',
+  ])('still rejects a non-canonical identity hidden by the same wording: %s', (content) => {
+    expect(enforce(content, canonical).violations.map((violation) => violation.code))
+      .toContain('OFFERING_NOT_CANONICAL');
+  });
+});

@@ -129,8 +129,8 @@ const OFFERING_DESCRIPTION = /^(?:todos|todas|ambos|ambas|que|para|con|sin|ideal
 const DESCRIPTION_VERB_LED = /^(?:te\s+\p{L}+|\d+\b|(?:aprend(?:es|eras)|ve(?:ras|s)|trabaj(?:as|aras)|desarroll(?:as|aras)|domin(?:as|aras)|conoc(?:es|eras)|practic(?:as|aras)|construy(?:es)|construiras|cre(?:as|aras)|manej(?:as|aras)|us(?:as|aras)|disen(?:as|aras)|aplic(?:as|aras)|obtien(?:es)|obtendras|adquier(?:es)|adquiriras|descubr(?:es|iras)|analiz(?:as|aras)|gestion(?:as|aras)|program(?:as|aras)|edit(?:as|aras)|armas|haras|lograras|podras|sabras|tendras|incluy(?:e|en)|cubr(?:e|en)|abarca(?:n)?|ensena(?:n)?|permit(?:e|en)|ayuda(?:n)?|prepara(?:n)?|brinda(?:n)?|ofrece(?:n)?|combina(?:n)?|integra(?:n)?|es|son|sirv(?:e|en)|se)\b)/u;
 const NON_COURSE_OBJECT = /^(?:(?:el|la|un|una|nuestro|nuestra)\s+)?(?:\d+\s+)?(?:pagos?|cuotas?|planes?|chat|soporte|llamadas?|asesoria|acompanamiento|ayuda|informacion|acceso|profesores|clases|certificados?|descuentos?|becas?)\b/u;
 const EXPLICIT_COURSE = /^(?:(?:el|un|nuestro)\s+)?(?:curso|diplomado|diplomatura|carrera)\s+(?:de\s+|en\s+)?/u;
-const AREA_MEMBERSHIP = /^(?:que\s+)?(?:dentro\s+de|(?:como\s+)?parte\s+de|(?:forma|es)\s+parte\s+de|(?:pertenece|perteneciente)\s+a)\s+(?:(?:la|el|nuestra|nuestro)\s+)?/u;
-const COLLECTIVE_AREA_MEMBERSHIP = /^(?:todos?|todas?)\s+(?:dentro\s+de|(?:como\s+)?parte\s+de|pertenecientes?\s+a)\s+(?:(?:la|el|nuestra|nuestro)\s+)?/u;
+const AREA_MEMBERSHIP = /^(?:que\s+)?(?:justo\s+)?(?:dentro\s+(?:de|del)|(?:como\s+)?parte\s+de|(?:forma|es)\s+parte\s+de|(?:pertenece|perteneciente)\s+a)\s+(?:(?:la|el|nuestra|nuestro)\s+)?(?:(?:area|academia)\s+de\s+)?/u;
+const COLLECTIVE_AREA_MEMBERSHIP = /^(?:todos?|todas?)\s+(?:justo\s+)?(?:dentro\s+(?:de|del)|(?:como\s+)?parte\s+de|pertenecientes?\s+a)\s+(?:(?:la|el|nuestra|nuestro)\s+)?(?:(?:area|academia)\s+de\s+)?/u;
 const OFFERING_LIST_SEPARATOR = /^(?:[,;:]\s*(?:(?:y|e|o)\s+)?|(?:y|e|o)\s+)/u;
 
 const COURSE_NOUN_TAIL = /\b(?:curso|diplomado|diplomatura|carrera|programa)\s+(?:de\s+|en\s+)?(.+)$/u;
@@ -178,6 +178,10 @@ function containsUnknownOffering(sentence: string, names: readonly string[], are
   const normalized = normalize(sentence);
   const canonicalNames = names.map(normalize).filter(Boolean).sort((a, b) => b.length - a.length);
   const canonicalAreas = areas.map(normalize).filter(Boolean).sort((a, b) => b.length - a.length);
+  const canonicalAreaAliases = [...new Set(canonicalAreas.flatMap((area) => {
+    const short = area.replace(/^(?:area|academia)\s+de\s+/u, '');
+    return short === area ? [area] : [area, short];
+  }))].sort((a, b) => b.length - a.length);
   for (const claim of sentence.matchAll(OFFERING_CLAIM)) {
     if (/\b(?:no|nunca|tampoco)\s*$/u.test(normalized.slice(0, claim.index))) continue;
     const namedObject = claim[1]!.trim();
@@ -201,6 +205,25 @@ function containsUnknownOffering(sentence: string, names: readonly string[], are
         && !/\p{L}/u.test(remainder.slice(candidate.length, candidate.length + 1)));
       if (!name) return true;
       remainder = remainder.slice(name.length).trim();
+      // An area descriptor after a comma or colon belongs to the preceding
+      // canonical course. Accept natural wording, but resolve the area by an
+      // exact canonical name (or its "Academia de" short form).
+      const descriptor = remainder.replace(OFFERING_LIST_SEPARATOR, '');
+      const membership = descriptor.match(AREA_MEMBERSHIP)
+        ?? descriptor.match(COLLECTIVE_AREA_MEMBERSHIP);
+      if (membership) {
+        const areaObject = descriptor.slice(membership[0].length);
+        const area = canonicalAreaAliases.find((candidate) => areaObject.startsWith(candidate)
+          && !/\p{L}/u.test(areaObject.slice(candidate.length, candidate.length + 1)));
+        if (!area) return true;
+        remainder = areaObject.slice(area.length).trim();
+        if (remainder.length === 0 || OFFERING_DESCRIPTION.test(remainder)) break;
+        const following = remainder.replace(OFFERING_LIST_SEPARATOR, '');
+        if (following === remainder) return true;
+        remainder = following;
+        if (OFFERING_DESCRIPTION.test(remainder)) break;
+        continue;
+      }
       // After a canonical name a colon either introduces its description
       // ("Marketing Digital: aprendes estrategias…") or is a list item that
       // names another course, which is checked against the canonical names.
@@ -218,27 +241,12 @@ function containsUnknownOffering(sentence: string, names: readonly string[], are
         remainder = after.replace(EXPLICIT_COURSE, '');
         continue;
       }
-      const descriptor = remainder.replace(OFFERING_LIST_SEPARATOR, '');
-      const membership = descriptor.match(AREA_MEMBERSHIP)
-        ?? descriptor.match(COLLECTIVE_AREA_MEMBERSHIP);
-      if (membership) {
-        // El área describe el curso anterior. Consumir sólo ese nombre permite
-        // seguir verificando otros cursos que aparezcan después del descriptor.
-        const areaObject = descriptor.slice(membership[0].length);
-        const area = canonicalAreas.find((candidate) => areaObject.startsWith(candidate)
-          && !/\p{L}/u.test(areaObject.slice(candidate.length, candidate.length + 1)));
-        if (!area) return true;
-        remainder = areaObject.slice(area.length).trim();
-        if (remainder.length === 0 || OFFERING_DESCRIPTION.test(remainder)) break;
-        const following = remainder.replace(OFFERING_LIST_SEPARATOR, '');
-        if (following === remainder) return true;
-        remainder = following;
-        if (OFFERING_DESCRIPTION.test(remainder)) break;
-        continue;
-      }
       if (remainder.length === 0 || OFFERING_DESCRIPTION.test(remainder)) break;
       const next = remainder.replace(OFFERING_LIST_SEPARATOR, '');
-      if (next === remainder) break;
+      // Extra words attached directly to an exact canonical title change its
+      // identity (for example "Real Estate Pro"). Descriptions must use one
+      // of the explicit description forms above.
+      if (next === remainder) return true;
       remainder = next;
       if (OFFERING_DESCRIPTION.test(remainder)) break;
     }

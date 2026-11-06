@@ -847,6 +847,7 @@ OWNER_PROMOTION_MODE_REPLAY_CASES_MUTABLE.push(
 // settled as voicemail before the next turn exactly as recorded; call 4 is still open when the customer says
 // «sigamos por aca» (order-2 race) and is settled only before the following turn.
 const traceRef = owner(222, 228, 'Recibos de datos, estado posllamada');
+const storiesRef = gabi(60, 60, 'Historias de éxito');
 const traceBase = (id: string, customer: string, override: Partial<GoldenTurnV1> = {}) => turn(id, customer, {
   must: ['Responder al mensaje actual con hechos autorizados y un próximo paso apropiado.'],
   mustNot: ['No afirmar datos, llamadas, envíos ni promociones que no ocurrieron; no negar material disponible.'],
@@ -874,7 +875,11 @@ OWNER_PROMOTION_MODE_REPLAY_CASES_MUTABLE.push({
     traceBase('t07_payment', 'dale\njoya\nche y el pago?\npero no estoy seguro'),
     traceBase('t08_trust', 'no sé si es seguro este medio\nstudyx\nhay testimonios?'),
     traceBase('t09_testimonials', 'tenes algun testiminio de otro alumno\nde algun otro rubro?'),
-    traceBase('t10_felipe', 'mandame el testiminio de felipe\nsa er\nno lo tenes?'),
+    traceBase('t10_felipe', 'mandame el testiminio de felipe\nsa er\nno lo tenes?', {
+      authority: [traceRef, intentRef, noPrefabRef, storiesRef],
+      must: ['Responder con la historia real autorizada de Felipe. Esa historia no implica que exista un video o archivo testimonial; no afirmar que se envía material si no hay una capability de testimonial.'],
+      mustNot: ['No negar la historia autorizada de Felipe ni afirmar que envía un video inexistente.'],
+    }),
     traceBase('t11_why_payment', 'y xq antes me dijiste que no lo tenias?\npor otro lado, qué métodos de pago hay?'),
     traceBase('t12_call_request', 'me pueden llamar?'),
     traceBase('t13_comma_email', 'dale, THIAGO MANEYRO 1169004497 tmaneyro@gmail,com', {
@@ -890,7 +895,7 @@ OWNER_PROMOTION_MODE_REPLAY_CASES_MUTABLE.push({
     traceBase('t16_call_again', 'dale, me llamas?'),
     traceBase('t17_email', 'tmaneyro@gmail.com'),
     traceBase('t18_call_now', 'sii\nllamame'),
-    traceBase('t19_retry', 'me llamas neuvamente?\nasi probamos', { settleLatestCallBefore: 'buzon_de_voz', must: ['Si la llamada anterior terminó sin hablar, decir con claridad cómo terminó (no atendió, buzón o contestador) y ofrecer reintentar o seguir por chat.'], mustNot: ['No prometer avisar, reintentar o llamar más tarde por su cuenta; no decir que llama si no puede llamar.'] }),
+    traceBase('t19_retry', 'me llamas neuvamente?\nasi probamos', { settleLatestCallBefore: 'buzon_de_voz', must: ['Con last_call_result=buzon_de_voz, decir expresamente que llegó al buzón de voz y ejecutar u ofrecer el reintento solicitado; no hace falta volver a ofrecer chat en este turno.'], mustNot: ['No ocultar el resultado exacto de buzón de voz; no prometer avisar o llamar más tarde por su cuenta.'] }),
     traceBase('t20_ok', 'oki', { settleLatestCallBefore: 'buzon_de_voz', must: ['Si la llamada anterior terminó sin hablar, decir con claridad cómo terminó (no atendió, buzón o contestador) y ofrecer reintentar o seguir por chat.'], mustNot: ['No prometer avisar, reintentar o llamar más tarde por su cuenta; no decir que llama si no puede llamar.'] }),
     traceBase('t21_phone_correction', 'ah sabes que me confundi, mi número termina en 8, no en 7', {
       must: ['Escribir el número completo corregido y pedir que lo confirme.'],
@@ -987,8 +992,9 @@ OWNER_PROMOTION_MODE_REPLAY_CASES_MUTABLE.push({
       mustNot: [sameFamily],
       hard: [{ type: 'workflow_committed' }, noPrefab, { type: 'question_count_at_most', value: 1 }, ...noBeca],
     }),
-    traceBase('g05_students', 'hay gente que haya cursado con ustedes?', { authority: [discoverOnceRef, intentRef, noPrefabRef],
-      mustNot: [sameFamily, 'No inventar un testimonio de Real Estate.'],
+    traceBase('g05_students', 'hay gente que haya cursado con ustedes?', { authority: [discoverOnceRef, intentRef, noPrefabRef, storiesRef],
+      must: ['Responder con una de las historias reales autorizadas, sin convertirla en testimonio de Real Estate.'],
+      mustNot: [sameFamily, 'No inventar un testimonio de Real Estate ni afirmar que el caso está publicado si no hay un hecho autorizado.'],
       hard: [{ type: 'workflow_committed' }, noPrefab, { type: 'question_count_at_most', value: 1 }, ...noBeca],
     }),
     traceBase('g06_does_it_help', 'tenes los testimonios?\nme gustaría entender como se mueve el negocio, me sirve?', {

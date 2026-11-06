@@ -5,7 +5,7 @@ import {
 } from './studyx-agent-a-canonical.generated';
 import { resolveCanonicalPromptIdentityV1 } from './agent-a-identity';
 
-export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v180' as const;
+export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v181' as const;
 
 /**
  * Runtime contract only. The sales behavior lives in the canonical prompt so
@@ -150,7 +150,7 @@ Preserve an already resolved course reference. Use only authorized duration, syl
     ? 'Rebuild course_mentions for the final rewritten response; remove declarations of courses no longer mentioned, without inventing authorization.' : '';
   const forbiddenPromiseRepair = repairsBonusPromise ? `
 For ladder_step_pending or forbidden_promise, remove the unauthorized promise completely.
-Do not mention, suggest or imply any bonus in this rewrite, including a generic, conditional, questioned or hinted gift; do not anticipate a gift or invent a quantity. This repair boundary takes precedence over the course_bonus effect contract, including previously delivered bonuses.
+Do not mention, suggest or imply any bonus in this rewrite, including a generic, conditional, questioned or hinted gift. Delete every customer-visible sentence that does so. Phrases such as "puedo buscarte otra promoción", "puedo sumarte otro curso" or an unnamed future benefit are still promises and must be removed. Do not anticipate a gift or invent a quantity. This repair boundary takes precedence over the course_bonus effect contract, including previously delivered bonuses.
 Use proposed_action=none for bonus effects; do not offer, accept or request review of a bonus in this rewrite. Keep delivered_bonus_offerings and existing obligations in durable state without mentioning them; never delete them. Pending additions remain pending and unconfirmed.
 Continue naturally with the paid course under canonical_sales_behavior; never invent objections or completed steps.
 Do not claim a discount, promotion, gift, approval, income or result. Preserve the rest of the response only when its facts and effects remain authorized.` : '';
@@ -166,7 +166,7 @@ For PROGRAM_SEND_REQUIRED or program_send_not_executed:not_proposed, the course 
     .filter(subject => subject.startsWith('contact_profile_rejected:')).map(subject => subject.split(':')[1])
   const profileReceiptRepair = rejectedProfileFields.length || rejection.rejections.some(reason => reason.subject === 'phone_confirmation_pending') ? `
 For contact_profile_rejected or phone_confirmation_pending, the value was NOT recorded (${[...rejectedProfileFields, ...(rejection.rejections.some(reason => reason.subject === 'phone_confirmation_pending') ? ['telefono'] : [])].join(', ')}). Never say it is saved, registered or used.
-${rejectedProfileFields.includes('correo') ? 'Email: do not repeat or correct it; ask once for the email to be resent complete, exactly as the customer uses it.\n' : ''}${rejectedProfileFields.includes('telefono') || rejection.rejections.some(reason => reason.subject === 'phone_confirmation_pending') ? 'Phone: write the complete number you understood and ask the customer to confirm it, with profile_requests [{fields:["telefono"],mode:"clarify",purpose:"call"}]; use proposed_action=none until it is confirmed.' : ''}` : ''
+${rejectedProfileFields.includes('correo') ? 'Email: do not say the rejected email is valid, correct or okay; do not repeat or correct it; ask once for the email to be resent complete, exactly as the customer uses it.\n' : ''}${rejectedProfileFields.includes('telefono') || rejection.rejections.some(reason => reason.subject === 'phone_confirmation_pending') ? 'Phone: write the complete number you understood and ask the customer to confirm it, with profile_requests [{fields:["telefono"],mode:"clarify",purpose:"call"}]; use proposed_action=none until it is confirmed.' : ''}` : ''
   const firstBonusMotiveRepair = rejection.rejections.some(reason => reason.subject === 'bonus_motive:motive_needs_delivered_offer') ? `
 For motive_needs_delivered_offer, a first bonus needs a current price complaint or purchase decline. If the current message complains about the price, offer it again with motive {kind:"price_objection", quote: that exact fragment} and price_objection in the move or secondary_moves; otherwise ask in your own words whether price is the only thing holding them back and record memory constraint/price_question_asked. Never answer that the price does not move.` : ''
   const repairsBonusNaming = rejection.rejections.some(reason => reason.subject === 'bonus_not_named');
