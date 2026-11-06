@@ -3,12 +3,12 @@ import { readFileSync, readdirSync, readlinkSync } from 'node:fs';
 import path from 'node:path';
 import ts from 'typescript';
 
-// Last commit of claude/agent-a-model-owned-sales that changed deployable code (brain v174, prompt v109).
+// Last reviewed commit that changed deployable code (brain v183, prompt v112).
 // Anything committed after it must be docs/evals/tests only (see assertOnlyNonCodeChangesSinceBaseV1), so a release
 // prepared from the branch HEAD runs exactly this code. Re-pin whenever a code file changes.
-export const BOT_RELEASE_BASE_SHA = '5d834a67642987f58ea1ccc4d58b9b9ef686ffc3';
-export const BOT_RELEASE_BRAIN_VERSION = 'studyx-agent-a-brain-v174';
-export const BOT_RELEASE_PROMPT_VERSION = 'studyx-agent-a-canonical-v109';
+export const BOT_RELEASE_BASE_SHA = 'b1a3990b0bb94ae562d9ab8910dac63668e27a7f';
+export const BOT_RELEASE_BRAIN_VERSION = 'studyx-agent-a-brain-v183';
+export const BOT_RELEASE_PROMPT_VERSION = 'studyx-agent-a-canonical-v112';
 export const BOT_RELEASE_INSTRUMENTATION_VERSION = 'studyx-release-provenance-v1';
 export const BOT_RELEASE_SOURCE_PATHS = Object.freeze([
   'botpress-agent/src/lib/observability/persist-turn-evidence.ts',
