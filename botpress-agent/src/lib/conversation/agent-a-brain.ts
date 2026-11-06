@@ -29,7 +29,16 @@ import {
   type ComposedNarrativeV1,
   type TurnPlanV1,
 } from '../../schemas/conversation-pipeline';
-import { buildAgentABrainInstructionsV1, hasDirectBonusContextV1 } from '../../prompts/agent-a-brain-v1';
+import {
+  buildAgentABrainInstructionsV1,
+  buildAgentACommercialPlanInstructionsV1,
+  hasDirectBonusContextV1,
+} from '../../prompts/agent-a-brain-v1';
+import {
+  COMMERCIAL_TURN_PLAN_JSON_SCHEMA,
+  CommercialTurnPlanV1Schema,
+  type CommercialTurnPlanV1,
+} from '../../schemas/agent-a-commercial-plan';
 import { assertedCommercialClausesV1, assertedCommercialPricesV1 } from '../../../../src/features/orchestration/domain/commercial-truth-guard';
 import {
   extractProtectedFacts,
@@ -83,6 +92,10 @@ export interface GeneratedAgentATurnProposalV1 {
     readonly output_tokens: number;
     readonly total_tokens: number;
   };
+  /** Model-owned planning-pass reading used by the writer; repairs of the turn reuse it. */
+  readonly commercial_plan?: CommercialTurnPlanV1;
+  /** Physical planning requests made by this generation (0 or 1, never retried). */
+  readonly planner_requests?: 0 | 1;
 }
 
 function parseDeepSeekJsonContent(content: string): unknown {
@@ -218,6 +231,93 @@ function addTokenUsage(
   };
 }
 
+export const AGENT_A_COMMERCIAL_PLAN_DEADLINE_MS = 6_000;
+
+export interface CommercialTurnPlanResultV1 {
+  readonly plan: CommercialTurnPlanV1 | null;
+  readonly status: 'planned' | 'failed';
+  readonly failure_code: string | null;
+  readonly latency_ms: number;
+  readonly token_usage?: GeneratedAgentATurnProposalV1['token_usage'];
+}
+
+/**
+ * Planning pass (model-owned): one request, no retry, bounded deadline.
+ * Never throws: any failure returns plan=null and the writer runs with the
+ * original context, so a planner failure can never silence the turn.
+ * The backend does not read or judge the plan; it authorizes nothing.
+ */
+export async function generateCommercialTurnPlanV1(input: {
+  readonly context: AgentAContextV1;
+  readonly apiKey: string;
+  readonly signal: AbortSignal;
+  readonly model?: string;
+  readonly timeout_ms?: number;
+  readonly observe?: (event: ModelObservation) => void;
+}): Promise<CommercialTurnPlanResultV1> {
+  const startedAt = Date.now();
+  const controller = new AbortController();
+  const parentAbort = () => controller.abort();
+  const timeout = setTimeout(() => controller.abort(), Math.min(
+    AGENT_A_COMMERCIAL_PLAN_DEADLINE_MS,
+    Math.max(1, input.timeout_ms ?? AGENT_A_COMMERCIAL_PLAN_DEADLINE_MS),
+  ));
+  input.signal.addEventListener('abort', parentAbort, { once: true });
+  if (input.signal.aborted) controller.abort();
+  let tokenUsage: GeneratedAgentATurnProposalV1['token_usage'];
+  const finish = (plan: CommercialTurnPlanV1 | null, failureCode: string | null): CommercialTurnPlanResultV1 => {
+    const result: CommercialTurnPlanResultV1 = {
+      plan, status: plan ? 'planned' : 'failed', failure_code: failureCode,
+      latency_ms: Date.now() - startedAt, ...(tokenUsage ? { token_usage: tokenUsage } : {}),
+    };
+    input.observe?.({ kind: 'commercial_plan', status: result.status, failure_code: failureCode,
+      latency_ms: result.latency_ms, plan });
+    return result;
+  };
+  try {
+    const model = resolveAgentADeepSeekModelV1(input.model);
+    let response: Response;
+    try {
+      response = await fetch(DEEPSEEK_RESPONSES_URL, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${input.apiKey}`, 'content-type': 'application/json' },
+        body: JSON.stringify({
+          model,
+          instructions: buildAgentACommercialPlanInstructionsV1(input.context),
+          input: `Current customer messages: ${JSON.stringify(input.context.turn.batch_messages.map((message) => message.text))}\nReturn only the CommercialTurnPlanV1 JSON object.`,
+          reasoning: { effort: 'none' },
+          temperature: 0.2,
+          stream: false,
+          max_output_tokens: 900,
+          text: { format: { type: 'json_schema', name: 'studyx_agent_a_commercial_turn_plan_v1', schema: COMMERCIAL_TURN_PLAN_JSON_SCHEMA } },
+        }),
+        signal: controller.signal,
+      });
+    } catch {
+      return finish(null, controller.signal.aborted ? 'PLANNER_TIMEOUT' : 'PLANNER_NETWORK_ERROR');
+    }
+    if (!response.ok) return finish(null, `PLANNER_HTTP_${response.status}`);
+    let payload: unknown;
+    try { payload = await response.json(); } catch { return finish(null, 'PLANNER_INVALID_RESPONSE'); }
+    tokenUsage = extractResponsesTokenUsage(payload);
+    const content = extractResponsesContent(payload);
+    if (content === null) return finish(null, 'PLANNER_EMPTY_RESPONSE');
+    let decoded: unknown;
+    try { decoded = parseDeepSeekJsonContent(content); } catch { return finish(null, 'PLANNER_INVALID_JSON'); }
+    const parsed = CommercialTurnPlanV1Schema.safeParse(decoded);
+    if (!parsed.success) return finish(null, 'PLANNER_INVALID_SCHEMA');
+    // An unknown course code is not evidence of focus; keep the rest of the reading.
+    const knownFocus = parsed.data.course_focus !== null
+      && input.context.catalog.available_offerings.some(offering => offering.code === parsed.data.course_focus);
+    return finish(knownFocus ? parsed.data : { ...parsed.data, course_focus: null }, null);
+  } catch {
+    return finish(null, 'PLANNER_UNKNOWN_ERROR');
+  } finally {
+    clearTimeout(timeout);
+    input.signal.removeEventListener('abort', parentAbort);
+  }
+}
+
 export async function generateDeepSeekAgentATurnProposalV1(input: {
   readonly observe?: (event: ModelObservation) => void;
   readonly context: AgentAContextV1;
@@ -228,8 +328,24 @@ export async function generateDeepSeekAgentATurnProposalV1(input: {
   readonly conversation_only?: boolean;
   /** Rule B may authorize invitation copy while all physical actions stay fenced. */
   readonly on_provider_request?: () => void;
+  /** Run the model-owned planning pass before the first draft of a turn. */
+  readonly commercial_planning?: boolean;
 }): Promise<GeneratedAgentATurnProposalV1> {
   const model = resolveAgentADeepSeekModelV1(input.model);
+  // Planning runs once, for the first draft only. Repairs and continuations
+  // reuse context.commercial_plan from that draft and never plan again.
+  let plannerRequests: 0 | 1 = 0;
+  let plannerTokenUsage: GeneratedAgentATurnProposalV1['token_usage'];
+  let writerContext = input.context;
+  if (input.commercial_planning === true && input.conversation_only !== true
+    && !input.context.turn_rejection && !input.context.commercial_plan) {
+    plannerRequests = 1;
+    const planned = await generateCommercialTurnPlanV1({
+      context: input.context, apiKey: input.apiKey, signal: input.signal, model, observe: input.observe,
+    });
+    plannerTokenUsage = planned.token_usage;
+    if (planned.plan) writerContext = { ...writerContext, commercial_plan: planned.plan };
+  }
   const timeoutMs = Math.min(
     AGENT_A_BRAIN_DEEPSEEK_DEADLINE_MS,
     Math.max(1, input.timeout_ms ?? AGENT_A_BRAIN_DEEPSEEK_DEADLINE_MS),
@@ -262,9 +378,9 @@ export async function generateDeepSeekAgentATurnProposalV1(input: {
           },
           body: JSON.stringify({
             model,
-            instructions: buildAgentABrainInstructionsV1(input.context)
+            instructions: buildAgentABrainInstructionsV1(writerContext)
               + (input.conversation_only ? `\nThe requested operation was not executed. This is a conversation-only continuation from the structured turn_rejection. Answer the customer in your own usual voice using the actual context and explain or ask for the relevant missing information. Do not claim an effect succeeded, repeat an action, invent a provider cause, or ask the customer to repeat a message that is already in context. Preserve the customer intent with the accurate structured move; never use unknown merely because the physical action is fenced. Use proposed_action none. Use no call_offer. These are internal effect boundaries, not wording instructions.` : ''),
-            input: `Current customer messages: ${JSON.stringify(input.context.turn.batch_messages.map((message) => message.text))}\nAnswer these messages and return only the single AgentATurnProposalV1 JSON object.${retryDiagnostic ? `\nThe previous output failed validation at ${retryDiagnostic}. Return a corrected full object. ${naturalnessRepairDirectiveV1(input.context)}${retryProfileEvidence}` : ''}`,
+            input: `Current customer messages: ${JSON.stringify(writerContext.turn.batch_messages.map((message) => message.text))}\nAnswer these messages and return only the single AgentATurnProposalV1 JSON object.${retryDiagnostic ? `\nThe previous output failed validation at ${retryDiagnostic}. Return a corrected full object. ${naturalnessRepairDirectiveV1(writerContext)}${retryProfileEvidence}` : ''}`,
             reasoning: { effort: 'none' },
             temperature: 0.2,
             stream: false,
@@ -273,7 +389,7 @@ export async function generateDeepSeekAgentATurnProposalV1(input: {
               format: {
                 type: 'json_schema',
                 name: 'studyx_agent_a_turn_proposal_v1',
-                schema: proposalJsonSchema(input.context, input.conversation_only),
+                schema: proposalJsonSchema(writerContext, input.conversation_only),
               },
             },
           }),
@@ -322,7 +438,7 @@ export async function generateDeepSeekAgentATurnProposalV1(input: {
       try {
         proposal = parseAgentATurnProposalV1(
           carryProfileInterpretation(stripDeepSeekRootMetadata(decoded), recoveredProfileUpdates),
-          input.context,
+          writerContext,
         );
       } catch (error) {
         input.observe?.({ kind: 'model_schema_rejected', code: error instanceof AgentABrainError ? error.code : 'BRAIN_INVALID_SCHEMA',
@@ -341,15 +457,18 @@ export async function generateDeepSeekAgentATurnProposalV1(input: {
         }
         throw error;
       }
+      const tokenUsage = addTokenUsage(plannerTokenUsage, accumulatedTokenUsage);
       return {
         proposal,
         provider: 'deepseek-direct',
         model,
         latency_ms: Date.now() - startedAt,
         attempt_count: attempt,
-        ...(accumulatedTokenUsage
-          ? { token_usage: accumulatedTokenUsage }
+        ...(tokenUsage
+          ? { token_usage: tokenUsage }
           : {}),
+        ...(writerContext.commercial_plan ? { commercial_plan: writerContext.commercial_plan } : {}),
+        ...(plannerRequests === 1 ? { planner_requests: plannerRequests } : {}),
       };
     }
     throw new AgentABrainError('BRAIN_INVALID_SCHEMA');

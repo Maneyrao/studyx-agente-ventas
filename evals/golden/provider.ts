@@ -1,4 +1,4 @@
-type GoldenProviderRoleV1 = 'agent' | 'judge' | 'post_sale' | 'unknown';
+type GoldenProviderRoleV1 = 'agent' | 'planner' | 'judge' | 'post_sale' | 'unknown';
 
 interface GoldenTokenUsageV1 {
   readonly input: number | null;
@@ -124,6 +124,7 @@ function requestRole(body: ResponsesRequestV1): GoldenProviderRoleV1 {
   if (name.includes('golden_semantic_turn_judge')) return 'judge';
   if (name.includes('post_sale')) return 'post_sale';
   if (name.includes('agent_a_turn_proposal')) return 'agent';
+  if (name.includes('agent_a_commercial_turn_plan')) return 'planner';
   return 'unknown';
 }
 
@@ -429,7 +430,7 @@ export function createGoldenOfficialResponsesProviderV1(
     const { body, signal } = await decodeRequest(input, init);
     const role = requestRole(body);
     if (role === 'unknown') throw new Error('GOLDEN_OFFICIAL_ROLE_UNKNOWN');
-    const actualModel = role === 'agent' ? config.agentModel
+    const actualModel = role === 'agent' || role === 'planner' ? config.agentModel
       : role === 'judge' ? config.judgeModel : stringValue(body.model);
     const mappedBody = role === 'post_sale' ? body : { ...body, model: actualModel };
     const index = records.length;

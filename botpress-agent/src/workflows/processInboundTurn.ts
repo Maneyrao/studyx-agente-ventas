@@ -1461,6 +1461,9 @@ export const processInboundTurn = new Workflow({
             context: agentABrainContext,
             ...(resumedRejection ? { conversation_only: agentAConversationOnly } : {}),
             on_provider_request: accountAgentAProviderRequest,
+            // Owner decision 2026-11-06: one model-owned planning request per
+            // turn, never retried, accounted apart from the generation budget.
+            commercial_planning: configuration.agentACommercialPlanningEnabled === true,
             apiKey: deepSeekApiKey,
             signal,
             model: typeof configuration.agentABrainDeepSeekModel === 'string'
@@ -1507,6 +1510,17 @@ export const processInboundTurn = new Workflow({
           action_status: 'none',
         }
         let generated = generatedAttempt.value
+        // The plan travels in the durable step result, so a replayed step and
+        // every repair or continuation of this turn reuse the same reading.
+        if (generated.commercial_plan && agentABrainContext && !agentABrainContext.commercial_plan) {
+          agentABrainContext.commercial_plan = generated.commercial_plan
+        }
+        safeLog('studyx.turn.agent_a_commercial_plan', {
+          trace_id: input.trace_id,
+          turn_id: owned.turn_id,
+          physical_planner_requests: generated.planner_requests ?? 0,
+          planned: generated.commercial_plan !== undefined,
+        })
         if (plannerlessV2Enabled) customerCallInterpretation ??= generated.proposal.move
         precommitModelAuthoredCandidates.push(generated)
         await persistProfileProposal(generated.proposal)

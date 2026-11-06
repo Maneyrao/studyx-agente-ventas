@@ -5,7 +5,7 @@ import {
 } from './studyx-agent-a-canonical.generated';
 import { resolveCanonicalPromptIdentityV1 } from './agent-a-identity';
 
-export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v187' as const;
+export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v188' as const;
 
 /**
  * Runtime contract only. The sales behavior lives in the canonical prompt so
@@ -85,11 +85,46 @@ function inertJson(value: unknown): string {
 /** Preserve the complete context while placing the live conversation nearest
  * to the canonical behavior. This changes prompt presentation only: it does
  * not derive state, filter facts or mutate the caller-owned context. */
+/**
+ * Writer view of the catalog. With a planning-pass course focus, the writer
+ * sees the course in focus, the resolver candidates and every bonus/package
+ * identity instead of all offerings. Presentation only: schemas, validation
+ * and authorized fact ids keep using the complete catalog. Without a valid
+ * focus, or while the catalog resolution is open, the full catalog stays.
+ */
+export function writerCatalogPresentationV1(
+  context: AgentAContextV1,
+): AgentAContextV1['catalog'] & { omitted_offerings_count?: number } {
+  const catalog = context.catalog;
+  const focus = context.commercial_plan?.course_focus ?? null;
+  const offerings = catalog.available_offerings;
+  if (!focus || !offerings.some(offering => offering.code === focus)
+    || catalog.resolution === 'ambiguous' || catalog.resolution === 'not_found') return catalog;
+  const bonus = context.capabilities.course_bonus;
+  const promotion = context.commercial_state.promotion;
+  const keep = new Set<string>([
+    focus,
+    ...(catalog.selected_offering ? [catalog.selected_offering.code] : []),
+    ...(context.commercial_state.selected_offering_code ? [context.commercial_state.selected_offering_code] : []),
+    ...catalog.candidate_offerings.map(offering => offering.code),
+    ...(catalog.bonus_candidate_fichas ?? []).map(ficha => ficha.code),
+    ...(bonus?.bonus_candidates ?? []).map(candidate => candidate.code),
+    ...(bonus?.delivered_bonus_offerings ?? []).map(offering => offering.code),
+    ...(bonus?.interest_offering_code ? [bonus.interest_offering_code] : []),
+    ...(bonus?.rule_bonus?.paid_offering_code ? [bonus.rule_bonus.paid_offering_code] : []),
+    ...(promotion?.interest_offering_code ? [promotion.interest_offering_code] : []),
+    ...(promotion?.bonus_offerings ?? []).map(offering => offering.offering_code),
+  ]);
+  const kept = offerings.filter(offering => keep.has(offering.code));
+  return { ...catalog, available_offerings: kept, omitted_offerings_count: offerings.length - kept.length };
+}
+
 function promptContextPresentationV1(context: AgentAContextV1): AgentAContextV1 {
-  const { turn, customer, commercial_state, continuity, ...background } = context;
+  const { turn, customer, commercial_state, continuity, commercial_plan: _plan, ...background } = context;
   const { batch_messages, recent_turns, ...turnBackground } = turn;
   return {
     ...background,
+    catalog: writerCatalogPresentationV1(context),
     customer,
     commercial_state,
     ...(continuity === undefined ? {} : { continuity }),
@@ -373,6 +408,32 @@ ${inertJson({
 </verified_commercial_facts>`;
 }
 
+/**
+ * The model's own planning-pass reading, handed back to the writer. It adds
+ * no rule: canonical_sales_behavior stays the only commercial guide.
+ */
+function commercialTurnPlanContextV1(context: AgentAContextV1): string {
+  if (!context.commercial_plan) return '';
+  return `<commercial_turn_plan>
+Your own reading of this turn, produced in a separate planning pass from this same context under canonical_sales_behavior. It is internal, subordinate to canonical_sales_behavior and the authorized context, and authorizes no fact, course, gift or effect. Write the reply that carries out this reading in your usual voice.
+${inertJson(context.commercial_plan)}
+</commercial_turn_plan>
+
+`;
+}
+
+export const COMMERCIAL_TURN_PLANNING_TASK_V1 = `<commercial_turn_planning>
+This request is the planning pass only: instead of AgentATurnProposalV1, return CommercialTurnPlanV1. Read the authorized context and the current customer messages under canonical_sales_behavior and record your reading of this turn. Do not write customer-facing text. The plan is internal and authorizes no fact or effect.
+</commercial_turn_planning>`;
+
+/** Planning pass: complete context (full catalog) plus the planning tag. */
+export function buildAgentACommercialPlanInstructionsV1(context: AgentAContextV1): string {
+  const { commercial_plan: _plan, ...withoutPlan } = context;
+  return `${buildAgentABrainInstructionsV1(withoutPlan)}
+
+${COMMERCIAL_TURN_PLANNING_TASK_V1}`;
+}
+
 export function buildAgentABrainInstructionsV1(context: AgentAContextV1): string {
   const canonicalPrompt = context.identity === null
     ? STUDYX_AGENT_A_CANONICAL_PROMPT
@@ -407,7 +468,7 @@ ${currentCheckoutEffectContractV1(context)}
 
 ${EXECUTION_CONSISTENCY_CHECK}
 
-<canonical_sales_behavior version="${STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION}">
+${commercialTurnPlanContextV1(context)}<canonical_sales_behavior version="${STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION}">
 ${canonicalPrompt}</canonical_sales_behavior>
 
 ${mandatoryRepairDirectiveV1(context)}`;

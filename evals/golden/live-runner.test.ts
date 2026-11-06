@@ -778,6 +778,7 @@ beforeAll(async () => {
   expect(new URL(databaseUrl).origin).toBe('null');
   configuration.apiBaseUrl = apiBaseUrl;
   configuration.agentAPlannerlessV2Enabled = true;
+  configuration.agentACommercialPlanningEnabled = true;
   configuration.agentAAdvisorName = 'Emma';
   expect(model).toBe(AGENT_A_DEEPSEEK_MODEL);
   configuration.agentABrainDeepSeekModel = model;

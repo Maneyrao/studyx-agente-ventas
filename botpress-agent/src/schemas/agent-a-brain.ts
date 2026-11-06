@@ -2,6 +2,7 @@ import { COURSE_MENTION_ROLES_V1 } from '../../../src/shared/conversation/course
 import { z } from '@botpress/runtime';
 import { ConversationMoveV1Schema } from './conversation-pipeline';
 import { TurnRejectionV1Schema } from './turn-rejection';
+import { CommercialTurnPlanV1Schema } from './agent-a-commercial-plan';
 import {
   CONTACT_PROFILE_FIELDS_V1,
   CONTACT_PROFILE_OPERATIONS_V1,
@@ -340,6 +341,11 @@ export const AgentAContextV1Schema = z.object({
    * alternativas, nunca prosa: el backend no redacta (A3/A4).
    */
   turn_rejection: TurnRejectionV1Schema.optional(),
+  /**
+   * Agent A's own planning-pass reading of this turn (model-owned, internal).
+   * Carried so repairs of the same turn reuse it; never an authorization.
+   */
+  commercial_plan: CommercialTurnPlanV1Schema.optional(),
   capabilities: z.object({
     may_reply: z.boolean(),
     may_offer_call: z.boolean(),
