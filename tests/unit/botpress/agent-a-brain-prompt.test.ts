@@ -428,7 +428,7 @@ describe('Agent A Brain prompt', () => {
     expect(JSON.parse(encoded)).toEqual(current);
     expect(instructions).not.toContain('<current_turn_guidance>');
     expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v118');
-    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v185');
+    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v186');
   });
 
   it('maps recommendations and generic continuation without persisting a customer choice', () => {
@@ -931,21 +931,41 @@ describe('Agent A Brain prompt', () => {
     expect(instructions.match(/<authorized_context>/gu)).toHaveLength(1);
     expect(JSON.parse(instructions.split('<authorized_context>')[1]!.split('</authorized_context>')[0]!)).toEqual(current);
   });
-  it('keeps profile extraction subordinate to the canonical conversation behavior', () => {
+  it('presents facts and technical contracts before the final canonical conversation behavior', () => {
     const instructions = buildAgentABrainInstructionsV1(context());
+    const contextStart = instructions.indexOf('<authorized_context>');
     const canonicalEnd = instructions.indexOf('</canonical_sales_behavior>');
+    const canonicalStart = instructions.indexOf('<canonical_sales_behavior');
     const profileStart = instructions.indexOf('<internal_contact_profile_contract>');
     const profileEnd = instructions.indexOf('</internal_contact_profile_contract>');
+    const executionStart = instructions.indexOf('<execution_consistency_check>');
 
-    expect(profileStart).toBeGreaterThan(canonicalEnd);
+    expect(profileStart).toBeGreaterThan(-1);
     expect(profileEnd).toBeGreaterThan(profileStart);
-    expect(profileEnd).toBeLessThan(instructions.indexOf('<authorized_context>'));
-    const execution = instructions.slice(0, instructions.indexOf('<canonical_sales_behavior'));
-    expect(execution).not.toContain('profile_updates');
+    expect(profileEnd).toBeLessThan(contextStart);
+    expect(contextStart).toBeLessThan(executionStart);
+    expect(executionStart).toBeLessThan(canonicalStart);
+    expect(canonicalEnd).toBeGreaterThan(canonicalStart);
+    expect(instructions.trimEnd().endsWith('</canonical_sales_behavior>')).toBe(true);
+    const executionBeforeProfile = instructions.slice(0, profileStart);
+    expect(executionBeforeProfile).not.toContain('profile_updates');
     const profileContract = instructions.slice(profileStart, profileEnd);
     expect(profileContract).toContain('Profile metadata is silent evidence');
     expect(profileContract).toContain('never customer-facing wording');
     expect(profileContract).toContain('use empty arrays when inapplicable or uncertain');
+  });
+
+  it('puts a specific repair after the final canonical behavior', () => {
+    const current = context();
+    current.turn_rejection = { schema_version: 1, attempt: 1,
+      rejection_id: '00000000-0000-4000-8000-000000000001',
+      rejections: [{ code: 'ACTION_NOT_AUTHORIZED', subject: 'request_call_now' }],
+      authorized_alternatives: { fact_ids: [], actions: ['none'], missing_information: ['telefono'] },
+    };
+    const instructions = buildAgentABrainInstructionsV1(current);
+    expect(instructions.indexOf('<mandatory_repair'))
+      .toBeGreaterThan(instructions.indexOf('</canonical_sales_behavior>'));
+    expect(instructions.trimEnd().endsWith('</mandatory_repair>')).toBe(true);
   });
   it('uses assistant history for continuity while preserving canonical authority over style', () => {
     const current = context();

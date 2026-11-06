@@ -5,7 +5,7 @@ import {
 } from './studyx-agent-a-canonical.generated';
 import { resolveCanonicalPromptIdentityV1 } from './agent-a-identity';
 
-export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v185' as const;
+export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v186' as const;
 
 /**
  * Runtime contract only. The sales behavior lives in the canonical prompt so
@@ -360,12 +360,8 @@ export function buildAgentABrainInstructionsV1(context: AgentAContextV1): string
     : resolveCanonicalPromptIdentityV1(STUDYX_AGENT_A_CANONICAL_PROMPT, context.identity).prompt;
 
   return `${EXECUTION_PREAMBLE}
-${exactLastCallResultDirectiveV1(context)}
 ${MOVE_SEMANTICS}
 ${COURSE_MENTIONS_CONTRACT}
-
-<canonical_sales_behavior version="${STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION}">
-${canonicalPrompt}</canonical_sales_behavior>
 
 <internal_contact_profile_contract>
 ${INTERNAL_CONTACT_PROFILE_CONTRACT}
@@ -375,9 +371,13 @@ ${INTERNAL_CONTACT_PROFILE_CONTRACT}
 ${inertJson(context)}
 </authorized_context>
 
+${exactLastCallResultDirectiveV1(context)}
+
 ${verifiedPostSalePackageContextV1(context)}
 
 ${currentCatalogResolutionDirectiveV1(context)}
+
+${verifiedCommercialFactsContextV1(context)}
 
 ${currentCourseBonusEffectContractV1(context)}
 
@@ -386,9 +386,10 @@ ${currentCallEffectContractV1(context)}
 
 ${currentCheckoutEffectContractV1(context)}
 
-${mandatoryRepairDirectiveV1(context)}
-
 ${EXECUTION_CONSISTENCY_CHECK}
 
-${verifiedCommercialFactsContextV1(context)}`;
+<canonical_sales_behavior version="${STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION}">
+${canonicalPrompt}</canonical_sales_behavior>
+
+${mandatoryRepairDirectiveV1(context)}`;
 }
