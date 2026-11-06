@@ -292,7 +292,7 @@ export async function generateCommercialTurnPlanV1(input: {
           temperature: 0.2,
           stream: false,
           max_output_tokens: 900,
-          text: { format: { type: 'json_schema', name: 'studyx_agent_a_commercial_turn_plan_v1', schema: COMMERCIAL_TURN_PLAN_JSON_SCHEMA } },
+          text: { format: { type: 'json_schema', name: 'studyx_agent_a_commercial_turn_plan_v1', schema: commercialTurnPlanWireSchemaV1() } },
         }),
         signal: controller.signal,
       });
@@ -319,6 +319,18 @@ export async function generateCommercialTurnPlanV1(input: {
     clearTimeout(timeout);
     input.signal.removeEventListener('abort', parentAbort);
   }
+}
+
+/** The plan classifies the current message with the same move contract as the proposal. */
+export function commercialTurnPlanWireSchemaV1() {
+  const { current_move: _move, ...properties } = COMMERCIAL_TURN_PLAN_JSON_SCHEMA.properties;
+  return {
+    ...COMMERCIAL_TURN_PLAN_JSON_SCHEMA,
+    properties: {
+      current_move: { type: 'string', enum: [...MOVE_KINDS], description: MOVE_SEMANTICS },
+      ...properties,
+    },
+  };
 }
 
 export async function generateDeepSeekAgentATurnProposalV1(input: {

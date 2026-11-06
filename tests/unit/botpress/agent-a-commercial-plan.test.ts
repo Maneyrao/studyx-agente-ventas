@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  commercialTurnPlanWireSchemaV1,
   generateCommercialTurnPlanV1,
   generateDeepSeekAgentATurnProposalV1,
 } from '../../../botpress-agent/src/lib/conversation/agent-a-brain';
@@ -54,9 +55,11 @@ function scripted(...replies: Array<Response | (() => Promise<Response>)>) {
 }
 
 const PLAN: CommercialTurnPlanV1 = {
+  current_move: 'ask_course_information',
   current_request: 'Aclara que empieza de cero.',
   course_focus: 'real_estate',
   customer_goal: null,
+  pending_confirmations: [],
   known_information: ['Empieza de cero'],
   answered_discovery_topics: ['Nivel: desde cero'],
   ignored_or_closed_topics: ['Trabajar con inmobiliaria o invertir: sin responder'],
@@ -64,6 +67,7 @@ const PLAN: CommercialTurnPlanV1 = {
   next_commercial_move: 'value',
   response_obligations: ['Confirmar que sirve desde cero', 'Cierre de prueba suave'],
   proposed_effect_intent: 'none',
+  contact_data_purpose: 'none',
 };
 
 afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); });
@@ -83,6 +87,10 @@ describe('CommercialTurnPlanV1 contract', () => {
     const result = await generateCommercialTurnPlanV1({ context, apiKey: 'fixture', signal: new AbortController().signal });
     expect(result).toMatchObject({ status: 'planned', plan: PLAN, failure_code: null });
     expect(calls[0]!.name).toBe('studyx_agent_a_commercial_turn_plan_v1');
+    const wire = commercialTurnPlanWireSchemaV1();
+    expect(Object.keys(wire.properties)[0]).toBe('current_move');
+    expect(wire.properties.current_move.enum).toContain('request_payment_link');
+    expect(wire.properties.current_move.description).toContain('an enrollment or purchase signal');
     expect(calls[0]!.instructions).toBe(buildAgentACommercialPlanInstructionsV1(context));
     expect(calls[0]!.instructions.startsWith(buildAgentABrainInstructionsV1(context))).toBe(true);
     expect(calls[0]!.instructions).toContain('<commercial_turn_planning>');
@@ -226,12 +234,20 @@ describe('deterministic replay of case 47 g03 and g06 (recorded real two-pass ou
     expect(writer.indexOf('<commercial_turn_plan>')).toBeGreaterThan(writer.indexOf('</execution_consistency_check>'));
     expect(writer.indexOf('<commercial_turn_plan>')).toBeLessThan(writer.indexOf('<canonical_sales_behavior'));
     expect(writer).toContain('"omitted_offerings_count"');
+    // The writer classifies the message itself; the planner's move only grounds the plan.
+    expect(writer).not.toContain('"current_move"');
+    expect(writer).toContain('"contact_data_purpose"');
     expect(plan.course_focus).toBe('real_estate');
     expect(plan.forbidden_repetitions.join(' ')).toMatch(/inmobiliaria/u);
     expect(result.commercial_plan).toEqual(plan);
     expect(result.token_usage?.total_tokens).toBe(30);
     // The saved single-pass reply re-asked; the recorded two-pass reply does not.
-    expect(value.original_response.response.messages.join(' ')).toMatch(/inmobiliaria[^?]*invert[^?]*\?/u);
-    expect(result.proposal.response.messages.join(' ')).not.toMatch(/inmobiliaria[^?]*invert[^?]*\?/u);
+    // Only questions count: stating that the course serves both paths is not re-asking the choice.
+    const questions = (messages: readonly string[]) => messages.join(' ').split(/(?<=[.!?])\s+/u)
+      .filter(sentence => sentence.trim().endsWith('?'));
+    const reasks = (messages: readonly string[]) => questions(messages)
+      .some(question => /inmobiliaria/u.test(question) && /invert/u.test(question));
+    expect(reasks(value.original_response.response.messages)).toBe(true);
+    expect(reasks(result.proposal.response.messages)).toBe(false);
   });
 });

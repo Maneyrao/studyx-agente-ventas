@@ -5,7 +5,7 @@ import {
 } from './studyx-agent-a-canonical.generated';
 import { resolveCanonicalPromptIdentityV1 } from './agent-a-identity';
 
-export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v188' as const;
+export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v190' as const;
 
 /**
  * Runtime contract only. The sales behavior lives in the canonical prompt so
@@ -419,9 +419,12 @@ ${inertJson({
  */
 function commercialTurnPlanContextV1(context: AgentAContextV1): string {
   if (!context.commercial_plan) return '';
+  // The writer classifies the current message itself under the move contract;
+  // the planning-pass classification only grounds the plan's own reasoning.
+  const { current_move: _move, ...reading } = context.commercial_plan;
   return `<commercial_turn_plan>
 Your own reading of this turn, produced in a separate planning pass from this same context under canonical_sales_behavior. It is internal, subordinate to canonical_sales_behavior and the authorized context, and authorizes no fact, course, gift or effect. Write the reply that carries out this reading in your usual voice.
-${inertJson(context.commercial_plan)}
+${inertJson(reading)}
 </commercial_turn_plan>
 
 `;

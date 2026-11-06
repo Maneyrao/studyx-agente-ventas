@@ -24,16 +24,21 @@ export const COMMERCIAL_EFFECT_INTENTS = [
 ] as const;
 
 export const CommercialTurnPlanV1Schema = z.object({
+  // Classification of the current customer message under the existing move
+  // contract (MOVE_SEMANTICS), made before deciding the commercial move.
+  current_move: z.string().trim().min(1).max(60),
   current_request: PlanText,
   course_focus: z.string().trim().min(1).max(120).nullable(),
   customer_goal: PlanText.nullable(),
   known_information: PlanList,
+  pending_confirmations: PlanList,
   answered_discovery_topics: PlanList,
   ignored_or_closed_topics: PlanList,
   forbidden_repetitions: PlanList,
   next_commercial_move: z.enum(COMMERCIAL_NEXT_MOVES),
   response_obligations: PlanList,
   proposed_effect_intent: z.enum(COMMERCIAL_EFFECT_INTENTS),
+  contact_data_purpose: z.enum(['none', 'identity', 'call', 'payment']),
 }).strict();
 
 export type CommercialTurnPlanV1 = z.infer<typeof CommercialTurnPlanV1Schema>;
@@ -47,20 +52,23 @@ export const COMMERCIAL_TURN_PLAN_JSON_SCHEMA = {
   type: 'object',
   additionalProperties: false,
   required: [
-    'current_request', 'course_focus', 'customer_goal', 'known_information', 'answered_discovery_topics',
+    'current_move', 'current_request', 'course_focus', 'customer_goal', 'known_information', 'pending_confirmations', 'answered_discovery_topics',
     'ignored_or_closed_topics', 'forbidden_repetitions', 'next_commercial_move', 'response_obligations',
-    'proposed_effect_intent',
+    'proposed_effect_intent', 'contact_data_purpose',
   ],
   properties: {
+    current_move: { type: 'string', description: 'Move of the current customer message, under the existing move contract.' },
     current_request: { type: 'string', maxLength: 400, description: 'What the current customer messages ask or say, every part.' },
     course_focus: { anyOf: [{ type: 'string' }, { type: 'null' }], description: 'Exact canonical offering code in focus, or null.' },
     customer_goal: { anyOf: [{ type: 'string', maxLength: 400 }, { type: 'null' }] },
-    known_information: list('What the customer already told (level, goal, constraints, data).'),
+    known_information: list('What the customer already told or confirmed (level, goal, constraints, data).'),
+    pending_confirmations: list('Values the agent proposed or the customer changed that still await an explicit customer confirmation; empty when none.'),
     answered_discovery_topics: list('Discovery topics already answered, with the answer.'),
     ignored_or_closed_topics: list('Questions the agent asked earlier that the customer ignored, answered with uncertainty, or declined.'),
     forbidden_repetitions: list('Questions or content from earlier agent turns that this reply would repeat or rephrase.'),
     next_commercial_move: { type: 'string', enum: [...COMMERCIAL_NEXT_MOVES] },
     response_obligations: list('What this reply does, in order, under the canonical sales behavior.'),
     proposed_effect_intent: { type: 'string', enum: [...COMMERCIAL_EFFECT_INTENTS], description: 'Internal intent only; never an authorization.' },
+    contact_data_purpose: { type: 'string', enum: ['none', 'identity', 'call', 'payment'], description: 'If this reply asks for contact data, its profile_requests purpose: payment for enrollment checkout, call for a call, identity otherwise; none when no data is asked.' },
   },
 } as const;

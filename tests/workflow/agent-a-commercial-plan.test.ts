@@ -20,9 +20,11 @@ let writerFailuresLeft = 0;
 let respond: (context: AgentAContextV1) => AgentATurnProposalV1;
 
 const PLAN: CommercialTurnPlanV1 = {
+  current_move: 'ask_payment_options',
   current_request: 'Pregunta por cuotas.',
   course_focus: 'ingles_1',
   customer_goal: null,
+  pending_confirmations: [],
   known_information: ['Le interesa Inglés 1'],
   answered_discovery_topics: [],
   ignored_or_closed_topics: [],
@@ -30,6 +32,7 @@ const PLAN: CommercialTurnPlanV1 = {
   next_commercial_move: 'value',
   response_obligations: ['Responder los planes canónicos'],
   proposed_effect_intent: 'none',
+  contact_data_purpose: 'none',
 };
 
 const output = (value: unknown) => new Response(JSON.stringify({
