@@ -29,7 +29,7 @@ describe('Agent A canonical sales prompt authority', () => {
     expect(`## Anexo técnico\n${annex}`).toBe(TECHNICAL_ANNEX);
   });
 
-  it('keeps both generated modules byte-identical to the canonical source at v116', () => {
+  it('keeps both generated modules byte-identical to the canonical source at v117', () => {
     const prompt = readFileSync(PROMPT_PATH, 'utf8');
     const generated = GENERATED_PATHS.map((path) => readFileSync(path, 'utf8'));
 
@@ -38,7 +38,7 @@ describe('Agent A canonical sales prompt authority', () => {
       `export const STUDYX_AGENT_A_CANONICAL_PROMPT = ${JSON.stringify(prompt)} as const;`,
     );
     expect(generated[0]).toContain(
-      "export const STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION = 'studyx-agent-a-canonical-v116' as const;",
+      "export const STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION = 'studyx-agent-a-canonical-v117' as const;",
     );
   });
 
@@ -53,7 +53,7 @@ describe('Agent A canonical sales prompt authority', () => {
   });
 });
 
-describe('Agent A canonical prompt v116 (Gabi manual integration)', () => {
+describe('Agent A canonical prompt v117 (Gabi manual integration)', () => {
   const prompt = readFileSync(PROMPT_PATH, 'utf8');
   const authority = readFileSync(AUTHORITY_PATH, 'utf8');
 
@@ -106,6 +106,17 @@ describe('Agent A canonical prompt v116 (Gabi manual integration)', () => {
     expect(prompt).toContain(guidance);
   });
 
+  it('does not repeat an ignored choice and grounds every programme delivery', () => {
+    for (const guidance of [
+      'si el cliente aporta información nueva pero no responde esa elección, cuenta como ignorada y no puedes repetirla ni reformularla en el turno siguiente',
+      'Al enviar material de un curso, nombra uno o dos contenidos disponibles en su descripción o temario autorizado',
+      'Anunciar solamente que compartes o adjuntas el programa no cumple',
+    ]) {
+      expect(authority).toContain(guidance);
+      expect(prompt).toContain(guidance);
+    }
+  });
+
   it('separates a forgotten ad from an explicit request for options without imposing a fixed question', () => {
     const guidance = 'Si el cliente sólo dice que no recuerda qué curso o anuncio vio y todavía no identificó un área, reconócelo y haz una sola pregunta breve de orientación, sin desplegar un catálogo de áreas o cursos. Usa el contexto: no vuelvas a pedir un objetivo ya conocido ni reformules la pregunta recién ignorada. Si pide opciones expresamente, respóndelas con una orientación breve y, si aún no hay criterio suficiente para recomendar una, termina con una sola pregunta nueva que realmente las separe.';
     expect(authority).toContain(guidance);
@@ -114,7 +125,7 @@ describe('Agent A canonical prompt v116 (Gabi manual integration)', () => {
 
   it('pins the canonical source in the generator', () => {
     const generator = readFileSync('scripts/generate-agent-a-prompt-module.mjs', 'utf8');
-    expect(generator).toContain('studyx-agent-a-canonical-v116');
+    expect(generator).toContain('studyx-agent-a-canonical-v117');
     expect(generator).toContain(`lineCount !== ${prompt.match(/\n/gu)!.length}`);
   });
 

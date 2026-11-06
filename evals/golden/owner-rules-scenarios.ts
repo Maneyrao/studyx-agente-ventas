@@ -848,7 +848,7 @@ OWNER_PROMOTION_MODE_REPLAY_CASES_MUTABLE.push(
 // «sigamos por aca» (order-2 race) and is settled only before the following turn.
 const traceRef = owner(222, 228, 'Recibos de datos, estado posllamada');
 const storiesRef = gabi(66, 66, 'Historias de éxito');
-const programSummaryRef = gabi(60, 60, 'Cuando compartas el material de un curso');
+const programSummaryRef = gabi(60, 60, 'Al enviar material de un curso');
 const traceBase = (id: string, customer: string, override: Partial<GoldenTurnV1> = {}) => turn(id, customer, {
   must: ['Responder al mensaje actual con hechos autorizados y un próximo paso apropiado.'],
   mustNot: ['No afirmar datos, llamadas, envíos ni promociones que no ocurrieron; no negar material disponible.'],
