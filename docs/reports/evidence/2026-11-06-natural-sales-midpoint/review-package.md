@@ -14,3 +14,4 @@
 - Exact separated diffs: authority.diff, canonical-prompt.diff (including generated outputs), brain.diff (including schema description).
 - Final architect case50 coverage finding ADDRESSED structurally: t05 is now only «sí, es lo que estaba buscando»; contact_details/RealEstate/noLink assertions unchanged. Relevant structure suites21/21 once. No authored model response, runtime change or paidretry. Model validation remains blocked402; architect scoped review of f06dfe3 confirmed structurally resolved, no additional finding.
 - Local only, NO PUSH: unmet acceptance/provenance and candidate branch auto-deploy safety unestablished. No Vercel configuration/account changes.
+- Verbatim final scoped architect verdict: architect-final-verdict.txt.
