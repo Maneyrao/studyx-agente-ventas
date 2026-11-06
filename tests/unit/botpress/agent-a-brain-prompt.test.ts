@@ -404,6 +404,19 @@ describe('Agent A Brain prompt', () => {
     expect(technicalOnly).not.toContain('one or two short WhatsApp messages');
   });
 
+  it('does not close discovery merely because a question was asked and ignored', () => {
+    const technicalOnly = buildAgentABrainInstructionsV1(context())
+      .replace(STUDYX_AGENT_A_CANONICAL_PROMPT, '');
+
+    expect(technicalOnly).toContain('Only an answered or explicitly declined discovery topic is closed');
+    expect(technicalOnly).toContain('ask one new, narrower discriminating question');
+    expect(technicalOnly).toContain('at most three representative paths');
+    expect(technicalOnly).toContain('A request for the complete catalog or for more options is the exception');
+    expect(technicalOnly).not.toContain('never ask one of them again, in any wording');
+    expect(technicalOnly).not.toContain('Si el cliente no contestó tu pregunta, no la repitas en el turno siguiente');
+    expect(technicalOnly).not.toContain('Con next_step=value no abras otra pregunta de descubrimiento');
+  });
+
   it('includes the canonical behavior once and preserves the complete inert context', () => {
     const current = context();
     const instructions = buildAgentABrainInstructionsV1(current);
@@ -412,7 +425,7 @@ describe('Agent A Brain prompt', () => {
     expect(JSON.parse(encoded)).toEqual(current);
     expect(instructions).not.toContain('<current_turn_guidance>');
     expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v109');
-    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v174');
+    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v175');
   });
 
   it('maps recommendations and generic continuation without persisting a customer choice', () => {

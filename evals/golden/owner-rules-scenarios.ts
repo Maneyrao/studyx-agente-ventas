@@ -1060,4 +1060,45 @@ OWNER_PROMOTION_MODE_REPLAY_CASES_MUTABLE.push({
   ],
 });
 
+// Owner test 2026-11-06: the anti-repetition rule must not confuse an asked question with an answered one.
+// The customer never answered the generic objective question; after naming a broad area and asking for options,
+// Emma answers with a short oriented comparison and one NEW discriminating question instead of a flat catalog.
+OWNER_PROMOTION_MODE_REPLAY_CASES_MUTABLE.push({
+  id: '49_broad_area_unanswered_discovery_20261106',
+  title: 'Pregunta de descubrimiento ignorada: saludar, orientar un área amplia y repreguntar sin repetir como robot',
+  note: 'Reproduce la conversación del dueño del 06/11 que quedó en una lista plana de cuatro cursos sin orientación.',
+  turns: [
+    traceBase('d01_greeting', 'hola, cómo estás?', {
+      authority: [gabi(7, 17, 'En el primer contacto preséntate una vez'), noPrefabRef],
+      must: ['Saludar con naturalidad y presentarse una sola vez como «Soy Emma, asesora de Studyx».'],
+      mustNot: ['No presentarse como administrativa ni usar signos invertidos de apertura.'],
+      hard: [{ type: 'workflow_committed' }, noPrefab, { type: 'contains', value: 'Soy Emma, asesora de Studyx' },
+        { type: 'not_contains', value: 'administrativa' }, { type: 'not_contains', value: '¿' }, { type: 'not_contains', value: '¡' }, ...noBeca],
+    }),
+    traceBase('d02_acknowledgement', 'ah okay', {
+      authority: [gabi(17, 23, 'Varía la estructura'), gabi(32, 32, 'pregunta ligera de descubrimiento'), noPrefabRef],
+      must: ['Retomar con calidez y avanzar con una sola pregunta ligera para conocer qué le interesa.'],
+      mustNot: ['No volver a presentarse, no sonar administrativo ni usar signos invertidos de apertura.'],
+      hard: [{ type: 'workflow_committed' }, noPrefab, { type: 'question_count_at_most', value: 1 },
+        { type: 'not_contains', value: 'Soy Emma' }, { type: 'not_contains', value: '¿' }, { type: 'not_contains', value: '¡' }, ...noBeca],
+    }),
+    traceBase('d03_does_not_remember', 'no se que habia visto', {
+      authority: [gabi(36, 44, 'Descubrir lo justo'), noPrefabRef],
+      must: ['Aceptar que no recuerda el curso y hacer como máximo una pregunta útil, sin formulario ni menú largo.'],
+      mustNot: ['No inventar qué curso vio ni usar signos invertidos de apertura.'],
+      hard: [{ type: 'workflow_committed' }, noPrefab, { type: 'question_count_at_most', value: 1 },
+        { type: 'not_contains', value: '¿' }, { type: 'not_contains', value: '¡' }, ...noBeca],
+    }),
+    traceBase('d04_computers_options', 'algo vinculado con computadoras\nme pasas las opciones?', {
+      authority: [gabi(15, 21, 'Para dos o más opciones usa una lista'), gabi(38, 50, 'Con un objetivo claro, recomienda el mejor curso y por qué'), noPrefabRef],
+      must: ['Responder primero al pedido con hasta tres caminos realmente vinculados con computadoras, diferenciarlos brevemente y terminar con una sola pregunta nueva que ayude a elegir según el último mensaje.'],
+      mustNot: ['No repetir la pregunta genérica sobre conseguir trabajo, sumar ingresos o tener un negocio; no dar una lista plana de cuatro o más cursos; no pedir inscripción, plan ni llamada; no usar signos invertidos de apertura.'],
+      expected: { move: ['browse_catalog', 'ask_course_information'], action: ['none'], state: {} },
+      hard: [{ type: 'workflow_committed' }, noPrefab, { type: 'question_count_at_most', value: 1 },
+        { type: 'no_call_offer' }, { type: 'no_enrollment_ask' }, { type: 'not_contains', value: '¿' },
+        { type: 'not_contains', value: '¡' }, ...noBeca],
+    }),
+  ],
+});
+
 export const OWNER_PROMOTION_MODE_REPLAY_CASES: readonly GoldenCaseV1[] = OWNER_PROMOTION_MODE_REPLAY_CASES_MUTABLE;
