@@ -16,6 +16,7 @@ const previousPlanning = configuration.agentACommercialPlanningEnabled;
 const writerCalls: Array<{ context: AgentAContextV1; instructions: string }> = [];
 let plannerCalls = 0;
 let plannerReply: () => Response;
+let writerFailuresLeft = 0;
 let respond: (context: AgentAContextV1) => AgentATurnProposalV1;
 
 const PLAN: CommercialTurnPlanV1 = {
@@ -75,6 +76,10 @@ beforeAll(async () => {
     if (!serialized) throw new Error('AUTHORIZED_CONTEXT_MISSING');
     const context = JSON.parse(serialized) as AgentAContextV1;
     writerCalls.push({ context, instructions: body.instructions });
+    if (writerFailuresLeft > 0) {
+      writerFailuresLeft -= 1;
+      return new Response('{}', { status: 503 });
+    }
     const generated = respond(context);
     return output({ ...generated, repair_of: context.turn_rejection
       ? { rejection_id: context.turn_rejection.rejection_id, attempt: 1 } : null });
@@ -138,4 +143,22 @@ it('never stays silent when the planning pass fails: the single-pass writer answ
   expect(plannerCalls - plannerBefore).toBe(1);
   expect(writerCalls.slice(writersBefore)).toHaveLength(1);
   expect(writerCalls.at(-1)!.instructions).not.toContain('<commercial_turn_plan>');
+});
+
+it('does not plan again when the workflow retries a failed first writer request', async () => {
+  const id = identity();
+  plannerReply = () => output(PLAN);
+  writerFailuresLeft = 1;
+  const answer = 'Hola, soy Emma, asesora de Studyx. Qué te gustaría aprender?';
+  respond = () => proposal(answer, {
+    move: { schema_version: 1, move: 'greeting', secondary_moves: [], vetoes: [], confidence: 1 },
+  });
+  const plannerBefore = plannerCalls;
+  const writersBefore = writerCalls.length;
+  const turn = await runWorkflowTurnV1({ ...id, text: 'Hola' });
+  expect(turn.errorCode).toBeNull();
+  expect(turn.authorizedMessages).toEqual([answer]);
+  // One planning request per turn: the provider retry reuses nothing and never re-plans.
+  expect(plannerCalls - plannerBefore).toBe(1);
+  expect(writerCalls.slice(writersBefore)).toHaveLength(2);
 });

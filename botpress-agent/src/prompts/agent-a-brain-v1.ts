@@ -90,7 +90,9 @@ function inertJson(value: unknown): string {
  * sees the course in focus, the resolver candidates and every bonus/package
  * identity instead of all offerings. Presentation only: schemas, validation
  * and authorized fact ids keep using the complete catalog. Without a valid
- * focus, or while the catalog resolution is open, the full catalog stays.
+ * focus, while the catalog resolution is open or unavailable, or when the
+ * model's own plan moves to discovery, promotion or an objection (where a
+ * bonus or alternative may come from any active course), the full catalog stays.
  */
 export function writerCatalogPresentationV1(
   context: AgentAContextV1,
@@ -98,8 +100,11 @@ export function writerCatalogPresentationV1(
   const catalog = context.catalog;
   const focus = context.commercial_plan?.course_focus ?? null;
   const offerings = catalog.available_offerings;
+  const move = context.commercial_plan?.next_commercial_move;
   if (!focus || !offerings.some(offering => offering.code === focus)
-    || catalog.resolution === 'ambiguous' || catalog.resolution === 'not_found') return catalog;
+    || move === 'discover' || move === 'promo' || move === 'objection'
+    || catalog.resolution === 'ambiguous' || catalog.resolution === 'not_found'
+    || catalog.resolution === 'unavailable') return catalog;
   const bonus = context.capabilities.course_bonus;
   const promotion = context.commercial_state.promotion;
   const keep = new Set<string>([

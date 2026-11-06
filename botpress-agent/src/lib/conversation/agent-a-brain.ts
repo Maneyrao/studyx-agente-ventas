@@ -96,6 +96,9 @@ export interface GeneratedAgentATurnProposalV1 {
   readonly commercial_plan?: CommercialTurnPlanV1;
   /** Physical planning requests made by this generation (0 or 1, never retried). */
   readonly planner_requests?: 0 | 1;
+  readonly planner_status?: 'planned' | 'failed';
+  readonly planner_failure_code?: string | null;
+  readonly planner_latency_ms?: number;
 }
 
 function parseDeepSeekJsonContent(content: string): unknown {
@@ -336,6 +339,7 @@ export async function generateDeepSeekAgentATurnProposalV1(input: {
   // reuse context.commercial_plan from that draft and never plan again.
   let plannerRequests: 0 | 1 = 0;
   let plannerTokenUsage: GeneratedAgentATurnProposalV1['token_usage'];
+  let plannerOutcome: Pick<CommercialTurnPlanResultV1, 'status' | 'failure_code' | 'latency_ms'> | null = null;
   let writerContext = input.context;
   if (input.commercial_planning === true && input.conversation_only !== true
     && !input.context.turn_rejection && !input.context.commercial_plan) {
@@ -344,6 +348,7 @@ export async function generateDeepSeekAgentATurnProposalV1(input: {
       context: input.context, apiKey: input.apiKey, signal: input.signal, model, observe: input.observe,
     });
     plannerTokenUsage = planned.token_usage;
+    plannerOutcome = { status: planned.status, failure_code: planned.failure_code, latency_ms: planned.latency_ms };
     if (planned.plan) writerContext = { ...writerContext, commercial_plan: planned.plan };
   }
   const timeoutMs = Math.min(
@@ -469,6 +474,8 @@ export async function generateDeepSeekAgentATurnProposalV1(input: {
           : {}),
         ...(writerContext.commercial_plan ? { commercial_plan: writerContext.commercial_plan } : {}),
         ...(plannerRequests === 1 ? { planner_requests: plannerRequests } : {}),
+        ...(plannerOutcome ? { planner_status: plannerOutcome.status,
+          planner_failure_code: plannerOutcome.failure_code, planner_latency_ms: plannerOutcome.latency_ms } : {}),
       };
     }
     throw new AgentABrainError('BRAIN_INVALID_SCHEMA');

@@ -135,6 +135,7 @@ describe('two-pass generation', () => {
     expect(result.proposal.response.messages.length).toBeGreaterThan(0);
     expect(result.commercial_plan).toBeUndefined();
     expect(result.planner_requests).toBe(1);
+    expect(result).toMatchObject({ planner_status: 'failed', planner_failure_code: 'PLANNER_HTTP_503' });
   });
 
   it('keeps today\'s single request when planning is not enabled', async () => {
@@ -197,7 +198,15 @@ describe('writer catalog view', () => {
     expect(writerCatalogPresentationV1({ ...base, commercial_plan: { ...PLAN, course_focus: 'no_existe' } })).toBe(base.catalog);
     const open = { ...base, commercial_plan: PLAN, catalog: { ...base.catalog, resolution: 'ambiguous' as const } };
     expect(writerCatalogPresentationV1(open)).toBe(open.catalog);
+    const unavailable = { ...base, commercial_plan: PLAN, catalog: { ...base.catalog, resolution: 'unavailable' as const } };
+    expect(writerCatalogPresentationV1(unavailable)).toBe(unavailable.catalog);
   });
+
+  it.each(['discover', 'promo', 'objection'] as const)(
+    'keeps every active course when the model plans %s (options, gifts and alternatives)', (move) => {
+      const context = { ...contextOf(fixture('g03')), commercial_plan: { ...PLAN, next_commercial_move: move } };
+      expect(writerCatalogPresentationV1(context)).toBe(context.catalog);
+    });
 });
 
 describe('deterministic replay of case 47 g03 and g06 (recorded real two-pass outputs)', () => {
