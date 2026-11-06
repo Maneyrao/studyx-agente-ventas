@@ -410,7 +410,11 @@ describe('Agent A Brain prompt', () => {
 
     expect(technicalOnly).toContain('Only an answered or explicitly declined discovery topic is closed');
     expect(technicalOnly).toContain('ask one new, narrower discriminating question');
+    expect(technicalOnly).toContain('"I do not know" explicitly declines that concrete discovery topic');
+    expect(technicalOnly).toContain('do not ask that criterion again or an equivalent either/or');
     expect(technicalOnly).toContain('at most three representative paths');
+    expect(technicalOnly).toContain('only after the customer has named a broad area');
+    expect(technicalOnly).toContain('do not list example courses');
     expect(technicalOnly).toContain('A request for the complete catalog or for more options is the exception');
     expect(technicalOnly).not.toContain('never ask one of them again, in any wording');
     expect(technicalOnly).not.toContain('Si el cliente no contestó tu pregunta, no la repitas en el turno siguiente');
@@ -425,7 +429,7 @@ describe('Agent A Brain prompt', () => {
     expect(JSON.parse(encoded)).toEqual(current);
     expect(instructions).not.toContain('<current_turn_guidance>');
     expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v109');
-    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v175');
+    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v176');
   });
 
   it('maps recommendations and generic continuation without persisting a customer choice', () => {
