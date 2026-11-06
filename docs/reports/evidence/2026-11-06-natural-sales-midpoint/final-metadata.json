@@ -102,6 +102,15 @@
     },
     "model_responses_authored": false,
     "paid_retry": false,
-    "scoped_architect_review": "requested"
+    "scoped_architect_review": "confirmed structurally resolved; no additional findings; real-model behavior not validated",
+    "commit": "f06dfe3b172e8d8291898e1684294119a2ca6731"
+  },
+  "final_architect_verdict": {
+    "structural_conformity": true,
+    "new_material_implementation_defect": false,
+    "case50_structurally_resolved": true,
+    "commercial_acceptance": false,
+    "release_ready": false,
+    "reviewed_fix_sha": "f06dfe3b172e8d8291898e1684294119a2ca6731"
   }
 }
