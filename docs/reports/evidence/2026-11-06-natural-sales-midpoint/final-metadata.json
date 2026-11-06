@@ -1,0 +1,86 @@
+{
+  "status": "acceptance_blocked_environment_402",
+  "branch": "codex/agent-a-natural-sales-midpoint",
+  "deployed_baseline_sha": "9b40a87b1b9523df4f2658ca1450c43a84f86cd9",
+  "runtime_commit": "541ecf0",
+  "scenario_alignment_commit": "c6cfb9a",
+  "candidate_head_at_preflight": "597c690fe5b391e4c405f44e35dd24b880873008",
+  "brain_version": "studyx-agent-a-brain-v180",
+  "canonical_version": "studyx-agent-a-canonical-v110",
+  "provider_preflight": {
+    "evidence": "provider-preflight.json",
+    "endpoint": "https://api.deepseek.com/responses",
+    "model": "deepseek-v4-flash",
+    "attempts": 1,
+    "http_status": 402,
+    "error_type": "insufficient_balance_error",
+    "started_at": "2026-11-06T12:13:04.992Z",
+    "ended_at": "2026-11-06T12:13:06.968Z",
+    "usage": null,
+    "token_usage_status": "not_reported"
+  },
+  "focused": {
+    "case_ids": [
+      45,
+      47,
+      48,
+      49,
+      50
+    ],
+    "status": "NOT_RUN",
+    "reason": "provider preflight HTTP402 insufficient balance"
+  },
+  "formal_16": {
+    "status": "NOT_RUN",
+    "reason": "successful preflight and focused acceptance prerequisites not met"
+  },
+  "current_provider_requests": 1,
+  "current_token_usage": null,
+  "current_token_usage_status": "not_reported",
+  "historical_provider_usage": {
+    "case49_v174": {
+      "calls": 8,
+      "input_tokens": 109301,
+      "output_tokens": 1769,
+      "total_tokens": 111070
+    },
+    "cases47_48_v174": {
+      "calls": 46,
+      "input_tokens": 845100,
+      "output_tokens": 11535,
+      "total_tokens": 856635
+    }
+  },
+  "layers": {
+    "environment": "HTTP402 Insufficient Balance",
+    "offline_workflow": "8 failed /2 passed; retained, architect reviewed; two continuation-count assertions still need fine tracing",
+    "release_manifest": "1 stale v174 assertion;8 passed",
+    "commercial_candidate": "unmeasured; no generated real candidate response",
+    "backend_candidate_real_response": "not evaluated; no real candidate response",
+    "deterministic_integration": "214/214 passed"
+  },
+  "provenance_repin": false,
+  "deployed": false,
+  "plan_b_attempted": false,
+  "source_diff_artifacts": {
+    "authority.diff": "1c1395a285cd76340218d99230992d6b872befd7f07712eadbc78613427e8e71",
+    "canonical-prompt.diff": "a8eece38d3f8eecaee6f4f975d6e923aeb2035252331693e0d8a0d095f512406",
+    "brain.diff": "6a2400f071777fa23f1abd0e72fdf33d058e4ac2691f7b7fe447ee3b18ac9d98",
+    "review-source.diff": "86a946a71d62f5dd13ba8dd9369f58ecdeaeb95b0c99395b5f0f9d9e1a67518b"
+  },
+  "material_risks": [
+    "Real-model commercial acceptance unavailable",
+    "Offline workflow8/10 failed; no all-green gate claim",
+    "Continuation generationCount3vs2 remains unresolved",
+    "Release pin remains operational v174; candidate is not release-ready",
+    "Case50 t05 combines affirmative fit with explicit purchase intent; bare yes-to-trial-close transition is not isolated or evaluated."
+  ],
+  "publication": {
+    "local_only": true,
+    "pushed": false,
+    "reason": "Acceptance/provenance prerequisites unmet; candidate-branch push-triggered deployment safety is not established; owner prohibits deployment."
+  },
+  "coverage_limitations": [
+    "Case50 t05 combines affirmative fit with explicit purchase intent; bare yes-to-trial-close transition is not isolated or evaluated."
+  ]
+}

@@ -1,6 +1,6 @@
 # Agent A natural sales midpoint — candidate verification
 
-Status: runtime frozen at `541ecf0`; test-only scenario alignment `c6cfb9a`. Offline verification is incomplete: fixture workflows failed 8/10. No real-model acceptance or deployment claimed.
+Status: acceptance blocked by the actual provider preflight HTTP402 (Insufficient Balance). Exactly one synthetic request was sent by the principal; usage was not reported. Focused and formal16 evaluations were NOT RUN. Runtime stays frozen at `541ecf0`, test-only alignment `c6cfb9a`; candidate HEAD at preflight `597c690`. Fixture workflows also remain 8/10 failed. No acceptance, release readiness or deployment claimed.
 
 ## Identity and changes
 
@@ -49,29 +49,47 @@ Architect review permits a single provider preflight and focused real-model diag
 
 Original v174 evidence was copied byte-identically; `recorded-v174-sha256.json` records source and SHA256. Raw observations, workflow captures and both 427-attempt replay artifacts are losslessly packaged in `raw-evidence.tar.gz`, with every member verified against its original bytes in `raw-evidence-manifest.json`. Local originals remain under `.local-evidence/natural-sales-midpoint/raw/`.
 
-| Real v174 run | Verdict | Observations / attribution | Provider usage |
-|---|---|---|---|
-| Case49 | 2/4 | d03 long area menu; d04 flat seven-course menu. Judge `bonificación` attribution is wrong: backend rejections empty; this is commercial orientation. | 8 calls; 109301 input +1769 output =111070 tokens |
-| Cases47+48 | 15/19 |47g02 missing material summary; g03 repeated agency/invest choice; g06 no trial close.47g05 fabricated-story label is a judge false attribution: Amparo/Edson are authorized real stories.48 passed. |46 calls;845100 input +11535 output =856635 tokens |
+| Real v174 run | Verdict | Observations / attribution | Historical provider usage | Candidate comparison |
+|---|---|---|---|---|
+| Case49 | 2/4 | d03 long area menu; d04 flat seven-course menu. Judge `bonificación` attribution is wrong: backend rejections empty; this is commercial orientation. | 8 calls; 109301 input +1769 output =111070 tokens | Unavailable: preflight402; no candidate observation |
+| Cases47+48 | 15/19 |47g02 missing material summary; g03 repeated agency/invest choice; g06 no trial close.47g05 fabricated-story label is a judge false attribution: Amparo/Edson are authorized real stories.48 passed. |46 calls;845100 input +11535 output =856635 tokens | Unavailable: preflight402; no candidate observation |
 
-Scenario50 is a new behavioral probe; no matching real v174 response is invented. Candidate model behavior is pending the principal's preflight and real-model gates. Commercial quality, schema/response errors, backend/media rejection and provider/environment failures must remain separate. HTTP402 stops paid evaluation and does not justify a prompt verdict.
+Scenario50 is a new behavioral probe; no matching real v174 response is invented. Coverage limitation from final architect review: t05 combines an affirmative fit response with explicit «quiero inscribirme». Even a future pass would prove explicit-purchase checkout, not isolate whether a bare affirmative reply to the trial close alone advances. That isolated branch is untested; no test change was made during this stop. Candidate commercial behavior is unmeasured: the actual preflight returned402 before any focused or formal runner. This is an environment verdict only, with no candidate model response from which to judge copy, schema, backend rejection or media behavior.
+
+| Current evaluation | Actual result | Requests / tokens |
+|---|---|---|
+| Synthetic provider preflight (2026-11-06 12:13:04.992–12:13:06.968Z) | HTTP402, insufficient_balance_error, Insufficient Balance | Exactly1 request; usage=null, tokens not reported |
+| Focused45,47,48,49,50 | NOT RUN — stopped by preflight402 | No runner invoked |
+| Formal16 | NOT RUN — successful preflight/focused prerequisites unmet | No runner invoked |
+
+Historical v174 usage above is separate from this delivery's single preflight request. Missing usage is not reported as zero tokens. See `provider-preflight.json` for the safe complete response and `final-metadata.json` for machine-readable status and layers.
 
 ## Release and execution limits
 
-No deployment. Provenance remains pinned to the operational v174 release until focused cases45,47,48,49,50 and formal16 acceptance pass. The principal owns paid execution and the final architect review.
+No deployment. Provenance remains pinned to the operational v174 release until focused cases45,47,48,49,50 and formal16 acceptance pass. No focused/full runner was invoked after402; no provenance values were changed. The principal owns the final architect review.
 
 The principal's running configuration reports gpt-6.1-sol/xhigh; it cannot be changed by an available tool, so medium is not claimed. Explorer: luna/medium read-only, worker: sol/medium single writer, architect: astra/high; maximum4 slots. Orchestration token usage is not exposed; only provider evaluation usage is verifiable.
 
 ## Rulings I made
 
 - Replace the aggregate6300-word static prompt ceiling with a strict <900-word technical wrapper ceiling while retaining literal canonical parity. Cost if wrong: authority can grow beyond an aggregate bound, but exact reviewed content remains hash/line pinned.
+- Architect review allowed one preflight plus focused diagnostic evaluation while retaining8 workflow failures; it did not certify release readiness. Cost if wrong: an operational concern may remain beyond the214 green integration tests. The actual402 stopped all further evaluation.
+- Principal release ruling: keep the branch local and do not push while acceptance/provenance are unmet and push-triggered deployment safety is unestablished. Cost: the candidate is not remotely shared; the owner can later approve a safe release flow.
 
-## Principal-only evaluation handoff
+## Evaluation handoff and actual stop
 
 Ports3217/55435 were shut down after verification. Root dependencies are an isolated APFS clone; Botpress dependencies remain linked to the unchanged reference installation. `.eval/.env.local` is an ignored symlink to the exact existing evaluation config, with no credential/provider edits.
 
-1. Run exactly once: `node docs/reports/evidence/2026-11-06-natural-sales-midpoint/provider-preflight.mjs`. It reserves its result file before exactly one official Responses fetch, max16 output tokens, no retry; saves safe body/status/usage.402 means environment failure and stops paid evaluation.
-2. Only after successful preflight: `LANG=C STUDYX_GOLDEN_CASE_IDS=45,47,48,49,50 STUDYX_GOLDEN_RESULT_STEM=midpoint-<HEAD>-focused node evals/golden/run-local.mjs`.
-3. Only if focused cases pass: omit CASE_IDS and choose a new result stem for one formal16 run. Do not run concurrently or repin provenance before accepted evidence.
+The principal executed the synthetic preflight exactly once; HTTP402 stopped Plan A acceptance. Focused45,47,48,49,50 and formal16 were not invoked. The recorded preflight must not be rerun as part of this stopped delivery. The worker syntax-checked the utility only and made no paid request. Credentials/provider selection remain unchanged.
 
-The preflight script passed `node --check`; the worker did not execute it or any paid runner.
+The branch remains **local only; not pushed**. Acceptance/provenance prerequisites are unmet. In addition, `vercel.json` does not establish deployment-disabled safety for this candidate branch (its disabled branch is `codex/studyx-bonus-staged-release`). The owner's no-deploy instruction therefore rules out pushing this branch now. Vercel configuration/account were not changed; any future release flow needs an owner-approved path.
+
+## Exact review artifacts
+
+- `authority.diff`: complete baseline-to-candidate AGENTS and authority prompt diff.
+- `canonical-prompt.diff`: complete canonical source, generator invariants and both generated modules.
+- `brain.diff`: complete brain prompt diff and the `already_said` schema-description diff.
+- `review-source.diff`: source and test changes together; `operational-contract-parity.json` preserves8/8 unchanged operational function hashes.
+- `final-metadata.json`: evaluated source identities, failure layers, NOT RUN statuses, actual versus historical usage, artifact SHA256 values.
+
+Material blockers remain environment402, unmeasured real-model commercial/operational behavior,8 open fixture workflow failures (including unresolved3-vs2 continuations), and the deliberately stale release pin. The final architect review is handled by the principal; its case50 coverage limitation is recorded above.
