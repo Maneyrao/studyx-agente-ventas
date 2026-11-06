@@ -708,7 +708,7 @@ function proposalJsonSchema(context: AgentAContextV1, conversationOnly = false):
       ...closedObject({
         phase: { type: 'string', maxLength: 120 },
         customer_now: { type: 'string', maxLength: 400, description: 'What the customer wants or doubts right now.' },
-        already_said: { type: 'string', maxLength: 400, description: 'Use the compact format FACTS: ... | CLOSED_CRITERIA: ... | LAST_IGNORED_CRITERION: .... CLOSED_CRITERIA contains discovery criteria the customer answered or explicitly declined and they cannot be asked again, even as an equivalent choice. LAST_IGNORED_CRITERION is unresolved but cannot be repeated in the immediate next turn; only a different useful criterion may be asked from new information.' },
+        already_said: { type: 'string', maxLength: 400, description: 'Use the compact format FACTS: ... | CLOSED_CRITERIA: ... | LAST_IGNORED_CRITERION: .... CLOSED_CRITERIA contains discovery criteria the customer answered or explicitly declined and they cannot be asked again, even as an equivalent choice, unless the customer explicitly reopens or changes that criterion with new information. LAST_IGNORED_CRITERION is unresolved but cannot be repeated in the immediate next turn; only a different useful criterion may be asked from new information.' },
         customer_goal: { type: 'string', maxLength: 400 },
         next_step: { type: 'string', enum: [...TURN_REASONING_NEXT_STEPS_V1] },
       }),

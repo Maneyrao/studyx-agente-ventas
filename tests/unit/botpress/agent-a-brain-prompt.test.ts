@@ -422,6 +422,10 @@ describe('Agent A Brain prompt', () => {
     expect(technicalOnly).toContain('FACTS already communicated, CLOSED_CRITERIA');
     expect(technicalOnly).toContain('compare the final question against CLOSED_CRITERIA and LAST_IGNORED_CRITERION');
     expect(technicalOnly).toContain('next_step must be value or close');
+    expect(technicalOnly).toContain('unless the customer explicitly reopens or changes that criterion');
+    expect(technicalOnly).toContain('other requests to choose content are discovery questions, not trial closes');
+    expect(technicalOnly).toContain('Popularity and ranking are facts, not conversational filler');
+    expect(technicalOnly).toContain('introduce representative paths neutrally');
     expect(technicalOnly).toContain('A request for the complete catalog or for more options is the exception');
     expect(technicalOnly).not.toContain('never ask one of them again, in any wording');
     expect(technicalOnly).not.toContain('Si el cliente no contestó tu pregunta, no la repitas en el turno siguiente');
@@ -436,7 +440,7 @@ describe('Agent A Brain prompt', () => {
     expect(JSON.parse(encoded)).toEqual(current);
     expect(instructions).not.toContain('<current_turn_guidance>');
     expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v109');
-    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v178');
+    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v179');
   });
 
   it('maps recommendations and generic continuation without persisting a customer choice', () => {
