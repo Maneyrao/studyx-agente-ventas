@@ -94,7 +94,7 @@ beforeAll(async () => {
       ? proposal('Claro, te llamo ahora.')
       : phase === 'missing_identity'
       ? proposal(rejection
-        ? 'Para coordinarla, me pasas tu nombre, apellido y teléfono con código de país?'
+        ? 'Para coordinarla, me pasas tu nombre, apellido, correo y teléfono con código de país?'
         : 'Claro, te llamo ahora.')
       : phase === 'identity'
         ? proposal('Gracias, Juan. Puedes atender ahora?')
@@ -115,21 +115,21 @@ beforeAll(async () => {
         ? '¿Confirmas tus datos y el pago único para enviarte el enlace?'
         : phase === 'payment_missing_identity'
         ? 'Para generar el enlace, me pasas tu nombre, apellido, correo y teléfono con código de país?'
-        : 'Para coordinarla, me pasas tu nombre, apellido y teléfono con código de país?'),
+        : 'Para coordinarla, me pasas tu nombre, apellido, correo y teléfono con código de país?'),
         move: continuationMove };
     }
     result.profile_updates = contactFixtureUpdatesV1(latestContext,
       phase === 'identity' ? [{ field: 'nombre', value: 'Juan' }, { field: 'apellido', value: 'Perez' },
-        { field: 'telefono', value: '+15551234567' }]
+        { field: 'correo', value: 'juan@example.com' }, { field: 'telefono', value: '+15551234567' }]
       : phase === 'agus_identity' ? [{ field: 'nombre', value: 'Agus' },
-        { field: 'apellido', value: 'Maneyro', quote: 'maneyro' }, { field: 'telefono', value: '+15551234567' }]
+        { field: 'apellido', value: 'Maneyro', quote: 'maneyro' },
+        { field: 'correo', value: 'agus@example.com' }, { field: 'telefono', value: '+15551234567' }]
       : phase === 'payment_identity' || phase === 'payment_complete_intake'
         ? [{ field: 'nombre', value: 'Thiago' }, { field: 'apellido', value: 'Maneyro' },
             { field: 'correo', value: 'thiago@example.com' }, { field: 'telefono', value: '+15551234567' }]
         : []);
     if (requestBody.text.format.schema.properties.proposed_action.anyOf.length === 1 || phase === 'missing_identity' && rejection) {
-      const fields = latestContext.capabilities.intake_missing.filter(field =>
-        phase === 'payment_missing_identity' || field !== 'correo');
+      const fields = latestContext.capabilities.intake_missing;
       result.profile_requests = fields.length ? [{ message_index: 0, fields,
         purpose: phase === 'payment_missing_identity' ? 'payment' : 'call', mode: 'collect' }] : [];
     }
@@ -155,7 +155,9 @@ it('retains a payment request through intake and executes it once after the sepa
   phase = 'payment_missing_identity'; generationCount = 0;
   const initial = await runWorkflowTurnV1({ ...id, text: 'Quiero el enlace para 1 pago.' });
   expect(initial.commitSucceeded).toBe(true);
-  expect(generationCount).toBe(2);
+  // Initial proposal, rejected effect repair, then the constrained
+  // conversational continuation that asks for the missing intake.
+  expect(generationCount).toBe(3);
   expect(initial.authorizedMessages.join(' ')).toContain('nombre, apellido, correo y teléfono');
   const payments = () => db`SELECT p.id,p.plan_code FROM payments p JOIN contacts c ON c.id=p.contact_id WHERE c.phone=${id.phoneE164}`;
   expect(await payments()).toHaveLength(0);
@@ -187,20 +189,21 @@ it('persists Agus data before accepting “Sí, dale”, reserves once and keeps
   expect((await runWorkflowTurnV1({ ...id, text: 'Me interesa Oratoria.' })).commitSucceeded).toBe(true);
   phase = 'missing_identity';
   const requested = await runWorkflowTurnV1({ ...id, text: 'Me podes llamar?' });
-  expect(requested.authorizedMessages.join(' ')).toContain('nombre, apellido y teléfono');
+  expect(requested.authorizedMessages.join(' ')).toContain('nombre, apellido, correo y teléfono');
   const [pendingIntent] = await db`SELECT s.call_preference,s.call_offer_status,s.awaiting_reply
     FROM conversation_sales_context_states_v1 s JOIN contacts c ON c.id=s.contact_id WHERE c.phone=${id.phoneE164}`;
-  expect(pendingIntent).toMatchObject({ call_preference: 'call', call_offer_status: 'accepted', awaiting_reply: 'call_or_chat' });
+  expect(pendingIntent).toMatchObject({ call_preference: 'call', call_offer_status: 'accepted', awaiting_reply: 'contact_details' });
   phase = 'agus_identity';
   const intake = await runWorkflowBurstV1({ ...id, messages: [
     { text: 'así es, mi nombre es Agus', delayMs: 0 },
     { text: 'maneyro', delayMs: 200 },
     { text: 'Mi teléfono es +15551234567', delayMs: 400 },
+    { text: 'Mi correo es agus@example.com', delayMs: 600 },
   ] });
   expect(intake.errorCode).toBeNull();
   expect(intake.commitSucceeded).toBe(true);
   const receipt = intake.httpExchanges.find(exchange => exchange.url.endsWith('/profile'))?.responseBody as { values?: unknown };
-  expect(receipt.values).toMatchObject({ nombre: 'Agus', apellido: 'Maneyro' });
+  expect(receipt.values).toMatchObject({ nombre: 'Agus', apellido: 'Maneyro', correo: 'agus@example.com' });
   const stored = await readWorkflowDbEvidenceV1({ databaseUrl, externalConversationId: id.conversationId });
   expect(stored.contact).toMatchObject({ name: 'Agus Maneyro', declaredPhone: '+15551234567' });
   phase = 'confirm';
@@ -228,6 +231,7 @@ it('does not create consent when “Sí, dale” is followed by a refusal in the
   expect((await runWorkflowBurstV1({ ...id, messages: [
     { text: 'mi nombre es Agus', delayMs: 0 },
     { text: 'Maneyro, +15551234567', delayMs: 200 },
+    { text: 'Mi correo es agus@example.com', delayMs: 400 },
   ] })).commitSucceeded).toBe(true);
 
   phase = 'confirm';
@@ -248,7 +252,7 @@ afterAll(async () => {
   await db.end();
 });
 
-it('repairs the Lucas promise, records the real repair, retains full identity and reserves one consented call without requiring email', async () => {
+it('repairs the Lucas promise, records the real repair, retains full identity and reserves one consented call', async () => {
   const id = {
     conversationId: `lucas-call-${randomUUID()}`, userId: `lucas-${randomUUID()}`,
     phoneE164: `+999${String(Date.now()).slice(-10)}`, providerMode: 'fixture' as const,
@@ -262,25 +266,31 @@ it('repairs the Lucas promise, records the real repair, retains full identity an
   expect(initial.errorCode).toBeNull();
   expect(initial.commitSucceeded).toBe(true);
   expect(initial.authorizedMessages.join(' ')).not.toContain('te llamo ahora');
-  expect(initial.authorizedMessages.join(' ')).toContain('nombre, apellido y teléfono');
+  expect(initial.authorizedMessages.join(' ')).toContain('nombre, apellido, correo y teléfono');
   expect(generationCount).toBe(2);
   const initialRows = await db<Array<{ diagnostics: unknown }>>`
     SELECT diagnostics FROM agent_decisions WHERE trace_id = ${initial.traceId}::uuid
   `;
   expect(initialRows[0]?.diagnostics).toMatchObject({
     generation_attempts: 2, failure_stage: 'proposal_validation',
-    failure_codes: expect.arrayContaining(['UNSUPPORTED_OPERATIONAL_CLAIM']), action_status: 'none',
+    failure_codes: expect.arrayContaining([
+      'MISSING_INTAKE:nombre',
+      'MISSING_INTAKE:apellido',
+      'MISSING_INTAKE:correo',
+      'MISSING_INTAKE:telefono',
+      'UNSUPPORTED_OPERATIONAL_CLAIM:call_confirmation',
+    ]), action_status: 'none',
   });
 
   phase = 'identity';
   const intake = await runWorkflowTurnV1({
-    ...id, text: 'Mi nombre es Juan y mi apellido es Perez. Mi teléfono es +15551234567.',
+    ...id, text: 'Mi nombre es Juan y mi apellido es Perez. Mi correo es juan@example.com. Mi teléfono es +15551234567.',
   });
   expect(intake.errorCode).toBeNull();
   const persisted = await readWorkflowDbEvidenceV1({ databaseUrl, externalConversationId: id.conversationId });
-  expect(persisted.contact).toMatchObject({ name: 'Juan Perez', email: null });
+  expect(persisted.contact).toMatchObject({ name: 'Juan Perez', email: 'juan@example.com' });
   const receipt = intake.httpExchanges.find(exchange => exchange.url.endsWith('/profile'))?.responseBody as { values?: unknown };
-  expect(receipt.values).toMatchObject({ nombre: 'Juan', apellido: 'Perez', correo: null });
+  expect(receipt.values).toMatchObject({ nombre: 'Juan', apellido: 'Perez', correo: 'juan@example.com' });
   expect(persisted.state).toMatchObject({ callPreference: 'call', callOfferStatus: 'accepted' });
 
   phase = 'confirm'; generationCount = 0;
@@ -320,11 +330,13 @@ it('lets Agent A request missing data after the rejected call promise without a 
   generationCount = 0;
   const result = await runWorkflowTurnV1({ ...id, text: 'Dale llámenme ahora por favor' });
   expect(result.commitSucceeded).toBe(true);
-  expect(generationCount).toBe(2);
+  // The invalid repair is followed by a constrained continuation so the
+  // customer still receives an authorized request for the missing data.
+  expect(generationCount).toBe(3);
   expect(result.adapterCaptures).toHaveLength(1);
   expect(result.authorizedMessages).toHaveLength(1);
   expect(result.authorizedMessages.join(' ')).not.toMatch(/te llamo|registrad|ocupad/iu);
-  expect(result.authorizedMessages.join(' ')).toContain('nombre, apellido y teléfono');
+  expect(result.authorizedMessages.join(' ')).toContain('nombre, apellido, correo y teléfono');
   expect(result.authorizedMessages.join(' ')).not.toContain('se cortó mi respuesta');
   expect(result.actions.some(action => action.name === 'dispatchCall')).toBe(false);
   const calls = await db`
@@ -336,7 +348,7 @@ it('lets Agent A request missing data after the rejected call promise without a 
     SELECT diagnostics FROM agent_decisions WHERE trace_id = ${result.traceId}::uuid
   `;
   expect(rows[0]?.diagnostics).toMatchObject({
-    generation_attempts: 2, failure_stage: 'proposal_validation', action_status: 'none',
+    generation_attempts: 3, failure_stage: 'proposal_validation', action_status: 'none',
   });
 });
 
@@ -360,13 +372,17 @@ it.each(['1 pago', 'un pago de 360', 'split'])('keeps intake and executes the Ag
     : await runWorkflowTurnV1({ ...id, text: choice });
   expect(result.errorCode).toBeNull();
   expect(result.commitSucceeded).toBe(true);
-  expect(generationCount).toBe(2);
+  // A valid plan selection no longer needs a redundant repair generation.
+  expect(generationCount).toBe(1);
   expect(result.authorizedMessages.join(' ')).not.toContain('se cortó mi respuesta');
-  expect(await db`SELECT p.id FROM payments p JOIN contacts c ON c.id=p.contact_id WHERE c.phone=${id.phoneE164}`).toHaveLength(0);
+  expect(result.authorizedMessages.join(' ')).toContain('https://buy.stripe.com/local-eval-contado');
+  expect(await db`SELECT p.id FROM payments p JOIN contacts c ON c.id=p.contact_id WHERE c.phone=${id.phoneE164}`).toHaveLength(1);
   phase = 'payment_confirm_choice';
   const confirmed = await runWorkflowTurnV1({ ...id, text: 'Sí, confirmo mis datos y el pago único. Envíame el enlace.' });
   expect(confirmed.errorCode).toBeNull();
-  expect(confirmed.authorizedMessages.join(' ')).toContain('https://buy.stripe.com/local-eval-contado');
+  // The plan choice already delivered the canonical link. A later
+  // confirmation must remain idempotent and must not resend it.
+  expect(confirmed.authorizedMessages.join(' ')).not.toContain('https://buy.stripe.com/local-eval-contado');
   const rows = await db`SELECT p.id,p.plan_code,p.amount FROM payments p JOIN contacts c ON c.id=p.contact_id WHERE c.phone=${id.phoneE164}`;
   expect(rows).toHaveLength(1);
   expect(rows[0].plan_code).toBe('one_time');
