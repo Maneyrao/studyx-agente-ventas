@@ -614,6 +614,7 @@ function baselineReport(cases: readonly CaseResultV1[]) {
     execution_harness: 'processInboundTurn',
     environment: 'isolated_local',
     environment_configuration: {
+      commercial_planning: configuration.agentACommercialPlanningEnabled === true,
       voice_provider: process.env.VOICE_PROVIDER ?? null,
       payment_provider: process.env.PAYMENT_PROVIDER ?? null,
       payment_link_environment: process.env.PAYMENT_LINK_ENVIRONMENT ?? null,
@@ -778,7 +779,8 @@ beforeAll(async () => {
   expect(new URL(databaseUrl).origin).toBe('null');
   configuration.apiBaseUrl = apiBaseUrl;
   configuration.agentAPlannerlessV2Enabled = true;
-  configuration.agentACommercialPlanningEnabled = true;
+  // A/B on the same SHA: 'false' measures the single-pass writer (byte-identical fallback).
+  configuration.agentACommercialPlanningEnabled = process.env.STUDYX_GOLDEN_COMMERCIAL_PLANNING !== 'false';
   configuration.agentAAdvisorName = 'Emma';
   expect(model).toBe(AGENT_A_DEEPSEEK_MODEL);
   configuration.agentABrainDeepSeekModel = model;
