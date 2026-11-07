@@ -79,10 +79,14 @@ describe('evidencia de precio citada', () => {
     expect(priceObservationQuoteInBatchV1('me parezca caro', ['Es caro? Te pregunto, no estoy diciendo que me parezca caro.'])).toBe(false);
     expect(priceObservationQuoteInBatchV1('No es caro. Gracias', ['No es caro. Gracias'])).toBe(false);
   });
-  it('una cita literal mixta conserva la afirmación de precio aunque también incluya una pregunta', () => {
-    const quote = 'No me hacés un descuento? USD 360 me parece caro.';
-    expect(priceObservationQuoteInBatchV1(quote, [quote])).toBe(true);
-    expect(draftRecordsPriceObjectionV1(draft([{ type: 'objection', key: 'price_objection', value: 'USD 360 le parece caro', source_quote: quote }]), [quote])).toBe(true);
+  it('una cita que incluye una pregunta no es evidencia; la afirmación citada sola sí', () => {
+    for (const quote of ['¿Es caro? Gracias', 'Es caro? Ok, lo pienso', '¿Cuánto cuesta? Me interesa',
+      'No me hacés un descuento? USD 360 me parece caro.']) {
+      expect(priceObservationQuoteInBatchV1(quote, [quote])).toBe(false);
+    }
+    const batch = ['No me hacés un descuento? USD 360 me parece caro.'];
+    expect(priceObservationQuoteInBatchV1('USD 360 me parece caro.', batch)).toBe(true);
+    expect(draftRecordsPriceObjectionV1(draft([{ type: 'objection', key: 'price_objection', value: 'USD 360 le parece caro', source_quote: 'USD 360 me parece caro.' }]), batch)).toBe(true);
   });
   it('el precio como único freno confirmado también es evidencia', () => {
     expect(draftConfirmsPriceOnlyBarrierV1(draft([{ type: 'constraint', key: 'price_only_barrier', value: 'confirmed', source_quote: 'solo el precio' }]), ['es sólo el precio'])).toBe(false);

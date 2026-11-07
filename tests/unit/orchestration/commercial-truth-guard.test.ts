@@ -862,6 +862,8 @@ describe('offering descriptions keep natural discourse anchors factual', () => {
   it.each([
     'Tenemos Real Estate Pro: ahí ves captación y cierres.',
     'Tenemos Fotografía con Celulares para Tiendas Online: ahí ves el curso de Real Estate Pro.',
+    'Tenemos Fotografía con Celulares para Tiendas Online: ahí ves lo mismo que en ese curso de marketing inmobiliario avanzado.',
+    'Tenemos Fotografía con Celulares para Tiendas Online: ahí ves lo mismo que en el curso de marketing inmobiliario avanzado.',
   ])('still rejects an invented identity inside the same natural wording: %s', (content) => {
     expect(enforce(content, canonical).violations.map((violation) => violation.code))
       .toContain('OFFERING_NOT_CANONICAL');

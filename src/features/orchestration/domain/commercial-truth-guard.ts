@@ -134,7 +134,7 @@ const AREA_MEMBERSHIP = /^(?:que\s+)?(?:justo\s+)?(?:dentro\s+(?:de|del)|(?:como
 const COLLECTIVE_AREA_MEMBERSHIP = /^(?:todos?|todas?)\s+(?:justo\s+)?(?:dentro\s+(?:de|del)|(?:como\s+)?parte\s+de|pertenecientes?\s+a)\s+(?:(?:la|el|nuestra|nuestro)\s+)?(?:(?:area|academia)\s+de\s+)?/u;
 const OFFERING_LIST_SEPARATOR = /^(?:[,;:]\s*(?:(?:y|e|o)\s+)?|(?:y|e|o)\s+)/u;
 
-const COURSE_NOUN_TAIL = /\b(?<!ese\s)(?<!este\s)(?:curso|diplomado|diplomatura|carrera|programa)\s+(?:de\s+|en\s+)?(.+)$/u;
+const COURSE_NOUN_TAIL = /\b(?:curso|diplomado|diplomatura|carrera|programa)\s+(?:de\s+|en\s+)?(.+)$/u;
 const CAPITALIZED_NAME = /\p{Lu}\p{L}+(?:\s+(?:(?:de|del|en|y|para|con)\s+)?\p{Lu}\p{L}+)+/gu;
 
 /** Inside a colon description: course-type nouns and capitalized multi-word names must start with a canonical name. */
@@ -145,7 +145,8 @@ function descriptionNamesUnknownCourse(namedObject: string, after: string, canon
     return remainder.length === 0
       || /^(?:[,;:.!?()]|\s+(?:que|para|con|sin|ideal|donde|porque|si|es|tiene|incluye)\b)/u.test(remainder);
   });
-  const tail = COURSE_NOUN_TAIL.exec(after)?.[1];
+  // «en ese curso …» refers back to the canonical course; strip only that leading anchor.
+  const tail = COURSE_NOUN_TAIL.exec(after.replace(DESCRIPTION_DISCOURSE_ANCHOR, '').trim())?.[1];
   if (tail !== undefined && !startsCanonical(tail.trim())) return true;
   let originalAfter = after;
   for (let index = namedObject.indexOf(':'); index >= 0; index = namedObject.indexOf(':', index + 1)) {
