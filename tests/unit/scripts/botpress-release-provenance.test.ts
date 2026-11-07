@@ -91,7 +91,7 @@ describe('instrumented Botpress release provenance from the reviewed source comm
     expect(info).toHaveBeenCalledTimes(2);
     const [boot, entry] = info.mock.calls.map(([line]) => JSON.parse(line));
     expect(boot).toMatchObject({ event: 'studyx.release.loaded', source_base_sha: BOT_RELEASE_BASE_SHA,
-      instrumentation_sha256: toolHash, brain_version: 'studyx-agent-a-brain-v201',
+      instrumentation_sha256: toolHash, brain_version: 'studyx-agent-a-brain-v202',
       prompt_version: 'studyx-agent-a-canonical-v118' });
     expect(entry).toMatchObject({ event: 'studyx.release.entry', subject_type: 'turn', trace_id: 'trace',
       external_message_id: 'message', conversation_id: 'conversation', workflow_id: 'workflow' });
