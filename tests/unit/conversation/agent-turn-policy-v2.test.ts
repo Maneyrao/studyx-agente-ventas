@@ -201,6 +201,55 @@ describe('plannerless Agent A authority', () => {
         response:{messages:['Excel Integral puede servirte.']},course_mentions:[{offering_code:'excel_integral',role:'paid'}]})});
     expect(result).toMatchObject({ok:true,transition:{selected_offering_code:'excel_integral'}});
   });
+  it('accepts the former paid course as an alternative on switch without transferring its bonus package',()=>{
+    const packageBeforeSwitch = {
+      enabled: true,
+      status: 'offer_available' as const,
+      package_status: 'offered' as const,
+      max_bonus_courses: 3 as const,
+      may_offer_bonus: false,
+      may_schedule_checkin: false,
+      may_request_review: false,
+      may_accept_offer: false,
+      may_send_promoted_payment: false,
+      promotion_code: 'redes_con_excel',
+      interest_offering_code: 'redes_informaticas',
+      bonus_offerings: [{ code: 'excel_integral', display_name: 'Excel Integral', position: 1 }],
+      delivered_bonus_offerings: [{ code: 'excel_integral', display_name: 'Excel Integral', position: 1 }],
+      bonus_candidates: [],
+    };
+    const switching = proposal({
+      move:{schema_version:1,move:'select_course',course_reference:'marketing_digital',secondary_moves:[],vetoes:[],confidence:1},
+      response:{messages:['Dejamos Redes Informáticas de lado y vamos con Marketing Digital.']},
+      course_mentions:[
+        {offering_code:'marketing_digital',role:'paid'},
+        {offering_code:'redes_informaticas',role:'alternative'},
+      ],
+    });
+    expect(authorize({
+      state:state({selected_offering_code:'redes_informaticas'}),
+      courseBonus:packageBeforeSwitch,
+      proposal:switching,
+    })).toMatchObject({
+      ok:true,
+      action:{type:'none'},
+      transition:{selected_offering_code:'marketing_digital'},
+    });
+
+    expect(authorize({
+      state:state({selected_offering_code:'redes_informaticas'}),
+      courseBonus:packageBeforeSwitch,
+      proposal:{
+        ...switching,
+        response:{messages:['Dejamos Redes Informáticas de lado, vamos con Marketing Digital y Excel Integral sigue bonificado.']},
+        course_mentions:[...(switching.course_mentions ?? []),{offering_code:'excel_integral',role:'bonus'}],
+      },
+    })).toMatchObject({
+      ok:false,
+      reasons:['COMMERCIAL_TRUTH_VIOLATION'],
+      rejection_subjects:['forbidden_promise'],
+    });
+  });
   it("«sí, ese curso» after the agent named a single close course: the model's reference by display name becomes the focus (golden 25 machinery)", () => {
     // Fixed proposal as INPUT to the deterministic resolver; whether the real model produces it is a golden question.
     const select = (reference: string) => authorize({ state: state({ selected_offering_code: null, stage: 'exploring' }),

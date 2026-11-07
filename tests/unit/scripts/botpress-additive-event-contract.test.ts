@@ -5,6 +5,7 @@ import {
   inspectBotpressRemoteCode,
   planBotpressAdditiveConversationTagPatch,
   planBotpressAdditiveEventPatch,
+  planBotpressReviewedConfigurationUpdate,
 } from '../../../scripts/lib/botpress-additive-event-contract.mjs';
 
 const commercialFollowupEvent = {
@@ -42,6 +43,33 @@ const existingEvents = {
 const commercialFollowupTriggerTag = {
   title: 'Trigger: onStudyxCommercialFollowup',
   description: 'Subscribe to events from trigger "onStudyxCommercialFollowup" (use "*" for all events or specific values)',
+};
+
+const existingConfiguration = {
+  data: {
+    automationEnabled: true,
+    apiBaseUrl: 'https://backend.example',
+  },
+  schema: {
+    type: 'object',
+    properties: {
+      automationEnabled: { type: 'boolean', default: false },
+      apiBaseUrl: { type: 'string', default: 'http://localhost:3000' },
+    },
+    required: [],
+    additionalProperties: false,
+  },
+};
+
+const commercialPlanningProperty = { type: 'boolean', default: true };
+const generatedConfiguration = {
+  schema: {
+    ...existingConfiguration.schema,
+    properties: {
+      ...existingConfiguration.schema.properties,
+      agentACommercialPlanningEnabled: commercialPlanningProperty,
+    },
+  },
 };
 
 describe('Botpress additive event publication contract', () => {
@@ -164,6 +192,125 @@ describe('Botpress additive event publication contract', () => {
       conversation: { tags: { triggerE5F2C: commercialFollowupTriggerTag } },
     });
     expect(JSON.stringify(update)).not.toContain('null');
+  });
+
+  it('permits only the reviewed commercial-planning configuration addition and preserves all remote data', () => {
+    const plan = planBotpressReviewedConfigurationUpdate({
+      remoteConfiguration: existingConfiguration,
+      generatedConfiguration,
+    });
+
+    expect(plan).toEqual({
+      changed: true,
+      configuration: {
+        data: {
+          ...existingConfiguration.data,
+          agentACommercialPlanningEnabled: true,
+        },
+        schema: generatedConfiguration.schema,
+      },
+    });
+
+    const update = buildBotpressAdditiveEventUpdate({
+      botId: 'bot_123',
+      code: 'compiled-code',
+      eventPatch: {},
+      configurationPlan: plan,
+    });
+    expect(update).toEqual({
+      id: 'bot_123',
+      code: 'compiled-code',
+      configuration: plan.configuration,
+    });
+    expect(update).not.toHaveProperty('integrations');
+    expect(update).not.toHaveProperty('plugins');
+    expect(update).not.toHaveProperty('secrets');
+  });
+
+  it('is idempotent when the reviewed configuration and true value already exist', () => {
+    const remoteConfiguration = {
+      data: {
+        ...existingConfiguration.data,
+        agentACommercialPlanningEnabled: true,
+      },
+      schema: generatedConfiguration.schema,
+    };
+    const plan = planBotpressReviewedConfigurationUpdate({
+      remoteConfiguration,
+      generatedConfiguration,
+    });
+
+    expect(plan).toEqual({ changed: false, configuration: remoteConfiguration });
+    expect(buildBotpressAdditiveEventUpdate({
+      botId: 'bot_123', code: 'compiled-code', eventPatch: {}, configurationPlan: plan,
+    })).toEqual({ id: 'bot_123', code: 'compiled-code' });
+  });
+
+  it('adds the true data value when the reviewed schema already exists without a stored value', () => {
+    expect(planBotpressReviewedConfigurationUpdate({
+      remoteConfiguration: {
+        data: existingConfiguration.data,
+        schema: generatedConfiguration.schema,
+      },
+      generatedConfiguration,
+    })).toMatchObject({
+      changed: true,
+      configuration: { data: { agentACommercialPlanningEnabled: true } },
+    });
+  });
+
+  it.each([
+    ['stored false', {
+      remoteConfiguration: {
+        data: { ...existingConfiguration.data, agentACommercialPlanningEnabled: false },
+        schema: generatedConfiguration.schema,
+      },
+      generatedConfiguration,
+    }],
+    ['wrong reviewed property type', {
+      remoteConfiguration: existingConfiguration,
+      generatedConfiguration: {
+        schema: {
+          ...generatedConfiguration.schema,
+          properties: {
+            ...generatedConfiguration.schema.properties,
+            agentACommercialPlanningEnabled: { type: 'string', default: true },
+          },
+        },
+      },
+    }],
+    ['unreviewed additional property', {
+      remoteConfiguration: existingConfiguration,
+      generatedConfiguration: {
+        schema: {
+          ...generatedConfiguration.schema,
+          properties: {
+            ...generatedConfiguration.schema.properties,
+            anotherFlag: { type: 'boolean', default: true },
+          },
+        },
+      },
+    }],
+    ['changed existing property', {
+      remoteConfiguration: existingConfiguration,
+      generatedConfiguration: {
+        schema: {
+          ...generatedConfiguration.schema,
+          properties: {
+            ...generatedConfiguration.schema.properties,
+            automationEnabled: { type: 'boolean', default: true },
+          },
+        },
+      },
+    }],
+    ['changed required list', {
+      remoteConfiguration: existingConfiguration,
+      generatedConfiguration: {
+        schema: { ...generatedConfiguration.schema, required: ['agentACommercialPlanningEnabled'] },
+      },
+    }],
+  ])('rejects an unsafe configuration delta: %s', (_label, input) => {
+    expect(() => planBotpressReviewedConfigurationUpdate(input)).toThrow();
   });
 
   it('reports unavailable instead of claiming a match when Botpress omits remote code', () => {

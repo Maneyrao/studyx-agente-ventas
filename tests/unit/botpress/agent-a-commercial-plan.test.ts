@@ -138,8 +138,8 @@ describe('two-pass generation', () => {
     const result = await generateDeepSeekAgentATurnProposalV1({ context, apiKey: 'fixture',
       signal: new AbortController().signal, commercial_planning: true });
     expect(calls.map(call => call.name)).toEqual(['studyx_agent_a_commercial_turn_plan_v1', 'studyx_agent_a_turn_proposal_v1']);
-    // Byte-identical to today's request saved by the 7f1eebf golden run.
-    expect(calls[1]!.instructions).toBe(value.instructions);
+    // Byte-identical to the current single-pass writer request.
+    expect(calls[1]!.instructions).toBe(buildAgentABrainInstructionsV1(contextOf(value)));
     expect(result.proposal.response.messages.length).toBeGreaterThan(0);
     expect(result.commercial_plan).toBeUndefined();
     expect(result.planner_requests).toBe(1);
@@ -151,7 +151,7 @@ describe('two-pass generation', () => {
     const calls = scripted(responses(value.original_response));
     await generateDeepSeekAgentATurnProposalV1({ context: contextOf(value), apiKey: 'fixture', signal: new AbortController().signal });
     expect(calls).toHaveLength(1);
-    expect(calls[0]!.instructions).toBe(value.instructions);
+    expect(calls[0]!.instructions).toBe(buildAgentABrainInstructionsV1(contextOf(value)));
   });
 
   it('reuses the first draft plan in a repair and never plans again', async () => {
@@ -187,6 +187,33 @@ describe('two-pass generation', () => {
 });
 
 describe('writer catalog view', () => {
+  it('exposes the verified paid course after access even when selected_offering was not persisted', () => {
+    const base = contextOf(fixture('g03'));
+    const context: AgentAContextV1 = {
+      ...base,
+      catalog: { ...base.catalog, selected_offering: null },
+      commercial_state: {
+        ...base.commercial_state,
+        promotion: null,
+        payment_verification: {
+          status: 'paid',
+          offering_code: 'real_estate',
+          plan_code: 'monthly_12',
+          paid_at: '2026-11-06T12:00:00.000Z',
+          fulfillment: {
+            enrollment_status: 'active',
+            access_message_status: 'sent',
+            access_sent_at: '2026-11-06T12:01:00.000Z',
+          },
+        },
+      },
+    };
+
+    const instructions = buildAgentABrainInstructionsV1(context);
+    expect(instructions).toContain('<verified_post_sale_package>');
+    expect(instructions).toContain('Real Estate');
+  });
+
   it('shows the focus, candidates and package identities; validation context keeps all 57', () => {
     const context: AgentAContextV1 = { ...contextOf(fixture('g03')), commercial_plan: PLAN };
     const view = writerCatalogPresentationV1(context);

@@ -117,19 +117,29 @@ export function priceObservationQuoteInBatchV1(quote: string, batch: readonly st
       const end = start + exact.length;
       const clauses = [...text.matchAll(/[^.!?;\n]+[.!?;]?/gu)]
         .filter(match => match.index < end && match.index + match[0].length > start);
-      const excluded = clauses.some(match => {
+      let hasDeclarativeEvidence = false;
+      let hasNegatedPriceStatement = false;
+      for (const match of clauses) {
         const clause = match[0];
-        if (clause.trim().endsWith('?')) return true;
+        // A composite literal quote may include a preceding question and then
+        // the customer's declarative objection. The question is neutral: it
+        // cannot grant permission, but it must not erase the following
+        // statement either.
+        if (clause.trim().endsWith('?')) continue;
         const localStart = Math.max(0, start - match.index);
         const localEnd = Math.min(clause.length, end - match.index);
         const quoteStart = normalizedVisible(clause.slice(0, localStart)).length;
         const quoteEnd = normalizedVisible(clause.slice(0, localEnd)).length;
         // Also "no estoy diciendo que me parezca caro": any negation earlier in the clause.
         const negations = normalizedVisible(clause).matchAll(/\b(?:no|nunca|tampoco|nada|para nada)\b[^.!?;]*?\b(?:car[oa]s?|costos[oa]s?)\b/gu);
-        return [...negations].some(negation => negation.index < quoteEnd
+        const negated = [...negations].some(negation => negation.index < quoteEnd
           && negation.index + negation[0].length > quoteStart);
-      });
-      if (clauses.length && !excluded) return true;
+        if (negated) hasNegatedPriceStatement = true;
+        else if (normalizedVisible(clause.slice(localStart, localEnd)).trim().length > 0) hasDeclarativeEvidence = true;
+      }
+      // A negated price statement keeps the whole composite quote excluded:
+      // unrelated trailing prose ("gracias") cannot turn it into evidence.
+      if (hasDeclarativeEvidence && !hasNegatedPriceStatement) return true;
     }
     return false;
   });

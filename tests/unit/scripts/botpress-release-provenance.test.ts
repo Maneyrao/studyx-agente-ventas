@@ -91,8 +91,8 @@ describe('instrumented Botpress release provenance from the reviewed source comm
     expect(info).toHaveBeenCalledTimes(2);
     const [boot, entry] = info.mock.calls.map(([line]) => JSON.parse(line));
     expect(boot).toMatchObject({ event: 'studyx.release.loaded', source_base_sha: BOT_RELEASE_BASE_SHA,
-      instrumentation_sha256: toolHash, brain_version: 'studyx-agent-a-brain-v185',
-      prompt_version: 'studyx-agent-a-canonical-v117' });
+      instrumentation_sha256: toolHash, brain_version: 'studyx-agent-a-brain-v201',
+      prompt_version: 'studyx-agent-a-canonical-v118' });
     expect(entry).toMatchObject({ event: 'studyx.release.entry', subject_type: 'turn', trace_id: 'trace',
       external_message_id: 'message', conversation_id: 'conversation', workflow_id: 'workflow' });
     expect(JSON.stringify(info.mock.calls)).not.toMatch(/PRIVATE CLIENT TEXT|SECRET/);
@@ -205,8 +205,17 @@ describe('instrumented Botpress release provenance from the reviewed source comm
   });
 
   it('H2: refuses code changed after the pin and labels that do not match the code', () => {
-    expect(() => assertOnlyNonCodeChangesSinceBaseV1(['docs/x.md', 'evals/a.ts', 'tests/b.ts', 'AGENTS.md'])).not.toThrow();
+    expect(() => assertOnlyNonCodeChangesSinceBaseV1([
+      'docs/x.md',
+      'evals/a.ts',
+      'tests/b.ts',
+      'botpress-agent/evals/personas/heldout.json',
+      'scripts/lib/botpress-additive-event-contract.mjs',
+      'scripts/publish-botpress-code-preserving-connections.mjs',
+      'AGENTS.md',
+    ])).not.toThrow();
     expect(() => assertOnlyNonCodeChangesSinceBaseV1(['docs/x.md', 'src/lib/services/decision.service.ts'])).toThrow('CODE_CHANGED_SINCE_RELEASE_BASE');
+    expect(() => assertOnlyNonCodeChangesSinceBaseV1(['scripts/unreviewed-runtime-tool.mjs'])).toThrow('CODE_CHANGED_SINCE_RELEASE_BASE');
     const brainSource = execFileSync('git', ['show', `${BOT_RELEASE_BASE_SHA}:botpress-agent/src/prompts/agent-a-brain-v1.ts`], { encoding: 'utf8' });
     const promptSource = execFileSync('git', ['show', `${BOT_RELEASE_BASE_SHA}:botpress-agent/src/prompts/studyx-agent-a-canonical.generated.ts`], { encoding: 'utf8' });
     expect(() => assertReleaseLabelsMatchCodeV1({ brainSource, promptSource })).not.toThrow();

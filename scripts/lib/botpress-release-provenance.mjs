@@ -3,12 +3,12 @@ import { readFileSync, readdirSync, readlinkSync } from 'node:fs';
 import path from 'node:path';
 import ts from 'typescript';
 
-// Last reviewed commit that changed deployable code (brain v185, prompt v117).
+// Last reviewed commit that changed deployable code (brain v201, prompt v118).
 // Anything committed after it must be docs/evals/tests only (see assertOnlyNonCodeChangesSinceBaseV1), so a release
 // prepared from the branch HEAD runs exactly this code. Re-pin whenever a code file changes.
-export const BOT_RELEASE_BASE_SHA = 'dd0be93b13800dcec1e28821a9c0df5ecdfeb8c8';
-export const BOT_RELEASE_BRAIN_VERSION = 'studyx-agent-a-brain-v185';
-export const BOT_RELEASE_PROMPT_VERSION = 'studyx-agent-a-canonical-v117';
+export const BOT_RELEASE_BASE_SHA = '4733fd4f1c297e4781b12d5b5f474b3f35788ae5';
+export const BOT_RELEASE_BRAIN_VERSION = 'studyx-agent-a-brain-v201';
+export const BOT_RELEASE_PROMPT_VERSION = 'studyx-agent-a-canonical-v118';
 export const BOT_RELEASE_INSTRUMENTATION_VERSION = 'studyx-release-provenance-v1';
 export const BOT_RELEASE_SOURCE_PATHS = Object.freeze([
   'botpress-agent/src/lib/observability/persist-turn-evidence.ts',
@@ -17,12 +17,18 @@ export const BOT_RELEASE_SOURCE_PATHS = Object.freeze([
 ]);
 const REVIEWED_SOURCE_HASHES = Object.freeze({
   [BOT_RELEASE_SOURCE_PATHS[0]]: 'c1a85e1d95000cd56f885e02d3cf900d7900ea5102b08ed51910500387c2de93',
-  [BOT_RELEASE_SOURCE_PATHS[1]]: 'dddece68a6cdedc8264cb967463c98b8e66c6112418dfdc157a07c13f1f1ab18',
+  [BOT_RELEASE_SOURCE_PATHS[1]]: '19560c19565c2cd30eccb003f165e62d7592689d4045f6f160437780efbd0738',
   [BOT_RELEASE_SOURCE_PATHS[2]]: '77809dcfbf8e605affe2eeb746f56bcf5ce91ca07ef05726ec5fe20111c07fd2',
 });
 // Paths that may change after the pinned base without altering what is deployed.
-const NON_CODE_EXACT = new Set(['AGENTS.md', 'scripts/lib/botpress-release-provenance.mjs', 'scripts/prepare-instrumented-botpress-release.mjs']);
-const NON_CODE_PREFIXES = ['docs/', 'evals/', 'tests/'];
+const NON_CODE_EXACT = new Set([
+  'AGENTS.md',
+  'scripts/lib/botpress-additive-event-contract.mjs',
+  'scripts/lib/botpress-release-provenance.mjs',
+  'scripts/prepare-instrumented-botpress-release.mjs',
+  'scripts/publish-botpress-code-preserving-connections.mjs',
+]);
+const NON_CODE_PREFIXES = ['docs/', 'evals/', 'tests/', 'botpress-agent/evals/'];
 
 /** Guard: the branch HEAD may only differ from the pinned base in docs, evals, tests, AGENTS.md and these tools. */
 export function assertOnlyNonCodeChangesSinceBaseV1(changedPaths) {

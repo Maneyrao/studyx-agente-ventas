@@ -191,6 +191,8 @@ describe('Agent A Brain prompt', () => {
     expect(instructions).toContain('keep move=request_call');
     expect(instructions).toContain('profile_updates');
     expect(instructions).toContain('provide_contact_details as a secondary move');
+    expect(instructions).toContain('If the current batch supplies every remaining call field');
+    expect(instructions).toContain('ask availability now instead of asking whether the contact summary is correct');
 
     current.commercial_state.call_preference = 'unknown';
     current.commercial_state.call_offer_status = 'not_offered';
@@ -428,7 +430,7 @@ describe('Agent A Brain prompt', () => {
     expect(JSON.parse(encoded)).toEqual(current);
     expect(instructions).not.toContain('<current_turn_guidance>');
     expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v118');
-    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v190');
+    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v202');
   });
 
   it('presents the current conversation after the large factual context without mutating it', () => {
@@ -471,9 +473,10 @@ describe('Agent A Brain prompt', () => {
     };
     const instructions = buildAgentABrainInstructionsV1(current);
     const block = instructions.split('<verified_post_sale_package>')[1]?.split('</verified_post_sale_package>')[0] ?? '';
-    expect(block).toContain('Redes Informáticas');
-    expect(block).toContain('Excel Integral');
+    expect(block).toContain('"paid_course":{"offering_code":"redes-informaticas","display_name":"Redes Informáticas"}');
+    expect(block).toContain('"active_course_names":["Redes Informáticas","Excel Integral"]');
     expect(block).toContain('fact exposure only');
+    expect(block).toContain('does not authorize an access schedule, duration, self-paced study or unrestricted access');
     expect(buildAgentABrainInstructionsV1(context())).not.toContain('<verified_post_sale_package>');
   });
 

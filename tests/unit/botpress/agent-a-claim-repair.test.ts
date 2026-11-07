@@ -37,6 +37,99 @@ describe('COURSE_ROLE_UNDECLARED metadata repair (natural-59cab80 17/marketing_b
   it('is a no-op when the metadata is already right', () => {
     expect(repairCourseMentionRolesV1({ proposal: proposal([{ offering_code: 'marketing_digital', role: 'alternative' }]), context: ctx() })).toBeNull();
   });
+
+  it('declares only the previously paid course as an alternative during an explicit validated course switch', () => {
+    const current = {
+      ...ctx(),
+      catalog: {
+        selected_offering: { code: 'fotografia_profesional', display_name: 'Fotografía Profesional' },
+        available_offerings: [
+          { code: 'fotografia_profesional', display_name: 'Fotografía Profesional' },
+          { code: 'marketing_digital', display_name: 'Marketing Digital' },
+          { code: 'diseno_photoshop', display_name: 'Diseño Photoshop' },
+        ],
+      },
+      capabilities: {
+        course_bonus: {
+          interest_offering_code: 'fotografia_profesional',
+          delivered_bonus_offerings: [{ code: 'diseno_photoshop', display_name: 'Diseño Photoshop' }],
+        },
+      },
+      turn_rejection: {
+        rejections: [{
+          code: 'COURSE_ROLE_UNDECLARED',
+          subject: 'course_mentions:undeclared:fotografia_profesional',
+        }],
+      },
+    } as unknown as AgentAContextV1;
+    const switching = {
+      ...proposal([{ offering_code: 'marketing_digital', role: 'paid' }]),
+      move: {
+        schema_version: 1,
+        move: 'select_course',
+        secondary_moves: [],
+        vetoes: [],
+        course_reference: 'marketing_digital',
+        confidence: 1,
+      },
+      response: {
+        messages: ['Perfecto, dejamos Fotografía Profesional de lado y vamos con Marketing Digital.'],
+        call_offer: null,
+      },
+    } as unknown as AgentATurnProposalV1;
+
+    const repaired = repairCourseMentionRolesV1({ proposal: switching, context: current });
+
+    expect(repaired).not.toBeNull();
+    expect(repaired?.course_mentions).toEqual([
+      { offering_code: 'marketing_digital', role: 'paid' },
+      { offering_code: 'fotografia_profesional', role: 'alternative' },
+    ]);
+    expect(repaired?.response).toEqual(switching.response);
+    expect(repaired?.proposed_action).toEqual(switching.proposed_action);
+    expect(repairCourseMentionRolesV1({ proposal: repaired!, context: current })).toBeNull();
+  });
+
+  it('does not repair a stale or unrelated undeclared-course rejection as a paid-course switch', () => {
+    const current = {
+      ...ctx(),
+      catalog: {
+        selected_offering: { code: 'fotografia_profesional', display_name: 'Fotografía Profesional' },
+        available_offerings: [
+          { code: 'fotografia_profesional', display_name: 'Fotografía Profesional' },
+          { code: 'marketing_digital', display_name: 'Marketing Digital' },
+          { code: 'diseno_photoshop', display_name: 'Diseño Photoshop' },
+        ],
+      },
+      capabilities: { course_bonus: { delivered_bonus_offerings: [] } },
+      turn_rejection: {
+        rejections: [{ code: 'COURSE_ROLE_UNDECLARED', subject: 'course_mentions:undeclared:diseno_photoshop' }],
+      },
+    } as unknown as AgentAContextV1;
+    const base = {
+      ...proposal([{ offering_code: 'marketing_digital', role: 'paid' }]),
+      move: {
+        schema_version: 1,
+        move: 'select_course',
+        secondary_moves: [],
+        vetoes: [],
+        course_reference: 'marketing_digital',
+        confidence: 1,
+      },
+      response: {
+        messages: ['Vamos con Marketing Digital y también podríamos ver Diseño Photoshop.'],
+        call_offer: null,
+      },
+    } as unknown as AgentATurnProposalV1;
+
+    expect(repairCourseMentionRolesV1({ proposal: base, context: current })).toBeNull();
+    expect(repairCourseMentionRolesV1({
+      proposal: { ...base, move: { ...base.move!, move: 'ask_course_information' } } as AgentATurnProposalV1,
+      context: { ...current, turn_rejection: {
+        rejections: [{ code: 'COURSE_ROLE_UNDECLARED', subject: 'course_mentions:undeclared:fotografia_profesional' }],
+      } } as AgentAContextV1,
+    })).toBeNull();
+  });
 });
 
 describe('M4: backend-reported sentences match by bubble index plus containment', () => {

@@ -62,7 +62,7 @@ export const COMMERCIAL_TURN_PLAN_JSON_SCHEMA = {
     course_focus: { anyOf: [{ type: 'string' }, { type: 'null' }], description: 'Exact canonical offering code in focus, or null.' },
     customer_goal: { anyOf: [{ type: 'string', maxLength: 400 }, { type: 'null' }] },
     known_information: list('What the customer already told or confirmed (level, goal, constraints, data).'),
-    pending_confirmations: list('Values the agent proposed or the customer changed that still await an explicit customer confirmation; empty when none.'),
+    pending_confirmations: list('Values the agent proposed or the customer changed that still await an explicit customer confirmation; empty when none. Newly supplied call-contact data are not pending confirmation: once complete, the call contract asks availability.'),
     answered_discovery_topics: list('Discovery topics already answered, with the answer.'),
     ignored_or_closed_topics: list('Questions the agent asked earlier that the customer ignored, answered with uncertainty, or declined.'),
     forbidden_repetitions: list('Questions or content from earlier agent turns that this reply would repeat or rephrase.'),

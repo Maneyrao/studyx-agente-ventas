@@ -1927,7 +1927,10 @@ function comparableProtectedFact(fact: ReturnType<typeof extractProtectedFacts>[
   // Complete raw tokens are checked separately below, so the portable
   // extractor cannot authorize a truncated three-place amount.
   const value = fact.kind === 'price'
-    ? fact.value.replace(/(\d),(\d{1,2})(?!\d)/gu, '$1.$2').replace(/(\d)\.0{1,2}(?!\d)/gu, '$1')
+    ? fact.value
+      .replace(/^(?:cuesta|sale|vale)\s+/u, '')
+      .replace(/(\d),(\d{1,2})(?!\d)/gu, '$1.$2')
+      .replace(/(\d)\.0{1,2}(?!\d)/gu, '$1')
     : fact.value;
   return `${fact.kind}\u0000${value}`;
 }

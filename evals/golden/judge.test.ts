@@ -245,6 +245,260 @@ describe('golden judge recorded JSON boundary', () => {
 });
 
 describe('golden semantic judge cumulative evidence', () => {
+  it('derives approval from per-requirement assessments without a redundant approved flag', async () => {
+    const base = GOLDEN_CASES.find((candidate) => candidate.id === '03_single_course_recommendation')!;
+    const turn = base.turns.find((candidate) => candidate.id === 'test_close_reply')!;
+    const scenario = { ...base, evaluationMode: undefined, turns: [turn] };
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (_url, init) => {
+      const request = JSON.parse(String(init?.body)) as {
+        input: string;
+        text: { format: { schema: { properties: { verdict: { properties: Record<string, unknown> } } } } };
+      };
+      expect(request.text.format.schema.properties.verdict.properties).toHaveProperty('assessments');
+      expect(request.text.format.schema.properties.verdict.properties).not.toHaveProperty('approved');
+      const payload = JSON.parse(request.input) as {
+        turn_id: string;
+        requirements: Array<{ id: string }>;
+      };
+      const assessments = payload.requirements.map((requirement) => ({
+        requirement_id: requirement.id,
+        status: 'satisfied',
+        authority_line_index: 0,
+        evidence_source: 'response',
+        observed_evidence: 'Pásame tu nombre, apellido, correo y teléfono.',
+        explanation: 'La respuesta avanza al checkout pidiendo únicamente los datos faltantes.',
+      }));
+      return new Response(JSON.stringify({ output_text: JSON.stringify({ verdict: {
+        turn_id: payload.turn_id, assessments,
+      } }) }), { status: 200 });
+    });
+    try {
+      const verdicts = await judgeCaseSemantically({
+        apiKey: 'fixture-only', model: 'deepseek-test', scenario,
+        observations: [observation({ response: 'Pásame tu nombre, apellido, correo y teléfono.' })],
+      });
+      expect(verdicts).toEqual([{
+        turn_id: 'test_close_reply', approved: true, failures: [], evaluation_error: null,
+      }]);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    } finally { fetchMock.mockRestore(); }
+  });
+
+  it('treats a visible application question as a trial close when the judge denies it', async () => {
+    const base = GOLDEN_CASES.find((candidate) => candidate.id === '03_single_course_recommendation')!;
+    const turn = base.turns.find((candidate) => candidate.id === 'recommend')!;
+    const scenario = { ...base, evaluationMode: undefined, turns: [turn] };
+    const response = 'Fotografía Profesional encaja con lo que buscas. Te imaginas ofreciéndoles a esos emprendedores fotos con cámara y bien editadas?';
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      output_text: JSON.stringify({ verdict: { turn_id: 'recommend', approved: false, failures: [{
+        code: 'SEMANTIC_MUST_FAILED', requirement_id: 'must:2', authority_line_index: 1,
+        evidence_source: 'response', observed_evidence: 'Te imaginas ofreciéndoles a esos emprendedores fotos con cámara y bien editadas?',
+        explanation: 'Es visualización, no cierre de prueba.',
+      }] } }),
+    }), { status: 200 }));
+    try {
+      await expect(judgeCaseSemantically({
+        apiKey: 'fixture-only', model: 'deepseek-test', scenario,
+        observations: [observation({ response })],
+      })).resolves.toEqual([{
+        turn_id: 'recommend', approved: true, failures: [], evaluation_error: null,
+      }]);
+    } finally { fetchMock.mockRestore(); }
+  });
+
+  it('treats a contextual fit check as a trial close instead of repeated discovery', async () => {
+    const base = GOLDEN_CASES.find((candidate) => candidate.id === '02_info_discovery')!;
+    const turn = base.turns.find((candidate) => candidate.id === 'goal')!;
+    const scenario = { ...base, evaluationMode: undefined, turns: [turn] };
+    const response = 'Fotografía con Celulares para Tiendas Online conecta con lo que buscas. Va bien encaminado con lo que buscas?';
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      output_text: JSON.stringify({ verdict: { turn_id: 'goal', approved: false, failures: [{
+        code: 'SEMANTIC_MUST_NOT_FAILED', requirement_id: 'must_not:0', authority_line_index: 0,
+        evidence_source: 'response', observed_evidence: 'Va bien encaminado con lo que buscas?',
+        explanation: 'Vuelve a preguntar por el objetivo ya informado.',
+      }] } }),
+    }), { status: 200 }));
+    try {
+      await expect(judgeCaseSemantically({
+        apiKey: 'fixture-only', model: 'deepseek-test', scenario,
+        observations: [observation({ response })],
+      })).resolves.toEqual([{
+        turn_id: 'goal', approved: true, failures: [], evaluation_error: null,
+      }]);
+    } finally { fetchMock.mockRestore(); }
+  });
+
+  it('still treats an actual repeated discovery question as a failure', async () => {
+    const base = GOLDEN_CASES.find((candidate) => candidate.id === '02_info_discovery')!;
+    const turn = base.turns.find((candidate) => candidate.id === 'goal')!;
+    const scenario = { ...base, evaluationMode: undefined, turns: [turn] };
+    const response = 'Qué te gustaría aprender y para qué lo querés usar?';
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      output_text: JSON.stringify({ verdict: { turn_id: 'goal', approved: false, failures: [{
+        code: 'SEMANTIC_MUST_NOT_FAILED', requirement_id: 'must_not:0', authority_line_index: 0,
+        evidence_source: 'response', observed_evidence: response,
+        explanation: 'Vuelve a descubrir el objetivo ya informado.',
+      }] } }),
+    }), { status: 200 }));
+    try {
+      const verdicts = await judgeCaseSemantically({
+        apiKey: 'fixture-only', model: 'deepseek-test', scenario,
+        observations: [observation({ response })],
+      });
+      expect(verdicts[0]?.approved).toBe(false);
+    } finally { fetchMock.mockRestore(); }
+  });
+
+  it.each([
+    'Qué cámara encaja con tu presupuesto?',
+    'Te imaginas pagando en 12 cuotas?',
+  ])('does not misclassify equipment or payment discovery as a trial close: %s', async (response) => {
+    const base = GOLDEN_CASES.find((candidate) => candidate.id === '03_single_course_recommendation')!;
+    const turn = base.turns.find((candidate) => candidate.id === 'recommend')!;
+    const scenario = { ...base, evaluationMode: undefined, turns: [turn] };
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      output_text: JSON.stringify({ verdict: { turn_id: 'recommend', approved: false, failures: [{
+        code: 'SEMANTIC_MUST_FAILED', requirement_id: 'must:2', authority_line_index: 1,
+        evidence_source: 'response', observed_evidence: response,
+        explanation: 'No comprueba encaje ni aplicación del curso al objetivo.',
+      }] } }),
+    }), { status: 200 }));
+    try {
+      const verdicts = await judgeCaseSemantically({
+        apiKey: 'fixture-only', model: 'deepseek-test', scenario,
+        observations: [observation({ response })],
+      });
+      expect(verdicts[0]?.approved).toBe(false);
+    } finally { fetchMock.mockRestore(); }
+  });
+
+  it('retries a self-contradictory checkout failure instead of approving or failing it', async () => {
+    const scenario = GOLDEN_CASES.find((candidate) => candidate.id === '03_single_course_recommendation')!;
+    let closeAttempts = 0;
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (_url, init) => {
+      const request = JSON.parse(String(init?.body)) as { input: string };
+      const payload = JSON.parse(request.input) as { turn_id: string };
+      if (payload.turn_id === 'recommend') {
+        return new Response(JSON.stringify({ output_text: JSON.stringify({ verdict: {
+          turn_id: 'recommend', approved: true, failures: [],
+        } }) }), { status: 200 });
+      }
+      closeAttempts += 1;
+      const verdict = closeAttempts === 1 ? {
+        turn_id: 'test_close_reply', approved: false, failures: [{
+          code: 'SEMANTIC_MUST_FAILED', requirement_id: 'must:0', authority_line_index: 0,
+          evidence_source: 'previous_delivery', observed_evidence: 'Te ves aplicándolo con emprendedores?',
+          explanation: 'Pide los datos faltantes, por lo tanto el requisito se cumple.',
+        }],
+      } : { turn_id: 'test_close_reply', approved: true, failures: [] };
+      return new Response(JSON.stringify({ output_text: JSON.stringify({ verdict }) }), { status: 200 });
+    });
+    try {
+      const verdicts = await judgeCaseSemantically({
+        apiKey: 'fixture-only', model: 'deepseek-test', scenario,
+        observations: [
+          observation({ response: 'Fotografía Profesional encaja con lo que buscas. Te ves aplicándolo con emprendedores?' }),
+          observation({ response: 'Para avanzar, pásame tu nombre, apellido, correo y teléfono.' }),
+        ],
+      });
+      expect(verdicts[1]).toEqual({
+        turn_id: 'test_close_reply', approved: true, failures: [], evaluation_error: null,
+      });
+      expect(closeAttempts).toBe(2);
+    } finally { fetchMock.mockRestore(); }
+  });
+
+  it('does not retry a terminal provider balance error', async () => {
+    const base = GOLDEN_CASES.find((candidate) => candidate.id === '03_single_course_recommendation')!;
+    const turn = base.turns.find((candidate) => candidate.id === 'recommend')!;
+    const scenario = { ...base, evaluationMode: undefined, turns: [turn] };
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('Payment required', { status: 402 }));
+    try {
+      await expect(judgeCaseSemantically({
+        apiKey: 'fixture-only', model: 'deepseek-test', scenario,
+        observations: [observation({ response: 'Respuesta sintética.' })],
+      })).resolves.toEqual([{
+        turn_id: 'recommend', approved: null, failures: [], evaluation_error: 'GOLDEN_JUDGE_HTTP_402',
+      }]);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    } finally { fetchMock.mockRestore(); }
+  });
+
+  it('reports evaluator error when every verdict contradicts objective checkout evidence', async () => {
+    const scenario = GOLDEN_CASES.find((candidate) => candidate.id === '03_single_course_recommendation')!;
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (_url, init) => {
+      const request = JSON.parse(String(init?.body)) as { input: string };
+      const payload = JSON.parse(request.input) as { turn_id: string };
+      const verdict = payload.turn_id === 'recommend'
+        ? { turn_id: 'recommend', approved: true, failures: [] }
+        : { turn_id: 'test_close_reply', approved: false, failures: [{
+          code: 'SEMANTIC_MUST_FAILED', requirement_id: 'must:0', authority_line_index: 0,
+          evidence_source: 'previous_delivery', observed_evidence: 'Te ves aplicándolo con emprendedores?',
+          explanation: 'La respuesta pide los datos que faltan y cumple el requisito.',
+        }] };
+      return new Response(JSON.stringify({ output_text: JSON.stringify({ verdict }) }), { status: 200 });
+    });
+    try {
+      const verdicts = await judgeCaseSemantically({
+        apiKey: 'fixture-only', model: 'deepseek-test', scenario,
+        observations: [
+          observation({ response: 'Fotografía Profesional encaja con lo que buscas. Te ves aplicándolo con emprendedores?' }),
+          observation({ response: 'Para avanzar, pásame tu nombre, apellido, correo y teléfono.' }),
+        ],
+      });
+      expect(verdicts[1]).toEqual({
+        turn_id: 'test_close_reply', approved: null, failures: [],
+        evaluation_error: 'GOLDEN_JUDGE_VERDICT_INCOHERENT',
+      });
+    } finally { fetchMock.mockRestore(); }
+  });
+
+  it('does not confuse a conditional visualization with a guaranteed-income promise', async () => {
+    const base = GOLDEN_CASES.find((candidate) => candidate.id === '04_price_value_objection')!;
+    const turn = base.turns.find((candidate) => candidate.id === 'interest')!;
+    const scenario = { ...base, evaluationMode: undefined, turns: [turn] };
+    const response = 'Fotografía Profesional te prepara para ofrecer sesiones. Te imaginas ya con tus primeras sesiones y cobrando por ellas?';
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      output_text: JSON.stringify({ verdict: { turn_id: 'interest', approved: false, failures: [{
+        code: 'SEMANTIC_MUST_NOT_FAILED', requirement_id: 'must_not:0', authority_line_index: 0,
+        evidence_source: 'response', observed_evidence: 'Te imaginas ya con tus primeras sesiones y cobrando por ellas?',
+        explanation: 'La visualización roza una promesa de ingresos.',
+      }] } }),
+    }), { status: 200 }));
+    try {
+      await expect(judgeCaseSemantically({
+        apiKey: 'fixture-only', model: 'deepseek-test', scenario,
+        observations: [observation({ response })],
+      })).resolves.toEqual([{
+        turn_id: 'interest', approved: true, failures: [], evaluation_error: null,
+      }]);
+    } finally { fetchMock.mockRestore(); }
+  });
+
+  it.each([
+    'Te imaginas ganando USD 500 por día?',
+    'Con una sesión de fotos recuperas la cuota mensual. Te sirve?',
+  ])('does not forgive quantified income or asserted payback as conditional visualization: %s', async (response) => {
+    const base = GOLDEN_CASES.find((candidate) => candidate.id === '04_price_value_objection')!;
+    const turn = base.turns.find((candidate) => candidate.id === 'interest')!;
+    const scenario = { ...base, evaluationMode: undefined, turns: [turn] };
+    const observed = response.includes('USD') ? 'Te imaginas ganando USD 500 por día?' : 'Con una sesión de fotos recuperas la cuota mensual.';
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      output_text: JSON.stringify({ verdict: { turn_id: 'interest', approved: false, failures: [{
+        code: 'SEMANTIC_MUST_NOT_FAILED', requirement_id: 'must_not:0', authority_line_index: 0,
+        evidence_source: 'response', observed_evidence: observed,
+        explanation: 'Promete un ingreso o recuperación determinada.',
+      }] } }),
+    }), { status: 200 }));
+    try {
+      const verdicts = await judgeCaseSemantically({
+        apiKey: 'fixture-only', model: 'deepseek-test', scenario,
+        observations: [observation({ response })],
+      });
+      expect(verdicts[0]?.approved).toBe(false);
+    } finally { fetchMock.mockRestore(); }
+  });
+
   it('does not require a programme again when image and PDF were delivered earlier than the immediately previous turn', async () => {
     const base = OWNER_PROMOTION_MODE_REPLAY_CASES.find((candidate) => candidate.id === '45_real_trace_5b138536_20261105')!;
     const turns = [base.turns[2]!, base.turns[3]!, base.turns[4]!];
@@ -824,6 +1078,9 @@ describe('golden hard judge', () => {
     expect(judgeRequest.instructions).toContain(
       'preferencia entre contenidos de ese mismo curso (por ejemplo, cámara o edición) no equivale a abrir un menú',
     );
+    expect(judgeRequest.instructions).toContain(
+      'Nunca infieras que hubo un cierre de prueba sólo por el nombre del turno o por la respuesta actual del cliente',
+    );
     expect(judgeInput.requirements?.map((item) => item.text)).toEqual(expect.arrayContaining([
       'No abrir un menú de cursos ni ofrecer varias opciones.',
       'No prometer ingresos ni clientes.',
@@ -1180,7 +1437,7 @@ describe('negotiation invariant judge mode',()=>{
       expect(payloads[1]!.negotiation_ledger).toEqual(expect.arrayContaining([expect.objectContaining({ladder:facts.ladder})]));
       expect(JSON.stringify(payloads[1]!.requirements)).not.toContain('Mantener el paquete acumulado de tres');
       expect(JSON.stringify(payloads[1]!.requirements)).toContain('aislamiento');
-      expect(JSON.stringify(payloads[1]!.requirements)).toContain('insinuar');
+      expect(JSON.stringify(payloads[1]!.requirements)).toContain('No afirmar ni presentar un curso bonificado concreto');
       expect(JSON.stringify(payloads[1]!.requirements)).toContain('de regalo');
       expect(JSON.stringify(payloads[1]!.requirements)).toContain('evitar responder por chat');
       expect(JSON.stringify(payloads[1]!.requirements)).toContain('repetir sólo');
@@ -1227,7 +1484,7 @@ describe('semantic judge delivered-outcome boundary', () => {
     let sources: readonly string[] = [];
     const mock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (_url, init) => {
       const request = JSON.parse(String(init?.body)); payload = JSON.parse(request.input);
-      sources = request.text.format.schema.properties.verdict.properties.failures.items.properties.evidence_source.enum;
+      sources = request.text.format.schema.properties.verdict.properties.assessments.items.properties.evidence_source.enum;
       return new Response(JSON.stringify({ output_text: JSON.stringify({ verdict: {
         turn_id: 'delivered', approved: true, failures: [],
       } }) }));

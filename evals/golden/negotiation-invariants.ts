@@ -11,11 +11,11 @@ export interface NegotiationTurnEvidenceV1 {
   readonly currentPriceObjectionPersisted?:boolean;
   readonly currentPriceOnlyBarrierQuoted?:boolean;
   readonly priceOnlyBarrierConfirmed?:boolean;
-  readonly ladder?: {readonly observed_price_objection_count:number;readonly required_price_objection_count:2|3;
-    readonly price_only_barrier_confirmed?:boolean;
-    readonly instant_trigger?:boolean;
+  readonly ladder?: ({readonly retention_used:boolean;readonly previous_turn_asked_price_question:boolean} | {
+    readonly observed_price_objection_count:number;readonly required_price_objection_count:2|3;
+    readonly price_only_barrier_confirmed?:boolean;readonly instant_trigger?:boolean;
     readonly call_invitation_status:string;readonly call_offer_count:number;readonly may_offer_call:boolean;
-    readonly missing_steps:readonly string[];readonly eligible:boolean} | null;
+    readonly missing_steps:readonly string[];readonly eligible:boolean}) | null;
   readonly action: string | null;
   readonly proposedAction: Record<string,unknown> | null;
   readonly selectedCourse: string | null;
@@ -24,10 +24,29 @@ export interface NegotiationTurnEvidenceV1 {
 }
 export interface InvariantCheckV1 {readonly id:string;readonly status:InvariantStatusV1;readonly authority:string;readonly evidence:readonly string[];readonly failedTurnIds:readonly string[];readonly indeterminateTurnIds:readonly string[]}
 export const NEGOTIATION_AUTHORITY_V1 = {
-  ladder:'AGENTS.md:45-54 (Regla A, reemplaza regla 10); docs/authority/prompt-agente-a-studyx-v2.md:87,106-129',
+  ladder:'AGENTS.md:202-212 (motivo del mensaje actual); docs/authority/prompt-agente-a-studyx-v2.md:106-129',
   package:'docs/authority/spec-backend-bonificacion.md:39-40,59-71',
   semantics:'docs/authority/prompt-agente-a-studyx-v2.md:106-129',
 } as const;
+
+function isCurrentMotiveLadderV1(value:NegotiationTurnEvidenceV1['ladder']):value is {
+  readonly retention_used:boolean;readonly previous_turn_asked_price_question:boolean
+} {
+  return value!==null&&value!==undefined&&'retention_used' in value&&'previous_turn_asked_price_question' in value;
+}
+
+function currentMotiveStatusV1(turn:NegotiationTurnEvidenceV1):{status:InvariantStatusV1;evidence:string} {
+  const motive=turn.proposedAction?.motive;
+  if(!motive||typeof motive!=='object'||Array.isArray(motive))return {status:'FAIL',evidence:`${turn.turnId}:missing motive`};
+  const kind=(motive as Record<string,unknown>).kind;
+  const quote=(motive as Record<string,unknown>).quote;
+  const allowed=['price_objection','promotion_rejection','better_promotion_request','purchase_decline'];
+  if(typeof kind!=='string'||!allowed.includes(kind))return {status:'FAIL',evidence:`${turn.turnId}:invalid kind=${String(kind)}`};
+  if(typeof quote!=='string'||quote.trim()==='')return {status:'FAIL',evidence:`${turn.turnId}:missing quote`};
+  return turn.customer.includes(quote)
+    ? {status:'PASS',evidence:`${turn.turnId}:kind=${kind};quote=${JSON.stringify(quote)}`}
+    : {status:'FAIL',evidence:`${turn.turnId}:quote is not literal in current customer batch`};
+}
 export function aggregateInvariantStatusV1(statuses:readonly InvariantStatusV1[]):InvariantStatusV1 {
   if(statuses.includes('FAIL'))return 'FAIL';
   if(statuses.length===0||statuses.includes('INDETERMINATE'))return 'INDETERMINATE';
@@ -72,7 +91,10 @@ export function evaluateNegotiationInvariantsV1(
     if(t.action==='offer_course_bonus'){
       offered++;
       const l=t.ladder;
-      if(l?.required_price_objection_count===2){
+      if(isCurrentMotiveLadderV1(l)){
+        const motive=currentMotiveStatusV1(t);
+        record('current_motive',motive.status,motive.evidence);
+      }else if(l?.required_price_objection_count===2){
         // Owner rule A: the current quoted, committed objection counts. A lexical
         // price hint, eligible=true or an unquoted model memory is never evidence.
         const current=t.currentPriceObjectionQuoted===true&&t.currentPriceObjectionPersisted===true;
@@ -109,7 +131,7 @@ export function evaluateNegotiationInvariantsV1(
   }
   activeTurnId=undefined;
   if(maximum<=3)record('max_three',!caseCode.startsWith('06')||maximum===3?'PASS':'NOT_EXERCISED',`maximum=${maximum}; need actual cap exercise`);
-  if(!offered)for(const id of ['prior_ladder','prior_sources','prior_call','one_distinct_addition','active_distinct_course','package_recap','effect_matches_proposal'])record(id,'NOT_EXERCISED','No bonus effect executed.');
+  if(!offered)for(const id of ['current_motive','prior_ladder','prior_sources','prior_call','one_distinct_addition','active_distinct_course','package_recap','effect_matches_proposal'])record(id,'NOT_EXERCISED','No bonus effect executed.');
   if(caseCode.startsWith('06')){
     record('three_additions_exercised',offered>=3&&maximum===3?'PASS':'NOT_EXERCISED',`Test exposure only, not an obligation to sell three: effects=${offered};max=${maximum}`);
     record('fourth_request_exercised',turns.some((t,i)=>t.maxBonusChallenge&&i>0&&turns[i-1]!.promotion.bonusCount===3)?'PASS':'NOT_EXERCISED','Requires a real intervention after three accumulated bonuses.');
@@ -123,7 +145,7 @@ export function evaluateNegotiationInvariantsV1(
     if(id==='active_distinct_course')return 'docs/authority/prompt-agente-a-studyx-v2.md:122; docs/authority/spec-backend-bonificacion.md:61-63';
     if(id==='course_change_cancellation')return 'docs/authority/spec-backend-bonificacion.md:40';
     if(id==='commercial_semantics')return 'docs/authority/prompt-agente-a-studyx-v2.md:106-112,122-124,129; docs/authority/spec-backend-bonificacion.md:69-73';
-    if(id.startsWith('prior_'))return NEGOTIATION_AUTHORITY_V1.ladder;
+    if(id==='current_motive'||id.startsWith('prior_'))return NEGOTIATION_AUTHORITY_V1.ladder;
     if(id==='objective_facts')return 'docs/authority/prompt-agente-a-studyx-v2.md:50,87,236';
     return 'docs/authority/prompt-agente-a-studyx-v2.md:121; docs/authority/spec-backend-bonificacion.md:64-66,103';
   };

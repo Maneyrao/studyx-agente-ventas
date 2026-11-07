@@ -1,6 +1,7 @@
 /**
- * Transport-only publication. Run with Bun from botpress-agent; default is read-only.
- * --publish permits updating ONLY code after a fresh production build and contract checks.
+ * Narrow publication transport. Run with Bun from botpress-agent; default is read-only.
+ * --publish permits updating code plus only the explicitly reviewed additive
+ * contracts/configuration after a fresh production build and contract checks.
  * A change to API contracts/dependencies must use a separately reviewed full deployment.
  * SDK entry points are pinned to installed ADK 2.0.8; fail closed after SDK upgrades.
  */
@@ -14,6 +15,7 @@ import {
   inspectBotpressRemoteCode,
   planBotpressAdditiveConversationTagPatch,
   planBotpressAdditiveEventPatch,
+  planBotpressReviewedConfigurationUpdate,
   planBotpressReviewedActionPatch,
 } from './lib/botpress-additive-event-contract.mjs';
 
@@ -78,12 +80,15 @@ try {
     remoteActions: before.actions ?? {},
     generatedActions: body.actions ?? {},
   });
+  const configurationPlan = planBotpressReviewedConfigurationUpdate({
+    remoteConfiguration: before.configuration,
+    generatedConfiguration: body.configuration,
+  });
   const additiveEventPatch = planBotpressAdditiveEventPatch({
     remoteEvents: before.events ?? {},
     generatedEvents: body.events ?? {},
   });
   const additiveEventKeys = Object.keys(additiveEventPatch).sort();
-  if (!equal(body.configuration?.schema, before.configuration?.schema)) contractDifferences.push('configuration.schema');
   for (const field of ['user', 'message']) {
     if (!equal(Object.keys(body[field]?.tags ?? {}).sort(), Object.keys(before[field]?.tags ?? {}).sort())) {
       contractDifferences.push(`${field}.tags`);
@@ -146,27 +151,39 @@ try {
     pluginCount: Object.keys(definition.plugins).length, aliasesPreserved, contractsMatch: true,
     additiveEventKeys, additiveConversationTagKeys,
     reviewedActionKeys: Object.keys(actionPatch).sort(),
+    reviewedConfigurationKeys: configurationPlan.changed ? ['agentACommercialPlanningEnabled'] : [],
     publicationMode: additiveEventKeys.length > 0
       || additiveConversationTagKeys.length > 0
       || Object.keys(actionPatch).length > 0
+      || configurationPlan.changed
       ? 'code+reviewed-contract' : 'code-only', publish };
   record('preflight.json', preflight);
   if (publish) {
-    // Omitting integrations/plugins/configuration/secrets is deliberate. Never
-    // run missing-dependency deletion here. The only permitted contract change
-    // is the reviewed additive commercial-followup event and the exact pinned
-    // reportDelivery additive contract.
+    // Omitting integrations/plugins/secrets is deliberate. Never run
+    // missing-dependency deletion here. Configuration is sent only when the
+    // exact reviewed commercial-planning addition was derived from the fresh
+    // remote snapshot; every other contract/configuration delta fails closed.
     const update = buildBotpressAdditiveEventUpdate({
       botId: ctx.botId,
       code: bundle.toString('utf8'),
       eventPatch: additiveEventPatch,
       conversationTagPatch,
       actionPatch,
+      configurationPlan,
     });
     await client.updateBot(update);
     const after = (await client.getBot({ id: ctx.botId })).bot;
     record('bot-after.private.json', after);
-    const configurationUnchanged = equal(protectedConfiguration(before), protectedConfiguration(after));
+    const expectedProtectedConfiguration = {
+      ...protectedConfiguration(before),
+      configuration: configurationPlan.configuration,
+    };
+    const configurationMatchesExpected = equal(expectedProtectedConfiguration, protectedConfiguration(after));
+    const configurationUnchanged = equal(before.configuration, after.configuration);
+    const configurationContractCurrent = !planBotpressReviewedConfigurationUpdate({
+      remoteConfiguration: after.configuration,
+      generatedConfiguration: body.configuration,
+    }).changed;
     const eventContractCurrent = Object.keys(planBotpressAdditiveEventPatch({
       remoteEvents: after.events ?? {},
       generatedEvents: body.events ?? {},
@@ -185,14 +202,17 @@ try {
     });
     const remoteCodeMatches = remoteCodeEvidence.matches;
     const result = { ...preflight, deployedAt: after.deployedAt, previousDeployedAt: before.deployedAt,
-      configurationUnchanged, eventContractCurrent, conversationTagContractCurrent,
+      configurationUnchanged, configurationMatchesExpected, configurationContractCurrent,
+      eventContractCurrent, conversationTagContractCurrent,
       actionContractCurrent,
       remoteCodeEvidence, remoteCodeMatches,
       codeOnly: additiveEventKeys.length === 0
         && additiveConversationTagKeys.length === 0
-        && Object.keys(actionPatch).length === 0 };
+        && Object.keys(actionPatch).length === 0
+        && !configurationPlan.changed };
     record('publication.json', result);
-    assert(configurationUnchanged && eventContractCurrent && conversationTagContractCurrent
+    assert(configurationMatchesExpected && configurationContractCurrent
+      && eventContractCurrent && conversationTagContractCurrent
       && actionContractCurrent
       && remoteCodeMatches !== false
       && after.deployedAt !== before.deployedAt, 'POST_PUBLICATION_PARITY_FAILED');

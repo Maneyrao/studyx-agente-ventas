@@ -958,6 +958,23 @@ describe('Agent A Brain V1', () => {
     },
   );
 
+  it.each([
+    'cuesta USD 360',
+    'sale USD 360',
+    'vale USD 360',
+  ])('accepts an affirmative natural predicate before an authorized price: %s', (naturalPrice) => {
+    const ctx = context();
+    const priceId = 'payment:redes-informaticas:monthly_12:price:v1';
+    ctx.catalog.selected_offering!.facts.push({ id: priceId, kind: 'payment_plan_price', value: 'USD 360.00' });
+    const parsed = parseAgentATurnProposalV1(proposal({
+      response: { messages: [`El diplomado ${naturalPrice}.`] }, used_fact_ids: [priceId],
+    }), ctx);
+    expect(validateAgentATurnProposalV1({
+      proposal: parsed, context: ctx, planned_fact_ids: parsed.used_fact_ids,
+      rejection_id: '00000000-0000-4000-8000-000000000001',
+    })).toBeNull();
+  });
+
   it.each(['USD 361', 'USD 360.01', 'EUR 360', 'USD 36000', 'USD 360.000',
     'USD 360,000', 'USD 360,001', 'no cuesta USD 360'])(
     'still rejects a different amount, currency or negated price: %s', (total) => {

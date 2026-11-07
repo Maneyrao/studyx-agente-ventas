@@ -175,7 +175,6 @@ export const OWNER_REPLAY_CASES: readonly GoldenCaseV1[] = [{
 const englishSet = [...affinitySet('ingles_1'), 'armado_reparacion_pc'];
 const noContingency = [{ type: 'not_contains', value: 'no te entendí bien' } as const,
   { type: 'not_contains', value: 'Qué dos cursos comparamos' } as const];
-const promotionMode = permission;
 // The customer says "quiero directamente pagar": checkout moves are valid here.
 const replayMoves = [...moves, 'request_payment_link', 'provide_contact_details'];
 const englishTurn = (id: string, customer: string, override: Partial<GoldenTurnV1> = {}) => turn(id, customer, {

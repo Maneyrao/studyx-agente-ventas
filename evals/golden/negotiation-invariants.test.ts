@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { evaluateNegotiationInvariantsV1, type NegotiationTurnEvidenceV1 } from './negotiation-invariants';
+import { usesCurrentModelOwnedNegotiationV1 } from './negotiation-evidence';
 function turn(count=3, codes=['extra']): NegotiationTurnEvidenceV1 {
   return { turnId:'t1', response:'Curso pago + Extra', customer:'precio', currentTurnId:'current',
     priorPriceSourceIds:['p1','p2','p3'], ladder:{observed_price_objection_count:count,required_price_objection_count:3,
@@ -9,6 +10,28 @@ function turn(count=3, codes=['extra']): NegotiationTurnEvidenceV1 {
     offerings:[{code:'paid',displayName:'Curso pago'},{code:'extra',displayName:'Extra'},{code:'two',displayName:'Dos'},{code:'three',displayName:'Tres'}] };
 }
 describe('negotiation invariants (authority:106-129; spec:39-40,59-71)',()=>{
+  it('selects current model-owned semantics from the runtime ladder shape',()=>{
+    expect(usesCurrentModelOwnedNegotiationV1({ladder:{retention_used:false,previous_turn_asked_price_question:false}})).toBe(true);
+    expect(usesCurrentModelOwnedNegotiationV1({ladder:{...turn().ladder!} as never})).toBe(false);
+  });
+  it('accepts the current motive-based ladder without retired objection counters or a prior call',()=>{
+    const current: NegotiationTurnEvidenceV1 = {
+      ...turn(),
+      customer:'El precio me sigue frenando.',
+      currentTurnId:'current',
+      priorPriceSourceIds:[],
+      ladder:{retention_used:false,previous_turn_asked_price_question:false} as never,
+      proposedAction:{
+        type:'offer_course_bonus',
+        bonus_offering_code:'extra',
+        interest_offering_code:'paid',
+        motive:{kind:'price_objection',quote:'El precio me sigue frenando.'},
+      },
+    };
+    const result=evaluateNegotiationInvariantsV1('17',[current],'PASS');
+    expect(result.status).toBe('PASS');
+    expect(result.checks.find(check=>check.id==='prior_call')).toBeUndefined();
+  });
   it('counts a quoted and persisted current objection for owner rule A without requiring a prior call', () => {
     const current: NegotiationTurnEvidenceV1 = { ...turn(1), priorPriceSourceIds: ['p1'],
       currentPriceObjectionQuoted: true, currentPriceObjectionPersisted: true,

@@ -299,10 +299,42 @@ export function repairCourseMentionRolesV1(input: {
 }): AgentATurnProposalV1 | null {
   const { proposal, context } = input
   const bonus = context.capabilities.course_bonus
-  if (context.catalog.selected_offering !== null && context.catalog.selected_offering !== undefined) return null
+  const selected = context.catalog.selected_offering
+  const text = [...proposal.response.messages, proposal.response.call_offer ?? ''].join('\n')
+  if (selected !== null && selected !== undefined) {
+    const requestedCode = proposal.move?.move === 'select_course'
+      ? proposal.move.course_reference : null
+    const requested = requestedCode === null ? null
+      : context.catalog.available_offerings.find((offering) => offering.code === requestedCode) ?? null
+    const rejectedSelectedMention = context.turn_rejection?.rejections.some((reason) => (
+      reason.code === 'COURSE_ROLE_UNDECLARED'
+        && reason.subject === `course_mentions:undeclared:${selected.code}`
+    )) === true
+    const requestedIsDeclaredPaid = requested !== null && proposal.course_mentions.some((mention) => (
+      mention.offering_code === requested.code && mention.role === 'paid'
+    ))
+    const selectedIsUndeclared = !proposal.course_mentions.some((mention) => (
+      mention.offering_code === selected.code
+    ))
+    if (proposal.proposed_action.type === 'none'
+      && requested !== null
+      && requested.code !== selected.code
+      && requestedIsDeclaredPaid
+      && selectedIsUndeclared
+      && rejectedSelectedMention
+      && normalizedIncludes(text, selected.display_name)) {
+      return {
+        ...proposal,
+        course_mentions: [
+          ...proposal.course_mentions,
+          { offering_code: selected.code, role: 'alternative' },
+        ],
+      }
+    }
+    return null
+  }
   if ((bonus?.delivered_bonus_offerings?.length ?? 0) > 0) return null
   if (proposal.proposed_action.type === 'offer_course_bonus') return null
-  const text = [...proposal.response.messages, proposal.response.call_offer ?? ''].join('\n')
   const named = context.catalog.available_offerings.filter((offering) => normalizedIncludes(text, offering.display_name))
   const namedCodes = new Set(named.map((offering) => offering.code))
   const declared = new Map<string, AgentATurnProposalV1['course_mentions'][number]>()

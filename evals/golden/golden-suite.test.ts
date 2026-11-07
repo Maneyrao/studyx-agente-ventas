@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { GOLDEN_BASE_SHA, GOLDEN_CASES, validateGoldenAuthorityReferences } from './scenarios';
+import { negotiationSemanticTurnV1 } from './negotiation-evidence';
 
 const REQUIRED_CASE_IDS = [
   '01_first_contact_identity',
@@ -63,5 +64,27 @@ describe('Agent A authority-only golden specification', () => {
     expect(byId('06_repeated_price_bonus_ladder', 'installments').expected.action).toContain('offer_course_bonus');
     expect(byId('14_course_change_cancels_promotion', 'installments').expected.action).toContain('offer_course_bonus');
     expect(byId('16_discount_limit_stays_commercial', 'discount').expected.action).toContain('offer_course_bonus');
+  });
+
+  it('treats an affirmative trial close as checkout authority without treating it as a completed sale', () => {
+    const scenario = GOLDEN_CASES.find((item) => item.id === '03_single_course_recommendation')!;
+    const recommendation = scenario.turns.find((item) => item.id === 'recommend')!;
+    const turn = scenario.turns.find((item) => item.id === 'test_close_reply')!;
+
+    expect(recommendation.must.join(' ')).toContain('Una pregunta sobre cámara, equipo o experiencia adicional no cumple');
+    expect(turn.must.join(' ')).toContain('sólo si previous_delivery.response contiene un cierre de prueba real');
+    expect(turn.must.join(' ')).toContain('datos faltantes');
+    expect(turn.mustNot.join(' ')).toContain('No afirmar que la inscripción ya quedó confirmada');
+    expect(turn.mustNot.join(' ')).not.toContain('consentimiento de inscripción');
+  });
+
+  it('allows the authorized isolation question without mistaking it for a materialized bonus', () => {
+    const source = GOLDEN_CASES.find((item) => item.id === '06_repeated_price_bonus_ladder')!
+      .turns.find((item) => item.id === 'installments')!;
+    const judged = negotiationSemanticTurnV1(source, false, true);
+
+    expect(judged.must.join(' ')).toContain('aislar el freno sin repetir valor ni cuotas');
+    expect(judged.mustNot.join(' ')).toContain('Una pregunta condicional para buscar una promoción');
+    expect(judged.mustNot.join(' ')).not.toContain('insinuar ni condicionar una nueva bonificación');
   });
 });

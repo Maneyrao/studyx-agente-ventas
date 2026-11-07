@@ -5,7 +5,7 @@ import {
 } from './studyx-agent-a-canonical.generated';
 import { resolveCanonicalPromptIdentityV1 } from './agent-a-identity';
 
-export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v190' as const;
+export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v202' as const;
 
 /**
  * Runtime contract only. The sales behavior lives in the canonical prompt so
@@ -153,7 +153,10 @@ function verifiedPostSalePackageContextV1(context: AgentAContextV1): string {
     || fulfillment.access_message_status !== 'sent') return ''
   const names: string[] = []
   const selected = context.catalog.selected_offering
-  if (selected?.code === verification.offering_code) names.push(selected.display_name)
+  const paidOffering = selected?.code === verification.offering_code
+    ? selected
+    : context.catalog.available_offerings.find((offering) => offering.code === verification.offering_code)
+  if (paidOffering) names.push(paidOffering.display_name)
   const promotion = context.commercial_state.promotion
   if (promotion?.status === 'accepted' && promotion.interest_offering_code === verification.offering_code) {
     names.push(...promotion.bonus_offerings.map((offering) => offering.name))
@@ -164,8 +167,15 @@ function verifiedPostSalePackageContextV1(context: AgentAContextV1): string {
   const unique = [...new Set(names)]
   if (unique.length === 0) return ''
   return `<verified_post_sale_package>
-Verified active course identities: ${JSON.stringify(unique)}.
+${inertJson({
+    paid_course: paidOffering ? {
+      offering_code: paidOffering.code,
+      display_name: paidOffering.display_name,
+    } : null,
+    active_course_names: unique,
+  })}
 This is fact exposure only. Canonical behavior decides the wording and next conversational move.
+An active enrollment/access status authorizes only that status. It does not authorize an access schedule, duration, self-paced study or unrestricted access.
 </verified_post_sale_package>`
 }
 
@@ -347,6 +357,7 @@ function currentCallEffectContractV1(context: AgentAContextV1): string {
 The customer has an accepted or requested call whose contact intake is incomplete.
 While collecting the missing fields, keep move=request_call. Put received values in profile_updates and, if useful, include provide_contact_details as a secondary move; never replace the call intent with provide_contact_details as the primary move.
 Use proposed_action=none. Once all four call fields are complete, ask once whether the customer can take the call now; a later confirmation separately authorizes request_call_now.
+If the current batch supplies every remaining call field, treat intake as complete for this reply: ask availability now instead of asking whether the contact summary is correct. A contact-summary confirmation belongs to enrollment checkout, not call intake. New call data are not pending confirmations unless the customer corrected a value or the agent had proposed one.
 </current_effect_contract>`;
   }
   if (execution?.next_step !== 'confirm_availability') return '';
@@ -382,6 +393,7 @@ The customer is answering the requested payment-plan choice. For a clear canonic
 const EXECUTION_CONSISTENCY_CHECK = `<execution_consistency_check>
 Before returning AgentATurnProposalV1, make response, move, profile metadata and proposed_action describe the same next step.
 - An accepted or requested call stays primary move=request_call while collecting contact data and while asking availability. provide_contact_details may be secondary, never the primary replacement for that live call intent.
+- For contact_data_purpose=call, when the current batch supplies every remaining call field, ask whether the customer can take the call now. Do not use the checkout contact-summary confirmation. The summary rule below applies only to enrollment checkout.
 - When the current customer message supplies the final missing checkout contact fields, return the complete contact summary confirmation only. Ask whether those data are correct; do not ask for a payment plan in that same turn. A later confirmed payment_confirmation moves to ask_payment_options only when no plan exists; with a durable selected plan and an authorized link effect it moves to request_payment_link plus send_payment_link. A clear answer while awaiting payment_plan moves to select_payment_plan plus send_payment_link in the same turn.
 - If proposed_action=offer_course_bonus, include exactly one new active bonus_offering_code and the exact interest_offering_code. Always include motive {kind, quote} from the current message. It must differ from the paid course and every current bonus code; the response must refer to the same course. Never construct a fourth addition when max_bonus_courses is 3.
 - If proposed_action=send_course_program, keep the action and customer-facing text consistent: write one or two human sentences summarizing what the course teaches from cited authorized facts; the image and PDF carry the detail.

@@ -1,5 +1,5 @@
 import { evaluateNegotiationInvariantsV1, type InvariantStatusV1 } from './negotiation-invariants';
-import { negotiationEvidenceV1, negotiationSemanticTurnV1 } from './negotiation-evidence';
+import { negotiationEvidenceV1, negotiationSemanticTurnV1, usesCurrentModelOwnedNegotiationV1 } from './negotiation-evidence';
 import type { AgentAContextV1 } from '../../botpress-agent/src/schemas/agent-a-brain';
 import { execFileSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
@@ -417,6 +417,21 @@ async function prepareFulfilledBonusPackage(input: {
     .map((code) => byCode.get(code)).filter((item): item is NonNullable<typeof item> => Boolean(item));
   if (!paid || bonuses.length !== 2) throw new Error('GOLDEN_FULFILLED_SETUP_CATALOG_MISSING');
 
+  // The real workflow creates this binding before a promotion can exist for a
+  // legacy Botpress conversation (workspace_id = NULL). Seed the same
+  // invariant before inserting the synthetic accepted offer; otherwise the
+  // database correctly rejects the fixture as an identity mismatch.
+  await db`INSERT INTO conversation_sales_context_states_v1(
+      workspace_id,conversation_id,contact_id,selected_offering_code,selected_payment_plan,
+      stage,awaiting_reply,source_turn_id)
+    VALUES (${identityRow.workspace_id},${identityRow.conversation_id},${identityRow.contact_id},${paid.code},
+      'monthly_12','payment_link_sent','none',${input.setupTurn.turnId})
+    ON CONFLICT (workspace_id,conversation_id) DO UPDATE SET
+      selected_offering_code=EXCLUDED.selected_offering_code,
+      selected_payment_plan=EXCLUDED.selected_payment_plan,
+      stage=EXCLUDED.stage,awaiting_reply=EXCLUDED.awaiting_reply,
+      source_turn_id=EXCLUDED.source_turn_id,updated_at=now()`;
+
   const promotionCode = `golden-review-${randomUUID()}`;
   const [promotion] = await db<Array<{ id: string }>>`
     INSERT INTO promotions(workspace_id,promotion_code,paid_offering_id,channels,active)
@@ -514,16 +529,6 @@ async function prepareFulfilledBonusPackage(input: {
   if (delivery.outcome !== 'sent' || !accessMessages[0]) {
     throw new Error(`GOLDEN_POST_SALE_DELIVERY_FAILED:${delivery.outcome}`);
   }
-  await db`INSERT INTO conversation_sales_context_states_v1(
-      workspace_id,conversation_id,contact_id,selected_offering_code,selected_payment_plan,
-      stage,awaiting_reply,source_turn_id)
-    VALUES (${identityRow.workspace_id},${identityRow.conversation_id},${identityRow.contact_id},${paid.code},
-      'monthly_12','payment_link_sent','none',${input.setupTurn.turnId})
-    ON CONFLICT (workspace_id,conversation_id) DO UPDATE SET
-      selected_offering_code=EXCLUDED.selected_offering_code,
-      selected_payment_plan=EXCLUDED.selected_payment_plan,
-      stage=EXCLUDED.stage,awaiting_reply=EXCLUDED.awaiting_reply,
-      source_turn_id=EXCLUDED.source_turn_id,updated_at=now()`;
   return {
     evidence: {
       fixture_kind: 'controlled_local_paid_and_fulfilled_package',
@@ -858,7 +863,7 @@ live('authority-only Agent A golden baseline through the real workflow', () => {
         }[];
       };
       expect(raw.base_sha).toBe(evaluatedSha);
-      expect(raw.completed_cases).toBe(selectedCases.length);
+      expect(raw.completed_cases).toBe(raw.cases?.length);
       for (const scenario of selectedCases) {
         const saved = raw.cases?.find((candidate) => candidate.scenario?.id === scenario.id);
         expect(saved, `GOLDEN_REUSED_OBSERVATIONS_MISSING:${scenario.id}`).toBeTruthy();
@@ -1062,8 +1067,8 @@ live('authority-only Agent A golden baseline through the real workflow', () => {
           approved: executionStatus === 'executed' ? failures.length === 0 : null,
           execution_status: executionStatus,
           authority: primaryCitation ? [primaryCitation] : [],
-          must: pending.scenario.evaluationMode==='negotiation_invariants'?negotiationSemanticTurnV1(turn,index===pending.scenario.turns.length-1,observation.negotiationFacts?.ladder?.required_price_objection_count===2).must:turn.must,
-          must_not: pending.scenario.evaluationMode==='negotiation_invariants'?negotiationSemanticTurnV1(turn,index===pending.scenario.turns.length-1,observation.negotiationFacts?.ladder?.required_price_objection_count===2).mustNot:turn.mustNot,
+          must: pending.scenario.evaluationMode==='negotiation_invariants'?negotiationSemanticTurnV1(turn,index===pending.scenario.turns.length-1,usesCurrentModelOwnedNegotiationV1(observation.negotiationFacts)).must:turn.must,
+          must_not: pending.scenario.evaluationMode==='negotiation_invariants'?negotiationSemanticTurnV1(turn,index===pending.scenario.turns.length-1,usesCurrentModelOwnedNegotiationV1(observation.negotiationFacts)).mustNot:turn.mustNot,
           response_real: observation.response,
           move: observation.move,
           proposed_action: observation.proposedAction,

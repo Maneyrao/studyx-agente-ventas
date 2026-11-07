@@ -839,6 +839,35 @@ describe('offering list guard: a colon after a canonical name introduces its des
   });
 });
 
+describe('offering descriptions keep natural discourse anchors factual', () => {
+  const canonical = canonicalTruthSetFromOfferingsV1({
+    offerings: [
+      { code: 'foto_celulares', display_name: 'Fotografía con Celulares para Tiendas Online',
+        price_type: 'fixed', price_amount: '360', currency: 'USD', description: 'x', delivery: {} },
+      { code: 'real_estate', display_name: 'Real Estate', price_type: 'fixed', price_amount: '360',
+        currency: 'USD', description: 'x', delivery: {} },
+    ] as never,
+    selected_offering_code: null,
+  });
+
+  it.each([
+    'Tenemos Fotografía con Celulares para Tiendas Online: ahí ves luz, encuadre y edición.',
+    'Tenemos Fotografía con Celulares para Tiendas Online: allí aprendés a crear imágenes para una tienda.',
+    'Tenemos Fotografía con Celulares para Tiendas Online: en ese curso ves cómo fotografiar productos.',
+  ])('accepts a canonical course followed by a natural description: %s', (content) => {
+    expect(enforce(content, canonical).violations.map((violation) => violation.code))
+      .not.toContain('OFFERING_NOT_CANONICAL');
+  });
+
+  it.each([
+    'Tenemos Real Estate Pro: ahí ves captación y cierres.',
+    'Tenemos Fotografía con Celulares para Tiendas Online: ahí ves el curso de Real Estate Pro.',
+  ])('still rejects an invented identity inside the same natural wording: %s', (content) => {
+    expect(enforce(content, canonical).violations.map((violation) => violation.code))
+      .toContain('OFFERING_NOT_CANONICAL');
+  });
+});
+
 describe('offering area membership remains factual without rejecting natural wording', () => {
   const canonical = canonicalTruthSetFromOfferingsV1({
     offerings: [{ code: 'real_estate', display_name: 'Real Estate', price_type: 'fixed', price_amount: '360', currency: 'USD',

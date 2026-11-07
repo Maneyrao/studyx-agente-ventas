@@ -125,6 +125,7 @@ const UNCERTAIN_BENEFIT = /\b(?:no\s+(?:(?:tengo|tenemos)\s+(?:(?:informacion|da
 const OFFERING_CLAIM = /\b(?:(?:studyx\s+)?(?:ofrece(?:mos)?|tenemos|brinda(?:mos)?|dicta(?:mos)?|contamos\s+con|disponemos\s+de)|studyx\s+tiene|pod[eé]s\s+estudiar|te\s+recomiendo)\s+([^.!?\n]+)/giu;
 const GENERIC_CATALOG = /^(?:(?:varias|distintas|muchas|algunas|las|estas|tres)\s+)?(?:opciones|alternativas|areas|formas|planes)\b|^(?:cursos|diplomados)\s*(?:$|disponibles\b)/u;
 const OFFERING_DESCRIPTION = /^(?:todos|todas|ambos|ambas|que|para|con|sin|ideal|donde|porque|si|una\s+opcion|un\s+curso|es|tiene|incluye)\b/u;
+const DESCRIPTION_DISCOURSE_ANCHOR = /^(?:a(?:hi|lli)|en\s+(?:(?:ese|este|el)\s+)?(?:curso|diplomado|programa))\b/u;
 // Second-person / descriptive verbs that open a description after "Curso: …" (accent-folded).
 const DESCRIPTION_VERB_LED = /^(?:te\s+\p{L}+|\d+\b|(?:aprend(?:es|eras)|ve(?:ras|s)|trabaj(?:as|aras)|desarroll(?:as|aras)|domin(?:as|aras)|conoc(?:es|eras)|practic(?:as|aras)|construy(?:es)|construiras|cre(?:as|aras)|manej(?:as|aras)|us(?:as|aras)|disen(?:as|aras)|aplic(?:as|aras)|obtien(?:es)|obtendras|adquier(?:es)|adquiriras|descubr(?:es|iras)|analiz(?:as|aras)|gestion(?:as|aras)|program(?:as|aras)|edit(?:as|aras)|armas|haras|lograras|podras|sabras|tendras|incluy(?:e|en)|cubr(?:e|en)|abarca(?:n)?|ensena(?:n)?|permit(?:e|en)|ayuda(?:n)?|prepara(?:n)?|brinda(?:n)?|ofrece(?:n)?|combina(?:n)?|integra(?:n)?|es|son|sirv(?:e|en)|se)\b)/u;
 const NON_COURSE_OBJECT = /^(?:(?:el|la|un|una|nuestro|nuestra)\s+)?(?:\d+\s+)?(?:pagos?|cuotas?|planes?|chat|soporte|llamadas?|asesoria|acompanamiento|ayuda|informacion|acceso|profesores|clases|certificados?|descuentos?|becas?)\b/u;
@@ -133,13 +134,17 @@ const AREA_MEMBERSHIP = /^(?:que\s+)?(?:justo\s+)?(?:dentro\s+(?:de|del)|(?:como
 const COLLECTIVE_AREA_MEMBERSHIP = /^(?:todos?|todas?)\s+(?:justo\s+)?(?:dentro\s+(?:de|del)|(?:como\s+)?parte\s+de|pertenecientes?\s+a)\s+(?:(?:la|el|nuestra|nuestro)\s+)?(?:(?:area|academia)\s+de\s+)?/u;
 const OFFERING_LIST_SEPARATOR = /^(?:[,;:]\s*(?:(?:y|e|o)\s+)?|(?:y|e|o)\s+)/u;
 
-const COURSE_NOUN_TAIL = /\b(?:curso|diplomado|diplomatura|carrera|programa)\s+(?:de\s+|en\s+)?(.+)$/u;
+const COURSE_NOUN_TAIL = /\b(?<!ese\s)(?<!este\s)(?:curso|diplomado|diplomatura|carrera|programa)\s+(?:de\s+|en\s+)?(.+)$/u;
 const CAPITALIZED_NAME = /\p{Lu}\p{L}+(?:\s+(?:(?:de|del|en|y|para|con)\s+)?\p{Lu}\p{L}+)+/gu;
 
 /** Inside a colon description: course-type nouns and capitalized multi-word names must start with a canonical name. */
 function descriptionNamesUnknownCourse(namedObject: string, after: string, canonicalNames: readonly string[]): boolean {
-  const startsCanonical = (text: string) => canonicalNames.some((name) => text.startsWith(name)
-    && !/\p{L}/u.test(text.slice(name.length, name.length + 1)));
+  const startsCanonical = (text: string) => canonicalNames.some((name) => {
+    if (!text.startsWith(name) || /\p{L}/u.test(text.slice(name.length, name.length + 1))) return false;
+    const remainder = text.slice(name.length);
+    return remainder.length === 0
+      || /^(?:[,;:.!?()]|\s+(?:que|para|con|sin|ideal|donde|porque|si|es|tiene|incluye)\b)/u.test(remainder);
+  });
   const tail = COURSE_NOUN_TAIL.exec(after)?.[1];
   if (tail !== undefined && !startsCanonical(tail.trim())) return true;
   let originalAfter = after;
@@ -232,7 +237,13 @@ function containsUnknownOffering(sentence: string, names: readonly string[], are
       if (remainder.startsWith(':')) {
         const after = remainder.slice(1).trim();
         if (after.length === 0) break;
-        if (OFFERING_DESCRIPTION.test(after) || DESCRIPTION_VERB_LED.test(after)) {
+        const discourseAnchor = after.match(DESCRIPTION_DISCOURSE_ANCHOR)?.[0];
+        const anchoredDescription = discourseAnchor
+          ? after.slice(discourseAnchor.length).trim()
+          : null;
+        if (OFFERING_DESCRIPTION.test(after) || DESCRIPTION_VERB_LED.test(after)
+          || (anchoredDescription !== null
+            && (OFFERING_DESCRIPTION.test(anchoredDescription) || DESCRIPTION_VERB_LED.test(anchoredDescription)))) {
           // A description prefix never exempts the rest: an explicit course noun or a capitalized
           // multi-word name inside it is another course and must be canonical.
           if (descriptionNamesUnknownCourse(namedObject, after, canonicalNames)) return true;

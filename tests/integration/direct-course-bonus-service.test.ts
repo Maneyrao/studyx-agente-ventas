@@ -101,6 +101,13 @@ run('atomic direct bonus service', () => {
     await expectReason({},'motive_price_quote_invalid');
     expect((await db!`SELECT count(*)::int n FROM promotion_offers WHERE conversation_id=${f.v.id}`)[0].n).toBe(0);
   });
+  it('keeps a literal price complaint valid when the same customer message begins with a discount question',async()=>{
+    const f=await fixture(0);
+    const quote='No me hacés un descuento? USD 360 me parece caro.';
+    await db!`UPDATE messages SET content=${quote} WHERE id=${f.source}`;
+    const input={...f.input(),motive:{kind:'price_objection' as const,quote},declared_moves:['price_objection']};
+    expect(await offerWithMotive(db!,input)).toMatchObject({ok:true,offer_version:1});
+  });
   it('REAL TRACE: after the first bonus, "osea me regalas otro curso?" + "dos por uno?" with a clarification move adds nothing',async()=>{
     vi.stubEnv('COURSE_BONUS_MAX_COURSES','3');
     const f=await fixture();
