@@ -1175,4 +1175,17 @@ OWNER_PROMOTION_MODE_REPLAY_CASES_MUTABLE.push({
     englishTurn('que_se_ve', 'me interesa\nque se ve en el curso?'),
   ],
 });
+// 2026-11-09 owner check of prompt v119 (one short real run, no judge): after Emma already spoke the customer
+// greets again (no second introduction), says «no sé, qué me recomendás» (one course, not two) and adds
+// «quizás fotografía» (takes a position, connects value, no automatic either/or question).
+OWNER_PROMOTION_MODE_REPLAY_CASES_MUTABLE.push({
+  id: '99_owner_v119_greeting_no_se_fotografia',
+  title: 'Prompt v119: re-saludo sin presentarse → no sé → fotografía',
+  turns: [
+    englishTurn('redes', 'hola\nme gustaría aprender\nalgo vinculado para redes'),
+    englishTurn('hola_otra_vez', 'hola'),
+    englishTurn('no_se', 'no l ose\nque me recomendai'),
+    englishTurn('fotografia', 'quizas algo vinculado con fotografia'),
+  ],
+});
 export const OWNER_PROMOTION_MODE_REPLAY_CASES: readonly GoldenCaseV1[] = OWNER_PROMOTION_MODE_REPLAY_CASES_MUTABLE;
