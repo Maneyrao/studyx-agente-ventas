@@ -160,7 +160,7 @@ const environment = {
   STUDYX_GOLDEN_PROVIDER_BASE_URL: providerBaseUrl,
   STUDYX_GOLDEN_PROVIDER_MODEL: providerModel,
   STUDYX_GOLDEN_RESULT_STEM: resultStem,
-  ...(process.env.STUDYX_GOLDEN_COMMERCIAL_PLANNING === 'false' ? { STUDYX_GOLDEN_COMMERCIAL_PLANNING: 'false' } : {}),
+  ...(process.env.STUDYX_GOLDEN_COMMERCIAL_PLANNING === 'true' ? { STUDYX_GOLDEN_COMMERCIAL_PLANNING: 'true' } : {}),
   STUDYX_WORKFLOW_REPORT_DIR: 'evals/golden/results/runtime',
   DEEPSEEK_API_KEY: 'managed-by-golden-evaluator',
   BUSINESS_WORKSPACE_SLUG: 'studyx',

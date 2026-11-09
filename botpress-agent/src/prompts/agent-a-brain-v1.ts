@@ -5,7 +5,7 @@ import {
 } from './studyx-agent-a-canonical.generated';
 import { resolveCanonicalPromptIdentityV1 } from './agent-a-identity';
 
-export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v202' as const;
+export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v203' as const;
 
 /**
  * Runtime contract only. The sales behavior lives in the canonical prompt so
@@ -341,7 +341,7 @@ function currentCourseProgramEffectContractV1(context: AgentAContextV1): string 
   const materials = (programs.materials ?? []).filter(item => sendable.includes(item.offering_code))
     .map(item => `${item.offering_code}(${item.has_program_pdf ? 'official programme PDF' : 'manual ficha PDF'}${item.has_image ? ' + course image' : ''})`)
   return `<current_effect_contract kind="course_program">
-Course material can be sent over WhatsApp with ONE action, proposed_action={type:"send_course_program", offering_code}: the official course image and the programme PDF (the official programme when it exists, otherwise the manual ficha) go out together, before your text. Available now: ${materials.join(', ') || '(none left to send)'}.
+Course material can be sent over WhatsApp with ONE action, proposed_action={type:"send_course_program", offering_code}: the programme PDF (the official programme when it exists, otherwise the manual ficha) and then the official course image go out before your text. Available now: ${materials.join(', ') || '(none left to send)'}.
 When you explain the classes, the syllabus (temario) or the content of the course in focus for the first time in this conversation, propose the action in that same turn (use move=ask_course_information, or request_course_program when the customer asks for the programme/temario/PDF). Not on pure price or payment turns, and never more than once per course.
 With the material, write one or two human sentences summarizing what the course teaches, from its authorized description or syllabus facts (cite them in used_fact_ids); the files carry the detail, so never paste the whole syllabus. The backend resolves the files; never write a URL.
 Phrase it as something you are sharing ("te comparto el programa de X") only together with the action; never state as already done what the backend has not delivered.

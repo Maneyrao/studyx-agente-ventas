@@ -4364,7 +4364,7 @@ describe('processInboundTurn hot path', () => {
         document: { kind: 'course_program', media: 'image', offering_code: 'real_estate', file_url: 'https://assets.example.com/material/imagenes/real_estate.png',
           filename: 'Real Estate - Studyx.png', title: 'Real Estate' } },
     ];
-    it('sends the course image, then the PDF as a file, then the text bubbles', async () => {
+    it('sends the PDF as a file, then the course image, then the text bubbles', async () => {
       configuration.whatsappPublicEnabled = true;
       configuration.whatsappCanaryEnabled = false;
       configuration.whatsappAllowedBotPhoneNumberId = 'allowed-business-number-75';
@@ -4372,9 +4372,9 @@ describe('processInboundTurn hot path', () => {
       await runCommittedOutbound({ authorized_egress: parts()[0]!.authorized_egress }, { channel: 'whatsapp',
         message: { ...workflowInput().message, metadata: { bot_phone_number_id: 'allowed-business-number-75' } } },
       { createMessage, outbounds: parts() });
-      expect(createMessage.mock.calls.map(([input]) => (input as { type: string }).type)).toEqual(['image', 'file', 'text', 'text']);
-      expect(createMessage.mock.calls[0]![0]).toMatchObject({ type: 'image', payload: { imageUrl: 'https://assets.example.com/material/imagenes/real_estate.png' } });
-      expect(createMessage.mock.calls[1]![0]).toMatchObject({ type: 'file', payload: { fileUrl: 'https://assets.example.com/programas/real-estate.pdf',
+      expect(createMessage.mock.calls.map(([input]) => (input as { type: string }).type)).toEqual(['file', 'image', 'text', 'text']);
+      expect(createMessage.mock.calls[1]![0]).toMatchObject({ type: 'image', payload: { imageUrl: 'https://assets.example.com/material/imagenes/real_estate.png' } });
+      expect(createMessage.mock.calls[0]![0]).toMatchObject({ type: 'file', payload: { fileUrl: 'https://assets.example.com/programas/real-estate.pdf',
         filename: 'Programa Real Estate - Studyx.pdf', title: 'Real Estate' } });
       expect(createMessage.mock.calls.slice(2).map(([input]) => (input as { payload: { text: string } }).payload.text)).toEqual(['Primero', 'Segundo']);
     });

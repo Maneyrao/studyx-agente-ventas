@@ -309,7 +309,7 @@ interface DecisionRow {
 
 export interface CourseProgramDocumentV1 {
   readonly kind: 'course_program';
-  /** `image`: the course image (sent first); `file`: the programme PDF. */
+  /** `file`: the programme PDF (sent first); `image`: the course image (sent after the PDF). */
   readonly media: 'file' | 'image';
   readonly offering_code: string;
   readonly file_url: string;

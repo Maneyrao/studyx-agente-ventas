@@ -152,6 +152,7 @@ try {
     additiveEventKeys, additiveConversationTagKeys,
     reviewedActionKeys: Object.keys(actionPatch).sort(),
     reviewedConfigurationKeys: configurationPlan.changed ? ['agentACommercialPlanningEnabled'] : [],
+    commercialPlanningEnabled: configurationPlan.configuration.data?.agentACommercialPlanningEnabled ?? null,
     publicationMode: additiveEventKeys.length > 0
       || additiveConversationTagKeys.length > 0
       || Object.keys(actionPatch).length > 0

@@ -3358,9 +3358,9 @@ export const processInboundTurn = new Workflow({
       let lastBotpressMessageId: string | null = null
       let submittedPartsThisRun = 0
 
-      // The official-programme document goes first, then the text bubbles. A document that
-      // is confirmed NOT sent never silences the reply: its text parts still go out.
-      const mediaRank = (part: { document?: { media: 'file' | 'image' } }) => (part.document ? (part.document.media === 'image' ? 2 : 1) : 0)
+      // Owner order (2026-11-09): programme PDF, then the course image, then the text bubbles.
+      // A document that is confirmed NOT sent never silences the reply: its text parts still go out.
+      const mediaRank = (part: { document?: { media: 'file' | 'image' } }) => (part.document ? (part.document.media === 'file' ? 2 : 1) : 0)
       const orderedOutbounds = [...committed.outbounds].sort((a, b) => mediaRank(b) - mediaRank(a) || a.part_index - b.part_index)
       for (const outboundPart of orderedOutbounds) {
         // A replay may contain parts already acknowledged by Botpress. Their

@@ -785,7 +785,7 @@ beforeAll(async () => {
   configuration.apiBaseUrl = apiBaseUrl;
   configuration.agentAPlannerlessV2Enabled = true;
   // A/B on the same SHA: 'false' measures the single-pass writer (byte-identical fallback).
-  configuration.agentACommercialPlanningEnabled = process.env.STUDYX_GOLDEN_COMMERCIAL_PLANNING !== 'false';
+  configuration.agentACommercialPlanningEnabled = process.env.STUDYX_GOLDEN_COMMERCIAL_PLANNING === 'true';
   configuration.agentAAdvisorName = 'Emma';
   expect(model).toBe(AGENT_A_DEEPSEEK_MODEL);
   configuration.agentABrainDeepSeekModel = model;

@@ -61,7 +61,8 @@ const existingConfiguration = {
   },
 };
 
-const commercialPlanningProperty = { type: 'boolean', default: true };
+const commercialPlanningProperty = { type: 'boolean', default: false };
+const legacyCommercialPlanningProperty = { type: 'boolean', default: true };
 const generatedConfiguration = {
   schema: {
     ...existingConfiguration.schema,
@@ -205,7 +206,7 @@ describe('Botpress additive event publication contract', () => {
       configuration: {
         data: {
           ...existingConfiguration.data,
-          agentACommercialPlanningEnabled: true,
+          agentACommercialPlanningEnabled: false,
         },
         schema: generatedConfiguration.schema,
       },
@@ -227,11 +228,11 @@ describe('Botpress additive event publication contract', () => {
     expect(update).not.toHaveProperty('secrets');
   });
 
-  it('is idempotent when the reviewed configuration and true value already exist', () => {
+  it('is idempotent when the reviewed configuration and the default (false) value already exist', () => {
     const remoteConfiguration = {
       data: {
         ...existingConfiguration.data,
-        agentACommercialPlanningEnabled: true,
+        agentACommercialPlanningEnabled: false,
       },
       schema: generatedConfiguration.schema,
     };
@@ -246,7 +247,7 @@ describe('Botpress additive event publication contract', () => {
     })).toEqual({ id: 'bot_123', code: 'compiled-code' });
   });
 
-  it('adds the true data value when the reviewed schema already exists without a stored value', () => {
+  it('adds the default (false) data value when the reviewed schema already exists without a stored value', () => {
     expect(planBotpressReviewedConfigurationUpdate({
       remoteConfiguration: {
         data: existingConfiguration.data,
@@ -255,14 +256,41 @@ describe('Botpress additive event publication contract', () => {
       generatedConfiguration,
     })).toMatchObject({
       changed: true,
-      configuration: { data: { agentACommercialPlanningEnabled: true } },
+      configuration: { data: { agentACommercialPlanningEnabled: false } },
     });
   });
 
-  it.each([
-    ['stored false', {
+  it('turns OFF a planner left ON by the previously reviewed default:true contract (owner 2026-11-09)', () => {
+    const plan = planBotpressReviewedConfigurationUpdate({
       remoteConfiguration: {
+        data: { ...existingConfiguration.data, agentACommercialPlanningEnabled: true },
+        schema: { ...generatedConfiguration.schema, properties: {
+          ...generatedConfiguration.schema.properties, agentACommercialPlanningEnabled: legacyCommercialPlanningProperty } },
+      },
+      generatedConfiguration,
+    });
+    expect(plan).toEqual({
+      changed: true,
+      configuration: {
         data: { ...existingConfiguration.data, agentACommercialPlanningEnabled: false },
+        schema: generatedConfiguration.schema,
+      },
+    });
+  });
+
+  it('keeps an explicit owner flip to true once the current default:false contract is stored', () => {
+    const remoteConfiguration = {
+      data: { ...existingConfiguration.data, agentACommercialPlanningEnabled: true },
+      schema: generatedConfiguration.schema,
+    };
+    expect(planBotpressReviewedConfigurationUpdate({ remoteConfiguration, generatedConfiguration }))
+      .toEqual({ changed: false, configuration: remoteConfiguration });
+  });
+
+  it.each([
+    ['stored non-boolean', {
+      remoteConfiguration: {
+        data: { ...existingConfiguration.data, agentACommercialPlanningEnabled: 'true' },
         schema: generatedConfiguration.schema,
       },
       generatedConfiguration,

@@ -35,9 +35,10 @@ export default defineConfig({
       // Reversible migration: when enabled the complete Brain proposal goes
       // straight to backend authority and skips the conversational planner.
       agentAPlannerlessV2Enabled: z.boolean().default(false),
-      // Model-owned two-pass turn (CommercialTurnPlanV1 then writer). Owner
-      // decision 2026-11-06. Disabling it restores the single-pass writer.
-      agentACommercialPlanningEnabled: z.boolean().default(true),
+      // Model-owned two-pass turn (CommercialTurnPlanV1 then writer), owner
+      // decision 2026-11-06. OFF by default since 2026-11-09 (owner: "v202 sin
+      // planner"): one model call per normal turn. true restores the planner.
+      agentACommercialPlanningEnabled: z.boolean().default(false),
       // Independent emergency brake for the V3 agent loop. The database is
       // the normal rollout control; this bundle flag always wins when true.
       agentAAgentLoopV3KillSwitch: z.boolean().default(false),
