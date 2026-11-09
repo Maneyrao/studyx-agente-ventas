@@ -6,7 +6,7 @@ import ts from 'typescript';
 // Last reviewed commit that changed deployable code (brain v205, prompt v120).
 // Anything committed after it must be docs/evals/tests only (see assertOnlyNonCodeChangesSinceBaseV1), so a release
 // prepared from the branch HEAD runs exactly this code. Re-pin whenever a code file changes.
-export const BOT_RELEASE_BASE_SHA = 'da6ce9b452f4dbeef50d00b30d6475d1fcc66d96';
+export const BOT_RELEASE_BASE_SHA = '9bfd2aee2f81244a0260043a5b2b0e3c843e2825';
 export const BOT_RELEASE_BRAIN_VERSION = 'studyx-agent-a-brain-v205';
 export const BOT_RELEASE_PROMPT_VERSION = 'studyx-agent-a-canonical-v120';
 export const BOT_RELEASE_INSTRUMENTATION_VERSION = 'studyx-release-provenance-v1';
