@@ -635,7 +635,8 @@ async function readDirectCapability(input: {
   if (!row) return {...hidden('unavailable'),enabled:false,max_bonus_courses:max};
   const evidence=await readCourseBonusLadderV1(input,db);
   const ladder: CourseBonusLadderV1 | null = evidence ? {retention_used:evidence.retention_used,
-    previous_turn_asked_price_question:evidence.previous_turn_asked_price_question} : null;
+    previous_turn_asked_price_question:evidence.previous_turn_asked_price_question,
+    price_presented:evidence.price_presented} : null;
   const activeCourses=await db<Array<{code:string;display_name:string;aliases:string[]|null}>>`
     SELECT o.code,o.display_name,ARRAY(SELECT jsonb_array_elements_text(CASE WHEN jsonb_typeof(o.metadata->'aliases')='array'
       THEN o.metadata->'aliases' ELSE '[]'::jsonb END)) aliases

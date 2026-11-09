@@ -18,6 +18,7 @@ import {
 export const CourseBonusLadderV1Schema = z.object({
   retention_used: z.boolean(),
   previous_turn_asked_price_question: z.boolean(),
+  price_presented: z.boolean().optional(),
 }).strict();
 
 // Zui uses Zod 3; construct the ADK mirror locally from the portable constants.

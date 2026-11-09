@@ -81,6 +81,16 @@ describe('validación de la propuesta del turno', () => {
     })).toBeNull();
   });
 
+  // Owner 2026-11-09: authorized commercial argument; never rejected as an unsupported fact.
+  it('acepta el argumento comercial autorizado sobre Instagram y Facebook', () => {
+    expect(validateAgentATurnProposalV1({
+      proposal: proposal({ response: { messages: ['Te cuento de Redes Informáticas. Es de lo que más se pide hoy en negocios que necesitan vender por Instagram y Facebook.'], call_offer: null } }),
+      context: context(),
+      planned_fact_ids: ['offering:redes-informaticas:name:v1'],
+      rejection_id: '00000000-0000-4000-8000-000000000001',
+    })).toBeNull();
+  });
+
   it('rechaza el link temporal mientras falten datos de contacto', () => {
     const rejection = validateAgentATurnProposalV1({
       proposal: proposal({

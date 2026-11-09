@@ -896,3 +896,14 @@ describe('offering area membership remains factual without rejecting natural wor
       .toContain('OFFERING_NOT_CANONICAL');
   });
 });
+
+// Owner 2026-11-09: a discount request is answered with a related bonus course, never a lower price.
+it('rejects a lowered paid price in a bonus reply and keeps the USD 360 one', () => {
+  expect(enforce('Te lo dejo en USD 300 y te sumo Excel Integral sin costo.', CANONICAL).violations.length).toBeGreaterThan(0);
+  expect(enforce('El curso sigue en USD 360.', CANONICAL)).toMatchObject({ violations: [] });
+});
+
+it('keeps the owner-authorized Instagram/Facebook commercial argument', () => {
+  const content = 'Es de lo que más se pide hoy en negocios que necesitan vender por Instagram y Facebook.';
+  expect(enforce(content, CANONICAL)).toMatchObject({ content, violations: [] });
+});

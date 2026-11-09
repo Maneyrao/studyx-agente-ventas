@@ -21,4 +21,6 @@ export function mayOfferCallV1(input: {
 export interface CourseBonusLadderV1 {
   readonly retention_used: boolean;
   readonly previous_turn_asked_price_question: boolean;
+  /** An earlier agent message of this conversation stated the paid course price (fact, not interpretation). */
+  readonly price_presented?: boolean;
 }

@@ -616,7 +616,8 @@ export function authorizeAgentTurnV2(input: {
       has_delivered_bonus: (cap?.delivered_bonus_offerings?.length ?? 0) > 0,
       retention_used: cap?.ladder?.retention_used ?? false,
       purchase_decline_recorded: draftDeclinesPurchaseV1(draftEvidence, batch),
-      previous_turn_asked_price_question: cap?.ladder?.previous_turn_asked_price_question ?? false });
+      previous_turn_asked_price_question: cap?.ladder?.previous_turn_asked_price_question ?? false,
+      price_presented: cap?.ladder?.price_presented ?? false });
     const checkout = isBonusCheckoutV1({ stage: state.stage, awaiting_reply: state.awaiting_reply,
       payment_link_request_pending: state.payment_link_request?.status === 'pending' }, draftEvidence);
     // Owner 2026-11-03: a literal swap of the single offered bonus is not a new
@@ -629,7 +630,7 @@ export function authorizeAgentTurnV2(input: {
     const swap = chosen !== null && proposed.bonus_offering_code === chosen.bonus_offering_code;
     const inCandidates = cap?.bonus_candidates?.some(candidate => candidate.code === proposed.bonus_offering_code) === true;
     const reason = cap?.enabled !== true ? 'bonus_disabled'
-      : checkout ? 'sale_already_closed'
+      : checkout || ['accepted', 'attached'].includes(cap.package_status ?? '') ? 'sale_already_closed'
       : !swap && motiveReason !== null ? 'ladder_step_pending'
       : proposed.bonus_offering_code === capabilityInterestOffering ? 'same_as_paid_course'
       : !swap && !inCandidates && !cap.bonus_offerings.some(o => o.code === proposed.bonus_offering_code) ? 'invalid_offering'

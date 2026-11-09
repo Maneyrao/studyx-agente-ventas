@@ -15,10 +15,14 @@ export const PRICE_QUESTION_ASKED_MEMORY_KEY = 'price_question_asked';
  * - previous_turn_asked_price_question: the latest earlier reply decision of the
  *   conversation recorded the structured price_question_asked memory;
  * - purchase_decline_recorded: this turn's committed memory has the decline with
- *   a quote literally present in the batch.
+ *   a quote literally present in the batch;
+ * - price_presented: an agent message sent before the current turn contains the
+ *   paid course's fixed price amount as a standalone number (fact about Emma's
+ *   own text, never an interpretation of customer text).
  */
 export interface BonusMotiveEvidenceV1 extends CourseBonusLadderV1 {
   readonly purchase_decline_recorded: boolean;
+  readonly price_presented: boolean;
 }
 
 export async function readCourseBonusLadderV1(input: {
@@ -42,8 +46,17 @@ export async function readCourseBonusLadderV1(input: {
       AND v.id=${input.conversation_id}::uuid AND c.id=${input.contact_id}::uuid
   `;
   if (!row) return null;
-  const [current] = await db<Array<{ candidates: Array<{type:string;key:string;value:string;source_quote:string}> | null; retention_used: boolean; asked: boolean }>>`
+  const [current] = await db<Array<{ candidates: Array<{type:string;key:string;value:string;source_quote:string}> | null; retention_used: boolean; asked: boolean; price_presented: boolean }>>`
     SELECT
+      EXISTS(SELECT 1 FROM offerings paid JOIN workspaces pw ON pw.id=paid.workspace_id AND pw.slug=${row.workspace_slug}
+        JOIN messages prior ON prior.conversation_id=${input.conversation_id}::uuid AND prior.contact_id=${input.contact_id}::uuid
+          AND prior.direction='outbound'
+          AND prior.created_at < (SELECT created_at FROM messages WHERE id=${row.source_turn_id}::uuid)
+          AND (NOT EXISTS (SELECT 1 FROM outbound_deliveries known WHERE known.message_id=prior.id)
+            OR EXISTS (SELECT 1 FROM outbound_deliveries sent WHERE sent.message_id=prior.id
+              AND (sent.provider_message_id IS NOT NULL OR sent.state IN ('submitted','delivered'))))
+        WHERE paid.code=${input.selected_offering_code} AND paid.price_type='fixed' AND paid.price_amount IS NOT NULL
+          AND prior.content ~ ('(^|[^0-9.,])' || trim_scale(paid.price_amount)::text || '([^0-9]|$)')) price_presented,
       (SELECT d.memory_candidates FROM agent_decisions d
         WHERE d.turn_id=${row.source_turn_id}::uuid AND d.decision_kind='reply' LIMIT 1) candidates,
       EXISTS(SELECT 1 FROM promotion_offers o JOIN promotion_offer_bonus_offerings b ON b.offer_id=o.id
@@ -67,5 +80,6 @@ export async function readCourseBonusLadderV1(input: {
   const decline = current?.candidates?.some(candidate => candidate.type === 'objection'
     && candidate.key === PURCHASE_DECLINE_MEMORY_KEY && declineQuoteInBatchV1(candidate.source_quote, row.customer_messages)) === true;
   return { retention_used: current?.retention_used === true,
-    previous_turn_asked_price_question: current?.asked === true, purchase_decline_recorded: decline };
+    previous_turn_asked_price_question: current?.asked === true, purchase_decline_recorded: decline,
+    price_presented: current?.price_presented === true };
 }

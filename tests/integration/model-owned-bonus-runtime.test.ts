@@ -86,6 +86,37 @@ run('model-owned bonus at the actual commit and transactional boundaries', () =>
     expect(gifts.map(gift => gift.code)).toEqual(['ingles_2']);
   });
 
+  // Owner 2026-11-09: course clear + price already presented + explicit discount request → first bonus.
+  it.each([
+    ['price presented', 'Introducción al Ecommerce es USD 360 en un pago o 12 cuotas de USD 30.', true],
+    ['price not presented', 'Introducción al Ecommerce te enseña a armar tu tienda desde cero.', false],
+    ['similar number only', 'Son 3600 minutos de práctica.', false],
+  ] as const)('an explicit discount request opens the first bonus only after the price (%s)', async (_label, agentSaid, granted) => {
+    const f = await seedConversationForAgentTurn({ selected_offering_code: paid, first_message: 'quiero ecommerce' });
+    await db!`INSERT INTO messages (conversation_id, contact_id, direction, content, metadata)
+      VALUES (${f.conversation_id}::uuid, ${f.contact_id}::uuid, 'outbound', ${agentSaid}, '{}'::jsonb)`;
+    await db!`UPDATE messages SET content='me hacés un descuento?',created_at=clock_timestamp(),
+      metadata=metadata-'occurred_at_trusted' WHERE id=${f.second_turn_id}::uuid`;
+    const capability = await readCourseBonusCapabilityV1({ workspace_slug: 'studyx', contact_id: f.contact_id,
+      conversation_id: f.conversation_id, channel: 'text', selected_offering_code: paid,
+      source_turn_id: f.second_turn_id }, { db: db! });
+    expect(capability.ladder).toMatchObject({ price_presented: granted });
+    const ask = proposal();
+    ask.move = { schema_version: 1, move: 'explicit_promotion_request', secondary_moves: [], vetoes: [], confidence: 1 };
+    ask.proposed_action = { type: 'offer_course_bonus', motive: { kind: 'better_promotion_request', quote: 'me hacés un descuento?' },
+      interest_offering_code: paid, bonus_offering_code: bonus };
+    ask.memory_candidates = [];
+    const commit = commitAgentDecision({ turn_id: f.second_turn_id, trace_id: randomUUID(),
+      supports_multi_outbound: true, agent_turn_v2: { schema_version: 2 as const, proposal: ask },
+      decision: f.placeholderDecision as never, model: f.model as never });
+    // Without the price, a copy that names the gift goes back for repair; the package stays empty.
+    if (granted) expect((await commit).status).toBe('committed');
+    else await expect(commit).rejects.toThrow('AGENT_TURN_V2_REJECTED');
+    const gifts = await db!<Array<{ code: string }>>`SELECT b.offering_code_snapshot code FROM promotion_offer_bonus_offerings b
+      JOIN promotion_offers o ON o.id=b.offer_id WHERE o.conversation_id=${f.conversation_id}::uuid`;
+    expect(gifts.map(gift => gift.code)).toEqual(granted ? [bonus] : []);
+  });
+
   it('a first literal objection with no model memory grants no permission, whatever the wording', async () => {
     const f = await seedConversationForAgentTurn({ selected_offering_code: null, first_message: 'ingles' });
     await db!`UPDATE messages SET content='me parece caro',created_at=clock_timestamp(),
@@ -93,7 +124,7 @@ run('model-owned bonus at the actual commit and transactional boundaries', () =>
     const capability = await readCourseBonusCapabilityV1({ workspace_slug: 'studyx', contact_id: f.contact_id,
       conversation_id: f.conversation_id, channel: 'text', selected_offering_code: null,
       source_turn_id: f.second_turn_id }, { db: db! });
-    expect(capability.ladder).toEqual({ retention_used: false, previous_turn_asked_price_question: false });
+    expect(capability.ladder).toEqual({ retention_used: false, previous_turn_asked_price_question: false, price_presented: false });
   });
 
   it.each([

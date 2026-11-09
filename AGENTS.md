@@ -267,3 +267,12 @@ Manual, 57 fichas e `indice_para_el_agente.csv`. Es conocimiento para el modelo,
 - Cuando el PDF es la ficha del manual (sin programa oficial), Emma la llama «ficha» o «detalle de contenidos», nunca «programa completo» (brain v204).
 - **Naturalidad (OK literal del dueño 2026-11-09, prompt canónico v119):** tres correcciones en el prompt de autoridad: no volver a presentarse si Emma ya habló (un nuevo saludo del cliente no es un primer contacto); ante «no sé, qué me recomendás» recomendar un solo curso; no cerrar cada intervención con una pregunta por reflejo. No se duplicaron reglas existentes. El tiempo de agrupación de mensajes no cambia hasta medirlo en WhatsApp real.
 - El manual (`Manual_Capacitacion_Studyx_2026.pdf`) es referencia comercial y de producto; no reemplaza este archivo ni los documentos de autoridad, y no habilita cursos: el catálogo operativo decide qué se vende.
+
+## Correcciones adicionales del dueño (2026-11-09, prompt v120 / brain v205)
+
+- «No sé, qué me recomiendas»: un solo curso, tentativo si hace falta; sin dos caminos ni pregunta de elección; pregunta diferenciadora sólo si no hay información para elegir ninguno. Líneas 42/46/48/211 del prompt de autoridad alineadas. Una recomendación no es selección confirmada.
+- Re-saludo: no repetir ni reformular la pregunta ignorada en ese turno; sin regex ni plantillas en el backend.
+- Preguntas con propósito (cambian la recomendación, resuelven una objeción o habilitan el paso siguiente); sin reabrir dos caminos tras recomendar.
+- Tuteo estricto, sin `¿`/`¡`, sin reescritor en el backend.
+- Argumento comercial autorizado: «es de lo que más se pide hoy en negocios que necesitan vender por Instagram y Facebook» (Publicidad en Redes Sociales o formación vinculada), nunca como garantía de empleo o ingresos. Ningún control factual lo rechaza (tests de regresión).
+- Pedido explícito de descuento/rebaja/promoción/oferta con curso principal claro y precio ya presentado → primera bonificación (`offer_course_bonus`, `move=explicit_promotion_request`, `motive.kind=better_promotion_request`, cita literal). El modelo interpreta el pedido; el backend valida el hecho `ladder.price_presented` = un mensaje saliente enviado antes del turno contiene el importe fijo del curso pago como número aislado. Se conservan: máximo tres, uno por turno, afinidad, curso activo, nunca tras aceptar/link/pago/cierre (la política ahora también corta con paquete `accepted`/`attached`), nunca ante consulta de precio/cuotas/pago, nada sin curso principal ni candidatos.

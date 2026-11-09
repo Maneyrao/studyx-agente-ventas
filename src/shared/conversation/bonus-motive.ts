@@ -61,6 +61,8 @@ export function validateBonusMotiveV1(input: {
   readonly purchase_decline_recorded: boolean;
   /** The previous agent turn declared, structurally, that it asked the price question. */
   readonly previous_turn_asked_price_question: boolean;
+  /** Persisted fact: an earlier agent message of this conversation stated the paid course price. */
+  readonly price_presented?: boolean;
 }): BonusMotiveRejectionV1 | null {
   const { motive } = input;
   if (!motive || !motive.quote.trim()) return 'motive_missing';
@@ -81,7 +83,10 @@ export function validateBonusMotiveV1(input: {
     case 'purchase_decline':
       return input.retention_used || !input.purchase_decline_recorded ? 'motive_retention_unavailable' : null;
     case 'promotion_rejection':
-    case 'better_promotion_request':
       return input.has_delivered_bonus ? null : 'motive_needs_delivered_offer';
+    case 'better_promotion_request':
+      // Owner 2026-11-09: once the paid course price was presented, an explicit
+      // discount/promotion request is enough for the first bonus.
+      return input.has_delivered_bonus || input.price_presented === true ? null : 'motive_needs_delivered_offer';
   }
 }

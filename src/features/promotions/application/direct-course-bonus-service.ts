@@ -313,7 +313,8 @@ export async function offerDirectCourseBonusV1(db: DbClient, input: OfferDirectC
       const motiveReason=validateBonusMotiveV1({motive:input.motive,moves:input.declared_moves ?? [],batch:currentBatch,
         has_delivered_bonus:offered.length>0,retention_used:evidence?.retention_used ?? false,
         purchase_decline_recorded:evidence?.purchase_decline_recorded ?? false,
-        previous_turn_asked_price_question:evidence?.previous_turn_asked_price_question ?? false});
+        previous_turn_asked_price_question:evidence?.previous_turn_asked_price_question ?? false,
+        price_presented:evidence?.price_presented ?? false});
       if (motiveReason) throw new Rejection('ladder_step_pending',motiveReason);
     }
     if (!swap && offer && offer.offer_version>=limit) reject('bonus_limit_reached');

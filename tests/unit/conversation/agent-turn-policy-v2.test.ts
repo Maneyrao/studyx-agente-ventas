@@ -785,7 +785,7 @@ describe('plannerless Agent A authority', () => {
     const p = bonusProposal({ move: MOVE('explicit_promotion_request'), kind: 'better_promotion_request',
       quote: 'me bonificas Community Manager?', code: 'community_manager' });
     expect(run('me bonificas Community Manager?', p, ruleCap(true))).toMatchObject({ ok: true, action: { type: 'offer_course_bonus', bonus_offering_code: 'community_manager' } });
-    // First bonus: a promotion request without price in between goes back to the price question.
+    // First bonus: a promotion request before the price was presented goes back to the price question.
     expect(run('me bonificas Community Manager?', p, ruleCap(false))).toMatchObject(motiveRejected);
     // Same limits: an inactive/unauthorized course is still rejected.
     expect(run('me bonificas Community Manager?', p, ruleCap(true, { bonus_candidates: [] }))).toMatchObject(rejectedBy('invalid_offering'));
@@ -840,6 +840,71 @@ describe('plannerless Agent A authority', () => {
         display_name: 'Excel Integral', position: 1, source: 'customer_request', replaces_offering_code: 'camaras_seguridad', replaces_display_name: 'Cámaras' } });
     expect(run('cambiame cámaras por excel integral', bonusProposal({ move: MOVE('ask_course_information'), quote: 'zzz' }), swapCap))
       .toMatchObject({ ok: true, action: { type: 'offer_course_bonus' } });
+  });
+  // Owner 2026-11-09: with the paid course clear and its price already presented, an explicit
+  // discount/promotion request in the current message is enough for the first bonus. The model
+  // interprets the request (move + motive); the backend checks facts, permissions and limits.
+  describe('explicit discount request after the price was presented', () => {
+    const priced = (delivered: boolean, extra: Record<string, unknown> = {}) =>
+      ruleCap(delivered, { ladder: { retention_used: false, previous_turn_asked_price_question: false, price_presented: true }, ...extra });
+    const ask = (quote: string, code = 'excel_integral') => bonusProposal({ move: MOVE('explicit_promotion_request'),
+      kind: 'better_promotion_request', quote, code });
+    for (const request of ['me hacés un descuento?', 'podés bajar el precio?', 'Tenés alguna promoción?', 'no tenés alguna oferta?'])
+      it(`"${request}" with course and price clear authorizes the first bonus`, () => {
+        expect(run(request, ask(request), priced(false))).toMatchObject({ ok: true, action: { type: 'offer_course_bonus',
+          bonus_offering_code: 'excel_integral', interest_offering_code: 'redes_informaticas',
+          motive: { kind: 'better_promotion_request', quote: request } } });
+      });
+    it('"podés bajar el precio?" adds a related course and never changes the paid course or its price', () => {
+      // The effect carries no amount: the paid course stays the same; a lowered amount in the copy is
+      // rejected at egress by enforceCommercialTruthV1 (commercial-truth-guard.test.ts).
+      const result = run('podés bajar el precio?', ask('podés bajar el precio?'), priced(false));
+      expect(result).toMatchObject({ ok: true, action: { type: 'offer_course_bonus', interest_offering_code: 'redes_informaticas' } });
+      expect(JSON.stringify((result as { action: unknown }).action)).not.toMatch(/price|amount|discount/u);
+    });
+    it('the same request before the price was presented does not open the first bonus', () => {
+      expect(run('me hacés un descuento?', ask('me hacés un descuento?'), ruleCap(false))).toMatchObject(motiveRejected);
+    });
+    it('a bare price question ("cuánto cuesta?") is never a bonus motive', () => {
+      // Declared as a course question, or even mislabeled as a promotion request before the price was presented.
+      expect(run('cuánto cuesta?', bonusProposal({ move: MOVE('ask_course_information'), kind: 'better_promotion_request',
+        quote: 'cuánto cuesta?' }), priced(false))).toMatchObject(motiveRejected);
+      expect(run('cuánto cuesta?', ask('cuánto cuesta?'), ruleCap(false))).toMatchObject(motiveRejected);
+      expect(run('cuánto cuesta?', bonusProposal({ quote: 'cuánto cuesta?' }), priced(false))).toMatchObject(motiveRejected);
+    });
+    it('a payment question ("cómo se paga?") is never a bonus motive', () => {
+      expect(run('cómo se paga?', bonusProposal({ move: MOVE('ask_payment_options', ['explicit_promotion_request']),
+        kind: 'better_promotion_request', quote: 'cómo se paga?' }), priced(false))).toMatchObject(motiveRejected);
+    });
+    it('without a clear paid course the promotion is not materialized yet', () => {
+      expect(authorize({ state: state({ selected_offering_code: null }), customerText: 'me hacés un descuento?',
+        proposal: ask('me hacés un descuento?'), courseBonus: priced(false, { interest_offering_code: null }) as never }))
+        .not.toMatchObject({ ok: true, action: { type: 'offer_course_bonus' } });
+    });
+    it('without authorized candidates there is no bonus', () => {
+      expect(run('me hacés un descuento?', ask('me hacés un descuento?'), priced(false, { bonus_candidates: [] })))
+        .toMatchObject(rejectedBy('invalid_offering'));
+    });
+    it('never after acceptance, the link, a payment or a close', () => {
+      expect(run('me hacés un descuento?', ask('me hacés un descuento?', 'community_manager'),
+        priced(true, { status: 'accepted', package_status: 'accepted' }))).toMatchObject(rejectedBy('sale_already_closed'));
+      for (const stage of ['payment_link_sent', 'closed'] as const)
+        expect(authorize({ state: state({ selected_offering_code: 'redes_informaticas', stage }), customerText: 'me hacés un descuento?',
+          proposal: ask('me hacés un descuento?'), courseBonus: priced(false) as never })).toMatchObject(rejectedBy('sale_already_closed'));
+    });
+    it('second and third bonus each need a new valid request in the current message; never a fourth', () => {
+      const one = [{ code: 'camaras_seguridad', display_name: 'Cámaras', position: 1 }];
+      const two = [...one, { code: 'excel_integral', display_name: 'Excel Integral', position: 2 }];
+      const three = [...two, { code: 'c3', display_name: 'C3', position: 3 }];
+      // A reply without a motive ("ok") does not add the next course.
+      expect(run('ok', ask('me hacés un descuento?', 'community_manager'), priced(true))).toMatchObject(motiveRejected);
+      expect(run('y otro descuento más?', ask('y otro descuento más?', 'community_manager'),
+        priced(true, { bonus_offerings: one, delivered_bonus_offerings: one }))).toMatchObject({ ok: true, action: { type: 'offer_course_bonus' } });
+      expect(run('no me podés mejorar algo?', ask('no me podés mejorar algo?', 'community_manager'),
+        priced(true, { bonus_offerings: two, delivered_bonus_offerings: two }))).toMatchObject({ ok: true, action: { type: 'offer_course_bonus' } });
+      expect(run('dale, otra promo', ask('dale, otra promo', 'community_manager'),
+        priced(true, { bonus_offerings: three, delivered_bonus_offerings: three }))).toMatchObject(rejectedBy('bonus_limit_reached'));
+    });
   });
   it('replaces a stale course before handing an exact current course to the call', () => {
     const result = authorizeAgentTurnV2({
