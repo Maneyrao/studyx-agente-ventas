@@ -4378,6 +4378,23 @@ describe('processInboundTurn hot path', () => {
         filename: 'Programa Real Estate - Studyx.pdf', title: 'Real Estate' } });
       expect(createMessage.mock.calls.slice(2).map(([input]) => (input as { payload: { text: string } }).payload.text)).toEqual(['Primero', 'Segundo']);
     });
+    it('stops WhatsApp typing presence before the first outbound part, with the planner off (owner 2026-11-09)', async () => {
+      configuration.whatsappPublicEnabled = true;
+      configuration.whatsappCanaryEnabled = false;
+      configuration.whatsappAllowedBotPhoneNumberId = 'allowed-business-number-75';
+      configuration.agentACommercialPlanningEnabled = false;
+      const startTyping = vi.spyOn(runtimeActions.whatsapp, 'startTypingIndicator');
+      const stopTyping = vi.spyOn(runtimeActions.whatsapp, 'stopTypingIndicator');
+      const createMessage = vi.fn((input: Record<string, unknown>) => Promise.resolve({ message: { id: `bp-${String(input.type)}-${Math.random()}` } }));
+      await runCommittedOutbound({ authorized_egress: parts()[0]!.authorized_egress }, { channel: 'whatsapp',
+        message: { ...workflowInput().message, metadata: { bot_phone_number_id: 'allowed-business-number-75' } } },
+      { createMessage, outbounds: parts() });
+      expect(createMessage.mock.calls.map(([input]) => (input as { type: string }).type)).toEqual(['file', 'image', 'text', 'text']);
+      expect(startTyping).toHaveBeenCalledTimes(1);
+      expect(stopTyping).toHaveBeenCalledTimes(1);
+      expect(startTyping.mock.invocationCallOrder[0]).toBeLessThan(createMessage.mock.invocationCallOrder[0]!);
+      expect(stopTyping.mock.invocationCallOrder[0]).toBeLessThan(createMessage.mock.invocationCallOrder[0]!);
+    });
     it('on a channel without file support the document is reported failed (never sent) and the text bubbles still go out', async () => {
       const createMessage = vi.fn().mockResolvedValueOnce({ message: { id: 'bp-1' } }).mockResolvedValueOnce({ message: { id: 'bp-2' } });
       await runCommittedOutbound({ authorized_egress: parts()[0]!.authorized_egress }, { channel: 'emulator' }, { createMessage, outbounds: parts() });
