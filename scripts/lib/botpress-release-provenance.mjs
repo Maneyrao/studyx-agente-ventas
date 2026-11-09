@@ -3,12 +3,12 @@ import { readFileSync, readdirSync, readlinkSync } from 'node:fs';
 import path from 'node:path';
 import ts from 'typescript';
 
-// Last reviewed commit that changed deployable code (brain v203, prompt v118).
+// Last reviewed commit that changed deployable code (brain v204, prompt v119).
 // Anything committed after it must be docs/evals/tests only (see assertOnlyNonCodeChangesSinceBaseV1), so a release
 // prepared from the branch HEAD runs exactly this code. Re-pin whenever a code file changes.
 export const BOT_RELEASE_BASE_SHA = 'f9370dc64a0c1ba1a38963c058a0e0a69c42d41e';
-export const BOT_RELEASE_BRAIN_VERSION = 'studyx-agent-a-brain-v203';
-export const BOT_RELEASE_PROMPT_VERSION = 'studyx-agent-a-canonical-v118';
+export const BOT_RELEASE_BRAIN_VERSION = 'studyx-agent-a-brain-v204';
+export const BOT_RELEASE_PROMPT_VERSION = 'studyx-agent-a-canonical-v119';
 export const BOT_RELEASE_INSTRUMENTATION_VERSION = 'studyx-release-provenance-v1';
 export const BOT_RELEASE_SOURCE_PATHS = Object.freeze([
   'botpress-agent/src/lib/observability/persist-turn-evidence.ts',

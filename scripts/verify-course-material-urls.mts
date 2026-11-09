@@ -4,6 +4,7 @@
  * backend. Run after staging + deploy (owner 2026-11-09: no 404 attachments).
  *
  *   npx tsx scripts/verify-course-material-urls.mts https://studyx-agente-ventas.vercel.app
+ *   npx tsx scripts/verify-course-material-urls.mts http://127.0.0.1:3000   (local `next start` of the build)
  *
  * Read-only: GET requests to public assets. Exit 1 on any failure.
  */
@@ -14,15 +15,19 @@ import {
 } from '../src/shared/catalog/course-programs.ts';
 
 const baseUrl = process.argv[2];
-if (!baseUrl || !/^https:\/\//u.test(baseUrl)) {
-  console.error('USAGE: npx tsx scripts/verify-course-material-urls.mts <https-base-url>');
+const localBase = /^http:\/\/(?:127\.0\.0\.1|localhost)(?::\d+)?$/u.test(baseUrl ?? '');
+if (!baseUrl || (!/^https:\/\//u.test(baseUrl) && !localBase)) {
+  console.error('USAGE: npx tsx scripts/verify-course-material-urls.mts <https-base-url|http://127.0.0.1:port>');
   process.exit(2);
 }
-const env = { STUDYX_PUBLIC_ASSET_BASE_URL: baseUrl };
+// The backend only builds https URLs; a local server is checked on the same registry paths.
+const placeholder = 'https://material.invalid';
+const env = { STUDYX_PUBLIC_ASSET_BASE_URL: localBase ? placeholder : baseUrl };
+const served = (url: string | null) => (url && localBase ? baseUrl + url.slice(placeholder.length) : url);
 
 const checks = [...COURSE_PROGRAM_ASSETS_V1.keys()].flatMap((code) => [
-  { code, kind: 'pdf', url: courseProgramUrlV1(code, env), type: 'application/pdf' },
-  { code, kind: 'image', url: courseProgramImageUrlV1(code, env), type: 'image/png' },
+  { code, kind: 'pdf', url: served(courseProgramUrlV1(code, env)), type: 'application/pdf' },
+  { code, kind: 'image', url: served(courseProgramImageUrlV1(code, env)), type: 'image/png' },
 ]);
 
 const failures: string[] = [];

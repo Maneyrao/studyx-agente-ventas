@@ -5,7 +5,7 @@ import {
 } from './studyx-agent-a-canonical.generated';
 import { resolveCanonicalPromptIdentityV1 } from './agent-a-identity';
 
-export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v203' as const;
+export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v204' as const;
 
 /**
  * Runtime contract only. The sales behavior lives in the canonical prompt so
@@ -245,7 +245,7 @@ Do not claim a discount, promotion, gift, approval, income or result. Preserve t
   const programSendReason = rejection.rejections.map(reason => reason.subject).find(subject => subject.startsWith('program_send_not_executed'))?.split(':')[1] ?? 'unavailable'
   const programSendRepair = repairsProgramSend && programSendReason !== 'not_proposed' ? `
 For program_send_not_executed, the programme PDF was NOT sent in this turn (${programSendReason}).
-Remove every sentence saying you are sending, sharing, re-sending or attaching it now, including "te lo comparto otra vez" and "te lo mando de nuevo". ${programSendReason === 'already_sent' ? 'It was already delivered earlier in this chat and it is not sent twice: say so ("el programa te lo envié más arriba en este chat"), point to that earlier message and offer to go through it together.' : 'There is no PDF file for this course: say you do not have the programme file and offer the information you do have.'} Use proposed_action=none.` : ''
+Remove every sentence saying you are sending, sharing, re-sending or attaching it now, including "te lo comparto otra vez" and "te lo mando de nuevo". ${programSendReason === 'already_sent' ? 'It was already delivered earlier in this chat and it is not sent twice: say so, naming the file as it was sent (the programme, or the ficha/detalle de contenidos when it was a manual ficha), point to that earlier message and offer to go through it together.' : 'There is no PDF file for this course: say you do not have the programme file and offer the information you do have.'} Use proposed_action=none.` : ''
   const programNotProposed = programSendReason === 'not_proposed' || rejection.rejections.some(reason => reason.code === 'PROGRAM_SEND_REQUIRED')
   const programRequiredRepair = programNotProposed ? `
 For PROGRAM_SEND_REQUIRED or program_send_not_executed:not_proposed, the course material IS available and was not sent yet: keep your short summary of what the course teaches, say you are sharing the full programme, and set proposed_action={type:"send_course_program", offering_code} for the course in focus. Never say you do not have the file.` : ''
@@ -344,7 +344,7 @@ function currentCourseProgramEffectContractV1(context: AgentAContextV1): string 
 Course material can be sent over WhatsApp with ONE action, proposed_action={type:"send_course_program", offering_code}: the programme PDF (the official programme when it exists, otherwise the manual ficha) and then the official course image go out before your text. Available now: ${materials.join(', ') || '(none left to send)'}.
 When you explain the classes, the syllabus (temario) or the content of the course in focus for the first time in this conversation, propose the action in that same turn (use move=ask_course_information, or request_course_program when the customer asks for the programme/temario/PDF). Not on pure price or payment turns, and never more than once per course.
 With the material, write one or two human sentences summarizing what the course teaches, from its authorized description or syllabus facts (cite them in used_fact_ids); the files carry the detail, so never paste the whole syllabus. The backend resolves the files; never write a URL.
-Phrase it as something you are sharing ("te comparto el programa de X") only together with the action; never state as already done what the backend has not delivered.
+Phrase it as something you are sharing only together with the action; never state as already done what the backend has not delivered. Name the file by what it is: an official programme PDF is "el programa"; a manual ficha PDF is "la ficha" or "el detalle de contenidos", never "el programa" or "el programa completo".
 A course that is not in the list above has no material available: say naturally that you do not have the file for it and offer the information you do have; never say you are sending it, and do not propose the action.
 Already delivered in this conversation: ${programs.sent_offering_codes.join(', ') || 'none'}. For those, say naturally that you already sent it (more arriba en este chat) and offer to go over anything in it; do not propose the action again.
 </current_effect_contract>`

@@ -29,7 +29,7 @@ describe('Agent A canonical sales prompt authority', () => {
     expect(`## Anexo técnico\n${annex}`).toBe(TECHNICAL_ANNEX);
   });
 
-  it('keeps both generated modules byte-identical to the canonical source at v118', () => {
+  it('keeps both generated modules byte-identical to the canonical source at v119', () => {
     const prompt = readFileSync(PROMPT_PATH, 'utf8');
     const generated = GENERATED_PATHS.map((path) => readFileSync(path, 'utf8'));
 
@@ -38,7 +38,7 @@ describe('Agent A canonical sales prompt authority', () => {
       `export const STUDYX_AGENT_A_CANONICAL_PROMPT = ${JSON.stringify(prompt)} as const;`,
     );
     expect(generated[0]).toContain(
-      "export const STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION = 'studyx-agent-a-canonical-v118' as const;",
+      "export const STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION = 'studyx-agent-a-canonical-v119' as const;",
     );
   });
 
@@ -53,13 +53,22 @@ describe('Agent A canonical sales prompt authority', () => {
   });
 });
 
-describe('Agent A canonical prompt v118 (Gabi manual integration)', () => {
+describe('Agent A canonical prompt v119 (Gabi manual integration)', () => {
   const prompt = readFileSync(PROMPT_PATH, 'utf8');
   const authority = readFileSync(AUTHORITY_PATH, 'utf8');
 
   it('mentions no 699, no scholarship and no inverted marks outside the rule that forbids them', () => {
     expect(authority).not.toMatch(/\b699\b|beca/iu);
     expect(authority.replace(/`¿` ni `¡`/u, '')).not.toMatch(/[¡¿]/u);
+  });
+
+  it('carries the owner-authorized 2026-11-09 natural turn fixes once each', () => {
+    for (const phrase of ['Un nuevo saludo del cliente no convierte la conversación en un primer contacto',
+      'Si dice que no sabe y pide una recomendación, toma posición: recomienda un solo curso',
+      'No cierres cada intervención con una pregunta por reflejo']) {
+      expect(authority.split(phrase)).toHaveLength(2);
+      expect(prompt.split(phrase)).toHaveLength(2);
+    }
   });
 
   it('speaks with tú, never voseo, in the text it teaches', () => {
@@ -126,7 +135,7 @@ describe('Agent A canonical prompt v118 (Gabi manual integration)', () => {
 
   it('pins the canonical source in the generator', () => {
     const generator = readFileSync('scripts/generate-agent-a-prompt-module.mjs', 'utf8');
-    expect(generator).toContain('studyx-agent-a-canonical-v118');
+    expect(generator).toContain('studyx-agent-a-canonical-v119');
     expect(generator).toContain(`lineCount !== ${prompt.match(/\n/gu)!.length}`);
   });
 

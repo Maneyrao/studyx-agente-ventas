@@ -68,3 +68,4 @@ artifacts/runs/
 
 # Official programme PDFs (170 MB): staged at deploy by scripts/stage-course-programs.mjs
 /public/programas/
+/public/material/
