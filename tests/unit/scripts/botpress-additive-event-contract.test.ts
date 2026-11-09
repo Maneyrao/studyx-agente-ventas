@@ -276,6 +276,9 @@ describe('Botpress additive event publication contract', () => {
         schema: generatedConfiguration.schema,
       },
     });
+    expect(buildBotpressAdditiveEventUpdate({
+      botId: 'bot_123', code: 'compiled-code', eventPatch: {}, configurationPlan: plan,
+    })).toEqual({ id: 'bot_123', code: 'compiled-code', configuration: plan.configuration });
   });
 
   it('keeps an explicit owner flip to true once the current default:false contract is stored', () => {
