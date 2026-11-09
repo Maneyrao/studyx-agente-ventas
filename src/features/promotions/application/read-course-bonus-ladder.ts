@@ -16,9 +16,9 @@ export const PRICE_QUESTION_ASKED_MEMORY_KEY = 'price_question_asked';
  *   conversation recorded the structured price_question_asked memory;
  * - purchase_decline_recorded: this turn's committed memory has the decline with
  *   a quote literally present in the batch;
- * - price_presented: an agent message sent before the current turn contains the
- *   paid course's fixed price amount as a standalone number (fact about Emma's
- *   own text, never an interpretation of customer text).
+ * - price_presented: a delivered agent message sent before the current turn states the
+ *   paid course's fixed amount next to a currency marker (USD/US$/$/dólares); a fact
+ *   about Emma's own text, never an interpretation of customer text.
  */
 export interface BonusMotiveEvidenceV1 extends CourseBonusLadderV1 {
   readonly purchase_decline_recorded: boolean;
@@ -56,7 +56,8 @@ export async function readCourseBonusLadderV1(input: {
             OR EXISTS (SELECT 1 FROM outbound_deliveries sent WHERE sent.message_id=prior.id
               AND (sent.provider_message_id IS NOT NULL OR sent.state IN ('submitted','delivered'))))
         WHERE paid.code=${input.selected_offering_code} AND paid.price_type='fixed' AND paid.price_amount IS NOT NULL
-          AND prior.content ~ ('(^|[^0-9.,])' || trim_scale(paid.price_amount)::text || '([^0-9]|$)')) price_presented,
+          AND prior.content ~* ('(usd|us\\$|\\$)\\s*' || replace(trim_scale(paid.price_amount)::text, '.', '\\.') || '([^0-9.,]|[.,]([^0-9]|$)|$)'
+            || '|(^|[^0-9.,])' || replace(trim_scale(paid.price_amount)::text, '.', '\\.') || '\\s*(usd|d(o|ó)lares)')) price_presented,
       (SELECT d.memory_candidates FROM agent_decisions d
         WHERE d.turn_id=${row.source_turn_id}::uuid AND d.decision_kind='reply' LIMIT 1) candidates,
       EXISTS(SELECT 1 FROM promotion_offers o JOIN promotion_offer_bonus_offerings b ON b.offer_id=o.id

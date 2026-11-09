@@ -865,8 +865,9 @@ describe('plannerless Agent A authority', () => {
     it('the same request before the price was presented does not open the first bonus', () => {
       expect(run('me hacés un descuento?', ask('me hacés un descuento?'), ruleCap(false))).toMatchObject(motiveRejected);
     });
-    it('a bare price question ("cuánto cuesta?") is never a bonus motive', () => {
-      // Declared as a course question, or even mislabeled as a promotion request before the price was presented.
+    it('a bare price question ("cuánto cuesta?") declared as such, or before the price, is not a bonus motive', () => {
+      // Model-owned risk (owner: no commercial regex in the backend): once the price was presented, a question
+      // the model MISLABELS as explicit_promotion_request is not detected here; evals cover the labeling.
       expect(run('cuánto cuesta?', bonusProposal({ move: MOVE('ask_course_information'), kind: 'better_promotion_request',
         quote: 'cuánto cuesta?' }), priced(false))).toMatchObject(motiveRejected);
       expect(run('cuánto cuesta?', ask('cuánto cuesta?'), ruleCap(false))).toMatchObject(motiveRejected);

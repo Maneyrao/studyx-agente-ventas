@@ -375,7 +375,7 @@ run('atomic direct bonus service', () => {
     const cap=await readCourseBonusCapabilityV1({workspace_slug:'studyx',contact_id:f.contact_id,conversation_id:f.conversation_id,
       channel:'text',selected_offering_code:scenario==='interest_current'?null:course,source_turn_id:f.second_turn_id},{db:db!});
     // The objection committed on the first turn is not evidence: the ledger only carries retention and the price-question flag.
-    expect(cap.ladder).toEqual({retention_used:false,previous_turn_asked_price_question:false});
+    expect(cap.ladder).toEqual({retention_used:false,previous_turn_asked_price_question:false,price_presented:false});
     const id=randomUUID();
     expect(await offerWithMotive(db!,{workspace_id:f.workspace_id,contact_id:f.contact_id,conversation_id:f.conversation_id,
       paid_offering_code:course,source_turn_id:f.second_turn_id,expected_offer_version:0,

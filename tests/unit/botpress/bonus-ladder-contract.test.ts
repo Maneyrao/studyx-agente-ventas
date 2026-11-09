@@ -19,6 +19,8 @@ describe('Botpress course bonus permission contract', () => {
   it.each([
     { retention_used: false, previous_turn_asked_price_question: false },
     { retention_used: true, previous_turn_asked_price_question: true },
+    { retention_used: false, previous_turn_asked_price_question: false, price_presented: true },
+    { retention_used: false, previous_turn_asked_price_question: false, price_presented: false },
   ])('preserves shared committed facts at both strict boundaries (%j)', ladder => {
     expect(CourseBonusLadderV1Schema.parse(ladder)).toEqual(ladder);
     for (const schema of [
@@ -45,6 +47,7 @@ describe('Botpress course bonus permission contract', () => {
       { required_price_objection_count: 2 },
       { instant_trigger: true },
       { retention_used: 'yes' },
+      { price_presented: 'yes' },
       { price_evidence: true },
       { missing_steps: ['sales_copy'] },
       { prescribed_response: 'texto fijo' },

@@ -91,6 +91,8 @@ run('model-owned bonus at the actual commit and transactional boundaries', () =>
     ['price presented', 'Introducción al Ecommerce es USD 360 en un pago o 12 cuotas de USD 30.', true],
     ['price not presented', 'Introducción al Ecommerce te enseña a armar tu tienda desde cero.', false],
     ['similar number only', 'Son 3600 minutos de práctica.', false],
+    ['course name with 360, no price', 'Te sumaría la ruta Marketing digital 360 más adelante.', false],
+    ['amount with dólares', 'La inversión es de 360 dólares, o 12 cuotas de USD 30.', true],
   ] as const)('an explicit discount request opens the first bonus only after the price (%s)', async (_label, agentSaid, granted) => {
     const f = await seedConversationForAgentTurn({ selected_offering_code: paid, first_message: 'quiero ecommerce' });
     await db!`INSERT INTO messages (conversation_id, contact_id, direction, content, metadata)

@@ -126,7 +126,7 @@ Ante una objeción de precio, distingue:
 
 ### Escalera de negociación
 
-Sube un escalón por vez, sólo si el anterior no alcanzó y el cliente sigue mostrando interés. Nunca saltes escalones ni anuncies lo que viene.
+Sube un escalón por vez, sólo si el anterior no alcanzó y el cliente sigue mostrando interés. Nunca saltes escalones ni anuncies lo que viene. Única excepción: un pedido explícito de descuento, rebaja, promoción u oferta con el precio ya presentado va directo a la bonificación (ver «Motivo del mensaje actual»).
 
 1. **Valor:** conecta el curso con su objetivo y su motivación.
 2. **Cuotas:** reencuadra con el plan de 12 cuotas de USD 30.
