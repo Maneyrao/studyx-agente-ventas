@@ -1188,4 +1188,19 @@ OWNER_PROMOTION_MODE_REPLAY_CASES_MUTABLE.push({
     englishTurn('fotografia', 'quizas algo vinculado con fotografia'),
   ],
 });
+// 2026-11-09 owner check of prompt v120 / brain v205 (one short real run, no judge): re-greeting after Emma
+// spoke (no re-introduction, ignored question not repeated), «no sé, qué me recomendás» (one course, no two
+// paths), «quizás fotografía», price made clear, then «me hacés un descuento?» (one related bonus, USD 360 kept).
+OWNER_PROMOTION_MODE_REPLAY_CASES_MUTABLE.push({
+  id: '97_owner_v120_no_se_fotografia_descuento',
+  title: 'Prompt v120: re-saludo → no sé → fotografía → precio → descuento = un bonificado',
+  turns: [
+    englishTurn('redes', 'hola\nme gustaría aprender\nalgo vinculado para redes'),
+    englishTurn('hola_otra_vez', 'hola'),
+    englishTurn('no_se', 'no sé, qué me recomendás?'),
+    englishTurn('fotografia', 'quizás algo vinculado con fotografía'),
+    englishTurn('precio', 'me gusta, cuánto cuesta?'),
+    englishTurn('descuento', 'me hacés un descuento?'),
+  ],
+});
 export const OWNER_PROMOTION_MODE_REPLAY_CASES: readonly GoldenCaseV1[] = OWNER_PROMOTION_MODE_REPLAY_CASES_MUTABLE;
