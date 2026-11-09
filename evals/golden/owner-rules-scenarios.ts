@@ -1160,4 +1160,19 @@ OWNER_PROMOTION_MODE_REPLAY_CASES_MUTABLE.push({
   ],
 });
 
+// Owner request 2026-11-09 ("v202 sin planner"): the single short real-model check,
+// based on the owner's live chat of 9/11 7:41 (saludo → pedido amplio → redes →
+// «no sé» → fotografía → qué se ve, que debe enviar PDF + imagen + texto).
+OWNER_PROMOTION_MODE_REPLAY_CASES_MUTABLE.push({
+  id: '98_owner_live_20261109_no_planner',
+  title: 'Charla real del dueño 9/11 7:41 sin plan: redes → no sé → fotografía → material',
+  turns: [
+    englishTurn('hola_vivis', 'hola\nvivis'),
+    englishTurn('hola_info', 'hola\ninfo'),
+    englishTurn('redes', 'hola\nme gustaría aprender\nalgo vinculado para redes'),
+    englishTurn('no_se', 'no l ose\nque me recomendai'),
+    englishTurn('fotografia', 'que me recomendas?\nno tengo nada claro\nquizas algo vinculado con fotografia'),
+    englishTurn('que_se_ve', 'me interesa\nque se ve en el curso?'),
+  ],
+});
 export const OWNER_PROMOTION_MODE_REPLAY_CASES: readonly GoldenCaseV1[] = OWNER_PROMOTION_MODE_REPLAY_CASES_MUTABLE;
