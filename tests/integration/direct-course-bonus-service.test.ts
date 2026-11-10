@@ -53,6 +53,10 @@ async function fixture(objectionCount=2) {
   await db!`INSERT INTO selected_memories(contact_id,conversation_id,source_message_id,status,memory_type,memory_key,value_normalized,source_quote,confidence,dedupe_hash)
     VALUES (${c.id},${v.id},${prior},'active','objection','price_objection','expensive','Customer',0.9,${'a'.repeat(64)})`;
   const objectionTurns=await seedPriorModelNegotiation(db!,{workspace_id:w.id,contact_id:c.id,conversation_id:v.id},objectionCount);
+  // Emma answered the earlier objections: they are history, not the current
+  // intervention (owner 2026-11-10 — only unanswered messages join the turn).
+  await db!`INSERT INTO messages(conversation_id,contact_id,direction,content,created_at)
+    VALUES (${v.id},${c.id},'outbound','Te entiendo.',now() - interval '1 second')`;
   const source = await inbound(0);
   const identity = {workspace_id:w.id as string,contact_id:c.id as string,conversation_id:v.id as string,
     paid_offering_code:courses[0].code as string,promotion_code:key,promotion_cycle_id:randomUUID()};
