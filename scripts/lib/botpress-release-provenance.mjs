@@ -3,10 +3,11 @@ import { readFileSync, readdirSync, readlinkSync } from 'node:fs';
 import path from 'node:path';
 import ts from 'typescript';
 
-// Last reviewed commit that changed deployable code (brain v205, prompt v120).
+// Last reviewed commit that changed deployable code (brain v205, prompt v120,
+// owner-only WhatsApp typing presence and natural multipart cadence).
 // Anything committed after it must be docs/evals/tests only (see assertOnlyNonCodeChangesSinceBaseV1), so a release
 // prepared from the branch HEAD runs exactly this code. Re-pin whenever a code file changes.
-export const BOT_RELEASE_BASE_SHA = '251144f1f2209757ff129ed27e720445a0eaf3db';
+export const BOT_RELEASE_BASE_SHA = '94636b11ecf04eb1d3abc1fe400dc1f01e0c5fb2';
 export const BOT_RELEASE_BRAIN_VERSION = 'studyx-agent-a-brain-v205';
 export const BOT_RELEASE_PROMPT_VERSION = 'studyx-agent-a-canonical-v120';
 export const BOT_RELEASE_INSTRUMENTATION_VERSION = 'studyx-release-provenance-v1';
@@ -17,7 +18,7 @@ export const BOT_RELEASE_SOURCE_PATHS = Object.freeze([
 ]);
 const REVIEWED_SOURCE_HASHES = Object.freeze({
   [BOT_RELEASE_SOURCE_PATHS[0]]: 'c1a85e1d95000cd56f885e02d3cf900d7900ea5102b08ed51910500387c2de93',
-  [BOT_RELEASE_SOURCE_PATHS[1]]: 'c9e07ee4463af0635cef5e594250b1140b3199dfb67c214473b3544ef136799f',
+  [BOT_RELEASE_SOURCE_PATHS[1]]: '2e3345d044f2fa6a679dabf93a3f8ebef284a092d490ed1cebbc41a6e7d22b25',
   [BOT_RELEASE_SOURCE_PATHS[2]]: '77809dcfbf8e605affe2eeb746f56bcf5ce91ca07ef05726ec5fe20111c07fd2',
 });
 // Paths that may change after the pinned base without altering what is deployed.
