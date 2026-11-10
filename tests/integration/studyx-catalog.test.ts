@@ -91,10 +91,10 @@ run('catálogo del agente con workspace studyx (production)', () => {
     else process.env.BUSINESS_WORKSPACE_SLUG = originalSlug;
   });
 
-  it('lista los 40 cursos del catálogo oficial activo', async () => {
+  it('lista los 45 cursos del catálogo oficial activo', async () => {
     process.env.BUSINESS_WORKSPACE_SLUG = WS;
     const res = await catalogList();
-    expect(res.items).toHaveLength(40);
+    expect(res.items).toHaveLength(45);
   });
 
   it('cada item expone el precio cobrable y ninguno filtra el monto de la beca', async () => {

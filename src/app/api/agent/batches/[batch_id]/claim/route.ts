@@ -192,11 +192,23 @@ export async function POST(
             ...input,
           }, { db: sql });
         },
+        courseProgramsCapability: async (input) => {
+          const [{ readCourseProgramsCapabilityV1 }, { sql }] = await Promise.all([
+            import('@/features/programs/application/read-course-programs-capability'), import('@/lib/db/orchestrator'),
+          ]);
+          return readCourseProgramsCapabilityV1({ workspace_slug: workspaceSlug, conversation_id: input.conversation_id }, { db: sql });
+        },
         negotiationFacts: async (input) => {
           const [{ readNegotiationFactsV1 }, { sql }] = await Promise.all([
             import('@/features/conversation/application/read-negotiation-facts'), import('@/lib/db/orchestrator'),
           ]);
           return readNegotiationFactsV1({ workspace_slug: workspaceSlug, ...input }, { db: sql });
+        },
+        salesProfile: async (input) => {
+          const [{ readSalesProfileMemoriesV1 }, { sql }] = await Promise.all([
+            import('@/features/conversation/application/read-sales-profile'), import('@/lib/db/orchestrator'),
+          ]);
+          return readSalesProfileMemoriesV1({ workspace_slug: workspaceSlug, ...input }, { db: sql });
         },
         agentLoopRollout,
       }

@@ -22,8 +22,12 @@ run('exact call delivery copies (explicit technical authorization 2026-11-01)',(
       agent_turn_v2:{schema_version:2,proposal:raw as never},decision:f.placeholderDecision as never,model:f.model as never});
     const expected=position==='only'?[invitation]:[explanation,invitation];
     expect(result.outbounds.map(outbound=>outbound.content)).toEqual(expected);
-    expect((await db!`SELECT content FROM messages WHERE in_reply_to=${f.turn_id} AND direction='outbound' ORDER BY conversation_seq`)
-      .map(row=>row.content)).toEqual(expected);
+    const stored=await db!`SELECT id,content FROM messages WHERE in_reply_to=${f.turn_id} AND direction='outbound'`;
+    expect(stored).toHaveLength(expected.length);
+    const storedById=new Map(stored.map(row=>[row.id,row.content]));
+    // The authorized outbound plan owns delivery order; outbound rows may
+    // share a null conversation_seq and must not be ordered by heap position.
+    expect(result.outbounds.map(outbound=>storedById.get(outbound.id))).toEqual(expected);
     expect((await db!`SELECT response FROM agent_decisions WHERE turn_id=${f.turn_id}`)[0].response).toBe(expected.join('\n\n'));
     expect(raw).toEqual(before);
     for(const outbound of result.outbounds){

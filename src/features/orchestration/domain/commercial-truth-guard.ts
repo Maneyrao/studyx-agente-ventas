@@ -1,4 +1,6 @@
+import { STUDYX_GENERAL_FACTS_V1 } from '../../../shared/catalog/studyx-general-facts';
 import { courseLogisticsInV1 as courseLogisticsIn, type CourseLogisticsFactV1 } from '../../../shared/conversation/course-logistics';
+import { hardClaimKindsInSentenceV1, stripUrlsV1 } from '../../../shared/conversation/hard-claims';
 import { inspectCourseBonusClaimsV1 } from '../../../shared/conversation/course-bonus-claim';
 
 /**
@@ -40,6 +42,8 @@ export interface CanonicalTruthSetV1 {
   readonly area_names?: readonly string[];
   /** Logística explícita de la oferta; nunca se infiere de que sea online. */
   readonly course_logistics?: readonly CourseLogisticsFactV1[];
+  /** Real persisted promotion expiry (ISO). Lets "tiempo limitado" / "vence el <esa fecha>" pass. */
+  readonly authorized_promo_expires_at?: string | null;
 }
 
 export type CommercialTruthViolationCodeV1 =
@@ -51,7 +55,8 @@ export type CommercialTruthViolationCodeV1 =
   | 'CERTIFICATION_CONTRADICTS_CANONICAL'
   | 'OFFERING_NOT_CANONICAL'
   | 'LOGISTICS_NOT_CANONICAL'
-  | 'FORBIDDEN_PROMISE';
+  | 'FORBIDDEN_PROMISE'
+  | 'HARD_CLAIM';
 
 export interface CommercialTruthViolationV1 {
   readonly code: CommercialTruthViolationCodeV1;
@@ -106,7 +111,7 @@ const DURATION_PATTERN =
   /\b(\d+(?:[.,]\d+)?)\s*(minutos?|horas?|d[ií]as?|semanas?|mes(?:es)?|a[nñ]os?|clases?|m[oó]dulos?)\b/giu;
 
 const ONLINE_MODALITY = /\b(?:online|virtual(?:es)?|remot[oa]s?|a distancia|en linea|asincronic[oa]s?)\b/u;
-const PRESENTIAL_MODALITY = /\b(?:presencial(?:es)?|en sede|en el campus)\b/u;
+const PRESENTIAL_MODALITY = /\b(?:presencial(?:es)?|en sede)\b/u;
 
 const CERTIFICATION_NOUN = /\b(?:certificad[oa]s?|certificacion(?:es)?|diplomas?|titulos?)\b/u;
 const NEGATION = /\b(?:no|sin|tampoco)\b/u;
@@ -120,11 +125,35 @@ const UNCERTAIN_BENEFIT = /\b(?:no\s+(?:(?:tengo|tenemos)\s+(?:(?:informacion|da
 const OFFERING_CLAIM = /\b(?:(?:studyx\s+)?(?:ofrece(?:mos)?|tenemos|brinda(?:mos)?|dicta(?:mos)?|contamos\s+con|disponemos\s+de)|studyx\s+tiene|pod[eé]s\s+estudiar|te\s+recomiendo)\s+([^.!?\n]+)/giu;
 const GENERIC_CATALOG = /^(?:(?:varias|distintas|muchas|algunas|las|estas|tres)\s+)?(?:opciones|alternativas|areas|formas|planes)\b|^(?:cursos|diplomados)\s*(?:$|disponibles\b)/u;
 const OFFERING_DESCRIPTION = /^(?:todos|todas|ambos|ambas|que|para|con|sin|ideal|donde|porque|si|una\s+opcion|un\s+curso|es|tiene|incluye)\b/u;
+const DESCRIPTION_DISCOURSE_ANCHOR = /^(?:a(?:hi|lli)|en\s+(?:(?:ese|este|el)\s+)?(?:curso|diplomado|programa))\b/u;
+// Second-person / descriptive verbs that open a description after "Curso: …" (accent-folded).
+const DESCRIPTION_VERB_LED = /^(?:te\s+\p{L}+|\d+\b|(?:aprend(?:es|eras)|ve(?:ras|s)|trabaj(?:as|aras)|desarroll(?:as|aras)|domin(?:as|aras)|conoc(?:es|eras)|practic(?:as|aras)|construy(?:es)|construiras|cre(?:as|aras)|manej(?:as|aras)|us(?:as|aras)|disen(?:as|aras)|aplic(?:as|aras)|obtien(?:es)|obtendras|adquier(?:es)|adquiriras|descubr(?:es|iras)|analiz(?:as|aras)|gestion(?:as|aras)|program(?:as|aras)|edit(?:as|aras)|armas|haras|lograras|podras|sabras|tendras|incluy(?:e|en)|cubr(?:e|en)|abarca(?:n)?|ensena(?:n)?|permit(?:e|en)|ayuda(?:n)?|prepara(?:n)?|brinda(?:n)?|ofrece(?:n)?|combina(?:n)?|integra(?:n)?|es|son|sirv(?:e|en)|se)\b)/u;
 const NON_COURSE_OBJECT = /^(?:(?:el|la|un|una|nuestro|nuestra)\s+)?(?:\d+\s+)?(?:pagos?|cuotas?|planes?|chat|soporte|llamadas?|asesoria|acompanamiento|ayuda|informacion|acceso|profesores|clases|certificados?|descuentos?|becas?)\b/u;
 const EXPLICIT_COURSE = /^(?:(?:el|un|nuestro)\s+)?(?:curso|diplomado|diplomatura|carrera)\s+(?:de\s+|en\s+)?/u;
-const AREA_MEMBERSHIP = /^(?:que\s+)?(?:dentro\s+de|(?:como\s+)?parte\s+de|(?:forma|es)\s+parte\s+de|(?:pertenece|perteneciente)\s+a)\s+(?:(?:la|el|nuestra|nuestro)\s+)?/u;
-const COLLECTIVE_AREA_MEMBERSHIP = /^(?:todos?|todas?)\s+(?:dentro\s+de|(?:como\s+)?parte\s+de|pertenecientes?\s+a)\s+(?:(?:la|el|nuestra|nuestro)\s+)?/u;
+const AREA_MEMBERSHIP = /^(?:que\s+)?(?:justo\s+)?(?:dentro\s+(?:de|del)|(?:como\s+)?parte\s+de|(?:forma|es)\s+parte\s+de|(?:pertenece|perteneciente)\s+a|en(?=\s+(?:(?:la|el|nuestra|nuestro)\s+)?(?:area|academia)\s+de\b))\s+(?:(?:la|el|nuestra|nuestro)\s+)?(?:(?:area|academia)\s+de\s+)?/u;
+const COLLECTIVE_AREA_MEMBERSHIP = /^(?:todos?|todas?)\s+(?:justo\s+)?(?:dentro\s+(?:de|del)|(?:como\s+)?parte\s+de|pertenecientes?\s+a)\s+(?:(?:la|el|nuestra|nuestro)\s+)?(?:(?:area|academia)\s+de\s+)?/u;
 const OFFERING_LIST_SEPARATOR = /^(?:[,;:]\s*(?:(?:y|e|o)\s+)?|(?:y|e|o)\s+)/u;
+
+const COURSE_NOUN_TAIL = /\b(?:curso|diplomado|diplomatura|carrera|programa)\s+(?:de\s+|en\s+)?(.+)$/u;
+const CAPITALIZED_NAME = /\p{Lu}\p{L}+(?:\s+(?:(?:de|del|en|y|para|con)\s+)?\p{Lu}\p{L}+)+/gu;
+
+/** Inside a colon description: course-type nouns and capitalized multi-word names must start with a canonical name. */
+function descriptionNamesUnknownCourse(namedObject: string, after: string, canonicalNames: readonly string[]): boolean {
+  const startsCanonical = (text: string) => canonicalNames.some((name) => {
+    if (!text.startsWith(name) || /\p{L}/u.test(text.slice(name.length, name.length + 1))) return false;
+    const remainder = text.slice(name.length);
+    return remainder.length === 0
+      || /^(?:[,;:.!?()]|\s+(?:que|para|con|sin|ideal|donde|porque|si|es|tiene|incluye)\b)/u.test(remainder);
+  });
+  // «en ese curso …» refers back to the canonical course; strip only that leading anchor.
+  const tail = COURSE_NOUN_TAIL.exec(after.replace(DESCRIPTION_DISCOURSE_ANCHOR, '').trim())?.[1];
+  if (tail !== undefined && !startsCanonical(tail.trim())) return true;
+  let originalAfter = after;
+  for (let index = namedObject.indexOf(':'); index >= 0; index = namedObject.indexOf(':', index + 1)) {
+    if (normalize(namedObject.slice(index + 1)) === after) { originalAfter = namedObject.slice(index + 1); break; }
+  }
+  return [...originalAfter.matchAll(CAPITALIZED_NAME)].some((match) => !startsCanonical(normalize(match[0])));
+}
 
 function offersUnauthorizedBenefit(sentence: string): boolean {
   // Una negación alcanza su cláusula, nunca una oferta afirmativa posterior.
@@ -155,6 +184,10 @@ function containsUnknownOffering(sentence: string, names: readonly string[], are
   const normalized = normalize(sentence);
   const canonicalNames = names.map(normalize).filter(Boolean).sort((a, b) => b.length - a.length);
   const canonicalAreas = areas.map(normalize).filter(Boolean).sort((a, b) => b.length - a.length);
+  const canonicalAreaAliases = [...new Set(canonicalAreas.flatMap((area) => {
+    const short = area.replace(/^(?:area|academia)\s+de\s+/u, '');
+    return short === area ? [area] : [area, short];
+  }))].sort((a, b) => b.length - a.length);
   for (const claim of sentence.matchAll(OFFERING_CLAIM)) {
     if (/\b(?:no|nunca|tampoco)\s*$/u.test(normalized.slice(0, claim.index))) continue;
     const namedObject = claim[1]!.trim();
@@ -178,14 +211,15 @@ function containsUnknownOffering(sentence: string, names: readonly string[], are
         && !/\p{L}/u.test(remainder.slice(candidate.length, candidate.length + 1)));
       if (!name) return true;
       remainder = remainder.slice(name.length).trim();
+      // An area descriptor after a comma or colon belongs to the preceding
+      // canonical course. Accept natural wording, but resolve the area by an
+      // exact canonical name (or its "Academia de" short form).
       const descriptor = remainder.replace(OFFERING_LIST_SEPARATOR, '');
       const membership = descriptor.match(AREA_MEMBERSHIP)
         ?? descriptor.match(COLLECTIVE_AREA_MEMBERSHIP);
       if (membership) {
-        // El área describe el curso anterior. Consumir sólo ese nombre permite
-        // seguir verificando otros cursos que aparezcan después del descriptor.
         const areaObject = descriptor.slice(membership[0].length);
-        const area = canonicalAreas.find((candidate) => areaObject.startsWith(candidate)
+        const area = canonicalAreaAliases.find((candidate) => areaObject.startsWith(candidate)
           && !/\p{L}/u.test(areaObject.slice(candidate.length, candidate.length + 1)));
         if (!area) return true;
         remainder = areaObject.slice(area.length).trim();
@@ -196,9 +230,35 @@ function containsUnknownOffering(sentence: string, names: readonly string[], are
         if (OFFERING_DESCRIPTION.test(remainder)) break;
         continue;
       }
+      // After a canonical name a colon either introduces its description
+      // ("Marketing Digital: aprendes estrategias…") or is a list item that
+      // names another course, which is checked against the canonical names.
+      // Only a description (OFFERING_DESCRIPTION or verb-led, any case) ends the
+      // check; the colon examined is always the current one.
+      if (remainder.startsWith(':')) {
+        const after = remainder.slice(1).trim();
+        if (after.length === 0) break;
+        const discourseAnchor = after.match(DESCRIPTION_DISCOURSE_ANCHOR)?.[0];
+        const anchoredDescription = discourseAnchor
+          ? after.slice(discourseAnchor.length).trim()
+          : null;
+        if (OFFERING_DESCRIPTION.test(after) || DESCRIPTION_VERB_LED.test(after)
+          || (anchoredDescription !== null
+            && (OFFERING_DESCRIPTION.test(anchoredDescription) || DESCRIPTION_VERB_LED.test(anchoredDescription)))) {
+          // A description prefix never exempts the rest: an explicit course noun or a capitalized
+          // multi-word name inside it is another course and must be canonical.
+          if (descriptionNamesUnknownCourse(namedObject, after, canonicalNames)) return true;
+          break;
+        }
+        remainder = after.replace(EXPLICIT_COURSE, '');
+        continue;
+      }
       if (remainder.length === 0 || OFFERING_DESCRIPTION.test(remainder)) break;
       const next = remainder.replace(OFFERING_LIST_SEPARATOR, '');
-      if (next === remainder) break;
+      // Extra words attached directly to an exact canonical title change its
+      // identity (for example "Real Estate Pro"). Descriptions must use one
+      // of the explicit description forms above.
+      if (next === remainder) return true;
       remainder = next;
       if (OFFERING_DESCRIPTION.test(remainder)) break;
     }
@@ -445,8 +505,14 @@ function sentenceViolations(
     violations.push({ code: 'OFFERING_NOT_CANONICAL', value: 'offering' });
   }
 
+  // The backend-inserted payment/test URL has opaque ids ("699", "beca"): it is not prose.
+  const prose = stripUrlsV1(sentence);
+  for (const kind of hardClaimKindsInSentenceV1(prose, { promoExpiresAt: canonical.authorized_promo_expires_at })) {
+    violations.push({ code: 'HARD_CLAIM', value: kind });
+  }
+
   const authorizedLogistics = new Set(canonical.course_logistics ?? []);
-  if (courseLogisticsIn(sentence).some((fact) => !authorizedLogistics.has(fact))) {
+  if (courseLogisticsIn(prose).some((fact) => !authorizedLogistics.has(fact))) {
     violations.push({ code: 'LOGISTICS_NOT_CANONICAL', value: 'course_logistics' });
   }
 
@@ -487,6 +553,8 @@ export function canonicalTruthSetFromOfferingsV1(input: {
   const paymentTerms: { months: number; price: string }[] = [];
   const paymentPlans: { installments: number; price: string }[] = [];
   const courseLogistics = new Set<CourseLogisticsFactV1>();
+  // Manual-verified general facts hold for every course (never schedules or dates).
+  for (const general of STUDYX_GENERAL_FACTS_V1) for (const fact of courseLogisticsIn(general.value)) courseLogistics.add(fact);
   for (const offering of scope) {
     const currency = offering.currency?.trim() ?? '';
     if (offering.price_type === 'fixed' && offering.price_amount && currency.length > 0) {

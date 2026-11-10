@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "status": "interrupted",
+  "evaluated_sha": "32f08470da84c64423a7a356fe7bc0f96944e207",
+  "provider": "deepseek",
+  "model": "deepseek-v4-flash",
+  "judge_model": "deepseek-v4-flash",
+  "case_selection": "10,12,15,05,27",
+  "suite_invocations": 1,
+  "started_at": "2026-11-04T05:53:46.237Z",
+  "updated_at": "2026-11-04T06:24:57.122Z",
+  "error_code": "npx failed with status 1"
+}

@@ -3,7 +3,7 @@ import { existsSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSyn
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { parseEnv } from 'node:util';
-import { reserveGoldenRunV1 } from './run-config.mjs';
+import { copyGoldenReuseObservationsV1, readGoldenReuseEvaluatedShaV1, reserveGoldenRunV1 } from './run-config.mjs';
 
 const BASE_SHA = '028f272fc3a6f6dc4806d19b251564169b55e6d6';
 const POSTGRES_PORT = '55435';
@@ -74,6 +74,12 @@ if (process.env.STUDYX_GOLDEN_DEEPSEEK_MODEL && process.env.STUDYX_GOLDEN_DEEPSE
 }
 const resultStem = process.env.STUDYX_GOLDEN_RESULT_STEM
   ?? (providerName === 'nvidia_nim' ? `acceptance-${headSha.slice(0, 7)}-nim` : 'baseline-v9');
+const reuseObservations = process.env.STUDYX_GOLDEN_REUSE_OBSERVATIONS === 'true';
+const reuseSourceStem = process.env.STUDYX_GOLDEN_REUSE_SOURCE_STEM?.trim() || null;
+if (reuseObservations && !reuseSourceStem) throw new Error('GOLDEN_REUSE_SOURCE_STEM_MISSING');
+const evaluatedSha = reuseObservations
+  ? readGoldenReuseEvaluatedShaV1('evals/golden/results', reuseSourceStem)
+  : headSha;
 if (providerName === 'deepseek' && !localSecrets.deepseek) {
   throw new Error('DEEPSEEK_API_KEY_MISSING: guardala sólo en .eval/.env.local');
 }
@@ -82,10 +88,13 @@ if (providerName === 'nvidia_nim' && !localSecrets.nvidia) {
 }
 const runStartedAt = new Date().toISOString();
 const runStatePath = reserveGoldenRunV1('evals/golden/results', resultStem, {
-  schema_version: 1, evaluated_sha: headSha, provider: providerName, model: providerModel,
+  schema_version: 1, evaluated_sha: evaluatedSha, provider: providerName, model: providerModel,
   judge_model: judgeModel, case_selection: process.env.STUDYX_GOLDEN_CASE_IDS ?? null,
   suite_invocations: 1, started_at: runStartedAt, updated_at: runStartedAt,
 });
+if (reuseObservations) {
+  copyGoldenReuseObservationsV1('evals/golden/results', reuseSourceStem, resultStem);
+}
 
 if (providerName === 'nvidia_nim') {
   const base = providerBaseUrl.replace(/\/+$/u, '');
@@ -110,7 +119,7 @@ function runState(status, extra = {}) {
   return `${JSON.stringify({
     schema_version: 1,
     status,
-    evaluated_sha: headSha,
+    evaluated_sha: evaluatedSha,
     provider: providerName,
     model: providerModel,
     judge_model: judgeModel,
@@ -138,8 +147,12 @@ const environment = {
   TEST_DATABASE_URL: databaseUrl,
   STUDYX_EVAL_API_BASE_URL: apiBaseUrl,
   STUDYX_GOLDEN_LIVE: 'true',
-  STUDYX_GOLDEN_EVALUATED_SHA: headSha,
-  STUDYX_GOLDEN_REUSE_OBSERVATIONS: process.env.STUDYX_GOLDEN_REUSE_OBSERVATIONS ?? 'false',
+  // Official-programme PDFs: the harness records the `file` part instead of sending it. Dummy https
+  // base (never fetched) and the emulator channel allowed for documents, local evaluation only.
+  STUDYX_PUBLIC_ASSET_BASE_URL: 'https://assets.golden.invalid',
+  STUDYX_COURSE_PROGRAM_CHANNELS: 'whatsapp,emulator',
+  STUDYX_GOLDEN_EVALUATED_SHA: evaluatedSha,
+  STUDYX_GOLDEN_REUSE_OBSERVATIONS: reuseObservations ? 'true' : 'false',
   STUDYX_GOLDEN_DEEPSEEK_MODEL: 'deepseek-v4-flash',
   STUDYX_GOLDEN_JUDGE_MODEL: judgeModel,
   ...(process.env.STUDYX_GOLDEN_CASE_IDS === undefined ? {} : { STUDYX_GOLDEN_CASE_IDS: process.env.STUDYX_GOLDEN_CASE_IDS }),
@@ -147,6 +160,7 @@ const environment = {
   STUDYX_GOLDEN_PROVIDER_BASE_URL: providerBaseUrl,
   STUDYX_GOLDEN_PROVIDER_MODEL: providerModel,
   STUDYX_GOLDEN_RESULT_STEM: resultStem,
+  ...(process.env.STUDYX_GOLDEN_COMMERCIAL_PLANNING === 'true' ? { STUDYX_GOLDEN_COMMERCIAL_PLANNING: 'true' } : {}),
   STUDYX_WORKFLOW_REPORT_DIR: 'evals/golden/results/runtime',
   DEEPSEEK_API_KEY: 'managed-by-golden-evaluator',
   BUSINESS_WORKSPACE_SLUG: 'studyx',
@@ -154,7 +168,7 @@ const environment = {
   ORCHESTRATOR_KEY_ID: 'botpress-eval',
   STUDYX_SIGNING_SECRET: 'eval-signing-secret',
   CRON_SECRET: 'local-eval-cron',
-  VERCEL_GIT_COMMIT_SHA: headSha,
+  VERCEL_GIT_COMMIT_SHA: evaluatedSha,
   PAYMENT_PROVIDER: 'fake',
   PAYMENT_LINK_ENVIRONMENT: 'test',
   // Readiness requires the canonical production variable names to exist even
@@ -235,6 +249,10 @@ for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => {
 try {
   command('bash', [bootstrapScript, POSTGRES_PORT, '--seed'], { env: environment });
   ownsPostgres = true;
+  // The 17 NUEVO courses of the 2026 manual exist only in the database: add them to THIS disposable runner database (never any other).
+  command('node', ['scripts/upsert-manual-2026-offerings.mjs', '--apply'], {
+    env: { ...environment, STUDYX_CATALOG_TARGET_URL: databaseUrl },
+  });
   backend = spawn('npx', ['next', 'dev', '--hostname', '127.0.0.1', '--port', BACKEND_PORT], {
     env: environment,
     stdio: ['ignore', 'inherit', 'inherit'],

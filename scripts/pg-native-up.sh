@@ -82,6 +82,7 @@ psql_run -c "CREATE EXTENSION IF NOT EXISTS pgcrypto WITH SCHEMA extensions;" >/
 psql_run -c "ALTER DATABASE ${TEST_DATABASE} SET search_path TO public, extensions;" >/dev/null
 psql_run -c "DO \$\$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon') THEN CREATE ROLE anon NOLOGIN; END IF; END \$\$;" >/dev/null
 psql_run -c "DO \$\$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated') THEN CREATE ROLE authenticated NOLOGIN; END IF; END \$\$;" >/dev/null
+psql_run -c "DO \$\$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'service_role') THEN CREATE ROLE service_role NOLOGIN; END IF; END \$\$;" >/dev/null
 
 for migration_file in supabase/migrations/*.sql; do
   # KNOWN BUG (discovered 2026-08-17, not fixed here): the migration filename

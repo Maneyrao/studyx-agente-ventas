@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { STUDYX_GENERAL_FACTS_V1 } from '../../../src/shared/catalog/studyx-general-facts';
 import { AgentATurnCommitV2Schema } from '../../../botpress-agent/src/schemas/agent-turn-v2';
 import { AgentATurnProposalV1Schema } from '../../../botpress-agent/src/schemas/agent-a-brain';
 import { AgentATurnProposalV1Schema as BackendProposalSchema } from '@/features/conversation/adapters/agent-a-brain-schema';
@@ -96,6 +97,24 @@ afterEach(() => {
 });
 
 describe('Agent A Brain V1', () => {
+  it('keeps actions and the call invitation fenced in a conversation-only continuation', async () => {
+    const current = context();
+    current.turn_rejection = { schema_version: 1, rejection_id: '00000000-0000-4000-8000-000000000009', attempt: 1,
+      rejections: [{ code: 'ACTION_NOT_AUTHORIZED', subject: 'offer_course_bonus' }],
+      authorized_alternatives: { fact_ids: [], actions: ['none'], missing_information: [] } };
+    const authored = proposal({ response: { messages: ['Te cuento las opciones.'], call_offer: null },
+      repair_of: { rejection_id: current.turn_rejection.rejection_id, attempt: 1 } });
+    const fetcher = vi.fn(async () => providerResponse(200, responsesSuccessBody(authored)));
+    vi.stubGlobal('fetch', fetcher);
+    await generateDeepSeekAgentATurnProposalV1({ context: current, apiKey: 'fixture', signal: new AbortController().signal,
+      conversation_only: true });
+    const body = JSON.parse(String((fetcher.mock.calls as unknown as Array<[string, RequestInit]>)[0][1].body));
+    expect(body.text.format.schema.properties.proposed_action.anyOf).toEqual([
+      { type: 'object', properties: { type: { type: 'string', enum: ['none'] } }, required: ['type'], additionalProperties: false },
+    ]);
+    expect(body.text.format.schema.properties.response.properties.call_offer.anyOf).toEqual([{ type: 'null' }]);
+    expect(body.instructions).toContain('Use no call_offer.');
+  });
   it('preserves explicit course roles through parser and both wire schemas without inferring legacy roles',()=>{
     const mentions=[{offering_code:'redes-informaticas',role:'paid'}];
     const raw=proposal({course_mentions:mentions,response:{messages:['Redes Informáticas.']}});
@@ -176,12 +195,30 @@ describe('Agent A Brain V1', () => {
     ] as const) {
       const parsed = parseAgentATurnProposalV1(proposal({
         response: { messages: [message], call_offer: null }, used_fact_ids: [], used_memory_ids: [],
-        proposed_action: { type: 'offer_course_bonus', interest_offering_code: 'redes-informaticas', bonus_offering_code: 'word' },
+        proposed_action: { type: 'offer_course_bonus', motive:{kind:'price_objection',quote:'es caro'}, interest_offering_code: 'redes-informaticas', bonus_offering_code: 'word' },
       }), current);
       const rejection = validateAgentATurnProposalV1({ proposal: parsed, context: current, planned_fact_ids: [],
         rejection_id: '00000000-0000-4000-8000-000000000001' });
       expect(rejection?.rejections.some(r => r.subject === 'forbidden_promise') ?? false).toBe(forbidden);
     }
+  });
+
+  it('29/expensive (focused-29-41-r3): "menos de lo que cuesta una salida a comer" is not a price and a fact rejection keeps the bonus effect available', () => {
+    const current = context();
+    current.turn.batch_messages = [{ id: 'current', text: 'es caro' }];
+    current.capabilities.course_bonus = { enabled: true, status: 'checkin_available', may_offer_bonus: true, max_bonus_courses: 3,
+      may_schedule_checkin: false, may_request_review: false, may_accept_offer: false, may_send_promoted_payment: false,
+      promotion_code: null, interest_offering_code: 'redes-informaticas', bonus_offerings: [], delivered_bonus_offerings: [],
+      bonus_candidates: [{ code: 'excel', display_name: 'Excel' }] } as never;
+    const clean = parseAgentATurnProposalV1(proposal({ response: { messages: [
+      'Te entiendo, es una inversión. Es menos de lo que cuesta una salida a comer al mes, y accedes a las 16 clases.'], call_offer: null },
+      used_fact_ids: [], used_memory_ids: [] }), current);
+    const rejection = validateAgentATurnProposalV1({ proposal: clean, context: current, planned_fact_ids: [], rejection_id: '00000000-0000-4000-8000-000000000001' });
+    expect(rejection?.rejections.some(reason => reason.subject === 'price') ?? false).toBe(false);
+    const wrong = parseAgentATurnProposalV1(proposal({ response: { messages: ['Son USD 99 al mes.'], call_offer: null }, used_fact_ids: [], used_memory_ids: [] }), current);
+    const priceRejection = validateAgentATurnProposalV1({ proposal: wrong, context: current, planned_fact_ids: [], rejection_id: '00000000-0000-4000-8000-000000000001' });
+    expect(priceRejection?.rejections.some(reason => reason.subject === 'price')).toBe(true);
+    expect(priceRejection?.authorized_alternatives.actions).toContain('offer_course_bonus');
   });
 
   it('accepts the real direct-bonus copy with a course name containing para and rejects an extra gift', () => {
@@ -206,7 +243,7 @@ describe('Agent A Brain V1', () => {
       bonus_offerings: [], delivered_bonus_offerings: [],
     };
     const action = { type: 'offer_course_bonus' as const,
-      interest_offering_code: 'fotografia_profesional',
+      motive:{kind:'price_objection',quote:'es caro'}, interest_offering_code: 'fotografia_profesional',
       bonus_offering_code: 'fotografia_celulares_tiendas_online' };
     for (const [message, forbidden] of [
       ['Perfecto, seguimos por acá. Te sumo Fotografía con Celulares para Tiendas Online sin costo extra, para que puedas resolver fotos de producto. El precio de Fotografía Profesional no cambia.', false],
@@ -223,6 +260,75 @@ describe('Agent A Brain V1', () => {
       expect(rejection?.rejections.some((item) => item.subject === 'forbidden_promise') ?? false)
         .toBe(forbidden);
     }
+  });
+  it('H1: an offer_course_bonus whose copy names only an earlier bonus is rejected once as bonus_not_named', () => {
+    const current = context();
+    current.catalog.selected_offering = { code: 'fotografia_profesional', display_name: 'Fotografía Profesional', area_code: 'diseno', facts: [] };
+    current.commercial_state.selected_offering_code = 'fotografia_profesional';
+    current.catalog.available_offerings = [
+      { code: 'fotografia_profesional', display_name: 'Fotografía Profesional', area_code: 'diseno', fact_id: 'paid' },
+      { code: 'ingles_1', display_name: 'Inglés 1', area_code: 'cultural', fact_id: 'one' },
+      { code: 'instagram_emprendedores', display_name: 'Instagram para Emprendedores', area_code: 'marketing', fact_id: 'two' },
+    ];
+    current.capabilities.course_bonus = {
+      enabled: true, max_bonus_courses: 3, may_offer_bonus: true, status: 'checkin_available',
+      may_schedule_checkin: false, may_request_review: false, may_accept_offer: false, may_send_promoted_payment: false,
+      promotion_code: null, interest_offering_code: 'fotografia_profesional',
+      bonus_offerings: [], delivered_bonus_offerings: [{ code: 'ingles_1', display_name: 'Inglés 1', position: 1 }],
+    };
+    const action = { type: 'offer_course_bonus' as const, motive:{kind:'price_objection',quote:'es caro'}, interest_offering_code: 'fotografia_profesional',
+      bonus_offering_code: 'instagram_emprendedores' };
+    for (const [message, rejected] of [
+      ['Ya tienes Inglés 1 sin costo, y te sumo otro más. El precio no cambia.', true],
+      ['Te sumo instagram para emprendedores sin costo. El precio no cambia.', false],
+    ] as const) {
+      const parsed = parseAgentATurnProposalV1(proposal({
+        move: { schema_version: 1, move: 'continue_by_chat', secondary_moves: [], vetoes: [], confidence: 1 },
+        response: { messages: [message], call_offer: null }, proposed_action: action }), current);
+      const rejection = validateAgentATurnProposalV1({ proposal: parsed, context: current,
+        planned_fact_ids: [], rejection_id: '00000000-0000-4000-8000-000000000001' });
+      expect(rejection?.rejections.some(item => item.subject === 'bonus_not_named') ?? false).toBe(rejected);
+    }
+    current.turn_rejection = { schema_version: 1, rejection_id: '00000000-0000-4000-8000-000000000001', attempt: 1,
+      rejections: [{ code: 'FACT_VALUE_MISMATCH', subject: 'bonus_not_named' }] } as never;
+    const repair = buildAgentABrainInstructionsV1(current);
+    expect(repair).toContain("name the course you're adding");
+  });
+  it('M2: tiempo limitado passes the hard-claim check only when the context has a real promo expiry', () => {
+    for (const [expires, rejected] of [[null, true], ['2026-11-15T12:00:00.000Z', false]] as const) {
+      const current = context();
+      current.capabilities.course_bonus = {
+        enabled: true, max_bonus_courses: 3, may_offer_bonus: false, status: 'offer_available',
+        may_schedule_checkin: false, may_request_review: false, may_accept_offer: false, may_send_promoted_payment: false,
+        promotion_code: null, interest_offering_code: 'redes-informaticas', bonus_offerings: [], delivered_bonus_offerings: [],
+        sales_flow: { retention_used: false, promo_expires_at: expires },
+      };
+      const parsed = parseAgentATurnProposalV1(proposal({
+        response: { messages: ['La promo es por tiempo limitado.'], call_offer: null } }), current);
+      const rejection = validateAgentATurnProposalV1({ proposal: parsed, context: current, planned_fact_ids: [],
+        rejection_id: '00000000-0000-4000-8000-000000000001' });
+      expect(rejection?.rejections.some(r => r.subject === 'hard_claim.invented_deadline') ?? false).toBe(rejected);
+    }
+  });
+  it('M5: a bonus the capability does not allow (checkout) does not exempt the copy from asking for missing data', () => {
+    const current = context();
+    current.commercial_state.awaiting_reply = 'contact_details';
+    current.capabilities.intake_missing = ['correo'];
+    current.catalog.available_offerings = [
+      { code: 'redes-informaticas', display_name: 'Redes Informáticas', area_code: 'tecnologia', fact_id: 'paid' },
+      { code: 'word', display_name: 'Word', area_code: 'ofimatica', fact_id: 'bonus' },
+    ];
+    current.capabilities.course_bonus = {
+      enabled: true, max_bonus_courses: 3, may_offer_bonus: false, status: 'checkin_available',
+      may_schedule_checkin: false, may_request_review: false, may_accept_offer: false, may_send_promoted_payment: false,
+      promotion_code: null, interest_offering_code: 'redes-informaticas', bonus_offerings: [], delivered_bonus_offerings: [],
+    };
+    const parsed = parseAgentATurnProposalV1(proposal({
+      response: { messages: ['Te sumo Word sin costo.'], call_offer: null },
+      proposed_action: { type: 'offer_course_bonus', motive:{kind:'price_objection',quote:'es caro'}, interest_offering_code: 'redes-informaticas', bonus_offering_code: 'word' } }), current);
+    const rejection = validateAgentATurnProposalV1({ proposal: parsed, context: current, planned_fact_ids: [],
+      rejection_id: '00000000-0000-4000-8000-000000000001' });
+    expect(rejection?.rejections).toContainEqual({ code: 'MISSING_INTAKE', subject: 'correo' });
   });
   it('accepts neutral exact terms for a real budget limit without a price-reframe rejection', () => {
     const current = context();
@@ -852,6 +958,23 @@ describe('Agent A Brain V1', () => {
     },
   );
 
+  it.each([
+    'cuesta USD 360',
+    'sale USD 360',
+    'vale USD 360',
+  ])('accepts an affirmative natural predicate before an authorized price: %s', (naturalPrice) => {
+    const ctx = context();
+    const priceId = 'payment:redes-informaticas:monthly_12:price:v1';
+    ctx.catalog.selected_offering!.facts.push({ id: priceId, kind: 'payment_plan_price', value: 'USD 360.00' });
+    const parsed = parseAgentATurnProposalV1(proposal({
+      response: { messages: [`El diplomado ${naturalPrice}.`] }, used_fact_ids: [priceId],
+    }), ctx);
+    expect(validateAgentATurnProposalV1({
+      proposal: parsed, context: ctx, planned_fact_ids: parsed.used_fact_ids,
+      rejection_id: '00000000-0000-4000-8000-000000000001',
+    })).toBeNull();
+  });
+
   it.each(['USD 361', 'USD 360.01', 'EUR 360', 'USD 36000', 'USD 360.000',
     'USD 360,000', 'USD 360,001', 'no cuesta USD 360'])(
     'still rejects a different amount, currency or negated price: %s', (total) => {
@@ -1443,7 +1566,7 @@ describe('Agent A Brain V1', () => {
     });
 
     expect(composition.narrative.opening).toBe(
-      'Queda registrada tu elección. Avisame cuando quieras avanzar.',
+      'Queda registrada tu elección. Avísame cuando quieras avanzar.',
     );
     expect(composition.narrative.opening).not.toMatch(/USD|30|cuotas/iu);
   });
@@ -1609,6 +1732,22 @@ describe('Agent A Brain V1', () => {
       .toContainEqual({ code: 'FACT_VALUE_MISMATCH', subject: 'course_logistics.self_paced' });
   });
 
+  it('accepts manual-verified general logistics only when the general facts are in context, never a schedule', () => {
+    const validate = (text: string, withFacts: boolean) => {
+      const current = context();
+      current.capabilities.may_offer_call = false;
+      if (withFacts) current.catalog.general_facts = STUDYX_GENERAL_FACTS_V1.map((fact) => ({ ...fact }));
+      const parsed = parseAgentATurnProposalV1(proposal({ response: { messages: [text], call_offer: null } }), current);
+      return validateAgentATurnProposalV1({ proposal: parsed, context: current,
+        planned_fact_ids: parsed.used_fact_ids, rejection_id: '00000000-0000-4000-8000-000000000006' })?.rejections ?? [];
+    };
+    const claim = 'Tienes clases en vivo y clases grabadas, y avanzas a tu ritmo.';
+    expect(validate(claim, false)).toContainEqual({ code: 'FACT_VALUE_MISMATCH', subject: 'course_logistics.self_paced' });
+    expect(validate(claim, true)).not.toContainEqual(expect.objectContaining({ subject: 'course_logistics' }));
+    expect(validate('Las clases en vivo son todos los martes a las 19 h.', true))
+      .toContainEqual({ code: 'FACT_VALUE_MISMATCH', subject: 'course_logistics.fixed_schedule' });
+  });
+
   it('compacts multiline model copy before canonical assembly', () => {
     const composition = buildSafeAgentABrainCompositionV1({
       proposal: parseAgentATurnProposalV1(proposal({
@@ -1699,6 +1838,13 @@ describe('Agent A Brain V1', () => {
     ]) expect(moveSemantics).toContain(`"${expression}"`);
     expect(moveSemantics).toContain('to defer_payment');
     expect(moveSemantics).toContain('decline_purchase requires an explicit definitive refusal');
+    // Acceptance 82054dd: structured observations are emitted before the internal reasoning,
+    // and the contract names the budget-limit and enrollment-signal cases the model got wrong.
+    const props = Object.keys(body.response_format.json_schema.schema.properties);
+    expect(props.indexOf('profile_requests')).toBeLessThan(props.indexOf('turn_reasoning'));
+    expect(props.indexOf('memory_candidates')).toBeLessThan(props.indexOf('turn_reasoning'));
+    expect(body.response_format.json_schema.schema.properties.memory_candidates.description).toContain('"no me alcanza"');
+    expect(moveSemantics).toContain('"dale, cómo me inscribo"');
   });
 
   it.each([400, 413])(
@@ -2608,5 +2754,163 @@ describe('Agent A Brain V1', () => {
     await expect(generateAgentATurnProposalV1({
       context: context(), apiKey: 'test-key', signal: new AbortController().signal,
     })).rejects.toEqual(expect.objectContaining<Partial<AgentABrainError>>({ code: 'BRAIN_INVALID_JSON' }));
+  });
+});
+
+// 2026-11-05 (conversación 5b138536): el recibo rechazó «gmail,com» y «termina en 8»,
+// pero la respuesta presentó el valor como registrado.
+describe('contact profile receipt is respected by the reply', () => {
+  const id = '00000000-0000-4000-8000-000000000001';
+  const withRejected = (field: 'correo' | 'telefono', value: string) => {
+    const current = context();
+    current.customer.contact_intake = { nombre: 'Thiago', apellido: 'Maneyro', correo: null, telefono: '+5491169004497' };
+    current.customer.contact_profile = { version: 2, sources: [], pending_requests: [],
+      rejected_updates: [{ field, value, code: 'VALUE_MISMATCH' }] };
+    return current;
+  };
+  const subjects = (current: AgentAContextV1, overrides: Record<string, unknown>) => {
+    const parsed = parseAgentATurnProposalV1(proposal(overrides), current);
+    return validateAgentATurnProposalV1({ proposal: parsed, context: current, planned_fact_ids: [], rejection_id: id })
+      ?.rejections.map((r) => r.subject) ?? [];
+  };
+
+  it('rejects an autocorrected email the receipt refused', () => {
+    const current = withRejected('correo', 'tmaneyro@gmail.com');
+    expect(subjects(current, { response: { messages: ['Te confirmo: correo TMANEYRO@gmail.com. ¿Está bien?'] } }))
+      .toContain('contact_profile_rejected:correo');
+    expect(subjects(current, { response: { messages: ['¿Me lo reenviás completo, tal como lo usás?'] } }))
+      .not.toContain('contact_profile_rejected:correo');
+  });
+
+  it('rejects a refused phone stated as recorded, allows it inside a structured confirmation request', () => {
+    const current = withRejected('telefono', '+5491169004498');
+    expect(subjects(current, { response: { messages: ['Perfecto, tu número queda en +54 9 11 6900-4498.'] } }))
+      .toContain('contact_profile_rejected:telefono');
+    expect(subjects(current, { response: { messages: ['Entonces sería +5491169004498, ¿me confirmás?'] },
+      profile_requests: [{ message_index: 0, fields: ['telefono'], purpose: 'call', mode: 'clarify' }] }))
+      .not.toContain('contact_profile_rejected:telefono');
+  });
+
+  it('golden replay t13: asking again for the phone may quote what the customer wrote; an invented email stays blocked', () => {
+    const phone = withRejected('telefono', '1169004497');
+    phone.customer.contact_intake!.telefono = null;
+    expect(subjects(phone, { response: { messages: ['El 1169004497 no me sirve así: ¿me lo pasás con código de país?'] },
+      profile_requests: [{ message_index: 0, fields: ['telefono'], purpose: 'call', mode: 'collect' }] }))
+      .not.toContain('contact_profile_rejected:telefono');
+    const mail = withRejected('correo', 'tmaneyro@gmail.com');
+    mail.turn.batch_messages = [{ id: 'current', text: 'THIAGO MANEYRO tmaneyro@gmail,com' }];
+    expect(subjects(mail, { response: { messages: ['¿Tu correo es tmaneyro@gmail.com? Confirmame.'] },
+      profile_requests: [{ message_index: 0, fields: ['correo'], purpose: 'call', mode: 'clarify' }] }))
+      .toContain('contact_profile_rejected:correo');
+  });
+
+  it('allows explaining that a malformed email was not recorded instead of treating it as saved', () => {
+    const current = withRejected('correo', 'tmaneyro@gmail,com');
+    current.capabilities.intake_missing = ['correo', 'telefono'];
+    expect(subjects(current, { response: { messages: [
+      'El correo llegó con una coma y no pude registrarlo. Reenviámelo completo tal como lo usás, y pasame también tu teléfono con código de país.',
+    ] }, profile_requests: [{ message_index: 0, fields: ['correo', 'telefono'], purpose: 'call', mode: 'collect' }] }))
+      .not.toContain('contact_details');
+  });
+
+  it('compares canonically: a local-format or case-changed canonical value is not a refused one', () => {
+    const phone = withRejected('telefono', '11 6900 4497');
+    expect(subjects(phone, { response: { messages: ['Te llamo al 11 6900-4497.'] } })).not.toContain('contact_profile_rejected:telefono');
+    const mail = withRejected('correo', 'Thiago@Example.com');
+    mail.customer.contact_intake!.correo = 'thiago@example.com';
+    expect(subjects(mail, { response: { messages: ['Te escribo a thiago@example.com.'] } })).not.toContain('contact_profile_rejected:correo');
+  });
+
+  it('finds a refused phone even when an amount follows it', () => {
+    const current = withRejected('telefono', '+5491169004498');
+    expect(subjects(current, { response: { messages: ['Queda el 11 6900 4498 - 12 cuotas de USD 30.'] } }))
+      .toContain('contact_profile_rejected:telefono');
+  });
+
+  it('does not flag a value that is already the current canonical one', () => {
+    const current = withRejected('telefono', '+5491169004497');
+    expect(subjects(current, { response: { messages: ['Te llamo al +5491169004497.'] } }))
+      .not.toContain('contact_profile_rejected:telefono');
+  });
+});
+
+describe('course prerequisites come from any authorized course fact', () => {
+  const rejectionId = '00000000-0000-4000-8000-000000000001';
+  const validate = (current: AgentAContextV1, planned: string[]) => {
+    const parsed = parseAgentATurnProposalV1(proposal({
+      response: { messages: ['Podés empezar desde cero: el curso no exige experiencia previa.'] },
+      used_fact_ids: planned,
+    }), current);
+    return validateAgentATurnProposalV1({
+      proposal: parsed,
+      context: current,
+      planned_fact_ids: planned,
+      rejection_id: rejectionId,
+    })?.rejections.map((item) => item.subject) ?? [];
+  };
+
+  it('accepts an authorized syllabus fact that says prior experience is unnecessary', () => {
+    const current = context();
+    const id = 'knowledge-source:real-estate';
+    current.catalog.selected_offering!.facts.push({
+      id,
+      kind: 'offering_syllabus',
+      value: 'Real Estate está diseñado para latinos sin importar su experiencia\nprevia.',
+    });
+    expect(validate(current, [id])).not.toContain('prerequisites');
+  });
+
+  it('still rejects the same claim when the supporting fact was not authorized for the turn', () => {
+    const current = context();
+    current.catalog.selected_offering!.facts.push({
+      id: 'knowledge-source:real-estate',
+      kind: 'offering_syllabus',
+      value: 'Real Estate está diseñado para latinos sin importar su experiencia previa.',
+    });
+    expect(validate(current, [])).toContain('prerequisites');
+  });
+
+  it('does not use a prerequisite fact belonging to another candidate course', () => {
+    const current = context();
+    const id = 'knowledge-source:other-course';
+    current.catalog.candidate_offerings.push({
+      code: 'other-course',
+      display_name: 'Otro Curso',
+      fact_id: 'offering:other-course:name:v1',
+      area_code: null,
+      facts: [{ id, kind: 'offering_syllabus', value: 'No requiere experiencia previa.' }],
+    });
+    expect(validate(current, [id])).toContain('prerequisites');
+  });
+});
+
+// 2026-11-05 18:19Z (5b138536): «sabes qué dan?» sobre Real Estate (material
+// disponible) respondió el temario sin enviar imagen + PDF.
+describe('a contents answer for the course in focus carries its material', () => {
+  const id = '00000000-0000-4000-8000-000000000001';
+  const withProgram = (sent: string[] = []) => {
+    const current = context();
+    current.catalog.selected_offering!.facts.push({ id: 'knowledge-source:redes', kind: 'offering_syllabus', value: '11 clases' });
+    current.capabilities.course_programs = { available_offering_codes: ['redes-informaticas'], sent_offering_codes: sent };
+    return current;
+  };
+  const codes = (current: AgentAContextV1, overrides: Record<string, unknown>) => {
+    const parsed = parseAgentATurnProposalV1(proposal(overrides), current);
+    return validateAgentATurnProposalV1({ proposal: parsed, context: current, planned_fact_ids: [], rejection_id: id })
+      ?.rejections.map((r) => `${r.code}:${r.subject}`) ?? [];
+  };
+  const contents = { used_fact_ids: ['offering:redes-informaticas:name:v1', 'knowledge-source:redes'], used_memory_ids: [] };
+
+  it('requires send_course_program when the syllabus of the focus course is explained and the material is unsent', () => {
+    expect(codes(withProgram(), contents)).toContain('PROGRAM_SEND_REQUIRED:send_course_program:redes-informaticas');
+    expect(codes(withProgram(), { ...contents, proposed_action: { type: 'send_course_program', offering_code: 'redes-informaticas' } }))
+      .not.toContain('PROGRAM_SEND_REQUIRED:send_course_program:redes-informaticas');
+  });
+  it('does not require it once sent, without the syllabus, or on a price turn', () => {
+    expect(codes(withProgram(['redes-informaticas']), contents).some((c) => c.startsWith('PROGRAM_SEND_REQUIRED'))).toBe(false);
+    expect(codes(withProgram(), { used_memory_ids: [] }).some((c) => c.startsWith('PROGRAM_SEND_REQUIRED'))).toBe(false);
+    expect(codes(withProgram(), { ...contents, move: { schema_version: 1, move: 'ask_course_information',
+      secondary_moves: ['price_objection'], vetoes: [], course_reference: 'Redes Informáticas', confidence: 0.9 } })
+      .some((c) => c.startsWith('PROGRAM_SEND_REQUIRED'))).toBe(false);
   });
 });

@@ -1,4 +1,4 @@
-import type { GoldenModelAttemptV1 } from './judge';
+import type { EarlyCallOfferEvidenceV1, GoldenModelAttemptV1 } from './judge';
 
 interface ExchangeLikeV1 {
   readonly boundary: 'deepseek' | 'backend';
@@ -7,6 +7,27 @@ interface ExchangeLikeV1 {
   readonly responseBody: unknown;
   readonly status: number | null;
   readonly error: string | null;
+}
+
+interface DeliveryCaptureLikeV1 {
+  readonly outboundId: string | null;
+  readonly providerMessageId: string;
+}
+
+/** Every physical bubble has its own outbound id. A multi-bubble golden turn
+ * must confirm all of them; otherwise the offer bubble can remain pending and
+ * the following turn observes a package that was never delivered. */
+export function deliveryAcknowledgementTargetsV1(
+  captures: readonly DeliveryCaptureLikeV1[],
+): readonly { readonly outboundId: string; readonly providerMessageId: string }[] {
+  const seen = new Set<string>();
+  const targets: Array<{ outboundId: string; providerMessageId: string }> = [];
+  for (const capture of captures) {
+    if (!capture.outboundId || seen.has(capture.outboundId)) continue;
+    seen.add(capture.outboundId);
+    targets.push({ outboundId: capture.outboundId, providerMessageId: capture.providerMessageId });
+  }
+  return targets;
 }
 
 export function extractFinalBackendDecisionErrorV1(
@@ -67,6 +88,121 @@ function proposalResponse(proposal: Record<string, unknown> | null): string | nu
   const texts = messages.filter((value): value is string => typeof value === 'string' && value.trim().length > 0);
   if (typeof response?.call_offer === 'string' && response.call_offer.trim()) texts.push(response.call_offer);
   return texts.length > 0 ? texts.join('\n') : null;
+}
+
+/** Only a successful decision receipt establishes which proposal was committed.
+ * The last model draft can differ from the whole-turn Rule A fixed fallback. */
+function committedExchangeV1(exchanges: readonly ExchangeLikeV1[]): ExchangeLikeV1 | null {
+  for (let index = exchanges.length - 1; index >= 0; index -= 1) {
+    const exchange = exchanges[index]!;
+    if (exchange.boundary !== 'backend' || !exchange.url?.endsWith('/decision')
+      || exchange.status === null || exchange.status < 200 || exchange.status >= 300 || exchange.error) continue;
+    const receipt = record(exchange.responseBody);
+    if (!['committed', 'duplicate'].includes(String(receipt?.status))) continue;
+    const request = record(exchange.requestBody);
+    const proposal = record(record(request?.agent_turn_v2)?.proposal);
+    if (proposal) return exchange;
+  }
+  return null;
+}
+
+export function extractCommittedProposalV1(exchanges: readonly ExchangeLikeV1[]): Record<string, unknown> | null {
+  const exchange = committedExchangeV1(exchanges);
+  return record(record(record(exchange?.requestBody)?.agent_turn_v2)?.proposal);
+}
+
+export function extractCommittedCallIdV1(exchanges: readonly ExchangeLikeV1[]): string | null {
+  const receipt = record(committedExchangeV1(exchanges)?.responseBody);
+  const callRequest = record(receipt?.call_request);
+  return callRequest?.status === 'requested' && typeof callRequest.call_id === 'string'
+    ? callRequest.call_id
+    : null;
+}
+
+/** Final repairs can replace an earlier model outcome with a fixed fallback.
+ * No proposal hash is emitted: correlate the last event to the successful
+ * receipt's exact turn/trace and committed effect identity, retaining raw events. */
+export function extractFinalDeterministicRuleOutcomeV1(
+  events: readonly Readonly<Record<string, unknown>>[], exchanges: readonly ExchangeLikeV1[],
+): Readonly<Record<string, unknown>> | null {
+  const exchange = committedExchangeV1(exchanges);
+  const request = record(exchange?.requestBody);
+  const receipt = record(exchange?.responseBody);
+  const proposal = record(record(request?.agent_turn_v2)?.proposal);
+  if (!proposal || typeof request?.turn_id !== 'string' || typeof request.trace_id !== 'string') return null;
+  if (receipt?.turn_id !== request.turn_id
+    || (typeof receipt.trace_id === 'string' && receipt.trace_id !== request.trace_id)) return null;
+  let final: Readonly<Record<string, unknown>> | null = null;
+  for (const event of events) {
+    if (event.event === 'studyx.turn.deterministic_rules'
+      && event.turn_id === request.turn_id && event.trace_id === request.trace_id) final = event;
+  }
+  if (!final) return null;
+  const action = record(proposal.proposed_action);
+  if (typeof final.rule_a_bonus_code === 'string' && (action?.type !== 'offer_course_bonus'
+    || action.bonus_offering_code !== final.rule_a_bonus_code)) return null;
+  if (action?.type === 'offer_course_bonus' && final.rule_a === 'not_applicable') return null;
+  if (['model', 'rewrite', 'fixed'].includes(String(final.rule_b))
+    && !String(record(proposal.response)?.call_offer ?? '').trim()) return null;
+  return final;
+}
+
+export function proposalEvidenceV1(proposal: Record<string, unknown> | null) {
+  const move = record(proposal?.move);
+  const profileRequests = Array.isArray(proposal?.profile_requests) ? proposal.profile_requests : [];
+  return {
+    response: proposalResponse(proposal),
+    move: typeof move?.move === 'string' ? move.move : null,
+    secondaryMoves: Array.isArray(move?.secondary_moves)
+      ? move.secondary_moves.filter((value): value is string => typeof value === 'string') : [],
+    proposedAction: record(proposal?.proposed_action),
+    usedFactIds: Array.isArray(proposal?.used_fact_ids)
+      ? proposal.used_fact_ids.filter((value): value is string => typeof value === 'string') : [],
+    profileRequestedFields: profileRequests.flatMap((request) => {
+      const fields = record(request)?.fields;
+      return Array.isArray(fields) ? fields.filter((value): value is string => typeof value === 'string') : [];
+    }),
+    callOffer: typeof record(proposal?.response)?.call_offer === 'string'
+      ? String(record(proposal?.response)?.call_offer) : null,
+  };
+}
+
+/** Interpretation evidence is accepted only with a literal current-message quote. */
+export function quotedCurrentPriceEvidenceV1(context: Record<string, unknown> | null,
+  proposal: Record<string, unknown> | null) {
+  const messages = record(context?.turn)?.batch_messages;
+  const texts = Array.isArray(messages) ? messages.map(message => record(message)?.text)
+    .filter((value): value is string => typeof value === 'string') : [];
+  const memories = Array.isArray(proposal?.memory_candidates) ? proposal.memory_candidates : [];
+  const quoted = memories.map(record).filter(candidate => typeof candidate?.source_quote === 'string'
+    && candidate.source_quote.trim().length > 0
+    && texts.some(text => text.includes(String(candidate.source_quote).trim())));
+  return {
+    currentPriceObjectionQuoted: quoted.some(candidate => candidate?.type === 'objection' && candidate.key === 'price_objection'),
+    currentPriceOnlyBarrierQuoted: quoted.some(candidate => candidate?.type === 'constraint'
+      && candidate.key === 'price_only_barrier' && candidate.value === 'confirmed'),
+  };
+}
+
+/** Capture facts, not invitation prose quality: a Rule B ordinal, successful
+ * receipt, persisted count and the exact committed invitation delivered locally. */
+export function appendEarlyCallOfferEvidenceV1(input: {
+  readonly prior: readonly EarlyCallOfferEvidenceV1[];
+  readonly conversationId: string;
+  readonly turnId: string | null;
+  readonly callOffer: string | null;
+  readonly response: string;
+  readonly ruleBReason: unknown;
+  readonly committed: boolean;
+  readonly persistedOfferCount: number;
+}): readonly EarlyCallOfferEvidenceV1[] {
+  const prior = input.prior.filter(source => source.conversationId === input.conversationId);
+  const ordinal = input.ruleBReason === 'response_2' ? 2 : input.ruleBReason === 'response_3' ? 3 : null;
+  if (!ordinal || !input.turnId || !input.callOffer?.trim() || !input.committed
+    || input.persistedOfferCount < 1 || !input.response.includes(input.callOffer)) return prior;
+  return [...prior, { conversationId: input.conversationId, turnId: input.turnId,
+    responseOrdinal: ordinal, callOffer: input.callOffer, committed: true, delivered: true,
+    persistedOfferCount: input.persistedOfferCount }];
 }
 
 export function extractModelAttemptsV1(
@@ -216,4 +352,39 @@ export function extractContextEvidenceV1(exchanges: readonly ExchangeLikeV1[]): 
       status: typeof courseBonus?.status === 'string' ? courseBonus.status : null,
     },
   };
+}
+
+/** Minimal turn shape the results report needs (the live runner's TurnResultV1 satisfies it). */
+export interface ReportTurnV1 {
+  readonly turn_id: string;
+  readonly approved: boolean | null;
+  readonly execution_status: 'executed' | 'not_executed' | 'evaluation_error';
+  readonly invariant_status?: string;
+  readonly failures: readonly unknown[];
+}
+
+/** approved=true, approved=false and approved=null always add up to the number of turns. */
+export function reportTurnTotalsV1(turns: readonly ReportTurnV1[]) {
+  return {
+    total: turns.length,
+    approved: turns.filter((turn) => turn.approved === true).length,
+    failed: turns.filter((turn) => turn.approved === false).length,
+    no_verdict: turns.filter((turn) => turn.approved === null).length,
+    evaluation_error: turns.filter((turn) => turn.execution_status === 'evaluation_error').length,
+  };
+}
+
+export function reportTurnLabelV1(turn: ReportTurnV1): string {
+  if (turn.execution_status === 'not_executed') return 'NO_EJECUTADO';
+  if (turn.execution_status === 'evaluation_error') return 'ERROR_EVALUACIÓN';
+  if (turn.approved === null) return 'SIN_VEREDICTO';
+  return turn.approved ? 'APROBADO' : 'FALLIDO';
+}
+
+/** Why a turn without verdict (approved=null) has no failures to list. */
+export function noVerdictReasonV1(turn: ReportTurnV1): string {
+  const parts = [`execution_status=${turn.execution_status}`];
+  if (turn.invariant_status) parts.push(`invariant_status=${turn.invariant_status}`);
+  parts.push('el evaluador no emitió veredicto (evidencia o juez indeterminado), no hay fallos que listar');
+  return parts.join('; ');
 }

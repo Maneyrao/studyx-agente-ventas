@@ -15,6 +15,10 @@ export const TurnRejectionCodeSchema = z.enum([
   'MISSING_INTAKE',
   'CALL_BUDGET_EXHAUSTED',
   'CALL_OFFER_REQUIRED',
+  'BONUS_OFFER_REQUIRED',
+  'PRICE_PROBE_REQUIRED',
+  'PASSIVE_CLOSING_FORBIDDEN',
+  'RETENTION_REQUIRED',
   'CALL_OFFER_MESSAGE_BOUNDARY_INVALID',
   'PROPOSAL_SCHEMA_INVALID',
   'CHANNEL_PREFERENCE_NOT_SUPPORTED',
@@ -23,6 +27,7 @@ export const TurnRejectionCodeSchema = z.enum([
   'COURSE_NOT_RESOLVED',
   'COURSE_ROLE_UNDECLARED',
   'REPEATED_AGENT_REPLY',
+  'PROGRAM_SEND_REQUIRED',
 ])
 
 /** Identificador o código. Nunca una frase para el cliente (A4). */

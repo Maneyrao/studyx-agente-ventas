@@ -1,0 +1,52 @@
+{
+  "inspected_at": "2026-11-02T00:00:14.285828+00:00",
+  "activation_performed": false,
+  "owner_clarification": "The confirmed Botpress account is tmaneyro@gmail.com; its workspace is named Vertice. De Fazio belongs to another account.",
+  "backend": {
+    "account": "maneyrao",
+    "team": "maneyraos-projects",
+    "team_id": "team_G25HixfcqzQ8ExR1GuKNEURb",
+    "project_id": "prj_Ns9LbXPT6UF6yvKR0rUcrwJAsFYM",
+    "alias": "https://studyx-agente-ventas.vercel.app",
+    "live_health": {
+      "status": "ok",
+      "service": "studyx-agente-ventas",
+      "timestamp": "2026-11-02T00:00:14.130Z",
+      "commit": "acfb9175571c2d1769c14bca29578356dbcbc1ba",
+      "region": "iad1"
+    },
+    "deployment_id": "dpl_5Jkkhp5kcuh6DCn4HvBBDS172oUx"
+  },
+  "botpress": {
+    "profile": "studyx-detmaneyro",
+    "workspace_name": "Vertice",
+    "workspace_id": "wkspace_01M4XEBZNC10HX2KDHKY36T6R0",
+    "bot_id": "0d7c9ecb-4781-4c65-913d-f7e947fa14d4",
+    "name": "STUDYX",
+    "live_deployed_at": "2026-10-30T22:44:34.966Z",
+    "live_api_base_url": "https://studyx-agente-ventas.vercel.app",
+    "live_source_sha": null,
+    "live_brain_prompt_version": null,
+    "live_code_evidence": "getBot has no source hash; versions and bot-json endpoints returned 500; retries stopped"
+  },
+  "prepared": {
+    "release_sha": "d558f938f849422d2adc12797e4773bf95b29a0d",
+    "application_change_sha": "bac1af0dc90e68c2234184bee2d467fda03ed763",
+    "brain_version": "studyx-agent-a-brain-v149",
+    "prompt_version": "studyx-agent-a-canonical-v101",
+    "access_template_version": "access_v1",
+    "botpress_bundle_sha256": "3718b45ff81a1981c88c58ef213330d828029c5ec4d15839ab3ed7042754e4a5",
+    "botpress_bundle_bytes": 24493132,
+    "backend_local_health_sha": "d558f938f849422d2adc12797e4773bf95b29a0d",
+    "same_prepared_source_sha": true
+  },
+  "live_parity": {
+    "same_endpoint": true,
+    "same_source_sha": "unknown",
+    "prepared_release_live": false
+  },
+  "external_model_requests": 0,
+  "model_tokens": 0,
+  "model_cost_usd": 0,
+  "architect_review": "approved; no material findings outstanding within implementation and preparation scope"
+}

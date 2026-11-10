@@ -1,0 +1,142 @@
+diff --git a/botpress-agent/src/lib/conversation/deterministic-rules-turn.ts b/botpress-agent/src/lib/conversation/deterministic-rules-turn.ts
+index 4c4c560..fc3559d 100644
+--- a/botpress-agent/src/lib/conversation/deterministic-rules-turn.ts
++++ b/botpress-agent/src/lib/conversation/deterministic-rules-turn.ts
+@@ -48,7 +48,9 @@ export function ruleContextFromAgentAContextV1(context: AgentAContextV1): RuleCo
+       || context.catalog.candidate_offerings.some(candidate => candidate.reference !== undefined)
+       || context.catalog.resolution === 'exact' || context.catalog.resolution === 'ambiguous'
+       || context.customer.memories.some(memory => memory.type === 'study_goal'),
+-    previous_agent_messages: latestAgentTurnMessages(context.turn.recent_turns),
++    // Every bubble of the last agent turn: the price question may not be the last one
++    // (owner live test 2026-11-03: question first, call invitation after it).
++    previous_agent_messages: lastAgentTurnBubblesV1(context.turn.recent_turns),
+     payment_reported: state.payment_reported,
+     active_call: state.active_call != null,
+     opted_out: !context.capabilities.may_reply,
+@@ -60,6 +62,16 @@ export function ruleContextFromAgentAContextV1(context: AgentAContextV1): RuleCo
+   }
+ }
+ 
++function lastAgentTurnBubblesV1(turns: AgentAContextV1['turn']['recent_turns']): string[] {
++  const bubbles: string[] = []
++  for (let index = turns.length - 1; index >= 0; index -= 1) {
++    const turn = turns[index]!
++    if (turn.direction === 'outbound') bubbles.unshift(turn.content)
++    else if (bubbles.length > 0) break
++  }
++  return bubbles.length > 0 ? bubbles : latestAgentTurnMessages(turns)
++}
++
+ function paidCourseV1(context: AgentAContextV1): { paid_offering_code: string | null; paid_display_name: string | null } {
+   const code = context.commercial_state.selected_offering_code ?? context.capabilities.course_bonus?.interest_offering_code ?? null
+   const name = code ? context.catalog.available_offerings.find(offering => offering.code === code)?.display_name ?? null : null
+@@ -96,10 +108,14 @@ export function decideDeterministicRulesV1(context: AgentAContextV1, draft: Agen
+     : supportsCallRequestV1(ruleContext.batch_texts.join('\n'), ruleContext.awaiting_reply === 'call_or_chat')
+       ? { kind: 'none' as const, reason: 'current_call_request' }
+       : decideCallRuleV1(obligation ? { ...ruleContext, customer_expressed_interest: true } : ruleContext, eligibilityDraft, bonus)
++  const probe = decidePriceProbeRuleV1(ruleContext, draft, bonus)
++  // Owner 2026-11-03: one question per turn. A turn that offers a gift or asks
++  // the price question carries no call invitation; Rule B moves to the next reply.
++  const oneQuestion = !obligation && call.kind === 'offer' && (bonus.kind === 'offer' || probe.kind === 'ask')
+   return {
+     bonus,
+-    call: call.kind === 'offer' && obligation ? obligation : call,
+-    probe: decidePriceProbeRuleV1(ruleContext, draft, bonus),
++    call: oneQuestion ? { kind: 'none' as const, reason: 'one_question_per_turn' } : call.kind === 'offer' && obligation ? obligation : call,
++    probe,
+     passive_forbidden: passiveRuleAppliesV1(ruleContext, draft),
+     price_expression_hint: ruleContext.batch_texts.some(priceExpressionHintV1),
+     retention,
+diff --git a/evals/golden/owner-rules-scenarios.ts b/evals/golden/owner-rules-scenarios.ts
+index 0fae37c..3a8d39d 100644
+--- a/evals/golden/owner-rules-scenarios.ts
++++ b/evals/golden/owner-rules-scenarios.ts
+@@ -249,7 +249,11 @@ const valueRegister = [
+   { type: 'not_contains', value: 'sigue siendo USD' } as const, { type: 'not_contains', value: 'precio no cambia' } as const,
+   { type: 'not_contains', value: 'Qué dato o qué curso' } as const, ...noContingency];
+ const emmaSells = owner(114, 114, 'Emma vende');
+-const setupPackage = englishTurn('setup_live_package', 'me interesa ingles 1, desde cero\ntenés alguna promo? me parece caro', {
++// Owner 2026-11-03 third revision: the first offer needs the explicit "sí" to the price question.
++const setupPriceQuestion = englishTurn('setup_price_question', 'me interesa ingles 1, desde cero\ncuanto sale? me parece caro', {
++  authority: [emmaSells], hard: [{ type: 'workflow_committed' }, ...valueRegister],
++});
++const setupPackage = englishTurn('setup_live_package', 'si, es solo el precio', {
+   must: ['Presentar la promoción exclusiva: Inglés 1 con Inglés 2 bonificado, con valor y cierre de plan.'],
+   authority: [promotionMode, ruleA],
+   expected: { move: replayMoves, action: ['offer_course_bonus'], state: {
+@@ -267,6 +271,7 @@ OWNER_PROMOTION_MODE_REPLAY_CASES_MUTABLE.push({
+     }),
+     englishTurn('not_defined_yet', 'no lo he definido aun', { authority: [emmaSells],
+       hard: [{ type: 'workflow_committed' }, ...valueRegister] }),
++    setupPriceQuestion,
+     setupPackage,
+     englishTurn('bonify_one_of_two', 'y si yo tengo el curso de ingles 1 y armado y reparacion de pc, me bonificas uno de los dos?', {
+       must: ['Decir que sí: sumar Armado y Reparación de PC de regalo y recapitular el paquete como ganancia (tres cursos al precio de uno), cerrando con una sola pregunta con energía.'],
+@@ -283,6 +288,7 @@ OWNER_PROMOTION_MODE_REPLAY_CASES_MUTABLE.push({
+   id: '24_owner_emma_vende_swap_20261103_0741',
+   title: 'Replay 3/11 07:41: «no puedo cambiar Inglés 2 por Reparación de PC?» → se cambia el único bonificado',
+   turns: [
++    setupPriceQuestion,
+     setupPackage,
+     englishTurn('swap_only_bonus', 'osea no puedo cambiar ingles 2 por armado y reparacion de pc?', {
+       must: ['Decir que sí y cambiarlo: Inglés 1 + Armado y Reparación de PC de regalo, dos cursos al precio de uno, con cierre de una sola pregunta.'],
+diff --git a/tests/unit/botpress/deterministic-rules-turn.test.ts b/tests/unit/botpress/deterministic-rules-turn.test.ts
+index dccfeb9..21316da 100644
+--- a/tests/unit/botpress/deterministic-rules-turn.test.ts
++++ b/tests/unit/botpress/deterministic-rules-turn.test.ts
+@@ -72,6 +72,7 @@ function resolver(current: AgentAContextV1) {
+       repair: async () => { throw new Error('unexpected generic repair'); } });
+ }
+ 
++// Owner 2026-11-03: one question per turn; a gift turn carries no Rule B invitation.
+ describe('live Rule A/B orchestration, bounded rewrite and validated fallback', () => {
+   it('permits a model correction unknown → request_call grounded in the current explicit request, leaving backend permissions intact', async () => {
+     const current = context(true);
+@@ -120,7 +121,7 @@ describe('live Rule A/B orchestration, bounded rewrite and validated fallback',
+     const result = await resolveDeterministicRulesTurnV1({ context: current, initial,
+       repair_enabled: true, rejection_id: () => rejectionId, resolve: resolver(current), repair });
+     expect(repair).toHaveBeenCalledOnce();
+-    expect(result.record).toMatchObject({ rule_a: 'rewrite', rule_b: 'rewrite' });
++    expect(result.record).toMatchObject({ rule_a: 'rewrite', rule_b: 'not_applicable' });
+     expect(result.resolved.effective.proposal.move).toMatchObject({ move: 'defer_payment',
+       secondary_moves: [], vetoes: [], course_reference: 'Ecommerce' });
+     expect(result.resolved.effective.proposal.response.call_offer).toBe(invitation);
+@@ -197,8 +198,8 @@ describe('live Rule A/B orchestration, bounded rewrite and validated fallback',
+     const result = await resolveDeterministicRulesTurnV1({ context: current, initial,
+       repair_enabled: true, rejection_id: () => rejectionId, resolve: resolver(current), repair });
+     expect(repair).toHaveBeenCalledOnce();
+-    expect(repair.mock.calls[0]?.[0].rejections.map(reason => reason.code)).toEqual(['BONUS_OFFER_REQUIRED', 'CALL_OFFER_REQUIRED']);
+-    expect(result.record).toMatchObject({ rule_a: 'rewrite', rule_b: 'rewrite' });
++    expect(repair.mock.calls[0]?.[0].rejections.map(reason => reason.code)).toEqual(['BONUS_OFFER_REQUIRED']);
++    expect(result.record).toMatchObject({ rule_a: 'rewrite', rule_b: 'not_applicable' });
+     expect(result.resolved.effective.proposal.response.call_offer).toBe(invitation);
+     expect(result.resolved.effective.proposal.memory_candidates).toEqual(initial.proposal.memory_candidates);
+     expect(result.resolved.effective.proposal.proposed_action.type).toBe('offer_course_bonus');
+@@ -216,12 +217,12 @@ describe('live Rule A/B orchestration, bounded rewrite and validated fallback',
+     const result = await resolveDeterministicRulesTurnV1({ context: current, initial: offered(),
+       repair_enabled: true, rejection_id: () => rejectionId, resolve, repair });
+     expect(repair).toHaveBeenCalledOnce();
+-    expect(result.record).toMatchObject({ rule_a: 'fixed', rule_b: 'fixed' });
++    expect(result.record).toMatchObject({ rule_a: 'fixed', rule_b: 'not_applicable' });
+     // Owner "modo promoción" fixed copy (no payment plans in this context).
+     expect(result.resolved.effective.proposal.response.messages).toEqual([
+       `Te lo puedo resolver! Tengo una promoción exclusiva para ti: si avanzas con Introducción al Ecommerce, te bonifico ${bonusName}, así te llevas dos cursos al precio de uno. Lo hacemos?!`,
+     ]);
+-    expect(result.resolved.effective.proposal.response.call_offer).toBeTruthy();
++    expect(result.resolved.effective.proposal.response.call_offer).toBeNull();
+     expect(result.resolved.effective.proposal.memory_candidates).toEqual(draft().proposal.memory_candidates);
+   });
+ 
+@@ -242,9 +243,10 @@ describe('live Rule A/B orchestration, bounded rewrite and validated fallback',
+     const repair = vi.fn(async () => { throw new Error('provider timeout'); });
+     const result = await resolveDeterministicRulesTurnV1({ context: current, initial,
+       repair_enabled: true, rejection_id: () => rejectionId, resolve: resolver(current), repair });
+-    expect(result.record.rule_b).toBe('fixed');
++    // One question per turn (owner 2026-11-03): a gift turn carries no invitation.
++    expect(result.record.rule_b).toBe(bonusApplies ? 'not_applicable' : 'fixed');
+     expect(result.resolved.effective.proposal.response.call_offer)
+-      .toBe('Si quieres, coordinamos una llamada corta para verlo juntos. Te sirve?');
++      .toBe(bonusApplies ? null : 'Si quieres, coordinamos una llamada corta para verlo juntos. Te sirve?');
+     expect(result.resolved.action_rejection).toBeNull();
+     expect(repair).toHaveBeenCalledOnce();
+   });

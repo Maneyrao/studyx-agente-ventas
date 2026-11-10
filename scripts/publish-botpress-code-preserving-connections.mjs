@@ -1,24 +1,32 @@
 /**
- * Transport-only publication. Run with Bun from botpress-agent; default is read-only.
- * --publish permits updating ONLY code after a fresh production build and contract checks.
+ * Narrow publication transport. Run with Bun from botpress-agent; default is read-only.
+ * --publish permits updating code plus only the explicitly reviewed additive
+ * contracts/configuration after a fresh production build and contract checks.
  * A change to API contracts/dependencies must use a separately reviewed full deployment.
- * SDK entry points are pinned to installed ADK 2.0.6; fail closed after SDK upgrades.
+ * SDK entry points are pinned to installed ADK 2.0.8; fail closed after SDK upgrades.
  */
 import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { createHash } from 'node:crypto';
+import { loadReviewedBotpressAdk, requireBotpressReleaseProfile } from './lib/botpress-reviewed-adk.mjs';
 import {
   buildBotpressAdditiveEventUpdate,
   inspectBotpressRemoteCode,
+  normalizeBotpressConfigurationForComparison,
   planBotpressAdditiveConversationTagPatch,
   planBotpressAdditiveEventPatch,
+  planBotpressReviewedConfigurationUpdate,
   planBotpressReviewedActionPatch,
 } from './lib/botpress-additive-event-contract.mjs';
+import {
+  STUDYX_RELEASE_DESTINATION,
+  assertBotpressReleaseDestination,
+  assertBotpressReleaseRemoteIdentity,
+  normalizeBotpressIntegrationField,
+} from './lib/botpress-release-destination.mjs';
 
-const expectedBotId = '0d7c9ecb-4781-4c65-913d-f7e947fa14d4';
-const expectedWorkspaceId = 'wkspace_01M4XEBZNC10HX2KDHKY36T6R0';
-const expectedProfile = process.env.STUDYX_BOTPRESS_PROFILE ?? 'vertice';
+const expectedProfile = process.env.STUDYX_BOTPRESS_PROFILE;
 const root = process.cwd();
 const outputDirectory = process.env.STUDYX_RELEASE_EVIDENCE_DIR;
 const publish = process.argv.includes('--publish');
@@ -35,30 +43,32 @@ const protectedConfiguration = (bot) => ({
   integrations: bot.integrations, plugins: bot.plugins, configuration: bot.configuration,
   subscriptions: bot.subscriptions, secretNames: [...bot.secrets].sort(), name: bot.name, blocked: bot.blocked,
 });
-const normalizedIntegrationField = (alias, field, value) => {
-  if (alias === 'whatsapp' && field === 'configuration') {
-    return { ...(value ?? {}), listenMessageEchoes: value?.listenMessageEchoes ?? false };
-  }
-  return value;
-};
 
 try {
   assert(outputDirectory && path.isAbsolute(outputDirectory), 'ABSOLUTE_EVIDENCE_DIRECTORY_REQUIRED');
   fs.mkdirSync(outputDirectory, { recursive: true, mode: 0o700 });
   const sdkPackage = JSON.parse(fs.readFileSync(path.join(root, 'node_modules/@botpress/adk-cli/package.json'), 'utf8'));
-  assert(sdkPackage.version === '2.0.6', 'UNREVIEWED_ADK_VERSION');
-  const { auth } = await load('node_modules/@botpress/adk-cli/dist/chunk-dcbcz1ws.js');
+  requireBotpressReleaseProfile(expectedProfile);
+  assertBotpressReleaseDestination({
+    profile: expectedProfile,
+    workspaceId: STUDYX_RELEASE_DESTINATION.workspaceId,
+    botId: STUDYX_RELEASE_DESTINATION.botId,
+  });
+  const { auth, resolveCommandContext, refreshDependencySnapshotOnce, adkBuild }
+    = await loadReviewedBotpressAdk(sdkPackage.version, load);
   auth.setProfileOverride(expectedProfile);
-  const { resolveCommandContext } = await load('node_modules/@botpress/adk-cli/dist/chunk-wddbs9hm.js');
-  const { refreshDependencySnapshotOnce } = await load('node_modules/@botpress/adk-cli/dist/chunk-rq2e6ba8.js');
-  const { adkBuild } = await load('node_modules/@botpress/adk-cli/dist/chunk-p4ar5kkm.js');
   const { Client } = await load('node_modules/@botpress/client/dist/index.cjs');
   const { prepareCreateBotBody } = await load('node_modules/@botpress/cli/dist/api/bot-body.js');
   const ctx = await resolveCommandContext({ target: 'prod', projectLoadOptions: { adkCommand: 'adk-deploy' },
     require: ['project', 'credentials', 'workspace', 'bot'] });
-  assert(ctx.botId === expectedBotId && ctx.workspaceId === expectedWorkspaceId, 'DESTINATION_MISMATCH');
+  assertBotpressReleaseDestination({
+    profile: expectedProfile,
+    botId: ctx.botId,
+    workspaceId: ctx.workspaceId,
+  });
   const client = new Client({ ...ctx.credentials, headers: { 'x-multiple-integrations': 'true' } });
   const before = (await client.getBot({ id: ctx.botId })).bot;
+  assertBotpressReleaseRemoteIdentity(before);
   record('bot-before.private.json', before);
   assert(Object.keys(before.integrations).length > 0, 'EMPTY_REMOTE_DEPENDENCIES');
   await refreshDependencySnapshotOnce({ projectPath: root, env: 'prod', botId: ctx.botId, client, required: true });
@@ -79,12 +89,15 @@ try {
     remoteActions: before.actions ?? {},
     generatedActions: body.actions ?? {},
   });
+  const configurationPlan = planBotpressReviewedConfigurationUpdate({
+    remoteConfiguration: before.configuration,
+    generatedConfiguration: body.configuration,
+  });
   const additiveEventPatch = planBotpressAdditiveEventPatch({
     remoteEvents: before.events ?? {},
     generatedEvents: body.events ?? {},
   });
   const additiveEventKeys = Object.keys(additiveEventPatch).sort();
-  if (!equal(body.configuration?.schema, before.configuration?.schema)) contractDifferences.push('configuration.schema');
   for (const field of ['user', 'message']) {
     if (!equal(Object.keys(body[field]?.tags ?? {}).sort(), Object.keys(before[field]?.tags ?? {}).sort())) {
       contractDifferences.push(`${field}.tags`);
@@ -105,8 +118,8 @@ try {
     for (const field of ['enabled', 'configurationType', 'configuration', 'disabledChannels']) {
       const fallback = field === 'configurationType' ? null : field === 'disabledChannels' ? [] : undefined;
       assert(equal(
-        normalizedIntegrationField(alias, field, integration[field] ?? fallback),
-        normalizedIntegrationField(alias, field, remote[field] ?? fallback),
+        normalizeBotpressIntegrationField(alias, field, integration[field] ?? fallback),
+        normalizeBotpressIntegrationField(alias, field, remote[field] ?? fallback),
       ), `INTEGRATION_CHANGED:${alias}.${field}`);
     }
     // ADK gives this pre-existing, unused namespaced integration a friendly local alias.
@@ -139,7 +152,7 @@ try {
     && before.deployedAt === current.deployedAt,
     'REMOTE_CHANGED_DURING_BUILD');
   const bundleSha256 = createHash('sha256').update(bundle).digest('hex');
-  const preflight = { at: new Date().toISOString(), botId: ctx.botId, workspaceId: ctx.workspaceId,
+  const preflight = { at: new Date().toISOString(), profile: expectedProfile, adkVersion: sdkPackage.version, botId: ctx.botId, workspaceId: ctx.workspaceId,
     bundleSha256, remoteCodeEvidence: inspectBotpressRemoteCode({
       remoteCode: before.code,
       expectedSha256: bundleSha256,
@@ -147,27 +160,40 @@ try {
     pluginCount: Object.keys(definition.plugins).length, aliasesPreserved, contractsMatch: true,
     additiveEventKeys, additiveConversationTagKeys,
     reviewedActionKeys: Object.keys(actionPatch).sort(),
+    reviewedConfigurationKeys: configurationPlan.changed ? ['agentACommercialPlanningEnabled'] : [],
+    commercialPlanningEnabled: configurationPlan.configuration.data?.agentACommercialPlanningEnabled ?? null,
     publicationMode: additiveEventKeys.length > 0
       || additiveConversationTagKeys.length > 0
       || Object.keys(actionPatch).length > 0
+      || configurationPlan.changed
       ? 'code+reviewed-contract' : 'code-only', publish };
   record('preflight.json', preflight);
   if (publish) {
-    // Omitting integrations/plugins/configuration/secrets is deliberate. Never
-    // run missing-dependency deletion here. The only permitted contract change
-    // is the reviewed additive commercial-followup event and the exact pinned
-    // reportDelivery additive contract.
+    // Omitting integrations/plugins/secrets is deliberate. Never run
+    // missing-dependency deletion here. Configuration is sent only when the
+    // exact reviewed commercial-planning addition was derived from the fresh
+    // remote snapshot; every other contract/configuration delta fails closed.
     const update = buildBotpressAdditiveEventUpdate({
       botId: ctx.botId,
       code: bundle.toString('utf8'),
       eventPatch: additiveEventPatch,
       conversationTagPatch,
       actionPatch,
+      configurationPlan,
     });
     await client.updateBot(update);
     const after = (await client.getBot({ id: ctx.botId })).bot;
     record('bot-after.private.json', after);
-    const configurationUnchanged = equal(protectedConfiguration(before), protectedConfiguration(after));
+    const expectedProtectedConfiguration = {
+      ...protectedConfiguration(before),
+      configuration: normalizeBotpressConfigurationForComparison(configurationPlan.configuration),
+    };
+    const configurationMatchesExpected = equal(expectedProtectedConfiguration, protectedConfiguration(after));
+    const configurationUnchanged = equal(before.configuration, after.configuration);
+    const configurationContractCurrent = !planBotpressReviewedConfigurationUpdate({
+      remoteConfiguration: after.configuration,
+      generatedConfiguration: body.configuration,
+    }).changed;
     const eventContractCurrent = Object.keys(planBotpressAdditiveEventPatch({
       remoteEvents: after.events ?? {},
       generatedEvents: body.events ?? {},
@@ -186,14 +212,17 @@ try {
     });
     const remoteCodeMatches = remoteCodeEvidence.matches;
     const result = { ...preflight, deployedAt: after.deployedAt, previousDeployedAt: before.deployedAt,
-      configurationUnchanged, eventContractCurrent, conversationTagContractCurrent,
+      configurationUnchanged, configurationMatchesExpected, configurationContractCurrent,
+      eventContractCurrent, conversationTagContractCurrent,
       actionContractCurrent,
       remoteCodeEvidence, remoteCodeMatches,
       codeOnly: additiveEventKeys.length === 0
         && additiveConversationTagKeys.length === 0
-        && Object.keys(actionPatch).length === 0 };
+        && Object.keys(actionPatch).length === 0
+        && !configurationPlan.changed };
     record('publication.json', result);
-    assert(configurationUnchanged && eventContractCurrent && conversationTagContractCurrent
+    assert(configurationMatchesExpected && configurationContractCurrent
+      && eventContractCurrent && conversationTagContractCurrent
       && actionContractCurrent
       && remoteCodeMatches !== false
       && after.deployedAt !== before.deployedAt, 'POST_PUBLICATION_PARITY_FAILED');

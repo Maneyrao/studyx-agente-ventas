@@ -1,0 +1,33 @@
+{
+  "application_change_sha": "bac1af0dc90e68c2234184bee2d467fda03ed763",
+  "prepared_release_sha": "d558f938f849422d2adc12797e4773bf95b29a0d",
+  "unit": {
+    "passed": 4955,
+    "skipped": 17,
+    "todo": 7
+  },
+  "integration": {
+    "passed": 962,
+    "skipped": 1,
+    "database": "clean disposable PostgreSQL 17 + pgvector; all migrations applied in order"
+  },
+  "focused": {
+    "passed": 42
+  },
+  "signed_workflow_fixtures": {
+    "passed": 2,
+    "selected_out": 2,
+    "external_providers": "simulated; real workflow, HTTP backend, payment signature, database and fulfillment contracts"
+  },
+  "release_tooling": {
+    "passed": 16
+  },
+  "typecheck": "passed",
+  "lint": "passed",
+  "backend_build": "passed",
+  "botpress_adk_check": "passed",
+  "botpress_build_and_readonly_preflight": "passed",
+  "architect": "approved",
+  "external_model_requests": 0,
+  "new_formal_16_golden_acceptance": false
+}

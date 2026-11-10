@@ -7,9 +7,15 @@ export interface NegotiationTurnEvidenceV1 {
   readonly maxBonusChallenge?:boolean;
   readonly turnId: string; readonly response: string; readonly customer: string;
   readonly currentTurnId?: string; readonly priorPriceSourceIds?: readonly string[];
-  readonly ladder?: {readonly observed_price_objection_count:number;readonly required_price_objection_count:3;
+  readonly currentPriceObjectionQuoted?:boolean;
+  readonly currentPriceObjectionPersisted?:boolean;
+  readonly currentPriceOnlyBarrierQuoted?:boolean;
+  readonly priceOnlyBarrierConfirmed?:boolean;
+  readonly ladder?: ({readonly retention_used:boolean;readonly previous_turn_asked_price_question:boolean} | {
+    readonly observed_price_objection_count:number;readonly required_price_objection_count:2|3;
+    readonly price_only_barrier_confirmed?:boolean;readonly instant_trigger?:boolean;
     readonly call_invitation_status:string;readonly call_offer_count:number;readonly may_offer_call:boolean;
-    readonly missing_steps:readonly string[];readonly eligible:boolean} | null;
+    readonly missing_steps:readonly string[];readonly eligible:boolean}) | null;
   readonly action: string | null;
   readonly proposedAction: Record<string,unknown> | null;
   readonly selectedCourse: string | null;
@@ -18,16 +24,41 @@ export interface NegotiationTurnEvidenceV1 {
 }
 export interface InvariantCheckV1 {readonly id:string;readonly status:InvariantStatusV1;readonly authority:string;readonly evidence:readonly string[];readonly failedTurnIds:readonly string[];readonly indeterminateTurnIds:readonly string[]}
 export const NEGOTIATION_AUTHORITY_V1 = {
-  ladder:'AGENTS.md:regla 10; docs/authority/prompt-agente-a-studyx-v2.md:106-129',
+  ladder:'AGENTS.md:202-212 (motivo del mensaje actual); docs/authority/prompt-agente-a-studyx-v2.md:106-129',
   package:'docs/authority/spec-backend-bonificacion.md:39-40,59-71',
   semantics:'docs/authority/prompt-agente-a-studyx-v2.md:106-129',
 } as const;
+
+function isCurrentMotiveLadderV1(value:NegotiationTurnEvidenceV1['ladder']):value is {
+  readonly retention_used:boolean;readonly previous_turn_asked_price_question:boolean
+} {
+  return value!==null&&value!==undefined&&'retention_used' in value&&'previous_turn_asked_price_question' in value;
+}
+
+function currentMotiveStatusV1(turn:NegotiationTurnEvidenceV1):{status:InvariantStatusV1;evidence:string} {
+  const motive=turn.proposedAction?.motive;
+  if(!motive||typeof motive!=='object'||Array.isArray(motive))return {status:'FAIL',evidence:`${turn.turnId}:missing motive`};
+  const kind=(motive as Record<string,unknown>).kind;
+  const quote=(motive as Record<string,unknown>).quote;
+  const allowed=['price_objection','promotion_rejection','better_promotion_request','purchase_decline'];
+  if(typeof kind!=='string'||!allowed.includes(kind))return {status:'FAIL',evidence:`${turn.turnId}:invalid kind=${String(kind)}`};
+  if(typeof quote!=='string'||quote.trim()==='')return {status:'FAIL',evidence:`${turn.turnId}:missing quote`};
+  return turn.customer.includes(quote)
+    ? {status:'PASS',evidence:`${turn.turnId}:kind=${kind};quote=${JSON.stringify(quote)}`}
+    : {status:'FAIL',evidence:`${turn.turnId}:quote is not literal in current customer batch`};
+}
 export function aggregateInvariantStatusV1(statuses:readonly InvariantStatusV1[]):InvariantStatusV1 {
   if(statuses.includes('FAIL'))return 'FAIL';
   if(statuses.length===0||statuses.includes('INDETERMINATE'))return 'INDETERMINATE';
   return statuses.includes('NOT_EXERCISED')?'NOT_EXERCISED':'PASS';
 }
-export function evaluateNegotiationInvariantsV1(caseCode:string, turns:readonly NegotiationTurnEvidenceV1[], semanticStatus:InvariantStatusV1, factStatus:InvariantStatusV1='PASS') {
+export function evaluateNegotiationInvariantsV1(
+  caseCode:string,
+  turns:readonly NegotiationTurnEvidenceV1[],
+  semanticStatus:InvariantStatusV1,
+  factStatus:InvariantStatusV1='PASS',
+  semanticStatusByTurn:Readonly<Record<string,InvariantStatusV1>>={},
+) {
   const records=new Map<string,{status:InvariantStatusV1;evidence:string[];failedTurnIds:string[];indeterminateTurnIds:string[]}>();
   let activeTurnId:string|undefined;
   const record=(id:string,status:InvariantStatusV1,evidence:string)=>{
@@ -60,17 +91,36 @@ export function evaluateNegotiationInvariantsV1(caseCode:string, turns:readonly 
     if(t.action==='offer_course_bonus'){
       offered++;
       const l=t.ladder;
+      if(isCurrentMotiveLadderV1(l)){
+        const motive=currentMotiveStatusV1(t);
+        record('current_motive',motive.status,motive.evidence);
+      }else if(l?.required_price_objection_count===2){
+        // Owner rule A: the current quoted, committed objection counts. A lexical
+        // price hint, eligible=true or an unquoted model memory is never evidence.
+        const current=t.currentPriceObjectionQuoted===true&&t.currentPriceObjectionPersisted===true;
+        const prior=t.priorPriceSourceIds;
+        const confirmed=t.priceOnlyBarrierConfirmed===true||l.price_only_barrier_confirmed===true;
+        record('prior_ladder',!Number.isInteger(l.observed_price_objection_count)?'INDETERMINATE'
+          :l.observed_price_objection_count+(current?1:0)>=2||confirmed?'PASS':'FAIL',`${t.turnId}:${JSON.stringify(l)};current_quoted_persisted=${current};price_only=${confirmed}`);
+        if(!t.currentTurnId||!prior)record('prior_sources','INDETERMINATE',`${t.turnId}:missing source IDs`);
+        else if(prior.includes(t.currentTurnId))record('prior_sources','FAIL',`${t.turnId}:current source mislabeled as prior`);
+        else record('prior_sources',new Set(prior).size+(current?1:0)>=(confirmed?1:2)?'PASS':'FAIL',`${t.turnId}:prior=${prior.join(',')};current=${current};price_only=${confirmed}`);
+        // A prior call is intentionally no longer a bonus precondition (owner A).
+        // Call policy and early-offer rule B remain separately measured.
+      }else{
       record('prior_ladder',!l||!Number.isInteger(l.observed_price_objection_count)?'INDETERMINATE':l.observed_price_objection_count<3?'FAIL':'PASS',`${t.turnId}:${JSON.stringify(l??null)}`);
       if(t.currentTurnId&&t.priorPriceSourceIds){
         record('prior_sources',t.priorPriceSourceIds.includes(t.currentTurnId)?'FAIL':new Set(t.priorPriceSourceIds).size<3?'INDETERMINATE':'PASS',`${t.turnId}:current=${t.currentTurnId};prior=${t.priorPriceSourceIds.join(',')}`);
       }else record('prior_sources','INDETERMINATE',`${t.turnId}:missing committed source IDs`);
       if(l)record('prior_call',['offered','declined'].includes(l.call_invitation_status)||l.may_offer_call===false||l.call_offer_count>=2?'PASS':l.may_offer_call===undefined||l.call_invitation_status===undefined?'INDETERMINATE':'FAIL',`${t.turnId}:${l.call_invitation_status};may_offer=${l.may_offer_call};count=${l.call_offer_count}`);
       else record('prior_call','INDETERMINATE',t.turnId);
+      }
       const old=previous?.promotion.paidCourse===t.promotion.paidCourse?previous.promotion.bonusCourses:[];
       const added=t.promotion.bonusCourses.filter(c=>!old.includes(c));
       record('one_distinct_addition',added.length===1&&new Set(t.promotion.bonusCourses).size===t.promotion.bonusCount&&added[0]===t.proposedAction?.bonus_offering_code&&old.every(c=>t.promotion.bonusCourses.includes(c))?'PASS':'FAIL',`${t.turnId}:new=${added.join(',')};prior=${old.join(',')}`);
       record('active_distinct_course',added.every(code=>code!==t.promotion.paidCourse&&t.offerings.some(o=>o.code===code))?'PASS':'FAIL',`${t.turnId}:new=${added.join(',')};paid=${t.promotion.paidCourse}`);
-      record('package_recap',semanticStatus==='PASS'?'PASS':'INDETERMINATE',`${t.turnId}:semantic recap of paid=${t.promotion.paidCourse};members=${t.promotion.bonusCourses.join(',')};canonical display-name literal matching is not a requirement`);
+      const recapStatus=semanticStatusByTurn[t.turnId]??semanticStatus;
+      record('package_recap',recapStatus,`${t.turnId}:semantic recap of paid=${t.promotion.paidCourse};members=${t.promotion.bonusCourses.join(',')};canonical display-name literal matching is not a requirement`);
       record('effect_matches_proposal',t.proposedAction?.type==='offer_course_bonus'?'PASS':'FAIL',t.turnId);
     }
     if(previous&&previous.selectedCourse!==t.selectedCourse&&previous.promotion.bonusCount>0&&previous.promotion.status!=='cancelled'){
@@ -81,21 +131,21 @@ export function evaluateNegotiationInvariantsV1(caseCode:string, turns:readonly 
   }
   activeTurnId=undefined;
   if(maximum<=3)record('max_three',!caseCode.startsWith('06')||maximum===3?'PASS':'NOT_EXERCISED',`maximum=${maximum}; need actual cap exercise`);
-  if(!offered)for(const id of ['prior_ladder','prior_sources','prior_call','one_distinct_addition','active_distinct_course','package_recap','effect_matches_proposal'])record(id,'NOT_EXERCISED','No bonus effect executed.');
+  if(!offered)for(const id of ['current_motive','prior_ladder','prior_sources','prior_call','one_distinct_addition','active_distinct_course','package_recap','effect_matches_proposal'])record(id,'NOT_EXERCISED','No bonus effect executed.');
   if(caseCode.startsWith('06')){
     record('three_additions_exercised',offered>=3&&maximum===3?'PASS':'NOT_EXERCISED',`Test exposure only, not an obligation to sell three: effects=${offered};max=${maximum}`);
     record('fourth_request_exercised',turns.some((t,i)=>t.maxBonusChallenge&&i>0&&turns[i-1]!.promotion.bonusCount===3)?'PASS':'NOT_EXERCISED','Requires a real intervention after three accumulated bonuses.');
   }
   if(caseCode.startsWith('14')&&!cancelExercised)record('course_change_cancellation','NOT_EXERCISED','No paid-course change with a nonempty cancellable package.');
   record('objective_facts',factStatus,'Original nonpositional hard facts retained.');
-  record('commercial_semantics',semanticStatus,'Value → installments → isolation/conditional close → appropriate call → affinity, closure and no unauthorized explicit or implicit bonus. Requires semantic evidence; never inferred from text patterns.');
+  record('commercial_semantics',semanticStatus,'Personalized value, authorized installments, affinity, closure and no unauthorized explicit or implicit bonus. Owner A/B override bonus timing and early call; evidence is semantic, never inferred from text patterns.');
   const authorityFor=(id:string)=>{
     if(id==='never_silence'||id==='effect_matches_proposal')return 'docs/authority/prompt-agente-a-studyx-v2.md:236';
     if(id==='package_recap')return 'docs/authority/prompt-agente-a-studyx-v2.md:124';
     if(id==='active_distinct_course')return 'docs/authority/prompt-agente-a-studyx-v2.md:122; docs/authority/spec-backend-bonificacion.md:61-63';
     if(id==='course_change_cancellation')return 'docs/authority/spec-backend-bonificacion.md:40';
     if(id==='commercial_semantics')return 'docs/authority/prompt-agente-a-studyx-v2.md:106-112,122-124,129; docs/authority/spec-backend-bonificacion.md:69-73';
-    if(id.startsWith('prior_'))return NEGOTIATION_AUTHORITY_V1.ladder;
+    if(id==='current_motive'||id.startsWith('prior_'))return NEGOTIATION_AUTHORITY_V1.ladder;
     if(id==='objective_facts')return 'docs/authority/prompt-agente-a-studyx-v2.md:50,87,236';
     return 'docs/authority/prompt-agente-a-studyx-v2.md:121; docs/authority/spec-backend-bonificacion.md:64-66,103';
   };

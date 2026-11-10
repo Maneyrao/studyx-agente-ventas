@@ -35,6 +35,7 @@ export interface CentralCargaBonusConfig {
   readonly enabled: boolean;
   readonly fulfillmentPaused: boolean;
   readonly canaryContactIds?: readonly string[];
+  readonly canaryPhoneE164s?: readonly string[];
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
@@ -46,24 +47,38 @@ function parseCanaryContactIds(value: string | undefined): readonly string[] {
     .filter((candidate) => UUID.test(candidate)))];
 }
 
+function normalizedCanaryPhone(value: string | null | undefined): string | null {
+  const compact = value?.trim().replace(/[ ()-]/gu, '') ?? '';
+  const phone = /^\d+$/u.test(compact) ? `+${compact}` : compact;
+  return /^\+[1-9]\d{7,14}$/u.test(phone) && !phone.startsWith('+999') ? phone : null;
+}
+
+function isCanaryContact(config: CentralCargaBonusConfig, contactId: string, storedPhone?: string | null): boolean {
+  if ((config.canaryContactIds ?? []).includes(contactId.trim().toLowerCase())) return true;
+  const phone = normalizedCanaryPhone(storedPhone);
+  return phone !== null && (config.canaryPhoneE164s ?? []).includes(phone);
+}
+
 export function isCentralCargaBonusEnabledForContact(
   config: CentralCargaBonusConfig,
   contactId: string,
+  storedPhone?: string | null,
 ): boolean {
   if (config.enabled) return true;
-  return (config.canaryContactIds ?? []).includes(contactId.trim().toLowerCase());
+  return isCanaryContact(config, contactId, storedPhone);
 }
 
 export function isCentralCargaBonusConfigured(config: CentralCargaBonusConfig): boolean {
-  return config.enabled || (config.canaryContactIds?.length ?? 0) > 0;
+  return config.enabled || (config.canaryContactIds?.length ?? 0) > 0 || (config.canaryPhoneE164s?.length ?? 0) > 0;
 }
 
 export function isCentralCargaBonusFulfillmentAllowedForContact(
   config: CentralCargaBonusConfig,
   contactId: string,
+  storedPhone?: string | null,
 ): boolean {
   return !config.fulfillmentPaused
-    || (config.canaryContactIds ?? []).includes(contactId.trim().toLowerCase());
+    || isCanaryContact(config, contactId, storedPhone);
 }
 
 export function loadCentralCargaBonusConfig(
@@ -73,6 +88,8 @@ export function loadCentralCargaBonusConfig(
     enabled: environment.CENTRAL_CARGA_BONUS_ENABLED?.trim().toLowerCase() === 'true',
     fulfillmentPaused: environment.CENTRAL_CARGA_BONUS_FULFILLMENT_PAUSED?.trim().toLowerCase() === 'true',
     canaryContactIds: parseCanaryContactIds(environment.CENTRAL_CARGA_BONUS_CANARY_CONTACT_IDS),
+    canaryPhoneE164s: [...new Set((environment.CENTRAL_CARGA_BONUS_CANARY_PHONE_E164S ?? '')
+      .split(',').map(normalizedCanaryPhone).filter((phone): phone is string => phone !== null))],
   };
 }
 

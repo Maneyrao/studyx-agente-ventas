@@ -12,6 +12,9 @@ export type CallStatus =
   | 'timed_out'
   | 'cancelled';
 
+/** Statuses after which a call session can no longer ring or talk. */
+export const TERMINAL_CALL_STATUSES = ['completed', 'failed', 'no_answer', 'timed_out', 'cancelled'] as const satisfies readonly CallStatus[];
+
 export type AnalysisStatus = 'pending' | 'completed' | 'failed';
 
 export interface CallProjection {

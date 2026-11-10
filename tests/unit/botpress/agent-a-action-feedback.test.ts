@@ -75,6 +75,33 @@ describe('Agent A conversation from action feedback', () => {
       .toEqual(['nombre', 'apellido']);
   });
 
+  it('keeps a model-authored invitation permitted by the call policy while fencing physical call and payment actions', async () => {
+    const current = context();
+    current.capabilities.may_offer_call = true;
+    current.commercial_state.call_preference = 'unknown';
+    current.commercial_state.call_offer_status = 'not_offered';
+    current.commercial_state.call_offer_count = 0;
+    current.commercial_state.awaiting_reply = 'none';
+    const rejection = { schema_version: 1 as const,
+      rejection_id: '00000000-0000-4000-8000-000000000008', attempt: 1 as const,
+      rejections: [{ code: 'ACTION_NOT_AUTHORIZED' as const, subject: 'offer_course_bonus' }],
+      authorized_alternatives: { fact_ids: [], actions: ['none'], missing_information: [] } };
+    const authored = reply('Te cuento las opciones.');
+    const generate = vi.fn(async () => ({ ...authored, proposal: { ...authored.proposal,
+      response: { messages: ['Te cuento las opciones.'], call_offer: 'Si querés, podemos verlo en una llamada corta. Te sirve?' },
+      repair_of: { rejection_id: rejection.rejection_id, attempt: 1 as const } } }));
+    const result = await continueAgentAAfterActionFeedbackV1({ context: current, rejection,
+      apiKey: 'fixture', signal: new AbortController().signal, model: 'deepseek-v4-flash', generate });
+    expect(generate).toHaveBeenCalledWith(expect.objectContaining({ conversation_only: true }));
+    expect(result.proposal.response.call_offer).toBeTruthy();
+    expect(result.proposal.proposed_action).toEqual({ type: 'none' });
+    generate.mockImplementationOnce(async () => ({ ...authored, proposal: { ...authored.proposal,
+      proposed_action: { type: 'request_call_now', reason: 'direct_request' },
+      repair_of: { rejection_id: rejection.rejection_id, attempt: 1 } } } as never));
+    await expect(continueAgentAAfterActionFeedbackV1({ context: current, rejection,
+      apiKey: 'fixture', signal: new AbortController().signal, model: 'deepseek-v4-flash', generate }))
+      .rejects.toThrow('ACTION_NOT_AUTHORIZED:continuation');
+  });
   it('retains a promotion review as an authorized correction when the capability allows it', () => {
     const current = context();
     current.capabilities.course_bonus = {
@@ -170,7 +197,7 @@ describe('Agent A conversation from action feedback', () => {
       ...draft.proposal,
       proposed_action: {
         type: 'offer_course_bonus' as const,
-        interest_offering_code: 'fotografia_profesional',
+        motive:{kind:'price_objection' as const,quote:'es caro'}, interest_offering_code: 'fotografia_profesional',
         bonus_offering_code: 'diseno_photoshop',
       },
       repair_of: { rejection_id: rejection.rejection_id, attempt: 1 as const },

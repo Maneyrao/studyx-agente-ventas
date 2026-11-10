@@ -187,6 +187,23 @@ function suppressedRoute(
   }
 }
 
+/**
+ * Owner decision 2026-11-04: the model writes commercial copy; the backend
+ * delivers data and effects. A deterministic route that reaches the customer
+ * (only when the brain did not run: brain off, or ineligible) keeps its
+ * effects, ids and reason but never its prefab sales wording: the text becomes
+ * the single P0 sentence. Kept as written: the opt-out acknowledgement, the
+ * call handoff acknowledgements and any decision that carries a business action
+ * (e.g. the payment-link acknowledgement).
+ */
+export const PREFAB_COPY_FALLBACK_TEXT = 'Perdón, no te entendí bien, a qué te refieres?'
+export function withoutPrefabCommercialCopy(route: CommercialRouteResult): CommercialRouteResult {
+  if (route.kind !== 'deterministic' || route.origin === 'opt_out_ack' || route.origin === 'call_handoff') return route
+  const { decision } = route
+  if (decision.kind === 'suppress' || !decision.response || decision.business_action) return route
+  return { ...route, decision: { ...decision, response: PREFAB_COPY_FALLBACK_TEXT } }
+}
+
 function deterministicRoute(
   origin: DeterministicCommercialRouteOrigin,
   model: string,
@@ -234,7 +251,7 @@ function paymentOfferingClarification(): Decision {
     schema_version: 4,
     intent: 'commercial',
     kind: 'clarify',
-    response: 'Perfecto. ¿Para qué curso querés elegir ese plan?',
+    response: 'Perfecto. ¿Para qué curso quieres elegir ese plan?',
     response_type: 'clarification',
     confidence: 1,
     reason_code: 'OFFERING_REQUIRED',
@@ -363,7 +380,7 @@ function unavailableCatalogRoute(
     claimed,
     'catalog_unavailable',
     reason,
-    'No puedo confirmar el catálogo ahora. ¿Querés que lo revisemos más tarde?',
+    'No puedo confirmar el catálogo ahora. ¿Quieres que lo revisemos más tarde?',
     'catalog_availability',
   )
 }
@@ -450,7 +467,7 @@ function routeCatalogResolution(claimed: ClaimedTurn): CommercialRouteResult | n
       claimed,
       'catalog_ambiguous',
       'DETERMINISTIC_CATALOG_AMBIGUOUS',
-      `Encontré varias opciones: ${labels.join(', ')}. ¿Cuál querés revisar?`,
+      `Encontré varias opciones: ${labels.join(', ')}. ¿Cuál quieres revisar?`,
       resolution.clarification === 'choose_area' ? 'catalog_area_choice' : 'catalog_offering_choice',
     )
   }
@@ -478,7 +495,7 @@ function routeCatalogResolution(claimed: ClaimedTurn): CommercialRouteResult | n
       claimed,
       'catalog_not_found',
       'DETERMINISTIC_CATALOG_NOT_FOUND',
-      'No pude verificar ese curso. ¿Querés que te muestre opciones de esa área?',
+      'No pude verificar ese curso. ¿Quieres que te muestre opciones de esa área?',
       'catalog_alternative',
     )
   }

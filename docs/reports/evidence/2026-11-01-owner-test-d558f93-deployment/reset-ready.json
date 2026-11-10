@@ -1,0 +1,26 @@
+{
+  "operation_version": "owner-test-lead-reset-v1",
+  "resetId": "4d52008c-985e-49fe-a17a-b03276905fea",
+  "phase": "ready_for_first_inbound",
+  "oldContactId": "ac0e21f1-4dbe-46ed-ac8a-acbf4187317c",
+  "workspaceId": "b0000000-0000-4000-8000-000000000001",
+  "phone_sha256": "face2198d9d973bdcdc15294ba29d303a3cd4475ef5a63823c60664f0668b8ea",
+  "newContactId": "98807ee2-8e7a-46d5-9f33-b2764669af04",
+  "newBotpressConversationId": null,
+  "oldConversationDeleted": true,
+  "proof": {
+    "oldConversationDeleted": true,
+    "newBotpressConversationId": null,
+    "matchingConversationCount": 0,
+    "activeWorkflows": 0,
+    "activeOwnerWorkflows": 0,
+    "checkedActiveBotWorkflows": 0,
+    "workflowPages": 1,
+    "routingValidation": "pending_first_real_inbound"
+  },
+  "freshLeadClean": true,
+  "financialRowsPreserved": true,
+  "continuityRowsPreserved": true,
+  "routingValidation": "pending_first_real_inbound",
+  "creationMode": "whatsapp_native_first_inbound"
+}

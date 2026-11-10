@@ -4,9 +4,9 @@ import { isAgentOwnedContactProfileV1, isContactProfileSourceStaleV1, type Store
 import { jsonbParam } from '@/lib/db/json';
 import { withSerializableTransactionOn } from '@/lib/db/transaction';
 
-/** The model interprets confirmation. PostgreSQL proves the number belonged
- * to the immediately preceding, delivered reply and extends the customer's
- * own local number. No country inference or conversational classification. */
+/** The model interprets confirmation. PostgreSQL proves the complete number
+ * came from the customer or is a last-four correction of an already callable
+ * number. A delivered assistant reply never supplies a missing country code. */
 export async function confirmDeliveredContactPhone(input: {
   turnId: string;
   phone: string;
@@ -33,6 +33,29 @@ export async function confirmDeliveredContactPhone(input: {
       source: { id: input.turnId, conversation_id: recorded.conversation_id, conversation_seq: Number(recorded.conversation_seq) },
     }) || profile.fields.telefono.status === 'retracted' && profile.fields.telefono.source_message_id === input.turnId) return false;
   } else if (recorded.declared_phone === input.phone) return true;
+  const customerAuthoredCurrentPhone = extractDeclaredPhones(recorded.content).includes(input.phone);
+  if (customerAuthoredCurrentPhone) {
+    if (profile) {
+      const nextProfile = structuredClone(profile);
+      nextProfile.version += 1;
+      nextProfile.fields.telefono = {
+        value: input.phone,
+        status: 'confirmed',
+        source: 'agent_a_v1',
+        source_message_id: input.turnId,
+        source_conversation_id: recorded.conversation_id,
+        source_quote: recorded.content,
+        source_seq: Number(recorded.conversation_seq),
+        version: nextProfile.version,
+      };
+      await db`UPDATE contacts SET contact_profile_v1 = ${jsonbParam(db, nextProfile)},
+        declared_phone = ${input.phone}, updated_at = now() WHERE id = ${recorded.contact_id}::uuid`;
+    } else {
+      await db`UPDATE contacts SET declared_phone = ${input.phone}, updated_at = now()
+        WHERE id = ${recorded.contact_id}::uuid AND contact_profile_v1 IS NULL`;
+    }
+    return true;
+  }
   const rows = await db<Array<{ id: string; contact_id: string; declared_phone: string | null; content: string }>>`
     SELECT previous.id, current.contact_id, contact.declared_phone, previous.content
     FROM messages current
@@ -65,7 +88,6 @@ export async function confirmDeliveredContactPhone(input: {
   `;
   const source = rows.find(row => extractDeclaredPhones(row.content).includes(input.phone));
   if (!source) return false;
-  const declared = source.declared_phone?.replace(/\D/gu, '') ?? '';
   let numberEvidence: { id: string; content: string } | undefined;
   if (profile) {
     // Literal number provenance survives retirement of semantic ingestion.
@@ -80,20 +102,67 @@ export async function confirmDeliveredContactPhone(input: {
       ORDER BY supplied.conversation_seq DESC LIMIT 32
     `;
     numberEvidence = priorNumbers.find(message => extractDeclaredPhones(message.content)
-      .some(number => input.phone.endsWith(number.replace(/\D/gu, ''))));
-    if (!numberEvidence && (declared.length < 8 || !input.phone.endsWith(declared))) return false;
+      .includes(input.phone));
+    // A corrected known number: the customer wrote the changed tail ("termina
+    // en 8"), saw the complete candidate in the delivered reply and confirmed
+    // it. Only the last four digits may change; country and area stay those of
+    // the callable number already on the profile.
+    const known = profile.fields.telefono.status === 'retracted' ? null : profile.fields.telefono.value;
+    let correctionEvidence: { id: string; content: string } | undefined;
+    if (!numberEvidence && known !== null && known !== input.phone && isCallablePhoneE164V1(known)
+      && known.length === input.phone.length && known.slice(0, -4) === input.phone.slice(0, -4)) {
+      let firstChanged = 0;
+      while (known[firstChanged] === input.phone[firstChanged]) firstChanged += 1;
+      const changedTail = input.phone.slice(firstChanged);
+      // Only the customer's batch answering the reply before the suggestion,
+      // newer than the known phone's own source, and only standalone digits
+      // (never an amount, a time, a percentage or a decimal).
+      const knownSeq = profile.fields.telefono.source_conversation_id === recorded.conversation_id
+        ? profile.fields.telefono.source_seq ?? -1 : -1;
+      // The batch is the one answered by the FIRST reply proposing this number:
+      // the agent may repeat the question while the customer has not confirmed.
+      const proposals = await db<Array<{ id: string; content: string }>>`
+        SELECT reply.id, reply.content FROM messages reply JOIN messages suggestion ON suggestion.id = ${source.id}::uuid
+        WHERE reply.conversation_id = suggestion.conversation_id AND reply.direction = 'outbound'
+          AND reply.created_at <= suggestion.created_at
+        ORDER BY reply.created_at DESC, reply.id DESC LIMIT 6
+      `;
+      let firstProposalId = source.id;
+      for (const reply of proposals) {
+        if (!extractDeclaredPhones(reply.content).includes(input.phone)) break;
+        firstProposalId = reply.id;
+      }
+      const correctionBatch = await db<Array<{ id: string; content: string }>>`
+        SELECT supplied.id, supplied.content FROM messages supplied JOIN messages suggestion ON suggestion.id = ${firstProposalId}::uuid
+        WHERE supplied.contact_id = ${recorded.contact_id}::uuid AND supplied.conversation_id = ${recorded.conversation_id}::uuid
+          AND supplied.direction = 'inbound' AND supplied.created_at < suggestion.created_at
+          AND supplied.conversation_seq > ${knownSeq}
+          AND COALESCE(supplied.metadata->>'message_type', 'text') <> 'unsupported'
+          AND NOT EXISTS (SELECT 1 FROM messages earlier WHERE earlier.conversation_id = suggestion.conversation_id
+            AND earlier.direction = 'outbound' AND earlier.id <> suggestion.id
+            AND earlier.created_at > supplied.created_at AND earlier.created_at < suggestion.created_at
+            AND earlier.in_reply_to IS DISTINCT FROM suggestion.in_reply_to)
+        ORDER BY supplied.conversation_seq DESC LIMIT 8
+      `;
+      correctionEvidence = correctionBatch.find(message => (message.content.match(/(?<![\d$%:/.,])\d+(?![\d%:/]|[.,]\d)/gu) ?? [])
+        .some(run => run.length >= changedTail.length && input.phone.endsWith(run)));
+    }
+    if (!numberEvidence && !correctionEvidence && source.declared_phone !== input.phone) return false;
+    const evidenceKind = correctionEvidence && source.declared_phone !== input.phone
+      ? 'delivered_phone_correction_v1' as const : 'delivered_phone_confirmation_v1' as const;
+    numberEvidence ??= correctionEvidence;
     const nextProfile = structuredClone(profile);
     nextProfile.version += 1;
     nextProfile.fields.telefono = { value: input.phone, status: 'confirmed', source: 'legacy',
       source_message_id: input.turnId, source_conversation_id: recorded.conversation_id,
       source_quote: recorded.content, source_seq: Number(recorded.conversation_seq), version: nextProfile.version,
-      confirmation_evidence: { kind: 'delivered_phone_confirmation_v1', suggested_message_id: source.id,
+      confirmation_evidence: { kind: evidenceKind, suggested_message_id: source.id,
         suggested_quote: source.content, local_phone_message_id: numberEvidence?.id ?? null,
         local_phone_quote: numberEvidence?.content ?? null } };
     await db`UPDATE contacts SET contact_profile_v1 = ${jsonbParam(db, nextProfile)},
       declared_phone = ${input.phone}, updated_at = now() WHERE id = ${source.contact_id}::uuid`;
   } else {
-    if (declared.length < 8 || !input.phone.endsWith(declared)) return false;
+    if (source.declared_phone !== input.phone) return false;
     await db`UPDATE contacts SET declared_phone = ${input.phone}, updated_at = now()
       WHERE id = ${source.contact_id}::uuid AND contact_profile_v1 IS NULL`;
   }

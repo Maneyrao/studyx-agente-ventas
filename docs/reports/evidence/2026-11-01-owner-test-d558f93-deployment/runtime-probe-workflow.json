@@ -1,0 +1,15 @@
+{
+  "checked_at": "2026-11-02T01:13:18.176Z",
+  "workflows": [
+    {
+      "id": "wrkflow_01M6CX23303JYD7Q413WHKZXAS",
+      "name": "processPostSale",
+      "status": "completed",
+      "input_notification_id": "827038e8-9f94-4311-adb7-e7bf6430a0af",
+      "output": {
+        "outcome": "not_claimed"
+      }
+    }
+  ],
+  "more": false
+}

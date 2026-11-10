@@ -1,5 +1,9 @@
 # Agent A authority golden baseline
 
+La campaña suplementaria de las reglas A/B y el replay del 2/11 está documentada en
+[`OWNER-RULES-2026-11-02.md`](OWNER-RULES-2026-11-02.md). La campaña formal original
+conserva sus 16 casos, 48 turnos y umbral de aceptación; los nuevos casos se seleccionan aparte.
+
 Esta suite fija el comportamiento esperado exclusivamente desde `AGENTS.md` y
 `docs/authority/`, sin modificar prompt, brain, políticas, validadores ni
 backend.

@@ -43,3 +43,6 @@ los nombres reales de los tags.
 - Una continuación opcional fallida no descarta una primera respuesta de A
   ya validada. Las generaciones comparten un límite de dos solicitudes
   reales, contando reparaciones de JSON y replay de pasos durables.
+- Excepción del dueño (2026-11-06): el plan comercial model-owned de Agent A
+  suma UNA solicitud por turno, sin reintento, fuera de ese límite y
+  registrada aparte. Ver «Planificación comercial en dos pasos» en AGENTS.md.

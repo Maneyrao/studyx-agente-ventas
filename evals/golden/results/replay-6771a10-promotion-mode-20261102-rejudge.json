@@ -1,0 +1,2488 @@
+{
+  "schema_version": 3,
+  "absolute_acceptance": null,
+  "evaluation_scope": {
+    "case_ids": [
+      "20_owner_promotion_mode_replay_20261102_1730"
+    ],
+    "expected_turns": 8,
+    "full_suite": false
+  },
+  "generated_at": "2026-11-02T21:16:28.690Z",
+  "base_sha": "6771a10ed7478305d363abe87e8ddb303fd99a5d",
+  "authority_baseline_origin_sha": "028f272fc3a6f6dc4806d19b251564169b55e6d6",
+  "execution_harness": "processInboundTurn",
+  "environment": "isolated_local",
+  "environment_configuration": {
+    "voice_provider": "telegram_sandbox",
+    "payment_provider": "fake",
+    "payment_link_environment": "test",
+    "payment_links_configured": true,
+    "course_bonus_flow_mode": "direct",
+    "course_bonus_max_courses": "3",
+    "provider_transport": {
+      "protocol": "responses_api",
+      "source_envelope": "responses_api",
+      "max_requests_per_minute": null,
+      "max_attempts": null,
+      "retry_base_delay_ms": null,
+      "request_timeouts_ms": {
+        "agent": 15000,
+        "judge": 30000,
+        "post_sale": 10000
+      },
+      "reasoning_mapping": "native"
+    }
+  },
+  "production_or_vertice_used": false,
+  "deepseek_model": "deepseek-v4-flash",
+  "actual_agent_model": "deepseek-v4-flash",
+  "judge_model": "deepseek-v4-flash",
+  "evaluation_provider": {
+    "name": "deepseek",
+    "base_url": "https://api.deepseek.com",
+    "model": "deepseek-v4-flash",
+    "judge_model": "deepseek-v4-flash",
+    "report": {
+      "provider": "deepseek",
+      "base_url": "https://api.deepseek.com",
+      "model": "deepseek-v4-flash",
+      "judge_model": "deepseek-v4-flash",
+      "max_requests_per_minute": null,
+      "logical_calls": 8,
+      "attempts": 8,
+      "usage_missing_attempts": 0,
+      "tokens": {
+        "input": 40921,
+        "output": 175,
+        "total": 41096,
+        "cached": 39424
+      },
+      "records": [
+        {
+          "call_id": "call-0001",
+          "attempt": 1,
+          "role": "judge",
+          "provider": "deepseek",
+          "source_model": "deepseek-v4-flash",
+          "requested_model": "deepseek-v4-flash",
+          "returned_model": "deepseek-flash",
+          "status": 200,
+          "rate_limit_wait_ms": 0,
+          "retry_wait_ms": 0,
+          "latency_ms": 1176,
+          "tokens": {
+            "input": 5547,
+            "output": 25,
+            "total": 5572,
+            "cached": 5376
+          },
+          "finish_reason": "completed",
+          "error_code": null,
+          "response_content": "{\"verdict\":{\"turn_id\":\"greeting_marketing_or_english\",\"approved\":true,\"failures\":[]}}",
+          "provider_response": {
+            "id": "ce30b33c-bc3f-4916-b0eb-2f32c4c1a1bb",
+            "object": "response",
+            "created_at": 1793654179,
+            "status": "completed",
+            "background": false,
+            "completed_at": 1793654180,
+            "content_filters": null,
+            "error": null,
+            "frequency_penalty": 0,
+            "incomplete_details": null,
+            "instructions": "Sos un juez estricto de comportamiento conversacional. Evalúa únicamente la respuesta entregada, la acción efectiva del backend, el estado y las precondiciones suministradas. actual.delivery_result es el resultado final: un intento rechazado que luego se reparó no invalida la entrega final. Los borradores, moves y acciones propuestas no son efectos ni evidencia de entrega. previous_delivery conserva el recibo, invitación y estado entregados en el turno anterior; early_call_offer_evidence conserva invitaciones autorizadas, persistidas y entregadas de la segunda/tercera respuesta en el mismo diálogo. Una invitación ya realizada no se exige de nuevo. promotion_delta compara identidades exactas del paquete anterior y actual: recordar un miembro ya vigente no añade un curso ni constituye por sí solo una nueva promesa. Una promesa nueva explícita o implícita sin efecto sigue siendo un fallo, incluso si el ledger no cambió; comparar lo prometido con los miembros ya vigentes. preconditions.rule_bonus_before_turn identifica únicamente cuál sería el próximo curso si una oferta resulta exigible; jamás demuestra por sí solo que la oferta sea exigible en este turno. Para exigirla deben acreditarse el disparador en negotiation_ladder_before_turn o rule_outcomes.rule_a=model|rewrite|fixed y el efecto final. rule_outcomes.rule_a=not_applicable, mayOfferBonus=false y ladder.eligible=false prueban que no correspondía bonificar, salvo evidencia estructural contradictoria como instant_trigger=true o priceOnlyBarrierConfirmed=true. No premies intención ni inventes hechos. Juzga cada requisito de forma independiente: nunca traslades el incumplimiento de un requisito a otro. Un requisito must falla si no se observa. Un must_not falla ÚNICAMENTE cuando la conducta prohibida sí ocurre; la ausencia de respuesta o de evidencia nunca viola un must_not. Una obligación condicional que comienza con “Si se añade un bonificado” no falla cuando no se añadió ninguno; la exigibilidad de añadirlo se juzga en el requisito de la Regla A. La prohibición de expresiones de la línea 129 está en la sección de bonificación y se interpreta por el objeto y el sentido: ofrecer un bonificado o una excepción personal. Compartir o dejar un enlace de inscripción no constituye por sí mismo regalar un curso. Esto no exime una bonificación explícita o implícita sin efecto, aunque la misma respuesta también comparta un enlace. Después de recomendar exactamente un curso, preguntar por equipo o por una preferencia entre contenidos de ese mismo curso (por ejemplo, cámara o edición) no equivale a abrir un menú de cursos. Un nombre completo como \"Ana Pérez\" satisface nombre y apellido; no se exige mostrarlos en campos separados. En preconditions.price_objection_memory, present=true prueba que la objeción del turno actual o de la conversación quedó registrada; priorSourceMessageIds prueba exclusivamente que ya existía en un turno anterior. preconditions.negotiation_ladder_before_turn y cada ladder del historial describen hechos previos a ese turno; action y promotion describen su resultado. Una llamada ofrecida en el turno actual no autoriza retroactivamente una bonificación del mismo turno; la Regla A del dueño tampoco exige una llamada previa, y puede coincidir con la Regla B cuando ambas tienen sus propios disparadores autorizados. may_offer_call gobierna una oferta proactiva, no invalida una llamada que el cliente pidió y confirmó; backend_action=request_call_now con actual.delivery_result.commitSucceeded=true prueba que el despacho fue autorizado. Si backend_action=send_payment_link y una URL visible coincide exactamente con actual.delivered_links, esa URL fue añadida por el backend y no fue escrita ni inventada por el agente. Para cada fallo elegí el requirement_id exacto, el authority_line_index y evidence_source. En observed_evidence copia literalmente el fragmento de esa fuente que prueba el fallo; para un must ausente puede quedar vacío, pero para un must_not debe ser un fragmento no vacío presente en la fuente. El runner expande la línea de autoridad; no redactes ni alteres citas. No juzgues reglas no incluidas.",
+            "max_output_tokens": 1200,
+            "max_tool_calls": null,
+            "model": "deepseek-flash",
+            "moderation": null,
+            "output": [
+              {
+                "type": "message",
+                "id": "89341770-72bd-4789-859e-d75d4a83339b",
+                "status": "completed",
+                "content": [
+                  {
+                    "type": "output_text",
+                    "annotations": [],
+                    "logprobs": [],
+                    "text": "{\"verdict\":{\"turn_id\":\"greeting_marketing_or_english\",\"approved\":true,\"failures\":[]}}"
+                  }
+                ],
+                "phase": "final_answer",
+                "role": "assistant"
+              }
+            ],
+            "parallel_tool_calls": true,
+            "presence_penalty": 0,
+            "previous_response_id": null,
+            "prompt_cache_key": null,
+            "prompt_cache_retention": null,
+            "reasoning": {
+              "effort": "none",
+              "summary": null
+            },
+            "safety_identifier": null,
+            "service_tier": "default",
+            "store": false,
+            "temperature": 0,
+            "text": {
+              "format": {
+                "type": "json_schema",
+                "name": "studyx_golden_semantic_turn_judge_v3",
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "verdict"
+                  ],
+                  "properties": {
+                    "verdict": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "turn_id",
+                        "approved",
+                        "failures"
+                      ],
+                      "properties": {
+                        "turn_id": {
+                          "type": "string",
+                          "enum": [
+                            "greeting_marketing_or_english"
+                          ]
+                        },
+                        "approved": {
+                          "type": "boolean"
+                        },
+                        "failures": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                              "code",
+                              "requirement_id",
+                              "authority_line_index",
+                              "evidence_source",
+                              "observed_evidence",
+                              "explanation"
+                            ],
+                            "properties": {
+                              "code": {
+                                "type": "string",
+                                "enum": [
+                                  "SEMANTIC_MUST_FAILED",
+                                  "SEMANTIC_MUST_NOT_FAILED"
+                                ]
+                              },
+                              "requirement_id": {
+                                "type": "string",
+                                "enum": [
+                                  "must:0",
+                                  "must_not:0"
+                                ]
+                              },
+                              "authority_line_index": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 36
+                              },
+                              "evidence_source": {
+                                "type": "string",
+                                "enum": [
+                                  "previous_delivery",
+                                  "promotion_delta",
+                                  "early_call_offer_evidence",
+                                  "response",
+                                  "backend_action",
+                                  "delivery_result",
+                                  "state",
+                                  "preconditions"
+                                ]
+                              },
+                              "observed_evidence": {
+                                "type": "string",
+                                "maxLength": 800
+                              },
+                              "explanation": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 800
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                },
+                "description": null,
+                "strict": null
+              },
+              "verbosity": null
+            },
+            "tool_choice": "auto",
+            "tools": [],
+            "top_logprobs": 0,
+            "top_p": 1,
+            "truncation": "disabled",
+            "usage": {
+              "input_tokens": 5547,
+              "input_tokens_details": {
+                "cached_tokens": 5376
+              },
+              "output_tokens": 25,
+              "output_tokens_details": {
+                "reasoning_tokens": 0
+              },
+              "total_tokens": 5572
+            },
+            "user": null,
+            "metadata": {}
+          }
+        },
+        {
+          "call_id": "call-0002",
+          "attempt": 1,
+          "role": "judge",
+          "provider": "deepseek",
+          "source_model": "deepseek-v4-flash",
+          "requested_model": "deepseek-v4-flash",
+          "returned_model": "deepseek-flash",
+          "status": 200,
+          "rate_limit_wait_ms": 0,
+          "retry_wait_ms": 0,
+          "latency_ms": 1169,
+          "tokens": {
+            "input": 5314,
+            "output": 20,
+            "total": 5334,
+            "cached": 5120
+          },
+          "finish_reason": "completed",
+          "error_code": null,
+          "response_content": "{\"verdict\":{\"turn_id\":\"english_from_zero\",\"approved\":true,\"failures\":[]}}",
+          "provider_response": {
+            "id": "66fe6ac9-4f1c-425d-9db2-1968490b1e9c",
+            "object": "response",
+            "created_at": 1793654180,
+            "status": "completed",
+            "background": false,
+            "completed_at": 1793654181,
+            "content_filters": null,
+            "error": null,
+            "frequency_penalty": 0,
+            "incomplete_details": null,
+            "instructions": "Sos un juez estricto de comportamiento conversacional. Evalúa únicamente la respuesta entregada, la acción efectiva del backend, el estado y las precondiciones suministradas. actual.delivery_result es el resultado final: un intento rechazado que luego se reparó no invalida la entrega final. Los borradores, moves y acciones propuestas no son efectos ni evidencia de entrega. previous_delivery conserva el recibo, invitación y estado entregados en el turno anterior; early_call_offer_evidence conserva invitaciones autorizadas, persistidas y entregadas de la segunda/tercera respuesta en el mismo diálogo. Una invitación ya realizada no se exige de nuevo. promotion_delta compara identidades exactas del paquete anterior y actual: recordar un miembro ya vigente no añade un curso ni constituye por sí solo una nueva promesa. Una promesa nueva explícita o implícita sin efecto sigue siendo un fallo, incluso si el ledger no cambió; comparar lo prometido con los miembros ya vigentes. preconditions.rule_bonus_before_turn identifica únicamente cuál sería el próximo curso si una oferta resulta exigible; jamás demuestra por sí solo que la oferta sea exigible en este turno. Para exigirla deben acreditarse el disparador en negotiation_ladder_before_turn o rule_outcomes.rule_a=model|rewrite|fixed y el efecto final. rule_outcomes.rule_a=not_applicable, mayOfferBonus=false y ladder.eligible=false prueban que no correspondía bonificar, salvo evidencia estructural contradictoria como instant_trigger=true o priceOnlyBarrierConfirmed=true. No premies intención ni inventes hechos. Juzga cada requisito de forma independiente: nunca traslades el incumplimiento de un requisito a otro. Un requisito must falla si no se observa. Un must_not falla ÚNICAMENTE cuando la conducta prohibida sí ocurre; la ausencia de respuesta o de evidencia nunca viola un must_not. Una obligación condicional que comienza con “Si se añade un bonificado” no falla cuando no se añadió ninguno; la exigibilidad de añadirlo se juzga en el requisito de la Regla A. La prohibición de expresiones de la línea 129 está en la sección de bonificación y se interpreta por el objeto y el sentido: ofrecer un bonificado o una excepción personal. Compartir o dejar un enlace de inscripción no constituye por sí mismo regalar un curso. Esto no exime una bonificación explícita o implícita sin efecto, aunque la misma respuesta también comparta un enlace. Después de recomendar exactamente un curso, preguntar por equipo o por una preferencia entre contenidos de ese mismo curso (por ejemplo, cámara o edición) no equivale a abrir un menú de cursos. Un nombre completo como \"Ana Pérez\" satisface nombre y apellido; no se exige mostrarlos en campos separados. En preconditions.price_objection_memory, present=true prueba que la objeción del turno actual o de la conversación quedó registrada; priorSourceMessageIds prueba exclusivamente que ya existía en un turno anterior. preconditions.negotiation_ladder_before_turn y cada ladder del historial describen hechos previos a ese turno; action y promotion describen su resultado. Una llamada ofrecida en el turno actual no autoriza retroactivamente una bonificación del mismo turno; la Regla A del dueño tampoco exige una llamada previa, y puede coincidir con la Regla B cuando ambas tienen sus propios disparadores autorizados. may_offer_call gobierna una oferta proactiva, no invalida una llamada que el cliente pidió y confirmó; backend_action=request_call_now con actual.delivery_result.commitSucceeded=true prueba que el despacho fue autorizado. Si backend_action=send_payment_link y una URL visible coincide exactamente con actual.delivered_links, esa URL fue añadida por el backend y no fue escrita ni inventada por el agente. Para cada fallo elegí el requirement_id exacto, el authority_line_index y evidence_source. En observed_evidence copia literalmente el fragmento de esa fuente que prueba el fallo; para un must ausente puede quedar vacío, pero para un must_not debe ser un fragmento no vacío presente en la fuente. El runner expande la línea de autoridad; no redactes ni alteres citas. No juzgues reglas no incluidas.",
+            "max_output_tokens": 1200,
+            "max_tool_calls": null,
+            "model": "deepseek-flash",
+            "moderation": null,
+            "output": [
+              {
+                "type": "message",
+                "id": "96f7a945-41e8-40d8-a26c-53447b517cbe",
+                "status": "completed",
+                "content": [
+                  {
+                    "type": "output_text",
+                    "annotations": [],
+                    "logprobs": [],
+                    "text": "{\"verdict\":{\"turn_id\":\"english_from_zero\",\"approved\":true,\"failures\":[]}}"
+                  }
+                ],
+                "phase": "final_answer",
+                "role": "assistant"
+              }
+            ],
+            "parallel_tool_calls": true,
+            "presence_penalty": 0,
+            "previous_response_id": null,
+            "prompt_cache_key": null,
+            "prompt_cache_retention": null,
+            "reasoning": {
+              "effort": "none",
+              "summary": null
+            },
+            "safety_identifier": null,
+            "service_tier": "default",
+            "store": false,
+            "temperature": 0,
+            "text": {
+              "format": {
+                "type": "json_schema",
+                "name": "studyx_golden_semantic_turn_judge_v3",
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "verdict"
+                  ],
+                  "properties": {
+                    "verdict": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "turn_id",
+                        "approved",
+                        "failures"
+                      ],
+                      "properties": {
+                        "turn_id": {
+                          "type": "string",
+                          "enum": [
+                            "english_from_zero"
+                          ]
+                        },
+                        "approved": {
+                          "type": "boolean"
+                        },
+                        "failures": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                              "code",
+                              "requirement_id",
+                              "authority_line_index",
+                              "evidence_source",
+                              "observed_evidence",
+                              "explanation"
+                            ],
+                            "properties": {
+                              "code": {
+                                "type": "string",
+                                "enum": [
+                                  "SEMANTIC_MUST_FAILED",
+                                  "SEMANTIC_MUST_NOT_FAILED"
+                                ]
+                              },
+                              "requirement_id": {
+                                "type": "string",
+                                "enum": [
+                                  "must:0",
+                                  "must_not:0"
+                                ]
+                              },
+                              "authority_line_index": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 36
+                              },
+                              "evidence_source": {
+                                "type": "string",
+                                "enum": [
+                                  "previous_delivery",
+                                  "promotion_delta",
+                                  "early_call_offer_evidence",
+                                  "response",
+                                  "backend_action",
+                                  "delivery_result",
+                                  "state",
+                                  "preconditions"
+                                ]
+                              },
+                              "observed_evidence": {
+                                "type": "string",
+                                "maxLength": 800
+                              },
+                              "explanation": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 800
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                },
+                "description": null,
+                "strict": null
+              },
+              "verbosity": null
+            },
+            "tool_choice": "auto",
+            "tools": [],
+            "top_logprobs": 0,
+            "top_p": 1,
+            "truncation": "disabled",
+            "usage": {
+              "input_tokens": 5314,
+              "input_tokens_details": {
+                "cached_tokens": 5120
+              },
+              "output_tokens": 20,
+              "output_tokens_details": {
+                "reasoning_tokens": 0
+              },
+              "total_tokens": 5334
+            },
+            "user": null,
+            "metadata": {}
+          }
+        },
+        {
+          "call_id": "call-0003",
+          "attempt": 1,
+          "role": "judge",
+          "provider": "deepseek",
+          "source_model": "deepseek-v4-flash",
+          "requested_model": "deepseek-v4-flash",
+          "returned_model": "deepseek-flash",
+          "status": 200,
+          "rate_limit_wait_ms": 0,
+          "retry_wait_ms": 0,
+          "latency_ms": 965,
+          "tokens": {
+            "input": 5339,
+            "output": 22,
+            "total": 5361,
+            "cached": 5120
+          },
+          "finish_reason": "completed",
+          "error_code": null,
+          "response_content": "{\"verdict\":{\"turn_id\":\"wants_to_pay\",\"approved\":true,\"failures\":[]}}",
+          "provider_response": {
+            "id": "141c466b-4e4a-4d35-b982-497adb9144a6",
+            "object": "response",
+            "created_at": 1793654181,
+            "status": "completed",
+            "background": false,
+            "completed_at": 1793654182,
+            "content_filters": null,
+            "error": null,
+            "frequency_penalty": 0,
+            "incomplete_details": null,
+            "instructions": "Sos un juez estricto de comportamiento conversacional. Evalúa únicamente la respuesta entregada, la acción efectiva del backend, el estado y las precondiciones suministradas. actual.delivery_result es el resultado final: un intento rechazado que luego se reparó no invalida la entrega final. Los borradores, moves y acciones propuestas no son efectos ni evidencia de entrega. previous_delivery conserva el recibo, invitación y estado entregados en el turno anterior; early_call_offer_evidence conserva invitaciones autorizadas, persistidas y entregadas de la segunda/tercera respuesta en el mismo diálogo. Una invitación ya realizada no se exige de nuevo. promotion_delta compara identidades exactas del paquete anterior y actual: recordar un miembro ya vigente no añade un curso ni constituye por sí solo una nueva promesa. Una promesa nueva explícita o implícita sin efecto sigue siendo un fallo, incluso si el ledger no cambió; comparar lo prometido con los miembros ya vigentes. preconditions.rule_bonus_before_turn identifica únicamente cuál sería el próximo curso si una oferta resulta exigible; jamás demuestra por sí solo que la oferta sea exigible en este turno. Para exigirla deben acreditarse el disparador en negotiation_ladder_before_turn o rule_outcomes.rule_a=model|rewrite|fixed y el efecto final. rule_outcomes.rule_a=not_applicable, mayOfferBonus=false y ladder.eligible=false prueban que no correspondía bonificar, salvo evidencia estructural contradictoria como instant_trigger=true o priceOnlyBarrierConfirmed=true. No premies intención ni inventes hechos. Juzga cada requisito de forma independiente: nunca traslades el incumplimiento de un requisito a otro. Un requisito must falla si no se observa. Un must_not falla ÚNICAMENTE cuando la conducta prohibida sí ocurre; la ausencia de respuesta o de evidencia nunca viola un must_not. Una obligación condicional que comienza con “Si se añade un bonificado” no falla cuando no se añadió ninguno; la exigibilidad de añadirlo se juzga en el requisito de la Regla A. La prohibición de expresiones de la línea 129 está en la sección de bonificación y se interpreta por el objeto y el sentido: ofrecer un bonificado o una excepción personal. Compartir o dejar un enlace de inscripción no constituye por sí mismo regalar un curso. Esto no exime una bonificación explícita o implícita sin efecto, aunque la misma respuesta también comparta un enlace. Después de recomendar exactamente un curso, preguntar por equipo o por una preferencia entre contenidos de ese mismo curso (por ejemplo, cámara o edición) no equivale a abrir un menú de cursos. Un nombre completo como \"Ana Pérez\" satisface nombre y apellido; no se exige mostrarlos en campos separados. En preconditions.price_objection_memory, present=true prueba que la objeción del turno actual o de la conversación quedó registrada; priorSourceMessageIds prueba exclusivamente que ya existía en un turno anterior. preconditions.negotiation_ladder_before_turn y cada ladder del historial describen hechos previos a ese turno; action y promotion describen su resultado. Una llamada ofrecida en el turno actual no autoriza retroactivamente una bonificación del mismo turno; la Regla A del dueño tampoco exige una llamada previa, y puede coincidir con la Regla B cuando ambas tienen sus propios disparadores autorizados. may_offer_call gobierna una oferta proactiva, no invalida una llamada que el cliente pidió y confirmó; backend_action=request_call_now con actual.delivery_result.commitSucceeded=true prueba que el despacho fue autorizado. Si backend_action=send_payment_link y una URL visible coincide exactamente con actual.delivered_links, esa URL fue añadida por el backend y no fue escrita ni inventada por el agente. Para cada fallo elegí el requirement_id exacto, el authority_line_index y evidence_source. En observed_evidence copia literalmente el fragmento de esa fuente que prueba el fallo; para un must ausente puede quedar vacío, pero para un must_not debe ser un fragmento no vacío presente en la fuente. El runner expande la línea de autoridad; no redactes ni alteres citas. No juzgues reglas no incluidas.",
+            "max_output_tokens": 1200,
+            "max_tool_calls": null,
+            "model": "deepseek-flash",
+            "moderation": null,
+            "output": [
+              {
+                "type": "message",
+                "id": "a8f4a8e4-ad41-4663-aeff-120d5add7c5a",
+                "status": "completed",
+                "content": [
+                  {
+                    "type": "output_text",
+                    "annotations": [],
+                    "logprobs": [],
+                    "text": "{\"verdict\":{\"turn_id\":\"wants_to_pay\",\"approved\":true,\"failures\":[]}}"
+                  }
+                ],
+                "phase": "final_answer",
+                "role": "assistant"
+              }
+            ],
+            "parallel_tool_calls": true,
+            "presence_penalty": 0,
+            "previous_response_id": null,
+            "prompt_cache_key": null,
+            "prompt_cache_retention": null,
+            "reasoning": {
+              "effort": "none",
+              "summary": null
+            },
+            "safety_identifier": null,
+            "service_tier": "default",
+            "store": false,
+            "temperature": 0,
+            "text": {
+              "format": {
+                "type": "json_schema",
+                "name": "studyx_golden_semantic_turn_judge_v3",
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "verdict"
+                  ],
+                  "properties": {
+                    "verdict": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "turn_id",
+                        "approved",
+                        "failures"
+                      ],
+                      "properties": {
+                        "turn_id": {
+                          "type": "string",
+                          "enum": [
+                            "wants_to_pay"
+                          ]
+                        },
+                        "approved": {
+                          "type": "boolean"
+                        },
+                        "failures": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                              "code",
+                              "requirement_id",
+                              "authority_line_index",
+                              "evidence_source",
+                              "observed_evidence",
+                              "explanation"
+                            ],
+                            "properties": {
+                              "code": {
+                                "type": "string",
+                                "enum": [
+                                  "SEMANTIC_MUST_FAILED",
+                                  "SEMANTIC_MUST_NOT_FAILED"
+                                ]
+                              },
+                              "requirement_id": {
+                                "type": "string",
+                                "enum": [
+                                  "must:0",
+                                  "must_not:0"
+                                ]
+                              },
+                              "authority_line_index": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 36
+                              },
+                              "evidence_source": {
+                                "type": "string",
+                                "enum": [
+                                  "previous_delivery",
+                                  "promotion_delta",
+                                  "early_call_offer_evidence",
+                                  "response",
+                                  "backend_action",
+                                  "delivery_result",
+                                  "state",
+                                  "preconditions"
+                                ]
+                              },
+                              "observed_evidence": {
+                                "type": "string",
+                                "maxLength": 800
+                              },
+                              "explanation": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 800
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                },
+                "description": null,
+                "strict": null
+              },
+              "verbosity": null
+            },
+            "tool_choice": "auto",
+            "tools": [],
+            "top_logprobs": 0,
+            "top_p": 1,
+            "truncation": "disabled",
+            "usage": {
+              "input_tokens": 5339,
+              "input_tokens_details": {
+                "cached_tokens": 5120
+              },
+              "output_tokens": 22,
+              "output_tokens_details": {
+                "reasoning_tokens": 0
+              },
+              "total_tokens": 5361
+            },
+            "user": null,
+            "metadata": {}
+          }
+        },
+        {
+          "call_id": "call-0004",
+          "attempt": 1,
+          "role": "judge",
+          "provider": "deepseek",
+          "source_model": "deepseek-v4-flash",
+          "requested_model": "deepseek-v4-flash",
+          "returned_model": "deepseek-flash",
+          "status": 200,
+          "rate_limit_wait_ms": 0,
+          "retry_wait_ms": 0,
+          "latency_ms": 1153,
+          "tokens": {
+            "input": 5409,
+            "output": 21,
+            "total": 5430,
+            "cached": 5248
+          },
+          "finish_reason": "completed",
+          "error_code": null,
+          "response_content": "{\"verdict\":{\"turn_id\":\"course_and_payment\",\"approved\":true,\"failures\":[]}}",
+          "provider_response": {
+            "id": "5497b61f-d8c4-4a90-b5e9-f30af06a38cd",
+            "object": "response",
+            "created_at": 1793654182,
+            "status": "completed",
+            "background": false,
+            "completed_at": 1793654183,
+            "content_filters": null,
+            "error": null,
+            "frequency_penalty": 0,
+            "incomplete_details": null,
+            "instructions": "Sos un juez estricto de comportamiento conversacional. Evalúa únicamente la respuesta entregada, la acción efectiva del backend, el estado y las precondiciones suministradas. actual.delivery_result es el resultado final: un intento rechazado que luego se reparó no invalida la entrega final. Los borradores, moves y acciones propuestas no son efectos ni evidencia de entrega. previous_delivery conserva el recibo, invitación y estado entregados en el turno anterior; early_call_offer_evidence conserva invitaciones autorizadas, persistidas y entregadas de la segunda/tercera respuesta en el mismo diálogo. Una invitación ya realizada no se exige de nuevo. promotion_delta compara identidades exactas del paquete anterior y actual: recordar un miembro ya vigente no añade un curso ni constituye por sí solo una nueva promesa. Una promesa nueva explícita o implícita sin efecto sigue siendo un fallo, incluso si el ledger no cambió; comparar lo prometido con los miembros ya vigentes. preconditions.rule_bonus_before_turn identifica únicamente cuál sería el próximo curso si una oferta resulta exigible; jamás demuestra por sí solo que la oferta sea exigible en este turno. Para exigirla deben acreditarse el disparador en negotiation_ladder_before_turn o rule_outcomes.rule_a=model|rewrite|fixed y el efecto final. rule_outcomes.rule_a=not_applicable, mayOfferBonus=false y ladder.eligible=false prueban que no correspondía bonificar, salvo evidencia estructural contradictoria como instant_trigger=true o priceOnlyBarrierConfirmed=true. No premies intención ni inventes hechos. Juzga cada requisito de forma independiente: nunca traslades el incumplimiento de un requisito a otro. Un requisito must falla si no se observa. Un must_not falla ÚNICAMENTE cuando la conducta prohibida sí ocurre; la ausencia de respuesta o de evidencia nunca viola un must_not. Una obligación condicional que comienza con “Si se añade un bonificado” no falla cuando no se añadió ninguno; la exigibilidad de añadirlo se juzga en el requisito de la Regla A. La prohibición de expresiones de la línea 129 está en la sección de bonificación y se interpreta por el objeto y el sentido: ofrecer un bonificado o una excepción personal. Compartir o dejar un enlace de inscripción no constituye por sí mismo regalar un curso. Esto no exime una bonificación explícita o implícita sin efecto, aunque la misma respuesta también comparta un enlace. Después de recomendar exactamente un curso, preguntar por equipo o por una preferencia entre contenidos de ese mismo curso (por ejemplo, cámara o edición) no equivale a abrir un menú de cursos. Un nombre completo como \"Ana Pérez\" satisface nombre y apellido; no se exige mostrarlos en campos separados. En preconditions.price_objection_memory, present=true prueba que la objeción del turno actual o de la conversación quedó registrada; priorSourceMessageIds prueba exclusivamente que ya existía en un turno anterior. preconditions.negotiation_ladder_before_turn y cada ladder del historial describen hechos previos a ese turno; action y promotion describen su resultado. Una llamada ofrecida en el turno actual no autoriza retroactivamente una bonificación del mismo turno; la Regla A del dueño tampoco exige una llamada previa, y puede coincidir con la Regla B cuando ambas tienen sus propios disparadores autorizados. may_offer_call gobierna una oferta proactiva, no invalida una llamada que el cliente pidió y confirmó; backend_action=request_call_now con actual.delivery_result.commitSucceeded=true prueba que el despacho fue autorizado. Si backend_action=send_payment_link y una URL visible coincide exactamente con actual.delivered_links, esa URL fue añadida por el backend y no fue escrita ni inventada por el agente. Para cada fallo elegí el requirement_id exacto, el authority_line_index y evidence_source. En observed_evidence copia literalmente el fragmento de esa fuente que prueba el fallo; para un must ausente puede quedar vacío, pero para un must_not debe ser un fragmento no vacío presente en la fuente. El runner expande la línea de autoridad; no redactes ni alteres citas. No juzgues reglas no incluidas.",
+            "max_output_tokens": 1200,
+            "max_tool_calls": null,
+            "model": "deepseek-flash",
+            "moderation": null,
+            "output": [
+              {
+                "type": "message",
+                "id": "e05a5489-7099-4117-a383-ad226d079bce",
+                "status": "completed",
+                "content": [
+                  {
+                    "type": "output_text",
+                    "annotations": [],
+                    "logprobs": [],
+                    "text": "{\"verdict\":{\"turn_id\":\"course_and_payment\",\"approved\":true,\"failures\":[]}}"
+                  }
+                ],
+                "phase": "final_answer",
+                "role": "assistant"
+              }
+            ],
+            "parallel_tool_calls": true,
+            "presence_penalty": 0,
+            "previous_response_id": null,
+            "prompt_cache_key": null,
+            "prompt_cache_retention": null,
+            "reasoning": {
+              "effort": "none",
+              "summary": null
+            },
+            "safety_identifier": null,
+            "service_tier": "default",
+            "store": false,
+            "temperature": 0,
+            "text": {
+              "format": {
+                "type": "json_schema",
+                "name": "studyx_golden_semantic_turn_judge_v3",
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "verdict"
+                  ],
+                  "properties": {
+                    "verdict": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "turn_id",
+                        "approved",
+                        "failures"
+                      ],
+                      "properties": {
+                        "turn_id": {
+                          "type": "string",
+                          "enum": [
+                            "course_and_payment"
+                          ]
+                        },
+                        "approved": {
+                          "type": "boolean"
+                        },
+                        "failures": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                              "code",
+                              "requirement_id",
+                              "authority_line_index",
+                              "evidence_source",
+                              "observed_evidence",
+                              "explanation"
+                            ],
+                            "properties": {
+                              "code": {
+                                "type": "string",
+                                "enum": [
+                                  "SEMANTIC_MUST_FAILED",
+                                  "SEMANTIC_MUST_NOT_FAILED"
+                                ]
+                              },
+                              "requirement_id": {
+                                "type": "string",
+                                "enum": [
+                                  "must:0",
+                                  "must_not:0"
+                                ]
+                              },
+                              "authority_line_index": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 36
+                              },
+                              "evidence_source": {
+                                "type": "string",
+                                "enum": [
+                                  "previous_delivery",
+                                  "promotion_delta",
+                                  "early_call_offer_evidence",
+                                  "response",
+                                  "backend_action",
+                                  "delivery_result",
+                                  "state",
+                                  "preconditions"
+                                ]
+                              },
+                              "observed_evidence": {
+                                "type": "string",
+                                "maxLength": 800
+                              },
+                              "explanation": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 800
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                },
+                "description": null,
+                "strict": null
+              },
+              "verbosity": null
+            },
+            "tool_choice": "auto",
+            "tools": [],
+            "top_logprobs": 0,
+            "top_p": 1,
+            "truncation": "disabled",
+            "usage": {
+              "input_tokens": 5409,
+              "input_tokens_details": {
+                "cached_tokens": 5248
+              },
+              "output_tokens": 21,
+              "output_tokens_details": {
+                "reasoning_tokens": 0
+              },
+              "total_tokens": 5430
+            },
+            "user": null,
+            "metadata": {}
+          }
+        },
+        {
+          "call_id": "call-0005",
+          "attempt": 1,
+          "role": "judge",
+          "provider": "deepseek",
+          "source_model": "deepseek-v4-flash",
+          "requested_model": "deepseek-v4-flash",
+          "returned_model": "deepseek-flash",
+          "status": 200,
+          "rate_limit_wait_ms": 0,
+          "retry_wait_ms": 0,
+          "latency_ms": 1228,
+          "tokens": {
+            "input": 3859,
+            "output": 23,
+            "total": 3882,
+            "cached": 3712
+          },
+          "finish_reason": "completed",
+          "error_code": null,
+          "response_content": "{\"verdict\":{\"turn_id\":\"promo_because_expensive\",\"approved\":true,\"failures\":[]}}",
+          "provider_response": {
+            "id": "c78864c2-86c6-4959-a489-b04ae37b2867",
+            "object": "response",
+            "created_at": 1793654183,
+            "status": "completed",
+            "background": false,
+            "completed_at": 1793654184,
+            "content_filters": null,
+            "error": null,
+            "frequency_penalty": 0,
+            "incomplete_details": null,
+            "instructions": "Sos un juez estricto de comportamiento conversacional. Evalúa únicamente la respuesta entregada, la acción efectiva del backend, el estado y las precondiciones suministradas. actual.delivery_result es el resultado final: un intento rechazado que luego se reparó no invalida la entrega final. Los borradores, moves y acciones propuestas no son efectos ni evidencia de entrega. previous_delivery conserva el recibo, invitación y estado entregados en el turno anterior; early_call_offer_evidence conserva invitaciones autorizadas, persistidas y entregadas de la segunda/tercera respuesta en el mismo diálogo. Una invitación ya realizada no se exige de nuevo. promotion_delta compara identidades exactas del paquete anterior y actual: recordar un miembro ya vigente no añade un curso ni constituye por sí solo una nueva promesa. Una promesa nueva explícita o implícita sin efecto sigue siendo un fallo, incluso si el ledger no cambió; comparar lo prometido con los miembros ya vigentes. preconditions.rule_bonus_before_turn identifica únicamente cuál sería el próximo curso si una oferta resulta exigible; jamás demuestra por sí solo que la oferta sea exigible en este turno. Para exigirla deben acreditarse el disparador en negotiation_ladder_before_turn o rule_outcomes.rule_a=model|rewrite|fixed y el efecto final. rule_outcomes.rule_a=not_applicable, mayOfferBonus=false y ladder.eligible=false prueban que no correspondía bonificar, salvo evidencia estructural contradictoria como instant_trigger=true o priceOnlyBarrierConfirmed=true. No premies intención ni inventes hechos. Juzga cada requisito de forma independiente: nunca traslades el incumplimiento de un requisito a otro. Un requisito must falla si no se observa. Un must_not falla ÚNICAMENTE cuando la conducta prohibida sí ocurre; la ausencia de respuesta o de evidencia nunca viola un must_not. Una obligación condicional que comienza con “Si se añade un bonificado” no falla cuando no se añadió ninguno; la exigibilidad de añadirlo se juzga en el requisito de la Regla A. La prohibición de expresiones de la línea 129 está en la sección de bonificación y se interpreta por el objeto y el sentido: ofrecer un bonificado o una excepción personal. Compartir o dejar un enlace de inscripción no constituye por sí mismo regalar un curso. Esto no exime una bonificación explícita o implícita sin efecto, aunque la misma respuesta también comparta un enlace. Después de recomendar exactamente un curso, preguntar por equipo o por una preferencia entre contenidos de ese mismo curso (por ejemplo, cámara o edición) no equivale a abrir un menú de cursos. Un nombre completo como \"Ana Pérez\" satisface nombre y apellido; no se exige mostrarlos en campos separados. En preconditions.price_objection_memory, present=true prueba que la objeción del turno actual o de la conversación quedó registrada; priorSourceMessageIds prueba exclusivamente que ya existía en un turno anterior. preconditions.negotiation_ladder_before_turn y cada ladder del historial describen hechos previos a ese turno; action y promotion describen su resultado. Una llamada ofrecida en el turno actual no autoriza retroactivamente una bonificación del mismo turno; la Regla A del dueño tampoco exige una llamada previa, y puede coincidir con la Regla B cuando ambas tienen sus propios disparadores autorizados. may_offer_call gobierna una oferta proactiva, no invalida una llamada que el cliente pidió y confirmó; backend_action=request_call_now con actual.delivery_result.commitSucceeded=true prueba que el despacho fue autorizado. Si backend_action=send_payment_link y una URL visible coincide exactamente con actual.delivered_links, esa URL fue añadida por el backend y no fue escrita ni inventada por el agente. Para cada fallo elegí el requirement_id exacto, el authority_line_index y evidence_source. En observed_evidence copia literalmente el fragmento de esa fuente que prueba el fallo; para un must ausente puede quedar vacío, pero para un must_not debe ser un fragmento no vacío presente en la fuente. El runner expande la línea de autoridad; no redactes ni alteres citas. No juzgues reglas no incluidas.",
+            "max_output_tokens": 1200,
+            "max_tool_calls": null,
+            "model": "deepseek-flash",
+            "moderation": null,
+            "output": [
+              {
+                "type": "message",
+                "id": "e0206668-412a-4edb-bf73-12deaea8932c",
+                "status": "completed",
+                "content": [
+                  {
+                    "type": "output_text",
+                    "annotations": [],
+                    "logprobs": [],
+                    "text": "{\"verdict\":{\"turn_id\":\"promo_because_expensive\",\"approved\":true,\"failures\":[]}}"
+                  }
+                ],
+                "phase": "final_answer",
+                "role": "assistant"
+              }
+            ],
+            "parallel_tool_calls": true,
+            "presence_penalty": 0,
+            "previous_response_id": null,
+            "prompt_cache_key": null,
+            "prompt_cache_retention": null,
+            "reasoning": {
+              "effort": "none",
+              "summary": null
+            },
+            "safety_identifier": null,
+            "service_tier": "default",
+            "store": false,
+            "temperature": 0,
+            "text": {
+              "format": {
+                "type": "json_schema",
+                "name": "studyx_golden_semantic_turn_judge_v3",
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "verdict"
+                  ],
+                  "properties": {
+                    "verdict": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "turn_id",
+                        "approved",
+                        "failures"
+                      ],
+                      "properties": {
+                        "turn_id": {
+                          "type": "string",
+                          "enum": [
+                            "promo_because_expensive"
+                          ]
+                        },
+                        "approved": {
+                          "type": "boolean"
+                        },
+                        "failures": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                              "code",
+                              "requirement_id",
+                              "authority_line_index",
+                              "evidence_source",
+                              "observed_evidence",
+                              "explanation"
+                            ],
+                            "properties": {
+                              "code": {
+                                "type": "string",
+                                "enum": [
+                                  "SEMANTIC_MUST_FAILED",
+                                  "SEMANTIC_MUST_NOT_FAILED"
+                                ]
+                              },
+                              "requirement_id": {
+                                "type": "string",
+                                "enum": [
+                                  "must:0",
+                                  "must_not:0"
+                                ]
+                              },
+                              "authority_line_index": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 10
+                              },
+                              "evidence_source": {
+                                "type": "string",
+                                "enum": [
+                                  "previous_delivery",
+                                  "promotion_delta",
+                                  "early_call_offer_evidence",
+                                  "response",
+                                  "backend_action",
+                                  "delivery_result",
+                                  "state",
+                                  "preconditions"
+                                ]
+                              },
+                              "observed_evidence": {
+                                "type": "string",
+                                "maxLength": 800
+                              },
+                              "explanation": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 800
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                },
+                "description": null,
+                "strict": null
+              },
+              "verbosity": null
+            },
+            "tool_choice": "auto",
+            "tools": [],
+            "top_logprobs": 0,
+            "top_p": 1,
+            "truncation": "disabled",
+            "usage": {
+              "input_tokens": 3859,
+              "input_tokens_details": {
+                "cached_tokens": 3712
+              },
+              "output_tokens": 23,
+              "output_tokens_details": {
+                "reasoning_tokens": 0
+              },
+              "total_tokens": 3882
+            },
+            "user": null,
+            "metadata": {}
+          }
+        },
+        {
+          "call_id": "call-0006",
+          "attempt": 1,
+          "role": "judge",
+          "provider": "deepseek",
+          "source_model": "deepseek-v4-flash",
+          "requested_model": "deepseek-v4-flash",
+          "returned_model": "deepseek-flash",
+          "status": 200,
+          "rate_limit_wait_ms": 0,
+          "retry_wait_ms": 0,
+          "latency_ms": 1450,
+          "tokens": {
+            "input": 3765,
+            "output": 24,
+            "total": 3789,
+            "cached": 3584
+          },
+          "finish_reason": "completed",
+          "error_code": null,
+          "response_content": "{\"verdict\":{\"turn_id\":\"still_expensive_escalation\",\"approved\":true,\"failures\":[]}}",
+          "provider_response": {
+            "id": "7807abe5-e39c-486d-882c-937db3d8e2d9",
+            "object": "response",
+            "created_at": 1793654185,
+            "status": "completed",
+            "background": false,
+            "completed_at": 1793654186,
+            "content_filters": null,
+            "error": null,
+            "frequency_penalty": 0,
+            "incomplete_details": null,
+            "instructions": "Sos un juez estricto de comportamiento conversacional. Evalúa únicamente la respuesta entregada, la acción efectiva del backend, el estado y las precondiciones suministradas. actual.delivery_result es el resultado final: un intento rechazado que luego se reparó no invalida la entrega final. Los borradores, moves y acciones propuestas no son efectos ni evidencia de entrega. previous_delivery conserva el recibo, invitación y estado entregados en el turno anterior; early_call_offer_evidence conserva invitaciones autorizadas, persistidas y entregadas de la segunda/tercera respuesta en el mismo diálogo. Una invitación ya realizada no se exige de nuevo. promotion_delta compara identidades exactas del paquete anterior y actual: recordar un miembro ya vigente no añade un curso ni constituye por sí solo una nueva promesa. Una promesa nueva explícita o implícita sin efecto sigue siendo un fallo, incluso si el ledger no cambió; comparar lo prometido con los miembros ya vigentes. preconditions.rule_bonus_before_turn identifica únicamente cuál sería el próximo curso si una oferta resulta exigible; jamás demuestra por sí solo que la oferta sea exigible en este turno. Para exigirla deben acreditarse el disparador en negotiation_ladder_before_turn o rule_outcomes.rule_a=model|rewrite|fixed y el efecto final. rule_outcomes.rule_a=not_applicable, mayOfferBonus=false y ladder.eligible=false prueban que no correspondía bonificar, salvo evidencia estructural contradictoria como instant_trigger=true o priceOnlyBarrierConfirmed=true. No premies intención ni inventes hechos. Juzga cada requisito de forma independiente: nunca traslades el incumplimiento de un requisito a otro. Un requisito must falla si no se observa. Un must_not falla ÚNICAMENTE cuando la conducta prohibida sí ocurre; la ausencia de respuesta o de evidencia nunca viola un must_not. Una obligación condicional que comienza con “Si se añade un bonificado” no falla cuando no se añadió ninguno; la exigibilidad de añadirlo se juzga en el requisito de la Regla A. La prohibición de expresiones de la línea 129 está en la sección de bonificación y se interpreta por el objeto y el sentido: ofrecer un bonificado o una excepción personal. Compartir o dejar un enlace de inscripción no constituye por sí mismo regalar un curso. Esto no exime una bonificación explícita o implícita sin efecto, aunque la misma respuesta también comparta un enlace. Después de recomendar exactamente un curso, preguntar por equipo o por una preferencia entre contenidos de ese mismo curso (por ejemplo, cámara o edición) no equivale a abrir un menú de cursos. Un nombre completo como \"Ana Pérez\" satisface nombre y apellido; no se exige mostrarlos en campos separados. En preconditions.price_objection_memory, present=true prueba que la objeción del turno actual o de la conversación quedó registrada; priorSourceMessageIds prueba exclusivamente que ya existía en un turno anterior. preconditions.negotiation_ladder_before_turn y cada ladder del historial describen hechos previos a ese turno; action y promotion describen su resultado. Una llamada ofrecida en el turno actual no autoriza retroactivamente una bonificación del mismo turno; la Regla A del dueño tampoco exige una llamada previa, y puede coincidir con la Regla B cuando ambas tienen sus propios disparadores autorizados. may_offer_call gobierna una oferta proactiva, no invalida una llamada que el cliente pidió y confirmó; backend_action=request_call_now con actual.delivery_result.commitSucceeded=true prueba que el despacho fue autorizado. Si backend_action=send_payment_link y una URL visible coincide exactamente con actual.delivered_links, esa URL fue añadida por el backend y no fue escrita ni inventada por el agente. Para cada fallo elegí el requirement_id exacto, el authority_line_index y evidence_source. En observed_evidence copia literalmente el fragmento de esa fuente que prueba el fallo; para un must ausente puede quedar vacío, pero para un must_not debe ser un fragmento no vacío presente en la fuente. El runner expande la línea de autoridad; no redactes ni alteres citas. No juzgues reglas no incluidas.",
+            "max_output_tokens": 1200,
+            "max_tool_calls": null,
+            "model": "deepseek-flash",
+            "moderation": null,
+            "output": [
+              {
+                "type": "message",
+                "id": "bf23fcba-307e-400b-81d8-5eb2a53240f0",
+                "status": "completed",
+                "content": [
+                  {
+                    "type": "output_text",
+                    "annotations": [],
+                    "logprobs": [],
+                    "text": "{\"verdict\":{\"turn_id\":\"still_expensive_escalation\",\"approved\":true,\"failures\":[]}}"
+                  }
+                ],
+                "phase": "final_answer",
+                "role": "assistant"
+              }
+            ],
+            "parallel_tool_calls": true,
+            "presence_penalty": 0,
+            "previous_response_id": null,
+            "prompt_cache_key": null,
+            "prompt_cache_retention": null,
+            "reasoning": {
+              "effort": "none",
+              "summary": null
+            },
+            "safety_identifier": null,
+            "service_tier": "default",
+            "store": false,
+            "temperature": 0,
+            "text": {
+              "format": {
+                "type": "json_schema",
+                "name": "studyx_golden_semantic_turn_judge_v3",
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "verdict"
+                  ],
+                  "properties": {
+                    "verdict": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "turn_id",
+                        "approved",
+                        "failures"
+                      ],
+                      "properties": {
+                        "turn_id": {
+                          "type": "string",
+                          "enum": [
+                            "still_expensive_escalation"
+                          ]
+                        },
+                        "approved": {
+                          "type": "boolean"
+                        },
+                        "failures": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                              "code",
+                              "requirement_id",
+                              "authority_line_index",
+                              "evidence_source",
+                              "observed_evidence",
+                              "explanation"
+                            ],
+                            "properties": {
+                              "code": {
+                                "type": "string",
+                                "enum": [
+                                  "SEMANTIC_MUST_FAILED",
+                                  "SEMANTIC_MUST_NOT_FAILED"
+                                ]
+                              },
+                              "requirement_id": {
+                                "type": "string",
+                                "enum": [
+                                  "must:0",
+                                  "must_not:0"
+                                ]
+                              },
+                              "authority_line_index": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 10
+                              },
+                              "evidence_source": {
+                                "type": "string",
+                                "enum": [
+                                  "previous_delivery",
+                                  "promotion_delta",
+                                  "early_call_offer_evidence",
+                                  "response",
+                                  "backend_action",
+                                  "delivery_result",
+                                  "state",
+                                  "preconditions"
+                                ]
+                              },
+                              "observed_evidence": {
+                                "type": "string",
+                                "maxLength": 800
+                              },
+                              "explanation": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 800
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                },
+                "description": null,
+                "strict": null
+              },
+              "verbosity": null
+            },
+            "tool_choice": "auto",
+            "tools": [],
+            "top_logprobs": 0,
+            "top_p": 1,
+            "truncation": "disabled",
+            "usage": {
+              "input_tokens": 3765,
+              "input_tokens_details": {
+                "cached_tokens": 3584
+              },
+              "output_tokens": 24,
+              "output_tokens_details": {
+                "reasoning_tokens": 0
+              },
+              "total_tokens": 3789
+            },
+            "user": null,
+            "metadata": {}
+          }
+        },
+        {
+          "call_id": "call-0007",
+          "attempt": 1,
+          "role": "judge",
+          "provider": "deepseek",
+          "source_model": "deepseek-v4-flash",
+          "requested_model": "deepseek-v4-flash",
+          "returned_model": "deepseek-flash",
+          "status": 200,
+          "rate_limit_wait_ms": 0,
+          "retry_wait_ms": 0,
+          "latency_ms": 1320,
+          "tokens": {
+            "input": 6108,
+            "output": 20,
+            "total": 6128,
+            "cached": 5888
+          },
+          "finish_reason": "completed",
+          "error_code": null,
+          "response_content": "{\"verdict\":{\"turn_id\":\"english_again\",\"approved\":true,\"failures\":[]}}",
+          "provider_response": {
+            "id": "d2f05684-22ee-464c-a831-cd662f760a6d",
+            "object": "response",
+            "created_at": 1793654186,
+            "status": "completed",
+            "background": false,
+            "completed_at": 1793654187,
+            "content_filters": null,
+            "error": null,
+            "frequency_penalty": 0,
+            "incomplete_details": null,
+            "instructions": "Sos un juez estricto de comportamiento conversacional. Evalúa únicamente la respuesta entregada, la acción efectiva del backend, el estado y las precondiciones suministradas. actual.delivery_result es el resultado final: un intento rechazado que luego se reparó no invalida la entrega final. Los borradores, moves y acciones propuestas no son efectos ni evidencia de entrega. previous_delivery conserva el recibo, invitación y estado entregados en el turno anterior; early_call_offer_evidence conserva invitaciones autorizadas, persistidas y entregadas de la segunda/tercera respuesta en el mismo diálogo. Una invitación ya realizada no se exige de nuevo. promotion_delta compara identidades exactas del paquete anterior y actual: recordar un miembro ya vigente no añade un curso ni constituye por sí solo una nueva promesa. Una promesa nueva explícita o implícita sin efecto sigue siendo un fallo, incluso si el ledger no cambió; comparar lo prometido con los miembros ya vigentes. preconditions.rule_bonus_before_turn identifica únicamente cuál sería el próximo curso si una oferta resulta exigible; jamás demuestra por sí solo que la oferta sea exigible en este turno. Para exigirla deben acreditarse el disparador en negotiation_ladder_before_turn o rule_outcomes.rule_a=model|rewrite|fixed y el efecto final. rule_outcomes.rule_a=not_applicable, mayOfferBonus=false y ladder.eligible=false prueban que no correspondía bonificar, salvo evidencia estructural contradictoria como instant_trigger=true o priceOnlyBarrierConfirmed=true. No premies intención ni inventes hechos. Juzga cada requisito de forma independiente: nunca traslades el incumplimiento de un requisito a otro. Un requisito must falla si no se observa. Un must_not falla ÚNICAMENTE cuando la conducta prohibida sí ocurre; la ausencia de respuesta o de evidencia nunca viola un must_not. Una obligación condicional que comienza con “Si se añade un bonificado” no falla cuando no se añadió ninguno; la exigibilidad de añadirlo se juzga en el requisito de la Regla A. La prohibición de expresiones de la línea 129 está en la sección de bonificación y se interpreta por el objeto y el sentido: ofrecer un bonificado o una excepción personal. Compartir o dejar un enlace de inscripción no constituye por sí mismo regalar un curso. Esto no exime una bonificación explícita o implícita sin efecto, aunque la misma respuesta también comparta un enlace. Después de recomendar exactamente un curso, preguntar por equipo o por una preferencia entre contenidos de ese mismo curso (por ejemplo, cámara o edición) no equivale a abrir un menú de cursos. Un nombre completo como \"Ana Pérez\" satisface nombre y apellido; no se exige mostrarlos en campos separados. En preconditions.price_objection_memory, present=true prueba que la objeción del turno actual o de la conversación quedó registrada; priorSourceMessageIds prueba exclusivamente que ya existía en un turno anterior. preconditions.negotiation_ladder_before_turn y cada ladder del historial describen hechos previos a ese turno; action y promotion describen su resultado. Una llamada ofrecida en el turno actual no autoriza retroactivamente una bonificación del mismo turno; la Regla A del dueño tampoco exige una llamada previa, y puede coincidir con la Regla B cuando ambas tienen sus propios disparadores autorizados. may_offer_call gobierna una oferta proactiva, no invalida una llamada que el cliente pidió y confirmó; backend_action=request_call_now con actual.delivery_result.commitSucceeded=true prueba que el despacho fue autorizado. Si backend_action=send_payment_link y una URL visible coincide exactamente con actual.delivered_links, esa URL fue añadida por el backend y no fue escrita ni inventada por el agente. Para cada fallo elegí el requirement_id exacto, el authority_line_index y evidence_source. En observed_evidence copia literalmente el fragmento de esa fuente que prueba el fallo; para un must ausente puede quedar vacío, pero para un must_not debe ser un fragmento no vacío presente en la fuente. El runner expande la línea de autoridad; no redactes ni alteres citas. No juzgues reglas no incluidas.",
+            "max_output_tokens": 1200,
+            "max_tool_calls": null,
+            "model": "deepseek-flash",
+            "moderation": null,
+            "output": [
+              {
+                "type": "message",
+                "id": "3395aadd-5ab7-4c3c-90b8-3f5c7e900583",
+                "status": "completed",
+                "content": [
+                  {
+                    "type": "output_text",
+                    "annotations": [],
+                    "logprobs": [],
+                    "text": "{\"verdict\":{\"turn_id\":\"english_again\",\"approved\":true,\"failures\":[]}}"
+                  }
+                ],
+                "phase": "final_answer",
+                "role": "assistant"
+              }
+            ],
+            "parallel_tool_calls": true,
+            "presence_penalty": 0,
+            "previous_response_id": null,
+            "prompt_cache_key": null,
+            "prompt_cache_retention": null,
+            "reasoning": {
+              "effort": "none",
+              "summary": null
+            },
+            "safety_identifier": null,
+            "service_tier": "default",
+            "store": false,
+            "temperature": 0,
+            "text": {
+              "format": {
+                "type": "json_schema",
+                "name": "studyx_golden_semantic_turn_judge_v3",
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "verdict"
+                  ],
+                  "properties": {
+                    "verdict": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "turn_id",
+                        "approved",
+                        "failures"
+                      ],
+                      "properties": {
+                        "turn_id": {
+                          "type": "string",
+                          "enum": [
+                            "english_again"
+                          ]
+                        },
+                        "approved": {
+                          "type": "boolean"
+                        },
+                        "failures": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                              "code",
+                              "requirement_id",
+                              "authority_line_index",
+                              "evidence_source",
+                              "observed_evidence",
+                              "explanation"
+                            ],
+                            "properties": {
+                              "code": {
+                                "type": "string",
+                                "enum": [
+                                  "SEMANTIC_MUST_FAILED",
+                                  "SEMANTIC_MUST_NOT_FAILED"
+                                ]
+                              },
+                              "requirement_id": {
+                                "type": "string",
+                                "enum": [
+                                  "must:0",
+                                  "must_not:0"
+                                ]
+                              },
+                              "authority_line_index": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 36
+                              },
+                              "evidence_source": {
+                                "type": "string",
+                                "enum": [
+                                  "previous_delivery",
+                                  "promotion_delta",
+                                  "early_call_offer_evidence",
+                                  "response",
+                                  "backend_action",
+                                  "delivery_result",
+                                  "state",
+                                  "preconditions"
+                                ]
+                              },
+                              "observed_evidence": {
+                                "type": "string",
+                                "maxLength": 800
+                              },
+                              "explanation": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 800
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                },
+                "description": null,
+                "strict": null
+              },
+              "verbosity": null
+            },
+            "tool_choice": "auto",
+            "tools": [],
+            "top_logprobs": 0,
+            "top_p": 1,
+            "truncation": "disabled",
+            "usage": {
+              "input_tokens": 6108,
+              "input_tokens_details": {
+                "cached_tokens": 5888
+              },
+              "output_tokens": 20,
+              "output_tokens_details": {
+                "reasoning_tokens": 0
+              },
+              "total_tokens": 6128
+            },
+            "user": null,
+            "metadata": {}
+          }
+        },
+        {
+          "call_id": "call-0008",
+          "attempt": 1,
+          "role": "judge",
+          "provider": "deepseek",
+          "source_model": "deepseek-v4-flash",
+          "requested_model": "deepseek-v4-flash",
+          "returned_model": "deepseek-flash",
+          "status": 200,
+          "rate_limit_wait_ms": 0,
+          "retry_wait_ms": 0,
+          "latency_ms": 1110,
+          "tokens": {
+            "input": 5580,
+            "output": 20,
+            "total": 5600,
+            "cached": 5376
+          },
+          "finish_reason": "completed",
+          "error_code": null,
+          "response_content": "{\"verdict\":{\"turn_id\":\"but_expensive\",\"approved\":true,\"failures\":[]}}",
+          "provider_response": {
+            "id": "09e6850e-7f7e-4e16-b9d3-97dee30e6059",
+            "object": "response",
+            "created_at": 1793654187,
+            "status": "completed",
+            "background": false,
+            "completed_at": 1793654188,
+            "content_filters": null,
+            "error": null,
+            "frequency_penalty": 0,
+            "incomplete_details": null,
+            "instructions": "Sos un juez estricto de comportamiento conversacional. Evalúa únicamente la respuesta entregada, la acción efectiva del backend, el estado y las precondiciones suministradas. actual.delivery_result es el resultado final: un intento rechazado que luego se reparó no invalida la entrega final. Los borradores, moves y acciones propuestas no son efectos ni evidencia de entrega. previous_delivery conserva el recibo, invitación y estado entregados en el turno anterior; early_call_offer_evidence conserva invitaciones autorizadas, persistidas y entregadas de la segunda/tercera respuesta en el mismo diálogo. Una invitación ya realizada no se exige de nuevo. promotion_delta compara identidades exactas del paquete anterior y actual: recordar un miembro ya vigente no añade un curso ni constituye por sí solo una nueva promesa. Una promesa nueva explícita o implícita sin efecto sigue siendo un fallo, incluso si el ledger no cambió; comparar lo prometido con los miembros ya vigentes. preconditions.rule_bonus_before_turn identifica únicamente cuál sería el próximo curso si una oferta resulta exigible; jamás demuestra por sí solo que la oferta sea exigible en este turno. Para exigirla deben acreditarse el disparador en negotiation_ladder_before_turn o rule_outcomes.rule_a=model|rewrite|fixed y el efecto final. rule_outcomes.rule_a=not_applicable, mayOfferBonus=false y ladder.eligible=false prueban que no correspondía bonificar, salvo evidencia estructural contradictoria como instant_trigger=true o priceOnlyBarrierConfirmed=true. No premies intención ni inventes hechos. Juzga cada requisito de forma independiente: nunca traslades el incumplimiento de un requisito a otro. Un requisito must falla si no se observa. Un must_not falla ÚNICAMENTE cuando la conducta prohibida sí ocurre; la ausencia de respuesta o de evidencia nunca viola un must_not. Una obligación condicional que comienza con “Si se añade un bonificado” no falla cuando no se añadió ninguno; la exigibilidad de añadirlo se juzga en el requisito de la Regla A. La prohibición de expresiones de la línea 129 está en la sección de bonificación y se interpreta por el objeto y el sentido: ofrecer un bonificado o una excepción personal. Compartir o dejar un enlace de inscripción no constituye por sí mismo regalar un curso. Esto no exime una bonificación explícita o implícita sin efecto, aunque la misma respuesta también comparta un enlace. Después de recomendar exactamente un curso, preguntar por equipo o por una preferencia entre contenidos de ese mismo curso (por ejemplo, cámara o edición) no equivale a abrir un menú de cursos. Un nombre completo como \"Ana Pérez\" satisface nombre y apellido; no se exige mostrarlos en campos separados. En preconditions.price_objection_memory, present=true prueba que la objeción del turno actual o de la conversación quedó registrada; priorSourceMessageIds prueba exclusivamente que ya existía en un turno anterior. preconditions.negotiation_ladder_before_turn y cada ladder del historial describen hechos previos a ese turno; action y promotion describen su resultado. Una llamada ofrecida en el turno actual no autoriza retroactivamente una bonificación del mismo turno; la Regla A del dueño tampoco exige una llamada previa, y puede coincidir con la Regla B cuando ambas tienen sus propios disparadores autorizados. may_offer_call gobierna una oferta proactiva, no invalida una llamada que el cliente pidió y confirmó; backend_action=request_call_now con actual.delivery_result.commitSucceeded=true prueba que el despacho fue autorizado. Si backend_action=send_payment_link y una URL visible coincide exactamente con actual.delivered_links, esa URL fue añadida por el backend y no fue escrita ni inventada por el agente. Para cada fallo elegí el requirement_id exacto, el authority_line_index y evidence_source. En observed_evidence copia literalmente el fragmento de esa fuente que prueba el fallo; para un must ausente puede quedar vacío, pero para un must_not debe ser un fragmento no vacío presente en la fuente. El runner expande la línea de autoridad; no redactes ni alteres citas. No juzgues reglas no incluidas.",
+            "max_output_tokens": 1200,
+            "max_tool_calls": null,
+            "model": "deepseek-flash",
+            "moderation": null,
+            "output": [
+              {
+                "type": "message",
+                "id": "cfeb5c21-b527-40fe-bfe1-fe48100b22e2",
+                "status": "completed",
+                "content": [
+                  {
+                    "type": "output_text",
+                    "annotations": [],
+                    "logprobs": [],
+                    "text": "{\"verdict\":{\"turn_id\":\"but_expensive\",\"approved\":true,\"failures\":[]}}"
+                  }
+                ],
+                "phase": "final_answer",
+                "role": "assistant"
+              }
+            ],
+            "parallel_tool_calls": true,
+            "presence_penalty": 0,
+            "previous_response_id": null,
+            "prompt_cache_key": null,
+            "prompt_cache_retention": null,
+            "reasoning": {
+              "effort": "none",
+              "summary": null
+            },
+            "safety_identifier": null,
+            "service_tier": "default",
+            "store": false,
+            "temperature": 0,
+            "text": {
+              "format": {
+                "type": "json_schema",
+                "name": "studyx_golden_semantic_turn_judge_v3",
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "verdict"
+                  ],
+                  "properties": {
+                    "verdict": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "turn_id",
+                        "approved",
+                        "failures"
+                      ],
+                      "properties": {
+                        "turn_id": {
+                          "type": "string",
+                          "enum": [
+                            "but_expensive"
+                          ]
+                        },
+                        "approved": {
+                          "type": "boolean"
+                        },
+                        "failures": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                              "code",
+                              "requirement_id",
+                              "authority_line_index",
+                              "evidence_source",
+                              "observed_evidence",
+                              "explanation"
+                            ],
+                            "properties": {
+                              "code": {
+                                "type": "string",
+                                "enum": [
+                                  "SEMANTIC_MUST_FAILED",
+                                  "SEMANTIC_MUST_NOT_FAILED"
+                                ]
+                              },
+                              "requirement_id": {
+                                "type": "string",
+                                "enum": [
+                                  "must:0",
+                                  "must_not:0"
+                                ]
+                              },
+                              "authority_line_index": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 36
+                              },
+                              "evidence_source": {
+                                "type": "string",
+                                "enum": [
+                                  "previous_delivery",
+                                  "promotion_delta",
+                                  "early_call_offer_evidence",
+                                  "response",
+                                  "backend_action",
+                                  "delivery_result",
+                                  "state",
+                                  "preconditions"
+                                ]
+                              },
+                              "observed_evidence": {
+                                "type": "string",
+                                "maxLength": 800
+                              },
+                              "explanation": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 800
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                },
+                "description": null,
+                "strict": null
+              },
+              "verbosity": null
+            },
+            "tool_choice": "auto",
+            "tools": [],
+            "top_logprobs": 0,
+            "top_p": 1,
+            "truncation": "disabled",
+            "usage": {
+              "input_tokens": 5580,
+              "input_tokens_details": {
+                "cached_tokens": 5376
+              },
+              "output_tokens": 20,
+              "output_tokens_details": {
+                "reasoning_tokens": 0
+              },
+              "total_tokens": 5600
+            },
+            "user": null,
+            "metadata": {}
+          }
+        }
+      ]
+    }
+  },
+  "evaluation_harness": {
+    "sha256": "edcb86ed0d1bd06dd8b9509f5a5012110eb2be61e05b501ec56129bedf593905",
+    "files": [
+      "evals/golden/compare-v3-v4.mjs",
+      "evals/golden/comparison.test.ts",
+      "evals/golden/comparison.ts",
+      "evals/golden/golden-suite.test.ts",
+      "evals/golden/judge.test.ts",
+      "evals/golden/judge.ts",
+      "evals/golden/live-runner.test.ts",
+      "evals/golden/negotiation-evidence.ts",
+      "evals/golden/negotiation-invariants.test.ts",
+      "evals/golden/negotiation-invariants.ts",
+      "evals/golden/official-provider.test.ts",
+      "evals/golden/offline-replay.config.mts",
+      "evals/golden/offline-replay.test.mjs",
+      "evals/golden/owner-conversation-2026-11-02.ts",
+      "evals/golden/owner-rules-scenarios.ts",
+      "evals/golden/owner-rules.test.ts",
+      "evals/golden/prepare-offline-knowledge-fixture.ts",
+      "evals/golden/provider.test.ts",
+      "evals/golden/provider.ts",
+      "evals/golden/reclassify-v2.test.ts",
+      "evals/golden/replay-baseline-v8.test.ts",
+      "evals/golden/replay-course-mentions.ts",
+      "evals/golden/replay-negotiation-invariants.test.ts",
+      "evals/golden/replay-negotiation-invariants.ts",
+      "evals/golden/replay-paid-role-alignment.test.ts",
+      "evals/golden/replay-paid-role-alignment.ts",
+      "evals/golden/run-config.mjs",
+      "evals/golden/run-config.test.ts",
+      "evals/golden/run-local.mjs",
+      "evals/golden/runner-support.test.ts",
+      "evals/golden/runner-support.ts",
+      "evals/golden/scenarios.ts",
+      "evals/golden/vitest.config.mts"
+    ],
+    "agent_runtime_sha": "6771a10ed7478305d363abe87e8ddb303fd99a5d"
+  },
+  "prompt_version": "studyx-agent-a-canonical-v101",
+  "brain_version": "studyx-agent-a-brain-v153",
+  "case_summary": {
+    "approved": 1,
+    "failed": 0,
+    "not_evaluated": 0,
+    "evaluator_errors": 0,
+    "judge_format_recoveries": 0,
+    "completed": 1,
+    "total": 1
+  },
+  "cases": [
+    {
+      "case_id": "20_owner_promotion_mode_replay_20261102_1730",
+      "title": "Replay 2/11 17:30–17:34: Inglés desde cero → pedido de promo por precio → escalada con recapitulación, sin contingencia",
+      "approved": true,
+      "turns": [
+        {
+          "case_id": "20_owner_promotion_mode_replay_20261102_1730",
+          "turn_id": "greeting_marketing_or_english",
+          "customer": "buenas\nquiero info\nrespecto a los cursos de marketing o ingles",
+          "approved": true,
+          "execution_status": "executed",
+          "authority": [
+            "docs/authority/prompt-agente-a-studyx-v2.md:38 | El catálogo está en `catalog.available_offerings`. «Info» no elige un curso: pregunta qué quiere aprender o cuál vio. Usa `browse_catalog` al explorar y `select_course` cuando elige. Una recomendación no es elección. Un anuncio determina el curso sólo si el contexto lo identifica. Si hay niveles, muestra una diferencia verificada."
+          ],
+          "must": [
+            "Responder sin silencio ni contingencia al mensaje real de este turno, conservando la intención y los hechos."
+          ],
+          "must_not": [
+            "No inventar datos del catálogo, descuentos, acciones ejecutadas ni bonificaciones sin efecto autorizado."
+          ],
+          "response_real": "Buenas! Soy Emma, asesora de Studyx. Tenemos varias opciones en las dos áreas, así te ubico mejor:\nEn marketing: Marketing Digital, Community Manager, Publicidad en Redes Sociales, Especialista en Marketing, entre otras.\nEn inglés: Inglés 1, 2 y 3, según tu nivel.\nPara qué los querés usar: crecer en tu trabajo, emprender o atender clientes en inglés?",
+          "move": "browse_catalog",
+          "proposed_action": {
+            "type": "none"
+          },
+          "backend_action": null,
+          "backend_rejections": [],
+          "state": {
+            "selectedCourse": null,
+            "stage": "exploring",
+            "awaitingReply": "none",
+            "plan": null,
+            "promotion": {
+              "status": null,
+              "bonusCount": 0,
+              "paidCourse": null,
+              "bonusCourses": []
+            }
+          },
+          "failures": [],
+          "failure_layer": null,
+          "validator_rejections": [],
+          "model_attempts": [
+            {
+              "attempt": 1,
+              "response": "Buenas! Soy Emma, asesora de Studyx. Tenemos varias opciones en las dos áreas, así te ubico mejor:\nEn marketing: Marketing Digital, Community Manager, Publicidad en Redes Sociales, Especialista en Marketing, entre otras.\nEn inglés: Inglés 1, 2 y 3, según tu nivel.\n¿Para qué los querés usar: crecer en tu trabajo, emprender o atender clientes en inglés?",
+              "move": "browse_catalog",
+              "proposedAction": {
+                "type": "none"
+              },
+              "turnRejection": null,
+              "providerStatus": 200,
+              "providerError": null
+            }
+          ],
+          "preconditions": {
+            "course_bonus": {
+              "enabled": true,
+              "maxBonusCourses": 3,
+              "mayOfferBonus": null,
+              "status": "needs_interest"
+            },
+            "price_objection_memory": {
+              "present": false,
+              "sourceMessageIds": [],
+              "priorSourceMessageIds": []
+            },
+            "may_offer_call": true,
+            "workflow": {
+              "commitSucceeded": true,
+              "status": "waiting_user",
+              "errorCode": null,
+              "finalBackendDecisionError": null
+            }
+          }
+        },
+        {
+          "case_id": "20_owner_promotion_mode_replay_20261102_1730",
+          "turn_id": "english_from_zero",
+          "customer": "para aprender idioma de cero",
+          "approved": true,
+          "execution_status": "executed",
+          "authority": [
+            "docs/authority/prompt-agente-a-studyx-v2.md:38 | El catálogo está en `catalog.available_offerings`. «Info» no elige un curso: pregunta qué quiere aprender o cuál vio. Usa `browse_catalog` al explorar y `select_course` cuando elige. Una recomendación no es elección. Un anuncio determina el curso sólo si el contexto lo identifica. Si hay niveles, muestra una diferencia verificada."
+          ],
+          "must": [
+            "Responder sin silencio ni contingencia al mensaje real de este turno, conservando la intención y los hechos."
+          ],
+          "must_not": [
+            "No inventar datos del catálogo, descuentos, acciones ejecutadas ni bonificaciones sin efecto autorizado."
+          ],
+          "response_real": "Perfecto, si arrancás de cero lo tuyo es Inglés 1: está pensado justo para eso, sin necesidad de base previa.\nContame una cosa: lo querés para viajar, para el trabajo o para atender clientes en inglés?\nSi querés, te llamo un momento y te cuento cómo es Inglés 1 desde cero y cómo se cursa, así lo ves claro.",
+          "move": "ask_course_information",
+          "proposed_action": {
+            "type": "none"
+          },
+          "backend_action": null,
+          "backend_rejections": [
+            {
+              "schema_version": 1,
+              "rejection_id": "537d1aa4-9a95-40ca-ba2b-1bc8a64c68ac",
+              "attempt": 1,
+              "rejections": [
+                {
+                  "code": "CALL_OFFER_REQUIRED",
+                  "subject": "rule_b:call_offer"
+                }
+              ],
+              "authorized_alternatives": {
+                "fact_ids": [
+                  "offering:aires_acondicionados:name:v1",
+                  "offering:armado_reparacion_pc:name:v1",
+                  "offering:autocad_interiores:name:v1",
+                  "offering:camaras_seguridad:name:v1",
+                  "offering:coaching_liderazgo:name:v1",
+                  "offering:community_manager:name:v1",
+                  "offering:comunicacion_interna_empresas:name:v1",
+                  "offering:decoracion_de_interiores:name:v1",
+                  "offering:diseno_corel_draw:name:v1",
+                  "offering:diseno_illustrator:name:v1",
+                  "offering:diseno_photoshop:name:v1",
+                  "offering:energia_solar_fotovoltaica:name:v1",
+                  "offering:entrenamiento_funcional:name:v1",
+                  "offering:especialista_marketing:name:v1",
+                  "offering:especialista_ventas:name:v1",
+                  "offering:estrategias_emprender:name:v1",
+                  "offering:excel_integral:name:v1",
+                  "offering:fotografia_celulares_tiendas_online:name:v1",
+                  "offering:fotografia_profesional:name:v1",
+                  "offering:influencers_creadores_contenidos:name:v1",
+                  "offering:ingles_1:name:v1",
+                  "offering:ingles_2:name:v1",
+                  "offering:ingles_3:name:v1",
+                  "offering:instagram_emprendedores:name:v1",
+                  "offering:introduccion_catering:name:v1",
+                  "offering:introduccion_criptomonedas:name:v1",
+                  "offering:introduccion_ecommerce:name:v1",
+                  "offering:maquillaje_profesional:name:v1",
+                  "offering:marketing_digital:name:v1",
+                  "offering:nutricion_alimentacion:name:v1",
+                  "offering:oratoria:name:v1",
+                  "offering:organizacion_baby_shower:name:v1",
+                  "offering:organizador_eventos_sociales:name:v1",
+                  "offering:paisajismo_jardineria:name:v1",
+                  "offering:publicidad_redes_sociales:name:v1",
+                  "offering:redes_informaticas:name:v1",
+                  "offering:reparacion_celulares:name:v1",
+                  "offering:sushi_principiantes:name:v1",
+                  "offering:unas_gelificadas:name:v1",
+                  "offering:vino_cata_maridaje:name:v1",
+                  "payment-workspace:monthly_12:label:v1",
+                  "payment-workspace:monthly_6:label:v1",
+                  "payment-workspace:one_time:label:v1"
+                ],
+                "actions": [
+                  "none"
+                ],
+                "missing_information": []
+              }
+            }
+          ],
+          "state": {
+            "selectedCourse": null,
+            "stage": "exploring",
+            "awaitingReply": "call_or_chat",
+            "plan": null,
+            "promotion": {
+              "status": null,
+              "bonusCount": 0,
+              "paidCourse": null,
+              "bonusCourses": []
+            }
+          },
+          "failures": [],
+          "failure_layer": null,
+          "validator_rejections": [],
+          "model_attempts": [
+            {
+              "attempt": 1,
+              "response": "Perfecto, si arrancás de cero lo tuyo es Inglés 1: está pensado justo para eso, sin dar por sabido nada previo.\nContame una cosa: lo querés para viajar, para el trabajo o para atender clientes en inglés?",
+              "move": "ask_course_information",
+              "proposedAction": {
+                "type": "none"
+              },
+              "turnRejection": null,
+              "providerStatus": 200,
+              "providerError": null
+            },
+            {
+              "attempt": 2,
+              "response": "Perfecto, si arrancás de cero lo tuyo es Inglés 1: está pensado justo para eso, sin necesidad de base previa.\nContame una cosa: lo querés para viajar, para el trabajo o para atender clientes en inglés?\nSi querés, te llamo un momento y te cuento cómo es Inglés 1 desde cero y cómo se cursa, así lo ves claro.",
+              "move": "ask_course_information",
+              "proposedAction": {
+                "type": "none"
+              },
+              "turnRejection": {
+                "schema_version": 1,
+                "rejection_id": "537d1aa4-9a95-40ca-ba2b-1bc8a64c68ac",
+                "attempt": 1,
+                "rejections": [
+                  {
+                    "code": "CALL_OFFER_REQUIRED",
+                    "subject": "rule_b:call_offer"
+                  }
+                ],
+                "authorized_alternatives": {
+                  "fact_ids": [
+                    "offering:aires_acondicionados:name:v1",
+                    "offering:armado_reparacion_pc:name:v1",
+                    "offering:autocad_interiores:name:v1",
+                    "offering:camaras_seguridad:name:v1",
+                    "offering:coaching_liderazgo:name:v1",
+                    "offering:community_manager:name:v1",
+                    "offering:comunicacion_interna_empresas:name:v1",
+                    "offering:decoracion_de_interiores:name:v1",
+                    "offering:diseno_corel_draw:name:v1",
+                    "offering:diseno_illustrator:name:v1",
+                    "offering:diseno_photoshop:name:v1",
+                    "offering:energia_solar_fotovoltaica:name:v1",
+                    "offering:entrenamiento_funcional:name:v1",
+                    "offering:especialista_marketing:name:v1",
+                    "offering:especialista_ventas:name:v1",
+                    "offering:estrategias_emprender:name:v1",
+                    "offering:excel_integral:name:v1",
+                    "offering:fotografia_celulares_tiendas_online:name:v1",
+                    "offering:fotografia_profesional:name:v1",
+                    "offering:influencers_creadores_contenidos:name:v1",
+                    "offering:ingles_1:name:v1",
+                    "offering:ingles_2:name:v1",
+                    "offering:ingles_3:name:v1",
+                    "offering:instagram_emprendedores:name:v1",
+                    "offering:introduccion_catering:name:v1",
+                    "offering:introduccion_criptomonedas:name:v1",
+                    "offering:introduccion_ecommerce:name:v1",
+                    "offering:maquillaje_profesional:name:v1",
+                    "offering:marketing_digital:name:v1",
+                    "offering:nutricion_alimentacion:name:v1",
+                    "offering:oratoria:name:v1",
+                    "offering:organizacion_baby_shower:name:v1",
+                    "offering:organizador_eventos_sociales:name:v1",
+                    "offering:paisajismo_jardineria:name:v1",
+                    "offering:publicidad_redes_sociales:name:v1",
+                    "offering:redes_informaticas:name:v1",
+                    "offering:reparacion_celulares:name:v1",
+                    "offering:sushi_principiantes:name:v1",
+                    "offering:unas_gelificadas:name:v1",
+                    "offering:vino_cata_maridaje:name:v1",
+                    "payment-workspace:monthly_12:label:v1",
+                    "payment-workspace:monthly_6:label:v1",
+                    "payment-workspace:one_time:label:v1"
+                  ],
+                  "actions": [
+                    "none"
+                  ],
+                  "missing_information": []
+                }
+              },
+              "providerStatus": 200,
+              "providerError": null
+            }
+          ],
+          "preconditions": {
+            "course_bonus": {
+              "enabled": true,
+              "maxBonusCourses": 3,
+              "mayOfferBonus": null,
+              "status": "needs_interest"
+            },
+            "price_objection_memory": {
+              "present": false,
+              "sourceMessageIds": [],
+              "priorSourceMessageIds": []
+            },
+            "may_offer_call": true,
+            "workflow": {
+              "commitSucceeded": true,
+              "status": "waiting_user",
+              "errorCode": null,
+              "finalBackendDecisionError": null
+            }
+          }
+        },
+        {
+          "case_id": "20_owner_promotion_mode_replay_20261102_1730",
+          "turn_id": "wants_to_pay",
+          "customer": "nono, quiero directamente pagar",
+          "approved": true,
+          "execution_status": "executed",
+          "authority": [
+            "docs/authority/prompt-agente-a-studyx-v2.md:38 | El catálogo está en `catalog.available_offerings`. «Info» no elige un curso: pregunta qué quiere aprender o cuál vio. Usa `browse_catalog` al explorar y `select_course` cuando elige. Una recomendación no es elección. Un anuncio determina el curso sólo si el contexto lo identifica. Si hay niveles, muestra una diferencia verificada."
+          ],
+          "must": [
+            "Responder sin silencio ni contingencia al mensaje real de este turno, conservando la intención y los hechos."
+          ],
+          "must_not": [
+            "No inventar datos del catálogo, descuentos, acciones ejecutadas ni bonificaciones sin efecto autorizado."
+          ],
+          "response_real": "Genial, vamos con Inglés 1 entonces. Para dejarte el enlace de pago necesito tus datos: nombre, apellido, correo y teléfono.",
+          "move": "request_payment_link",
+          "proposed_action": {
+            "type": "none"
+          },
+          "backend_action": null,
+          "backend_rejections": [],
+          "state": {
+            "selectedCourse": null,
+            "stage": "exploring",
+            "awaitingReply": "call_or_chat",
+            "plan": null,
+            "promotion": {
+              "status": null,
+              "bonusCount": 0,
+              "paidCourse": null,
+              "bonusCourses": []
+            }
+          },
+          "failures": [],
+          "failure_layer": null,
+          "validator_rejections": [],
+          "model_attempts": [
+            {
+              "attempt": 1,
+              "response": "Genial, vamos con Inglés 1 entonces. Para dejarte el enlace de pago necesito tus datos: nombre, apellido, correo y teléfono.",
+              "move": "request_payment_link",
+              "proposedAction": {
+                "type": "none"
+              },
+              "turnRejection": null,
+              "providerStatus": 200,
+              "providerError": null
+            }
+          ],
+          "preconditions": {
+            "course_bonus": {
+              "enabled": true,
+              "maxBonusCourses": 3,
+              "mayOfferBonus": false,
+              "status": "checkin_available"
+            },
+            "price_objection_memory": {
+              "present": false,
+              "sourceMessageIds": [],
+              "priorSourceMessageIds": []
+            },
+            "may_offer_call": true,
+            "workflow": {
+              "commitSucceeded": true,
+              "status": "waiting_user",
+              "errorCode": null,
+              "finalBackendDecisionError": null
+            }
+          }
+        },
+        {
+          "case_id": "20_owner_promotion_mode_replay_20261102_1730",
+          "turn_id": "course_and_payment",
+          "customer": "como son los cursos y el tema del pago",
+          "approved": true,
+          "execution_status": "executed",
+          "authority": [
+            "docs/authority/prompt-agente-a-studyx-v2.md:38 | El catálogo está en `catalog.available_offerings`. «Info» no elige un curso: pregunta qué quiere aprender o cuál vio. Usa `browse_catalog` al explorar y `select_course` cuando elige. Una recomendación no es elección. Un anuncio determina el curso sólo si el contexto lo identifica. Si hay niveles, muestra una diferencia verificada."
+          ],
+          "must": [
+            "Responder sin silencio ni contingencia al mensaje real de este turno, conservando la intención y los hechos."
+          ],
+          "must_not": [
+            "No inventar datos del catálogo, descuentos, acciones ejecutadas ni bonificaciones sin efecto autorizado."
+          ],
+          "response_real": "Inglés 1 son 12 clases online, pensadas para arrancar de cero: conceptos básicos, conversaciones y escritura simple, con 4 parciales y un examen final.\nEl pago son USD 360 en total, y podés elegir 12 cuotas de USD 30, 6 de USD 60 o un pago único. Con cuál te quedás más cómodo?",
+          "move": "ask_course_information",
+          "proposed_action": {
+            "type": "none"
+          },
+          "backend_action": null,
+          "backend_rejections": [],
+          "state": {
+            "selectedCourse": null,
+            "stage": "exploring",
+            "awaitingReply": "call_or_chat",
+            "plan": null,
+            "promotion": {
+              "status": null,
+              "bonusCount": 0,
+              "paidCourse": null,
+              "bonusCourses": []
+            }
+          },
+          "failures": [],
+          "failure_layer": null,
+          "validator_rejections": [],
+          "model_attempts": [
+            {
+              "attempt": 1,
+              "response": "Inglés 1 son 12 clases online, pensadas para arrancar de cero: conceptos básicos, conversaciones y escritura simple, con 4 parciales y un examen final.\nEl pago son USD 360 en total, y podés elegir 12 cuotas de USD 30, 6 de USD 60 o un pago único. Con cuál te quedás más cómodo?",
+              "move": "ask_course_information",
+              "proposedAction": {
+                "type": "none"
+              },
+              "turnRejection": null,
+              "providerStatus": 200,
+              "providerError": null
+            }
+          ],
+          "preconditions": {
+            "course_bonus": {
+              "enabled": true,
+              "maxBonusCourses": 3,
+              "mayOfferBonus": false,
+              "status": "checkin_available"
+            },
+            "price_objection_memory": {
+              "present": false,
+              "sourceMessageIds": [],
+              "priorSourceMessageIds": []
+            },
+            "may_offer_call": true,
+            "workflow": {
+              "commitSucceeded": true,
+              "status": "waiting_user",
+              "errorCode": null,
+              "finalBackendDecisionError": null
+            }
+          }
+        },
+        {
+          "case_id": "20_owner_promotion_mode_replay_20261102_1730",
+          "turn_id": "promo_because_expensive",
+          "customer": "hay bonificaciones?\no algun tipo de promocion\nporque me parece caro",
+          "approved": true,
+          "execution_status": "executed",
+          "authority": [
+            "AGENTS.md:46 | - Disparador: 2.ª objeción de precio registrada (turnos anteriores + la del turno actual), o el cliente confirma que el precio es lo único que lo frena (`constraint/price_only_barrier=confirmed`). No exige llamada ofrecida."
+          ],
+          "must": [
+            "Modo promoción, primera oferta: reconocer el freno del precio, decir que se lo puede resolver, presentar una promoción exclusiva (si avanza con Inglés 1, le bonifica Inglés 2) explicando por qué le suma a aprender desde cero, y cerrar con la alternativa de 12 cuotas de USD 30 o 6 de USD 60."
+          ],
+          "must_not": [
+            "No abrir con el precio ni con «el precio no cambia», no volver sólo a las cuotas, no comparar con gastos (comida, salidas, café), no usar frases defensivas, no más de 2 mensajes ni más de una pregunta."
+          ],
+          "response_real": "Entiendo que el precio te esté frenando, y justo para eso tengo algo pensado para tu caso.\nSi avanzás con Inglés 1, te bonifico Inglés 2: te sirve para seguir escalando desde cero y no quedarte a mitad de camino. El precio de Inglés 1 sigue igual, y podés arrancar con 12 cuotas de USD 30 o 6 de USD 60. Con cuál te queda más cómodo?",
+          "move": "ask_payment_options",
+          "proposed_action": {
+            "type": "offer_course_bonus",
+            "bonus_offering_code": "ingles_2",
+            "interest_offering_code": "ingles_1"
+          },
+          "backend_action": "offer_course_bonus",
+          "backend_rejections": [
+            {
+              "schema_version": 1,
+              "rejection_id": "f0c9e05d-b107-42b7-9ee0-6192faeb7c91",
+              "attempt": 1,
+              "rejections": [
+                {
+                  "code": "BONUS_OFFER_REQUIRED",
+                  "subject": "rule_a:bonus:ingles_2"
+                }
+              ],
+              "authorized_alternatives": {
+                "fact_ids": [
+                  "offering:aires_acondicionados:name:v1",
+                  "offering:armado_reparacion_pc:name:v1",
+                  "offering:autocad_interiores:name:v1",
+                  "offering:camaras_seguridad:name:v1",
+                  "offering:coaching_liderazgo:name:v1",
+                  "offering:community_manager:name:v1",
+                  "offering:comunicacion_interna_empresas:name:v1",
+                  "offering:decoracion_de_interiores:name:v1",
+                  "offering:diseno_corel_draw:name:v1",
+                  "offering:diseno_illustrator:name:v1",
+                  "offering:diseno_photoshop:name:v1",
+                  "offering:energia_solar_fotovoltaica:name:v1",
+                  "offering:entrenamiento_funcional:name:v1",
+                  "offering:especialista_marketing:name:v1",
+                  "offering:especialista_ventas:name:v1",
+                  "offering:estrategias_emprender:name:v1",
+                  "offering:excel_integral:name:v1",
+                  "offering:fotografia_celulares_tiendas_online:name:v1",
+                  "offering:fotografia_profesional:name:v1",
+                  "offering:influencers_creadores_contenidos:name:v1",
+                  "offering:ingles_1:name:v1",
+                  "offering:ingles_2:name:v1",
+                  "offering:ingles_3:name:v1",
+                  "offering:instagram_emprendedores:name:v1",
+                  "offering:introduccion_catering:name:v1",
+                  "offering:introduccion_criptomonedas:name:v1",
+                  "offering:introduccion_ecommerce:name:v1",
+                  "offering:maquillaje_profesional:name:v1",
+                  "offering:marketing_digital:name:v1",
+                  "offering:nutricion_alimentacion:name:v1",
+                  "offering:oratoria:name:v1",
+                  "offering:organizacion_baby_shower:name:v1",
+                  "offering:organizador_eventos_sociales:name:v1",
+                  "offering:paisajismo_jardineria:name:v1",
+                  "offering:publicidad_redes_sociales:name:v1",
+                  "offering:redes_informaticas:name:v1",
+                  "offering:reparacion_celulares:name:v1",
+                  "offering:sushi_principiantes:name:v1",
+                  "offering:unas_gelificadas:name:v1",
+                  "offering:vino_cata_maridaje:name:v1",
+                  "payment-workspace:monthly_12:label:v1",
+                  "payment-workspace:monthly_6:label:v1",
+                  "payment-workspace:one_time:label:v1"
+                ],
+                "actions": [
+                  "offer_course_bonus"
+                ],
+                "missing_information": []
+              }
+            }
+          ],
+          "state": {
+            "selectedCourse": null,
+            "stage": "exploring",
+            "awaitingReply": "call_or_chat",
+            "plan": null,
+            "promotion": {
+              "status": "offer_available",
+              "bonusCount": 1,
+              "paidCourse": "ingles_1",
+              "bonusCourses": [
+                "ingles_2"
+              ]
+            }
+          },
+          "failures": [],
+          "failure_layer": null,
+          "validator_rejections": [],
+          "model_attempts": [
+            {
+              "attempt": 1,
+              "response": "Te entiendo, y justo por eso quiero armarte algo especial: si avanzás con Inglés 1, te bonifico Inglés 2. Así, mientras arrancás de cero, ya tenés el siguiente nivel para seguir creciendo sin frenar.\nPara que lo veas cómodo, podés empezar con 12 cuotas de USD 30 o con 6 de USD 60. Cuál te queda mejor?",
+              "move": "ask_payment_options",
+              "proposedAction": {
+                "type": "offer_course_bonus",
+                "interest_offering_code": "ingles_1",
+                "bonus_offering_code": "ingles_2"
+              },
+              "turnRejection": null,
+              "providerStatus": 200,
+              "providerError": null
+            },
+            {
+              "attempt": 2,
+              "response": "Entiendo que el precio te esté frenando, y justo para eso tengo algo pensado para tu caso.\nSi avanzás con Inglés 1, te bonifico Inglés 2: te sirve para seguir escalando desde cero y no quedarte a mitad de camino. El precio de Inglés 1 sigue igual, y podés arrancar con 12 cuotas de USD 30 o 6 de USD 60. Con cuál te queda más cómodo?",
+              "move": "ask_payment_options",
+              "proposedAction": {
+                "type": "offer_course_bonus",
+                "interest_offering_code": "ingles_1",
+                "bonus_offering_code": "ingles_2"
+              },
+              "turnRejection": {
+                "schema_version": 1,
+                "rejection_id": "f0c9e05d-b107-42b7-9ee0-6192faeb7c91",
+                "attempt": 1,
+                "rejections": [
+                  {
+                    "code": "BONUS_OFFER_REQUIRED",
+                    "subject": "rule_a:bonus:ingles_2"
+                  }
+                ],
+                "authorized_alternatives": {
+                  "fact_ids": [
+                    "offering:aires_acondicionados:name:v1",
+                    "offering:armado_reparacion_pc:name:v1",
+                    "offering:autocad_interiores:name:v1",
+                    "offering:camaras_seguridad:name:v1",
+                    "offering:coaching_liderazgo:name:v1",
+                    "offering:community_manager:name:v1",
+                    "offering:comunicacion_interna_empresas:name:v1",
+                    "offering:decoracion_de_interiores:name:v1",
+                    "offering:diseno_corel_draw:name:v1",
+                    "offering:diseno_illustrator:name:v1",
+                    "offering:diseno_photoshop:name:v1",
+                    "offering:energia_solar_fotovoltaica:name:v1",
+                    "offering:entrenamiento_funcional:name:v1",
+                    "offering:especialista_marketing:name:v1",
+                    "offering:especialista_ventas:name:v1",
+                    "offering:estrategias_emprender:name:v1",
+                    "offering:excel_integral:name:v1",
+                    "offering:fotografia_celulares_tiendas_online:name:v1",
+                    "offering:fotografia_profesional:name:v1",
+                    "offering:influencers_creadores_contenidos:name:v1",
+                    "offering:ingles_1:name:v1",
+                    "offering:ingles_2:name:v1",
+                    "offering:ingles_3:name:v1",
+                    "offering:instagram_emprendedores:name:v1",
+                    "offering:introduccion_catering:name:v1",
+                    "offering:introduccion_criptomonedas:name:v1",
+                    "offering:introduccion_ecommerce:name:v1",
+                    "offering:maquillaje_profesional:name:v1",
+                    "offering:marketing_digital:name:v1",
+                    "offering:nutricion_alimentacion:name:v1",
+                    "offering:oratoria:name:v1",
+                    "offering:organizacion_baby_shower:name:v1",
+                    "offering:organizador_eventos_sociales:name:v1",
+                    "offering:paisajismo_jardineria:name:v1",
+                    "offering:publicidad_redes_sociales:name:v1",
+                    "offering:redes_informaticas:name:v1",
+                    "offering:reparacion_celulares:name:v1",
+                    "offering:sushi_principiantes:name:v1",
+                    "offering:unas_gelificadas:name:v1",
+                    "offering:vino_cata_maridaje:name:v1",
+                    "payment-workspace:monthly_12:label:v1",
+                    "payment-workspace:monthly_6:label:v1",
+                    "payment-workspace:one_time:label:v1"
+                  ],
+                  "actions": [
+                    "offer_course_bonus"
+                  ],
+                  "missing_information": []
+                }
+              },
+              "providerStatus": 200,
+              "providerError": null
+            }
+          ],
+          "preconditions": {
+            "course_bonus": {
+              "enabled": true,
+              "maxBonusCourses": 3,
+              "mayOfferBonus": true,
+              "status": "checkin_available"
+            },
+            "price_objection_memory": {
+              "present": true,
+              "sourceMessageIds": [
+                "470b2613-5d1f-4691-be39-38c38343f864"
+              ],
+              "priorSourceMessageIds": []
+            },
+            "may_offer_call": true,
+            "workflow": {
+              "commitSucceeded": true,
+              "status": "waiting_user",
+              "errorCode": null,
+              "finalBackendDecisionError": null
+            }
+          }
+        },
+        {
+          "case_id": "20_owner_promotion_mode_replay_20261102_1730",
+          "turn_id": "still_expensive_escalation",
+          "customer": "nono me parece caro",
+          "approved": true,
+          "execution_status": "executed",
+          "authority": [
+            "AGENTS.md:46 | - Disparador: 2.ª objeción de precio registrada (turnos anteriores + la del turno actual), o el cliente confirma que el precio es lo único que lo frena (`constraint/price_only_barrier=confirmed`). No exige llamada ofrecida."
+          ],
+          "must": [
+            "Modo promoción, escalada: sin repetir la pregunta del precio ni volver sólo a cuotas, sumar Inglés 3 además de Inglés 2 explicando qué le agrega, recapitular Inglés 1 + Inglés 2 + Inglés 3 por el mismo valor y cerrar con alternativa de plan."
+          ],
+          "must_not": [
+            "No caer en una respuesta de contingencia, no comparar con gastos, no más de una pregunta."
+          ],
+          "response_real": "Entiendo, y por eso quiero que veas todo lo que te llevás: con Inglés 1 te sumo Inglés 2 e Inglés 3, así seguís avanzando desde cero sin cortar el camino. Los tres cursos por el mismo valor de Inglés 1.\nPara arrancar, preferís 12 cuotas de USD 30 o 6 de USD 60?",
+          "move": "ask_payment_options",
+          "proposed_action": {
+            "type": "offer_course_bonus",
+            "bonus_offering_code": "ingles_3",
+            "interest_offering_code": "ingles_1"
+          },
+          "backend_action": "offer_course_bonus",
+          "backend_rejections": [],
+          "state": {
+            "selectedCourse": null,
+            "stage": "exploring",
+            "awaitingReply": "call_or_chat",
+            "plan": null,
+            "promotion": {
+              "status": "offer_available",
+              "bonusCount": 2,
+              "paidCourse": "ingles_1",
+              "bonusCourses": [
+                "ingles_2",
+                "ingles_3"
+              ]
+            }
+          },
+          "failures": [],
+          "failure_layer": null,
+          "validator_rejections": [],
+          "model_attempts": [
+            {
+              "attempt": 1,
+              "response": "Entiendo, y por eso quiero que veas todo lo que te llevás: con Inglés 1 te sumo Inglés 2 e Inglés 3, así seguís avanzando desde cero sin cortar el camino. Los tres cursos por el mismo valor de Inglés 1.\nPara arrancar, preferís 12 cuotas de USD 30 o 6 de USD 60?",
+              "move": "ask_payment_options",
+              "proposedAction": {
+                "type": "offer_course_bonus",
+                "interest_offering_code": "ingles_1",
+                "bonus_offering_code": "ingles_3"
+              },
+              "turnRejection": null,
+              "providerStatus": 200,
+              "providerError": null
+            }
+          ],
+          "preconditions": {
+            "course_bonus": {
+              "enabled": true,
+              "maxBonusCourses": 3,
+              "mayOfferBonus": true,
+              "status": "offer_available"
+            },
+            "price_objection_memory": {
+              "present": true,
+              "sourceMessageIds": [
+                "470b2613-5d1f-4691-be39-38c38343f864",
+                "ad021e6c-94c6-47a3-972c-b9a36092a25d"
+              ],
+              "priorSourceMessageIds": [
+                "470b2613-5d1f-4691-be39-38c38343f864"
+              ]
+            },
+            "may_offer_call": true,
+            "workflow": {
+              "commitSucceeded": true,
+              "status": "waiting_user",
+              "errorCode": null,
+              "finalBackendDecisionError": null
+            }
+          }
+        },
+        {
+          "case_id": "20_owner_promotion_mode_replay_20261102_1730",
+          "turn_id": "english_again",
+          "customer": "ignles\ningles",
+          "approved": true,
+          "execution_status": "executed",
+          "authority": [
+            "docs/authority/prompt-agente-a-studyx-v2.md:38 | El catálogo está en `catalog.available_offerings`. «Info» no elige un curso: pregunta qué quiere aprender o cuál vio. Usa `browse_catalog` al explorar y `select_course` cuando elige. Una recomendación no es elección. Un anuncio determina el curso sólo si el contexto lo identifica. Si hay niveles, muestra una diferencia verificada."
+          ],
+          "must": [
+            "Responder sin silencio ni contingencia al mensaje real de este turno, conservando la intención y los hechos."
+          ],
+          "must_not": [
+            "No inventar datos del catálogo, descuentos, acciones ejecutadas ni bonificaciones sin efecto autorizado."
+          ],
+          "response_real": "Perfecto, vamos con Inglés 1 entonces. Ya lo tenés claro: arrancás de cero, con 12 clases online, y te llevás también Inglés 2 e Inglés 3 bonificados por el mismo valor.\nPara dejarte el enlace de pago necesito tus datos: nombre, apellido, correo y teléfono.",
+          "move": "select_course",
+          "proposed_action": {
+            "type": "none"
+          },
+          "backend_action": null,
+          "backend_rejections": [],
+          "state": {
+            "selectedCourse": "ingles_1",
+            "stage": "course_selected",
+            "awaitingReply": "contact_details",
+            "plan": null,
+            "promotion": {
+              "status": "offer_available",
+              "bonusCount": 2,
+              "paidCourse": "ingles_1",
+              "bonusCourses": [
+                "ingles_2",
+                "ingles_3"
+              ]
+            }
+          },
+          "failures": [],
+          "failure_layer": null,
+          "validator_rejections": [],
+          "model_attempts": [
+            {
+              "attempt": 1,
+              "response": "Perfecto, vamos con Inglés 1 entonces. Ya lo tenés claro: arrancás de cero, con 12 clases online, y te llevás también Inglés 2 e Inglés 3 bonificados por el mismo valor.\nPara dejarte el enlace de pago necesito tus datos: nombre, apellido, correo y teléfono.",
+              "move": "select_course",
+              "proposedAction": {
+                "type": "none"
+              },
+              "turnRejection": null,
+              "providerStatus": 200,
+              "providerError": null
+            }
+          ],
+          "preconditions": {
+            "course_bonus": {
+              "enabled": true,
+              "maxBonusCourses": 3,
+              "mayOfferBonus": true,
+              "status": "offer_available"
+            },
+            "price_objection_memory": {
+              "present": true,
+              "sourceMessageIds": [
+                "470b2613-5d1f-4691-be39-38c38343f864",
+                "ad021e6c-94c6-47a3-972c-b9a36092a25d"
+              ],
+              "priorSourceMessageIds": [
+                "470b2613-5d1f-4691-be39-38c38343f864",
+                "ad021e6c-94c6-47a3-972c-b9a36092a25d"
+              ]
+            },
+            "may_offer_call": true,
+            "workflow": {
+              "commitSucceeded": true,
+              "status": "waiting_user",
+              "errorCode": null,
+              "finalBackendDecisionError": null
+            }
+          }
+        },
+        {
+          "case_id": "20_owner_promotion_mode_replay_20261102_1730",
+          "turn_id": "but_expensive",
+          "customer": "pero es caro",
+          "approved": true,
+          "execution_status": "executed",
+          "authority": [
+            "docs/authority/prompt-agente-a-studyx-v2.md:38 | El catálogo está en `catalog.available_offerings`. «Info» no elige un curso: pregunta qué quiere aprender o cuál vio. Usa `browse_catalog` al explorar y `select_course` cuando elige. Una recomendación no es elección. Un anuncio determina el curso sólo si el contexto lo identifica. Si hay niveles, muestra una diferencia verificada."
+          ],
+          "must": [
+            "Responder a la nueva objeción conservando el paquete vigente; si el backend decide otra escalada, presentarla con recapitulación."
+          ],
+          "must_not": [
+            "No inventar datos del catálogo, descuentos, acciones ejecutadas ni bonificaciones sin efecto autorizado."
+          ],
+          "response_real": "Entiendo que el precio siga pesando, así que te armo el paquete completo: a Inglés 1 le sumo Inglés 2, Inglés 3 y Estrategias para Emprender, que te da herramientas para generar ingresos con lo que aprendés. Todo por el mismo valor de Inglés 1.\nPara arrancar, preferís 12 cuotas de USD 30 o 6 de USD 60?",
+          "move": "defer_payment",
+          "proposed_action": {
+            "type": "offer_course_bonus",
+            "bonus_offering_code": "estrategias_emprender",
+            "interest_offering_code": "ingles_1"
+          },
+          "backend_action": "offer_course_bonus",
+          "backend_rejections": [],
+          "state": {
+            "selectedCourse": "ingles_1",
+            "stage": "course_selected",
+            "awaitingReply": "none",
+            "plan": null,
+            "promotion": {
+              "status": "offer_available",
+              "bonusCount": 3,
+              "paidCourse": "ingles_1",
+              "bonusCourses": [
+                "ingles_2",
+                "ingles_3",
+                "estrategias_emprender"
+              ]
+            }
+          },
+          "failures": [],
+          "failure_layer": null,
+          "validator_rejections": [],
+          "model_attempts": [
+            {
+              "attempt": 1,
+              "response": "Entiendo que el precio siga pesando, así que te armo el paquete completo: a Inglés 1 le sumo Inglés 2, Inglés 3 y Estrategias para Emprender, que te da herramientas para generar ingresos con lo que aprendés. Todo por el mismo valor de Inglés 1.\nPara arrancar, preferís 12 cuotas de USD 30 o 6 de USD 60?",
+              "move": "defer_payment",
+              "proposedAction": {
+                "type": "offer_course_bonus",
+                "interest_offering_code": "ingles_1",
+                "bonus_offering_code": "estrategias_emprender"
+              },
+              "turnRejection": null,
+              "providerStatus": 200,
+              "providerError": null
+            }
+          ],
+          "preconditions": {
+            "course_bonus": {
+              "enabled": true,
+              "maxBonusCourses": 3,
+              "mayOfferBonus": true,
+              "status": "offer_available"
+            },
+            "price_objection_memory": {
+              "present": true,
+              "sourceMessageIds": [
+                "470b2613-5d1f-4691-be39-38c38343f864",
+                "8a01e7a2-0873-4302-b9eb-3d19e75826c5",
+                "ad021e6c-94c6-47a3-972c-b9a36092a25d"
+              ],
+              "priorSourceMessageIds": [
+                "470b2613-5d1f-4691-be39-38c38343f864",
+                "ad021e6c-94c6-47a3-972c-b9a36092a25d"
+              ]
+            },
+            "may_offer_call": true,
+            "workflow": {
+              "commitSucceeded": true,
+              "status": "waiting_user",
+              "errorCode": null,
+              "finalBackendDecisionError": null
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "comparison_to_v8": {
+    "baseline": "baseline-v8",
+    "candidate": "replay-6771a10-promotion-mode-20261102-rejudge",
+    "disclosure": "Ambas corridas usan el mismo proveedor (deepseek); compartir un alias solicitado no garantiza el mismo snapshot. Las diferencias de una muestra no se atribuyen por sí solas al agente.",
+    "summary": {
+      "cases_improved": 0,
+      "cases_regressed": 0,
+      "cases_unchanged": 0,
+      "turns_improved": 0,
+      "turns_regressed": 0,
+      "turns_unchanged": 0,
+      "turns_missing": 0
+    },
+    "cases": [],
+    "turns": []
+  }
+}

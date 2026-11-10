@@ -13,7 +13,7 @@ const TECHNICAL_ANNEX = `## Anexo técnico
 - La especificación de bonificación se traduce al contrato real \`AgentATurnProposalV1\`: no existe \`move=negotiate\` y \`proposed_action\` es un objeto.
 - \`accept_promotion\` lleva la identidad completa del contexto: \`promotion_code\`, \`interest_offering_code\`, \`promotion_cycle_id\` y \`offer_version\`.
 - Ante el rechazo de una bonificación se quita sólo el curso nuevo y se conservan los ya entregados.
-- La \`price_objection\` que habilita la bonificación debe estar registrada en un turno anterior.
+- El motivo de la bonificación (\`motive.quote\`) debe ser literal en el mensaje entrante actual; una objeción registrada en un turno anterior no la habilita.
 - Los temarios y el texto del certificado llegan al modelo como datos autorizados mediante \`fact_id\`.
 `;
 
@@ -24,9 +24,12 @@ describe('Agent A canonical sales prompt authority', () => {
     const prompt = readFileSync(PROMPT_PATH, 'utf8');
 
     expect(prompt).toBe(`${authority}\n${TECHNICAL_ANNEX}`);
+    const [behavior, annex] = prompt.split('\n## Anexo técnico\n');
+    expect(behavior).toBe(authority);
+    expect(`## Anexo técnico\n${annex}`).toBe(TECHNICAL_ANNEX);
   });
 
-  it('keeps both generated modules byte-identical to the canonical source at v101', () => {
+  it('keeps both generated modules byte-identical to the canonical source at v120', () => {
     const prompt = readFileSync(PROMPT_PATH, 'utf8');
     const generated = GENERATED_PATHS.map((path) => readFileSync(path, 'utf8'));
 
@@ -35,7 +38,7 @@ describe('Agent A canonical sales prompt authority', () => {
       `export const STUDYX_AGENT_A_CANONICAL_PROMPT = ${JSON.stringify(prompt)} as const;`,
     );
     expect(generated[0]).toContain(
-      "export const STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION = 'studyx-agent-a-canonical-v101' as const;",
+      "export const STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION = 'studyx-agent-a-canonical-v120' as const;",
     );
   });
 
@@ -47,5 +50,102 @@ describe('Agent A canonical sales prompt authority', () => {
     expect(prompt).toContain('presenta el plan de 12 cuotas como la forma más accesible');
     expect(prompt).toContain('La llamada es una herramienta de cierre complementaria');
     expect(prompt).not.toMatch(/asesora virtual|administrativa/iu);
+  });
+});
+
+describe('Agent A canonical prompt v120 (Gabi manual integration)', () => {
+  const prompt = readFileSync(PROMPT_PATH, 'utf8');
+  const authority = readFileSync(AUTHORITY_PATH, 'utf8');
+
+  it('mentions no 699, no scholarship and no inverted marks outside the rule that forbids them', () => {
+    expect(authority).not.toMatch(/\b699\b|beca/iu);
+    expect(authority.replace(/`¿` ni `¡`/u, '')).not.toMatch(/[¡¿]/u);
+  });
+
+  it('carries the owner-authorized 2026-11-09 natural turn fixes once each', () => {
+    for (const phrase of ['Un nuevo saludo del cliente no convierte la conversación en un primer contacto',
+      'Si dice que no sabe y pide una recomendación, toma posición: recomienda un solo curso',
+      'No cierres cada intervención con una pregunta por reflejo']) {
+      expect(authority.split(phrase)).toHaveLength(2);
+      expect(prompt.split(phrase)).toHaveLength(2);
+    }
+  });
+
+  it('speaks with tú, never voseo, in the text it teaches', () => {
+    const withoutRule = authority.replace(/nunca de vos, aunque el cliente use voseo/u, '');
+    expect(withoutRule).not.toMatch(/\b(?:querés|podés|tenés|hacés|sabés|preferís|necesitás|contame|decime|mandá|dejá|fijate|imaginate|confirmás|avisame)\b/iu);
+  });
+
+  it('carries the manual: real testimonials, licensed trades, honest title answer and no second paid course', () => {
+    for (const phrase of ['Felipe Serrano', 'Cristian y Ana María', 'Amparo y Edson', 'no reemplaza esa licencia',
+      'cuánto cobrarías por un servicio cuando termines', 'qué parte te gustaría pensar: el curso, el precio o el tiempo',
+      'Nunca vendas un segundo curso pago', 'baja de bonificados', 'nunca de precio', 'prefiero seguir por acá']) {
+      expect(prompt).toContain(phrase);
+    }
+    expect(prompt).not.toMatch(/cierre con beca|cierre por inicio de clases/iu);
+  });
+
+  it('grounds the general value arguments in the authorized general facts and invents no schedules',()=>{
+    expect(prompt).toContain('studyx:benefits:v1');
+    expect(prompt).toContain('studyx:how_it_works:v1');
+    expect(prompt).toContain('no inventes días, horarios ni fechas de clase');
+  });
+
+  it('carries the owner price guidance as model guidance (merged from the retired runtime rules)', () => {
+    for (const phrase of ['Da siempre el precio (USD 360 y los planes) antes de cualquier pregunta sobre el precio o la promoción',
+      'sin ofrecer, insinuar ni recordar la promoción ni el bonificado, aunque ya exista el paquete',
+      'sólo ante una queja de precio, un pedido de promo o de un curso de regalo',
+      'Una sola pregunta por turno']) { expect(prompt).toContain(phrase); expect(authority).toContain(phrase); }
+  });
+
+  it('closes without invasion: the advance is the conversation, not an enrollment ask',()=>{
+    // Real failures of run natural-1a413da: informative price ended "Cómo te acomoda más pagarlo?";
+    // "ok, gracias" was answered with "seguimos con tu inscripción a Marketing Digital…";
+    // a classes question ended "te paso el formulario de inscripción?" right after an enrollment ask;
+    // the testimonial said "tenemos egresadas que hoy cobran por sus servicios de belleza".
+    expect(prompt).not.toContain('Cada respuesta tuya debe terminar con un avance');
+    for (const phrase of ['no es un pedido de inscripción o plan', 'nunca pidas la inscripción en dos turnos seguidos',
+      'no vuelvas a empujar la inscripción ni repitas el paquete', 'no es una señal',
+      'nunca «cómo te acomoda pagarlo?»', 'nunca «tenemos egresadas/alumnas que…» genérico']) expect(prompt).toContain(phrase);
+  });
+
+  it('does not abandon a broad-options turn as a flat menu', () => {
+    const guidance = 'Si todavía no hay criterio suficiente para recomendar, no cierres después de enumerar: termina con una sola pregunta breve que realmente separe esos caminos.';
+    expect(authority).toContain(guidance);
+    expect(prompt).toContain(guidance);
+  });
+
+  it('does not repeat an ignored choice and grounds every programme delivery', () => {
+    for (const guidance of [
+      'si el cliente aporta información nueva pero no responde esa elección, cuenta como ignorada y no puedes repetirla ni reformularla en el turno siguiente',
+      'Al responder referencias, conecta la historia con el objetivo conocido; si cierras con una pregunta, no retomes una elección ya respondida con «no sé» o recién ignorada.',
+      'Al enviar material de un curso, nombra uno o dos contenidos disponibles en su descripción o temario autorizado',
+      'Anunciar solamente que compartes o adjuntas el programa no cumple',
+    ]) {
+      expect(authority).toContain(guidance);
+      expect(prompt).toContain(guidance);
+    }
+  });
+
+  it('separates a forgotten ad from an explicit request for options without imposing a fixed question', () => {
+    const guidance = 'Si el cliente sólo dice que no recuerda qué curso o anuncio vio y todavía no identificó un área, reconócelo y haz una sola pregunta breve de orientación, sin desplegar un catálogo de áreas o cursos. Usa el contexto: no vuelvas a pedir un objetivo ya conocido ni reformules la pregunta recién ignorada. Si pide opciones expresamente, respóndelas con una orientación breve y, si aún no hay criterio suficiente para recomendar una, termina con una sola pregunta nueva que realmente las separe.';
+    expect(authority).toContain(guidance);
+    expect(prompt).toContain(guidance);
+  });
+
+  it('pins the canonical source in the generator', () => {
+    const generator = readFileSync('scripts/generate-agent-a-prompt-module.mjs', 'utf8');
+    expect(generator).toContain('studyx-agent-a-canonical-v120');
+    expect(generator).toContain(`lineCount !== ${prompt.match(/\n/gu)!.length}`);
+  });
+
+  it('finishes with one compact natural-sales consistency check', () => {
+    for (const phrase of [
+      'no reformules esa misma elección',
+      'no descargues una lista plana',
+      'un cierre de prueba suave',
+      'no desplaces una consulta, una objeción ni un paso operativo',
+    ]) expect(authority).toContain(phrase);
+    expect(authority).toContain('## Comprobación final antes de responder');
   });
 });

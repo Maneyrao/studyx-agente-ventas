@@ -2,13 +2,111 @@ import { describe, expect, it } from 'vitest';
 
 import {
   extractAuthorizedContextV1,
+  extractCommittedProposalV1,
+  extractCommittedCallIdV1,
+  proposalEvidenceV1,
+  quotedCurrentPriceEvidenceV1,
+  appendEarlyCallOfferEvidenceV1,
+  extractFinalDeterministicRuleOutcomeV1,
   extractFinalBackendDecisionErrorV1,
   extractContextEvidenceV1,
   extractModelAttemptsV1,
   normalizePromotionStatusV1,
+  deliveryAcknowledgementTargetsV1,
+  reportTurnTotalsV1,
+  reportTurnLabelV1,
+  noVerdictReasonV1,
 } from './runner-support';
 
 describe('golden live runner evidence extraction', () => {
+  it('acknowledges every distinct outbound in a multi-bubble turn', () => {
+    expect(deliveryAcknowledgementTargetsV1([
+      { outboundId: 'outbound-1', providerMessageId: 'provider-1' },
+      { outboundId: 'outbound-2', providerMessageId: 'provider-2' },
+      { outboundId: 'outbound-1', providerMessageId: 'provider-1-duplicate' },
+      { outboundId: null, providerMessageId: 'provider-without-outbound' },
+    ])).toEqual([
+      { outboundId: 'outbound-1', providerMessageId: 'provider-1' },
+      { outboundId: 'outbound-2', providerMessageId: 'provider-2' },
+    ]);
+  });
+  it('observes the final fixed outcome correlated to the committed proposal and preserves earlier events', () => {
+    const first = { event: 'studyx.turn.deterministic_rules', turn_id: 't1', trace_id: 'trace1',
+      rule_a: 'not_applicable', rule_a_bonus_code: null, rule_b: 'not_applicable' };
+    const last = { ...first, rule_a: 'fixed', rule_a_bonus_code: 'foto' };
+    const fallback = { proposed_action: { type: 'offer_course_bonus', bonus_offering_code: 'foto' },
+      response: { messages: ['Pausa', 'Curso pago más Fotografía sin costo. Avanzamos?'], call_offer: null } };
+    const exchange = { boundary: 'backend' as const, url: 'http://127.0.0.1:3217/turns/t1/decision', status: 200,
+      error: null, requestBody: { turn_id: 't1', trace_id: 'trace1', agent_turn_v2: { proposal: fallback } },
+      responseBody: { status: 'committed', turn_id: 't1' } };
+    const events = [first, last, { ...last, trace_id: 'other-trace', rule_a: 'rewrite' }];
+    const original = JSON.stringify(events);
+    expect(extractFinalDeterministicRuleOutcomeV1(events, [exchange])).toEqual(last);
+    expect(extractCommittedProposalV1([exchange])).toEqual(fallback);
+    expect(JSON.stringify(events)).toBe(original);
+    expect(extractFinalDeterministicRuleOutcomeV1(events, [{ ...exchange, status: 422, responseBody: { status: 'rejected', turn_id: 't1' } }])).toBeNull();
+    expect(extractFinalDeterministicRuleOutcomeV1([first], [exchange])).toBeNull();
+    expect(extractFinalDeterministicRuleOutcomeV1(events, [{ ...exchange, responseBody: { status: 'committed', turn_id: 'other-turn' } }])).toBeNull();
+    expect(extractFinalDeterministicRuleOutcomeV1([first, { ...last, rule_a_bonus_code: 'wrong-course' }], [exchange])).toBeNull();
+  });
+  it('takes the call id only from the successful committed receipt', () => {
+    const base = {
+      boundary: 'backend' as const,
+      url: 'http://127.0.0.1:3217/turns/t1/decision',
+      status: 200,
+      error: null,
+      requestBody: { turn_id: 't1', agent_turn_v2: { proposal: { proposed_action: { type: 'request_call_now' } } } },
+      responseBody: {
+        status: 'committed',
+        turn_id: 't1',
+        call_request: { status: 'requested', call_id: '11111111-1111-4111-8111-111111111111' },
+      },
+    };
+    expect(extractCommittedCallIdV1([base])).toBe('11111111-1111-4111-8111-111111111111');
+    expect(extractCommittedCallIdV1([{ ...base, status: 422, responseBody: { status: 'rejected' } }])).toBeNull();
+    expect(extractCommittedCallIdV1([{ ...base, responseBody: { status: 'committed', call_request: null } }])).toBeNull();
+  });
+  it('records an early invitation only after its same-dialogue receipt, exact delivery and persisted count', () => {
+    const input = { prior: [], conversationId: 'dialogue', turnId: 'turn-2', callOffer: 'Llamamos?',
+      response: 'Respuesta. Llamamos?', ruleBReason: 'response_2', committed: true, persistedOfferCount: 1 };
+    const proof = appendEarlyCallOfferEvidenceV1(input);
+    expect(proof).toEqual([{ conversationId: 'dialogue', turnId: 'turn-2', responseOrdinal: 2,
+      callOffer: 'Llamamos?', committed: true, delivered: true, persistedOfferCount: 1 }]);
+    for (const override of [{ committed: false }, { persistedOfferCount: 0 }, { response: 'Sin invitación' },
+      { ruleBReason: 'response_4' }, { turnId: null }]) {
+      expect(appendEarlyCallOfferEvidenceV1({ ...input, ...override })).toEqual([]);
+    }
+    expect(appendEarlyCallOfferEvidenceV1({ ...input, prior: proof, callOffer: null, ruleBReason: 'already_offered' })).toEqual(proof);
+    expect(appendEarlyCallOfferEvidenceV1({ ...input, prior: proof, conversationId: 'other', callOffer: null })).toEqual([]);
+  });
+  it('measures the committed fixed fallback separately from the unchanged raw model draft', () => {
+    const model = { move: { move: 'unknown', secondary_moves: [] }, response: { messages: ['Modelo sin oferta'] }, proposed_action: { type: 'none' } };
+    const fallback = { ...model, response: { messages: ['Pausa', 'Te sumo Fotografía sin costo'] },
+      proposed_action: { type: 'offer_course_bonus', bonus_offering_code: 'foto' } };
+    const exchanges = [
+      { boundary: 'deepseek' as const, status: 200, error: null, requestBody: {}, responseBody: { output_text: JSON.stringify(model) } },
+      { boundary: 'backend' as const, url: 'http://127.0.0.1:3217/turns/t1/decision', status: 422,
+        error: null, requestBody: { agent_turn_v2: { proposal: model } }, responseBody: { status: 'rejected' } },
+      { boundary: 'backend' as const, url: 'http://127.0.0.1:3217/turns/t1/decision', status: 200,
+        error: null, requestBody: { agent_turn_v2: { proposal: fallback } }, responseBody: { status: 'committed' } },
+    ];
+    expect(extractCommittedProposalV1(exchanges)).toEqual(fallback);
+    expect(proposalEvidenceV1(extractCommittedProposalV1(exchanges)).proposedAction).toEqual(fallback.proposed_action);
+    expect(extractModelAttemptsV1(exchanges)[0]?.response).toBe('Modelo sin oferta');
+    expect(extractCommittedProposalV1(exchanges.slice(0, 2))).toBeNull();
+    expect(extractCommittedProposalV1([{ ...exchanges[2]!, responseBody: { status: 'pending' } }])).toBeNull();
+  });
+
+  it('binds rule-A interpretation evidence to literal messages in the current batch', () => {
+    const context = { turn: { batch_messages: [{ text: 'Sólo el precio me frena, me parece caro.' }] } };
+    const proposal = { memory_candidates: [
+      { type: 'objection', key: 'price_objection', source_quote: 'me parece caro' },
+      { type: 'constraint', key: 'price_only_barrier', value: 'confirmed', source_quote: 'Sólo el precio me frena' },
+    ] };
+    expect(quotedCurrentPriceEvidenceV1(context, proposal)).toEqual({ currentPriceObjectionQuoted: true, currentPriceOnlyBarrierQuoted: true });
+    expect(quotedCurrentPriceEvidenceV1(context, { memory_candidates: proposal.memory_candidates.map(candidate => ({ ...candidate, source_quote: 'inventado' })) }))
+      .toEqual({ currentPriceObjectionQuoted: false, currentPriceOnlyBarrierQuoted: false });
+  });
   it('keeps rejected and repaired model attempts instead of hiding the first proposal', () => {
     const exchanges = [
       {
@@ -113,5 +211,18 @@ describe('golden live runner evidence extraction', () => {
     expect(extractFinalBackendDecisionErrorV1([rejected]))
       .toBe('AGENT_TURN_V2_REJECTED:ACTION_NOT_AUTHORIZED');
     expect(extractFinalBackendDecisionErrorV1([rejected, repaired])).toBeNull();
+  });
+});
+
+describe('golden results report counts every turn', () => {
+  const turn = (approved: boolean | null, execution_status: 'executed' | 'not_executed' | 'evaluation_error' = 'executed') =>
+    ({ turn_id: 't', approved, execution_status, failures: [] });
+  it('header totals add up and approved=null is labelled with a reason, not FALLIDO', () => {
+    const turns = [turn(true), turn(false), turn(null), turn(null, 'evaluation_error')];
+    const totals = reportTurnTotalsV1(turns);
+    expect(totals).toMatchObject({ total: 4, approved: 1, failed: 1, no_verdict: 2, evaluation_error: 1 });
+    expect(totals.approved + totals.failed + totals.no_verdict).toBe(totals.total);
+    expect(turns.map(reportTurnLabelV1)).toEqual(['APROBADO', 'FALLIDO', 'SIN_VEREDICTO', 'ERROR_EVALUACIÓN']);
+    expect(noVerdictReasonV1({ ...turn(null), invariant_status: 'INDETERMINATE' })).toContain('invariant_status=INDETERMINATE');
   });
 });

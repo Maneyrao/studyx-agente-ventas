@@ -15,6 +15,7 @@ import {
 } from '@/features/promotions/application/read-course-bonus-capability';
 import { reservePaymentLink } from '@/features/payments/application/reserve-payment-link';
 import { runEnrollmentWorker } from '@/features/fulfillment/central-carga/worker';
+import { postSaleAccessTestConfig } from '../helpers/post-sale-config';
 import { assemblePostSaleMessage } from '@/features/fulfillment/post-sale/service';
 import { commitAgentDecision } from '@/lib/services/decision.service';
 import { authorizeAgentTurnV2 } from '@/features/conversation/domain/agent-turn-policy-v2';
@@ -341,10 +342,10 @@ run('carries one authorized price-objection bonus through payment, Central v2 an
   }>>`SELECT offering_code,enrollment_status,position FROM central_bonus_enrollment_items
     WHERE payment_id=${reservation.payment_id} ORDER BY position`;
   expect(verified).toEqual([{offering_code:bonus.code,enrollment_status:'active',position:1}]);
-  const message = assemblePostSaleMessage({kind:'access_ready',student_was_created:true,login_email:'ana@example.test',
+  const message = assemblePostSaleMessage({kind:'access_ready',enrollment_status:'active',student_was_created:true,login_email:'ana@example.test',
     login_url:null,offering_name:paid.display_name,
     bonus_offerings:[{code:bonus.code,display_name:bonus.display_name,position:1}],
-    verified_bonus_enrollments:verified},{intro:'Tu acceso ya está habilitado.',suggestion:''});
+    verified_bonus_enrollments:verified},undefined,postSaleAccessTestConfig);
   expect(message).toContain('CURSO PRINCIPAL: Inglés 1');
   expect(message).toContain('CURSO BONIFICADO: Inglés 2');
   expect(message).not.toMatch(/invoice|comprobante/iu);

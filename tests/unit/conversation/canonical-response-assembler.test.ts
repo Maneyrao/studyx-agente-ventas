@@ -103,6 +103,28 @@ describe('canonical response assembler V1', () => {
     expect(result.used_fact_ids).toEqual([description.id]);
   });
 
+  it('normalizes PDF line breaks in an authorized prerequisite clause', () => {
+    const description: CanonicalFactV1 = {
+      id: 'offering:real-estate:description:v1',
+      kind: 'offering_description',
+      source: 'knowledge_base',
+      value: 'Diseñado para latinos sin importar su experiencia\nprevia.',
+      offering_code: 'real_estate',
+    };
+    const result = assembleCanonicalConversationResponseV1({
+      plan: plan({ selected_offering_code: 'real_estate' }),
+      fact_refs: [{ id: description.id, kind: description.kind, offering_code: description.offering_code }],
+      facts: [description],
+      composition: {
+        schema_version: 1,
+        narrative: { opening: 'No requiere experiencia previa.', explanation: null, next_question: null },
+        used_fact_ids: [description.id],
+      },
+    });
+    expect(result.content).toBe('No requiere experiencia previa.');
+    expect(result.used_fact_ids).toContain(description.id);
+  });
+
   it('renders a cited canonical syllabus when the model requests the full temario block', () => {
     const syllabus: CanonicalFactV1 = {
       id: 'knowledge-source:11111111-1111-4111-8111-111111111111',

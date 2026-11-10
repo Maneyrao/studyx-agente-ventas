@@ -7,6 +7,8 @@ import {
   catalogGuidanceForTurn,
   normalizeCatalogGuidanceText,
 } from './catalog-guidance'
+import { classifyBatchSalesSignal } from '../../../src/features/orchestration/domain/sales-signal'
+import { supportsChatPreferenceV1 } from '../lib/conversation/channel-preference-evidence'
 
 /**
  * Post-model policy: normalization plus the deterministic guardrails a raw
@@ -43,17 +45,98 @@ export function technicalFallback(
     schema_version: 3,
     intent: 'unknown',
     kind: 'reply',
-    // Last-resort continuity only. Never expose a provider failure or ask the
-    // customer to repeat the exact message that the system already received.
-    // Ask for the smallest useful clarification so the conversation keeps
-    // moving even while the model path is unavailable.
-    response: 'Qué dato o qué curso revisamos?',
+    // Last-resort continuity only. Never expose a provider failure. Owner
+    // wording (2026-11-03): a short, human clarification request.
+    response: 'Perdón, no te entendí bien, a qué te refieres?',
     response_type: responseType,
     business_action: null,
     memory_candidates: [],
     missing_information: [],
     next_state: 'waiting_user',
     reason_code: 'MODEL_UNAVAILABLE',
+    confidence: 1,
+    retrieval_used: null,
+  }
+}
+
+function callOperationalContinuityFallback(claimed: ClaimedTurn): Decision | null {
+  const state = claimed.conversation_state_v1
+  if (claimed.sales_context.active_call !== null
+    || state?.stage === 'handoff'
+    || state?.stage === 'closed') return null
+  const acceptedCall = state?.call_preference === 'call'
+    && state.call_offer_status === 'accepted'
+    && (state.awaiting_reply === 'contact_details' || state.awaiting_reply === 'call_or_chat')
+  const currentCallSignal = classifyBatchSalesSignal(
+    claimed.context.batch_messages.map((message) => message.content),
+    { pendingCallReply: state?.awaiting_reply === 'call_or_chat' },
+  )
+  const currentTurnChoosesChat = supportsChatPreferenceV1(
+    claimed.context.batch_messages.map((message) => message.content).join('\n'),
+    acceptedCall && state?.awaiting_reply === 'call_or_chat',
+  )
+  if (currentCallSignal.type === 'call_decline'
+    || currentCallSignal.type === 'opt_out'
+    || currentTurnChoosesChat) return null
+  const currentDirectRequest = claimed.deterministic_route === 'call_direct_request'
+    || claimed.deterministic_route === 'call_phone_required'
+    || currentCallSignal.type === 'direct_call_request'
+  if (!currentDirectRequest && !acceptedCall) return null
+
+  const responseType = claimed.policy.allowed_response_types.includes('commercial_reply')
+    ? 'commercial_reply'
+    : claimed.policy.allowed_response_types.includes('clarification')
+      ? 'clarification'
+      : null
+  if (responseType === null) return null
+
+  const readiness = claimed.call_intake_readiness
+  const requirements = readiness?.status === 'needs_input' ? readiness.requirements : []
+  if (requirements.length > 0) {
+    const fields = [...new Set(requirements.map((requirement) => requirement.field))]
+    const writtenEmailOnly = requirements.length === 1
+      && requirements[0]?.field === 'correo'
+      && requirements[0].reason === 'written_whatsapp_confirmation_required'
+    const labels = fields.map((field) => ({
+      nombre: 'tu nombre',
+      apellido: 'tu apellido',
+      correo: 'tu correo',
+      telefono: 'tu teléfono completo con código de país',
+    })[field])
+    const missingText = labels.length === 1
+      ? labels[0]
+      : `${labels.slice(0, -1).join(', ')} y ${labels.at(-1)}`
+    const response = writtenEmailOnly
+      ? 'Claro. Antes de llamarte, necesito que escribas tu correo por este chat para confirmarlo.'
+      : `Claro. Para llamarte me ${fields.length === 1 ? 'falta' : 'faltan'} ${missingText}. Me ${fields.length === 1 ? 'lo' : 'los'} compartes por acá?`
+    return {
+      schema_version: 4,
+      intent: 'commercial',
+      kind: responseType === 'clarification' ? 'clarify' : 'reply',
+      response,
+      response_type: responseType,
+      business_action: null,
+      memory_candidates: [],
+      missing_information: fields,
+      next_state: 'waiting_user',
+      reason_code: 'CALL_CONTACT_REQUIRED',
+      confidence: 1,
+      retrieval_used: null,
+    }
+  }
+
+  if (readiness?.status !== 'ready') return null
+  return {
+    schema_version: 4,
+    intent: 'commercial',
+    kind: responseType === 'clarification' ? 'clarify' : 'reply',
+    response: 'Claro. Puedes atender ahora?',
+    response_type: responseType,
+    business_action: null,
+    memory_candidates: [],
+    missing_information: ['call_availability'],
+    next_state: 'waiting_user',
+    reason_code: 'CALL_AVAILABILITY_REQUIRED',
     confidence: 1,
     retrieval_used: null,
   }
@@ -68,7 +151,10 @@ export function technicalContinuityFallback(claimed: ClaimedTurn): Decision {
   const responseType = claimed.policy.allowed_response_types.includes('commercial_reply')
     ? 'commercial_reply'
     : 'technical_fallback'
-  return applyDecisionPolicy(technicalFallback(responseType), claimed)
+  return applyDecisionPolicy(
+    callOperationalContinuityFallback(claimed) ?? technicalFallback(responseType),
+    claimed,
+  )
 }
 
 /** Customer-safe clarification after Agent A exhausts its one correction. */
@@ -79,6 +165,8 @@ export function validationExhaustedNotice(
     readonly failure_codes: readonly string[]
   },
 ): Decision {
+  const callContinuity = recovery ? callOperationalContinuityFallback(recovery.claimed) : null
+  if (callContinuity !== null) return callContinuity
   const paymentActionRejected = recovery?.failure_codes.some((code) => (
     code.includes('ACTION_NOT_AUTHORIZED:send_payment_link')
     || code.includes('PLAN_NOT_SELECTED:payment_plan')
@@ -161,7 +249,7 @@ export function validationExhaustedNotice(
     kind: 'reply',
     response: comparisonIsAmbiguous
       ? 'Qué dos cursos comparamos?'
-      : 'Qué dato o qué curso revisamos?',
+      : (recovery ? groundedPriceReplyV1(recovery.claimed) : null) ?? 'Perdón, no te entendí bien, a qué te refieres?',
     response_type: responseType === 'technical_fallback' ? 'commercial_reply' : responseType,
     business_action: null,
     memory_candidates: [],
@@ -293,6 +381,8 @@ export function modelUnavailableFallback(
   if (claimed.deterministic_route === 'call_phone_required') {
     return callPhoneRequiredFallback(claimed)
   }
+  const callContinuity = callOperationalContinuityFallback(claimed)
+  if (callContinuity !== null) return callContinuity
   const allowed = claimed.policy.allowed_response_types
   if (!allowed.includes('commercial_reply')) return technicalFallback()
   const guidance = catalogGuidanceForTurn(claimed)
@@ -311,6 +401,25 @@ export function modelUnavailableFallback(
       : /\b(?:como estas|todo bien|como va)\b/u.test(latest)
         ? `Bien, gracias! 😊 Qué te gustaría aprender o consultar?`
         : null
+  const priceReply = groundedPriceReplyV1(claimed)
+  if (priceReply) {
+    return {
+      schema_version: 4,
+      intent: 'commercial',
+      kind: 'reply',
+      response: priceReply,
+      response_type: 'commercial_reply',
+      business_action: null,
+      memory_candidates: [],
+      missing_information: [],
+      next_state: 'waiting_user',
+      reason_code: brainFailureReason
+        ? `BRAIN_FALLBACK_${brainFailureReason.toUpperCase()}`
+        : 'MODEL_UNAVAILABLE',
+      confidence: 1,
+      retrieval_used: null,
+    }
+  }
   const genericInformationRequest = /^(?:(?:quiero|necesito|busco|dame|pasame)\s+)?(?:toda\s+la\s+)?(?:informacion|info|detalles?)$/u.test(currentBatch)
   const response = socialResponse
     ?? (genericInformationRequest
@@ -326,7 +435,7 @@ export function modelUnavailableFallback(
         ? 'Puedo ayudarte a ordenar la consulta según tu presupuesto. Qué te preocupa del precio?'
         : course
           ? `Sigo con ${course}. Qué aspecto quieres confirmar?`
-          : 'Puedo seguir ayudándote por aquí. Puedes contarme la consulta en una frase?')
+          : 'Perdón, no te entendí bien, a qué te refieres?')
   return {
     schema_version: 4,
     intent: 'commercial',
@@ -345,7 +454,44 @@ export function modelUnavailableFallback(
   }
 }
 
+/** Owner P0 (2026-11-03): a price or payment question is answered with the
+ * canonical price and plans, never with a clarification. Only backend values;
+ * never for a payment report or after checkout (architect review). */
+export function groundedPriceReplyV1(claimed: ClaimedTurn): string | null {
+  const currentBatch = normalizeCatalogGuidanceText(
+    claimed.context.batch_messages.map((message) => message.content).join(' '),
+  )
+  const priceQuestion = /\b(?:cuanto\s+(?:sale|cuesta|vale|es)|precio|costo|valor|pago|pagar|cuotas?|forma\s+de\s+pago)\b/u
+    .test(currentBatch)
+  const paymentReport = /\b(?:ya\s+(?:pague|abone|transferi|hice\s+el\s+pago|realice\s+el\s+pago)|hice\s+el\s+pago|pague|no\s+puedo\s+pagar|comprobante|me\s+cobr\w*|reembolso|devolucion)\b/u
+    .test(currentBatch)
+  const stage = claimed.conversation_state_v1?.stage
+  const postCheckout = stage === 'payment_link_sent' || stage === 'handoff' || stage === 'closed'
+  const priceAnswer = priceQuestion && !paymentReport && !postCheckout ? canonicalPriceLineV1(claimed) : null
+  if (!priceAnswer) return null
+  const course = claimed.sales_context.course_of_interest?.trim()
+  // Canonical data only; no fixed closing question when a course is already in focus.
+  return course ? `${course}: ${priceAnswer}` : `${priceAnswer} Qué curso te interesa?`
+}
+
+/** "El valor es USD 360 y lo puedes pagar en ..." from the backend snapshot only. */
+function canonicalPriceLineV1(claimed: ClaimedTurn): string | null {
+  const context = claimed.business_context
+  if (!context?.prices_assertable) return null
+  const options = context.workspace.payment_options
+  if (options.length === 0) return null
+  const amount = (value: string) => value.replace(/\.00$/u, '')
+  const total = options[0]!.total
+  const parts = options.map((option) => option.installments > 1
+    ? `${option.installments} cuotas de ${option.total.currency} ${amount(option.installment_amount)}`
+    : `un pago único de ${option.total.currency} ${amount(option.total.amount)}`)
+  const list = parts.length === 1 ? parts[0] : `${parts.slice(0, -1).join(', ')} o ${parts.at(-1)}`
+  return `El valor es ${total.currency} ${amount(total.amount)} y lo puedes pagar en ${list}.`
+}
+
 function allowedTextFallback(claimed: ClaimedTurn, reasonCode: string): Decision {
+  const callContinuity = callOperationalContinuityFallback(claimed)
+  if (callContinuity !== null) return callContinuity
   const allowed = claimed.policy.allowed_response_types
   const responseType = allowed.includes('technical_fallback')
     ? 'technical_fallback'
@@ -359,7 +505,7 @@ function allowedTextFallback(claimed: ClaimedTurn, reasonCode: string): Decision
     schema_version: 3,
     intent: 'unknown',
     kind: 'reply',
-    response: 'Hubo un problema al preparar la respuesta. Envíame el mensaje otra vez en un momento.',
+    response: 'Perdón, no te entendí bien, a qué te refieres?',
     response_type: responseType,
     business_action: null,
     memory_candidates: [],
@@ -388,8 +534,8 @@ function advisorySensitiveFallback(
     intent: 'commercial',
     kind: responseType === 'clarification' ? 'clarify' : 'reply',
     response: action === 'send_payment_link'
-      ? 'Para enviarte el enlace correcto, confirmame qué curso y cuál de las tres opciones de pago elegís.'
-      : 'Puedo seguir asesorándote por acá. Si querés que gestionemos una llamada, pedímela de forma directa.',
+      ? 'Para enviarte el enlace correcto, confírmame qué curso y cuál de las tres opciones de pago eliges.'
+      : 'Puedo seguir asesorándote por acá. Si quieres que gestionemos una llamada, pídemela de forma directa.',
     response_type: responseType,
     business_action: null,
     memory_candidates: [],
@@ -441,7 +587,7 @@ function paymentPlanClarification(claimed: ClaimedTurn, reasonCode: string): Dec
     intent: 'commercial',
     kind: 'clarify',
     response:
-      'Para enviarte el link de pago necesito que me confirmes cuál de las tres opciones preferís: 12 cuotas mensuales, 6 cuotas mensuales o un pago único. ¿Con cuál avanzamos?',
+      'Para enviarte el link de pago necesito que me confirmes cuál de las tres opciones prefieres: 12 cuotas mensuales, 6 cuotas mensuales o un pago único. ¿Con cuál avanzamos?',
     response_type: 'clarification',
     business_action: null,
     memory_candidates: [],
@@ -461,7 +607,7 @@ function paymentCourseClarification(claimed: ClaimedTurn): Decision {
     schema_version: 4,
     intent: 'commercial',
     kind: 'clarify',
-    response: 'Antes de enviarte el link, confirmame por favor qué curso querés comprar.',
+    response: 'Antes de enviarte el link, confírmame por favor qué curso quieres comprar.',
     response_type: 'clarification',
     business_action: null,
     memory_candidates: [],

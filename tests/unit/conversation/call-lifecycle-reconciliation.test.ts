@@ -276,3 +276,52 @@ describe('reconcileTerminalCallStateV1', () => {
     },
   );
 });
+
+// 2026-11-05, conversación 5b138536: el cliente eligió chat mientras la 4.ª
+// llamada seguía abierta (v24 handoff/chat/declined). La llamada terminó
+// después y el estado quedó en handoff, que cierra la bonificación.
+describe('reconcileTerminalCallStateV1 — chat elegido antes del resultado terminal', () => {
+  const lastCall = {
+    call_id: '55555555-5555-4555-8555-555555555555',
+    result: 'buzon_de_voz',
+    ended_at: '2026-11-05T18:30:10.000Z',
+  };
+  const chatDuringCall = {
+    ...createDefaultConversationStateV1(identity),
+    selected_offering_code: 'real_estate',
+    stage: 'handoff' as const,
+    call_preference: 'chat' as const,
+    call_offer_status: 'declined' as const,
+    call_offer_count: 0 as const,
+    awaiting_reply: 'none' as const,
+  };
+
+  it('libera handoff cuando la llamada termina después de que el cliente eligió chat', () => {
+    expect(reconcileTerminalCallStateV1(chatDuringCall, { active_call: null, last_call_result: lastCall }))
+      .toMatchObject({
+        selected_offering_code: 'real_estate',
+        stage: 'course_selected',
+        call_preference: 'chat',
+        call_offer_status: 'declined',
+        call_offer_count: 0,
+        awaiting_reply: 'none',
+      });
+  });
+
+  it('conserva el plan elegido al volver', () => {
+    expect(reconcileTerminalCallStateV1({ ...chatDuringCall, selected_payment_plan: 'cuotas_12' as never },
+      { active_call: null, last_call_result: lastCall }).stage).toBe('plan_selected');
+  });
+
+  it('no toca el estado mientras la llamada sigue activa', () => {
+    const state = reconcileTerminalCallStateV1(chatDuringCall, {
+      active_call: { call_id: lastCall.call_id, status: 'in_progress' }, last_call_result: null,
+    });
+    expect(state).toBe(chatDuringCall);
+  });
+
+  it('sin ningún resultado terminal no libera', () => {
+    expect(reconcileTerminalCallStateV1(chatDuringCall, { active_call: null, last_call_result: null }))
+      .toBe(chatDuringCall);
+  });
+});

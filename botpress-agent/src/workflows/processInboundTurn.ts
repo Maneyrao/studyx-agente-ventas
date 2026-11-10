@@ -1,8 +1,12 @@
 import { claimsUnverifiedCallProgressV1 } from '../../../src/shared/conversation/call-progress-claim'
 import { createTurnEvidenceJournal, isTurnEvidencePersistenceError, TurnEvidencePersistenceError } from '../lib/observability/turn-evidence'
+import { summarizeProviderError } from '../lib/observability/provider-error-summary'
 import { persistTurnEvidence } from '../lib/observability/persist-turn-evidence'
-import { commitDecisionWithRejectionReceiptV1, backendDecisionRejectionReason, backendDecisionRejectionSubjects } from '../lib/delivery/commit-decision-receipt'
+import { getOrCreateEvidenceWorkflow } from '../lib/observability/evidence-workflow'
+import { commitDecisionWithRejectionReceiptV1, backendDecisionRejectionReason, backendDecisionRejectionSubjects, backendDecisionRejectionSentences } from '../lib/delivery/commit-decision-receipt'
+import { removeEffectClaimBubblesV1, repairCourseMentionRolesV1, salvageFactClaimsV1, salvageProgramSendClaimsV1 } from '../lib/conversation/agent-a-claim-repair'
 import { eligibleContactRequestFieldsV1 } from '../lib/conversation/contact-profile-request-policy'
+import { rejectedProfileValuesInReplyV1 } from '../lib/conversation/contact-profile-receipt-claims'
 import { scheduleTurnRecovery } from '../actions/scheduleTurnRecovery'
 import { bindRecoveryFeedbackV1 } from '../lib/conversation/recovery-feedback'
 import { captureContactProfile, ContactProfileReceiptSchema } from '../actions/captureContactProfile'
@@ -51,6 +55,7 @@ import {
 } from '../utils/decision-policy'
 import {
   routeCommercialTurn,
+  withoutPrefabCommercialCopy,
 } from '../utils/commercial-router'
 import { verifyAuthorizedEgressPortable } from '../utils/authorized-egress'
 import { generateGeminiDecision as generateGeminiUnobserved, MAX_GEMINI_DECISION_TIMEOUT_MS } from '../lib/decision/gemini-direct'
@@ -76,15 +81,20 @@ import {
   type GeneratedAgentATurnProposalV1,
 } from '../lib/conversation/agent-a-brain'
 import { claimsImmediatePaymentLinkDeliveryV1 } from '../../../src/shared/conversation/payment-link-claim'
+import { claimsProgramSendNowV1 } from '../../../src/shared/conversation/program-send-claim'
 import {
   classifyAgentAAttemptFailure,
   isAgentAProviderFailure,
   runAgentADeepSeekAttemptV1,
 } from '../lib/conversation/agent-a-attempt'
 import { resolveAgentAProposalV1 } from '../lib/conversation/resolve-agent-a-proposal'
-import { resolveAgentAPlannerlessProposalV2 } from '../lib/conversation/resolve-agent-a-plannerless'
-import { authorizedPromotionActionsV1, continueAgentAAfterActionFeedbackV1, fencedAgentARequestV1, plannerlessActionFeedbackV1 } from '../lib/conversation/agent-a-action-feedback'
+import { diagnosticRejectionCodesV1, resolveAgentAPlannerlessProposalV2 } from '../lib/conversation/resolve-agent-a-plannerless'
+import { preserveRuleTriggerEvidenceV1 } from '../lib/conversation/preserve-bonus-evidence'
+import { bindCustomerCallInterpretationV1, type CustomerCallInterpretationV1 } from '../lib/conversation/customer-call-interpretation'
+import { authorizedPromotionActionsV1, continueAgentAAfterActionFeedbackV1, fencedAgentARequestV1, paymentReservationRejectionSubjectsV1, plannerlessActionFeedbackV1 } from '../lib/conversation/agent-a-action-feedback'
 import { evaluateCallOfferTurnPolicyV1 } from '../lib/conversation/call-offer-turn-policy'
+import { courseProgramChannelsV1 } from '../../../src/shared/catalog/course-programs'
+import { sendableProgramCodesV1 } from '../lib/conversation/agent-a-brain'
 import type { AgentATurnProposalV1 } from '../schemas/agent-a-brain'
 import type { AgentATurnCommitV2 } from '../schemas/agent-turn-v2'
 import type { TurnRejectionV1 } from '../schemas/turn-rejection'
@@ -102,6 +112,10 @@ import {
   AGENT_A_BRAIN_PROMPT_VERSION,
 } from '../prompts/agent-a-brain-v1'
 import { evaluateWhatsAppCanarySend } from '../channels/whatsapp.channel'
+import {
+  settleWhatsAppTypingStartV1,
+  settleWhatsAppTypingStopV1,
+} from '../lib/channels/whatsapp-typing-presence'
 
 // ADK 2.0.6 exposes integration actions at runtime, while its generated
 // aggregate declaration can omit the alias in mixed workspace typechecks.
@@ -185,11 +199,12 @@ const MAX_CLAIM_ATTEMPTS = 6
 const INBOUND_RECOVERY_BASE_DELAY_MS = 2_000
 const INBOUND_RECOVERY_MAX_DELAY_MS = 15_000
 
-const MIN_INTER_BUBBLE_DELAY_MS = 650
-const INTER_BUBBLE_DELAY_RANGE_MS = 251
+const MIN_INTER_BUBBLE_DELAY_MS = 1_000
+const INTER_BUBBLE_DELAY_RANGE_MS = 1_001
 const MIN_WHATSAPP_REPLY_LATENCY_MS = 8_000
 const WHATSAPP_REPLY_LATENCY_RANGE_MS = 6_001
 const VISIBLE_OUTBOUND_BUDGET_MS = 15_000
+const TYPING_INDICATOR_BUDGET_MS = 25_000
 
 function interBubbleDelayMs(outboundId: string): number {
   let hash = 0
@@ -206,6 +221,52 @@ function stableJitterMs(value: string, rangeMs: number): number {
 export function whatsappReplyTargetLatencyMs(externalMessageId: string): number {
   return MIN_WHATSAPP_REPLY_LATENCY_MS
     + stableJitterMs(externalMessageId, WHATSAPP_REPLY_LATENCY_RANGE_MS)
+}
+
+const CALL_PROFILE_FIELDS_V1 = ['nombre', 'apellido', 'correo', 'telefono'] as const
+type CallProfileFieldV1 = typeof CALL_PROFILE_FIELDS_V1[number]
+
+function isCallProfileFieldV1(value: string): value is CallProfileFieldV1 {
+  return (CALL_PROFILE_FIELDS_V1 as readonly string[]).includes(value)
+}
+
+/**
+ * A call-specific operational fallback must keep the requested call durable
+ * without materializing the rejected call effect. The next customer message
+ * (contact data or availability) can then continue the same workflow.
+ */
+function callContinuityAgentTurnV2(decision: Decision): AgentATurnCommitV2 | null {
+  if (decision.reason_code !== 'CALL_CONTACT_REQUIRED'
+    && decision.reason_code !== 'CALL_PHONE_REQUIRED'
+    && decision.reason_code !== 'CALL_AVAILABILITY_REQUIRED') return null
+  if (typeof decision.response !== 'string' || decision.response.trim() === '') return null
+
+  const requestedFields = decision.missing_information.filter(isCallProfileFieldV1)
+  return {
+    schema_version: 2,
+    conversation_only: true,
+    proposal: {
+      schema_version: 1,
+      move: {
+        schema_version: 1,
+        move: 'request_call',
+        secondary_moves: [],
+        vetoes: [],
+        confidence: 1,
+      },
+      response: { messages: [decision.response], call_offer: null },
+      proposed_action: { type: 'none' },
+      course_mentions: [],
+      used_fact_ids: [],
+      used_memory_ids: [],
+      memory_candidates: [],
+      profile_updates: [],
+      profile_requests: requestedFields.length > 0
+        ? [{ message_index: 0, fields: requestedFields, purpose: 'call', mode: 'collect' }]
+        : [],
+      repair_of: null,
+    },
+  }
 }
 
 const DecisionExit = new Autonomous.Exit({
@@ -378,7 +439,7 @@ function errorCode(error: unknown): string {
 export function isConfirmedPreSubmissionBlock(code: string): boolean {
   return ['AUTOMATION_DISABLED', 'WHATSAPP_ROLLOUT_MODE_INVALID', 'WHATSAPP_CANARY_DISABLED',
     'WHATSAPP_CANARY_ALLOWLIST_INVALID', 'WHATSAPP_CANARY_PHONE_NOT_ALLOWED',
-    'WHATSAPP_BOT_PHONE_ALLOWLIST_INVALID', 'WHATSAPP_BOT_PHONE_NOT_ALLOWED'].includes(code)
+    'WHATSAPP_BOT_PHONE_ALLOWLIST_INVALID', 'WHATSAPP_BOT_PHONE_NOT_ALLOWED', 'COURSE_PROGRAM_CHANNEL_UNSUPPORTED'].includes(code)
 }
 
 const PLANNERLESS_REJECTION_PREFIX = 'PLANNERLESS_PROPOSAL_REJECTED:'
@@ -402,6 +463,23 @@ function attemptFailureDiagnosticCodes(input: {
   return /^[A-Z0-9_.-]+$/u.test(diagnosticCode)
     ? [diagnosticCode]
     : ['UNKNOWN_ERROR']
+}
+
+/**
+ * Live 2026-11-10: a rejected payment-link request (the link action or a
+ * course/plan resolution failure on a link request) is never an unreadable
+ * turn. The caller retries the whole turn instead of the generic fallback.
+ */
+function rejectionConcernsPaymentLinkV1(
+  rejection: TurnRejectionV1 | null,
+  proposals: ReadonlyArray<AgentATurnProposalV1>,
+): boolean {
+  if (rejection === null) return false
+  const linkProposal = proposals.some((proposal) => proposal.proposed_action.type === 'send_payment_link'
+    || proposal.move.move === 'request_payment_link'
+    || proposal.move.secondary_moves.includes('request_payment_link'))
+  return rejection.rejections.some((reason) => reason.subject === 'send_payment_link'
+    || (linkProposal && (reason.code === 'PLAN_NOT_SELECTED' || reason.code === 'COURSE_NOT_RESOLVED')))
 }
 
 function backendCommitTurnRejectionV1(input: {
@@ -456,13 +534,17 @@ function backendCommitTurnRejectionV1(input: {
           if (detailedSubjects.includes('call_consent_revoked')) {
             push('ACTION_NOT_AUTHORIZED', 'request_call_now')
             push('ACTION_NOT_AUTHORIZED', 'call_consent_revoked')
+          } else if (detailedSubjects.some(subject => subject.startsWith('program_send_not_executed'))) {
+            // not_proposed: the material exists and was not sent; the repair may propose it.
+            if (detailedSubjects.includes('send_course_program')) push('ACTION_NOT_AUTHORIZED', 'send_course_program')
+            detailedSubjects.filter(subject => subject.startsWith('program_send_not_executed'))
+              .forEach(subject => push('ACTION_NOT_AUTHORIZED', subject))
           } else push('ACTION_NOT_AUTHORIZED', actionSubject)
           break
         }
         case 'MISSING_INTAKE': push('MISSING_INTAKE', missingSubject); break
         case 'CALL_OFFER_NOT_AUTHORIZED': push('CALL_BUDGET_EXHAUSTED', 'call_offer'); break
         case 'CALL_OFFER_MESSAGE_BOUNDARY_INVALID': push('CALL_OFFER_MESSAGE_BOUNDARY_INVALID', 'call_offer'); break
-        case 'CALL_OFFER_REQUIRED': push('CALL_OFFER_REQUIRED', 'call_offer'); break
         case 'COURSE_NOT_RESOLVED': push('COURSE_NOT_RESOLVED', 'course_reference'); break
         case 'COURSE_ROLE_UNDECLARED': {
           if (detailedSubjects.length === 0) push('COURSE_ROLE_UNDECLARED', 'course_mentions')
@@ -475,6 +557,16 @@ function backendCommitTurnRejectionV1(input: {
   } else if (['PAYMENT_PLAN_MISMATCH', 'PAYMENT_OFFERING_REQUIRED', 'OFFERING_MISMATCH', 'OFFERING_NOT_FOUND'].includes(reason)) {
     push('ACTION_NOT_AUTHORIZED', 'send_payment_link')
     if (reason !== 'PAYMENT_PLAN_MISMATCH') push('COURSE_NOT_RESOLVED', 'course_reference')
+  } else if (paymentReservationRejectionSubjectsV1(reason) !== null) {
+    // Incident B (2026-11-10): a reservation failure is a rejected effect, not
+    // an unreadable turn. The receipt carries the real code, removes the
+    // payment link from the authorized actions (no identical retry) and lets
+    // Agent A keep the understood plan through the fenced repair or the floor.
+    paymentReservationRejectionSubjectsV1(reason)!.forEach(subject => push('ACTION_NOT_AUTHORIZED', subject))
+  } else if (reason === 'CALL_PHONE_CONFIRMATION_PENDING') {
+    // The last reply proposed another number: confirm it before any call.
+    push('ACTION_NOT_AUTHORIZED', 'request_call_now')
+    push('ACTION_NOT_AUTHORIZED', 'phone_confirmation_pending')
   } else if (reason === 'CALL_PHONE_INVALID') {
     push('MISSING_INTAKE', 'telefono')
   } else if (reason.startsWith('CALL_') || reason === 'ACTIVE_CALL_IN_PROGRESS') {
@@ -497,6 +589,7 @@ function backendCommitTurnRejectionV1(input: {
     actions.push('send_payment_link')
   }
   if ((input.context.catalog.test_payment_options?.length ?? 0) > 0) actions.push('send_test_payment_link')
+  if (sendableProgramCodesV1(input.context).length > 0) actions.push('send_course_program')
   if (input.context.capabilities.may_request_call_now) actions.push('request_call_now')
   const ladderPending = detailedSubjects.includes('direct_bonus:ladder_step_pending')
   const rejectedActions = new Set(mapped.flatMap((reason) => (
@@ -549,17 +642,43 @@ export const processInboundTurn = new Workflow({
     state.errorCode = null
     let evidenceJournal: ReturnType<typeof createTurnEvidenceJournal> | null = null
     let whatsappTypingActive = false
+    let firstWhatsappTypingAttemptAtMs: number | null = null
     const startWhatsAppTyping = async (): Promise<void> => {
       if (whatsappTypingActive
         || input.channel !== 'whatsapp'
         || input.sandbox_provider === 'telegram_sandbox') return
+      const requestedAtMs = Date.now()
+      if (firstWhatsappTypingAttemptAtMs === null) {
+        firstWhatsappTypingAttemptAtMs = requestedAtMs
+        if (Number.isFinite(occurredAtMs)) {
+          timings.event_to_typing_request_ms = Math.max(0, requestedAtMs - occurredAtMs)
+          timings.event_to_typing_request_over_budget =
+            timings.event_to_typing_request_ms >= TYPING_INDICATOR_BUDGET_MS ? 1 : 0
+        }
+      }
       try {
-        await getWhatsappRuntimeActions().startTypingIndicator({
+        const typingStart = await settleWhatsAppTypingStartV1(
+          getWhatsappRuntimeActions().startTypingIndicator({
           conversationId: input.botpress_conversation_id,
           messageId: input.external_message_id,
           timeout: 60_000,
-        })
+          }),
+        )
+        if (typingStart === 'timed_out') {
+          timings.typing_indicator_start_failed = 1
+          safeLog('studyx.turn.typing_indicator_start_failed', {
+            trace_id: input.trace_id,
+            error_code: 'WHATSAPP_TYPING_START_TIMEOUT',
+          })
+          return
+        }
         whatsappTypingActive = true
+        timings.typing_indicator_start_success = 1
+        if (Number.isFinite(occurredAtMs)) {
+          timings.event_to_typing_accepted_ms = Math.max(0, Date.now() - occurredAtMs)
+          timings.event_to_typing_accepted_over_budget =
+            timings.event_to_typing_accepted_ms >= TYPING_INDICATOR_BUDGET_MS ? 1 : 0
+        }
         safeLog('studyx.turn.typing_indicator_started', { trace_id: input.trace_id })
       } catch (error) {
       if (isTurnEvidencePersistenceError(error)) throw error
@@ -570,16 +689,26 @@ export const processInboundTurn = new Workflow({
           trace_id: input.trace_id,
           error_code: errorCode(error),
         })
+        timings.typing_indicator_start_failed = 1
       }
     }
     const stopWhatsAppTyping = async (): Promise<void> => {
       if (!whatsappTypingActive) return
       whatsappTypingActive = false
       try {
-        await getWhatsappRuntimeActions().stopTypingIndicator({
-          conversationId: input.botpress_conversation_id,
-          messageId: input.external_message_id,
-        })
+        const typingStop = await settleWhatsAppTypingStopV1(
+          getWhatsappRuntimeActions().stopTypingIndicator({
+            conversationId: input.botpress_conversation_id,
+            messageId: input.external_message_id,
+          }),
+        )
+        if (typingStop === 'timed_out') {
+          timings.typing_indicator_stop_failed = 1
+          safeLog('studyx.turn.typing_indicator_stop_failed', {
+            trace_id: input.trace_id,
+            error_code: 'WHATSAPP_TYPING_STOP_TIMEOUT',
+          })
+        }
       } catch (error) {
       if (isTurnEvidencePersistenceError(error)) throw error
         if (!(error instanceof Error)) throw error
@@ -587,6 +716,7 @@ export const processInboundTurn = new Workflow({
           trace_id: input.trace_id,
           error_code: errorCode(error),
         })
+        timings.typing_indicator_stop_failed = 1
       }
     }
     const finish = async (): Promise<WorkflowResult> => {
@@ -600,7 +730,9 @@ export const processInboundTurn = new Workflow({
       if (state.errorCode?.startsWith('TURN_EVIDENCE_')) {
         state.evidenceReview = { workflow_id: workflow.id, subject_id: state.turnId ?? input.external_message_id,
           reason: state.errorCode, evidence_location: 'workflow state.pendingEvidence and cached generation steps' }
-        workflow.tags = { ...workflow.tags, studyxEvidenceReview: 'true' }
+        // Await while in_progress: ADK's deferred tag save runs after completed.
+        try { await client.updateWorkflow({ id: workflow.id, tags: { studyxEvidenceReview: 'true' } }) }
+        catch { safeLog('studyx.turn.evidence_review_tag_failed', { workflow_id: workflow.id }) }
         safeLog('studyx.turn.evidence_review_required', state.evidenceReview)
       }
       return resultFromState(state, input.trace_id)
@@ -884,13 +1016,6 @@ export const processInboundTurn = new Workflow({
       return finish()
     }
 
-    // Ingest already contains the canonical contact policy. Start presence
-    // before the durable batch wait so WhatsApp shows activity during the
-    // entire customer-visible wait, without leaking it to blocked contacts.
-    if (ingest.policy.may_respond && !ingest.contact.blocked) {
-      await startWhatsAppTyping()
-    }
-
     // ---- Pasos 4-6: dormir hasta due_at y reclamar ------------------------
     //
     // El sueño es un step durable: si el runtime recicla el workflow, se
@@ -1026,6 +1151,12 @@ export const processInboundTurn = new Workflow({
         ? Math.max(latestInboundAtMs, lastBatchEventAtMs)
         : lastBatchEventAtMs
     }
+    // Only the durable batch owner may own WhatsApp presence. Starting it
+    // before the claim allowed an absorbed workflow to stop the winner's
+    // indicator when several customer bubbles arrived together.
+    if (owned.policy.may_respond && !owned.contact.blocked) {
+      await startWhatsAppTyping()
+    }
     Object.assign(timings, owned.diagnostics.timings, owned.diagnostics.counters)
     safeLog('studyx.turn.claimed', {
       trace_id: input.trace_id,
@@ -1070,7 +1201,43 @@ export const processInboundTurn = new Workflow({
       observe => generateGroqUnobserved({ ...args, observe }), { route: 'legacy_groq' },
     )
     const commitDecision = { execute: async (args: Parameters<typeof commitDecisionUnobserved.execute>[0]) => {
+      // Every plannerless proposal crosses this same final boundary, including
+      // backend repairs, final continuations and recovered conversation floors.
+      // An already consumed rewrite permits fixed copy only, not a generation.
+      const request = args as Parameters<typeof commitDecisionUnobserved.execute>[0] & { input: { agent_turn_v2?: AgentATurnCommitV2 | null;
+        model: { provider: GeneratedAgentATurnProposalV1['provider'] | 'botpress'; model: string }; [key: string]: unknown };
+        [key: string]: unknown }
+      let candidate = request.input.agent_turn_v2
+      if (plannerlessV2Enabled && agentABrainContext && candidate && request.input.model.provider !== 'botpress') {
+        const receiptForbidsBonus = latestRejection != null
+          && !latestRejection.authorized_alternatives.actions.includes('offer_course_bonus')
+        const finalContext = { ...agentABrainContext,
+          ...(latestRejection ? { turn_rejection: latestRejection } : {}),
+          capabilities: { ...agentABrainContext.capabilities,
+            ...(candidate.operational_continuity === 'call_consent_revoked'
+              || latestRejection?.rejections.some(reason => reason.code === 'CALL_BUDGET_EXHAUSTED' || reason.subject === 'call_consent_revoked')
+              ? { may_offer_call: false } : {}),
+            ...(agentABrainContext.capabilities.course_bonus ? { course_bonus: {
+              ...agentABrainContext.capabilities.course_bonus,
+              ...(candidate.conversation_only || receiptForbidsBonus ? { enabled: false, may_offer_bonus: false, rule_bonus: null } : {}),
+            } } : {}),
+          },
+        }
+        const boundProposal = customerCallInterpretation && candidate.operational_continuity !== 'call_consent_revoked'
+          ? bindCustomerCallInterpretationV1(customerCallInterpretation, candidate.proposal, finalContext) : candidate.proposal
+        if (boundProposal !== candidate.proposal) {
+          candidate = { ...candidate, proposal: boundProposal }
+          agentTurnV2Commit = candidate
+          pipelineMemoryCandidates = boundProposal.memory_candidates
+          args = { ...request, input: { ...request.input, agent_turn_v2: candidate } }
+        }
+      }
       const wire = (args as { input: Record<string, unknown> }).input
+      // Internal reasoning is evidence only: it is recorded here and never
+      // reaches the customer, the backend decision or any rule.
+      const committedReasoning = (wire.agent_turn_v2 as { proposal?: { turn_reasoning?: unknown } } | null | undefined)
+        ?.proposal?.turn_reasoning
+      if (committedReasoning !== undefined) journal.capture({ kind: 'turn_reasoning', turn_reasoning: committedReasoning })
       journal.capture({ kind: 'commit_proposed', proposal: wire.agent_turn_v2 ?? null,
         fallback_decision: wire.decision, model: wire.model })
       await journal.flush()
@@ -1098,7 +1265,8 @@ export const processInboundTurn = new Workflow({
         return receipt
       } catch (error) {
       if (isTurnEvidencePersistenceError(error)) throw error
-        journal.capture({ kind: 'provider_send_ambiguous', code: errorCode(error) })
+        journal.capture({ kind: 'provider_send_ambiguous', code: errorCode(error),
+          provider_error: summarizeProviderError(error) })
         throw error
       }
     }
@@ -1133,10 +1301,10 @@ export const processInboundTurn = new Workflow({
     // One pure router owns capability precedence for both this workflow and
     // the local evaluator. It chooses a deterministic decision, suppression,
     // or one model request; it never applies the final policy itself.
-    const commercialRoute = routeCommercialTurn({
+    const commercialRoute = withoutPrefabCommercialCopy(routeCommercialTurn({
       automationEnabled: configuration.automationEnabled,
       claimed: owned,
-    })
+    }))
     let authorizedOfferingCode = commercialRoute.kind === 'deterministic'
       ? commercialRoute.authorizedOfferingCode ?? owned.sales_context.offering_code
       : owned.sales_context.offering_code
@@ -1158,6 +1326,7 @@ export const processInboundTurn = new Workflow({
     let pipelineDecisionModel = 'conversation-pipeline-v1'
     let pipelinePromptVersion = `${CONVERSATION_INTERPRETER_PROMPT_VERSION}+${CONVERSATION_COMPOSER_PROMPT_VERSION}+${STUDYX_SALES_BEHAVIOR_VERSION}`
     let pipelineMemoryCandidates: Decision['memory_candidates'] = []
+    let customerCallInterpretation: CustomerCallInterpretationV1 | undefined
     const precommitModelAuthoredCandidates: GeneratedAgentATurnProposalV1[] = []
     let turnDiagnostics: TurnDiagnosticsV1 | null = null
     let agentAGenerationAttempts: 0 | 1 | 2 | 3 = 0
@@ -1286,7 +1455,24 @@ export const processInboundTurn = new Workflow({
           : { status: 'unknown', requirements: [] }
         owned.contact.name = currentValues.nombre
           ? [currentValues.nombre, currentValues.apellido].filter(Boolean).join(' ') : null
+        // Refused values stay visible to the validator for the rest of this
+        // turn (repairs, continuation, floor): a reply cannot present them as
+        // recorded. Accumulated per turn, never persisted.
+        const refused = receipt.rejections.flatMap(rejection => {
+          const proposed = rejection.field === 'telefono' && rejection.code === 'PHONE_CONFIRMATION_NOT_AUTHORIZED'
+            ? proposal.confirmed_phone
+            : updates.find(update => update.field === rejection.field)?.value
+          return typeof proposed === 'string' && proposed.trim()
+            ? [{ field: rejection.field, value: proposed.trim().slice(0, 320), code: rejection.code.slice(0, 64) }] : []
+        })
+        // A field accepted later in the turn (e.g. the repair's E.164 form)
+        // retires its refused entries: the canonical value now speaks.
+        const rejectedUpdates = [...(owned.contact_profile.rejected_updates ?? []), ...refused]
+          .filter(item => !receipt.accepted_fields.includes(item.field))
+          .filter((item, index, all) => all.findIndex(other => other.field === item.field && other.value === item.value) === index)
+          .slice(-8)
         owned.contact_profile = { ...owned.contact_profile, version: currentVersion,
+          ...(rejectedUpdates.length ? { rejected_updates: rejectedUpdates } : {}),
           pending_requests: owned.contact_profile.pending_requests.flatMap(request => {
             const fields = request.mode === 'clarify' ? request.fields.filter(field => !receipt.accepted_fields.includes(field))
               : request.fields.filter(field => currentValues[field] === null)
@@ -1339,6 +1525,10 @@ export const processInboundTurn = new Workflow({
             context: agentABrainContext,
             ...(resumedRejection ? { conversation_only: agentAConversationOnly } : {}),
             on_provider_request: accountAgentAProviderRequest,
+            // Owner decision 2026-11-06: one model-owned planning request per
+            // turn, never retried, accounted apart from the generation budget.
+            // Only the first writer attempt plans: a provider retry never asks again.
+            commercial_planning: configuration.agentACommercialPlanningEnabled === true && generationAttempt === 1,
             apiKey: deepSeekApiKey,
             signal,
             model: typeof configuration.agentABrainDeepSeekModel === 'string'
@@ -1360,6 +1550,8 @@ export const processInboundTurn = new Workflow({
               { maxAttempts: 1 },
             )
           },
+          // Durable backoff: survives a workflow restart like the other waits.
+          wait: (ms) => step.sleep('agent-a-provider-backoff', ms),
           onRetry: (failure) => {
             firstRetryCode = failure.code
             safeLog('studyx.turn.agent_a_brain_retry', {
@@ -1383,6 +1575,21 @@ export const processInboundTurn = new Workflow({
           action_status: 'none',
         }
         let generated = generatedAttempt.value
+        // The plan travels in the durable step result, so a replayed step and
+        // every repair or continuation of this turn reuse the same reading.
+        if (generated.commercial_plan && agentABrainContext && !agentABrainContext.commercial_plan) {
+          agentABrainContext.commercial_plan = generated.commercial_plan
+        }
+        safeLog('studyx.turn.agent_a_commercial_plan', {
+          trace_id: input.trace_id,
+          turn_id: owned.turn_id,
+          physical_planner_requests: generated.planner_requests ?? 0,
+          planned: generated.commercial_plan !== undefined,
+          planner_status: generated.planner_status ?? 'not_requested',
+          planner_failure_code: generated.planner_failure_code ?? null,
+          planner_latency_ms: generated.planner_latency_ms ?? null,
+        })
+        if (plannerlessV2Enabled) customerCallInterpretation ??= generated.proposal.move
         precommitModelAuthoredCandidates.push(generated)
         await persistProfileProposal(generated.proposal)
         assertCallNarrative(generated.proposal)
@@ -1427,14 +1634,7 @@ export const processInboundTurn = new Workflow({
               ...generated,
               proposal: { ...generated.proposal, move: authoritativeMove },
             }
-            const resolved = await resolveAgentAPlannerlessProposalV2({
-              observe: journal.capture,
-              initial: authoritativeGenerated,
-              context: agentABrainContext,
-              repair_enabled: repairEnabled,
-              semantic_rejections: 'advisory',
-              rejection_id: randomUUID(),
-              repair: async (rejection) => {
+            const plannerlessRepair = async (rejection: TurnRejectionV1) => {
                 if (agentAGenerationAttempts >= 3) {
                   throw new Error('PLANNERLESS_PROPOSAL_REJECTED:ACTION_NOT_AUTHORIZED:generation_budget')
                 }
@@ -1450,6 +1650,7 @@ export const processInboundTurn = new Workflow({
                 const repaired = await step(
                   'repair-agent-a-turn-proposal-v2',
                   () => continueAgentAAfterActionFeedbackV1({
+                    customer_call_interpretation: customerCallInterpretation,
                     context: agentABrainContext,
                     on_provider_request: accountAgentAPrecommitRepairRequest,
                     rejection,
@@ -1463,16 +1664,37 @@ export const processInboundTurn = new Workflow({
                   }),
                   { maxAttempts: 1 },
                 )
-                precommitModelAuthoredCandidates.push(repaired)
-                await persistProfileProposal(repaired.proposal, rejection)
-                return repaired
+                // The rewrite may change prose, never erase the quoted memory that backs an effect.
+                const preserved = { ...repaired, proposal: preserveRuleTriggerEvidenceV1(authoritativeGenerated.proposal,
+                  repaired.proposal, agentABrainContext.turn.batch_messages.map(message => message.text)) }
+                precommitModelAuthoredCandidates.push(preserved)
+                await persistProfileProposal(preserved.proposal, rejection)
+                return preserved
                 } catch (continuationError) {
       if (isTurnEvidencePersistenceError(continuationError)) throw continuationError
                   agentAContinuationFailure = continuationError
                   throw continuationError
                 }
-              },
-            })
+            }
+            const resolvePlannerless = (candidate: typeof authoritativeGenerated, repairNow: boolean, rejectionId: string = randomUUID()) =>
+              resolveAgentAPlannerlessProposalV2({
+                observe: journal.capture,
+                initial: candidate,
+                context: agentABrainContext,
+                repair_enabled: repairNow,
+                semantic_rejections: 'advisory',
+                rejection_id: rejectionId,
+                repair: plannerlessRepair,
+              })
+            // The model owns the commercial reading of the turn. Botpress only binds
+            // the customer's call consent (never the model's) and runs the one
+            // bounded technical repair for facts and effects.
+            const callInterpretation = customerCallInterpretation ?? authoritativeGenerated.proposal.move
+            const bindCall = (candidate: typeof authoritativeGenerated) => ({ ...candidate,
+              proposal: bindCustomerCallInterpretationV1(callInterpretation, candidate.proposal, agentABrainContext) })
+            const firstResolved = await resolvePlannerless(bindCall(authoritativeGenerated), repairEnabled)
+            const rulesTurn = { resolved: { ...firstResolved, effective: bindCall(firstResolved.effective) } }
+            const resolved = rulesTurn.resolved
             journal.capture({ kind: 'proposal_resolution', rejection: resolved.rejection, action_rejection: resolved.action_rejection, evidence: resolved.evidence })
             await journal.flush()
             let effectiveGenerated = resolved.effective
@@ -1484,6 +1706,7 @@ export const processInboundTurn = new Workflow({
               try {
               effectiveGenerated = await step('continue-agent-a-after-authorization-result-v2',
                 () => continueAgentAAfterActionFeedbackV1({
+                    customer_call_interpretation: customerCallInterpretation,
                   context: agentABrainContext, rejection: resolved.rejection!,
                   on_provider_request: accountAgentAPrecommitRepairRequest,
                   apiKey: secrets.DEEPSEEK_API_KEY as string, signal,
@@ -1493,10 +1716,15 @@ export const processInboundTurn = new Workflow({
                 }), { maxAttempts: 1 })
               precommitModelAuthoredCandidates.push(effectiveGenerated)
               await persistProfileProposal(effectiveGenerated.proposal, resolved.rejection!)
+              // The continuation skips the resolver: it may not repeat a value
+              // the receipt refused. Fall back to the validated first draft.
+              if (rejectedProfileValuesInReplyV1({ proposal: effectiveGenerated.proposal, context: agentABrainContext }).length > 0) {
+                throw new Error('PLANNERLESS_PROPOSAL_REJECTED:UNSUPPORTED_OPERATIONAL_CLAIM:contact_profile_rejected')
+              }
               turnDiagnostics = {
                 schema_version: 1, generation_attempts: agentAGenerationAttempts,
                 failure_stage: 'action_authorization',
-                failure_codes: resolved.action_rejection.codes.slice(0, 8), action_status: 'needs_input',
+                failure_codes: diagnosticRejectionCodesV1(resolved.rejection!.rejections), action_status: 'needs_input',
               }
               } catch (continuationError) {
       if (isTurnEvidencePersistenceError(continuationError)) throw continuationError
@@ -1523,9 +1751,9 @@ export const processInboundTurn = new Workflow({
                 generation_attempts: agentAGenerationAttempts,
                 failure_stage: 'proposal_validation',
                 failure_codes: [...new Set([
-                  ...(turnDiagnostics?.failure_codes ?? []),
                   ...resolved.evidence.rejection_codes,
-                ])].filter((code) => /^[A-Z0-9_:.-]+$/u.test(code)).slice(0, 8),
+                  ...(turnDiagnostics?.failure_codes ?? []),
+                ])].filter((code) => /^[A-Z0-9_:.-]+$/iu.test(code)).slice(0, 8),
                 action_status: effectiveGenerated.proposal.proposed_action.type === 'none'
                   ? 'none' : 'authorized',
               }
@@ -1546,9 +1774,9 @@ export const processInboundTurn = new Workflow({
                   schema_version: 1,
                   generation_attempts: agentAGenerationAttempts,
                   failure_stage: 'action_authorization',
-                  failure_codes: resolved.action_rejection.codes
-                    .filter((code) => /^[A-Z0-9_:.-]+$/u.test(code))
-                    .slice(0, 8),
+                  failure_codes: resolved.rejection
+                    ? diagnosticRejectionCodesV1(resolved.rejection.rejections)
+                    : resolved.action_rejection.codes.slice(0, 8),
                   action_status: 'needs_input',
                 }
             const policy = evaluateCallOfferTurnPolicyV1({
@@ -1780,6 +2008,7 @@ export const processInboundTurn = new Workflow({
                   .some((action) => action !== 'none')
                 const continuation = await step('continue-agent-a-after-action-feedback-v1',
                   () => continueAgentAAfterActionFeedbackV1({
+                    customer_call_interpretation: customerCallInterpretation,
                     context: agentABrainContext,
                     on_provider_request: accountAgentAProviderRequest,
                     rejection: profileRejection,
@@ -1823,7 +2052,14 @@ export const processInboundTurn = new Workflow({
             }
             if (pipelineFailureDecision?.reason_code === 'AGENT_A_CONTINUATION_REJECTED') {
               candidateLoop: for (const candidate of [...precommitModelAuthoredCandidates].reverse()) {
-                for (const candidateProposal of completeConversationProposals(candidate.proposal)) {
+                for (const originalCandidateProposal of completeConversationProposals(candidate.proposal)) {
+                  // Only the bubbles that name the unauthorized gift are removed.
+                  const candidateProposal = removeEffectClaimBubblesV1({
+                    proposal: originalCandidateProposal,
+                    context: agentABrainContext,
+                    bonus_offering_code: originalCandidateProposal.proposed_action.type === 'offer_course_bonus'
+                      ? originalCandidateProposal.proposed_action.bonus_offering_code : null,
+                  }) ?? originalCandidateProposal
                   const candidateCopy = [
                     ...candidateProposal.response.messages,
                     candidateProposal.response.call_offer ?? '',
@@ -1881,7 +2117,10 @@ export const processInboundTurn = new Workflow({
                 }
               }
             }
-            if (pipelineFailureDecision?.reason_code === 'AGENT_A_CONTINUATION_REJECTED') {
+            // A rejected link request keeps the suppress decision: the whole-turn
+            // recovery retries it. No generic «no te entendí».
+            if (pipelineFailureDecision?.reason_code === 'AGENT_A_CONTINUATION_REJECTED'
+              && !rejectionConcernsPaymentLinkV1(latestRejection, precommitModelAuthoredCandidates.map(({ proposal }) => proposal))) {
               pipelineFailureDecision = technicalContinuityFallback(owned)
               safeLog('studyx.turn.agent_a_precommit_technical_continuity', {
                 trace_id: input.trace_id,
@@ -1890,7 +2129,9 @@ export const processInboundTurn = new Workflow({
               })
             }
           } else {
-            pipelineFailureDecision = technicalContinuityFallback(owned)
+            // Owner P0 (2026-11-03): a provider outage answers from canonical
+            // facts (price, plans, catalog), never with the generic clarification.
+            pipelineFailureDecision = customerVisibleModelFallback(owned, brainFailureReason)
           }
         }
       }
@@ -2226,6 +2467,19 @@ export const processInboundTurn = new Workflow({
     if (decisionWasModel) decision = constrainModelToAdvisory(decision, owned)
     decision = applyDecisionPolicy(decision, owned)
 
+    const initialCallContinuity = agentTurnV2Commit === null && pipelineCommit === null
+      ? callContinuityAgentTurnV2(decision)
+      : null
+    if (initialCallContinuity !== null) {
+      agentTurnV2Commit = initialCallContinuity
+      pipelineFailureDecision = null
+      pipelineMemoryCandidates = []
+      decision = pipelinePlaceholder()
+      decisionProvider = 'botpress'
+      decisionModel = 'policy:call-operational-continuity'
+      pipelinePromptVersion = AGENT_A_BRAIN_PROMPT_VERSION
+    }
+
     if (Number.isFinite(occurredAtMs)) {
       timings.event_to_decision_ms = Math.max(0, Date.now() - occurredAtMs)
     }
@@ -2235,9 +2489,69 @@ export const processInboundTurn = new Workflow({
     // a fresh, bounded workflow with current facts. Delays are 2s/10s, not the
     // old five-minute operator pause, and every replay is fenced by the batch
     // claim token so it cannot duplicate a send or an effect.
-    const recoverRejectedTurn = async (): Promise<WorkflowResult> => {
+    // Exhausted recovery of a rejected link request: ONE conversation-only continuation
+    // of Agent A (receipt: link not created, still processing) committed so course, plan
+    // and data persist. Returns true when it was committed. No fixed backend text.
+    const linkContinuation: { committed: CommitDecisionResponse | null } = { committed: null }
+    const commitFencedContinuationAfterLink = async (): Promise<boolean> => {
+      const apiKey = secrets.DEEPSEEK_API_KEY
+      if (!plannerlessV2Enabled || latestRejection === null || agentABrainContext === null
+        || typeof apiKey !== 'string' || apiKey.length === 0) return false
+      const receipt = latestRejection
       try {
-        const recoveryCause = turnDiagnostics?.failure_codes.find(
+        const continuation = await step('continue-agent-a-link-not-created-v1',
+          () => continueAgentAAfterActionFeedbackV1({
+            customer_call_interpretation: customerCallInterpretation,
+            context: agentABrainContext!,
+            on_provider_request: accountAgentAProviderRequest,
+            rejection: receipt,
+            effects_allowed: false,
+            apiKey, signal,
+            generate: generateDeepSeekAgentATurnProposalV1,
+            model: typeof configuration.agentABrainDeepSeekModel === 'string'
+              ? configuration.agentABrainDeepSeekModel : DEFAULT_AGENT_A_BRAIN_DEEPSEEK_MODEL,
+          }), { maxAttempts: 1 })
+        await persistProfileProposal(continuation.proposal, receipt)
+        const resolved = await resolveAgentAPlannerlessProposalV2({
+          observe: journal.capture,
+          initial: continuation,
+          context: agentABrainContext!,
+          repair_enabled: false,
+          semantic_rejections: 'blocking',
+          rejection_id: receipt.rejection_id,
+          repair: async () => { throw new Error('AGENT_A_LINK_CONTINUATION_REPAIR_NOT_ALLOWED') },
+        })
+        agentTurnV2Commit = { schema_version: 2, proposal: resolved.effective.proposal, ...fencedAgentARequestV1() }
+        pipelineCommit = null
+        pipelineMemoryCandidates = resolved.effective.proposal.memory_candidates
+        decision = pipelinePlaceholder(pipelineMemoryCandidates)
+        decisionProvider = resolved.effective.provider
+        decisionModel = resolved.effective.model
+        pipelinePromptVersion = AGENT_A_BRAIN_PROMPT_VERSION
+        agentAGenerationAttempts = 3
+        turnDiagnostics = {
+          schema_version: 1,
+          generation_attempts: agentAGenerationAttempts,
+          failure_stage: 'backend_commit',
+          failure_codes: diagnosticRejectionCodesV1(receipt.rejections),
+          action_status: 'rejected',
+        }
+        linkContinuation.committed = await commitCurrentDecision('commit-agent-a-link-not-created-reply-v1')
+        return true
+      } catch (continuationError) {
+        if (isTurnEvidencePersistenceError(continuationError)) throw continuationError
+        if (!(continuationError instanceof Error)) throw continuationError
+        safeLog('studyx.turn.agent_a_link_continuation_failed', {
+          trace_id: input.trace_id,
+          turn_id: owned.turn_id,
+          error_code: errorCode(continuationError),
+        })
+        return false
+      }
+    }
+    const recoverRejectedTurn = async (): Promise<WorkflowResult | null> => {
+      try {
+        const recoveryCause = turnDiagnostics?.failure_codes.map((code) => code.split(':', 1)[0]!).find(
           (code) => /^[A-Z0-9_]{1,128}$/u.test(code),
         ) ?? 'AGENT_A_CONTINUATION_REJECTED'
         const recovery = await step('schedule-rejected-turn-recovery-v1', () =>
@@ -2262,10 +2576,22 @@ export const processInboundTurn = new Workflow({
           outcome: recovery.outcome,
           attempt: recovery.attempt,
         })
+        if (recovery.outcome === 'exhausted' && latestRejection !== null
+          && rejectionConcernsPaymentLinkV1(latestRejection, [
+            ...(agentTurnV2Commit ? [agentTurnV2Commit.proposal] : []),
+            ...precommitModelAuthoredCandidates.map(({ proposal }) => proposal),
+          ])
+          && await commitFencedContinuationAfterLink()) {
+          state.errorCode = null
+          return null
+        }
         if (recovery.outcome === 'scheduled') {
           await step.sleep(`rejected-turn-recovery-wait-${recovery.attempt}`, recovery.delay_ms)
-          await step('start-rejected-turn-recovery-v1', () => processInboundTurn.getOrCreate({
-            key: `recovery:${owned.batch.id}:${recovery.attempt}`,
+          await step('start-rejected-turn-recovery-v1', () => getOrCreateEvidenceWorkflow(client, {
+            name: 'processInboundTurn',
+            tags: { key: `recovery:${owned.batch.id}:${recovery.attempt}` }, discriminateByTags: ['key'],
+            parentWorkflowId: workflow.id, conversationId: input.botpress_conversation_id,
+            timeoutAt: new Date(Date.now() + 15 * 60_000).toISOString(),
             input: {
               ...input,
               preingested: null,
@@ -2301,10 +2627,6 @@ export const processInboundTurn = new Workflow({
       emitTimings()
       return finish()
     }
-    if (decision.reason_code === 'AGENT_A_CONTINUATION_REJECTED') {
-      return recoverRejectedTurn()
-    }
-
     // ---- Paso 10: commitear en Next.js -----------------------------------
     let committed: CommitDecisionResponse | null = null
     const commitStartedAt = Date.now()
@@ -2343,9 +2665,14 @@ export const processInboundTurn = new Workflow({
           },
         }),
     })
+    if (decision.reason_code === 'AGENT_A_CONTINUATION_REJECTED') {
+      const recovered = await recoverRejectedTurn()
+      if (recovered !== null) return recovered
+      committed = linkContinuation.committed
+    }
     try {
       try {
-        committed = await commitCurrentDecision('commit-canonical-decision')
+        if (committed === null) committed = await commitCurrentDecision('commit-canonical-decision')
       } catch (initialCommitError) {
       if (isTurnEvidencePersistenceError(initialCommitError)) throw initialCommitError
         if (!(initialCommitError instanceof Error)) throw initialCommitError
@@ -2376,6 +2703,7 @@ export const processInboundTurn = new Workflow({
       })
         latestRejection = rejection
         let currentBackendRejection = rejection
+        let backendViolationSentences: readonly { sentence: string; message_index?: number }[] = backendDecisionRejectionSentences(initialCommitError)
         // Keep only proposals that already crossed the local authority
         // boundary. If their business effect becomes stale at commit time,
         // one of these can still provide Agent A's own conversational reply
@@ -2390,9 +2718,17 @@ export const processInboundTurn = new Workflow({
           provider: decisionProvider,
           model: decisionModel,
         }]
-        let rejectionCodes = [...new Set(
-          rejection.rejections.map((item) => item.code),
-        )].slice(0, 8)
+        const preserveBackendRuleEvidence = (proposal: AgentATurnProposalV1): AgentATurnProposalV1 => (
+          modelAuthoredCommitCandidates.reduce(
+            (current, authored) => preserveRuleTriggerEvidenceV1(
+              authored.proposal,
+              current,
+              repairContext.turn.batch_messages.map((message) => message.text),
+            ),
+            proposal,
+          )
+        )
+        let rejectionCodes = diagnosticRejectionCodesV1(rejection.rejections)
         const rejectedEffectRemainsAuthorized = (
           proposal: AgentATurnProposalV1,
           receipt: typeof currentBackendRejection,
@@ -2420,12 +2756,76 @@ export const processInboundTurn = new Workflow({
         })
         let continuationFailure: ReturnType<typeof classifyAgentAAttemptFailure> | null = null
 
-        if (mayRepairWithAgentA) {
+        // Owner 2026-11-10: a payment reservation rejection keeps Agent A's own
+        // reply with only the false link claim removed (course, plan, e-mail,
+        // promotion and intent stay in its move, effects fenced). Only when no
+        // usable text remains does Agent A get ONE effect-fenced continuation.
+        // No fixed backend text and no «no te entendí» on this path.
+        const paymentReservationRejected = rejection.rejections.some((reason) => (
+          reason.subject.startsWith('payment_reservation:')))
+        const ownReply = modelAuthoredCommitCandidates[0]
+        if (paymentReservationRejected && ownReply !== undefined) {
+          repairEffectsAllowed = false
+          const claimsLink = [...ownReply.proposal.response.messages, ownReply.proposal.response.call_offer ?? '']
+            .some(claimsImmediatePaymentLinkDeliveryV1)
+          const withoutClaim = claimsLink
+            ? removeEffectClaimBubblesV1({ proposal: ownReply.proposal, context: repairContext, payment_link_sentences: true })
+            : { ...ownReply.proposal, proposed_action: { type: 'none' as const } }
+          if (withoutClaim !== null) {
+            try {
+              const revalidated = await resolveAgentAPlannerlessProposalV2({
+                observe: journal.capture,
+                initial: { ...ownReply, proposal: withoutClaim },
+                context: repairContext,
+                repair_enabled: false,
+                semantic_rejections: 'blocking',
+                rejection_id: currentBackendRejection.rejection_id,
+                repair: async () => { throw new Error('AGENT_A_CLAIM_REMOVAL_REPAIR_NOT_ALLOWED') },
+              })
+              agentTurnV2Commit = { schema_version: 2, proposal: revalidated.effective.proposal, ...fencedAgentARequestV1() }
+              pipelineCommit = null
+              pipelineMemoryCandidates = revalidated.effective.proposal.memory_candidates
+              decision = pipelinePlaceholder(pipelineMemoryCandidates)
+              decisionProvider = revalidated.effective.provider
+              decisionModel = revalidated.effective.model
+              pipelinePromptVersion = AGENT_A_BRAIN_PROMPT_VERSION
+              turnDiagnostics = {
+                schema_version: 1,
+                generation_attempts: agentAGenerationAttempts,
+                failure_stage: 'backend_commit',
+                failure_codes: rejectionCodes,
+                action_status: 'rejected',
+              }
+              committed = await commitCurrentDecision('commit-agent-a-reply-without-rejected-link-claim-v1')
+              safeLog('studyx.turn.agent_a_rejected_link_claim_removed', {
+                trace_id: input.trace_id,
+                turn_id: owned.turn_id,
+                rejection_codes: rejectionCodes,
+              })
+            } catch (claimRemovalError) {
+              if (isTurnEvidencePersistenceError(claimRemovalError)) throw claimRemovalError
+              if (!(claimRemovalError instanceof Error)) throw claimRemovalError
+              const failure = classifyAgentAAttemptFailure(claimRemovalError)
+              // An ambiguous transport outcome must not be committed twice.
+              if (failure.stage !== 'backend_rejected' && failure.stage !== 'policy' && failure.stage !== 'schema') {
+                throw claimRemovalError
+              }
+              safeLog('studyx.turn.agent_a_rejected_link_claim_removal_invalid', {
+                trace_id: input.trace_id,
+                turn_id: owned.turn_id,
+                error_code: errorCode(claimRemovalError),
+              })
+            }
+          }
+        }
+
+        if (mayRepairWithAgentA && committed === null) {
           agentAGenerationAttempts = Math.max(agentAGenerationAttempts, 2) as 2 | 3
           try {
             const repaired = await step(
               'repair-agent-a-turn-after-backend-rejection-v1',
               () => continueAgentAAfterActionFeedbackV1({
+                    customer_call_interpretation: customerCallInterpretation,
                 context: repairContext,
                 on_provider_request: accountAgentAProviderRequest,
                 rejection: currentBackendRejection,
@@ -2452,18 +2852,19 @@ export const processInboundTurn = new Workflow({
               },
             })
             const effectiveRepair = resolvedRepair.effective
+            const effectiveRepairProposal = preserveBackendRuleEvidence(effectiveRepair.proposal)
             modelAuthoredCommitCandidates.push({
-              proposal: effectiveRepair.proposal,
+              proposal: effectiveRepairProposal,
               provider: effectiveRepair.provider,
               model: effectiveRepair.model,
             })
             agentTurnV2Commit = {
               schema_version: 2,
-              proposal: effectiveRepair.proposal,
+              proposal: effectiveRepairProposal,
               ...(repairEffectsAllowed ? {} : fencedAgentARequestV1()),
             }
             pipelineCommit = null
-            pipelineMemoryCandidates = effectiveRepair.proposal.memory_candidates
+            pipelineMemoryCandidates = effectiveRepairProposal.memory_candidates
             decision = pipelinePlaceholder(pipelineMemoryCandidates)
             decisionProvider = effectiveRepair.provider
             decisionModel = effectiveRepair.model
@@ -2473,7 +2874,7 @@ export const processInboundTurn = new Workflow({
               generation_attempts: agentAGenerationAttempts,
               failure_stage: 'backend_commit',
               failure_codes: rejectionCodes,
-              action_status: effectiveRepair.proposal.proposed_action.type === 'none'
+              action_status: effectiveRepairProposal.proposed_action.type === 'none'
                 ? 'none'
                 : 'authorized',
             }
@@ -2483,13 +2884,14 @@ export const processInboundTurn = new Workflow({
               turn_id: owned.turn_id,
               rejection_id: currentBackendRejection.rejection_id,
               rejection_codes: rejectionCodes,
-              repaired_action_type: effectiveRepair.proposal.proposed_action.type,
+              repaired_action_type: effectiveRepairProposal.proposed_action.type,
             })
           } catch (repairError) {
       if (isTurnEvidencePersistenceError(repairError)) throw repairError
             if (!(repairError instanceof Error)) throw repairError
             continuationFailure = classifyAgentAAttemptFailure(repairError)
             if (continuationFailure.stage === 'backend_rejected' && agentTurnV2Commit !== null) {
+              backendViolationSentences = backendDecisionRejectionSentences(repairError)
               const renewedRejection = backendCommitTurnRejectionV1({
                 error: repairError,
                 proposal: agentTurnV2Commit.proposal,
@@ -2499,9 +2901,7 @@ export const processInboundTurn = new Workflow({
               if (renewedRejection !== null) {
                 currentBackendRejection = renewedRejection
                 latestRejection = renewedRejection
-                rejectionCodes = [...new Set(
-                  renewedRejection.rejections.map((item) => item.code),
-                )].slice(0, 8)
+                rejectionCodes = diagnosticRejectionCodesV1(renewedRejection.rejections)
                 repairEffectsAllowed = renewedRejection.authorized_alternatives.actions
                   .some((action) => action !== 'none')
               }
@@ -2517,6 +2917,8 @@ export const processInboundTurn = new Workflow({
 
         if (committed === null
           && continuationFailure?.stage === 'backend_rejected'
+          // A payment reservation rejection gets exactly one continuation.
+          && !paymentReservationRejected
           && agentAGenerationAttempts < 3
           && typeof deepSeekApiKey === 'string'
           && deepSeekApiKey.length > 0) {
@@ -2525,6 +2927,7 @@ export const processInboundTurn = new Workflow({
             const finalContinuation = await step(
               'final-agent-a-turn-after-backend-rejection-v1',
               () => continueAgentAAfterActionFeedbackV1({
+                    customer_call_interpretation: customerCallInterpretation,
                 context: repairContext,
                 on_provider_request: accountAgentAProviderRequest,
                 rejection: currentBackendRejection,
@@ -2539,18 +2942,19 @@ export const processInboundTurn = new Workflow({
               { maxAttempts: 1 },
             )
             await persistProfileProposal(finalContinuation.proposal, currentBackendRejection)
+            const finalContinuationProposal = preserveBackendRuleEvidence(finalContinuation.proposal)
             modelAuthoredCommitCandidates.push({
-              proposal: finalContinuation.proposal,
+              proposal: finalContinuationProposal,
               provider: finalContinuation.provider,
               model: finalContinuation.model,
             })
             agentTurnV2Commit = {
               schema_version: 2,
-              proposal: finalContinuation.proposal,
+              proposal: finalContinuationProposal,
               ...(repairEffectsAllowed ? {} : fencedAgentARequestV1()),
             }
             pipelineCommit = null
-            pipelineMemoryCandidates = finalContinuation.proposal.memory_candidates
+            pipelineMemoryCandidates = finalContinuationProposal.memory_candidates
             decision = pipelinePlaceholder(pipelineMemoryCandidates)
             decisionProvider = finalContinuation.provider
             decisionModel = finalContinuation.model
@@ -2560,7 +2964,7 @@ export const processInboundTurn = new Workflow({
               generation_attempts: 3,
               failure_stage: 'backend_commit',
               failure_codes: rejectionCodes,
-              action_status: finalContinuation.proposal.proposed_action.type === 'none'
+              action_status: finalContinuationProposal.proposed_action.type === 'none'
                 ? 'none'
                 : 'authorized',
             }
@@ -2577,6 +2981,7 @@ export const processInboundTurn = new Workflow({
             if (!(finalError instanceof Error)) throw finalError
             continuationFailure = classifyAgentAAttemptFailure(finalError)
             if (continuationFailure.stage === 'backend_rejected' && agentTurnV2Commit !== null) {
+              backendViolationSentences = backendDecisionRejectionSentences(finalError)
               const renewedRejection = backendCommitTurnRejectionV1({
                 error: finalError,
                 proposal: agentTurnV2Commit.proposal,
@@ -2586,9 +2991,7 @@ export const processInboundTurn = new Workflow({
               if (renewedRejection !== null) {
                 currentBackendRejection = renewedRejection
                 latestRejection = renewedRejection
-                rejectionCodes = [...new Set(
-                  renewedRejection.rejections.map((item) => item.code),
-                )].slice(0, 8)
+                rejectionCodes = diagnosticRejectionCodesV1(renewedRejection.rejections)
                 repairEffectsAllowed = renewedRejection.authorized_alternatives.actions
                   .some((action) => action !== 'none')
               }
@@ -2612,19 +3015,53 @@ export const processInboundTurn = new Workflow({
           // el link" therefore cannot survive after their effect is removed.
           let floorCandidateIndex = 0
           candidateLoop: for (const candidate of [...modelAuthoredCommitCandidates].reverse()) {
-            for (const candidateProposal of completeConversationProposals(candidate.proposal)) {
+            for (const originalCandidateProposal of completeConversationProposals(candidate.proposal)) {
               const candidateIndex = floorCandidateIndex
               floorCandidateIndex += 1
-              const candidateAction = candidateProposal.proposed_action.type
+              const candidateAction = originalCandidateProposal.proposed_action.type
               const retainAuthorizedEffect = rejectedEffectRemainsAuthorized(
-                candidateProposal,
+                originalCandidateProposal,
                 currentBackendRejection,
               )
+              // Reject the claim, not the conversation: drop only the bubbles
+              // that claim a rejected effect and only the sentences that state
+              // a wrong fact (canonical plans are appended for a wrong price).
+              let candidateProposal = originalCandidateProposal
+              if (!retainAuthorizedEffect) {
+                const withoutProgramClaims = salvageProgramSendClaimsV1({ proposal: candidateProposal, context: repairContext })
+                if (withoutProgramClaims !== null) candidateProposal = withoutProgramClaims
+                const withoutEffectClaims = removeEffectClaimBubblesV1({
+                  proposal: candidateProposal,
+                  context: repairContext,
+                  payment_link_sentences: paymentReservationRejected || currentBackendRejection.rejections.some((reason) => (
+                    reason.subject === 'send_payment_link' || reason.subject.startsWith('payment'))),
+                  bonus_offering_code: candidateProposal.proposed_action.type === 'offer_course_bonus'
+                    ? candidateProposal.proposed_action.bonus_offering_code : null,
+                })
+                if (withoutEffectClaims !== null) candidateProposal = withoutEffectClaims
+              }
+              // Role metadata is not prose: never discard a valid draft over it.
+              if (currentBackendRejection.rejections.some((reason) => reason.code === 'COURSE_ROLE_UNDECLARED')) {
+                const withRoles = repairCourseMentionRolesV1({ proposal: candidateProposal, context: repairContext })
+                if (withRoles !== null) candidateProposal = withRoles
+              }
+              if (currentBackendRejection.rejections.some((reason) => reason.code === 'FACT_VALUE_MISMATCH')) {
+                const withoutWrongFacts = salvageFactClaimsV1({
+                  proposal: candidateProposal,
+                  context: repairContext,
+                  backend_sentences: backendViolationSentences,
+                  backend_subjects: currentBackendRejection.rejections.map(reason => reason.subject),
+                })
+                if (withoutWrongFacts !== null) candidateProposal = withoutWrongFacts
+              }
               const rejectedCallEffect = currentBackendRejection.rejections.some((reason) => (
                 reason.subject === 'request_call_now' || reason.subject.startsWith('call')
               ))
               const rejectedPaymentEffect = currentBackendRejection.rejections.some((reason) => (
                 reason.subject === 'send_payment_link' || reason.subject.startsWith('payment')
+              ))
+              const rejectedProgramEffect = currentBackendRejection.rejections.some((reason) => (
+                reason.subject === 'send_course_program' || reason.subject.startsWith('program_send')
               ))
               const candidateCopy = [
                 ...candidateProposal.response.messages,
@@ -2649,6 +3086,8 @@ export const processInboundTurn = new Workflow({
                   )
                 ))
                 || rejectedPaymentEffect && candidateCopy.some(claimsImmediatePaymentLinkDeliveryV1)
+                || rejectedProgramEffect && candidateCopy.some(message => claimsProgramSendNowV1(message, {
+                  programTopic: [candidateProposal.move.move, ...candidateProposal.move.secondary_moves].includes('request_course_program') }))
                 || repeatsRejectedBonus
               )) continue
               const conversationCandidate = {
@@ -2715,7 +3154,8 @@ export const processInboundTurn = new Workflow({
                   })
                   continue
                 }
-                const floorRejection = backendCommitTurnRejectionV1({
+                backendViolationSentences = backendDecisionRejectionSentences(floorError)
+              const floorRejection = backendCommitTurnRejectionV1({
                   error: floorError,
                   proposal: conversationCandidate.proposal,
                   context: repairContext,
@@ -2724,9 +3164,7 @@ export const processInboundTurn = new Workflow({
                 if (floorRejection !== null) {
                   currentBackendRejection = floorRejection
                   latestRejection = floorRejection
-                  rejectionCodes = [...new Set(
-                    floorRejection.rejections.map((item) => item.code),
-                  )].slice(0, 8)
+                  rejectionCodes = diagnosticRejectionCodesV1(floorRejection.rejections)
                   safeLog('studyx.turn.agent_a_conversational_floor_rejected', {
                     trace_id: input.trace_id,
                     turn_id: owned.turn_id,
@@ -2740,6 +3178,25 @@ export const processInboundTurn = new Workflow({
                 throw floorError
               }
             }
+          }
+        }
+
+        if (committed === null && rejectionConcernsPaymentLinkV1(currentBackendRejection, [
+          rejectedProposal, ...modelAuthoredCommitCandidates.map(({ proposal }) => proposal),
+        ])) {
+          // A failed link is retried as a whole turn (order kept), never turned
+          // into the generic «no te entendí».
+          turnDiagnostics = {
+            schema_version: 1,
+            generation_attempts: agentAGenerationAttempts,
+            failure_stage: 'backend_commit',
+            failure_codes: rejectionCodes,
+            action_status: 'rejected',
+          }
+          {
+            const recovered = await recoverRejectedTurn()
+            if (recovered !== null) return recovered
+            committed = linkContinuation.committed
           }
         }
 
@@ -2757,6 +3214,12 @@ export const processInboundTurn = new Workflow({
           decision = technicalContinuityFallback(owned)
           decisionProvider = 'botpress'
           decisionModel = 'policy:agent-a-authorized-floor-unavailable'
+          const rejectedCallContinuity = callContinuityAgentTurnV2(decision)
+          if (rejectedCallContinuity !== null) {
+            agentTurnV2Commit = rejectedCallContinuity
+            decision = pipelinePlaceholder()
+            decisionModel = 'policy:call-operational-continuity'
+          }
           if (currentBackendRejection.rejections.some(reason => reason.subject === 'call_consent_revoked')) {
             agentTurnV2Commit = {
               schema_version: 2, conversation_only: true, operational_continuity: 'call_consent_revoked',
@@ -2798,7 +3261,9 @@ export const processInboundTurn = new Workflow({
               turn_id: owned.turn_id,
               error_code: errorCode(continuityError),
             })
-            return await recoverRejectedTurn()
+            const recovered = await recoverRejectedTurn()
+            if (recovered !== null) return recovered
+            committed = linkContinuation.committed
           }
         }
       }
@@ -2821,7 +3286,12 @@ export const processInboundTurn = new Workflow({
       if (agentTurnV2Commit !== null) {
         turnDiagnostics = {schema_version:1,generation_attempts:agentAGenerationAttempts,
           failure_stage:'backend_commit',failure_codes:['AGENT_A_COMMIT_FAILED'],action_status:'rejected'}
-        return recoverRejectedTurn()
+        const recovered = await recoverRejectedTurn()
+        if (recovered !== null) return recovered
+        committed = linkContinuation.committed
+      } else {
+        emitTimings()
+        return finish()
       }
       emitTimings()
       return finish()
@@ -2999,6 +3469,29 @@ export const processInboundTurn = new Workflow({
       },
     })
 
+    // The WhatsApp channel sends no delivery webhook to this bot, so no
+    // outbound ever left `submitted`, and bonus escalation, package identity
+    // and acceptance (all gated on a confirmed delivery) never worked live.
+    // createMessage resolving means the channel provider accepted the bubble;
+    // record that as the delivery receipt. Never fatal: the bubble is out.
+    const reportChannelAcceptance = async (name: string, outboundId: string,
+      botpressMessageId: string, deliveryAttempt: number | null) => {
+      try {
+        await step(name, () => reportDelivery.execute({ client, input: {
+          outbound_id: outboundId, trace_id: input.trace_id, status: 'delivered',
+          botpress_message_id: botpressMessageId, replayed: false, error_code: null,
+          // No timestamp: the backend stamps submitted_at, so a retry is an exact replay.
+          delivery_attempt: deliveryAttempt, delivered_at: null,
+        } }), { maxAttempts: 3 })
+      } catch (error) {
+        if (isTurnEvidencePersistenceError(error)) throw error
+        if (!(error instanceof Error)) throw error
+        safeLog('studyx.turn.delivery_acceptance_report_failed', {
+          trace_id: input.trace_id, turn_id: owned.turn_id, outbound_id: outboundId, error_code: errorCode(error),
+        })
+      }
+    }
+
     type Submission = { message: { id: string } } | { continuationOutcome: 'superseded' }
     type AuthorizationRetry = { authorizationRetry: { code: string; retryable: boolean } }
     const waitForNaturalWhatsAppReply = async (outboundId: string): Promise<void> => {
@@ -3094,8 +3587,13 @@ export const processInboundTurn = new Workflow({
       const multiSendStartedAt = Date.now()
       let lastBotpressMessageId: string | null = null
       let submittedPartsThisRun = 0
+      let lastSubmissionAcceptedAtMs: number | null = null
 
-      for (const outboundPart of committed.outbounds) {
+      // Owner order (2026-11-09): programme PDF, then the course image, then the text bubbles.
+      // A document that is confirmed NOT sent never silences the reply: its text parts still go out.
+      const mediaRank = (part: { document?: { media: 'file' | 'image' } }) => (part.document ? (part.document.media === 'file' ? 2 : 1) : 0)
+      const orderedOutbounds = [...committed.outbounds].sort((a, b) => mediaRank(b) - mediaRank(a) || a.part_index - b.part_index)
+      for (const outboundPart of orderedOutbounds) {
         // A replay may contain parts already acknowledged by Botpress. Their
         // durable delivery state is the fence: never submit those texts again;
         // continue from the first unfinished part only.
@@ -3108,6 +3606,7 @@ export const processInboundTurn = new Workflow({
           })
           continue
         }
+        if (outboundPart.status === 'failed' && outboundPart.document) continue
         if (outboundPart.status === 'failed') {
           // Retry leasing belongs to the delivery reconciler. A workflow
           // replay has no new attempt token and therefore must not redeliver.
@@ -3162,18 +3661,22 @@ export const processInboundTurn = new Workflow({
         }
 
         let delivery: Submission
+        // createMessage threw: never treat that bubble as accepted by the channel.
+        let heldAmbiguousPart = false
         try {
-          if (outboundPart.part_index === 0) {
+          if (outboundPart === orderedOutbounds[0]) {
             await waitForNaturalWhatsAppReply(outboundPart.id)
           }
-          // Preserve the model-authored bubbles exactly, while avoiding the
-          // machine-like effect of submitting every part in the same instant.
-          // A replay resumes immediately from its first unfinished part: the
-          // previous visible bubble was already sent in an earlier workflow.
           if (submittedPartsThisRun > 0) {
-            await new Promise<void>((resolve) => {
-              setTimeout(resolve, interBubbleDelayMs(outboundPart.id))
-            })
+            await startWhatsAppTyping()
+            const targetGapMs = interBubbleDelayMs(outboundPart.id)
+            const elapsedSinceAcceptanceMs = lastSubmissionAcceptedAtMs === null
+              ? 0
+              : Math.max(0, Date.now() - lastSubmissionAcceptedAtMs)
+            const remainingGapMs = Math.max(0, targetGapMs - elapsedSinceAcceptanceMs)
+            if (remainingGapMs > 0) {
+              await new Promise<void>(resolve => { setTimeout(resolve, remainingGapMs) })
+            }
           }
           delivery = await submitWithOwnership(
             `submit-outbound-to-botpress-part-${outboundPart.part_index}`,
@@ -3199,11 +3702,22 @@ export const processInboundTurn = new Workflow({
                   }
                 }
                 await stopWhatsAppTyping()
+                if (outboundPart.document && (!courseProgramChannelsV1(typeof process === 'undefined' ? {} : process.env).includes(input.channel)
+                  || input.sandbox_provider === 'telegram_sandbox')) {
+                  // Only the WhatsApp integration supports `file`: confirmed not sent.
+                  const unsupported = new Error('COURSE_PROGRAM_CHANNEL_UNSUPPORTED')
+                  unsupported.name = 'COURSE_PROGRAM_CHANNEL_UNSUPPORTED'
+                  throw unsupported
+                }
                 return observedCreateMessage({
                   conversationId: input.botpress_conversation_id,
                   userId: context.get('botId'),
-                  type: 'text',
-                  payload: { text: outboundPart.content },
+                  ...(outboundPart.document?.media === 'image'
+                    ? { type: 'image', payload: { imageUrl: outboundPart.document.file_url, title: outboundPart.document.title } }
+                    : outboundPart.document
+                      ? { type: 'file', payload: { fileUrl: outboundPart.document.file_url,
+                          title: outboundPart.document.title, filename: outboundPart.document.filename } }
+                      : { type: 'text', payload: { text: outboundPart.content } }),
                   tags: {
                     studyxOutboundId: outboundPart.id,
                     studyxTraceId: input.trace_id,
@@ -3227,9 +3741,11 @@ export const processInboundTurn = new Workflow({
             state.errorCode = 'OUTBOUND_SUBMISSION_AMBIGUOUS'
             safeLog('studyx.turn.delivery_submission_ambiguous', {
               trace_id: input.trace_id, outbound_id: outboundPart.id, error_code: errorCode(error),
+              provider_error: summarizeProviderError(error),
             })
             emitTimings()
             delivery = await holdAmbiguousSubmission(outboundPart)
+            heldAmbiguousPart = true
           } else {
           state.deliveryStatus = 'failed'
           try {
@@ -3260,6 +3776,14 @@ export const processInboundTurn = new Workflow({
               error_code: errorCode(reportError),
             })
           }
+          if (outboundPart.document) {
+            // Failure is recorded (ledger -> failed); the remaining text still goes out.
+            state.deliveryStatus = null
+            state.errorCode = null
+            state.phase = 'decision_committed'
+            safeLog('studyx.turn.course_program_not_sent', { trace_id: input.trace_id, outbound_id: outboundPart.id })
+            continue
+          }
           emitTimings()
           return finish()
           }
@@ -3276,6 +3800,7 @@ export const processInboundTurn = new Workflow({
           emitTimings()
           return finish()
         }
+        lastSubmissionAcceptedAtMs = Date.now()
 
         // Report immediately. If this becomes ambiguous after createMessage
         // returned an id, stop before the next part; never resend this one.
@@ -3295,6 +3820,8 @@ export const processInboundTurn = new Workflow({
               },
             }),
           )
+        if (!heldAmbiguousPart) await reportChannelAcceptance(`report-channel-acceptance-part-${outboundPart.part_index}`,
+          outboundPart.id, delivery.message.id, outboundPart.delivery_attempt)
         lastBotpressMessageId = delivery.message.id
         submittedPartsThisRun += 1
       }
@@ -3397,6 +3924,7 @@ export const processInboundTurn = new Workflow({
 
     // ---- Paso 11: un único envío físico ----------------------------------
     let delivery: Submission
+    let heldAmbiguousSingle = false
     const sendStartedAt = Date.now()
     try {
       await waitForNaturalWhatsAppReply(committed.outbound.id)
@@ -3472,9 +4000,11 @@ export const processInboundTurn = new Workflow({
         state.errorCode = 'OUTBOUND_SUBMISSION_AMBIGUOUS'
         safeLog('studyx.turn.delivery_submission_ambiguous', {
           trace_id: input.trace_id, outbound_id: committed.outbound.id, error_code: errorCode(error),
+          provider_error: summarizeProviderError(error),
         })
         emitTimings()
         delivery = await holdAmbiguousSubmission(committed.outbound)
+        heldAmbiguousSingle = true
       } else {
       state.deliveryStatus = 'failed'
 
@@ -3537,6 +4067,8 @@ export const processInboundTurn = new Workflow({
             },
           }),
       )
+    if (!heldAmbiguousSingle) await reportChannelAcceptance('report-channel-acceptance', committed.outbound.id,
+      delivery.message.id, committed.outbound.delivery_attempt)
       timings.delivery_report_ms = Date.now() - reportStartedAt
 
     await dispatchAcknowledgedCall()

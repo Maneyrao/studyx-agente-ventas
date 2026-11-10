@@ -7,6 +7,13 @@ import type { BusinessContextView } from '@/features/orchestration/domain/busine
 import type { AgentATurnProposalV1 } from '@/features/conversation/domain/agent-a-brain';
 
 const cases: ReadonlyArray<readonly [string, boolean]> = [
+  // Owner 2026-11-10: a historical reference is not a new send; a current send still is.
+  ['El link que te mandé era de Fotografía.', false],
+  ['El enlace que te pasé antes era de Fotografía, ese ya no corre.', false],
+  ['Ojo, el link de pago que te envié era para Fotografía.', false],
+  ['Te mando el link.', true],
+  ['El link que te mando ahora es de Plomería.', true],
+  ['El link que te mandé era de Fotografía, ahora te mando el link de Plomería.', true],
   ['Ya tengo tus datos completos, así que si quieres te paso el enlace de pago ahora mismo.', false],
   ['Te envío el enlace de pago para avanzar?', false],
   ['¿Te envío el enlace, para avanzar?', false],
@@ -27,6 +34,10 @@ const cases: ReadonlyArray<readonly [string, boolean]> = [
   ['No te lo he enviado; me falta tu correo para el enlace.', false],
   ['¿Ya te envié el enlace?', false],
   ['Te paso el link ahora.', true],
+  // Incident B (2026-11-10): a resend is the same effect claim.
+  ['Dale, te reenvío el enlace en 12 cuotas.', true],
+  ['Listo, ya te reenvié el link con el correo corregido.', true],
+  ['Si me confirmas el correo, te reenvío el enlace.', false],
   ['Te dejo el enlace para que lo hagas.', true],
   ['Ahí va el link.', true],
   ['Ahí va, Matía. El enlace es de Stripe.', true],

@@ -1,9 +1,8 @@
-import { Conversation, configuration, secrets } from '@botpress/runtime'
+import { Conversation, Workflow, configuration, secrets } from '@botpress/runtime'
 import { dispatch, logEvent } from '../channels'
 import { evaluateWhatsAppCanarySend } from '../channels/whatsapp.channel'
-import { processInboundTurn } from '../workflows/processInboundTurn'
 import { WorkflowInputSchema } from '../schemas/contracts'
-import { evidenceAwareWorkflow } from '../lib/observability/evidence-workflow'
+import { getOrCreateEvidenceWorkflow, hydrateWorkflowCallback } from '../lib/observability/evidence-workflow'
 
 /**
  * SINGLE Botpress Conversation handler for every channel.
@@ -20,7 +19,8 @@ import { evidenceAwareWorkflow } from '../lib/observability/evidence-workflow'
  */
 export default new Conversation({
   channel: '*',
-  async handler({ type, channel, message, conversation, chat }) {
+  async handler({ type, channel, message, conversation, chat, client, completion }) {
+    if (await hydrateWorkflowCallback(type, completion, id => Workflow.get(id))) return
     const traceId = crypto.randomUUID()
     const channelName = String(channel)
 
@@ -72,11 +72,13 @@ export default new Conversation({
       // Save the physical envelope in the managed durable workflow before
       // depending on the canonical backend. An unavailable HTTP endpoint must
       // not delay or prevent ownership of the incoming event.
-      const workflow = await evidenceAwareWorkflow(statuses => processInboundTurn.getOrCreate({
-        key: workflowKey,
-        statuses,
+      const workflow = await getOrCreateEvidenceWorkflow(client, {
+        name: 'processInboundTurn',
+        tags: { key: workflowKey }, discriminateByTags: ['key'],
+        conversationId: conversation.id,
+        timeoutAt: new Date(Date.now() + 15 * 60_000).toISOString(),
         input: WorkflowInputSchema.parse({ ...input, preingested: null }),
-      }))
+      })
 
       logEvent('studyx.router.workflow_started', {
         adapter,

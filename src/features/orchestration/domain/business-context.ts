@@ -222,7 +222,10 @@ export const DEFAULT_BUSINESS_CONTEXT_LIMITS: BusinessContextLimits = {
   // BusinessContextView.offerings_truncated, which callers log (see
   // catalog/route.ts's `catalog.capped` and claim-batch.ts's
   // `orchestration.claim.business_context_truncated`).
-  maxOfferings: 40,
+  // 2026-11-04: production reached exactly 40 active offerings; adding Real
+  // Estate (41) tripped the readiness probe (catalog_truncated). 60 restores
+  // headroom for the documented catalog (manual 57 courses).
+  maxOfferings: 60,
   maxTextChars: 400,
   maxSchedules: 6,
   maxQualificationFields: 12,

@@ -69,6 +69,14 @@ async function seedTurn(text: string) {
   return { ...rows[0], text };
 }
 
+async function drainPriorMemoryProjectionJobs(): Promise<void> {
+  for (let pass = 0; pass < 10; pass += 1) {
+    const result = await projectAgentAMemories({ limit: 100 }, { db: sql, audit: auditLog });
+    if (result.examined < 100) return;
+  }
+  throw new Error('TEST_MEMORY_PROJECTION_QUEUE_NOT_DRAINED');
+}
+
 const FACTS = {
   contact_name: null,
   contact_status: 'prospecto',
@@ -561,6 +569,7 @@ run('selected_memories — poisoning is archived, not silently dropped', () => {
 
 run('selected_memories — end to end from a committed decision', () => {
   it('persists the grounded candidate and archives the invented one', async () => {
+    await drainPriorMemoryProjectionJobs();
     const turn = await seedTurn('Quiero rendir el final de anatomía en marzo');
     const trace = randomUUID();
 
@@ -634,6 +643,7 @@ run('selected_memories — end to end from a committed decision', () => {
     // asynchronous projector drops URL/price-shaped candidates BEFORE
     // selection, so not even a `rejected` row carries the amount's text into
     // selected_memories; the trail lives in audit_log without the raw value.
+    await drainPriorMemoryProjectionJobs();
     const turn = await seedTurn('Tengo 50000 pesos disponibles');
     const trace = randomUUID();
 
@@ -687,6 +697,7 @@ run('selected_memories — end to end from a committed decision', () => {
   });
 
   it('keeps the turn committed when the memory store is unreachable', async () => {
+    await drainPriorMemoryProjectionJobs();
     const turn = await seedTurn('Prefiero cursar de noche');
     // Rompemos la tabla para este caso: el turno tiene que sobrevivir igual.
     await sql`ALTER TABLE selected_memories RENAME TO selected_memories_hidden`;

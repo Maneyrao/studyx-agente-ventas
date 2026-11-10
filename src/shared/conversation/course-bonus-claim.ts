@@ -119,3 +119,19 @@ export function inspectCourseBonusClaimsV1(input: {
     has_unauthorized_claim: hasUnauthorizedClaim,
   };
 }
+
+function foldAccentsAndCase(value: string): string {
+  return value.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLocaleLowerCase('es').replace(/\s+/gu, ' ').trim();
+}
+
+/**
+ * An offer_course_bonus effect is only real if the customer-visible copy names
+ * the bonus course by its canonical display_name (accents/case folded, whole
+ * words). Catalog identities have no short aliases: the same exact-name rule
+ * as `inspectCourseBonusClaimsV1` applies.
+ */
+export function copyNamesCourseV1(copy: string, displayName: string): boolean {
+  const name = foldAccentsAndCase(displayName);
+  if (!name) return false;
+  return exactCanonicalNameOccurrences(foldAccentsAndCase(copy), name).length > 0;
+}

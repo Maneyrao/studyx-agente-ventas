@@ -370,9 +370,10 @@ describe('restricciones comerciales firmes', () => {
     expect(verdict.violations.map((violation) => violation.code)).toContain('FORBIDDEN_PROMISE');
   });
 
-  it('conserva la negación explícita de becas y descuentos', () => {
-    const content = 'No ofrecemos becas ni descuentos. El total es USD 360.';
+  it('conserva la negación explícita de descuentos; la palabra «beca» nunca se menciona', () => {
+    const content = 'No ofrecemos descuentos. El total es USD 360.';
     expect(enforce(content).content).toBe(content);
+    expect(enforce('No ofrecemos becas ni descuentos. El total es USD 360.').content).toBe('El total es USD 360.');
   });
 
   it('treats a natural discount refusal as a denial, not an unauthorized benefit', () => {
@@ -410,6 +411,13 @@ describe('restricciones comerciales firmes', () => {
 
     expect(verdict.content).toBe('Es 100% online.');
     expect(verdict.violations.map((violation) => violation.code)).toContain('DURATION_NOT_CANONICAL');
+  });
+
+  it('no confunde el campus virtual con una sede presencial (golden 12, acuse post-alta)', () => {
+    const content = 'Qué bueno, Ana. Si ya ves los tres cursos en el campus, tu acceso está funcionando bien.';
+    const verdict = enforce(content);
+
+    expect(verdict.violations.map((violation) => violation.code)).not.toContain('MODALITY_CONTRADICTS_CANONICAL');
   });
 
   it('veta una modalidad contradictoria', () => {
@@ -706,7 +714,6 @@ describe('discount topic is not an affirmative benefit', () => {
     'Sobre descuentos, no tengo información confirmada.',
     'Sobre descuentos, no puedo confirmarte ninguno.',
     'No tengo confirmado si hay un descuento por ser alumno.',
-    'No puedo confirmarte si existe alguna beca vigente.',
     'No me consta que haya un descuento para alumnos.',
   ])('preserves the real denied-benefit reply: %s', content => {
     expect(enforce(content).violations).not.toContainEqual(expect.objectContaining({ code: 'FORBIDDEN_PROMISE' }));
@@ -735,4 +742,168 @@ describe('discount topic is not an affirmative benefit', () => {
   ])('still rejects an affirmative or referential benefit: %s', content => {
     expect(enforce(content).violations).toContainEqual(expect.objectContaining({ code: 'FORBIDDEN_PROMISE' }));
   });
+});
+
+describe('hard factual claims share one detector with the Botpress brain', () => {
+  it.each([
+    ['Recibís un título oficial.', 'official_title'],
+    ['El diplomado de electricidad reemplaza la licencia.', 'license_claim'],
+    ['Antes costaba USD 699.', 'forbidden_price'],
+    ['Tenemos una Beca Studyx.', 'scholarship'],
+  ])('rejects %s', (sentence, kind) => {
+    const verdict = enforce(`El total es USD 360. ${sentence}`);
+    expect(verdict.violations).toContainEqual({ code: 'HARD_CLAIM', value: kind });
+    expect(verdict.removed.join(' ')).toContain(sentence);
+  });
+
+  it('lets correct negations through', () => {
+    const content = 'No es un título oficial. El diplomado no reemplaza la licencia de electricista.';
+    expect(enforce(content).violations).toEqual([]);
+  });
+});
+
+describe('H3: the backend-inserted payment URL is not prose for hard claims', () => {
+  const url = 'https://buy.stripe.com/test_699aBecaX9Zq1699beca';
+  it('passes a link whose opaque id contains 699 and beca', () => {
+    const verdict = enforce(`Aquí tienes el link de pago: ${url}`, CANONICAL, [url]);
+    expect(verdict.violations).toEqual([]);
+    expect(verdict.content).toContain(url);
+  });
+  it('still rejects plain text 699 and beca beside the link', () => {
+    const verdict = enforce(`Antes costaba USD 699. Link: ${url}`, CANONICAL, [url]);
+    expect(verdict.violations).toContainEqual({ code: 'HARD_CLAIM', value: 'forbidden_price' });
+  });
+});
+
+describe('M2: a real promotion expiry authorizes the deadline wording', () => {
+  const expiry = '2026-11-15T23:59:00.000Z';
+  const withExpiry = { ...CANONICAL, authorized_promo_expires_at: expiry };
+  it.each(['La promo es por tiempo limitado.', 'La oferta vence el 15 de noviembre.', 'La promoción vence el 15/11.'])(
+    'passes %s with the real expiry and fails without it', (sentence) => {
+      expect(enforce(sentence, withExpiry).violations).toEqual([]);
+      expect(enforce(sentence).violations).toContainEqual({ code: 'HARD_CLAIM', value: 'invented_deadline' });
+    });
+  it('keeps rejecting a different or relative deadline', () => {
+    for (const sentence of ['La oferta vence el 20 de noviembre.', 'La oferta vence el viernes.', 'Es solo por hoy.']) {
+      expect(enforce(sentence, withExpiry).violations).toContainEqual({ code: 'HARD_CLAIM', value: 'invented_deadline' });
+    }
+  });
+});
+
+describe('offering list guard: a colon after a canonical name introduces its description', () => {
+  // Real drafts of natural-59cab80 17/marketing_budget were rejected as OFFERING_NOT_CANONICAL.
+  const canonical = canonicalTruthSetFromOfferingsV1({
+    offerings: [{ code: 'marketing_digital', display_name: 'Marketing Digital', price_type: 'fixed', price_amount: '360', currency: 'USD',
+      description: 'x', delivery: { classes: 16, modality: 'online' } }] as never,
+    selected_offering_code: null,
+  });
+  it.each([
+    'Para vender los productos de tu tienda online te recomiendo Marketing Digital: trabajas contenidos, redes y cómo atraer clientes a la tienda.',
+    'Para vender los productos de tu tienda online te recomiendo Marketing Digital: trabajas cómo atraer público y convertir visitas en ventas.',
+  ])('does not flag %s', (content) => {
+    expect(enforce(content, canonical).violations.map((v) => v.code)).not.toContain('OFFERING_NOT_CANONICAL');
+  });
+  it('passes a lowercase description after the colon', () => {
+    expect(enforce('Te recomiendo Marketing Digital: aprenderás estrategias y métricas.', canonical).violations.map((v) => v.code))
+      .not.toContain('OFFERING_NOT_CANONICAL');
+  });
+  it.each([
+    'Te recomiendo Marketing Digital: Diplomado en Criptomonedas.',
+    'Te recomiendo Marketing Digital: Criptomonedas Avanzadas.',
+    'Te recomiendo Marketing Digital: curso de Criptomonedas.',
+  ])('keeps checking course names after the colon: %s', (content) => {
+    expect(enforce(content, canonical).violations.map((v) => v.code)).toContain('OFFERING_NOT_CANONICAL');
+  });
+  it.each([
+    'Te recomiendo Marketing Digital: es el Diplomado en Criptomonedas Avanzadas.',
+    'Te recomiendo Marketing Digital: te enseña el Curso de Barbería Canina.',
+    'Te recomiendo Marketing Digital: aprendes con el curso de peluquería canina.',
+    'Te recomiendo Marketing Digital: 3 meses y el Diplomado en Criptomonedas.',
+    'Te recomiendo Marketing Digital: aprendes y luego Barbería Canina Pro.',
+  ])('M3 bypass: an invented course inside a description is flagged: %s', (content) => {
+    expect(enforce(content, canonical).violations.map((v) => v.code)).toContain('OFFERING_NOT_CANONICAL');
+  });
+  it('M3: a capitalized verb-led description passes', () => {
+    expect(enforce('Te recomiendo Marketing Digital: Aprendes estrategias y métricas.', canonical).violations.map((v) => v.code))
+      .not.toContain('OFFERING_NOT_CANONICAL');
+  });
+  it.each([
+    'Te recomiendo Marketing Digital: barbería canina.',
+    'Te recomiendo Marketing Digital: aprendes estrategias. Te recomiendo Marketing Digital: barbería canina.',
+    'Te recomiendo Marketing Digital, Marketing Digital: peluquería canina.',
+  ])('M3: a lowercase invented course after the colon is flagged: %s', (content) => {
+    expect(enforce(content, canonical).violations.map((v) => v.code)).toContain('OFFERING_NOT_CANONICAL');
+  });
+  it('still flags an invented course', () => {
+    expect(enforce('Te recomiendo Marketing Cuántico Avanzado.', canonical).violations.map((v) => v.code)).toContain('OFFERING_NOT_CANONICAL');
+  });
+});
+
+describe('offering descriptions keep natural discourse anchors factual', () => {
+  const canonical = canonicalTruthSetFromOfferingsV1({
+    offerings: [
+      { code: 'foto_celulares', display_name: 'Fotografía con Celulares para Tiendas Online',
+        price_type: 'fixed', price_amount: '360', currency: 'USD', description: 'x', delivery: {} },
+      { code: 'real_estate', display_name: 'Real Estate', price_type: 'fixed', price_amount: '360',
+        currency: 'USD', description: 'x', delivery: {} },
+    ] as never,
+    selected_offering_code: null,
+  });
+
+  it.each([
+    'Tenemos Fotografía con Celulares para Tiendas Online: ahí ves luz, encuadre y edición.',
+    'Tenemos Fotografía con Celulares para Tiendas Online: allí aprendés a crear imágenes para una tienda.',
+    'Tenemos Fotografía con Celulares para Tiendas Online: en ese curso ves cómo fotografiar productos.',
+  ])('accepts a canonical course followed by a natural description: %s', (content) => {
+    expect(enforce(content, canonical).violations.map((violation) => violation.code))
+      .not.toContain('OFFERING_NOT_CANONICAL');
+  });
+
+  it.each([
+    'Tenemos Real Estate Pro: ahí ves captación y cierres.',
+    'Tenemos Fotografía con Celulares para Tiendas Online: ahí ves el curso de Real Estate Pro.',
+    'Tenemos Fotografía con Celulares para Tiendas Online: ahí ves lo mismo que en ese curso de marketing inmobiliario avanzado.',
+    'Tenemos Fotografía con Celulares para Tiendas Online: ahí ves lo mismo que en el curso de marketing inmobiliario avanzado.',
+  ])('still rejects an invented identity inside the same natural wording: %s', (content) => {
+    expect(enforce(content, canonical).violations.map((violation) => violation.code))
+      .toContain('OFFERING_NOT_CANONICAL');
+  });
+});
+
+describe('offering area membership remains factual without rejecting natural wording', () => {
+  const canonical = canonicalTruthSetFromOfferingsV1({
+    offerings: [{ code: 'real_estate', display_name: 'Real Estate', price_type: 'fixed', price_amount: '360', currency: 'USD',
+      description: 'x', metadata: { academy: 'Academia de Emprendedores' }, delivery: {} }] as never,
+    selected_offering_code: null,
+  });
+
+  it.each([
+    'Sí, tenemos Real Estate, justo dentro del área de Emprendedores.',
+    'Sí, tenemos Real Estate: justo dentro del área de Emprendedores.',
+    'Sí, tenemos Real Estate, justo en la Academia de Emprendedores.',
+  ])('accepts a canonical course followed by its canonical area: %s', (content) => {
+    expect(enforce(content, canonical).violations.map((violation) => violation.code))
+      .not.toContain('OFFERING_NOT_CANONICAL');
+  });
+
+  it.each([
+    'Sí, tenemos Real Estate, justo dentro del área de Ingeniería Cuántica.',
+    'Sí, tenemos Real Estate, justo en la Academia de Ingeniería Cuántica.',
+    'Sí, tenemos Real Estate Pro, justo dentro del área de Emprendedores.',
+    'Sí, tenemos Marketing Cuántico, justo dentro del área de Emprendedores.',
+  ])('still rejects a non-canonical identity hidden by the same wording: %s', (content) => {
+    expect(enforce(content, canonical).violations.map((violation) => violation.code))
+      .toContain('OFFERING_NOT_CANONICAL');
+  });
+});
+
+// Owner 2026-11-09: a discount request is answered with a related bonus course, never a lower price.
+it('rejects a lowered paid price in a bonus reply and keeps the USD 360 one', () => {
+  expect(enforce('Te lo dejo en USD 300 y te sumo Excel Integral sin costo.', CANONICAL).violations.length).toBeGreaterThan(0);
+  expect(enforce('El curso sigue en USD 360.', CANONICAL)).toMatchObject({ violations: [] });
+});
+
+it('keeps the owner-authorized Instagram/Facebook commercial argument', () => {
+  const content = 'Es de lo que más se pide hoy en negocios que necesitan vender por Instagram y Facebook.';
+  expect(enforce(content, CANONICAL)).toMatchObject({ content, violations: [] });
 });

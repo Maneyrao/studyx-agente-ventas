@@ -1,0 +1,121 @@
+diff --git a/botpress-agent/src/lib/conversation/agent-a-brain.ts b/botpress-agent/src/lib/conversation/agent-a-brain.ts
+index 5e5cf68..ee96987 100644
+--- a/botpress-agent/src/lib/conversation/agent-a-brain.ts
++++ b/botpress-agent/src/lib/conversation/agent-a-brain.ts
+@@ -708,7 +708,7 @@ function proposalJsonSchema(context: AgentAContextV1, conversationOnly = false):
+       ...closedObject({
+         phase: { type: 'string', maxLength: 120 },
+         customer_now: { type: 'string', maxLength: 400, description: 'What the customer wants or doubts right now.' },
+-        already_said: { type: 'string', maxLength: 400, description: 'What you already said and must not repeat.' },
++        already_said: { type: 'string', maxLength: 400, description: 'Internal evidence of prior content and questions, including whether answered, declined or unanswered; not a conversation policy.' },
+         customer_goal: { type: 'string', maxLength: 400 },
+         next_step: { type: 'string', enum: [...TURN_REASONING_NEXT_STEPS_V1] },
+       }),
+diff --git a/botpress-agent/src/prompts/agent-a-brain-v1.ts b/botpress-agent/src/prompts/agent-a-brain-v1.ts
+index 3d8a295..d0ffd17 100644
+--- a/botpress-agent/src/prompts/agent-a-brain-v1.ts
++++ b/botpress-agent/src/prompts/agent-a-brain-v1.ts
+@@ -5,7 +5,7 @@ import {
+ } from './studyx-agent-a-canonical.generated';
+ import { resolveCanonicalPromptIdentityV1 } from './agent-a-identity';
+ 
+-export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v174' as const;
++export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v180' as const;
+ 
+ /**
+  * Runtime contract only. The sales behavior lives in the canonical prompt so
+@@ -27,14 +27,11 @@ Map postponement expressions such as "lo voy a pensar", "tengo que pensarlo", "n
+ Use move=decline_purchase only for an explicit definitive refusal to purchase. Postponement is not a definitive refusal.
+ Classify the CURRENT customer message; prior turns only resolve short references ("sí", "esa", "el segundo"). An objection made in an earlier turn is not a new objection: do not reuse it as price_objection.
+ Use move=price_objection only when the current message complains about the price, move=explicit_promotion_request only when the current message asks for a better promotion or a specific bonus course, and move=request_course_program when it asks for a course's program or syllabus.
+-Promotion request before any bonus: ask, in fresh words each time, if price is the only barrier (record memory constraint/price_question_asked); if they agree or similar, offer one affine bonus, motive price_objection quoting their reply.
+ A clarification question about the current offer ("me regalas otro curso?", "dos por uno?", "eso es gratis?") is ask_course_information, not a request for another course and not a promotion request: answer it about what was already offered.
+-A payment question (ask_payment_options) never triggers a promotion; explain the canonical plans and keep the offer as it is.
+-Ask at most one useful question per turn.
++A payment question is ask_payment_options, not a current-message bonus motive.
+ A model-authored recommendation is not a customer selection: use browse_catalog or ask_course_information until the customer explicitly chooses or accepts that course. Use select_course only for that explicit customer choice.
+ Use continue_by_chat only for an explicit preference to keep using chat instead of a call, never as a generic label for an ordinary conversational reply.
+ When you present or recap the bonus package, state the right number of courses for "N cursos al precio de uno": the paid course plus every bonus. Use commercial_state.promotion.courses_in_package for what the customer already has and courses_in_package_after_next_offer when you add a bonus now (two courses for the first bonus, three for the second, four for the third); without a promotion yet, the first bonus makes it two. Never say "dos cursos al precio de uno" when the package holds more.
+-A request for a discount is answered with value, the canonical plans and the promotion path; never open with a negative ("no hay descuento", "no puedo bajar el precio", "no tenemos descuentos"): start from what the customer gets and keep the total as is.
+ Never say you are sending, sharing or attaching a programme, temario or PDF unless proposed_action is send_course_program for that course. When capabilities.course_programs lists the course as available, the material exists: never say you do not have it; propose the action or offer to share it. Only when it is not listed, say naturally that you do not have the programme file and offer the information you do have.
+ Only the profile receipt records contact data: customer.contact_profile.rejected_updates were NOT saved. Never fix an email; ask once to resend it. For a phone correction, write the full number, ask to confirm, then use confirmed_phone; never call before.
+ The canonical behavior governs how to respond; this mapping only names the move in AgentATurnProposalV1.
+@@ -301,51 +298,30 @@ Before returning AgentATurnProposalV1, make response, move, profile metadata and
+ - When the current customer message supplies the final missing checkout contact fields, return the complete contact summary confirmation only. Ask whether those data are correct; do not ask for a payment plan in that same turn. A later confirmed payment_confirmation moves to ask_payment_options only when no plan exists; with a durable selected plan and an authorized link effect it moves to request_payment_link plus send_payment_link. A clear answer while awaiting payment_plan moves to select_payment_plan plus send_payment_link in the same turn.
+ - If proposed_action=offer_course_bonus, include exactly one new active bonus_offering_code and the exact interest_offering_code. Always include motive {kind, quote} from the current message. It must differ from the paid course and every current bonus code; the response must refer to the same course. Never construct a fourth addition when max_bonus_courses is 3.
+ - A rejected or pending addition is not a delivered bonus. Package identity comes only from capabilities.course_bonus.delivered_bonus_offerings and commercial_state.promotion.
+-- Fill turn_reasoning (phase, customer_now, already_said, customer_goal, next_step) BEFORE writing the reply and keep response.messages coherent with it. already_said names the discovery questions you already asked; never ask one of them again, in any wording. It is internal evidence: never quote or hint at it in response.messages.
++- turn_reasoning (phase, customer_now, already_said, customer_goal, next_step) is internal evidence only, not a permission or a conversation policy. already_said records prior content and questions with their answered, declined or unanswered status. Never quote or expose this metadata in response.messages.
+ - stage_hypothesis is diagnostic and must use only its allowed durable milestone enum. Do not expose internal validation in response.messages.
+ </execution_consistency_check>`;
+ 
+-const COUNT_WORDS_V1 = ['', 'un', 'dos', 'tres', 'cuatro'] as const
+-
+-/** Owner "Emma vende" (2026-11-03): the persisted package, so "N cursos al
+- * precio de uno" is only ever said from durable data. */
+-export function persistedPackageLineV1(context: AgentAContextV1): string {
+-  const bonus = context.capabilities.course_bonus
+-  const delivered = bonus?.delivered_bonus_offerings ?? []
+-  if (!bonus || delivered.length === 0 || !['offered', 'accepted', 'attached'].includes(bonus.package_status ?? '')) {
+-    return 'Paquete persistido: ninguno todavía. No digas que hay cursos de regalo ni "al precio de uno" hasta que el backend persista una bonificación.'
+-  }
+-  const paidCode = bonus.interest_offering_code ?? bonus.rule_bonus?.paid_offering_code ?? null
++/** Exact persisted identities and dates, with no independent sales instructions. */
++function verifiedCommercialFactsContextV1(context: AgentAContextV1): string {
++  const bonus = context.capabilities.course_bonus;
++  const delivered = bonus?.delivered_bonus_offerings ?? [];
++  const packageAvailable = delivered.length > 0
++    && ['offered', 'accepted', 'attached'].includes(bonus?.package_status ?? '');
++  const paidCode = bonus?.interest_offering_code ?? bonus?.rule_bonus?.paid_offering_code ?? null;
+   const paidName = context.catalog.available_offerings.find(offering => offering.code === paidCode)?.display_name
+-    ?? bonus.rule_bonus?.paid_display_name ?? 'el curso principal'
+-  const total = delivered.length + 1
+-  return `Paquete persistido: ${paidName} + ${delivered.map(course => course.display_name).join(' + ')} de regalo, todo por el precio de un curso: "${COUNT_WORDS_V1[total]} cursos al precio de uno". Usa exactamente esa cantidad.`
+-}
+-
+-/** Owner "Emma vende" (2026-11-03): sales premise, appended near the end.
+- * Closing without invasion (Gabi feedback 2026-11-03). Facts and limits only:
+- * commercial guidance (phases, objections, promo, retention) lives in the
+- * authority prompt, and the backend validates effects, it never writes the copy. */
+-export function ownerSalesPremiseV1(context: AgentAContextV1): string {
+-  return `<premisa_de_venta prioridad="alta" fuente="dueño 2026-11-03">
+-Emma vende: eres proactiva y quieres cerrar la venta, sin invadir. Cada respuesta hace avanzar la conversación (descubrir qué busca el cliente, dar valor, resolver la duda), no necesariamente pide la inscripción.
+-Pide la inscripción o el plan sólo ante una señal real: interés claro, una objeción recién resuelta, preguntas de pago o de inicio, o la aceptación de la promo. Si ya intentaste cerrar y no hubo un sí, no lo repitas hasta tener información nueva. Nunca pidas la inscripción en dos turnos seguidos.
+-El cierre enérgico (con «!», sin «¡») es sólo para la oferta final o la promo.
+-Usa commercial_state.sales_profile: no repitas lo que ya respondió y usa su objetivo en el precio, las objeciones y el cierre.
+-Descubre una vez: un «no sé» o «aún no lo decidí» es una respuesta, no la reformules ni preguntes otra variante del mismo tema. Si el cliente no contestó tu pregunta, no la repitas en el turno siguiente: avanza con lo que sí dijo. Pregunta sólo si la respuesta cambiaría tu recomendación. Si ya conoces curso, nivel y objetivo general, toma posición: recomienda, conecta el curso con lo que dijo y termina con un cierre de prueba suave. Con next_step=value no abras otra pregunta de descubrimiento.
+-Ante cualquier pedido, primero busca cómo sí hacerlo dentro de los límites; si algo no se puede, ofrece en la misma frase la alternativa que sí.
+-Límites fijos: USD 360 y sólo los planes reales del catálogo, sin descuento de dinero; máximo 3 bonificados, de a uno por turno, distintos del curso pago y sólo cursos activos; el paquete no cambia después de aceptar o pagar; nunca prometas algo que el backend no persistió ni inventes datos; si pide que no le escriban más, se respeta.
+-${persistedPackageLineV1(context)} No inventes montos de ahorro.
+-${promoExpiryLineV1(context)}
+-Usa siempre tú, nunca voseo.
+-</premisa_de_venta>`
+-}
+-
+-function promoExpiryLineV1(context: AgentAContextV1): string {
+-  const expires = context.capabilities.course_bonus?.sales_flow?.promo_expires_at ?? null
+-  return expires
+-    ? `La promoción vigente vence el ${expires.slice(0, 10)}: puedes decir que es por tiempo limitado, sin inventar otra fecha.`
+-    : 'La promoción no tiene vencimiento cargado: nunca digas «tiempo limitado» ni inventes urgencia o fechas.'
++    ?? bonus?.rule_bonus?.paid_display_name ?? null;
++  return `<verified_commercial_facts>
++${inertJson({
++    delivered_package: packageAvailable ? {
++      paid_offering_code: paidCode,
++      paid_display_name: paidName,
++      bonus_offerings: delivered,
++      courses_in_package: delivered.length + 1,
++    } : null,
++    promotion_expires_at: bonus?.sales_flow?.promo_expires_at ?? null,
++  })}
++</verified_commercial_facts>`;
+ }
+ 
+ export function buildAgentABrainInstructionsV1(context: AgentAContextV1): string {
+@@ -383,5 +359,5 @@ ${mandatoryRepairDirectiveV1(context)}
+ 
+ ${EXECUTION_CONSISTENCY_CHECK}
+ 
+-${ownerSalesPremiseV1(context)}`;
++${verifiedCommercialFactsContextV1(context)}`;
+ }

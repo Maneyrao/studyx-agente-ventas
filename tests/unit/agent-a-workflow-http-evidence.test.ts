@@ -45,4 +45,54 @@ describe('evidencia de las fronteras HTTP del workflow', () => {
     expect(exchanges[0]).toMatchObject({ boundary: 'backend', status: 409, responseBody: { status: 'rejected' } });
     expect(exchanges[1]).toMatchObject({ boundary: 'deepseek', status: null, error: 'network-unavailable' });
   });
+
+  it('simula sólo el despacho de llamada sintético cuando el arnés lo pide expresamente', async () => {
+    const exchanges: WorkflowHttpExchangeV1[] = [];
+    let physicalCalls = 0;
+    const source: typeof fetch = async () => {
+      physicalCalls += 1;
+      return new Response(JSON.stringify({ error: 'SHOULD_NOT_RUN' }), { status: 500 });
+    };
+    const observed = observeWorkflowFetchV1(
+      source,
+      exchanges,
+      'http://127.0.0.1:3217',
+      { syntheticCallDispatch: 'provider_accepted' },
+    );
+    const callId = '11111111-1111-4111-8111-111111111111';
+
+    const response = await observed(`http://127.0.0.1:3217/api/agent/calls/${callId}/dispatch`, {
+      method: 'POST',
+      body: JSON.stringify({ trace_id: '22222222-2222-4222-8222-222222222222' }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      status: 'provider_accepted',
+      providerCallId: `golden:${callId}`,
+    });
+    expect(physicalCalls).toBe(0);
+    expect(exchanges).toEqual([expect.objectContaining({
+      boundary: 'backend',
+      status: 200,
+      responseBody: { status: 'provider_accepted', providerCallId: `golden:${callId}` },
+    })]);
+  });
+
+  it('no intercepta otros endpoints ni despachos sin autorización explícita', async () => {
+    const exchanges: WorkflowHttpExchangeV1[] = [];
+    let physicalCalls = 0;
+    const source: typeof fetch = async () => {
+      physicalCalls += 1;
+      return new Response(JSON.stringify({ status: 'real-boundary' }), { status: 202 });
+    };
+    const observed = observeWorkflowFetchV1(source, exchanges, 'http://127.0.0.1:3217');
+
+    const response = await observed('http://127.0.0.1:3217/api/agent/calls/11111111-1111-4111-8111-111111111111/dispatch', {
+      method: 'POST', body: '{}',
+    });
+
+    expect(response.status).toBe(202);
+    expect(physicalCalls).toBe(1);
+  });
 });

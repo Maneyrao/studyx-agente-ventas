@@ -1,0 +1,114 @@
+
+[1m[30m[46m RUN [49m[39m[22m [36mv4.1.10 [39m[90m/Users/tmaneyro22/Documents/AGENTE IA/studyx-agente-ventas/.worktrees/agent-a-natural-sales-midpoint[39m
+
+ [31m❯[39m evals/golden/owner-rules.test.ts [2m([22m[2m18 tests[22m[2m | [22m[31m2 failed[39m[2m)[22m[32m 36[2mms[22m[39m
+[31m     [31m×[31m defines the midpoint orientation and trial-close boundary without a fixed catalog limit[39m[32m 7[2mms[22m[39m
+     [32m✓[39m preserves the exact formal 16-case/48-turn threshold independently of supplements[32m 1[2mms[22m[39m
+[31m     [31m×[31m cites Gabi and the precise owner exception in every new scenario[39m[32m 6[2mms[22m[39m
+     [32m✓[39m replays only the 11 actual customer inputs with source provenance, never historical agent answers[32m 0[2mms[22m[39m
+     [32m✓[39m model-owned authority: a promo request alone grants no bonus, a quoted price-only objection does, negations and questions never escalate[32m 1[2mms[22m[39m
+     [32m✓[39m judges a bonus by recorded price evidence, a confirmed barrier or a cited retention, never by a prior-turn count[32m 2[2mms[22m[39m
+     [32m✓[39m bonus_in_when_offered allows no offer, accepts an authorized course and rejects an unrelated one[32m 0[2mms[22m[39m
+     [32m✓[39m eval-only text checks: no call, no enrollment ask, no consecutive enrollment ask, no literal repeat[32m 1[2mms[22m[39m
+     [32m✓[39m case 17: the model decides; only the explicit price-only «sí» requires the offer, and no call is invited early[32m 0[2mms[22m[39m
+     [32m✓[39m registers cases 27 (Marketing 03/11, reconstructed) and 28 (Gabi) and the focused selection resolves[32m 0[2mms[22m[39m
+     [32m✓[39m judges the bonus against the same authorized set the backend validates (Combinalo con included)[32m 0[2mms[22m[39m
+     [32m✓[39m accepts the recorded canonical current-state move only at the fourth-bonus limit check[32m 0[2mms[22m[39m
+     [32m✓[39m requires committed delivery and persisted call evidence rather than a model invitation alone[32m 0[2mms[22m[39m
+     [32m✓[39m accepts an earlier second/third-response invitation only with committed delivery in this dialogue[32m 0[2mms[22m[39m
+     [32m✓[39m gives the semantic judge the previous delivered ledger, call receipt and exact next table course[32m 16[2mms[22m[39m
+     [32m✓[39m does not substitute another course duration for Ecommerce facts in the current context[32m 0[2mms[22m[39m
+     [32m✓[39m uses the owner override only for current rule-2 evidence and preserves historical rule-10 semantics[32m 0[2mms[22m[39m
+     [32m✓[39m cases 29-41 are selectable on their own with STUDYX_GOLDEN_CASE_IDS and exist exactly once[32m 0[2mms[22m[39m
+ [31m❯[39m evals/golden/golden-suite.test.ts [2m([22m[2m3 tests[22m[2m | [22m[31m1 failed[39m[2m)[22m[32m 17[2mms[22m[39m
+     [32m✓[39m pins the requested base and defines every required case exactly once[32m 1[2mms[22m[39m
+[31m     [31m×[31m makes every turn measurable instead of relying on an ideal written answer[39m[32m 15[2mms[22m[39m
+     [32m✓[39m measures the current owner price rules instead of the superseded ladder[32m 0[2mms[22m[39m
+
+[31m⎯⎯⎯⎯⎯⎯⎯[39m[1m[41m Failed Tests 3 [49m[22m[31m⎯⎯⎯⎯⎯⎯⎯[39m
+
+[41m[1m FAIL [22m[49m evals/golden/golden-suite.test.ts[2m > [22mAgent A authority-only golden specification[2m > [22mmakes every turn measurable instead of relying on an ideal written answer
+[31m[1mAssertionError[22m: expected [ …(24) ] to deeply equal [][39m
+
+[32m- Expected[39m
+[31m+ Received[39m
+
+[32m- [][39m
+[31m+ [[39m
+[31m+   "03_single_course_recommendation/test_close_reply: docs/authority/prompt-agente-a-studyx-v2.md:66-76 no contiene \"Si responde positivo, cierra\"",[39m
+[31m+   "04_price_value_objection/interest: docs/authority/prompt-agente-a-studyx-v2.md:62-62 no contiene \"No prometas ingresos\"",[39m
+[31m+   "04_price_value_objection/expensive: docs/authority/prompt-agente-a-studyx-v2.md:125-125 no contiene \"una sola vez por conversación\"",[39m
+[31m+   "05_real_budget_limit/interest: docs/authority/prompt-agente-a-studyx-v2.md:125-125 no contiene \"una pregunta informativa\"",[39m
+[31m+   "05_real_budget_limit/budget: docs/authority/prompt-agente-a-studyx-v2.md:135-135 no contiene \"Tú eliges el momento y el curso\"",[39m
+[31m+   "06_repeated_price_bonus_ladder/value: docs/authority/prompt-agente-a-studyx-v2.md:125-125 no contiene \"una sola vez por conversación\"",[39m
+[31m+   "06_repeated_price_bonus_ladder/value: docs/authority/prompt-agente-a-studyx-v2.md:173-173 no contiene \"no la ofrezcas en los primeros intercambios\"",[39m
+[31m+   "09_definitive_no/definitive: docs/authority/prompt-agente-a-studyx-v2.md:79-79 no contiene \"entiende qué lo frena\"",[39m
+[31m+   "09_definitive_no/definitive: docs/authority/prompt-agente-a-studyx-v2.md:94-94 no contiene \"deja la puerta abierta sin presionar\"",[39m
+[31m+   "10_requested_call/data: docs/authority/prompt-agente-a-studyx-v2.md:177-177 no contiene \"pregunta una vez si puede atender ahora\"",[39m
+[31m+   "11_purchase_to_payment_link/buy: docs/authority/prompt-agente-a-studyx-v2.md:34-34 no contiene \"Ante señal de compra\"",[39m
+[31m+   "11_purchase_to_payment_link/confirm: docs/authority/prompt-agente-a-studyx-v2.md:187-187 no contiene \"pregunta cómo prefiere pagar con un cierre por alternativa\"",[39m
+[31m+   "12_verified_payment_bonus_fulfillment/customer_acknowledgement: docs/authority/prompt-agente-a-studyx-v2.md:197-197 no contiene \"Ante un agradecimiento después del alta\"",[39m
+[31m+   "13_real_syllabus/syllabus: docs/authority/prompt-agente-a-studyx-v2.md:52-52 no contiene \"Contenido, duración, modalidad\"",[39m
+[31m+   "13_real_syllabus/syllabus: docs/authority/prompt-agente-a-studyx-v2.md:203-203 no contiene \"Cita sólo lo usado\"",[39m
+[31m+   "13_real_syllabus/duration_followup: docs/authority/prompt-agente-a-studyx-v2.md:52-52 no contiene \"Contenido, duración, modalidad\"",[39m
+[31m+   "13_real_syllabus/duration_followup: docs/authority/prompt-agente-a-studyx-v2.md:203-203 no contiene \"Cita sólo lo usado\"",[39m
+[31m+   "14_course_change_cancels_promotion/price_1: docs/authority/prompt-agente-a-studyx-v2.md:102-102 no contiene \"price_objection\"",[39m
+[31m+   "14_course_change_cancels_promotion/price_1: docs/authority/prompt-agente-a-studyx-v2.md:125-125 no contiene \"una sola vez por conversación\"",[39m
+[31m+   "14_course_change_cancels_promotion/price_1: docs/authority/prompt-agente-a-studyx-v2.md:173-173 no contiene \"no la ofrezcas en los primeros intercambios\"",[39m
+[31m+   "14_course_change_cancels_promotion/change: docs/authority/prompt-agente-a-studyx-v2.md:195-195 no contiene \"Si cambia de curso, suelta el anterior\"",[39m
+[31m+   "15_purchase_signal_executes/signal: docs/authority/prompt-agente-a-studyx-v2.md:34-34 no contiene \"Ante señal de compra\"",[39m
+[31m+   "16_discount_limit_stays_commercial/context: docs/authority/prompt-agente-a-studyx-v2.md:125-125 no contiene \"una pregunta informativa\"",[39m
+[31m+   "16_discount_limit_stays_commercial/discount: docs/authority/prompt-agente-a-studyx-v2.md:135-135 no contiene \"Tú eliges el momento y el curso\"",[39m
+[31m+ ][39m
+
+[36m [2m❯[22m evals/golden/golden-suite.test.ts:[2m54:54[22m[39m
+    [90m 52|[39m     expect(purchase.turns.map((turn) => turn.expected.state.checkout ?…
+    [90m 53|[39m       .toEqual([['contact_details'], ['payment_confirmation'], ['payme…
+    [90m 54|[39m     await expect(validateGoldenAuthorityReferences()).resolves.toEqual…
+    [90m   |[39m                                                      [31m^[39m
+    [90m 55|[39m   })[33m;[39m
+    [90m 56|[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/3]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m evals/golden/owner-rules.test.ts[2m > [22mowner-rule supplementary golden campaign[2m > [22mdefines the midpoint orientation and trial-close boundary without a fixed catalog limit
+[31m[1mError[22m: GOLDEN_CASE_SELECTION_INVALID[39m
+[36m [2m❯[22m selectGoldenCasesV1 evals/golden/run-config.mjs:[2m13:56[22m[39m
+    [90m 11|[39m   [35mconst[39m known [33m=[39m [35mnew[39m [33mSet[39m(cases[33m.[39m[34mmap[39m(item [33m=>[39m item[33m.[39mid[33m.[39m[34mslice[39m([34m0[39m[33m,[39m [34m2[39m)))[33m;[39m
+    [90m 12|[39m   [35mif[39m ([33m![39mrequested[33m.[39mlength [33m||[39m [35mnew[39m [33mSet[39m(requested)[33m.[39msize [33m!==[39m requested[33m.[39mlength
+    [90m 13|[39m     || requested.some(code => !known.has(code))) throw new Error('GOLD…
+    [90m   |[39m                                                        [31m^[39m
+    [90m 14|[39m   [35mreturn[39m cases[33m.[39m[34mfilter[39m(item [33m=>[39m requested[33m.[39m[34mincludes[39m(item[33m.[39mid[33m.[39m[34mslice[39m([34m0[39m[33m,[39m [34m2[39m)))[33m;[39m
+    [90m 15|[39m }
+[90m [2m❯[22m evals/golden/owner-rules.test.ts:[2m32:22[22m[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/3]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m evals/golden/owner-rules.test.ts[2m > [22mowner-rule supplementary golden campaign[2m > [22mcites Gabi and the precise owner exception in every new scenario
+[31m[1mAssertionError[22m: expected [ …(2) ] to deeply equal [][39m
+
+[32m- Expected[39m
+[31m+ Received[39m
+
+[32m- [][39m
+[31m+ [[39m
+[31m+   "27_owner_marketing_20261103/goal_brands: docs/authority/prompt-agente-a-studyx-v2.md:36-44 no contiene \"Lo que descubres es tu munición\"",[39m
+[31m+   "28_gabi_material_20261103/testimonial: docs/authority/prompt-agente-a-studyx-v2.md:58-58 no contiene \"Historias de éxito\"",[39m
+[31m+ ][39m
+
+[36m [2m❯[22m evals/golden/owner-rules.test.ts:[2m62:138[22m[39m
+    [90m 60|[39m     [34mexpect[39m([33mOWNER_GOLDEN_CASES[39m)[33m.[39m[34mtoHaveLength[39m([34m2[39m)[33m;[39m
+    [90m 61|[39m     [34mexpect[39m([33mOWNER_REPLAY_CASES[39m)[33m.[39m[34mtoHaveLength[39m([34m1[39m)[33m;[39m
+    [90m 62|[39m     await expect(validateGoldenAuthorityReferences([...OWNER_GOLDEN_CA…
+    [90m   |[39m                                                                                                                                          [31m^[39m
+    [90m 63|[39m     for (const scenario of [...OWNER_GOLDEN_CASES, ...OWNER_REPLAY_CAS…
+    [90m 64|[39m       expect(scenario.turns.some(turn => turn.authority.some(ref => re…
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/3]⎯[22m[39m
+
+
+[2m Test Files [22m [1m[31m2 failed[39m[22m[90m (2)[39m
+[2m      Tests [22m [1m[31m3 failed[39m[22m[2m | [22m[1m[32m18 passed[39m[22m[90m (21)[39m
+[2m   Start at [22m 08:58:21
+[2m   Duration [22m 462ms[2m (transform 111ms, setup 0ms, import 143ms, tests 53ms, environment 0ms)[22m
+

@@ -1,3 +1,4 @@
+import { priceObservationQuoteInBatchV1 } from '@/shared/conversation/deterministic-sales-rules';
 import type { DbClient } from '@/lib/db/types';
 import { PRICE_ONLY_BARRIER_MEMORY_KEY, PRICE_ONLY_BARRIER_STATUSES,
   type RecordedNegotiationFactsV1, type RecordedPriceOnlyBarrierV1 } from '@/shared/conversation/negotiation-facts';
@@ -18,7 +19,8 @@ export function collectNegotiationObservationsV1(input: {
     if (candidate.type !== 'constraint' || candidate.key !== PRICE_ONLY_BARRIER_MEMORY_KEY
       || !PRICE_ONLY_BARRIER_STATUSES.some(status => status === candidate.value)
       || !candidate.source_quote.trim()) continue;
-    const source = input.messages.filter(message => message.content.includes(candidate.source_quote)).at(-1);
+    const source = input.messages.filter(message => candidate.value === 'confirmed'
+      ? priceObservationQuoteInBatchV1(candidate.source_quote, [message.content]) : message.content.includes(candidate.source_quote)).at(-1);
     if (!source) continue;
     observations.set(source.id, { workspace_id: input.workspace_id, conversation_id: input.conversation_id,
       contact_id: input.contact_id, status: candidate.value as RecordedPriceOnlyBarrierV1['status'],
@@ -34,7 +36,7 @@ export async function readNegotiationFactsV1(input: {
   workspace_slug: string; conversation_id: string; contact_id: string; source_turn_id: string;
   selected_offering_code: string | null;
 }, deps: { db: DbClient }): Promise<RecordedNegotiationFactsV1 | null> {
-  const [row] = await deps.db<Array<RecordedNegotiationFactsV1>>`
+  const [row] = await deps.db<Array<RecordedNegotiationFactsV1 & { price_objection_evidence: Array<{id:string; memory_candidates: Array<{type:string;key:string;source_quote:string}>; messages:string[]}> }>>`
     WITH scope AS (
       SELECT w.id workspace_id, current.id, current.conversation_id, current.contact_id, current.conversation_seq, current.metadata, current.created_at
       FROM workspaces w JOIN workspace_contacts membership ON membership.workspace_id=w.id
@@ -81,6 +83,12 @@ export async function readNegotiationFactsV1(input: {
       SELECT DISTINCT id FROM recorded_decisions
     )
     SELECT (SELECT count(*)::int FROM distinct_sources) price_objection_count,
+      coalesce((SELECT jsonb_agg(jsonb_build_object('id',recorded.id,'memory_candidates',prior.memory_candidates,
+        'messages',ARRAY(SELECT evidence.content FROM messages evidence
+          WHERE evidence.contact_id=prior.contact_id AND evidence.conversation_id=prior.conversation_id AND evidence.direction='inbound'
+            AND (evidence.id=prior.id OR (evidence.batch_id=prior.batch_id AND prior.batch_id IS NOT NULL))))
+        ORDER BY prior.conversation_seq DESC)
+        FROM recorded_decisions recorded JOIN prior ON prior.id=recorded.id), '[]'::jsonb) price_objection_evidence,
       ARRAY(SELECT distinct_sources.id::text FROM distinct_sources JOIN messages source ON source.id=distinct_sources.id
         ORDER BY source.conversation_seq DESC LIMIT 20) latest_price_objection_source_turn_ids,
       ARRAY(SELECT recorded_memories.id::text FROM recorded_memories JOIN messages source ON source.id=recorded_memories.id
@@ -109,5 +117,10 @@ export async function readNegotiationFactsV1(input: {
         '{"status":"unknown"}'::jsonb) price_only_barrier
     FROM scope
   `;
-  return row ?? null;
+  if (!row) return null;
+  const { price_objection_evidence: evidence, ...facts } = row;
+  const sources = (evidence ?? []).filter(source => source.memory_candidates.some(candidate =>
+    candidate.type === 'objection' && candidate.key === 'price_objection'
+      && priceObservationQuoteInBatchV1(candidate.source_quote, source.messages))).map(source => source.id);
+  return { ...facts, price_objection_count: sources.length, latest_price_objection_source_turn_ids: sources.slice(0, 20) };
 }

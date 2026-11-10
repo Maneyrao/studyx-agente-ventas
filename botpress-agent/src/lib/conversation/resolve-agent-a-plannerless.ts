@@ -1,9 +1,11 @@
 import type { ModelObservation } from '../observability/turn-evidence'
 import { isTurnEvidencePersistenceError } from '../observability/turn-evidence'
 import type { TurnRejectionV1 } from '../../schemas/turn-rejection'
+import { claimsProgramSendNowV1 } from '../../../../src/shared/conversation/program-send-claim'
 import { claimsImmediatePaymentLinkDeliveryV1 } from '../../../../src/shared/conversation/payment-link-claim'
 import { messagesWithoutExactCallOfferV1 } from '../../../../src/shared/conversation/call-offer-format'
 import { AgentATurnProposalV1Schema, type AgentAContextV1, type AgentATurnProposalV1 } from '../../schemas/agent-a-brain'
+import { removeEffectClaimBubblesV1, salvageFactClaimsV1, salvageProgramSendClaimsV1 } from './agent-a-claim-repair'
 import {
   AgentABrainError,
   claimsImmediateCallDispatchV1,
@@ -25,6 +27,8 @@ export function authorizedFactIds(context: AgentAContextV1): string[] {
     ...context.catalog.candidate_offerings.flatMap((offering) => [
       offering.fact_id, ...(offering.facts?.map((fact) => fact.id) ?? []),
     ]),
+    ...(context.catalog.bonus_candidate_fichas?.map((candidate) => candidate.fact.id) ?? []),
+    ...(context.catalog.general_facts?.map((fact) => fact.id) ?? []),
     ...context.catalog.payment_plans.map((plan) => plan.fact_id),
     ...(context.catalog.test_payment_options?.map((option) => option.fact_id) ?? []),
   ]
@@ -207,6 +211,13 @@ function claimsImmediatePaymentLinkDelivery(proposal: AgentATurnProposalV1): boo
   return claimsImmediatePaymentLinkDeliveryV1(proposal.response.messages.join('\n\n'))
 }
 
+/** "Te comparto el programa" without an accepted send_course_program action is a false effect claim. */
+function claimsProgramSendWithoutEffect(proposal: AgentATurnProposalV1): boolean {
+  return proposal.proposed_action.type !== 'send_course_program'
+    && claimsProgramSendNowV1(proposal.response.messages.join('\n\n'), {
+      programTopic: [proposal.move?.move, ...(proposal.move?.secondary_moves ?? [])].includes('request_course_program') })
+}
+
 function hasUnbackedCallDispatchClaim(
   proposal: AgentATurnProposalV1,
   rejection: TurnRejectionV1,
@@ -322,7 +333,7 @@ function requiresModelCorrection(
     return proposal.proposed_action.type === 'none'
   }
   return ['UNSUPPORTED_OPERATIONAL_CLAIM', 'COURSE_ROLE_UNDECLARED',
-    'REPEATED_AGENT_REPLY', 'CALL_OFFER_MESSAGE_BOUNDARY_INVALID'].includes(reason.code)
+    'REPEATED_AGENT_REPLY', 'CALL_OFFER_MESSAGE_BOUNDARY_INVALID', 'PROGRAM_SEND_REQUIRED'].includes(reason.code)
 }
 
 function isNonBlockingGuidanceReason(
@@ -333,6 +344,8 @@ function isNonBlockingGuidanceReason(
     && [
       'candidate_course_detail',
       'candidate_course_names',
+      // After the one repair the backend rejects the unnamed bonus effect alone.
+      'bonus_not_named',
     ].includes(reason.subject)) return true
   return NON_BLOCKING_GUIDANCE_CODES.has(reason.code)
 }
@@ -355,7 +368,7 @@ function mayDegradeToBackendBoundary(
 ): boolean {
   // Afirmar un efecto que no ocurrió no es un hecho que el egress pueda podar:
   // la oración entera es la mentira. Eso sigue siendo un rechazo duro.
-  if (claimsImmediatePaymentLinkDelivery(proposal)) return false
+  if (claimsImmediatePaymentLinkDelivery(proposal) || claimsProgramSendWithoutEffect(proposal)) return false
   if (hasUnbackedCallDispatchClaim(proposal, rejection, context)) return false
   if (isMissingRequiredIntakeForRequestedCall(proposal, rejection)) return false
   if ((proposal.proposed_action.type === 'send_payment_link'
@@ -364,8 +377,11 @@ function mayDegradeToBackendBoundary(
   ))) return false
   // A failed style repair must not silence a factually safe answer. Actual
   // commercial/operational contradictions never enter this fallback.
+  // A missing programme send is guidance: one repair asks for it; a reply
+  // that still omits it is safe to deliver without the material.
   return rejection.rejections.every(reason => reason.code === 'REPEATED_AGENT_REPLY'
     || reason.code === 'PLAN_NOT_SELECTED'
+    || reason.code === 'PROGRAM_SEND_REQUIRED'
     || isNonBlockingGuidanceReason(reason))
 }
 
@@ -374,7 +390,7 @@ function hasOnlyNonBlockingGuidance(
   rejection: TurnRejectionV1,
   context: AgentAContextV1,
 ): boolean {
-  if (claimsImmediatePaymentLinkDelivery(proposal)) return false
+  if (claimsImmediatePaymentLinkDelivery(proposal) || claimsProgramSendWithoutEffect(proposal)) return false
   if (hasUnbackedCallDispatchClaim(proposal, rejection, context)) return false
   if (isMissingRequiredIntakeForRequestedCall(proposal, rejection)) return false
   if ((proposal.proposed_action.type === 'send_payment_link'
@@ -396,6 +412,7 @@ function plannerlessRejectionError(rejection: TurnRejectionV1): Error {
 
 export type AgentActionRejectionActionV1 =
   | 'offer_course_bonus'
+  | 'send_course_program'
   | 'request_call_now'
   | 'send_payment_link'
   | 'send_test_payment_link'
@@ -465,6 +482,20 @@ function actionRejectionV1(
  * facts/actions were rejected and allows one rewrite before the backend
  * performs the same authoritative checks against durable state.
  */
+/** PROGRAM_SEND_REQUIRED alone asks for one repair; it never blocks a reply. */
+function onlyProgramSendGuidanceV1(rejection: TurnRejectionV1): boolean {
+  return rejection.rejections.length > 0
+    && rejection.rejections.every((reason) => reason.code === 'PROGRAM_SEND_REQUIRED')
+}
+
+/** Durable diagnostics name what was rejected: `CODE:subject`, deduped, at
+ * most 8 of 128 chars (2026-11-05: a FACT_VALUE_MISMATCH lost its subject). */
+export function diagnosticRejectionCodesV1(
+  rejections: readonly { readonly code: string; readonly subject: string }[],
+): string[] {
+  return [...new Set(rejections.map((reason) => `${reason.code}:${reason.subject}`.slice(0, 128)))].slice(0, 8)
+}
+
 export async function resolveAgentAPlannerlessProposalV2<
   T extends AgentAProposalEnvelopeV1,
 >(input: {
@@ -505,7 +536,7 @@ export async function resolveAgentAPlannerlessProposalV2<
     return {
       effective: advisoryEffective,
       evidence: {
-        rejection_codes: originalRejection?.rejections.map((reason) => reason.code) ?? [],
+        rejection_codes: diagnosticRejectionCodesV1(originalRejection?.rejections ?? []),
         repair_attempted: false, repaired: false, proposal_generation_calls: 1,
       },
       rejection: originalRejection,
@@ -513,11 +544,25 @@ export async function resolveAgentAPlannerlessProposalV2<
     }
   }
   const initialActionRejection = actionRejectionV1(initial.proposal, originalRejection, input.context)
+  // A rejected effect rejects only the effect: when the text claims nothing
+  // about it, drop the action and keep the copy without spending the repair.
+  if (initialActionRejection !== null) {
+    const prunedFirst = pruneRejectedActionV1({
+      initial, rejection: originalRejection ?? rejection, context: input.context, authorized_fact_ids: factIds,
+    })
+    if (prunedFirst !== null) {
+      return {
+        effective: prunedFirst,
+        evidence: { rejection_codes: diagnosticRejectionCodesV1((originalRejection ?? rejection).rejections),
+          repair_attempted: false, repaired: false, proposal_generation_calls: 1 },
+        rejection: originalRejection ?? rejection,
+        action_rejection: initialActionRejection,
+      }
+    }
+  }
   let terminalRejection = rejection
-  const rejectedCodes = () => [...new Set([
-    ...(originalRejection?.rejections.map((reason) => reason.code) ?? []),
-    ...terminalRejection.rejections.map((reason) => reason.code),
-  ])]
+  const rejectedCodes = () => diagnosticRejectionCodesV1([
+    ...(originalRejection?.rejections ?? []), ...terminalRejection.rejections])
   const degraded = (repair_attempted: boolean) => ({
     effective: initial,
     evidence: {
@@ -528,10 +573,49 @@ export async function resolveAgentAPlannerlessProposalV2<
     rejection: terminalRejection,
     action_rejection: initialActionRejection,
   })
+  // Never contingency for a wrong claim. Wrong fact (prerequisites, price,
+  // hard claims): drop only the offending sentence and state the canonical
+  // plans when a price was removed. Claimed effect that did not happen: drop
+  // only the bubbles that claim it. Both are revalidated as a whole proposal.
+  const salvageable = (value: TurnRejectionV1) => value.rejections.length > 0
+    && value.rejections.every((reason) => reason.code === 'FACT_VALUE_MISMATCH'
+      || (reason.code === 'ACTION_NOT_AUTHORIZED' || reason.code === 'MISSING_INTAKE' || reason.code === 'PLAN_NOT_SELECTED'
+        || reason.code === 'UNSUPPORTED_OPERATIONAL_CLAIM' || reason.code === 'PROGRAM_SEND_REQUIRED'))
+  const salvage = (candidates: readonly T[]): PlannerlessResolutionV2<T> | null => {
+    for (const source of candidates) {
+      const variants: AgentATurnProposalV1[] = []
+      const factFixed = salvageFactClaimsV1({ proposal: source.proposal, context: input.context })
+      const programFixed = salvageProgramSendClaimsV1({ proposal: factFixed ?? source.proposal, context: input.context })
+      const effectFixed = removeEffectClaimBubblesV1({ proposal: programFixed ?? factFixed ?? source.proposal, context: input.context })
+      const dropAction = (value: AgentATurnProposalV1): AgentATurnProposalV1 => (
+        initialActionRejection === null ? value : { ...value, proposed_action: { type: 'none' as const } })
+      for (const variant of [effectFixed, programFixed, factFixed]) if (variant !== null) variants.push(dropAction(variant))
+      for (const proposal of variants) {
+        const cleaned = { ...source, proposal }
+        const checked = preparePlannerlessProposal({
+          initial: cleaned, context: input.context, authorized_fact_ids: factIds,
+          rejection_id: rejection.rejection_id, semantic_rejections: input.semantic_rejections ?? 'blocking',
+        })
+        // A missing programme send is guidance, never a reason to lose the
+        // reply: salvaged variants carry no action and would re-raise it.
+        if (checked.rejection !== null && !onlyProgramSendGuidanceV1(checked.rejection)) continue
+        return { effective: checked.effective,
+          evidence: { rejection_codes: rejectedCodes(), repair_attempted: source !== initial, repaired: false,
+            proposal_generation_calls: source !== initial ? 2 : 1 },
+          rejection: terminalRejection,
+          action_rejection: actionRejectionV1(checked.effective.proposal, checked.originalRejection, input.context)
+            ?? initialActionRejection }
+      }
+    }
+    return null
+  }
+  let lastRepaired: T | null = null
   const mayRepair = input.repair_enabled
     && initial.proposal.repair_of === null
   if (!mayRepair) {
     if (mayDegradeToBackendBoundary(initial.proposal, rejection, input.context)) return degraded(false)
+    const salvaged = salvageable(rejection) ? salvage([initial]) : null
+    if (salvaged) return salvaged
     throw plannerlessRejectionError(rejection)
   }
   try {
@@ -547,7 +631,7 @@ export async function resolveAgentAPlannerlessProposalV2<
         rejection_id: rejection.rejection_id,
         semantic_rejections: input.semantic_rejections ?? 'blocking',
       })
-      if (repaired.rejection === null) {
+      if (repaired.rejection === null || onlyProgramSendGuidanceV1(repaired.rejection)) {
         // The first draft may have had an action-specific rejection that the
         // continuation has now corrected. Carrying that stale receipt forward
         // makes the workflow erase the repaired, independently authorized
@@ -571,6 +655,7 @@ export async function resolveAgentAPlannerlessProposalV2<
         }
       }
       terminalRejection = repaired.rejection
+      lastRepaired = repaired.effective
       input.observe?.({ kind: 'proposal_rejected', rejection: terminalRejection })
     }
   } catch (error) {
@@ -607,6 +692,9 @@ export async function resolveAgentAPlannerlessProposalV2<
     }
   }
   if (mayDegradeToBackendBoundary(initial.proposal, rejection, input.context)) return degraded(true)
+  const salvaged = salvageable(terminalRejection)
+    ? salvage([...(lastRepaired ? [lastRepaired] : []), ...(salvageable(rejection) ? [initial] : [])]) : null
+  if (salvaged) return salvaged
   input.observe?.({ kind: 'proposal_rejected', rejection: terminalRejection })
   throw plannerlessRejectionError(terminalRejection)
 }

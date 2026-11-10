@@ -1,4 +1,3 @@
-import { deriveCourseBonusLadderV1 } from '@/shared/conversation/bonus-ladder';
 import { describe, expect, it } from 'vitest';
 import type { AgentATurnProposalV1 } from '@/features/conversation/domain/agent-a-brain';
 import type { ConversationStateV1 } from '@/features/conversation/domain/conversation-pipeline';
@@ -85,6 +84,21 @@ const completeIntake = async () => ({
 });
 
 describe('prepareAgentTurnV2', () => {
+  it.each(['current','history'] as const)('accepts the server-derived paid mention without persisting a purchase selection: %s',async source=>{
+    const result=await prepareAgentTurnV2({
+      turn:{id:ids.turn,workspace_id:ids.workspace,conversation_id:ids.conversation,contact_id:ids.contact},
+      workspace_slug:'studyx',business_context:business,catalog_index:index,semantic_rejections:'advisory',
+      current_customer_messages:source==='current'?['Quiero información de Redes Informáticas.']:['Cuánto dura?'],
+      course_focus_context:{batch_started_at:index.as_of,recent_turns:source==='history'
+        ? [{direction:'inbound' as const,content:'Quiero información de Redes Informáticas.',created_at:'2026-09-02T15:59:00.000Z'}]:[]},
+      proposal:proposal({move:{schema_version:1,move:'ask_course_information',secondary_moves:[],vetoes:[],confidence:1,course_reference:'redes_informaticas'},
+        response:{messages:['Redes Informáticas puede servirte.']},course_mentions:[{offering_code:'redes_informaticas',role:'paid'}]}),
+    },{state_store:store(state({selected_offering_code:null})),now:()=>Date.parse(index.as_of)});
+    expect(result.response_messages).toEqual(['Redes Informáticas puede servirte.']);
+    expect(result.transition.selected_offering_code).toBeNull();
+    expect(result.decision.business_action).toBeNull();
+    expect(result.authorized_offering_code).toBeNull();
+  });
   it('does not retain a request_call move by stripping only its effect after refusal', async () => {
     await expect(prepareAgentTurnV2({
       turn: { id: ids.turn, workspace_id: ids.workspace, conversation_id: ids.conversation, contact_id: ids.contact },
@@ -148,18 +162,76 @@ describe('prepareAgentTurnV2', () => {
   });
 
   it('retains an authorized direct bonus as the committed business action', async () => {
-    const action = {type:'offer_course_bonus',interest_offering_code:'redes_informaticas',bonus_offering_code:'excel_integral'} as const;
+    const action = {type:'offer_course_bonus',motive:{kind:'price_objection',quote:'me parece muy caro'}, interest_offering_code:'redes_informaticas',bonus_offering_code:'excel_integral'} as const;
     const prepared = await prepareAgentTurnV2({
       turn:{id:ids.turn,workspace_id:ids.workspace,conversation_id:ids.conversation,contact_id:ids.contact},
       workspace_slug:'studyx',business_context:business,
       catalog_index:{...index,offerings:[...index.offerings,{code:'excel_integral',display_name:'Excel Integral',aliases:[],academy:'Tecnología'}]},
-      proposal:proposal({proposed_action:action,course_mentions:[{offering_code:'excel_integral',role:'bonus'}],response:{messages:['Te regalo Excel Integral.']}}),
+      current_customer_messages:['me parece muy caro'],
+      proposal:proposal({move:{schema_version:1,move:'price_objection',secondary_moves:[],vetoes:[],confidence:1},proposed_action:action,course_mentions:[{offering_code:'excel_integral',role:'bonus'}],response:{messages:['Te regalo Excel Integral.']}}),
       course_bonus_capability:{status:'checkin_available',enabled:true,max_bonus_courses:2,may_offer_bonus:true,
-        ladder:deriveCourseBonusLadderV1({observed_price_objection_count:3,call_invitation_status:'offered',call_offer_count:1,may_offer_call:true}),
+        ladder:{retention_used:false,previous_turn_asked_price_question:false,prior_price_objection_recorded:true},
         may_schedule_checkin:false,may_request_review:false,may_accept_offer:false,may_send_promoted_payment:false,
-        promotion_code:null,interest_offering_code:'redes_informaticas',bonus_offerings:[]},
+        promotion_code:null,interest_offering_code:'redes_informaticas',bonus_offerings:[],
+        // The model chooses among the backend's authorized set.
+        bonus_candidates:[{code:'excel_integral',display_name:'Excel Integral'}]},
     },{state_store:store(state({selected_offering_code:'redes_informaticas'})),contact_intake:completeIntake});
-    expect(prepared.decision.business_action).toEqual(action);
+    expect(prepared.decision.business_action).toEqual({type:'offer_course_bonus',interest_offering_code:'redes_informaticas',bonus_offering_code:'excel_integral'});
+    expect(prepared.bonus_motive).toEqual({motive:action.motive,declared_moves:['price_objection']});
+  });
+  describe('program-send claims need an executed send_course_program (traces 36 and 38 of focused-29-41-r2)', () => {
+    const programMove = { schema_version: 1 as const, move: 'request_course_program' as const, secondary_moves: [] as never[], vetoes: [] as never[], confidence: 1 };
+    const run = (text: string, action: unknown, programs: { available_offering_codes: string[]; sent_offering_codes: string[] }) => prepareAgentTurnV2({
+      turn: { id: ids.turn, workspace_id: ids.workspace, conversation_id: ids.conversation, contact_id: ids.contact },
+      workspace_slug: 'studyx', business_context: business, catalog_index: index, current_customer_messages: ['me lo mandás de nuevo?'],
+      proposal: proposal({ move: programMove, response: { messages: [text] }, proposed_action: action as never }),
+      course_programs: programs,
+    }, { state_store: store(state({ selected_offering_code: 'redes_informaticas' })), contact_intake: completeIntake,
+      now: () => Date.parse(index.as_of) });
+    const reasons = async (promise: Promise<unknown>) => promise.then(() => null, (error: { rejectionSubjects?: string[] }) => error.rejectionSubjects ?? []);
+    const SEND = { type: 'send_course_program', offering_code: 'redes_informaticas' };
+
+    it('already sent: the pruned action cannot ride with "te lo comparto de nuevo"', async () => {
+      expect(await reasons(run('Claro, te lo comparto de nuevo por acá.', SEND,
+        { available_offering_codes: ['redes_informaticas'], sent_offering_codes: ['redes_informaticas'] })))
+        .toEqual(['send_course_program', 'program_send_not_executed:already_sent']);
+    });
+    it('no PDF for the course: "te comparto el programa" without an action is rejected for repair', async () => {
+      expect(await reasons(run('Claro, te comparto el programa del curso.', { type: 'none' },
+        { available_offering_codes: [], sent_offering_codes: [] })))
+        .toEqual(['send_course_program', 'program_send_not_executed:unavailable']);
+    });
+    // 2026-11-05 18:20Z: the material existed; «unavailable» made the repair deny it.
+    it('available, unsent material and no proposed action: not_proposed, and the action stays authorized', async () => {
+      expect(await reasons(run('Claro, te comparto el programa del curso.', { type: 'none' },
+        { available_offering_codes: ['redes_informaticas'], sent_offering_codes: [] })))
+        .toEqual(['program_send_not_executed:not_proposed']);
+    });
+    it('already sent and no proposed action: already_sent, not unavailable', async () => {
+      expect(await reasons(run('Claro, te comparto el programa del curso.', { type: 'none' },
+        { available_offering_codes: ['redes_informaticas'], sent_offering_codes: ['redes_informaticas'] })))
+        .toEqual(['send_course_program', 'program_send_not_executed:already_sent']);
+    });
+    it('without a selected course, the only material sent in the chat is the focus (2026-11-05 replay t27)', async () => {
+      const run2 = (text: string) => prepareAgentTurnV2({
+        turn: { id: ids.turn, workspace_id: ids.workspace, conversation_id: ids.conversation, contact_id: ids.contact },
+        workspace_slug: 'studyx', business_context: business, catalog_index: index, current_customer_messages: ['qué promo?'],
+        proposal: proposal({ move: programMove, response: { messages: [text] }, proposed_action: { type: 'none' } as never }),
+        course_programs: { available_offering_codes: ['redes_informaticas'], sent_offering_codes: ['redes_informaticas'] },
+      }, { state_store: store(state({ selected_offering_code: null })), contact_intake: completeIntake, now: () => Date.parse(index.as_of) });
+      expect(await reasons(run2('Claro, te comparto el programa del curso.')))
+        .toEqual(['send_course_program', 'program_send_not_executed:already_sent']);
+    });
+    it('honest wording passes: a past reference, a negation or no claim at all', async () => {
+      const programs = { available_offering_codes: ['redes_informaticas'], sent_offering_codes: ['redes_informaticas'] };
+      for (const text of ['Ya te lo compartí hace un rato, está arriba en el chat.', 'No tengo el archivo del programa, pero te cuento lo que incluye.'])
+        expect(await reasons(run(text, { type: 'none' }, programs))).toBeNull();
+    });
+    it('an accepted send_course_program may say it is sharing the programme', async () => {
+      const prepared = await run('Te comparto el programa del curso.', SEND,
+        { available_offering_codes: ['redes_informaticas'], sent_offering_codes: [] });
+      expect(prepared.decision.business_action).toEqual(SEND);
+    });
   });
   it.each(['missing', 'complete'] as const)('keeps the original explicit tool intent while continuation sends only prose: %s intake', async intakeCase => {
     const messages = ['Para avanzar, vemos los datos necesarios.'];
@@ -829,6 +901,36 @@ describe('prepareAgentTurnV2', () => {
       reasons: ['ACTION_NOT_AUTHORIZED'],
       rejectionSubjects: ['promotion_acceptance_required'],
     });
+  });
+
+  // Architect F4 (owner test 6bcc8efa): a link refused for a missing checkout checkpoint while a package
+  // offer is live is not a pending promotion acceptance; the repair must see the real cause.
+  it('names a missing checkout checkpoint instead of promotion acceptance when the package would auto-accept', async () => {
+    const attempt = prepareAgentTurnV2({
+      turn: { id: ids.turn, workspace_id: ids.workspace, conversation_id: ids.conversation, contact_id: ids.contact },
+      workspace_slug: 'studyx', business_context: business, catalog_index: index,
+      current_customer_messages: ['me interesa'],
+      course_bonus_capability: {
+        status: 'offer_available', may_schedule_checkin: false, may_request_review: false,
+        may_accept_offer: true, may_send_promoted_payment: false,
+        promotion_code: 'redes_con_excel', interest_offering_code: 'redes_informaticas',
+        promotion_cycle_id: 'cycle-1', offer_version: 1,
+        bonus_offerings: [{ code: 'excel_integral', display_name: 'Excel Integral', position: 1 }],
+      } as never,
+      proposal: proposal({
+        move: { schema_version: 1, move: 'unknown', secondary_moves: [], vetoes: [], confidence: 1 },
+        response: { messages: ['Perfecto, te paso el link.'] },
+        proposed_action: { type: 'send_payment_link', offering_code: 'redes_informaticas', payment_plan: 'monthly_6' },
+      }),
+    }, {
+      state_store: store(state({ selected_offering_code: 'redes_informaticas', selected_payment_plan: 'monthly_6',
+        stage: 'plan_selected', awaiting_reply: 'none' })),
+      contact_intake: completeIntake,
+      now: () => Date.parse(index.as_of),
+    });
+    const rejection = await attempt.catch((error: unknown) => error);
+    expect(rejection).toMatchObject({ code: 'AGENT_TURN_V2_REJECTED', reasons: ['ACTION_NOT_AUTHORIZED'],
+      rejectionSubjects: ['payment_confirmation_required'] });
   });
 
   it('carries a current explicit plan selected as a secondary move while intake is still incomplete', async () => {

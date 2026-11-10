@@ -24,6 +24,12 @@ describe('classifyDeterministicSalesSignal', () => {
     });
   });
 
+  it('keeps an inbound phone-number question distinct from consent to an outbound call', () => {
+    expect(classifyDeterministicSalesSignal('Dónde puedo llamar para hablar contigo?')).toEqual({
+      type: 'model_required',
+    });
+  });
+
   it('recognizes a plain call decline', () => {
     expect(classifyDeterministicSalesSignal('No me llames')).toEqual({ type: 'call_decline' });
   });
@@ -47,6 +53,7 @@ describe('classifyDeterministicSalesSignal', () => {
     'Llámame por favor',
     'Podes llamarme',
     'Me podes llamar?',
+    'Me puedes llamar?',
     'Noo, por llamada',
     'Llamar',
   ])(

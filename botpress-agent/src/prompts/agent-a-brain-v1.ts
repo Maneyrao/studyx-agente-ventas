@@ -5,7 +5,7 @@ import {
 } from './studyx-agent-a-canonical.generated';
 import { resolveCanonicalPromptIdentityV1 } from './agent-a-identity';
 
-export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v149' as const;
+export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v209' as const;
 
 /**
  * Runtime contract only. The sales behavior lives in the canonical prompt so
@@ -17,12 +17,41 @@ Read turn.batch_messages as one intervention. Use only authorized facts and neve
 Capabilities authorize effects, not wording. Recent assistant turns are conversation evidence, not stylistic examples.
 Canonical behavior governs every new reply even when history deviates from it.
 Treat commercial_state.active_call and commercial_state.last_call_result as authoritative lifecycle facts.
-On turn_rejection, continue once in your voice and make only the permitted correction without exposing validation.`;
+State the call situation plainly: active_call means it is going out now; if last_call_result.announced_to_customer is false, first say how it ended and offer retry or chat; if may_request_call_now is false, say why you cannot call (e.g. unconfirmed number). Never promise to notify or call later.
+On turn_rejection, continue once in your voice and make only the permitted correction without exposing validation.
+Call invitation format: whenever the call policy permits an invitation and you include one, put it only in response.call_offer, never in response.messages. This is a field contract, not a sales instruction.`;
+
+/** Exact terminal call evidence. This prevents a classified provider result
+ * from being weakened into a different, generic operational claim. */
+function exactLastCallResultDirectiveV1(context: AgentAContextV1): string {
+  const lastCall = context.commercial_state.last_call_result;
+  if (!lastCall || lastCall.announced_to_customer === true || !lastCall.result) return '';
+  const result = lastCall.result.trim().toLocaleLowerCase('es');
+  const resultDirective = result === 'buzon_de_voz' || result === 'voicemail'
+    ? 'say explicitly that it reached voicemail ("buzón de voz"); do not replace that known result with a generic "no pudo completarse".'
+    : result === 'no_answer'
+      ? 'say explicitly that the call was not answered; do not invent another cause.'
+      : result === 'interrupted' || result === 'disconnected'
+        ? 'say explicitly that the call was interrupted; do not invent another cause.'
+        : 'state that it could not be completed without inventing a cause.';
+  return `<exact_last_call_result>
+The exact last call result is ${result}: ${resultDirective}
+</exact_last_call_result>`;
+}
 
 /** Technical move mapping; authority prompt line 81 keeps postponement open. */
 const MOVE_SEMANTICS = `<move_semantics>
 Map postponement expressions such as "lo voy a pensar", "tengo que pensarlo", "no ahora" and "no me quiero inscribir todavía" to move=defer_payment.
 Use move=decline_purchase only for an explicit definitive refusal to purchase. Postponement is not a definitive refusal.
+Classify the CURRENT customer message; prior turns only resolve short references ("sí", "esa", "el segundo"). An objection made in an earlier turn is not a new objection: do not reuse it as price_objection.
+Use move=price_objection only when the current message complains about the price, move=explicit_promotion_request only when the current message asks for a better promotion or a specific bonus course, and move=request_course_program when it asks for a course's program or syllabus.
+A clarification question about the current offer ("me regalas otro curso?", "dos por uno?", "eso es gratis?") is ask_course_information, not a request for another course and not a promotion request: answer it about what was already offered.
+A payment question is ask_payment_options, not a current-message bonus motive.
+A model-authored recommendation is not a customer selection: use browse_catalog or ask_course_information until the customer explicitly chooses or accepts that course. Use select_course only for that explicit customer choice.
+Use continue_by_chat only for an explicit preference to keep using chat instead of a call, never as a generic label for an ordinary conversational reply.
+When you present or recap the bonus package, state the right number of courses for "N cursos al precio de uno": the paid course plus every bonus. Use commercial_state.promotion.courses_in_package for what the customer already has and courses_in_package_after_next_offer when you add a bonus now (two courses for the first bonus, three for the second, four for the third); without a promotion yet, the first bonus makes it two. Never say "dos cursos al precio de uno" when the package holds more.
+Never say you are sending, sharing or attaching a programme, temario or PDF unless proposed_action is send_course_program for that course. When capabilities.course_programs lists the course as available, the material exists: never say you do not have it; propose the action or offer to share it. Only when it is not listed, say naturally that you do not have the programme file and offer the information you do have.
+Only the profile receipt records contact data: customer.contact_profile.rejected_updates were NOT saved. Never fix an email; ask once to resend it. For a phone correction, write the full number, ask to confirm, then use confirmed_phone; never call before.
 The canonical behavior governs how to respond; this mapping only names the move in AgentATurnProposalV1.
 </move_semantics>`;
 
@@ -51,6 +80,103 @@ function inertJson(value: unknown): string {
     .replaceAll('<', '\\u003c')
     .replaceAll('>', '\\u003e')
     .replaceAll('&', '\\u0026');
+}
+
+/** Preserve the complete context while placing the live conversation nearest
+ * to the canonical behavior. This changes prompt presentation only: it does
+ * not derive state, filter facts or mutate the caller-owned context. */
+/**
+ * Writer view of the catalog. With a planning-pass course focus, the writer
+ * sees the course in focus, the resolver candidates and every bonus/package
+ * identity instead of all offerings. Presentation only: schemas, validation
+ * and authorized fact ids keep using the complete catalog. Without a valid
+ * focus, while the catalog resolution is open or unavailable, or when the
+ * model's own plan moves to discovery, promotion or an objection (where a
+ * bonus or alternative may come from any active course), the full catalog stays.
+ */
+export function writerCatalogPresentationV1(
+  context: AgentAContextV1,
+): AgentAContextV1['catalog'] & { omitted_offerings_count?: number } {
+  const catalog = context.catalog;
+  const focus = context.commercial_plan?.course_focus ?? null;
+  const offerings = catalog.available_offerings;
+  const move = context.commercial_plan?.next_commercial_move;
+  if (!focus || !offerings.some(offering => offering.code === focus)
+    || move === 'discover' || move === 'promo' || move === 'objection'
+    || catalog.resolution === 'ambiguous' || catalog.resolution === 'not_found'
+    || catalog.resolution === 'unavailable') return catalog;
+  const bonus = context.capabilities.course_bonus;
+  const promotion = context.commercial_state.promotion;
+  const keep = new Set<string>([
+    focus,
+    ...(catalog.selected_offering ? [catalog.selected_offering.code] : []),
+    ...(context.commercial_state.selected_offering_code ? [context.commercial_state.selected_offering_code] : []),
+    ...catalog.candidate_offerings.map(offering => offering.code),
+    ...(catalog.bonus_candidate_fichas ?? []).map(ficha => ficha.code),
+    ...(bonus?.bonus_candidates ?? []).map(candidate => candidate.code),
+    ...(bonus?.delivered_bonus_offerings ?? []).map(offering => offering.code),
+    ...(bonus?.interest_offering_code ? [bonus.interest_offering_code] : []),
+    ...(bonus?.rule_bonus?.paid_offering_code ? [bonus.rule_bonus.paid_offering_code] : []),
+    ...(promotion?.interest_offering_code ? [promotion.interest_offering_code] : []),
+    ...(promotion?.bonus_offerings ?? []).map(offering => offering.offering_code),
+  ]);
+  const kept = offerings.filter(offering => keep.has(offering.code));
+  return { ...catalog, available_offerings: kept, omitted_offerings_count: offerings.length - kept.length };
+}
+
+function promptContextPresentationV1(context: AgentAContextV1): AgentAContextV1 {
+  const { turn, customer, commercial_state, continuity, commercial_plan: _plan, ...background } = context;
+  const { batch_messages, recent_turns, ...turnBackground } = turn;
+  return {
+    ...background,
+    catalog: writerCatalogPresentationV1(context),
+    customer,
+    commercial_state,
+    ...(continuity === undefined ? {} : { continuity }),
+    turn: {
+      ...turnBackground,
+      recent_turns,
+      batch_messages,
+    },
+  };
+}
+
+/** Makes already-verified enrollment identities salient without adding a
+ * conversational policy. Canonical behavior remains the only source of what
+ * to say; this block only exposes the exact package names. */
+function verifiedPostSalePackageContextV1(context: AgentAContextV1): string {
+  const verification = context.commercial_state.payment_verification
+  const fulfillment = verification?.fulfillment
+  if (verification?.status !== 'paid'
+    || !fulfillment
+    || !['active', 'already_enrolled'].includes(fulfillment.enrollment_status)
+    || fulfillment.access_message_status !== 'sent') return ''
+  const names: string[] = []
+  const selected = context.catalog.selected_offering
+  const paidOffering = selected?.code === verification.offering_code
+    ? selected
+    : context.catalog.available_offerings.find((offering) => offering.code === verification.offering_code)
+  if (paidOffering) names.push(paidOffering.display_name)
+  const promotion = context.commercial_state.promotion
+  if (promotion?.status === 'accepted' && promotion.interest_offering_code === verification.offering_code) {
+    names.push(...promotion.bonus_offerings.map((offering) => offering.name))
+  }
+  for (const offering of context.capabilities.course_bonus?.delivered_bonus_offerings ?? []) {
+    names.push(offering.display_name)
+  }
+  const unique = [...new Set(names)]
+  if (unique.length === 0) return ''
+  return `<verified_post_sale_package>
+${inertJson({
+    paid_course: paidOffering ? {
+      offering_code: paidOffering.code,
+      display_name: paidOffering.display_name,
+    } : null,
+    active_course_names: unique,
+  })}
+This is fact exposure only. Canonical behavior decides the wording and next conversational move.
+An active enrollment/access status authorizes only that status. It does not authorize an access schedule, duration, self-paced study or unrestricted access.
+</verified_post_sale_package>`
 }
 
 export function hasDirectBonusContextV1(context: AgentAContextV1): boolean {
@@ -109,35 +235,59 @@ Preserve an already resolved course reference. Use only authorized duration, syl
   ));
   const courseDeclarationRepair = repairsBonusPromise || repairsUndeclaredCourse
     ? 'Rebuild course_mentions for the final rewritten response; remove declarations of courses no longer mentioned, without inventing authorization.' : '';
-  // Fresh transactional feedback supersedes the pre-generation snapshot.
-  const ladderFeedback = [
-    ...rejection.rejections.map(reason => reason.subject),
-    ...rejection.authorized_alternatives.missing_information,
-  ].filter(subject => subject.startsWith('bonus_ladder:'));
-  const pendingCall = ladderFeedback.length > 0
-    ? ladderFeedback.includes('bonus_ladder:missing:call_invitation')
-    : context.capabilities.course_bonus?.ladder?.missing_steps.includes('call_invitation') === true;
-  const callStepRepair = pendingCall && context.capabilities.may_offer_call
-    ? 'The identified missing step is call_invitation and it is currently authorized. Only offer the call after history confirms the earlier steps are complete; otherwise continue the earliest unfinished step under canonical_sales_behavior without inferring it from the objection count. Missing call evidence and insufficient objection count do not instruct an immediate invitation. When the call is the next step, offer it with a concrete reason under canonical_sales_behavior, in response.call_offer only. Never repeat the invitation in response.messages; those messages contain only the rest of your reply. This invitation does not mean a call was placed.'
-    : '';
-  const forbiddenPromiseRepair = repairsBonusPromise ? `
+  // Owner 2026-11-10: when the model PROPOSED a bonus and only that effect was
+  // rejected, return just the rejected effect. The strict rewrite below is for
+  // a gift invented in prose without any proposed effect.
+  const rejectedBonusEffects = rejection.rejections.map(reason => reason.subject)
+    .filter(subject => subject.startsWith('direct_bonus:') || subject === 'ladder_step_pending')
+  const forbiddenPromiseRepair = repairsBonusPromise && rejectedBonusEffects.length > 0 ? `
+The proposed bonus effect was not executed (${rejectedBonusEffects.join(', ')}). Only that effect is rejected.
+Use proposed_action=none for bonus effects; do not offer, hint at or present that gift as granted in this reply. Keep the course in focus, the customer's question and the commercial intent of your reply, and continue naturally from there; never invent objections or completed steps. Keep delivered_bonus_offerings and existing obligations in durable state; pending additions remain pending.`
+    : repairsBonusPromise ? `
 For ladder_step_pending or forbidden_promise, remove the unauthorized promise completely.
-Do not mention, suggest or imply any bonus in this rewrite, including a generic, conditional, questioned or hinted gift; do not anticipate a gift or invent a quantity. This repair boundary takes precedence over the course_bonus effect contract, including previously delivered bonuses.
+Do not mention, suggest or imply any bonus in this rewrite, including a generic, conditional, questioned or hinted gift. Delete every customer-visible sentence that does so. Phrases such as "puedo buscarte otra promoción", "puedo sumarte otro curso" or an unnamed future benefit are still promises and must be removed. Do not anticipate a gift or invent a quantity. This repair boundary takes precedence over the course_bonus effect contract, including previously delivered bonuses.
 Use proposed_action=none for bonus effects; do not offer, accept or request review of a bonus in this rewrite. Keep delivered_bonus_offerings and existing obligations in durable state without mentioning them; never delete them. Pending additions remain pending and unconfirmed.
-Continue naturally with the paid course and the factually identified pending step. Counts alone do not prove value, installments or isolation were completed: reread history and follow canonical_sales_behavior in order; never invent objections or completed steps.
-${callStepRepair}
-When no pending step is identified, use only verified value or installment facts and a natural closing question; do not invent which step is missing.
+Continue naturally with the paid course under canonical_sales_behavior; never invent objections or completed steps.
 Do not claim a discount, promotion, gift, approval, income or result. Preserve the rest of the response only when its facts and effects remain authorized.` : '';
+  const repairsProgramSend = rejection.rejections.some(reason => reason.subject.startsWith('program_send_not_executed'))
+  const programSendReason = rejection.rejections.map(reason => reason.subject).find(subject => subject.startsWith('program_send_not_executed'))?.split(':')[1] ?? 'unavailable'
+  const programSendRepair = repairsProgramSend && programSendReason !== 'not_proposed' ? `
+For program_send_not_executed, the programme PDF was NOT sent in this turn (${programSendReason}).
+Remove every sentence saying you are sending, sharing, re-sending or attaching it now, including "te lo comparto otra vez" and "te lo mando de nuevo". ${programSendReason === 'already_sent' ? 'It was already delivered earlier in this chat and it is not sent twice: say so, naming the file as it was sent (the programme, or the ficha/detalle de contenidos when it was a manual ficha), point to that earlier message and offer to go through it together.' : 'There is no PDF file for this course: say you do not have the programme file and offer the information you do have.'} Use proposed_action=none.` : ''
+  const programNotProposed = programSendReason === 'not_proposed' || rejection.rejections.some(reason => reason.code === 'PROGRAM_SEND_REQUIRED')
+  const programRequiredRepair = programNotProposed ? `
+For PROGRAM_SEND_REQUIRED or program_send_not_executed:not_proposed, the course material IS available and was not sent yet: keep your short summary of what the course teaches, say you are sharing the full programme, and set proposed_action={type:"send_course_program", offering_code} for the course in focus. Never say you do not have the file.` : ''
+  const rejectedProfileFields = rejection.rejections.map(reason => reason.subject)
+    .filter(subject => subject.startsWith('contact_profile_rejected:')).map(subject => subject.split(':')[1])
+  const rejectedProfileUpdates = context.customer.contact_profile?.rejected_updates ?? []
+  const invalidFormatPhone = rejectedProfileUpdates.some(update => (
+    update.field === 'telefono' && update.code === 'INVALID_FORMAT'
+  ))
+  const phoneConfirmationPending = rejection.rejections.some(reason => reason.subject === 'phone_confirmation_pending')
+  const phoneReceiptRepair = rejectedProfileFields.includes('telefono') || phoneConfirmationPending
+    ? invalidFormatPhone && !phoneConfirmationPending
+      ? 'Phone: ask the customer to resend the full international number including country code; do not infer a country code, repeat or transform the rejected local number. Use profile_requests [{fields:["telefono"],mode:"collect",purpose:"call"}] and proposed_action=none.'
+      : 'Phone: write the complete number you understood and ask the customer to confirm it, with profile_requests [{fields:["telefono"],mode:"clarify",purpose:"call"}]; use proposed_action=none until it is confirmed.'
+    : ''
+  const profileReceiptRepair = rejectedProfileFields.length || rejection.rejections.some(reason => reason.subject === 'phone_confirmation_pending') ? `
+For contact_profile_rejected or phone_confirmation_pending, the value was NOT recorded (${[...rejectedProfileFields, ...(rejection.rejections.some(reason => reason.subject === 'phone_confirmation_pending') ? ['telefono'] : [])].join(', ')}). Never say it is saved, registered or used.
+${rejectedProfileFields.includes('correo') ? 'Email: do not say the rejected email is valid, correct or okay; do not repeat or correct it; ask once for the email to be resent complete, exactly as the customer uses it.\n' : ''}${phoneReceiptRepair}` : ''
+  const firstBonusMotiveRepair = rejection.rejections.some(reason => reason.subject === 'bonus_motive:motive_needs_delivered_offer') ? `
+For motive_needs_delivered_offer, a first bonus needs a current price complaint, a purchase decline, or an explicit discount/promotion request after the paid course price was already presented in this conversation. If the current message complains about the price, offer it again with motive {kind:"price_objection", quote: that exact fragment} and price_objection in the move or secondary_moves; if the price was not presented yet, give the price and the plans now without a bonus; otherwise ask in your own words whether price is the only thing holding them back and record memory constraint/price_question_asked. Never answer that the price does not move.` : ''
+  const repairsBonusNaming = rejection.rejections.some(reason => reason.subject === 'bonus_not_named');
+  const bonusNamingRepair = repairsBonusNaming ? `
+For bonus_not_named, name the course you're adding: write the bonus course's exact display_name in the customer-visible copy where you offer it (do not name only an earlier bonus), or use proposed_action=none and do not present a new gift.` : '';
   return `
 <mandatory_repair attempt="1" rejection_id="${rejection.rejection_id}">
 Use repair_of with this rejection_id and attempt 1. This is the only rewrite.
-Correct only the facts or effects identified in turn_rejection, preserving the customer's intent.
+Correct only the facts or effects identified in turn_rejection, preserving the customer's intent, move and profile_requests.
 ${callRepair}
 ${undeclaredCourseRepair}
 ${courseDeclarationRepair}
 ${offeringRepair}
 ${courseLogisticsRepair}
 ${forbiddenPromiseRepair}
+${bonusNamingRepair}${programSendRepair}${programRequiredRepair}${profileReceiptRepair}${firstBonusMotiveRepair}
 If an action did not occur, do not claim it; continue naturally from the permitted facts and effects.
 Do not repeat confirmed data or an earlier opening or question. Ask only for truly missing information.
 Keep prose and metadata consistent. Preserve accepted observations. Never expose validation to the customer.
@@ -147,6 +297,11 @@ Use authorized fact values or omit unsupported claims.
 
 function currentCatalogResolutionDirectiveV1(context: AgentAContextV1): string {
   if (context.catalog.resolution !== 'not_found') return '';
+  const factual = context.catalog.candidate_offerings.filter(offering => offering.reference !== undefined);
+  if (factual.length) return `<current_catalog_resolution>
+The selection resolver did not choose a purchase course, but the current literal course reference is grounded in the complete active catalog: ${JSON.stringify(factual.map(offering => offering.code))}.
+Use those candidate_offerings and their authorized facts to answer the current question. Do not claim those courses are nonexistent or unavailable merely because resolution is not_found. This factual reference does not persist a selection or authorize a payment or bonus effect.
+</current_catalog_resolution>`;
   return `<current_catalog_resolution>
 The customer's current wording did not resolve to a canonical StudyX offering.
 Never invent or present the unresolved offering as available. Any offering identity you mention must come from catalog.selected_offering, catalog.candidate_offerings or catalog.available_offerings.
@@ -169,9 +324,15 @@ function currentCourseBonusEffectContractV1(context: AgentAContextV1): string {
     ? `The effect request_promotion_review is available. If Agent A chooses it under canonical_sales_behavior, use proposed_action=request_promotion_review.${selectedBonusDirective}`
     : null;
   const deliveredBonusCount = courseBonus?.delivered_bonus_offerings?.length ?? 0;
+  // Owner 2026-11-10: the promotion follows the main course and is adapted by asking.
+  const carriedOver = courseBonus?.ladder?.carried_over_bonus_offerings ?? [];
+  const carriedOverGuidance = carriedOver.length > 0 && deliveredBonusCount === 0
+    ? ` The promotion carries over from the customer's previous main course, where it already included ${carriedOver.map(course => course.display_name).join(', ')}. It stays valid for the current main course: ask the customer whether to keep that same course or choose another, then propose the effect with the answer; this first gift needs no new motive (any motive with a verbatim quote from turn.batch_messages is accepted).`
+    : '';
+  const candidates = courseBonus?.bonus_candidates ?? [];
   const directBonusGuidance = directBonusContext
     ? courseBonus?.enabled===true && courseBonus.may_offer_bonus===true
-      ? `The effect offer_course_bonus is technically available. This capability does not choose when or which course; Agent A applies canonical_sales_behavior. The package contains ${deliveredBonusCount} delivered bonus course${deliveredBonusCount === 1 ? '' : 's'}, with maximum ${courseBonus.max_bonus_courses ?? 0}. If Agent A chooses this effect, proposed_action must contain exactly one new active bonus_offering_code and the exact interest_offering_code. The new code must differ from the paid course and every delivered_bonus_offerings code. The response and proposed_action must identify the same new course, and the paid-course price remains unchanged. A later addition requires a customer message after the last delivered offer. Backend validation decides whether the effect commits.`
+      ? `The effect offer_course_bonus is technically available. This capability does not choose when or which course; Agent A applies canonical_sales_behavior. The package contains ${deliveredBonusCount} delivered bonus course${deliveredBonusCount === 1 ? '' : 's'}, with maximum ${courseBonus.max_bonus_courses ?? 0}. If Agent A chooses this effect, proposed_action must contain exactly one new active bonus_offering_code from capabilities.course_bonus.bonus_candidates${candidates.length ? ` (${candidates.map(course => course.code).join(', ')})` : ''} and the exact interest_offering_code. The new code must differ from the paid course and every delivered_bonus_offerings code. The response and proposed_action must identify the same new course, and the paid-course price remains unchanged. A later addition requires a customer message after the last delivered offer. The effect requires proposed_action.motive {kind, quote} taken from the customer's CURRENT message: quote is verbatim customer text from turn.batch_messages, and kind must match your declared move (price_objection with move=price_objection, which opens the first bonus only on a second price objection or the whole "sí" to your price question, never on the first objection alone: ${courseBonus.ladder?.prior_price_objection_recorded === true ? 'an earlier price objection is recorded' : 'no earlier price objection is recorded yet'}; better_promotion_request with move=explicit_promotion_request (an explicit request for a discount, a lower price, a promotion or an offer in the current message; it opens the first bonus only when the paid course price was already presented: ${courseBonus.ladder?.price_presented === true ? 'it was' : 'it was not yet'}); promotion_rejection with price_objection, explicit_promotion_request or decline_purchase and an already delivered bonus; purchase_decline with move=decline_purchase plus memory type=objection key=purchase_decline quoting the decline, once per conversation; ledger: ladder.retention_used). An earlier objection is not a motive. Payment questions, plan choice, link requests, personal data, acceptance, greetings and clarification questions about the current offer are not motives. When you ask the customer the price question, also record memory type=constraint key=price_question_asked (value asked, source_quote the customer text you are answering); only then can a bare "sí" next turn be quoted whole as a price_objection motive: ${courseBonus.ladder?.previous_turn_asked_price_question === true ? 'your previous turn did record that question' : 'your previous turn did not record that question'}.${carriedOverGuidance}`
       : `The effect offer_course_bonus is not authorized. Preserve the exact delivered_bonus_offerings package identity and do not repeat pending or rejected additions.`
     : null;
   const effectGuidance = directBonusGuidance
@@ -185,6 +346,23 @@ Never claim a completed effect before the matching action commits.
 </current_effect_contract>`;
 }
 
+function currentCourseProgramEffectContractV1(context: AgentAContextV1): string {
+  const programs = context.capabilities.course_programs
+  if (!programs) return ''
+  const sendable = programs.available_offering_codes.filter(code => !programs.sent_offering_codes.includes(code))
+  if (sendable.length === 0 && programs.sent_offering_codes.length === 0) return ''
+  const materials = (programs.materials ?? []).filter(item => sendable.includes(item.offering_code))
+    .map(item => `${item.offering_code}(${item.has_program_pdf ? 'official programme PDF' : 'manual ficha PDF'}${item.has_image ? ' + course image' : ''})`)
+  return `<current_effect_contract kind="course_program">
+Course material can be sent over WhatsApp with ONE action, proposed_action={type:"send_course_program", offering_code}: the programme PDF (the official programme when it exists, otherwise the manual ficha) and then the official course image go out before your text. Available now: ${materials.join(', ') || '(none left to send)'}.
+When you explain the classes, the syllabus (temario) or the content of the course in focus for the first time in this conversation, propose the action in that same turn (use move=ask_course_information, or request_course_program when the customer asks for the programme/temario/PDF). Not on pure price or payment turns, and never more than once per course.
+With the material, write one or two human sentences summarizing what the course teaches, from its authorized description or syllabus facts (cite them in used_fact_ids); the files carry the detail, so never paste the whole syllabus. The backend resolves the files; never write a URL.
+Phrase it as something you are sharing only together with the action; never state as already done what the backend has not delivered. Name the file by what it is: an official programme PDF is "el programa"; a manual ficha PDF is "la ficha" or "el detalle de contenidos", never "el programa" or "el programa completo".
+A course that is not in the list above has no material available: say naturally that you do not have the file for it and offer the information you do have; never say you are sending it, and do not propose the action.
+Already delivered in this conversation: ${programs.sent_offering_codes.join(', ') || 'none'}. For those, say naturally that you already sent it (more arriba en este chat) and offer to go over anything in it; do not propose the action again.
+</current_effect_contract>`
+}
+
 function currentCallEffectContractV1(context: AgentAContextV1): string {
   const execution = context.capabilities.call_execution;
   if (execution?.next_step === 'collect_contact_details') {
@@ -192,6 +370,7 @@ function currentCallEffectContractV1(context: AgentAContextV1): string {
 The customer has an accepted or requested call whose contact intake is incomplete.
 While collecting the missing fields, keep move=request_call. Put received values in profile_updates and, if useful, include provide_contact_details as a secondary move; never replace the call intent with provide_contact_details as the primary move.
 Use proposed_action=none. Once all four call fields are complete, ask once whether the customer can take the call now; a later confirmation separately authorizes request_call_now.
+If the current batch supplies every remaining call field, treat intake as complete for this reply: ask availability now instead of asking whether the contact summary is correct. A contact-summary confirmation belongs to enrollment checkout, not call intake. New call data are not pending confirmations unless the customer corrected a value or the agent had proposed one.
 </current_effect_contract>`;
   }
   if (execution?.next_step !== 'confirm_availability') return '';
@@ -227,11 +406,66 @@ The customer is answering the requested payment-plan choice. For a clear canonic
 const EXECUTION_CONSISTENCY_CHECK = `<execution_consistency_check>
 Before returning AgentATurnProposalV1, make response, move, profile metadata and proposed_action describe the same next step.
 - An accepted or requested call stays primary move=request_call while collecting contact data and while asking availability. provide_contact_details may be secondary, never the primary replacement for that live call intent.
+- For contact_data_purpose=call, when the current batch supplies every remaining call field, ask whether the customer can take the call now. Do not use the checkout contact-summary confirmation. The summary rule below applies only to enrollment checkout.
 - When the current customer message supplies the final missing checkout contact fields, return the complete contact summary confirmation only. Ask whether those data are correct; do not ask for a payment plan in that same turn. A later confirmed payment_confirmation moves to ask_payment_options only when no plan exists; with a durable selected plan and an authorized link effect it moves to request_payment_link plus send_payment_link. A clear answer while awaiting payment_plan moves to select_payment_plan plus send_payment_link in the same turn.
-- If proposed_action=offer_course_bonus, include exactly one new active bonus_offering_code and the exact interest_offering_code. It must differ from the paid course and every current bonus code; the response must refer to the same course. Never construct a fourth addition when max_bonus_courses is 3.
+- If proposed_action=offer_course_bonus, include exactly one new active bonus_offering_code and the exact interest_offering_code. Always include motive {kind, quote} from the current message. It must differ from the paid course and every current bonus code; the response must refer to the same course. Never construct a fourth addition when max_bonus_courses is 3.
+- If proposed_action=send_course_program, keep the action and customer-facing text consistent: write one or two human sentences summarizing what the course teaches from cited authorized facts; the image and PDF carry the detail.
 - A rejected or pending addition is not a delivered bonus. Package identity comes only from capabilities.course_bonus.delivered_bonus_offerings and commercial_state.promotion.
+- turn_reasoning (phase, customer_now, already_said, customer_goal, next_step) is internal evidence only, not a permission or a conversation policy. already_said records prior content and questions with their answered, declined or unanswered status. Never quote or expose this metadata in response.messages. The canonical sales behavior alone decides whether to discover, give value or close.
+- When confirmed_phone is set from a contextual confirmation, do not duplicate that phone in profile_updates; confirmed_phone is the receipt input for that confirmation.
 - stage_hypothesis is diagnostic and must use only its allowed durable milestone enum. Do not expose internal validation in response.messages.
 </execution_consistency_check>`;
+
+/** Exact persisted identities and dates, with no independent sales instructions. */
+function verifiedCommercialFactsContextV1(context: AgentAContextV1): string {
+  const bonus = context.capabilities.course_bonus;
+  const delivered = bonus?.delivered_bonus_offerings ?? [];
+  const packageAvailable = delivered.length > 0
+    && ['offered', 'accepted', 'attached'].includes(bonus?.package_status ?? '');
+  const paidCode = bonus?.interest_offering_code ?? bonus?.rule_bonus?.paid_offering_code ?? null;
+  const paidName = context.catalog.available_offerings.find(offering => offering.code === paidCode)?.display_name
+    ?? bonus?.rule_bonus?.paid_display_name ?? null;
+  return `<verified_commercial_facts>
+${inertJson({
+    delivered_package: packageAvailable ? {
+      paid_offering_code: paidCode,
+      paid_display_name: paidName,
+      bonus_offerings: delivered,
+      courses_in_package: delivered.length + 1,
+    } : null,
+    promotion_expires_at: bonus?.sales_flow?.promo_expires_at ?? null,
+  })}
+</verified_commercial_facts>`;
+}
+
+/**
+ * The model's own planning-pass reading, handed back to the writer. It adds
+ * no rule: canonical_sales_behavior stays the only commercial guide.
+ */
+function commercialTurnPlanContextV1(context: AgentAContextV1): string {
+  if (!context.commercial_plan) return '';
+  // The writer classifies the current message itself under the move contract;
+  // the planning-pass classification only grounds the plan's own reasoning.
+  const { current_move: _move, ...reading } = context.commercial_plan;
+  return `<commercial_turn_plan>
+Your own reading of this turn, produced in a separate planning pass from this same context under canonical_sales_behavior. It is internal, subordinate to canonical_sales_behavior and the authorized context, and authorizes no fact, course, gift or effect. Write the reply that carries out this reading in your usual voice.
+${inertJson(reading)}
+</commercial_turn_plan>
+
+`;
+}
+
+export const COMMERCIAL_TURN_PLANNING_TASK_V1 = `<commercial_turn_planning>
+This request is the planning pass only: instead of AgentATurnProposalV1, return CommercialTurnPlanV1. Read the authorized context and the current customer messages under canonical_sales_behavior and record your reading of this turn. Do not write customer-facing text. The plan is internal and authorizes no fact or effect.
+</commercial_turn_planning>`;
+
+/** Planning pass: complete context (full catalog) plus the planning tag. */
+export function buildAgentACommercialPlanInstructionsV1(context: AgentAContextV1): string {
+  const { commercial_plan: _plan, ...withoutPlan } = context;
+  return `${buildAgentABrainInstructionsV1(withoutPlan)}
+
+${COMMERCIAL_TURN_PLANNING_TASK_V1}`;
+}
 
 export function buildAgentABrainInstructionsV1(context: AgentAContextV1): string {
   const canonicalPrompt = context.identity === null
@@ -242,26 +476,33 @@ export function buildAgentABrainInstructionsV1(context: AgentAContextV1): string
 ${MOVE_SEMANTICS}
 ${COURSE_MENTIONS_CONTRACT}
 
-<canonical_sales_behavior version="${STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION}">
-${canonicalPrompt}</canonical_sales_behavior>
-
 <internal_contact_profile_contract>
 ${INTERNAL_CONTACT_PROFILE_CONTRACT}
 </internal_contact_profile_contract>
 
 <authorized_context>
-${inertJson(context)}
+${inertJson(promptContextPresentationV1(context))}
 </authorized_context>
+
+${exactLastCallResultDirectiveV1(context)}
+
+${verifiedPostSalePackageContextV1(context)}
 
 ${currentCatalogResolutionDirectiveV1(context)}
 
+${verifiedCommercialFactsContextV1(context)}
+
 ${currentCourseBonusEffectContractV1(context)}
 
+${currentCourseProgramEffectContractV1(context)}
 ${currentCallEffectContractV1(context)}
 
 ${currentCheckoutEffectContractV1(context)}
 
-${mandatoryRepairDirectiveV1(context)}
+${EXECUTION_CONSISTENCY_CHECK}
 
-${EXECUTION_CONSISTENCY_CHECK}`;
+${commercialTurnPlanContextV1(context)}<canonical_sales_behavior version="${STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION}">
+${canonicalPrompt}</canonical_sales_behavior>
+
+${mandatoryRepairDirectiveV1(context)}`;
 }

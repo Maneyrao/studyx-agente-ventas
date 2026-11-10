@@ -1,7 +1,7 @@
 import { after, NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { deliverNotification, NarrativeSchema, runPostSalePipeline } from '@/features/fulfillment/post-sale/service';
-const Body = z.object({ claim_token: z.string().uuid(), botpress_conversation_id: z.string().min(1), narrative: NarrativeSchema });
+const Body = z.object({ claim_token: z.string().uuid(), botpress_conversation_id: z.string().min(1), narrative: NarrativeSchema.optional() });
 export async function POST(request: NextRequest, context: { params: Promise<{ id: string }> }) {
   const { id } = await context.params;
   const body = Body.safeParse(await request.json().catch(() => null));

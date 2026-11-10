@@ -248,6 +248,7 @@ export class PostgresOrchestrationStore implements OrchestrationStore {
         call_id: string;
         result: string | null;
         ended_at: Date | string;
+        announced_to_customer?: boolean;
       } | null;
       last_decline_at: Date | string | null;
     };
@@ -269,7 +270,7 @@ export class PostgresOrchestrationStore implements OrchestrationStore {
         NOT EXISTS (
           SELECT 1
           FROM messages AS readable
-          WHERE readable.batch_id = b.id
+          WHERE readable.id = ANY(iv.ids)
             AND COALESCE(readable.metadata ->> 'message_type', 'text') <> 'unsupported'
         ) AS unsupported_message,
         ad.id AS decision_id,
@@ -292,10 +293,10 @@ export class PostgresOrchestrationStore implements OrchestrationStore {
               bm.conversation_seq,
               bm.id
           )
-          FROM messages AS bm
-          WHERE bm.batch_id = b.id
-            AND bm.conversation_id = b.conversation_id
-            AND bm.contact_id = b.contact_id
+          -- Owner 2026-11-10: the whole current intervention (every inbound
+          -- message since the agent's last reply), not only this batch, so a
+          -- superseded turn's messages keep their intent in the new generation.
+          FROM messages AS bm WHERE bm.id = ANY(iv.ids)
         ), '[]'::jsonb) AS batch_messages,
         COALESCE((
           SELECT jsonb_agg(
@@ -324,6 +325,7 @@ export class PostgresOrchestrationStore implements OrchestrationStore {
             ))
               AND rm.contact_id = b.contact_id
               AND rm.batch_id IS DISTINCT FROM b.id
+              AND rm.id <> ALL(iv.ids)
               AND (rm.direction <> 'outbound'
                 OR NOT EXISTS (SELECT 1 FROM outbound_deliveries known WHERE known.message_id = rm.id)
                 OR EXISTS (SELECT 1 FROM outbound_deliveries sent WHERE sent.message_id = rm.id
@@ -380,6 +382,7 @@ export class PostgresOrchestrationStore implements OrchestrationStore {
             ))
                 AND rm.contact_id = b.contact_id
                 AND rm.batch_id IS DISTINCT FROM b.id
+                AND rm.id <> ALL(iv.ids)
               AND (rm.direction <> 'outbound'
                 OR NOT EXISTS (SELECT 1 FROM outbound_deliveries known WHERE known.message_id = rm.id)
                 OR EXISTS (SELECT 1 FROM outbound_deliveries sent WHERE sent.message_id = rm.id
@@ -458,7 +461,17 @@ export class PostgresOrchestrationStore implements OrchestrationStore {
           SELECT jsonb_build_object(
             'call_id', terminal.id,
             'result', terminal.result,
-            'ended_at', COALESCE(terminal.completed_at, terminal.updated_at)
+            'ended_at', COALESCE(terminal.completed_at, terminal.updated_at),
+            -- A delivered reply after the call ended (the post-call message
+            -- or an Agent A turn) told the customer; otherwise A must say it.
+            'announced_to_customer', EXISTS (
+              SELECT 1 FROM messages AS told
+              JOIN outbound_deliveries AS told_delivery ON told_delivery.message_id = told.id
+                AND told_delivery.state IN ('submitted', 'delivered')
+              WHERE told.conversation_id = terminal.conversation_id AND told.contact_id = terminal.contact_id
+                AND told.direction = 'outbound'
+                AND told.created_at > COALESCE(terminal.completed_at, terminal.updated_at)
+            )
           )
           FROM call_sessions AS terminal
           WHERE terminal.contact_id = b.contact_id
@@ -487,6 +500,11 @@ export class PostgresOrchestrationStore implements OrchestrationStore {
         ON ccp.contact_id = c.id AND ccp.channel = conv.channel
       LEFT JOIN agent_decisions AS ad ON ad.turn_id = b.representative_turn_id
       LEFT JOIN outbound_deliveries AS od ON od.message_id = ad.outbound_message_id
+      -- The current intervention, computed once per claim (owner 2026-11-10).
+      CROSS JOIN LATERAL (
+        SELECT COALESCE(array_agg(current_turn.id), ARRAY[]::uuid[]) AS ids
+        FROM agent_intervention_inbound_v1(b.representative_turn_id) AS current_turn
+      ) AS iv
       WHERE b.id = ${input.batch_id}::uuid
       LIMIT 1
     `;
@@ -558,6 +576,8 @@ export class PostgresOrchestrationStore implements OrchestrationStore {
               call_id: row.last_call_result.call_id,
               result: row.last_call_result.result,
               ended_at: jsonIso(row.last_call_result.ended_at)!,
+              ...(typeof row.last_call_result.announced_to_customer === 'boolean'
+                ? { announced_to_customer: row.last_call_result.announced_to_customer } : {}),
             }
           : null,
         last_decline_at: jsonIso(row.last_decline_at),
@@ -775,13 +795,23 @@ export class PostgresOrchestrationStore implements OrchestrationStore {
       LIMIT 1
     `;
 
-    const terminalRows = await this.db<Array<{ id: string; result: string | null; ended_at: Date }>>`
-      SELECT id, result, COALESCE(completed_at, updated_at) AS ended_at
-      FROM call_sessions
-      WHERE contact_id = ${input.contact_id}::uuid
-        AND conversation_id = ${input.conversation_id}::uuid
-        AND status IN ('completed', 'failed', 'no_answer', 'timed_out', 'cancelled')
-      ORDER BY COALESCE(completed_at, updated_at) DESC
+    const terminalRows = await this.db<Array<{ id: string; result: string | null; ended_at: Date; announced_to_customer: boolean }>>`
+      SELECT terminal.id, terminal.result, COALESCE(terminal.completed_at, terminal.updated_at) AS ended_at,
+        -- A delivered reply after the call ended (post-call message or an
+        -- Agent A turn) told the customer; otherwise Agent A must say it.
+        EXISTS (
+          SELECT 1 FROM messages AS told
+          JOIN outbound_deliveries AS told_delivery ON told_delivery.message_id = told.id
+            AND told_delivery.state IN ('submitted', 'delivered')
+          WHERE told.conversation_id = terminal.conversation_id AND told.contact_id = terminal.contact_id
+            AND told.direction = 'outbound'
+            AND told.created_at > COALESCE(terminal.completed_at, terminal.updated_at)
+        ) AS announced_to_customer
+      FROM call_sessions AS terminal
+      WHERE terminal.contact_id = ${input.contact_id}::uuid
+        AND terminal.conversation_id = ${input.conversation_id}::uuid
+        AND terminal.status IN ('completed', 'failed', 'no_answer', 'timed_out', 'cancelled')
+      ORDER BY COALESCE(terminal.completed_at, terminal.updated_at) DESC
       LIMIT 1
     `;
 
@@ -810,7 +840,8 @@ export class PostgresOrchestrationStore implements OrchestrationStore {
         : null,
       active_call: active ? { call_id: active.id, status: active.status } : null,
       last_call_result: terminal
-        ? { call_id: terminal.id, result: terminal.result, ended_at: terminal.ended_at.toISOString() }
+        ? { call_id: terminal.id, result: terminal.result, ended_at: terminal.ended_at.toISOString(),
+            announced_to_customer: terminal.announced_to_customer }
         : null,
       last_decline_at: declineRows[0] ? declineRows[0].declined_at.toISOString() : null,
     };

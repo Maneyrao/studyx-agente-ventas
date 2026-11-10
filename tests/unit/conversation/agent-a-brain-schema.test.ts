@@ -46,7 +46,8 @@ describe('AgentATurnProposalV1Schema', () => {
     promotion_cycle_id: 'cycle-1', offer_version: 2,
   };
   const actions = [
-    { type: 'offer_course_bonus', bonus_offering_code: 'ingles_1', interest_offering_code: 'redes' },
+    { type: 'offer_course_bonus', bonus_offering_code: 'ingles_1', interest_offering_code: 'redes',
+      motive: { kind: 'price_objection', quote: 'es caro' } },
     directAcceptance,
     { type: 'accept_promotion' },
   ];
@@ -55,7 +56,16 @@ describe('AgentATurnProposalV1Schema', () => {
     for (const schema of [AgentATurnProposalV1Schema, BotpressAgentATurnProposalV1Schema]) {
       expect(schema.parse(proposal({ proposed_action })).proposed_action).toEqual(proposed_action);
     }
-    expect(DecisionBusinessActionSchema.parse(proposed_action)).toEqual(proposed_action);
+    // The persisted business action never carries the motive (it is validated in memory and in the bonus transaction).
+    const persisted = Object.fromEntries(Object.entries(proposed_action).filter(([key]) => key !== 'motive'));
+    expect(DecisionBusinessActionSchema.parse(persisted)).toEqual(persisted);
+  });
+  it('requires a well-formed motive on offer_course_bonus at every boundary', () => {
+    const base = { type: 'offer_course_bonus', bonus_offering_code: 'ingles_1', interest_offering_code: 'redes' };
+    for (const motive of [undefined, { kind: 'price_objection' }, { kind: 'cheap', quote: 'x' }, { kind: 'price_objection', quote: '' },
+      { kind: 'price_objection', quote: 'x', extra: 1 }])
+      for (const schema of [AgentATurnProposalV1Schema, BotpressAgentATurnProposalV1Schema])
+        expect(schema.safeParse(proposal({ proposed_action: { ...base, motive } as never })).success).toBe(false);
   });
 
   it.each([
@@ -162,5 +172,13 @@ describe('backend course_mentions wire contract',()=>{
       .toEqual([{offering_code:'ingles_1',role:'paid_complement'}]);
     for(const declaration of [{offering_code:'ingles_1',role:'free'}, {offering_code:'ingles_1',role:'bonus',effect:true}])
       expect(AgentATurnProposalV1Schema.safeParse(proposal({course_mentions:[declaration]})).success).toBe(false);
+  });
+});
+
+describe('H4: turn_reasoning crosses the backend boundary', () => {
+  it('the backend proposal schema accepts the Botpress turn_reasoning', () => {
+    const turn_reasoning = { phase: 'valor', customer_now: 'duda precio', already_said: 'precio', customer_goal: 'trabajar', next_step: 'value' };
+    expect(BotpressAgentATurnProposalV1Schema.safeParse(proposal({ turn_reasoning })).success).toBe(true);
+    expect(AgentATurnProposalV1Schema.safeParse(proposal({ turn_reasoning })).success).toBe(true);
   });
 });

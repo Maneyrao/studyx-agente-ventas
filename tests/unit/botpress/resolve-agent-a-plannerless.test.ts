@@ -1,4 +1,5 @@
 import * as brainValidation from '../../../botpress-agent/src/lib/conversation/agent-a-brain';
+import { STUDYX_GENERAL_FACTS_V1 } from '@/shared/catalog/studyx-general-facts';
 import { describe, expect, it, vi } from 'vitest';
 import { resolveAgentAPlannerlessProposalV2 } from '../../../botpress-agent/src/lib/conversation/resolve-agent-a-plannerless';
 import { AgentABrainError, parseAgentATurnProposalV1 } from '../../../botpress-agent/src/lib/conversation/agent-a-brain';
@@ -79,6 +80,35 @@ function generated(value: AgentATurnProposalV1) {
 }
 
 describe('resolveAgentAPlannerlessProposalV2', () => {
+  it.each([
+    'Perfecto, entonces el teléfono queda como 1169004497.',
+    'Con el correo ya tengo todo para la llamada.',
+  ])('repairs a false completed-intake claim before commit: %s', async (message) => {
+    const current = context();
+    current.commercial_state.awaiting_reply = 'contact_details';
+    current.capabilities.intake_status = 'unknown';
+    current.capabilities.intake_missing = ['correo', 'telefono'];
+    const initial = generated(proposal({
+      move: { schema_version: 1, move: 'provide_contact_details', secondary_moves: ['request_call'], vetoes: [], confidence: 1 },
+      response: { messages: [message], call_offer: null },
+      used_fact_ids: [],
+    }));
+    const repaired = generated(proposal({
+      move: initial.proposal.move,
+      response: { messages: ['Me faltan el correo y el teléfono completo con código de país para poder llamarte.'], call_offer: null },
+      used_fact_ids: [],
+      repair_of: { rejection_id: '00000000-0000-4000-8000-000000000141', attempt: 1 },
+    }));
+    const repair = vi.fn(async () => repaired);
+    const result = await resolveAgentAPlannerlessProposalV2({
+      initial, context: current, repair_enabled: true, semantic_rejections: 'advisory', repair,
+      rejection_id: '00000000-0000-4000-8000-000000000141',
+    });
+    expect(repair).toHaveBeenCalledTimes(1);
+    expect(result.effective.proposal.response.messages).toEqual(repaired.proposal.response.messages);
+    expect(result.evidence.rejection_codes).toContain('UNSUPPORTED_OPERATIONAL_CLAIM:contact_details');
+  });
+
   it.each([true,false])('exact call transport preserves the raw proposal without repair or contingency (only=%s)',async only=>{
     const current=context();
     current.turn.batch_messages=[{id:'price',text:'El precio es lo único que me frena.'}];
@@ -330,7 +360,9 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
       semantic_rejections: 'advisory',
       rejection_id: '00000000-0000-4000-8000-000000000128',
       repair: async () => { throw new Error('repair unavailable'); },
-    })).rejects.toThrow('FACT_VALUE_MISMATCH:price');
+    }).then(result => result.effective.proposal.response.messages)).resolves.toEqual([
+      'Las opciones son 12 pagos mensuales de USD 30, 6 pagos mensuales de USD 60 o 1 pago de USD 360.',
+    ]);
   });
 
   it.each([
@@ -482,7 +514,7 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
         response: { messages: ['Puedes pagar USD 47.'], call_offer: null },
         repair_of: { rejection_id: rejection.rejection_id, attempt: 1 },
       })),
-    })).rejects.toThrow('PLANNERLESS_PROPOSAL_REJECTED:FACT_VALUE_MISMATCH:price');
+    }).then(result => result.effective.proposal.response.messages)).resolves.toEqual(['Las opciones son 12 pagos mensuales de USD 30, 6 pagos mensuales de USD 60 o 1 pago de USD 360.']);
   });
 
   it('returns a repeated unanswered assistant question to A without rewriting it in the orchestrator', async () => {
@@ -894,7 +926,7 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
       context: current, repair_enabled: false, semantic_rejections: 'advisory',
       rejection_id: '00000000-0000-4000-8000-0000000000e3',
       repair: async () => { throw new Error('Unexpected repair'); },
-    })).rejects.toThrow('UNSUPPORTED_OPERATIONAL_CLAIM:call_confirmation');
+    }).then(result => result.effective.proposal.response)).resolves.toEqual({ messages: ['Claro.'], call_offer: null });
   });
 
   it('keeps unrelated semantic guidance advisory during an authorized call', async () => {
@@ -916,7 +948,7 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
     });
     expect(result.effective.proposal.response.messages).toEqual(messages);
     expect(result.effective.proposal.proposed_action).toEqual({ type: 'request_call_now', reason: 'direct_request' });
-    expect(result.evidence).toMatchObject({ repair_attempted: false, rejection_codes: ['FACT_NOT_AUTHORIZED'] });
+    expect(result.evidence).toMatchObject({ repair_attempted: false, rejection_codes: ['FACT_NOT_AUTHORIZED:offering:unknown:name:v1'] });
   });
 
   it('repairs an empty delivery announcement even with advisory semantics', async () => {
@@ -1496,7 +1528,7 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
     expect(result.effective.proposal.response.messages).toEqual([
       'Los dos sirven, pero uno apunta a campañas y el otro a manejar una comunidad.',
     ]);
-    expect(result.evidence.rejection_codes).toEqual(['FACT_VALUE_MISMATCH']);
+    expect(result.evidence.rejection_codes).toEqual(['FACT_VALUE_MISMATCH:candidate_course_detail']);
   });
 
   it('preserves a confirmed call action and its model-authored acknowledgement after an offer', async () => {
@@ -2057,7 +2089,7 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
     expect(repair).not.toHaveBeenCalled();
     expect(result.effective).toBe(initial);
     expect(result.evidence).toMatchObject({
-      rejection_codes: ['MISSING_INTAKE'], repair_attempted: false, repaired: false,
+      rejection_codes: ['MISSING_INTAKE:apellido'], repair_attempted: false, repaired: false,
     });
   });
 
@@ -2214,7 +2246,7 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
     expect(repair).toHaveBeenCalledTimes(1);
     expect(result.effective).toBe(repaired);
     expect(result.evidence).toMatchObject({
-      rejection_codes: ['FACT_VALUE_MISMATCH'], repair_attempted: true,
+      rejection_codes: ['FACT_VALUE_MISMATCH:price'], repair_attempted: true,
       repaired: true, proposal_generation_calls: 2,
     });
   });
@@ -2461,7 +2493,7 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
     expect(result.effective.proposal.response.messages).toEqual(messages);
     expect(result.effective.proposal.proposed_action).toEqual({ type: 'none' });
     expect(result.evidence).toMatchObject({
-      rejection_codes: ['FACT_VALUE_MISMATCH'],
+      rejection_codes: ['FACT_VALUE_MISMATCH:candidate_course_detail'],
       repair_attempted: false, repaired: false,
       proposal_generation_calls: 1,
     });
@@ -2672,7 +2704,7 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
     });
 
     expect(repair).toHaveBeenCalledTimes(1);
-    expect(result.evidence.rejection_codes).toContain('PLAN_NOT_SELECTED');
+    expect(result.evidence.rejection_codes).toContain('PLAN_NOT_SELECTED:payment_plan');
     expect(result.effective.proposal.response.messages).toEqual([
       'Prefieres 12 cuotas, 6 cuotas o un solo pago?',
     ]);
@@ -2721,7 +2753,7 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
     expect(repair).toHaveBeenCalledTimes(1);
     expect(result.effective).toBe(initial);
     expect(result.evidence).toMatchObject({
-      rejection_codes: ['PLAN_NOT_SELECTED'], repair_attempted: true, repaired: false,
+      rejection_codes: ['PLAN_NOT_SELECTED:payment_plan'], repair_attempted: true, repaired: false,
     });
     expect(result.effective.proposal.proposed_action).toEqual({ type: 'none' });
   });
@@ -2792,7 +2824,7 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
     expect(repair).not.toHaveBeenCalled();
   });
 
-  it('repairs an unsolicited payment action instead of silently deleting it', async () => {
+  it('prunes an unsolicited payment action and keeps the copy without spending the repair', async () => {
     const current = context();
     current.turn.batch_messages[0].text = 'Soy Tomás Quiroga, tomas@example.test';
     current.commercial_state.awaiting_reply = 'payment_confirmation';
@@ -2827,15 +2859,17 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
       rejection_id: '00000000-0000-4000-8000-000000000001',
     });
 
-    expect(repair).toHaveBeenCalledTimes(1);
-    expect(result.effective).toBe(repaired);
+    // A rejected effect rejects only the effect: the action is pruned, the copy kept, no repair spent.
+    expect(repair).not.toHaveBeenCalled();
+    expect(result.effective.proposal.proposed_action).toEqual({ type: 'none' });
+    expect(result.effective.proposal.response).toEqual(initial.proposal.response);
     expect(result.evidence).toMatchObject({
-      rejection_codes: ['ACTION_NOT_AUTHORIZED'], repair_attempted: true,
-      repaired: true, proposal_generation_calls: 2,
+      rejection_codes: ['ACTION_NOT_AUTHORIZED:send_payment_link'], repair_attempted: false,
+      repaired: false, proposal_generation_calls: 1,
     });
   });
 
-  it('repairs a premature payment action while contact intake is still incomplete', async () => {
+  it('prunes a premature payment action while contact intake is incomplete and keeps the copy', async () => {
     const current = context();
     current.turn.batch_messages[0].text = 'Soy Nadia Ferrer';
     current.commercial_state.awaiting_reply = 'contact_details';
@@ -2867,15 +2901,17 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
       rejection_id: '00000000-0000-4000-8000-000000000001',
     });
 
-    expect(repair).toHaveBeenCalledTimes(1);
-    expect(result.effective).toBe(repaired);
+    // A rejected effect rejects only the effect: the action is pruned, the copy kept, no repair spent.
+    expect(repair).not.toHaveBeenCalled();
+    expect(result.effective.proposal.proposed_action).toEqual({ type: 'none' });
+    expect(result.effective.proposal.response).toEqual(initial.proposal.response);
     expect(result.evidence).toMatchObject({
-      rejection_codes: ['MISSING_INTAKE'], repair_attempted: true,
-      repaired: true, proposal_generation_calls: 2,
+      rejection_codes: ['MISSING_INTAKE:correo'], repair_attempted: false,
+      repaired: false, proposal_generation_calls: 1,
     });
   });
 
-  it('repairs a premature temporary test-link action while contact intake is incomplete', async () => {
+  it('prunes a premature temporary test-link action while contact intake is incomplete and keeps the copy', async () => {
     const current = context();
     current.turn.batch_messages[0].text = 'Mandame el link de prueba de 0,50';
     current.commercial_state.awaiting_reply = 'contact_details';
@@ -2904,11 +2940,13 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
       rejection_id: '00000000-0000-4000-8000-000000000001',
     });
 
-    expect(repair).toHaveBeenCalledTimes(1);
-    expect(result.effective).toBe(repaired);
+    // A rejected effect rejects only the effect: the action is pruned, the copy kept, no repair spent.
+    expect(repair).not.toHaveBeenCalled();
+    expect(result.effective.proposal.proposed_action).toEqual({ type: 'none' });
+    expect(result.effective.proposal.response).toEqual(initial.proposal.response);
     expect(result.evidence).toMatchObject({
-      rejection_codes: ['MISSING_INTAKE'], repair_attempted: true,
-      repaired: true, proposal_generation_calls: 2,
+      rejection_codes: ['MISSING_INTAKE:correo'], repair_attempted: false,
+      repaired: false, proposal_generation_calls: 1,
     });
   });
 
@@ -3088,7 +3126,7 @@ describe('rechazo completo sin reescritura del backend', () => {
     await expect(resolveAgentAPlannerlessProposalV2({
       initial: rejectedByPrice(), context: context(), repair_enabled: false,
       repair: vi.fn(), rejection_id: '00000000-0000-4000-8000-000000000001',
-    })).rejects.toThrow('PLANNERLESS_PROPOSAL_REJECTED:FACT_VALUE_MISMATCH:price');
+    }).then(result => result.effective.proposal.response.messages)).resolves.toEqual(['Las opciones son 12 pagos mensuales de USD 30, 6 pagos mensuales de USD 60 o 1 pago de USD 360.']);
   });
 
   it('rechaza cuando la única reparación sigue siendo inválida', async () => {
@@ -3101,7 +3139,7 @@ describe('rechazo completo sin reescritura del backend', () => {
     await expect(resolveAgentAPlannerlessProposalV2({
       initial: rejectedByPrice(), context: context(), repair_enabled: true,
       repair, rejection_id: '00000000-0000-4000-8000-000000000001',
-    })).rejects.toThrow('PLANNERLESS_PROPOSAL_REJECTED:FACT_VALUE_MISMATCH:price');
+    }).then(result => result.effective.proposal.response.messages)).resolves.toEqual(['Las opciones son 12 pagos mensuales de USD 30, 6 pagos mensuales de USD 60 o 1 pago de USD 360.']);
 
     expect(repair).toHaveBeenCalledTimes(1);
   });
@@ -3171,7 +3209,9 @@ describe('afirmar un link no autorizado no puede terminar en silencio', () => {
       repair_enabled: true,
       rejection_id: '00000000-0000-4000-8000-0000000000aa',
       repair: async () => { throw new Error('BRAIN_DEEPSEEK_TIMEOUT'); },
-    })).rejects.toThrow('PLANNERLESS_PROPOSAL_REJECTED');
+    }).then(result => result.effective.proposal)).resolves.toMatchObject({
+      response: { messages: ['Gracias, Lucía.'] }, proposed_action: { type: 'none' },
+    });
   });
 
   it('si no queda nada verdadero que decir, sigue siendo un rechazo duro', async () => {
@@ -3389,7 +3429,10 @@ describe('la conversación sobre candidatos no se confunde con autoridad comerci
     expect(result.effective.proposal.response.messages).toEqual(initial.proposal.response.messages);
   });
 
-  it('rechaza la respuesta completa sin quitar una oración', async () => {
+  // Changed 2026-11-02 (owner: never the technical contingency): after the one
+  // rewrite fails, a reply rejected ONLY for an unsupported prerequisite claim
+  // is sent without that claim instead of "Perdón, no te entendí bien, a qué te refieres?".
+  it('si la reparación falla, envía la respuesta sin la afirmación de requisitos (nunca contingencia)', async () => {
     const initial = generated(proposal({
       response: {
         messages: [
@@ -3400,13 +3443,14 @@ describe('la conversación sobre candidatos no se confunde con autoridad comerci
       },
     }));
 
-    await expect(resolveAgentAPlannerlessProposalV2({
+    const result = await resolveAgentAPlannerlessProposalV2({
       initial,
       context: context(),
       repair_enabled: true,
       rejection_id: '00000000-0000-4000-8000-0000000000ac',
       repair: vi.fn(),
-    })).rejects.toThrow('PLANNERLESS_PROPOSAL_REJECTED');
+    });
+    expect(result.effective.proposal.response.messages).toEqual(['La formación tiene 38 clases.']);
   });
 
   it('rejects an unsupported prerequisite clause without altering it', async () => {
@@ -3450,7 +3494,7 @@ describe('la conversación sobre candidatos no se confunde con autoridad comerci
 });
 
 describe('flexibilidad de cursada sin respaldo se devuelve al agente', () => {
-  it('rechaza sin podar cuando la reparación repite la inferencia', async () => {
+  it('quita sólo la oración con la inferencia sin respaldo cuando la reparación la repite', async () => {
     const initial = generated(proposal({
       response: {
         messages: [
@@ -3472,7 +3516,9 @@ describe('flexibilidad de cursada sin respaldo se devuelve al agente', () => {
           rejection_id: '00000000-0000-4000-8000-0000000000af', attempt: 1,
         },
       })),
-    })).rejects.toThrow('PLANNERLESS_PROPOSAL_REJECTED');
+    }).then(result => result.effective.proposal.response.messages)).resolves.toEqual([
+      'La formación tiene 38 clases.', '¿Querés conocer el contenido?',
+    ]);
   });
 });
 
@@ -3492,7 +3538,7 @@ it.each(['narrative', 'dedicated'] as const)('repairs a third invitation in %s w
     repair_enabled: true, repair, rejection_id: '00000000-0000-4000-8000-000000000001' });
   expect(repair).toHaveBeenCalledOnce();
   expect(result.effective.proposal.response.messages).toEqual(['La formación tiene 38 clases.']);
-  expect(result.evidence.rejection_codes).toContain('CALL_BUDGET_EXHAUSTED');
+  expect(result.evidence.rejection_codes).toContain('CALL_BUDGET_EXHAUSTED:call_offer');
 });
 
 it('does not downgrade an unrepaired third invitation into advisory guidance', async () => {
@@ -3506,4 +3552,222 @@ it('does not downgrade an unrepaired third invitation into advisory guidance', a
     repair: async rejection => generated({ ...value, repair_of: { rejection_id: rejection.rejection_id, attempt: 1 } }),
     rejection_id: '00000000-0000-4000-8000-000000000001',
   })).rejects.toThrow('CALL_BUDGET_EXHAUSTED');
+});
+
+describe('separar la copia conversacional de los efectos y de los hechos (Bloque 2)', () => {
+  const PLANS = 'Las opciones son 12 pagos mensuales de USD 30, 6 pagos mensuales de USD 60 o 1 pago de USD 360.';
+  const resolveWith = (messages: string[], extra: Partial<AgentATurnProposalV1> = {}, repair = vi.fn(async () => { throw new Error('repair unavailable'); })) =>
+    resolveAgentAPlannerlessProposalV2({
+      initial: generated(proposal({ response: { messages, call_offer: null }, ...extra })),
+      context: context(), repair_enabled: true, repair: repair as never,
+      rejection_id: '00000000-0000-4000-8000-0000000000b2',
+    });
+
+  it('a wrong price sentence is replaced by the canonical plans and the rest is kept', async () => {
+    const result = await resolveWith(['La formación tiene 38 clases. Son 12 pagos de USD 999. Te cuento más?']);
+    expect(result.effective.proposal.response.messages).toEqual([
+      'La formación tiene 38 clases. Te cuento más?', PLANS,
+    ]);
+    expect(result.effective.proposal.used_fact_ids).toEqual(expect.arrayContaining([
+      'payment:maquillaje-profesional:monthly_12:label:v1']));
+  });
+
+  it('an official-title claim is removed and the rest of the message is kept', async () => {
+    const result = await resolveWith(['La formación tiene 38 clases. Recibís un título oficial al terminar.']);
+    expect(result.effective.proposal.response.messages).toEqual(['La formación tiene 38 clases.']);
+  });
+
+  it('a license claim is removed; the correct negation passes untouched', async () => {
+    const bad = await resolveWith(['La formación tiene 38 clases. El diplomado de electricidad reemplaza la licencia estatal.']);
+    expect(bad.effective.proposal.response.messages).toEqual(['La formación tiene 38 clases.']);
+    const good = await resolveWith(['La formación tiene 38 clases. Da la base, no reemplaza la licencia de electricista.']);
+    expect(good.effective.proposal.response.messages).toEqual(['La formación tiene 38 clases. Da la base, no reemplaza la licencia de electricista.']);
+    expect(good.evidence.repair_attempted).toBe(false);
+  });
+
+  it.each([
+    ['Antes costaba USD 699.', '699'],
+    ['Tenemos una Beca Studyx para vos.', 'Beca'],
+  ])('699 and beca are never delivered: %s', async (sentence, needle) => {
+    const result = await resolveWith([`La formación tiene 38 clases. ${sentence}`]);
+    expect(JSON.stringify(result.effective.proposal.response)).not.toContain(needle);
+    expect(result.effective.proposal.response.messages[0]).toContain('La formación tiene 38 clases.');
+  });
+
+  it('never silences: when every sentence is invalid and no price was removed, it is still a hard rejection (single P0 fallback)', async () => {
+    await expect(resolveWith(['Recibís un título oficial.', 'Te garantizamos trabajo al terminar.']))
+      .rejects.toThrow('PLANNERLESS_PROPOSAL_REJECTED');
+  });
+
+  it('a link claim that survives the failed repair removes only the claiming bubble', async () => {
+    const lying = proposal({
+      response: { messages: ['Gracias, Lucía.', 'Te mando el link de pago ahora mismo.'], call_offer: null },
+      proposed_action: { type: 'send_payment_link', offering_code: 'maquillaje-profesional', payment_plan: 'monthly_6' },
+    });
+    const current = context();
+    current.capabilities.may_send_payment_link = false;
+    const repair = vi.fn(async (rejection: { rejection_id: string }) => generated({
+      ...lying, repair_of: { rejection_id: rejection.rejection_id, attempt: 1 },
+    }));
+    const result = await resolveAgentAPlannerlessProposalV2({
+      initial: generated(lying), context: current, repair_enabled: true, repair: repair as never,
+      rejection_id: '00000000-0000-4000-8000-0000000000b3',
+    });
+    expect(repair).toHaveBeenCalledTimes(1);
+    expect(result.effective.proposal.response.messages).toEqual(['Gracias, Lucía.']);
+    expect(result.effective.proposal.proposed_action).toEqual({ type: 'none' });
+  });
+
+  it('turn_reasoning is optional, clamped and never part of the customer copy', () => {
+    const raw = {
+      ...proposal(),
+      turn_reasoning: { phase: 'discover', customer_now: 'x'.repeat(900), already_said: '', customer_goal: 'g', next_step: 'weird' },
+    };
+    const parsed = parseAgentATurnProposalV1(raw, context());
+    expect(parsed.turn_reasoning).toMatchObject({ next_step: 'other', customer_now: 'x'.repeat(400) });
+    expect(JSON.stringify(parsed.response)).not.toContain('discover');
+    expect(parseAgentATurnProposalV1({ ...proposal() }, context()).turn_reasoning).toBeUndefined();
+  });
+});
+
+describe('natural sales regression: deterministic machinery (fixed proposals are INPUTS, not model evidence)', () => {
+  const OLDER = 'Marketing Digital te prepara para trabajar con marcas. Qué te gustaría lograr?';
+  const resumed = (customer: string) => {
+    const current = context();
+    current.turn.batch_messages = [{ id: 'm9', text: customer }];
+    current.turn.recent_turns = [
+      { id: 'a1', direction: 'outbound', content: OLDER },
+      { id: 'c1', direction: 'inbound', content: 'qué precio tiene?' },
+      { id: 'a2', direction: 'outbound', content: 'Son USD 360, en cuotas si lo preferís.' },
+      { id: 'c2', direction: 'inbound', content: 'hola, sigo interesada' },
+    ];
+    current.commercial_state.call_offer_status = 'not_offered';
+    current.commercial_state.call_preference = 'unknown';
+    return current;
+  };
+
+  it('an informative price question: the model text goes out exactly as written, with no probe, no call and no appended text', async () => {
+    const current = resumed('qué precio tiene?');
+    const initial = generated(proposal({
+      response: { messages: ['El total es USD 360, en 12 cuotas de USD 30.'], call_offer: null },
+      used_fact_ids: current.catalog.payment_plans.map(plan => plan.fact_id),
+    }));
+    const repair = vi.fn();
+    const result = await resolveAgentAPlannerlessProposalV2({ initial, context: current, repair_enabled: true, repair,
+      rejection_id: '00000000-0000-4000-8000-0000000000c1' });
+    expect(repair).not.toHaveBeenCalled();
+    expect(result.effective).toBe(initial);
+    expect(result.effective.proposal.response.messages).toEqual(['El total es USD 360, en 12 cuotas de USD 30.']);
+    expect(result.effective.proposal.response.call_offer).toBeNull();
+    expect(result.effective.proposal.proposed_action).toEqual({ type: 'none' });
+    expect(result.evidence).toMatchObject({ repair_attempted: false, repaired: false });
+  });
+
+  it('a literal repeat of an earlier (not the last) agent reply on resume gets the single repair, and the repair is used', async () => {
+    const current = resumed('hola, sigo interesada');
+    const repeated = generated(proposal({ response: { messages: [OLDER], call_offer: null }, used_fact_ids: [] }));
+    const fresh = 'Qué bueno que volviste. Seguimos con Marketing Digital?';
+    const repair = vi.fn(async rejection => generated(proposal({
+      response: { messages: [fresh], call_offer: null }, used_fact_ids: [],
+      repair_of: { rejection_id: rejection.rejection_id, attempt: 1 } })));
+    const result = await resolveAgentAPlannerlessProposalV2({ initial: repeated, context: current, repair_enabled: true, repair,
+      semantic_rejections: 'advisory', rejection_id: '00000000-0000-4000-8000-0000000000c2' });
+    expect(repair).toHaveBeenCalledTimes(1);
+    expect(result.evidence).toMatchObject({ repair_attempted: true, repaired: true });
+    expect(result.effective.proposal.response.messages).toEqual([fresh]);
+  });
+
+  it('never silences: if the repair repeats too, the safe draft is still delivered', async () => {
+    const current = resumed('hola, sigo interesada');
+    const repeated = generated(proposal({ response: { messages: [OLDER], call_offer: null }, used_fact_ids: [] }));
+    const result = await resolveAgentAPlannerlessProposalV2({ initial: repeated, context: current, repair_enabled: true,
+      repair: async rejection => generated(proposal({ response: { messages: [OLDER], call_offer: null }, used_fact_ids: [],
+        repair_of: { rejection_id: rejection.rejection_id, attempt: 1 } })),
+      semantic_rejections: 'advisory', rejection_id: '00000000-0000-4000-8000-0000000000c3' });
+    expect(result.effective.proposal.response.messages).toEqual([OLDER]);
+  });
+  it('keeps the thank-you answer after enrollment when the repaired draft cites the general facts (real golden 12 draft)', async () => {
+    const current = context();
+    current.catalog.general_facts = STUDYX_GENERAL_FACTS_V1.map(fact => ({ ...fact })) as never;
+    const real = proposal({
+      response: { messages: [
+        'Qué bueno, Ana. Ya con el acceso activo puedes entrar al campus cuando quieras y avanzar a tu ritmo con Fotografía Profesional.',
+        'Cuéntame, ya pudiste abrir el curso o tienes alguna duda con la plataforma?',
+      ], call_offer: null },
+      used_fact_ids: [NAME_FACT, 'studyx:how_it_works:v1'],
+    });
+    const repair = vi.fn(async (rejection) => generated({
+      ...real, repair_of: { rejection_id: rejection.rejection_id, attempt: 1 },
+    }));
+    const result = await resolveAgentAPlannerlessProposalV2({
+      initial: generated(real), context: current, repair_enabled: true,
+      rejection_id: '00000000-0000-4000-8000-0000000000f2', repair,
+    });
+    expect(repair.mock.calls[0]![0].rejections.map((r: { code: string }) => r.code)).not.toContain('FACT_NOT_AUTHORIZED');
+    expect(result.effective.proposal.response.messages.length).toBeGreaterThan(0);
+    expect(result.effective.proposal.response.messages.join(' ')).toContain('Cuéntame');
+  });
+
+  it('does not reject a citation of the general facts the context itself sends (golden 12 thank-you after enrollment)', async () => {
+    const current = context();
+    current.catalog.general_facts = STUDYX_GENERAL_FACTS_V1.map(fact => ({ ...fact })) as never;
+    const messages = [
+      'Qué bueno, Ana. Ya con el acceso activo puedes avanzar a tu ritmo con Fotografía Profesional.',
+      'Cuéntame, ya pudiste abrir el curso o tienes alguna duda con la plataforma?',
+    ];
+    const repair = vi.fn();
+    const result = await resolveAgentAPlannerlessProposalV2({
+      initial: generated(proposal({
+        response: { messages, call_offer: null },
+        used_fact_ids: [NAME_FACT, 'studyx:how_it_works:v1'],
+      })),
+      context: current, repair_enabled: true,
+      rejection_id: '00000000-0000-4000-8000-0000000000f1',
+      repair,
+    });
+    expect(repair).not.toHaveBeenCalled();
+    expect(result.effective.proposal.response.messages).toEqual(messages);
+  });
+});
+
+// Architect review 2026-11-05: PROGRAM_SEND_REQUIRED asks for one repair and never costs the reply.
+describe('PROGRAM_SEND_REQUIRED never silences the turn', () => {
+  const SYLLABUS = 'knowledge-source:maquillaje';
+  const withProgram = () => {
+    const current = context();
+    current.catalog.selected_offering!.facts.push({ id: SYLLABUS, kind: 'offering_syllabus', value: 'Piel, ojos y labios' });
+    current.capabilities.course_programs = { available_offering_codes: ['maquillaje-profesional'], sent_offering_codes: [] };
+    return current;
+  };
+  const contents = proposal({ response: { messages: ['Vas a ver piel, ojos y labios en 38 clases.'], call_offer: null },
+    used_fact_ids: [NAME_FACT, DURATION_FACT, SYLLABUS] });
+
+  it('asks for the action once; a repair that still omits it is delivered', async () => {
+    let repairs = 0;
+    const result = await resolveAgentAPlannerlessProposalV2({ initial: generated(contents), context: withProgram(), repair_enabled: true,
+      rejection_id: '00000000-0000-4000-8000-000000000901',
+      repair: async (rejection) => { repairs += 1;
+        expect(rejection.rejections.map((r) => r.code)).toContain('PROGRAM_SEND_REQUIRED');
+        return generated({ ...contents, repair_of: { rejection_id: rejection.rejection_id, attempt: 1 } } as AgentATurnProposalV1); } });
+    expect(repairs).toBe(1);
+    expect(result.effective.proposal.response.messages).toEqual(contents.response.messages);
+  });
+  it('a repair that proposes the material is accepted with the action', async () => {
+    const result = await resolveAgentAPlannerlessProposalV2({ initial: generated(contents), context: withProgram(), repair_enabled: true,
+      rejection_id: '00000000-0000-4000-8000-000000000902',
+      repair: async (rejection) => generated({ ...contents, proposed_action: { type: 'send_course_program', offering_code: 'maquillaje-profesional' },
+        response: { messages: ['Vas a ver piel, ojos y labios en 38 clases. Te comparto el programa completo.'], call_offer: null },
+        repair_of: { rejection_id: rejection.rejection_id, attempt: 1 } } as AgentATurnProposalV1) });
+    expect(result.effective.proposal.proposed_action).toEqual({ type: 'send_course_program', offering_code: 'maquillaje-profesional' });
+  });
+  it('without repair, a send claim without the action is salvaged into a reply, never thrown', async () => {
+    const claim = proposal({ move: { schema_version: 1, move: 'request_course_program', secondary_moves: [], vetoes: [],
+      course_reference: 'Maquillaje Profesional', confidence: 1 },
+      response: { messages: ['Te comparto el programa.', 'Vas a ver piel, ojos y labios en 38 clases.'], call_offer: null },
+      used_fact_ids: [NAME_FACT, DURATION_FACT, SYLLABUS] });
+    const result = await resolveAgentAPlannerlessProposalV2({ initial: generated(claim), context: withProgram(), repair_enabled: false,
+      rejection_id: '00000000-0000-4000-8000-000000000903', repair: async () => { throw Error('Repair is disabled'); } });
+    expect(result.effective.proposal.response.messages.join(' ')).not.toMatch(/no tengo el archivo/iu);
+    expect(result.effective.proposal.response.messages.length).toBeGreaterThan(0);
+  });
 });

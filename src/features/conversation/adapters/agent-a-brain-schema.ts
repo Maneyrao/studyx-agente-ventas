@@ -37,6 +37,34 @@ const AgentAFactSchema = z.object({
   value: z.string().trim().min(1).max(1_200),
 }).strict();
 
+const SalesProfileItemV1Schema = z.object({
+  key: z.string().regex(/^[a-z][a-z0-9_]{0,63}$/u),
+  value: z.string().trim().min(1).max(512),
+  source_quote: z.string().trim().min(1).max(400),
+}).strict();
+const SalesProfileItemsSchema = z.array(SalesProfileItemV1Schema).max(4);
+/** Claim-level: persisted model memories, latest per (type, key). */
+const SalesProfileMemoriesV1Schema = z.object({
+  objective: SalesProfileItemsSchema, experience: SalesProfileItemsSchema,
+  tentative_interest: SalesProfileItemsSchema, objections: SalesProfileItemsSchema,
+  constraints: SalesProfileItemsSchema, preferences: SalesProfileItemsSchema,
+  timeline: SalesProfileItemsSchema, contact_preference: SalesProfileItemsSchema,
+}).strict();
+/** What the model sees in commercial_state: persisted data only, never agent phrases. */
+const SalesProfileV1Schema = SalesProfileMemoriesV1Schema.extend({
+  selected_course: z.object({ code: IdentifierSchema, name: z.string().trim().min(1).max(240) }).strict().nullable(),
+  call_preference: z.enum(['chat', 'call', 'unknown']),
+  active_promotion: z.object({
+    promotion_code: IdentifierSchema, interest_offering_code: IdentifierSchema,
+    status: z.enum(['none', 'offer_available', 'accepted', 'expired', 'cancelled']),
+  }).strict().nullable(),
+  bonus_courses: z.array(z.object({ code: IdentifierSchema, name: z.string().trim().min(1).max(240),
+    position: z.union([z.literal(1), z.literal(2), z.literal(3)]) }).strict()).max(3),
+  missing_data: z.array(z.enum(['nombre', 'apellido', 'correo', 'telefono'])).max(4),
+  next_allowed_effects: z.array(z.string().min(1).max(64)).max(16),
+  retention_used: z.boolean().nullable(),
+}).strict();
+
 export const AgentAContextV1Schema = z.object({
   schema_version: z.literal(1),
   turn: z.object({
@@ -73,6 +101,7 @@ export const AgentAContextV1Schema = z.object({
     instagram: z.string().trim().min(1).max(120).nullable(),
   }).strict().nullable(),
   commercial_state: z.object({
+    sales_profile: SalesProfileV1Schema.optional(),
     promotion: z.object({
       promotion_code: IdentifierSchema,
       promotion_cycle_id: IdentifierSchema,
@@ -85,6 +114,10 @@ export const AgentAContextV1Schema = z.object({
         offered_at: z.string().min(1),
         position: z.union([z.literal(1), z.literal(2), z.literal(3)]),
       }).strict()).max(3),
+      /** Paid course + delivered bonuses now. "N cursos al precio de uno" must use the right N. */
+      courses_in_package: z.number().int().min(1).max(4).optional(),
+      /** The count if the next bonus is offered in this turn (paid + bonuses + 1). */
+      courses_in_package_after_next_offer: z.number().int().min(2).max(4).optional(),
       accepted_at: z.string().min(1).nullable(),
     }).strict().nullable().optional(),
     selected_offering_code: IdentifierSchema.nullable(),
@@ -96,6 +129,7 @@ export const AgentAContextV1Schema = z.object({
     active_call: z.object({ call_id: z.string().uuid(), status: z.string() }).strict().nullable().optional(),
     last_call_result: z.object({
       call_id: z.string().uuid(), result: z.string().nullable(), ended_at: z.string(),
+      announced_to_customer: z.boolean().optional(),
     }).strict().nullable().optional(),
     awaiting_reply: z.enum(['none', 'area_choice', 'course_choice', 'call_or_chat', 'payment_plan', 'payment_confirmation', 'contact_details']),
     payment_reported: z.boolean(),
@@ -127,6 +161,12 @@ export const AgentAContextV1Schema = z.object({
       fact_id: IdentifierSchema,
       display_name: z.string().trim().min(1).max(240),
     }).strict()).max(24),
+    // Manual-verified facts valid for every course (benefits, how it works).
+    general_facts: z.array(AgentAFactSchema).max(4).optional(),
+    bonus_candidate_fichas: z.array(z.object({
+      code: IdentifierSchema,
+      fact: AgentAFactSchema,
+    }).strict()).max(8).optional(),
     candidate_offerings: z.array(z.object({
       code: IdentifierSchema,
       fact_id: IdentifierSchema,
@@ -160,6 +200,14 @@ export const AgentAContextV1Schema = z.object({
     may_present_payment_options: z.boolean(),
     may_send_payment_link: z.boolean(),
     authorized_payment_plan: PaymentPlanSchema.nullable(),
+    course_programs: z.object({
+      available_offering_codes: z.array(IdentifierSchema).max(60),
+      sent_offering_codes: z.array(IdentifierSchema).max(60),
+      /** What goes out per available course: the PDF kind (official programme or manual ficha) and the course image. */
+      materials: z.array(z.object({
+        offering_code: IdentifierSchema, has_program_pdf: z.boolean(), has_ficha_pdf: z.boolean(), has_image: z.boolean(),
+      }).strict()).max(60).optional(),
+    }).strict().optional(),
     course_bonus: z.object({
       enabled: z.boolean().optional(),
       may_offer_bonus: z.boolean().optional(),
@@ -168,6 +216,9 @@ export const AgentAContextV1Schema = z.object({
       accepted_at: z.string().nullable().optional(),
       package_status: z.enum(['pending_review','offered','accepted','cancelled','expired','attached']).nullable().optional(),
       delivered_bonus_offerings: z.array(z.object({code:IdentifierSchema,display_name:z.string().trim().min(1).max(240),position:z.number().int().min(1).max(3)}).strict()).max(3).optional(),
+      sales_flow: z.object({retention_used:z.boolean(),promo_expires_at:z.string().nullable()}).strict().optional(),
+      bonus_candidates: z.array(z.object({code:IdentifierSchema,display_name:z.string().trim().min(1).max(240)}).strict()).max(60).optional(),
+      rule_bonus: z.object({paid_offering_code:IdentifierSchema,paid_display_name:z.string().trim().min(1).max(240),bonus_offering_code:IdentifierSchema,display_name:z.string().trim().min(1).max(240),position:z.number().int().min(1).max(3),source:z.literal('customer_request').optional(),replaces_offering_code:IdentifierSchema.optional(),replaces_display_name:z.string().trim().min(1).max(240).optional()}).strict().nullable().optional(),
       max_bonus_courses: z.union([z.literal(1), z.literal(2), z.literal(3)]).optional(),
       status: z.enum([
         'unavailable', 'needs_interest', 'not_eligible', 'checkin_available',
@@ -225,6 +276,10 @@ export const AgentAProposedActionSchema = z.discriminatedUnion('type', [
     type: z.literal('offer_course_bonus'),
     bonus_offering_code: IdentifierSchema,
     interest_offering_code: IdentifierSchema,
+    motive: z.object({
+      kind: z.enum(['price_objection', 'promotion_rejection', 'better_promotion_request', 'purchase_decline']),
+      quote: z.string().trim().min(1).max(2_048),
+    }).strict(),
   }).strict(),
   z.object({
     type: z.literal('accept_promotion'),
@@ -232,6 +287,10 @@ export const AgentAProposedActionSchema = z.discriminatedUnion('type', [
     interest_offering_code: IdentifierSchema.optional(),
     promotion_cycle_id: IdentifierSchema.optional(),
     offer_version: z.number().int().min(1).optional(),
+  }).strict(),
+  z.object({
+    type: z.literal('send_course_program'),
+    offering_code: IdentifierSchema,
   }).strict(),
   z.object({
     type: z.literal('send_test_payment_link'),
@@ -255,6 +314,21 @@ const MemoryCandidateSchema = z.object({
   value: z.string().trim().min(1).max(512),
   source_quote: z.string().trim().min(1).max(2_048),
   confidence: z.number().min(0).max(1),
+}).strict();
+
+/**
+ * Internal reasoning of the turn. Never sent to the customer, never validated
+ * beyond shape/size and never used by any rule: it exists only as evidence.
+ */
+export const TURN_REASONING_NEXT_STEPS_V1 = [
+  'discover', 'value', 'objection', 'close', 'promo', 'call', 'checkout', 'post_sale', 'other',
+] as const;
+export const TurnReasoningV1Schema = z.object({
+  phase: z.string().max(120),
+  customer_now: z.string().max(400),
+  already_said: z.string().max(400),
+  customer_goal: z.string().max(400),
+  next_step: z.enum(TURN_REASONING_NEXT_STEPS_V1),
 }).strict();
 
 export const AgentATurnProposalV1Schema = z.object({
@@ -287,6 +361,7 @@ export const AgentATurnProposalV1Schema = z.object({
     attempt: z.literal(1),
   }).strict().nullable().default(null),
   memory_candidates: z.array(MemoryCandidateSchema).max(10),
+  turn_reasoning: TurnReasoningV1Schema.optional(),
 }).strict().superRefine((value, context) => {
   for (const [index, request] of (value.profile_requests ?? []).entries()) {
     if (request.message_index >= value.response.messages.length) {

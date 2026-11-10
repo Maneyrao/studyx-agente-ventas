@@ -5,6 +5,20 @@ import { validateCourseMentionsV1 } from '@/shared/conversation/course-mentions'
 const catalog=[{code:'paid',display_name:'Fotografía Profesional'},{code:'short',display_name:'Community Manager'},{code:'long',display_name:'Community Manager Avanzado'}];
 const base={messages:['Fotografía Profesional'],catalog,paid_offering_code:'paid',delivered_bonus_offering_codes:[]};
 describe('canonical course roles (authority prompt:123,129; bonus spec:59-71)',()=>{
+  it('uses a current canonical conversational focus only for paid mentions when durable purchase is absent',()=>{
+    expect(validateCourseMentionsV1({...base,paid_offering_code:null,paid_mention_offering_code:'short',
+      messages:['Community Manager'],course_mentions:[{offering_code:'short',role:'paid'}]}).violations).toEqual([]);
+  });
+  it('never lets conversational paid identity replace durable identity, create bonus authority or authorize inactive codes',()=>{
+    const contextual={...base,paid_offering_code:null,paid_mention_offering_code:'paid'};
+    expect(validateCourseMentionsV1({...base,paid_mention_offering_code:'short',messages:['Community Manager'],
+      course_mentions:[{offering_code:'short',role:'paid'}]}).violations).toMatchObject([{subject:'course_mentions:paid_mismatch:short'}]);
+    expect(validateCourseMentionsV1({...contextual,messages:['Community Manager'],course_mentions:[{offering_code:'short',role:'bonus'}]}).violations)
+      .toMatchObject([{subject:'forbidden_promise'}]);
+    expect(validateCourseMentionsV1({...contextual,messages:['Community Manager'],course_mentions:[{offering_code:'short',role:'bonus'}],
+      authorized_bonus_action:{paid_offering_code:'paid',bonus_offering_code:'short'}}).violations).toMatchObject([{subject:'forbidden_promise'}]);
+    expect(validateCourseMentionsV1({...contextual,catalog:[],course_mentions:[{offering_code:'paid',role:'paid'}]}).violations.length).toBeGreaterThan(0);
+  });
   it('allows legacy primary only and never infers a role for another exact named course',()=>{
     expect(validateCourseMentionsV1(base).violations).toEqual([]);
     expect(validateCourseMentionsV1({...base,messages:['Community Manager']})).toMatchObject({violations:[{code:'COURSE_ROLE_UNDECLARED'}]});
@@ -57,9 +71,7 @@ describe('canonical course roles (authority prompt:123,129; bonus spec:59-71)',(
       {...base,messages:['Community Manager'],course_mentions:[{offering_code:longCode,role:'paid' as const},{offering_code:longCode,role:'alternative' as const}]},
       {...base,course_mentions:[{offering_code:'invalid/code',role:'alternative' as const}]},
       {...base,course_mentions:[{offering_code:'short',role:'not_a_role' as never}]},
-      {...base,messages:['Community Manager'],course_mentions:[{offering_code:'short',role:'bonus' as const}],ladder:{eligible:false,
-        observed_price_objection_count:2,required_price_objection_count:3 as const,call_invitation_status:'not_offered' as const,
-        call_offer_count:0,may_offer_call:true,missing_steps:['recorded_price_objections','call_invitation'] as const}},
+      {...base,messages:['Community Manager'],course_mentions:[{offering_code:'short',role:'bonus' as const}]},
     ];
     for(const value of inputs) {
       const rejections=validateCourseMentionsV1(value).violations;
@@ -71,10 +83,8 @@ describe('canonical course roles (authority prompt:123,129; bonus spec:59-71)',(
       expect(rejections.every(reason=>reason.subject.length<=160 && !reason.subject.includes(','))).toBe(true);
     }
   });
-  it('returns factual ladder metadata when an effectless bonus skips missing prerequisites',()=>{
-    const result=validateCourseMentionsV1({...base,messages:['Community Manager'],course_mentions:[{offering_code:'short',role:'bonus'}],
-      ladder:{eligible:false,observed_price_objection_count:2,required_price_objection_count:3,call_invitation_status:'not_offered',call_offer_count:0,may_offer_call:true,missing_steps:['recorded_price_objections','call_invitation']}});
-    expect(result.violations.map(v=>v.subject)).toContain('direct_bonus:ladder_step_pending');
-    expect(result.violations.map(v=>v.subject)).toContain('bonus_ladder:missing:call_invitation');
+  it('rejects an effectless bonus mention as a forbidden promise',()=>{
+    const result=validateCourseMentionsV1({...base,messages:['Community Manager'],course_mentions:[{offering_code:'short',role:'bonus'}]});
+    expect(result.violations.map(v=>v.subject)).toContain('forbidden_promise');
   });
 });

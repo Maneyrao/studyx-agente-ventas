@@ -40,6 +40,8 @@ export interface WorkflowTurnInputV1 {
   readonly externalMessageId?: string;
   readonly occurredAt?: string;
   readonly providerMode?: 'live' | 'fixture';
+  /** Evaluation-only provider boundary. Never enabled by production code. */
+  readonly syntheticCallDispatch?: 'provider_accepted';
 }
 
 export interface WorkflowTurnEvidenceV1 {
@@ -67,6 +69,10 @@ export interface WorkflowTurnEvidenceV1 {
   };
   /** Texto que quedó autorizado y salió por el cliente de entrega. */
   readonly authorizedMessages: readonly string[];
+  /** Official-programme documents handed to the delivery client (`type: 'file'`). */
+  readonly documentMessages: readonly { readonly fileUrl: string; readonly filename: string | null }[];
+  /** Course images handed to the delivery client (`type: 'image'`). */
+  readonly imageMessages: readonly { readonly imageUrl: string }[];
   readonly steps: readonly string[];
   readonly actions: readonly { readonly name: string; readonly ok: boolean }[];
   readonly status: string | null;
@@ -129,6 +135,8 @@ async function executeWorkflowTurnV1(
   if (!shared) resetRecordedActionInvocationsV1();
   const steps: string[] = [];
   const authorizedMessages: string[] = [];
+  const documentMessages: Array<{ fileUrl: string; filename: string | null }> = [];
+  const imageMessages: Array<{ imageUrl: string }> = [];
   const adapterCaptures: WorkflowAdapterCaptureV1[] = [];
   const httpExchanges = shared?.httpExchanges ?? [];
   const workflowEvents = shared?.workflowEvents ?? [];
@@ -148,7 +156,9 @@ async function executeWorkflowTurnV1(
   const originalFetch = globalThis.fetch;
   const originalConsoleInfo = console.info;
   if (!shared) {
-    globalThis.fetch = observeWorkflowFetchV1(originalFetch, httpExchanges, apiUrl.origin);
+    globalThis.fetch = observeWorkflowFetchV1(originalFetch, httpExchanges, apiUrl.origin, {
+      ...(turn.syntheticCallDispatch ? { syntheticCallDispatch: turn.syntheticCallDispatch } : {}),
+    });
     console.info = observeWorkflowConsoleInfoV1(originalConsoleInfo, traceId, workflowEvents);
   }
 
@@ -211,12 +221,17 @@ async function executeWorkflowTurnV1(
       client: {
         async createMessage(message: {
           conversationId?: string;
-          payload?: { text?: string };
+          type?: string;
+          payload?: { text?: string; fileUrl?: string; filename?: string; imageUrl?: string };
           tags?: { studyxOutboundId?: string; studyxTraceId?: string };
         }) {
           // Se captura DESPUÉS de autorización y commit: es el texto que el
           // cliente habría recibido, no la propuesta del modelo.
           const providerMessageId = randomUUID();
+          if (message.type === 'image' && message.payload?.imageUrl) imageMessages.push({ imageUrl: message.payload.imageUrl });
+          if (message.type === 'file' && message.payload?.fileUrl) {
+            documentMessages.push({ fileUrl: message.payload.fileUrl, filename: message.payload.filename ?? null });
+          }
           if (message.payload?.text) {
             authorizedMessages.push(message.payload.text);
             adapterCaptures.push({
@@ -278,6 +293,8 @@ async function executeWorkflowTurnV1(
       advisorName: configuration.agentAAdvisorName,
     },
     authorizedMessages,
+    documentMessages,
+    imageMessages,
     steps,
     actions,
     status,
@@ -307,6 +324,7 @@ export async function runWorkflowBurstV1(input: {
   readonly phoneE164: string;
   readonly messages: readonly { readonly text: string; readonly delayMs: number }[];
   readonly providerMode?: 'live' | 'fixture';
+  readonly syntheticCallDispatch?: 'provider_accepted';
 }): Promise<WorkflowBurstEvidenceV1> {
   if (input.messages.length < 2 || input.messages.some((message) => (
     !message.text.trim() || !Number.isSafeInteger(message.delayMs) || message.delayMs < 0
@@ -318,7 +336,9 @@ export async function runWorkflowBurstV1(input: {
   const originalFetch = globalThis.fetch;
   const originalConsoleInfo = console.info;
   resetRecordedActionInvocationsV1();
-  globalThis.fetch = observeWorkflowFetchV1(originalFetch, shared.httpExchanges, apiUrl.origin);
+  globalThis.fetch = observeWorkflowFetchV1(originalFetch, shared.httpExchanges, apiUrl.origin, {
+    ...(input.syntheticCallDispatch ? { syntheticCallDispatch: input.syntheticCallDispatch } : {}),
+  });
   // Nesting the existing observer once per trace keeps its exact filtering
   // behavior while allowing all concurrent workflow logs into one capture.
   console.info = traceIds.reduce<Console['info']>(
@@ -338,6 +358,7 @@ export async function runWorkflowBurstV1(input: {
         phoneE164: input.phoneE164,
         text: message.text,
         providerMode: input.providerMode,
+        ...(input.syntheticCallDispatch ? { syntheticCallDispatch: input.syntheticCallDispatch } : {}),
       }, shared, traceIds[index]);
     }));
   } finally {
@@ -368,6 +389,8 @@ export async function runWorkflowBurstV1(input: {
     httpExchanges: shared.httpExchanges,
     workflowEvents: shared.workflowEvents,
     authorizedMessages: invocations.flatMap((invocation) => invocation.authorizedMessages),
+    documentMessages: invocations.flatMap((invocation) => invocation.documentMessages),
+    imageMessages: invocations.flatMap((invocation) => invocation.imageMessages),
     steps: invocations.flatMap((invocation) => invocation.steps),
     actions,
     elapsedMs: Date.now() - startedAt,

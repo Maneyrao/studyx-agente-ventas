@@ -8,7 +8,8 @@ export type CourseLogisticsFactV1 =
   | 'class_frequency'
   | 'unrestricted_access'
   | 'self_paced'
-  | 'remote_location';
+  | 'remote_location'
+  | 'fixed_schedule';
 
 const COURSE_LOGISTICS_PATTERNS: Readonly<Record<CourseLogisticsFactV1, RegExp>> = {
   access_24_7: /\b24\s*\/\s*7\b/u,
@@ -18,7 +19,9 @@ const COURSE_LOGISTICS_PATTERNS: Readonly<Record<CourseLogisticsFactV1, RegExp>>
   recorded_classes: /\b(?:clases?\s+en\s+vivo[^.!?\n]{0,48})?(?:queda|quedan)\s+grabad[ao]s?\b|\bclases?\s+grabad[ao]s?\b/u,
   class_frequency: /\bclases?[^.!?\n]{0,32}\b(?:semanal(?:es)?|cada\s+semana)\b|\b(?:semanal(?:es)?|cada\s+semana)\b[^.!?\n]{0,32}\bclases?\b/u,
   unrestricted_access: /\b(?:acceso|plataforma|acced(?:e|er|es|en)|entr(?:a|ar|as))\b[^.!?\n]{0,48}\b(?:cuando\s+quieras|a\s+cualquier\s+hora|cuando\s+te\s+quede\s+comodo)\b/u,
-  self_paced: /\ba\s+tu\s+ritmo\b/u,
+  self_paced: /\ba\s+(?:tu|su)\s+ritmo\b/u,
+  // A concrete weekday or clock time is never an authorized general fact.
+  fixed_schedule: /\btodos\s+los\s+(?:lunes|martes|miercoles|jueves|viernes|sabados|domingos)\b|\ba\s+las\s+\d{1,2}(?::\d{2})?\s*(?:h|hs|hrs|horas)\b/u,
   remote_location: /\b(?:desde\s+donde\s+estes|desde\s+cualquier\s+lugar)\b/u,
 };
 

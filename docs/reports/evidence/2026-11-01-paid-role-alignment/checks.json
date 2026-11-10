@@ -1,0 +1,60 @@
+{
+  "schema_version": 1,
+  "base_sha": "9d52d770eaffeccea1bb50e0df799390d16552f8",
+  "brain_version": "studyx-agent-a-brain-v149",
+  "canonical_prompt_version": "studyx-agent-a-canonical-v101",
+  "evaluator_version": "studyx-golden-semantic-delivered-v4",
+  "judge_output_schema": "studyx_golden_semantic_turn_judge_v3",
+  "unit": {
+    "passed": 4964,
+    "skipped": 17,
+    "todo": 7
+  },
+  "integration": {
+    "passed": 960,
+    "skipped": 1,
+    "database": "fresh PostgreSQL17 127.0.0.1:55434; full migrations+seed+offline embeddings"
+  },
+  "evaluator_offline": {
+    "passed": 115,
+    "skipped": 3
+  },
+  "paid_replay": {
+    "recorded_turns": 4,
+    "attempts": 12,
+    "before_paid_mismatch": 12,
+    "after_paid_mismatch": 0,
+    "negative_mutants_rejected": 8,
+    "scope": "server course-focus/role validation, not all other backend checks"
+  },
+  "judge_replay": {
+    "recorded_responses": 4,
+    "normalized_status": "FAIL",
+    "not_indeterminate": true,
+    "model_calls": 0
+  },
+  "typecheck": true,
+  "lint": true,
+  "next_build": true,
+  "adk_check": true,
+  "adk_packaging": "Previously documented local dependency limitation, not claimed as passed.",
+  "architect": "approved, no material finding pending",
+  "authority_or_scenario_requirements_changed": false,
+  "prompt_or_production_model_changed": false,
+  "model_calls_during_fix": 0,
+  "deployment": false,
+  "resolved_verification_incident": "Initial full integration959pass/1fail: exact-call persistence test ordered nullable conversation_seq; changed test to verify ID/content against authorized outbound order. Repeated fresh integration960pass. Final source also uses configured recentTurnsLimit matching claim, not a hardcoded20.",
+  "formal_acceptance": {
+    "full_suite_invocations_authorized": 1,
+    "minimum": 41,
+    "turns": 48,
+    "critical": [
+      "07",
+      "10",
+      "11",
+      "12",
+      "15"
+    ],
+    "zero_unsupported_bonus": true
+  }
+}

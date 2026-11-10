@@ -1,0 +1,136 @@
+{
+  "checked_at": "2026-11-02T03:33:19.678Z",
+  "source_sha": "b839dca186cb6699bc7a44a409d84999d8304154",
+  "backend": {
+    "url": "https://studyx-agente-ventas.vercel.app",
+    "deployment_id": "dpl_J83uzNUkJ39mDDWxK1hG4cpKsCn9",
+    "health": {
+      "status": "ok",
+      "service": "studyx-agente-ventas",
+      "timestamp": "2026-11-02T03:07:33.507Z",
+      "commit": "b839dca186cb6699bc7a44a409d84999d8304154",
+      "region": "iad1"
+    },
+    "evidence_http": {
+      "status": 200,
+      "eventId": "760a8888-0d02-461a-b30e-e684c15dc1c6",
+      "body": {
+        "recorded": true
+      }
+    },
+    "durable_evidence": [
+      {
+        "backend_sha": "b839dca186cb6699bc7a44a409d84999d8304154",
+        "kind": "incident_probe",
+        "event_key": "turn-evidence:turn:b4a6a0d9-0627-44ca-b3e5-470e1ee530c6:760a8888-0d02-461a-b30e-e684c15dc1c6"
+      }
+    ],
+    "privileges": [
+      {
+        "direct_audit_read": false,
+        "private_usage": true,
+        "evidence_append": true,
+        "anon_execute": false
+      }
+    ]
+  },
+  "botpress": {
+    "bot_id": "0d7c9ecb-4781-4c65-913d-f7e947fa14d4",
+    "deployed_at": "2026-11-02T03:08:17.497Z",
+    "submitted_bundle_sha256": "2ec89e37f012da58960c168c307f6241f4fbd15c70f06857b3d8cac8fa60d855",
+    "bundle_bytes": 24547332,
+    "remote_bundle_hash_available": false,
+    "publication_response": "HTTP 500 Unknown after code update; reconciled by independent metadata, runtime SHA and preserved configuration",
+    "observed_runtime_log": {
+      "timestamp": "2026-11-02T03:08:16.458Z",
+      "event": "studyx.release.loaded",
+      "source_base_sha": "b839dca186cb6699bc7a44a409d84999d8304154",
+      "brain_version": "studyx-agent-a-brain-v149",
+      "prompt_version": "studyx-agent-a-canonical-v101",
+      "instrumentation_sha256": "e6887c733551dc54456395426d666705f4412ad462044b96f0a0fb91e220ba1d"
+    },
+    "preserved_configuration": {
+      "integrations": true,
+      "plugins": true,
+      "configuration": true,
+      "subscriptions": true,
+      "secrets": true,
+      "states": true,
+      "events": true,
+      "actions": true,
+      "recurringEvents": true
+    },
+    "integration_count": 15,
+    "plugin_count": 2
+  },
+  "canary": {
+    "id": "wrkflow_01M6D47E62KCFX36PVF2P0ETC8",
+    "status": "completed",
+    "output": {
+      "scenario": "ack-committed-response-lost",
+      "first_send_count": 1,
+      "continuation_count": 1,
+      "report_attempts": 3,
+      "pending_suspensions": 2,
+      "first_receipt_id": "fixture-part-0",
+      "second_receipt_id": "fixture-part-1",
+      "external_sends": 0,
+      "model_calls": 0,
+      "backend_probe_before_ms": 1911,
+      "backend_probe_after_ms": 434,
+      "rejected_commit_count": 1,
+      "rejection_continuation_count": 1,
+      "rejection_reason": "AGENT_TURN_V2_REJECTED:COMMERCIAL_TRUTH_VIOLATION",
+      "rejection_subjects": [
+        "forbidden_promise"
+      ]
+    },
+    "state": {
+      "value": {
+        "firstSendCount": 1,
+        "continuationCount": 1,
+        "reportAttempts": 3,
+        "pendingSuspensions": 2,
+        "fixtureAcknowledged": true,
+        "rejectedCommitCount": 1,
+        "rejectionContinuationCount": 1
+      },
+      "location": {
+        "type": "state"
+      }
+    },
+    "callbacks": [
+      {
+        "id": "evt_01M6D499MY29WME9SRSZAE368A",
+        "type": "workflowCallback",
+        "status": "processed",
+        "created_at": "2026-11-02T03:19:12.798Z"
+      }
+    ],
+    "readback_at": "2026-11-02T03:32:48.066Z"
+  },
+  "verification": {
+    "unit_full_passed": 5008,
+    "unit_full_failed": "one ADK CLI registration timeout under load; isolated replay passed",
+    "unit_isolated_registration_passed": 1,
+    "integration_passed": 8,
+    "typescript_backend": "passed",
+    "typescript_botpress": "passed",
+    "lint": "passed",
+    "architect": "reviewed; material findings resolved",
+    "new_real_whatsapp_delivery": "pending new user message"
+  },
+  "original_attempts": {
+    "inbound_count": 2,
+    "decision_count": 0,
+    "outbound_count": 0,
+    "raw_drafts": "unavailable after prior ADK overwrite; not reconstructed",
+    "replayed": false
+  },
+  "model_calls_for_diagnostics": 0,
+  "commercial_acceptance": {
+    "score": "35/48",
+    "formal_criterion_changed": false,
+    "risk_accepted_for_development": true
+  }
+}

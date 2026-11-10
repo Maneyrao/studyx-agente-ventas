@@ -327,7 +327,7 @@ describe('canonical commercial copy parity', () => {
       area: 'Diseño',
       names: ['Decoración de Interiores', 'Paisajismo', 'AutoCAD', 'Corel Draw'],
       maxItems: 3,
-    }, 'En Diseño tenemos Decoración de Interiores, Paisajismo, AutoCAD. ¿Cuál querés revisar?'],
+    }, 'En Diseño tenemos Decoración de Interiores, Paisajismo, AutoCAD. ¿Cuál quieres revisar?'],
   ] as const)('renders identical closed %s copy in backend and Botpress', (
     _case,
     renderer,

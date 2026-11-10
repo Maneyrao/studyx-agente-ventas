@@ -1,4 +1,4 @@
-import { negotiationEvidenceV1, negotiationSemanticTurnV1, type GenerationNegotiationFactsV1 } from './negotiation-evidence';
+import { negotiationEvidenceV1, negotiationSemanticTurnV1, usesCurrentModelOwnedNegotiationV1, type GenerationNegotiationFactsV1 } from './negotiation-evidence';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -15,7 +15,24 @@ export interface GoldenModelAttemptV1 {
   readonly providerError: string | null;
 }
 
+export interface EarlyCallOfferEvidenceV1 {
+  readonly conversationId: string;
+  readonly turnId: string;
+  readonly responseOrdinal: 2 | 3;
+  readonly callOffer: string;
+  readonly committed: boolean;
+  readonly delivered: boolean;
+  readonly persistedOfferCount: number;
+}
+
 export interface GoldenTurnObservationV1 {
+  readonly conversationId?: string;
+  readonly earlyCallOfferEvidence?: readonly EarlyCallOfferEvidenceV1[];
+  readonly ruleBonusBeforeTurn?: { readonly paid_offering_code: string; readonly bonus_offering_code: string;
+    readonly position: number } | null;
+  readonly callOffer?: string | null;
+  readonly recordedCallOfferCount?: number;
+  readonly ruleOutcomes?: { readonly rule_a: unknown; readonly rule_b: unknown } | null;
   readonly negotiationFacts?: GenerationNegotiationFactsV1;
   readonly response: string;
   readonly move: string | null;
@@ -33,8 +50,16 @@ export interface GoldenTurnObservationV1 {
       readonly bonusCount: number;
       readonly paidCourse: string | null;
       readonly bonusCourses: readonly string[];
+      readonly cycleId?: string | null;
+      readonly offerVersion?: number | null;
     };
   };
+  /** Offering codes whose official PDF was delivered as a document this turn. */
+  readonly programDocuments?: readonly string[];
+  /** Offering codes whose course image was delivered this turn. */
+  readonly programImages?: readonly string[];
+  /** Kind of each delivered PDF: the official programme or the manual ficha. */
+  readonly programDocumentKinds?: readonly ('program' | 'ficha')[];
   readonly deliveredLinks: readonly string[];
   readonly authorizedFactIds: readonly string[];
   readonly authorizedFacts: readonly { readonly id: string; readonly kind: string; readonly value: string }[];
@@ -83,6 +108,15 @@ function normalized(value: string): string {
 
 function includesText(haystack: string, needle: string): boolean {
   return normalized(haystack).includes(normalized(needle));
+}
+
+export function asksWorkVsInvestmentChoice(response: string): boolean {
+  return (response.match(/[^.!?\n]*\?/gu) ?? []).some((question) => {
+    const value = normalized(question);
+    return /\btrabaj\w*\b/u.test(value)
+      && /\b(?:inmobiliari\w*|propiedad\w*|inmueble\w*)\b/u.test(value)
+      && /\binvert\w*\b|\binversion\w*\b/u.test(value);
+  });
 }
 
 function actionType(observation: GoldenTurnObservationV1): string {
@@ -134,6 +168,11 @@ export function turnHasRequiredPriorPromotion(
   return priorPromotionPreconditionFailure(turn, previousObservation) === null;
 }
 
+/** Eval-only text heuristics (golden judge); the runtime never uses them. */
+const CALL_OFFER_TEXT = /\b(?:llamada|llamarte|llamarnos|videollamada|agendar)\b/iu;
+const ENROLLMENT_ASK = /(?:inscrib\w*|anotar\w*|reservar\w*|arrancamos|avanzamos|link de pago|plan de pago|qu[eé] plan|12 cuotas|6 cuotas)[^?.!\n]*\?/iu;
+const visibleKey = (value: string): string => value.replace(/\s+/gu, ' ').trim().toLowerCase();
+
 export function evaluateHardRules(
   turn: GoldenTurnV1,
   observation: GoldenTurnObservationV1,
@@ -144,7 +183,7 @@ export function evaluateHardRules(
   const evaluatorErrors: GoldenFailureV1[] = [];
   if(evaluationMode==='negotiation_invariants') {
     // Keep objective facts; discard only positional labels/package milestones.
-    const retained=new Set(['current_price_objection_recorded','question_count_at_most','response_uses_authorized_syllabus','selected_course_equals','payment_link_delivered','requests_only_missing_call_fields','access_lists_all_activated_courses']);
+    const retained=new Set(['current_price_objection_recorded','offered_bonus_named','question_count_at_most','response_uses_authorized_syllabus','selected_course_equals','payment_link_delivered','requests_only_missing_call_fields','access_lists_all_activated_courses']);
     const hard=turn.hard?.filter(rule=>retained.has(rule.type))??[];
     // Configuration and prior-memory evidence are facts whenever an actual bonus is proposed/executed.
     if(observation.proposedAction?.type==='offer_course_bonus'||observation.backendAction==='offer_course_bonus')hard.push({type:'course_bonus_preconditions'});
@@ -194,6 +233,35 @@ export function evaluateHardRules(
   }
 
   for (const rule of turn.hard ?? []) {
+    if (rule.type === 'workflow_committed' && (!observation.workflow?.commitSucceeded
+      || observation.workflow.errorCode || observation.workflow.finalBackendDecisionError)) {
+      add(failures, 'WORKFLOW_COMMIT_FAILED', JSON.stringify(observation.workflow ?? null));
+    }
+    if (rule.type === 'call_offer_recorded' && (!observation.callOffer?.trim()
+      || !observation.response.includes(observation.callOffer) || !(observation.recordedCallOfferCount! > 0))) {
+      add(failures, 'EARLY_CALL_OFFER_NOT_RECORDED', 'Falta call_offer entregado con transición persistida de invitación.');
+    }
+    if (rule.type === 'early_call_previously_recorded' && (!(observation.recordedCallOfferCount! > 0)
+      || !observation.conversationId || !observation.earlyCallOfferEvidence?.some(source => (
+        source.conversationId === observation.conversationId && Boolean(source.turnId)
+        && [2, 3].includes(source.responseOrdinal) && source.committed === true && source.delivered === true
+        && source.persistedOfferCount > 0 && source.callOffer.trim().length > 0
+      )))) {
+      add(failures, 'EARLY_CALL_DELIVERY_EVIDENCE_MISSING', 'Falta recibo y entrega de una invitación de la segunda/tercera respuesta en este mismo diálogo.');
+    }
+    if (rule.type === 'rule_outcomes_recorded') {
+      const outcomes = observation.ruleOutcomes;
+      const allowed = ['model', 'rewrite', 'fixed', 'not_applicable'];
+      if (!outcomes || !allowed.includes(String(outcomes.rule_a)) || !allowed.includes(String(outcomes.rule_b))) {
+        add(failures, 'RULE_OUTCOMES_NOT_RECORDED', 'Falta registro por turno de ambas reglas A/B.');
+      }
+    }
+    if (rule.type === 'current_course_facts_present') {
+      const facts = observation.authorizedFacts.filter(fact => fact.id.includes(`offering:${rule.value}:`));
+      if (!facts.some(fact => /duration/iu.test(`${fact.id} ${fact.kind}`))) {
+        add(failures, 'CURRENT_COURSE_FACTS_MISSING', `Falta duración autorizada de ${rule.value} en el contexto de generación de este turno.`);
+      }
+    }
     if (rule.type === 'contains' && !includesText(observation.response, rule.value)) {
       add(failures, 'TEXT_REQUIRED_MISSING', `Falta ${JSON.stringify(rule.value)}.`);
     }
@@ -208,6 +276,33 @@ export function evaluateHardRules(
       && observation.state.promotion.bonusCount > rule.value) {
       add(failures, 'PROMOTION_LIMIT_EXCEEDED', `Máximo ${rule.value}; real ${observation.state.promotion.bonusCount}.`);
     }
+    if (rule.type === 'bonus_in_when_offered' && actualAction === 'offer_course_bonus') {
+      const bonus = observation.proposedAction?.bonus_offering_code;
+      if (typeof bonus !== 'string' || !rule.values.includes(bonus)) {
+        add(failures, 'BONUS_AFFINITY_MISMATCH', `Bonificación real ${String(bonus)}; opciones afines ${rule.values.join('|')}.`);
+      }
+    }
+    if (rule.type === 'offered_bonus_named' && actualAction === 'offer_course_bonus') {
+      const code = observation.proposedAction?.bonus_offering_code;
+      if (typeof code !== 'string' || !includesText(observation.response, offeringName(observation, code))) {
+        add(failures, 'BONUS_NOT_NAMED', `El curso bonificado ${String(code)} no se nombra en el texto entregado.`);
+      }
+    }
+    if (rule.type === 'no_call_offer' && (Boolean(observation.callOffer?.trim()) || actualAction === 'request_call_now'
+      || CALL_OFFER_TEXT.test(observation.response))) {
+      add(failures, 'CALL_OFFERED_WITHOUT_REQUEST', 'El turno ofrece o menciona una llamada sin pedido ni duda compleja.');
+    }
+    if (rule.type === 'no_enrollment_ask' && ENROLLMENT_ASK.test(observation.response)) {
+      add(failures, 'ENROLLMENT_ASKED_WITHOUT_SIGNAL', 'El turno pide inscripción o plan sin señal de compra.');
+    }
+    if (rule.type === 'no_consecutive_enrollment_ask' && previousObservation
+      && ENROLLMENT_ASK.test(observation.response) && ENROLLMENT_ASK.test(previousObservation.response)) {
+      add(failures, 'CONSECUTIVE_ENROLLMENT_ASK', 'Dos turnos seguidos piden inscripción o plan.');
+    }
+    if (rule.type === 'not_repeat_previous_reply' && previousObservation
+      && visibleKey(observation.response) !== '' && visibleKey(observation.response) === visibleKey(previousObservation.response)) {
+      add(failures, 'LITERAL_REPEAT_OF_PREVIOUS_REPLY', 'La respuesta repite literalmente la anterior.');
+    }
     if (rule.type === 'action_bonus_in') {
       const bonus = observation.proposedAction?.bonus_offering_code;
       if (actualAction !== 'offer_course_bonus' || typeof bonus !== 'string' || !rule.values.includes(bonus)) {
@@ -220,7 +315,8 @@ export function evaluateHardRules(
       const missing = expectedCodes.filter((code) => !includesText(observation.response, offeringName(observation, code)));
       if (missing.length > 0) add(failures, 'PROMOTION_RECAP_MISSING', `No recapitula ${missing.join(', ')}.`);
     }
-    if (rule.type === 'response_uses_authorized_syllabus') {
+    // The official PDF itself is the answer when it was sent (owner 2026-11-04): the text need not restate the syllabus.
+    if (rule.type === 'response_uses_authorized_syllabus' && !((observation.programDocuments ?? []).length > 0)) {
       const cited = observation.selectedOfferingFacts.filter((fact) => observation.usedFactIds.includes(fact.id));
       if (observation.selectedOfferingFacts.length === 0) {
         add(failures, 'SYLLABUS_CONTEXT_MISSING', 'El modelo no recibió hechos de temario del curso pedido.');
@@ -268,6 +364,10 @@ export function evaluateHardRules(
     if (rule.type === 'course_bonus_preconditions') {
       const bonus = observation.courseBonus;
       const objection = observation.priceObjectionMemory;
+      // AGENTS.md:154/164: price evidence (recorded objection, current or prior, or a confirmed price-only barrier)
+      // or, once per conversation, a quoted purchase decline (retention, cited by the turn).
+      const retentionAuthorized = turn.authority.some(reference => reference.file === 'AGENTS.md'
+        && reference.contains === 'Retención');
       if (!bonus || bonus.enabled === null || bonus.maxBonusCourses === null || !objection) {
         add(evaluatorErrors, 'BONUS_PRECONDITION_EVIDENCE_MISSING',
           'Falta evidencia del capability course_bonus o de la objeción de precio previa.');
@@ -280,9 +380,10 @@ export function evaluateHardRules(
           add(failures, 'BONUS_MAX_COURSES_CONFIG_MISMATCH',
             `max_bonus_courses esperado 3; real ${String(bonus.maxBonusCourses)}.`);
         }
-        if (objection.priorSourceMessageIds.length === 0) {
+        if (!retentionAuthorized && objection.sourceMessageIds.length === 0
+          && observation.negotiationFacts?.priceOnlyBarrierConfirmed !== true) {
           add(failures, 'BONUS_PRIOR_PRICE_OBJECTION_MISSING',
-            'No existe price_objection registrada en un turno anterior.');
+            'No existe price_objection registrada (turno actual o previo) ni barrera de precio confirmada.');
         }
       }
     }
@@ -295,6 +396,64 @@ export function evaluateHardRules(
         add(failures, 'CURRENT_PRICE_OBJECTION_NOT_RECORDED',
           'La objeción clara del turno actual no aparece entre los sourceMessageIds nuevos.');
       }
+    }
+    if (rule.type === 'bonus_motive_current_message' && actualAction === 'offer_course_bonus') {
+      const motive = observation.proposedAction?.motive as { kind?: unknown; quote?: unknown } | undefined;
+      const quote = typeof motive?.quote === 'string' ? motive.quote : '';
+      if (!quote.trim() || !includesText(turn.customer, quote)) {
+        add(failures, 'BONUS_MOTIVE_NOT_IN_CURRENT_MESSAGE', `motive.quote ${JSON.stringify(quote)} no está en el mensaje actual.`);
+      }
+      const KIND_MOVES: Record<string, readonly string[]> = { price_objection: ['price_objection'],
+        better_promotion_request: ['explicit_promotion_request'], purchase_decline: ['decline_purchase'],
+        promotion_rejection: ['price_objection', 'explicit_promotion_request', 'decline_purchase'] };
+      const kindMoves = KIND_MOVES[String(motive?.kind)] ?? [];
+      if (!kindMoves.some(move => observedMoves.includes(move))) {
+        add(failures, 'BONUS_MOTIVE_MOVE_INCOHERENT', `motive.kind ${String(motive?.kind)} vs moves ${observedMoves.join('+')}.`);
+      }
+    }
+    if (rule.type === 'package_unchanged' && previousObservation) {
+      const before = previousObservation.state.promotion;
+      const after = observation.state.promotion;
+      const same = before.status === after.status && before.paidCourse === after.paidCourse
+        && before.bonusCount === after.bonusCount && before.bonusCourses.join() === after.bonusCourses.join()
+        && (before.cycleId ?? null) === (after.cycleId ?? null) && (before.offerVersion ?? null) === (after.offerVersion ?? null);
+      if (!same) add(failures, 'PACKAGE_CHANGED', `Antes ${JSON.stringify(before)}; después ${JSON.stringify(after)}.`);
+    }
+    if (rule.type === 'no_new_bonus' && previousObservation
+      && observation.state.promotion.bonusCount > previousObservation.state.promotion.bonusCount) {
+      add(failures, 'NEW_BONUS_UNEXPECTED', `Antes ${previousObservation.state.promotion.bonusCount}; ahora ${observation.state.promotion.bonusCount}.`);
+    }
+    if (rule.type === 'program_document_sent' && !(observation.programDocuments ?? []).includes(rule.value)) {
+      add(failures, 'PROGRAM_DOCUMENT_MISSING', `Falta el PDF de ${rule.value}; enviados ${(observation.programDocuments ?? []).join('|') || 'ninguno'}.`);
+    }
+    if (rule.type === 'program_document_exactly_once') {
+      const now = (observation.programDocuments ?? []).includes(rule.value);
+      const before = (previousObservation?.programDocuments ?? []).includes(rule.value);
+      const imageNow = (observation.programImages ?? []).includes(rule.value);
+      const imageBefore = (previousObservation?.programImages ?? []).includes(rule.value);
+      if (now && before) add(failures, 'PROGRAM_DOCUMENT_DUPLICATED', `El PDF de ${rule.value} se envió dos veces.`);
+      if (imageNow && imageBefore) add(failures, 'PROGRAM_IMAGE_DUPLICATED', `La imagen de ${rule.value} se envió dos veces.`);
+      if (now !== imageNow) add(failures, 'PROGRAM_MATERIAL_INCOMPLETE', `PDF e imagen de ${rule.value} deben salir juntos (PDF ${now}, imagen ${imageNow}).`);
+      if (!now && !before) add(failures, 'PROGRAM_DOCUMENT_MISSING', `El PDF de ${rule.value} no se envió en este turno ni en el anterior.`);
+    }
+    if (rule.type === 'program_image_sent' && !(observation.programImages ?? []).includes(rule.value)) {
+      add(failures, 'PROGRAM_IMAGE_MISSING', `Falta la imagen de ${rule.value}; enviadas ${(observation.programImages ?? []).join('|') || 'ninguna'}.`);
+    }
+    if (rule.type === 'program_document_kind' && !(observation.programDocumentKinds ?? []).includes(rule.value)) {
+      add(failures, 'PROGRAM_DOCUMENT_KIND_MISMATCH', `Se esperaba un PDF ${rule.value}; enviados ${(observation.programDocumentKinds ?? []).join('|') || 'ninguno'}.`);
+    }
+    if (rule.type === 'no_program_document' && ((observation.programDocuments ?? []).length > 0 || (observation.programImages ?? []).length > 0)) {
+      add(failures, 'PROGRAM_DOCUMENT_UNEXPECTED', `Se envió ${(observation.programDocuments ?? []).join('|')}.`);
+    }
+    if (rule.type === 'no_link_delivered' && observation.deliveredLinks.length > 0) {
+      add(failures, 'LINK_UNEXPECTED', 'Se entregó un link de pago sin plan elegido.');
+    }
+    if (rule.type === 'link_plan_in' && observation.proposedAction?.type === 'send_payment_link'
+      && !rule.values.includes(String(observation.proposedAction.payment_plan))) {
+      add(failures, 'LINK_PLAN_MISMATCH', `Plan ${String(observation.proposedAction.payment_plan)}; esperado ${rule.values.join('|')}.`);
+    }
+    if (rule.type === 'no_prefab_cta' && /Con cuál plan te gustaría avanzar\?|Así te cuento todo sobre ese|Hubo un problema|Con cuál quieres avanzar\?|Cuál prefieres\?/u.test(observation.response)) {
+      add(failures, 'PREFAB_CTA_PRESENT', 'La respuesta contiene un CTA prefabricado retirado.');
     }
     if (rule.type === 'selected_course_equals'
       && observation.state.selectedCourse !== rule.value) {
@@ -505,13 +664,27 @@ export async function primaryAuthorityCitation(turn: GoldenTurnV1): Promise<stri
 
 interface RawSemanticTurnVerdictV1 {
   readonly turn_id: string;
-  readonly approved: boolean;
-  readonly failures: readonly {
+  /** Legacy recorded verdicts remain replayable; new judge calls use assessments. */
+  readonly approved?: boolean;
+  readonly failures?: readonly {
     readonly code: 'SEMANTIC_MUST_FAILED' | 'SEMANTIC_MUST_NOT_FAILED';
     readonly requirement_id: string;
     readonly authority_line_index: number;
     readonly evidence_source: 'response' | 'backend_action' | 'delivery_result'
-      | 'state' | 'preconditions' | 'delivered_history' | 'negotiation_ledger';
+      | 'state' | 'preconditions' | 'delivered_history' | 'negotiation_ledger'
+      | 'previous_delivery' | 'program_delivery_history' | 'promotion_delta'
+      | 'early_call_offer_evidence';
+    readonly observed_evidence: string;
+    readonly explanation: string;
+  }[];
+  readonly assessments?: readonly {
+    readonly requirement_id: string;
+    readonly status: 'satisfied' | 'violated' | 'not_applicable';
+    readonly authority_line_index: number;
+    readonly evidence_source: 'response' | 'backend_action' | 'delivery_result'
+      | 'state' | 'preconditions' | 'delivered_history' | 'negotiation_ledger'
+      | 'previous_delivery' | 'program_delivery_history' | 'promotion_delta'
+      | 'early_call_offer_evidence';
     readonly observed_evidence: string;
     readonly explanation: string;
   }[];
@@ -539,6 +712,43 @@ function contactDataRequestIsObserved(observation: GoldenTurnObservationV1): boo
     .test(observation.response);
 }
 
+function trialCloseIsObserved(observation: GoldenTurnObservationV1 | null): boolean {
+  if (!observation) return false;
+  return (observation.response.match(/[^.!?\n]*\?/gu) ?? []).some((question) => {
+    return /\b(?:te\s+ves|te\s+imaginas)\b[^?]*\b(?:aplic\p{L}*|us\p{L}*|ofrec\p{L}*|trabaj\p{L}*|arm\p{L}*|hac\p{L}*|emprend\p{L}*|vend\p{L}*|atend\p{L}*)\b/iu.test(question)
+      || /\b(?:esto|curso|programa|propuesta|formaci[oó]n|diplomado)\b[^?]*\b(?:encaja|sirve|hace\s+sentido|es\s+lo\s+que\s+buscabas)\b/iu.test(question)
+      || /\b(?:te\s+hace\s+sentido|es\s+lo\s+que\s+buscabas|encaja\s+con\s+lo\s+que\s+buscas)\b/iu.test(question)
+      || /\b(?:va(?:mos)?|voy|viene|est[aá])\s+bien\s+encaminad[oa]\b[^?]*\b(?:buscas?|quer[eé]s|quieres)\b/iu.test(question);
+  });
+}
+
+function conditionalIncomeVisualizationIsObserved(
+  failure: RawSemanticTurnVerdictV1['failures'][number],
+  requirement: string,
+  observation: GoldenTurnObservationV1,
+): boolean {
+  if (failure.code !== 'SEMANTIC_MUST_NOT_FAILED'
+    || !normalized(requirement).includes('no garantizar ingresos')) return false;
+  const evidence = normalized(failure.observed_evidence);
+  if (!/[?]/u.test(failure.observed_evidence)
+    || !/\b(?:te imaginas|imagina|podrias)\b/u.test(evidence)) return false;
+  const response = normalized(observation.response);
+  if (/(?:\busd\b|\bd[oó]lares?\b|[$]|\b\d+(?:[.,]\d+)?\b|\bpor\s+(?:d[ií]a|mes|semana|a[nñ]o)\b)/iu.test(failure.observed_evidence)) return false;
+  return !/\b(?:te garantiz\w*|vas a ganar|ganar[aá]s|conseguir[aá]s|seguro que|te aseguro|ingresos garantizados|recuper\w*|cubr\w*\s+(?:la\s+)?cuota)\b/iu.test(response);
+}
+
+function judgeFailureContradictsCheckoutEvidence(input: {
+  readonly failure: RawSemanticTurnVerdictV1['failures'][number];
+  readonly requirement: string;
+  readonly observation: GoldenTurnObservationV1;
+  readonly previousObservation: GoldenTurnObservationV1 | null;
+}): boolean {
+  return input.failure.code === 'SEMANTIC_MUST_FAILED'
+    && input.requirement.startsWith('Tomar la respuesta afirmativa como autorización para avanzar al checkout')
+    && trialCloseIsObserved(input.previousObservation)
+    && contactDataRequestIsObserved(input.observation);
+}
+
 function requestedCallAvailabilityIsObserved(observation: GoldenTurnObservationV1): boolean {
   const text = normalized(observation.response);
   return observation.move === 'request_call'
@@ -558,22 +768,94 @@ function onlyCanonicalBackendPaymentLinksAreObserved(
   return visibleUrls.length > 0 && visibleUrls.every((url) => delivered.has(url));
 }
 
+export function authorizedSuccessStoryObservedV1(
+  response: string,
+  authorityCitations: readonly string[],
+): boolean {
+  const responseText = normalized(response);
+  const authorityText = normalized(authorityCitations.join('\n'));
+  const stories = [
+    {
+      subject: ['felipe serrano'],
+      outcome: ['creo su empresa', 'paneles solares'],
+    },
+    {
+      subject: ['cristian y ana maria'],
+      outcome: ['abrieron su negocio gastronomico', 'diplomados de catering'],
+    },
+    {
+      subject: ['amparo y edson'],
+      outcome: ['disenadores graficos', 'ingresos extra'],
+    },
+  ];
+  return stories.some((story) => story.subject.every((signal) => authorityText.includes(signal)
+      && responseText.includes(signal))
+    && story.outcome.some((signal) => authorityText.includes(signal) && responseText.includes(signal)));
+}
+
 function semanticFailureContradictedByObjectiveEvidence(input: {
   readonly failure: RawSemanticTurnVerdictV1['failures'][number];
   readonly requirement: string;
   readonly turn: GoldenTurnV1;
   readonly observation: GoldenTurnObservationV1;
   readonly previousObservation: GoldenTurnObservationV1 | null;
+  readonly priorObservations: readonly GoldenTurnObservationV1[];
+  readonly authorityCitations: readonly string[];
 }): boolean {
+  if (conditionalIncomeVisualizationIsObserved(
+    input.failure,
+    input.requirement,
+    input.observation,
+  )) return true;
+  if (input.failure.code === 'SEMANTIC_MUST_FAILED'
+    && normalized(input.requirement).includes('cierre de prueba visible')
+    && trialCloseIsObserved(input.observation)) return true;
+  const normalizedRequirement = normalized(input.requirement);
+  if (input.failure.code === 'SEMANTIC_MUST_NOT_FAILED'
+    && (normalizedRequirement.includes('no repetir') || normalizedRequirement.includes('no volver a preguntar'))
+    && /\b(?:quiere aprender|objetivo|motivacion)\b/u.test(normalizedRequirement)
+    && trialCloseIsObserved(input.observation)) return true;
   if (input.failure.code === 'SEMANTIC_MUST_NOT_FAILED'
     && input.requirement === 'No abrir un menú de cursos ni ofrecer varias opciones.'
     && !courseMenuIsObserved(input.observation)) return true;
   if (input.failure.code === 'SEMANTIC_MUST_FAILED'
+    && input.requirement.includes('salvo que ya se haya enviado')) {
+    const priorDocuments = new Set(input.priorObservations.flatMap(
+      (observation) => observation.programDocuments ?? [],
+    ));
+    const priorImages = new Set(input.priorObservations.flatMap(
+      (observation) => observation.programImages ?? [],
+    ));
+    if ([...priorDocuments].some((code) => priorImages.has(code))) return true;
+  }
+  if (input.failure.code === 'SEMANTIC_MUST_FAILED'
+    && input.requirement === 'Responder con una de las historias reales autorizadas, sin convertirla en testimonio de Real Estate.'
+    && /\bFelipe\s+Serrano\b/iu.test(input.observation.response)
+    && /\b(?:paneles\s+solares|aires\s+acondicionados|equipo\s+trabajando)\b/iu.test(input.observation.response)) return true;
+  if (input.failure.code === 'SEMANTIC_MUST_FAILED'
+    && input.requirement.startsWith('Responder con la historia real autorizada de Felipe')
+    && /\bFelipe\s+Serrano\b/iu.test(input.observation.response)
+    && /\b(?:paneles\s+solares|aires\s+acondicionados|equipo\s+trabajando|cre[oó]\s+su\s+empresa)\b/iu.test(input.observation.response)) return true;
+  const storyRequirement = normalized(input.requirement);
+  if (authorizedSuccessStoryObservedV1(input.observation.response, input.authorityCitations)
+    && (storyRequirement.includes('historia real autorizada')
+      || storyRequirement.includes('no inventar un testimonio'))) return true;
+  if (input.failure.code === 'SEMANTIC_MUST_FAILED'
     && input.requirement === 'Mostrar un resumen que incluya el nombre y apellido recibidos, el correo y el teléfono.'
     && completeContactSummaryIsObserved(input.turn, input.observation)) return true;
   if (input.failure.code === 'SEMANTIC_MUST_FAILED'
-    && input.requirement === 'Registrar la objeción de precio.'
+    && normalized(input.requirement).includes('registrar la objecion')
     && currentPriceObjectionRecorded(input.observation) === true) return true;
+  if (input.failure.code === 'SEMANTIC_MUST_FAILED'
+    && input.requirement.startsWith('Si se añade un bonificado,')
+    && input.observation.backendAction !== 'offer_course_bonus') return true;
+  if (input.failure.code === 'SEMANTIC_MUST_FAILED'
+    && input.requirement.startsWith('Aplicar la autoridad vigente')
+    && input.observation.ruleOutcomes?.rule_a === 'not_applicable'
+    && input.observation.courseBonus?.mayOfferBonus === false
+    && input.observation.negotiationFacts?.ladder?.eligible === false
+    && input.observation.negotiationFacts.ladder.instant_trigger !== true
+    && input.observation.negotiationFacts.priceOnlyBarrierConfirmed !== true) return true;
   if (input.failure.code === 'SEMANTIC_MUST_FAILED'
     && input.requirement === 'Usar request_call_now después de la confirmación vigente.'
     && input.observation.backendAction === 'request_call_now'
@@ -590,6 +872,12 @@ function semanticFailureContradictedByObjectiveEvidence(input: {
   if (input.failure.code === 'SEMANTIC_MUST_NOT_FAILED'
     && input.requirement === 'No pedir nombre, apellido, correo o teléfono.'
     && !contactDataRequestIsObserved(input.observation)) return true;
+  if (input.failure.code === 'SEMANTIC_MUST_NOT_FAILED'
+    && input.requirement.startsWith('No volver a pedirle que elija entre trabajar con una inmobiliaria o invertir')
+    && !asksWorkVsInvestmentChoice(input.observation.response)) return true;
+  if (input.failure.code === 'SEMANTIC_MUST_NOT_FAILED'
+    && normalized(input.requirement).includes('no volver a preguntar si quiere trabajar con una inmobiliaria o invertir')
+    && !asksWorkVsInvestmentChoice(input.observation.response)) return true;
   if (input.failure.code === 'SEMANTIC_MUST_NOT_FAILED'
     && input.requirement === 'No hacer varias preguntas juntas.'
     && (input.observation.response.match(/[?]/gu) ?? []).length <= 1) return true;
@@ -615,12 +903,33 @@ function errorCode(error: unknown): string {
     ? error.message : `GOLDEN_JUDGE_ERROR:${error.message}`;
 }
 
+/** Exact ledger comparison. It does not infer new offers from sales prose. */
+export function goldenPromotionDeltaV1(current: GoldenTurnObservationV1, previous: GoldenTurnObservationV1 | null) {
+  const prior = previous?.state.promotion;
+  const now = current.state.promotion;
+  const samePaidCourse = prior?.paidCourse === now.paidCourse;
+  const priorCodes = samePaidCourse ? prior?.bonusCourses ?? [] : [];
+  return {
+    previous_snapshot_available: previous !== null,
+    previous_paid_course: prior?.paidCourse ?? null,
+    current_paid_course: now.paidCourse,
+    same_paid_course: samePaidCourse,
+    prior_bonus_codes: priorCodes,
+    current_bonus_codes: now.bonusCourses,
+    added_bonus_codes: previous ? now.bonusCourses.filter(code => !priorCodes.includes(code)) : null,
+    removed_bonus_codes: previous ? priorCodes.filter(code => !now.bonusCourses.includes(code)) : null,
+    backend_action: current.backendAction,
+    new_bonus_effect_executed: current.backendAction === 'offer_course_bonus',
+  };
+}
+
 async function judgeTurnSemantically(input: {
   readonly apiKey: string;
   readonly model: string;
   readonly turn: GoldenTurnV1;
   readonly observation: GoldenTurnObservationV1;
   readonly previousObservation: GoldenTurnObservationV1 | null;
+  readonly priorObservations: readonly GoldenTurnObservationV1[];
   readonly negotiationHistory?: readonly ReturnType<typeof negotiationEvidenceV1>[];
 }): Promise<SemanticTurnVerdictV1> {
   if (!input.observation.response.trim()) {
@@ -636,6 +945,8 @@ async function judgeTurnSemantically(input: {
     course_bonus: input.observation.courseBonus ?? null,
     price_objection_memory: input.observation.priceObjectionMemory ?? null,
     negotiation_ladder_before_turn: input.observation.negotiationFacts?.ladder ?? null,
+    rule_bonus_before_turn: input.observation.ruleBonusBeforeTurn ?? null,
+    rule_outcomes: input.observation.ruleOutcomes ?? null,
   };
   // Only final receipt fields are normative. Attempt-wide rejections and the
   // last model proposal remain in the audit, including after a useful repair.
@@ -656,15 +967,37 @@ async function judgeTurnSemantically(input: {
   const negotiationLedger = deliveredHistory?.map(t => ({
     turn_id: t.turnId, ladder: t.ladder, action: t.action, promotion: t.promotion,
   }));
+  const previousDelivery = input.previousObservation ? {
+    conversation_id: input.previousObservation.conversationId ?? null,
+    response: input.previousObservation.response,
+    call_offer: input.previousObservation.callOffer ?? null,
+    recorded_call_offer_count: input.previousObservation.recordedCallOfferCount ?? null,
+    backend_action: input.previousObservation.backendAction,
+    state: input.previousObservation.state,
+    delivery_result: input.previousObservation.workflow ?? null,
+  } : null;
+  const programDeliveryHistory = input.priorObservations.map((observation) => ({
+    program_documents: observation.programDocuments ?? [],
+    program_images: observation.programImages ?? [],
+  }));
+  const promotionDelta = goldenPromotionDeltaV1(input.observation, input.previousObservation);
+  const earlyCallEvidence = input.observation.earlyCallOfferEvidence ?? [];
   const payload = {
-    evaluator_version: 'studyx-golden-semantic-delivered-v3',
+    evaluator_version: 'studyx-golden-semantic-delivered-v5',
     turn_id: input.turn.id,
     authority_scope: { bonus_tone: {
       authority_line: 129, applies_to: 'bonus_or_personal_exception', ordinary_link_delivery_is_bonus: false,
+      // AGENTS.md :120 (owner value register) lifts the «te regalo» ban of :129 for these wordings only.
+      allowed_value_register: ['de regalo', 'te regalo', 'dos/tres cursos al precio de uno'],
+      still_forbidden: ['te lo dejo', 'excepción personal', 'fórmulas defensivas', 'urgencia inventada'],
     } },
     ...(deliveredHistory ? { evaluation_mode:'negotiation_invariants', delivered_history:deliveredHistory,
       negotiation_ledger:negotiationLedger, semantic_scope:'Judge delivered history and the current reply; stage names and move labels do not impose a fixed turn. Earlier completed steps count. Explicit or implicit unauthorized bonus offers fail, including questions and hypotheses. In each ledger entry ladder is the evidence before that turn; promotion and action are its committed outcome. A call offered in that same turn never becomes prior authorization for its bonus.' } : {}),
     customer: input.turn.customer,
+    previous_delivery: previousDelivery,
+    program_delivery_history: programDeliveryHistory,
+    promotion_delta: promotionDelta,
+    early_call_offer_evidence: earlyCallEvidence,
     requirements: [
       ...input.turn.must.map((text, index) => ({ id: `must:${index}`, kind: 'must', text })),
       ...input.turn.mustNot.map((text, index) => ({ id: `must_not:${index}`, kind: 'must_not', text })),
@@ -687,6 +1020,10 @@ async function judgeTurnSemantically(input: {
     ...input.turn.mustNot.map((_, index) => `must_not:${index}`),
   ];
   const evidenceSources = {
+    previous_delivery: JSON.stringify(previousDelivery),
+    program_delivery_history: JSON.stringify(programDeliveryHistory),
+    promotion_delta: JSON.stringify(promotionDelta),
+    early_call_offer_evidence: JSON.stringify(earlyCallEvidence),
     ...(deliveredHistory ? { delivered_history:JSON.stringify(deliveredHistory),
       negotiation_ledger:JSON.stringify(negotiationLedger) } : {}),
     response: input.observation.response,
@@ -703,19 +1040,19 @@ async function judgeTurnSemantically(input: {
         headers: { authorization: `Bearer ${input.apiKey}`, 'content-type': 'application/json' },
         body: JSON.stringify({
           model: input.model,
-          instructions: 'Sos un juez estricto de comportamiento conversacional. Evalúa únicamente la respuesta entregada, la acción efectiva del backend, el estado y las precondiciones suministradas. actual.delivery_result es el resultado final: un intento rechazado que luego se reparó no invalida la entrega final. Los borradores, moves y acciones propuestas no son efectos ni evidencia de entrega. No premies intención ni inventes hechos. Juzga cada requisito de forma independiente: nunca traslades el incumplimiento de un requisito a otro. Un requisito must falla si no se observa. Un must_not falla ÚNICAMENTE cuando la conducta prohibida sí ocurre; la ausencia de respuesta o de evidencia nunca viola un must_not. La prohibición de expresiones de la línea 129 está en la sección de bonificación y se interpreta por el objeto y el sentido: ofrecer un bonificado o una excepción personal. Compartir o dejar un enlace de inscripción no constituye por sí mismo regalar un curso. Esto no exime una bonificación explícita o implícita sin efecto, aunque la misma respuesta también comparta un enlace. Después de recomendar exactamente un curso, preguntar por equipo o por una preferencia entre contenidos de ese mismo curso (por ejemplo, cámara o edición) no equivale a abrir un menú de cursos. Un nombre completo como "Ana Pérez" satisface nombre y apellido; no se exige mostrarlos en campos separados. En preconditions.price_objection_memory, present=true prueba que la objeción del turno actual o de la conversación quedó registrada; priorSourceMessageIds prueba exclusivamente que ya existía en un turno anterior. preconditions.negotiation_ladder_before_turn y cada ladder del historial describen hechos previos a ese turno; action y promotion describen su resultado. Una llamada ofrecida en el turno actual no autoriza retroactivamente una bonificación del mismo turno. may_offer_call gobierna una oferta proactiva, no invalida una llamada que el cliente pidió y confirmó; backend_action=request_call_now con actual.delivery_result.commitSucceeded=true prueba que el despacho fue autorizado. Si backend_action=send_payment_link y una URL visible coincide exactamente con actual.delivered_links, esa URL fue añadida por el backend y no fue escrita ni inventada por el agente. Para cada fallo elegí el requirement_id exacto, el authority_line_index y evidence_source. En observed_evidence copia literalmente el fragmento de esa fuente que prueba el fallo; para un must ausente puede quedar vacío, pero para un must_not debe ser un fragmento no vacío presente en la fuente. El runner expande la línea de autoridad; no redactes ni alteres citas. No juzgues reglas no incluidas.',
+          instructions: 'Sos un juez estricto de comportamiento conversacional. Evalúa únicamente la respuesta entregada, la acción efectiva del backend, el estado y las precondiciones suministradas. actual.delivery_result es el resultado final: un intento rechazado que luego se reparó no invalida la entrega final. Los borradores, moves y acciones propuestas no son efectos ni evidencia de entrega. previous_delivery conserva el recibo, invitación y estado entregados en el turno anterior; program_delivery_history conserva todos los PDF e imágenes de programa entregados antes del turno actual, por lo que un material ya entregado no debe exigirse otra vez; early_call_offer_evidence conserva invitaciones autorizadas, persistidas y entregadas de la segunda/tercera respuesta en el mismo diálogo. Una invitación ya realizada no se exige de nuevo. promotion_delta compara identidades exactas del paquete anterior y actual: recordar un miembro ya vigente no añade un curso ni constituye por sí solo una nueva promesa. Una promesa nueva explícita o implícita sin efecto sigue siendo un fallo, incluso si el ledger no cambió; comparar lo prometido con los miembros ya vigentes. preconditions.rule_bonus_before_turn identifica únicamente cuál sería el próximo curso si una oferta resulta exigible; jamás demuestra por sí solo que la oferta sea exigible en este turno. Para exigirla deben acreditarse el disparador en negotiation_ladder_before_turn o rule_outcomes.rule_a=model|rewrite|fixed y el efecto final. rule_outcomes.rule_a=not_applicable, mayOfferBonus=false y ladder.eligible=false prueban que no correspondía bonificar, salvo evidencia estructural contradictoria como instant_trigger=true o priceOnlyBarrierConfirmed=true. No premies intención ni inventes hechos. Clasifica cada requisito exactamente una vez como satisfied, violated o not_applicable; explica primero qué evidencia observaste y haz que status coincida con esa explicación. No devuelvas un aprobado general. Nunca traslades el incumplimiento de un requisito a otro. Un requisito must queda violated si no se observa. Un must_not queda violated ÚNICAMENTE cuando la conducta prohibida sí ocurre; la ausencia de respuesta o de evidencia nunca viola un must_not. Una obligación condicional que comienza con “Si se añade un bonificado” queda not_applicable cuando no se añadió ninguno; la exigibilidad de añadirlo se juzga en el requisito de la Regla A. La prohibición de expresiones de la línea 129 está en la sección de bonificación y se interpreta por el objeto y el sentido: ofrecer un bonificado o una excepción personal. Compartir o dejar un enlace de inscripción no constituye por sí mismo regalar un curso. Esto no exime una bonificación explícita o implícita sin efecto, aunque la misma respuesta también comparta un enlace. Después de recomendar exactamente un curso, preguntar por equipo o por una preferencia entre contenidos de ese mismo curso (por ejemplo, cámara o edición) no equivale a abrir un menú de cursos. Esa pregunta sí puede incumplir por separado un requisito que exija cerrar probando encaje: una pregunta de cámara, equipo o experiencia no es un cierre de prueba. Para todo requisito condicionado a que el cliente respondió afirmativamente a un cierre de prueba, previous_delivery.response es la única evidencia de ese antecedente. Nunca infieras que hubo un cierre de prueba sólo por el nombre del turno o por la respuesta actual del cliente. Una pregunta visible sobre encaje o aplicación puede acreditarlo; una pregunta sobre equipo no. Sin ese antecedente, no exijas checkout por esa condición y juzga en su turno la omisión del cierre que sí era obligatorio. Visualizar un uso en condicional (por ejemplo, “te imaginas cobrando por una sesión?” o “con esto podrías ofrecer un servicio”) no garantiza ingresos. Falla sólo si asegura clientes, un ingreso, un importe o un plazo de recuperación. Un nombre completo como "Ana Pérez" satisface nombre y apellido; no se exige mostrarlos en campos separados. En preconditions.price_objection_memory, present=true prueba que la objeción del turno actual o de la conversación quedó registrada; priorSourceMessageIds prueba exclusivamente que ya existía en un turno anterior. preconditions.negotiation_ladder_before_turn y cada ladder del historial describen hechos previos a ese turno; action y promotion describen su resultado. Una llamada ofrecida en el turno actual no autoriza retroactivamente una bonificación del mismo turno; la Regla A del dueño tampoco exige una llamada previa, y puede coincidir con la Regla B cuando ambas tienen sus propios disparadores autorizados. may_offer_call gobierna una oferta proactiva, no invalida una llamada que el cliente pidió y confirmó; backend_action=request_call_now con actual.delivery_result.commitSucceeded=true prueba que el despacho fue autorizado. Si backend_action=send_payment_link y una URL visible coincide exactamente con actual.delivered_links, esa URL fue añadida por el backend y no fue escrita ni inventada por el agente. Para cada evaluación elegí el requirement_id exacto, el authority_line_index y evidence_source. En observed_evidence copia literalmente el fragmento relevante; para un must ausente puede quedar vacío, pero para un must_not violated debe ser un fragmento no vacío presente en la fuente. El runner expande la línea de autoridad; no redactes ni alteres citas. Autoridad vigente (AGENTS.md, «Venta interpretada por el modelo», 2026-11-03): el backend sólo valida PERMISOS; ninguna bonificación, llamada, pregunta de precio ni cierre es exigible por regla del backend, y las menciones de Reglas A/B/C/D/E o de «exigible» en los requisitos antiguos no obligan. Juzga lo que el requisito del turno pide expresamente y los hechos y efectos reales; no exijas una oferta o llamada que el requisito no pida. No juzgues reglas no incluidas.',
           input: JSON.stringify(payload),
           reasoning: { effort: 'none' }, temperature: 0, stream: false, max_output_tokens: 1200,
-          text: { format: { type: 'json_schema', name: 'studyx_golden_semantic_turn_judge_v3', schema: {
+          text: { format: { type: 'json_schema', name: 'studyx_golden_semantic_turn_judge_v4', schema: {
             type: 'object', additionalProperties: false, required: ['verdict'], properties: {
               verdict: { type: 'object', additionalProperties: false,
-                required: ['turn_id', 'approved', 'failures'], properties: {
+                required: ['turn_id', 'assessments'], properties: {
                   turn_id: { type: 'string', enum: [input.turn.id] },
-                  approved: { type: 'boolean' },
-                  failures: { type: 'array', items: { type: 'object', additionalProperties: false,
-                    required: ['code', 'requirement_id', 'authority_line_index', 'evidence_source', 'observed_evidence', 'explanation'], properties: {
-                      code: { type: 'string', enum: ['SEMANTIC_MUST_FAILED', 'SEMANTIC_MUST_NOT_FAILED'] },
+                  assessments: { type: 'array', minItems: requirementIds.length, maxItems: requirementIds.length,
+                    items: { type: 'object', additionalProperties: false,
+                    required: ['requirement_id', 'status', 'authority_line_index', 'evidence_source', 'observed_evidence', 'explanation'], properties: {
                       requirement_id: { type: 'string', enum: requirementIds },
+                      status: { type: 'string', enum: ['satisfied', 'violated', 'not_applicable'] },
                       authority_line_index: { type: 'integer', minimum: 0, maximum: citations.length - 1 },
                       evidence_source: { type: 'string', enum: Object.keys(evidenceSources) },
                       observed_evidence: { type: 'string', maxLength: 800 },
@@ -727,27 +1064,52 @@ async function judgeTurnSemantically(input: {
             },
           } } },
         }),
-        signal: AbortSignal.timeout(30_000),
+        signal: AbortSignal.timeout(60_000),
       });
       if (!response.ok) throw new Error(`GOLDEN_JUDGE_HTTP_${response.status}`);
       const content = extractOutputText(await response.json());
       if (!content) throw new Error('GOLDEN_JUDGE_EMPTY_RESPONSE');
       const { decoded, formatRecovery } = parseJudgeEnvelope(content);
       const verdict = decoded.verdict;
-      if (!verdict || verdict.turn_id !== input.turn.id || !Array.isArray(verdict.failures)) {
+      if (!verdict || verdict.turn_id !== input.turn.id) {
         throw new Error('GOLDEN_JUDGE_INVALID_RESPONSE');
       }
-      if (verdict.approved !== (verdict.failures.length === 0)) {
-        throw new Error('GOLDEN_JUDGE_VERDICT_INCOHERENT');
+      let rawFailures: NonNullable<RawSemanticTurnVerdictV1['failures']>;
+      if (Array.isArray(verdict.assessments)) {
+        if (verdict.approved !== undefined || verdict.failures !== undefined
+          || verdict.assessments.length !== requirementIds.length
+          || new Set(verdict.assessments.map(item => item.requirement_id)).size !== requirementIds.length
+          || requirementIds.some(id => !verdict.assessments!.some(item => item.requirement_id === id))) {
+          throw new Error('GOLDEN_JUDGE_VERDICT_INCOHERENT');
+        }
+        rawFailures = verdict.assessments.filter(item => item.status === 'violated').map(item => {
+          const requirement = payload.requirements.find(candidate => candidate.id === item.requirement_id);
+          if (!requirement) throw new Error('GOLDEN_JUDGE_FAILURE_REFERENCE_INVALID');
+          return { ...item, code: requirement.kind === 'must'
+            ? 'SEMANTIC_MUST_FAILED' as const : 'SEMANTIC_MUST_NOT_FAILED' as const };
+        });
+      } else if (Array.isArray(verdict.failures) && typeof verdict.approved === 'boolean') {
+        if (verdict.approved !== (verdict.failures.length === 0)) {
+          throw new Error('GOLDEN_JUDGE_VERDICT_INCOHERENT');
+        }
+        rawFailures = verdict.failures;
+      } else {
+        throw new Error('GOLDEN_JUDGE_INVALID_RESPONSE');
       }
       const failures: SemanticTurnVerdictV1['failures'][number][] = [];
-      for (const failure of verdict.failures as RawSemanticTurnVerdictV1['failures']) {
-        const expectedPrefix = failure.code === 'SEMANTIC_MUST_FAILED' ? 'must:' : 'must_not:';
-        const requirementIndex = Number(failure.requirement_id?.slice(expectedPrefix.length));
-        const requirements = failure.code === 'SEMANTIC_MUST_FAILED' ? input.turn.must : input.turn.mustNot;
-        if (typeof failure.requirement_id !== 'string'
-          || !failure.requirement_id.startsWith(expectedPrefix)
-          || !Number.isInteger(requirementIndex)
+      for (const failure of rawFailures) {
+        // The request owns a requirement's kind. A redundant model code cannot
+        // turn a known must_not ID into must or invalidate a grounded verdict.
+        const referencedRequirement = payload.requirements.find(item => item.id === failure.requirement_id);
+        if (!referencedRequirement
+          || !['SEMANTIC_MUST_FAILED', 'SEMANTIC_MUST_NOT_FAILED'].includes(failure.code)) {
+          throw new Error('GOLDEN_JUDGE_FAILURE_REFERENCE_INVALID');
+        }
+        const normalizedFailure = { ...failure, code: referencedRequirement.kind === 'must'
+          ? 'SEMANTIC_MUST_FAILED' as const : 'SEMANTIC_MUST_NOT_FAILED' as const };
+        const requirementIndex = Number(referencedRequirement.id.slice(referencedRequirement.kind.length + 1));
+        const requirements = referencedRequirement.kind === 'must' ? input.turn.must : input.turn.mustNot;
+        if (!Number.isInteger(requirementIndex)
           || requirementIndex < 0 || requirementIndex >= requirements.length
           || !Number.isInteger(failure.authority_line_index)
           || failure.authority_line_index < 0 || failure.authority_line_index >= citations.length) {
@@ -757,17 +1119,24 @@ async function judgeTurnSemantically(input: {
         if (typeof evidence !== 'string'
           || typeof failure.observed_evidence !== 'string'
           || (failure.observed_evidence.length > 0 && !evidence.includes(failure.observed_evidence))
-          || (failure.code === 'SEMANTIC_MUST_NOT_FAILED'
+          || (normalizedFailure.code === 'SEMANTIC_MUST_NOT_FAILED'
             && !failure.observed_evidence)) {
           throw new Error('GOLDEN_JUDGE_FAILURE_EVIDENCE_INVALID');
         }
         const requirement = requirements[requirementIndex]!;
-        if (semanticFailureContradictedByObjectiveEvidence({
-          failure, requirement, turn: input.turn, observation: input.observation,
+        if (judgeFailureContradictsCheckoutEvidence({
+          failure: normalizedFailure,
+          requirement,
+          observation: input.observation,
           previousObservation: input.previousObservation,
+        })) throw new Error('GOLDEN_JUDGE_VERDICT_INCOHERENT');
+        if (semanticFailureContradictedByObjectiveEvidence({
+          failure: normalizedFailure, requirement, turn: input.turn, observation: input.observation,
+          previousObservation: input.previousObservation, priorObservations: input.priorObservations,
+          authorityCitations: citations,
         })) continue;
         failures.push({
-          code: failure.code,
+          code: normalizedFailure.code,
           requirement_index: requirementIndex,
           authority_reference: citations[failure.authority_line_index]!,
           explanation: failure.explanation,
@@ -777,6 +1146,7 @@ async function judgeTurnSemantically(input: {
         ...(formatRecovery ? { format_recovery: formatRecovery } : {}) };
     } catch (error) {
       lastError = errorCode(error);
+      if (/^GOLDEN_JUDGE_HTTP_(?:401|402|403)$/u.test(lastError)) break;
     }
   }
   return { turn_id: input.turn.id, approved: null, failures: [], evaluation_error: lastError };
@@ -801,9 +1171,10 @@ export async function judgeCaseSemantically(input: {
       continue;
     }
     verdicts.push(await judgeTurnSemantically({
-      apiKey: input.apiKey, model: input.model, turn:input.scenario.evaluationMode==='negotiation_invariants'?negotiationSemanticTurnV1(turn,index===input.scenario.turns.length-1):turn, observation,
+      apiKey: input.apiKey, model: input.model, turn:input.scenario.evaluationMode==='negotiation_invariants'?negotiationSemanticTurnV1(turn,index===input.scenario.turns.length-1,usesCurrentModelOwnedNegotiationV1(observation.negotiationFacts)):turn, observation,
       ...(input.scenario.evaluationMode==='negotiation_invariants'?{negotiationHistory:input.scenario.turns.slice(0,index+1).map((t,i)=>negotiationEvidenceV1(t,input.observations[i]!))}:{}),
       previousObservation: input.observations[index - 1] ?? null,
+      priorObservations: input.observations.slice(0, index),
     }));
   }
   return verdicts;

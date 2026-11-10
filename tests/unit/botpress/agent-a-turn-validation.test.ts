@@ -81,6 +81,16 @@ describe('validación de la propuesta del turno', () => {
     })).toBeNull();
   });
 
+  // Owner 2026-11-09: authorized commercial argument; never rejected as an unsupported fact.
+  it('acepta el argumento comercial autorizado sobre Instagram y Facebook', () => {
+    expect(validateAgentATurnProposalV1({
+      proposal: proposal({ response: { messages: ['Te cuento de Redes Informáticas. Es de lo que más se pide hoy en negocios que necesitan vender por Instagram y Facebook.'], call_offer: null } }),
+      context: context(),
+      planned_fact_ids: ['offering:redes-informaticas:name:v1'],
+      rejection_id: '00000000-0000-4000-8000-000000000001',
+    })).toBeNull();
+  });
+
   it('rechaza el link temporal mientras falten datos de contacto', () => {
     const rejection = validateAgentATurnProposalV1({
       proposal: proposal({
@@ -162,7 +172,7 @@ describe('validación de la propuesta del turno', () => {
         },
         proposed_action: {
           type: 'offer_course_bonus',
-          interest_offering_code: 'redes-informaticas',
+          motive:{kind:'price_objection',quote:'es caro'}, interest_offering_code: 'redes-informaticas',
           bonus_offering_code: 'excel-integral',
         },
         used_fact_ids: [],
@@ -1289,6 +1299,31 @@ describe('V8 respuesta repetida', () => {
     expect(rejection?.rejections.map((r) => r.code)).toContain('REPEATED_AGENT_REPLY');
   });
 
+  it('rechaza al retomar la conversación un borrador igual a una respuesta anterior que no es la última', () => {
+    // Insumo fijo para la maquinaria determinista de duplicados; no prueba conducta del modelo.
+    const older = 'Marketing Digital te prepara para trabajar con marcas. ¿Qué te gustaría lograr?';
+    const reject = (draft: string, customer: string) => validateAgentATurnProposalV1({
+      proposal: proposal({ response: { messages: [draft], call_offer: null }, used_fact_ids: [] }),
+      context: context({
+        turn: {
+          batch_messages: [{ id: 'm9', text: customer }],
+          recent_turns: [
+            { id: 'r1', direction: 'outbound', content: older },
+            { id: 'r2', direction: 'inbound', content: 'qué precio tiene?' },
+            { id: 'r3', direction: 'outbound', content: 'Son USD 360, en cuotas si querés.' },
+            { id: 'r4', direction: 'inbound', content: 'hola, sigo interesada' },
+          ],
+        },
+      } as Partial<AgentAContextV1>),
+      planned_fact_ids: [],
+      rejection_id: '11111111-1111-4111-8111-111111111111',
+    });
+    expect(reject(older, 'hola, sigo interesada')?.rejections.map((r) => r.code)).toContain('REPEATED_AGENT_REPLY');
+    expect(reject(older, 'me lo repetís?')?.rejections.map((r) => r.code) ?? []).not.toContain('REPEATED_AGENT_REPLY');
+    expect(reject('Qué bueno que volvés. ¿Seguimos con Marketing Digital?', 'hola, sigo interesada')?.rejections.map((r) => r.code) ?? [])
+      .not.toContain('REPEATED_AGENT_REPLY');
+  });
+
   it('no rechaza una respuesta que dice algo distinto', () => {
     const rejection = withPrevious(['Sin tus datos no puedo dejarte anotado.']);
     expect(rejection?.rejections.map((r) => r.code) ?? []).not.toContain('REPEATED_AGENT_REPLY');
@@ -1922,7 +1957,9 @@ describe('el guard de prerequisitos distingue pregunta de afirmación', () => {
   it('la afirmación sin respaldo canónico se sigue rechazando', () => {
     expect(rechazoDePrerequisitos('No necesitás experiencia previa para este curso.')).toBe(true);
     expect(rechazoDePrerequisitos('Podés empezar desde cero sin problema.')).toBe(true);
-    expect(rechazoDePrerequisitos('Está pensado para arrancar desde los fundamentos.')).toBe(true);
+    // Dueño 2026-11-10 (incidente A, Plomería): «desde los fundamentos» describe
+    // el temario; no afirma por sí solo «no necesitás experiencia».
+    expect(rechazoDePrerequisitos('Está pensado para arrancar desde los fundamentos.')).toBe(false);
   });
 
   it('una afirmación no se salva por venir acompañada de una pregunta', () => {
@@ -1982,5 +2019,86 @@ it('rejects a call promise even when the same message asks for missing call iden
   expect(rejection?.rejections).toContainEqual({
     code: 'UNSUPPORTED_OPERATIONAL_CLAIM',
     subject: 'call_confirmation',
+  });
+});
+
+describe('nunca contingencia por una cláusula de requisitos sin respaldo (en vivo 2026-11-02 19:23)', () => {
+  it('después de la única reparación, envía la respuesta del modelo sin esa cláusula', async () => {
+    const { resolveAgentAPlannerlessProposalV2 } = await import('../../../botpress-agent/src/lib/conversation/resolve-agent-a-plannerless');
+    const ctx = context({ turn: { batch_messages: [{ id: 'm2', text: 'y el programa?' }], recent_turns: [] } } as Partial<AgentAContextV1>);
+    const draft = (text: string, repaired = false) => ({ proposal: proposal({
+      response: { messages: [text], call_offer: null }, used_fact_ids: [],
+      ...(repaired ? { repair_of: { rejection_id: '11111111-1111-4111-8111-111111111111', attempt: 1 as const } } : {}),
+    }), provider: 'deepseek-direct' as const, model: 'deepseek-v4-flash', latency_ms: 1, attempt_count: 1 as const });
+    const result = await resolveAgentAPlannerlessProposalV2({
+      context: ctx, repair_enabled: true, rejection_id: '11111111-1111-4111-8111-111111111111',
+      initial: draft('Son clases online, pensadas para que construyas la base desde cero y lo apliques en la práctica, con material teórico incluido.'),
+      repair: async () => draft('Son clases online, pensadas para arrancar desde cero, con material teórico de apoyo.', true),
+    });
+    expect(result.effective.proposal.response.messages).toEqual(['Son clases online, con material teórico de apoyo.']);
+  });
+});
+
+// Live 2026-11-10 (Community Manager + one_time): the bot validator mirrors the
+// backend policy; a null persisted course/plan is recovered only from exact,
+// declared catalog data.
+describe('recuperación de curso y plan nulos en un pedido de link', () => {
+  const planFact = 'plan:one_time:v1';
+  const nullState = (over: Partial<AgentAContextV1['capabilities']> = {}) => context({
+    commercial_state: { ...context().commercial_state, selected_offering_code: null, selected_payment_plan: null },
+    catalog: {
+      available_offerings: [
+        { code: 'community_manager', fact_id: 'offering:community_manager:name:v1', display_name: 'Community Manager', area_code: 'marketing' },
+      ],
+      selected_offering: null,
+      areas: [],
+      candidate_offerings: [],
+      payment_plans: [{ code: 'one_time', fact_id: planFact, label: 'Pago único' }],
+    },
+    capabilities: { ...context().capabilities, may_send_payment_link: true, intake_missing: [], ...over },
+  } as Partial<AgentAContextV1>);
+  const linkProposal = (over: { course?: string; plan?: string; role?: 'paid' | 'alternative'; mentions?: boolean } = {}) => proposal({
+    move: { schema_version: 1, move: 'request_payment_link', secondary_moves: [], vetoes: [], confidence: 1,
+      payment_plan: (over.plan ?? 'one_time') } as never,
+    response: { messages: ['Dale, lo dejamos en un solo pago.'], call_offer: null },
+    proposed_action: { type: 'send_payment_link', offering_code: over.course ?? 'community_manager',
+      payment_plan: over.plan ?? 'one_time' } as never,
+    course_mentions: over.mentions === false ? [] : [{ offering_code: over.course ?? 'community_manager', role: over.role ?? 'paid' }],
+    used_fact_ids: [],
+  } as Partial<AgentATurnProposalV1>);
+  const check = (p: AgentATurnProposalV1, c: AgentAContextV1) => validateAgentATurnProposalV1({
+    proposal: p, context: c, planned_fact_ids: [], rejection_id: '00000000-0000-4000-8000-000000000001' });
+
+  it('acepta community_manager + one_time declarados cuando no hay curso ni plan persistidos', () => {
+    expect(check(linkProposal(), nullState())).toBeNull();
+  });
+
+  it('sigue rechazando un curso inventado, un curso no declarado como paid y un plan inventado', () => {
+    const invented = check(linkProposal({ course: 'curso_inventado' }), nullState());
+    expect(invented?.rejections).toContainEqual({ code: 'COURSE_NOT_RESOLVED', subject: 'course_selection' });
+    const notPaid = check(linkProposal({ role: 'alternative' }), nullState());
+    expect(notPaid?.rejections).toContainEqual({ code: 'COURSE_NOT_RESOLVED', subject: 'course_selection' });
+    const undeclared = check(linkProposal({ mentions: false }), nullState());
+    expect(undeclared?.rejections).toContainEqual({ code: 'COURSE_NOT_RESOLVED', subject: 'course_selection' });
+    const plan = check(linkProposal({ plan: 'monthly_99' }), nullState());
+    expect(plan?.rejections).toContainEqual({ code: 'PLAN_NOT_SELECTED', subject: 'payment_plan' });
+  });
+
+  it('con curso persistido la recuperación no se aplica y el curso no se rechaza', () => {
+    const persisted = nullState();
+    persisted.commercial_state.selected_payment_plan = 'monthly_12';
+    persisted.commercial_state.selected_offering_code = 'community_manager';
+    expect(check(linkProposal(), persisted)?.rejections ?? []).not.toContainEqual({ code: 'COURSE_NOT_RESOLVED', subject: 'course_selection' });
+  });
+
+  it('un pedido de link sin acción con plan canónico rellena el plan nulo; sin plan sigue rechazado', () => {
+    const noAction = (plan?: string) => proposal({
+      move: { schema_version: 1, move: 'request_payment_link', secondary_moves: [], vetoes: [], confidence: 1,
+        ...(plan ? { payment_plan: plan } : {}) } as never,
+      response: { messages: ['Dale, avanzamos.'], call_offer: null },
+      proposed_action: { type: 'none' }, used_fact_ids: [],
+    } as Partial<AgentATurnProposalV1>);
+    expect(check(noAction('one_time'), nullState())?.rejections ?? []).not.toContainEqual({ code: 'PLAN_NOT_SELECTED', subject: 'payment_plan' });
+    expect(check(noAction(), nullState())?.rejections).toContainEqual({ code: 'PLAN_NOT_SELECTED', subject: 'payment_plan' });
   });
 });

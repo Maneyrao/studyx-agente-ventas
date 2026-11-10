@@ -87,6 +87,7 @@ export interface AgentAContextV1 {
       readonly call_id: string;
       readonly result: string | null;
       readonly ended_at: string;
+      readonly announced_to_customer?: boolean;
     } | null;
     readonly awaiting_reply: 'none' | 'area_choice' | 'course_choice' | 'call_or_chat' | 'payment_plan' | 'payment_confirmation' | 'contact_details';
     readonly payment_link_request?: {
@@ -146,6 +147,8 @@ export interface AgentAContextV1 {
       readonly accepted_at?: string | null;
       readonly package_status?: 'pending_review' | 'offered' | 'accepted' | 'cancelled' | 'expired' | 'attached' | null;
       readonly delivered_bonus_offerings?: ReadonlyArray<{ readonly code: string; readonly display_name: string; readonly position: number }>;
+      readonly bonus_candidates?: ReadonlyArray<{ readonly code: string; readonly display_name: string }>;
+      readonly rule_bonus?: { readonly paid_offering_code: string; readonly paid_display_name: string; readonly bonus_offering_code: string; readonly display_name: string; readonly position: number } | null;
       readonly max_bonus_courses?: CourseBonusMaxCoursesV1;
       readonly status: 'unavailable' | 'needs_interest' | 'not_eligible' | 'checkin_available'
         | 'review_available' | 'review_pending' | 'offer_available' | 'accepted';
@@ -195,9 +198,14 @@ export type AgentAProposedActionV1 =
       readonly type: 'offer_course_bonus';
       readonly bonus_offering_code: string;
       readonly interest_offering_code: string;
+      readonly motive: { readonly kind: 'price_objection' | 'promotion_rejection' | 'better_promotion_request' | 'purchase_decline'; readonly quote: string };
     }
   | {
       /** Temporary, hidden Stripe verification checkout. Never a commercial plan. */
+      readonly type: 'send_course_program';
+      readonly offering_code: string;
+    }
+  | {
       readonly type: 'send_test_payment_link';
       readonly offering_code: string;
     }
@@ -231,6 +239,15 @@ export interface AgentATurnProposalV1 {
     readonly rejection_id: string;
     readonly attempt: 1;
   } | null;
+  /** Internal evidence only; never customer-visible and never used by any rule. */
+  readonly turn_reasoning?: {
+    readonly phase: string;
+    readonly customer_now: string;
+    readonly already_said: string;
+    readonly customer_goal: string;
+    readonly next_step: 'discover' | 'value' | 'objection' | 'close' | 'promo' | 'call'
+      | 'checkout' | 'post_sale' | 'other';
+  };
   readonly memory_candidates: ReadonlyArray<{
     readonly type: AgentAMemoryTypeV1;
     readonly key: string;

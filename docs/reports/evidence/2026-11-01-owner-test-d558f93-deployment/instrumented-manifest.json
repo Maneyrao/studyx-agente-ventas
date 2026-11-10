@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "source_base_sha": "d558f938f849422d2adc12797e4773bf95b29a0d",
+  "instrumentation_version": "studyx-release-provenance-v1",
+  "instrumentation_sha256": "28e43d66df4e5aa65594696d73640b6105794342f462bcf9c152c9143a748769",
+  "brain_version": "studyx-agent-a-brain-v149",
+  "prompt_version": "studyx-agent-a-canonical-v101",
+  "prepared_source_is_instrumented": true,
+  "changed_sources": [
+    {
+      "path": "botpress-agent/src/lib/observability/persist-turn-evidence.ts",
+      "before_sha256": "c1a85e1d95000cd56f885e02d3cf900d7900ea5102b08ed51910500387c2de93",
+      "after_sha256": "adc1a042cd8e7c8e36e5dbc17dbcbe5f41116e18a486762d71c9384f5b33c2b2"
+    },
+    {
+      "path": "botpress-agent/src/workflows/processInboundTurn.ts",
+      "before_sha256": "b72f66600332260ccec494d28816cb471815432bcdc52e3fc118088c7efdf645",
+      "after_sha256": "70e4a06675869ec29c003bbeb60e2d67f6f1f82743c4a9ede7affebf2297b719"
+    },
+    {
+      "path": "botpress-agent/src/workflows/processPostSale.ts",
+      "before_sha256": "85be77b0b15302b396afcb028da816902af1411f826f80616e5e84bc1587ee40",
+      "after_sha256": "2545699027ad6cf8bf2bab08a869f664a52e84ccb1f73b90dda257f95ae62f1e"
+    }
+  ],
+  "generated_sources": [
+    {
+      "path": "botpress-agent/src/lib/observability/release-provenance.generated.ts",
+      "sha256": "4dbb00bcb66cb7c80fde54e23aeb30defc5a1166f89163a71e883cb49f33b02c"
+    }
+  ],
+  "published": false,
+  "instrumentation_files": [
+    {
+      "path": "scripts/lib/botpress-release-provenance.mjs",
+      "sha256": "ce50dac7bfc5a42b74c947c208522d0094fcf7ed2ae508f6e56fccc79fc8215b"
+    },
+    {
+      "path": "scripts/prepare-instrumented-botpress-release.mjs",
+      "sha256": "05ad860c8246d4a7b8445b2e1b91ae4f3868fe39b5a39396ee22a2d7fc14eea9"
+    }
+  ],
+  "source_preparation_only": true,
+  "build_executed_by_preparation_tool": false,
+  "remote_operations": 0,
+  "artifact_sha256": "3d4803677e855bce013ac74fa42d070007abe09742c1f9fac3f79e9a7c51413b",
+  "artifact_bytes": 24538705,
+  "prepared_source_inventory_entries": 2627
+}

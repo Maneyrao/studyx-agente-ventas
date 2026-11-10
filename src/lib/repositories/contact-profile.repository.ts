@@ -27,7 +27,7 @@ export interface StoredContactProfileFieldV1 {
   source_seq: number | null;
   version: number;
   confirmation_evidence?: {
-    kind: 'delivered_phone_confirmation_v1';
+    kind: 'delivered_phone_confirmation_v1' | 'delivered_phone_correction_v1';
     suggested_message_id: string;
     suggested_quote: string;
     local_phone_message_id: string | null;

@@ -1,7 +1,40 @@
+import { bindCustomerCallInterpretationV1, type CustomerCallInterpretationV1 } from './customer-call-interpretation'
 import type { AgentAContextV1 } from '../../schemas/agent-a-brain'
 import { TurnRejectionCodeSchema, type TurnRejectionV1 } from '../../schemas/turn-rejection'
 import { generateDeepSeekAgentATurnProposalV1 } from './agent-a-brain'
 import { resolveAgentAPlannerlessProposalV2 } from './resolve-agent-a-plannerless'
+
+/** Deterministic payment reservation outcomes (reserve-payment-link / replace-pending-checkout). */
+const PAYMENT_RESERVATION_REJECTIONS_V1 = new Set([
+  'PROMOTION_NOT_AUTHORIZED', 'PROMOTION_SNAPSHOT_INCOMPLETE', 'PROMOTION_SNAPSHOT_NOT_SEALED',
+  'COURSE_BONUS_DISABLED', 'IDEMPOTENCY_KEY_CONFLICT', 'PAYMENT_LINK_INVALID', 'PLAN_INVALID',
+  'PAYMENT_WORKSPACE_NOT_FOUND', 'CHECKOUT_REPLACEMENT_BLOCKED', 'CHECKOUT_REPLACEMENT_NOT_FOUND',
+  'CHECKOUT_REPLACEMENT_IDENTITY_MISMATCH', 'CHECKOUT_ALREADY_SUPERSEDED', 'CHECKOUT_REPLACEMENT_CONTACT_MISSING',
+  'CHECKOUT_REPLACEMENT_UNSUPPORTED', 'CHECKOUT_REPLACEMENT_NOT_RESERVED',
+  // Technical link configuration failure (materializer): an unexecuted effect, not an unreadable turn.
+  'LINK_CONFIG_MISSING',
+])
+
+/**
+ * A payment reservation failure rejects the payment-link EFFECT with its real
+ * code. It is never an unreadable turn (incident B, owner 2026-11-10).
+ */
+export function paymentReservationRejectionSubjectsV1(reason: string): string[] | null {
+  return PAYMENT_RESERVATION_REJECTIONS_V1.has(reason)
+    ? ['send_payment_link', `payment_reservation:${reason.toLowerCase()}`]
+    : null
+}
+
+/**
+ * A rejection of the payment-link request itself or of its course/plan resolution
+ * (validation). A technical `payment_reservation:*` failure is not retried as a link.
+ */
+export function rejectsPaymentLinkRequestV1(rejection: TurnRejectionV1): boolean {
+  return rejection.rejections.some((reason) => (reason.subject === 'send_payment_link'
+    || reason.code === 'PLAN_NOT_SELECTED' || reason.code === 'COURSE_NOT_RESOLVED')
+    && !reason.subject.startsWith('payment_reservation:'))
+    && !rejection.rejections.some((reason) => reason.subject.startsWith('payment_reservation:'))
+}
 
 /** Fence every effect; the continuation's own safe move carries conversation state. */
 export function fencedAgentARequestV1() {
@@ -96,6 +129,7 @@ export async function continueAgentAAfterActionFeedbackV1(input: {
   readonly model: string
   /** Keep an independently authorized call/payment obligation alive. */
   readonly effects_allowed?: boolean
+  readonly customer_call_interpretation?: CustomerCallInterpretationV1
   readonly on_provider_request?: () => void
   readonly generate?: typeof generateDeepSeekAgentATurnProposalV1
 }) {
@@ -106,11 +140,13 @@ export async function continueAgentAAfterActionFeedbackV1(input: {
     ...input.rejection,
     authorized_alternatives: { ...input.rejection.authorized_alternatives, actions: allowedActions },
   } }
-  const generated = await (input.generate ?? generateDeepSeekAgentATurnProposalV1)({
+  const rawGenerated = await (input.generate ?? generateDeepSeekAgentATurnProposalV1)({
     context, apiKey: input.apiKey, signal: input.signal, model: input.model,
     conversation_only: input.effects_allowed !== true,
     on_provider_request: input.on_provider_request,
   })
+  const generated = input.customer_call_interpretation ? { ...rawGenerated,
+    proposal: bindCustomerCallInterpretationV1(input.customer_call_interpretation, rawGenerated.proposal, context) } : rawGenerated
   const proposedAction = generated.proposal.proposed_action.type
   const callOfferAuthorized = generated.proposal.response.call_offer == null
     || continuationCallOfferAuthorizedV1(context)
@@ -122,8 +158,7 @@ export async function continueAgentAAfterActionFeedbackV1(input: {
     rejection_id: input.rejection.rejection_id,
     repair: async () => { throw new Error('AGENT_A_CONTINUATION_REPAIR_NOT_ALLOWED') },
   })
-  // The continuation owns both wording and semantic movement. The rejected
-  // draft is evidence for the feedback only; restoring its move here would
-  // let an invalid action mutate state after Agent A chose a different path.
+  // The continuation owns wording and classification corrections; the initial
+  // customer call controls remain bound when this is a repair of the same turn.
   return resolved.effective
 }

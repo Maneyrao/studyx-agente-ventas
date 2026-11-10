@@ -74,8 +74,6 @@ export function reconcileTerminalCallStateV1(
     && canReleasePendingReply
     && state.stage !== 'payment_link_sent'
     && state.stage !== 'closed';
-  if (!completedCallOwnsAcceptedState) return state;
-
   const resumedStage = state.stage === 'handoff'
     ? state.selected_payment_plan !== null
       ? 'plan_selected' as const
@@ -83,6 +81,17 @@ export function reconcileTerminalCallStateV1(
         ? 'course_selected' as const
         : 'exploring' as const
     : state.stage;
+
+  // Orden inverso: el cliente eligió chat mientras la llamada terminaba
+  // (handoff/chat). Cuando llega el resultado terminal, el handoff ya no tiene
+  // dueño. Se conserva la elección de chat y el contador de invitaciones.
+  if (!completedCallOwnsAcceptedState) {
+    const chatChosenBeforeTerminalResult = facts.active_call === null
+      && facts.last_call_result !== null
+      && state.stage === 'handoff'
+      && state.call_preference === 'chat';
+    return chatChosenBeforeTerminalResult ? { ...state, stage: resumedStage } : state;
+  }
 
   return {
     ...state,

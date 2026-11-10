@@ -1,3 +1,5 @@
+import { resolveCatalogFromSnapshot, latestAgentTurnMessages, deriveCourseSelection, activeSessionRecentTurns,
+  currentFactualCourseReferencesV1 } from '../domain/course-focus';
 import type { ContactProfileContextV1 } from '@/shared/conversation/contact-profile-contract';
 import type { RecordedNegotiationFactsV1 } from '@/shared/conversation/negotiation-facts';
 import { evaluateTurnPolicy, type TurnPolicy } from '../domain/turn-policy';
@@ -19,7 +21,6 @@ import {
   catalogDetailRequestOmitsSubject,
   isCatalogDetailRequest,
   isCatalogRequestNeutral,
-  resolveCatalogRequest,
   type CatalogResolution,
 } from '../domain/catalog-resolution';
 import { capRetrievedItems } from '../domain/retrieved-context';
@@ -32,6 +33,8 @@ import {
   type AgentLoopModeV3,
   type AgentLoopRolloutReaderV3,
 } from '../domain/agent-loop-rollout';
+import type { SalesProfileMemoriesV1 } from '@/shared/conversation/sales-profile';
+import { claimFichasV1, type ClaimFichaV1 } from '@/shared/catalog/gabi-fichas';
 import { isTrivial } from '@/lib/heuristics/triviality';
 import { isExplicitOptOut } from '@/lib/heuristics/opt-out';
 import type {
@@ -75,6 +78,7 @@ import type { CourseBonusCapabilityV1 } from '@/features/promotions/application/
 export interface ClaimBatchDependencies {
   readonly negotiationFacts?: (input: { source_turn_id: string; contact_id: string; conversation_id: string;
     selected_offering_code: string | null }) => Promise<RecordedNegotiationFactsV1 | null>;
+  readonly salesProfile?: (input: { source_turn_id: string; contact_id: string; conversation_id: string }) => Promise<SalesProfileMemoriesV1 | null>;
   readonly store: OrchestrationStore;
   readonly embedding: QueryEmbedder;
   readonly memory: MemoryRetriever;
@@ -117,6 +121,8 @@ export interface ClaimBatchDependencies {
     contactId: string,
     conversationId: string,
   ) => Promise<CallIntakeReadinessV1>;
+  /** A delivered reply proposed a corrected phone the customer has not confirmed. */
+  readonly phoneCorrectionPending?: (input: { latest_message_id: string; call_phone: string }) => Promise<boolean>;
   /** Canonical Stripe ledger projection; customer text never supplies it. */
   readonly paymentVerification?: (contactId: string, purchase?: {
     offering_code: string | null;
@@ -130,6 +136,11 @@ export interface ClaimBatchDependencies {
     channel: 'text' | 'voice';
     selected_offering_code: string | null;
   }) => Promise<CourseBonusCapabilityV1 | null>;
+  /** Programme PDFs the agent may send and those already sent. A failure resolves to null. */
+  readonly courseProgramsCapability?: (input: { conversation_id: string }) => Promise<{
+    readonly available_offering_codes: readonly string[];
+    readonly sent_offering_codes: readonly string[];
+  } | null>;
   readonly agentABrainShadow?: boolean;
   /** Runtime rollout resolved after the batch is owned and its contact is canonical. */
   readonly agentLoopRollout?: AgentLoopRolloutReaderV3;
@@ -221,7 +232,12 @@ export interface ClaimedTurn {
   readonly contact_profile?: ContactProfileContextV1 | null;
   readonly payment_verification: PaymentVerificationV1 | null;
   readonly course_bonus_capability?: CourseBonusCapabilityV1 | null;
+  readonly course_programs?: { readonly available_offering_codes: readonly string[]; readonly sent_offering_codes: readonly string[] };
   readonly negotiation_facts?: RecordedNegotiationFactsV1 | null;
+  /** Persisted commercial memories (latest per type/key), each with its source quote. */
+  readonly sales_profile?: SalesProfileMemoriesV1 | null;
+  /** Gabi's fichas: the course in focus and the current bonus candidates only. */
+  readonly catalog_fichas?: readonly ClaimFichaV1[];
   readonly contact: {
     readonly id: string;
     readonly status: 'prospecto' | 'cliente' | 'inactivo';
@@ -512,39 +528,6 @@ function buildSalesContext(input: {
   };
 }
 
-function resolveCatalogFromSnapshot(
-  messageTexts: readonly string[],
-  catalogIndex: CatalogIndexView | null,
-  contextualMessages: readonly string[] = [],
-): CatalogResolution {
-  return resolveCatalogRequest(
-    messageTexts,
-    catalogIndex === null
-      ? null
-      : {
-          offerings: catalogIndex.offerings,
-          offerings_truncated: Math.max(0, catalogIndex.offerings_total - catalogIndex.offerings.length),
-        },
-    { contextualMessages },
-  );
-}
-
-function latestAgentTurnMessages(recentTurns: readonly RecentTurn[]): string[] {
-  const latest = recentTurns.findLast((turn) => turn.direction === 'outbound');
-  return latest ? [latest.content] : [];
-}
-
-function previousAgentTurnMessages(
-  recentTurns: readonly RecentTurn[],
-  beforeIndex: number,
-): string[] {
-  for (let index = beforeIndex - 1; index >= 0; index -= 1) {
-    const turn = recentTurns[index]!;
-    if (turn.direction === 'outbound') return [turn.content];
-  }
-  return [];
-}
-
 /** Transitional mirror for old in-process doubles/older producer revisions. */
 function indexFromBusinessContext(context: BusinessContextView): CatalogIndexView {
   return {
@@ -558,81 +541,6 @@ function indexFromBusinessContext(context: BusinessContextView): CatalogIndexVie
     })),
     injection_suspected_count: context.injection_suspected_count,
   };
-}
-
-/**
- * Course state is derived, never guessed or persisted in a second state
- * machine. The current batch wins. Only when it contains no catalog intent do
- * we walk recent inbound turns backwards; an ambiguous, missing or unavailable
- * newer request deliberately clears an older course instead of reviving it.
- */
-function deriveCourseSelection(input: {
-  current: CatalogResolution;
-  currentMessageTexts: readonly string[];
-  recentTurns: readonly RecentTurn[];
-  catalogIndex: CatalogIndexView | null;
-}): Pick<ClaimedSalesContext, 'course_of_interest' | 'offering_code'> {
-  if (input.current.kind === 'exact') {
-    return {
-      course_of_interest: input.current.displayName,
-      offering_code: input.current.offeringCode,
-    };
-  }
-  if (
-    input.current.kind !== 'no_catalog_intent'
-    || !isCatalogRequestNeutral(input.currentMessageTexts)
-    || input.catalogIndex === null
-  ) {
-    return { course_of_interest: null, offering_code: null };
-  }
-
-  for (let index = input.recentTurns.length - 1; index >= 0; index -= 1) {
-    const turn = input.recentTurns[index]!;
-    if (turn.direction !== 'inbound') continue;
-    const historical = resolveCatalogFromSnapshot(
-      [turn.content],
-      input.catalogIndex,
-      previousAgentTurnMessages(input.recentTurns, index),
-    );
-    if (historical.kind === 'no_catalog_intent') {
-      if (isCatalogRequestNeutral(turn.content)) continue;
-      return { course_of_interest: null, offering_code: null };
-    }
-    if (historical.kind === 'exact') {
-      return {
-        course_of_interest: historical.displayName,
-        offering_code: historical.offeringCode,
-      };
-    }
-    return { course_of_interest: null, offering_code: null };
-  }
-  return { course_of_interest: null, offering_code: null };
-}
-
-/**
- * Recent turns are short-term dialogue, not durable memory. Keep only the
- * contiguous suffix that belongs to the current session; summaries, selected
- * memories and commercial state remain available through their own fields.
- */
-function activeSessionRecentTurns(
-  recentTurns: readonly RecentTurn[],
-  batchMessages: readonly BatchMessage[],
-  sessionIdleMs: number,
-): RecentTurn[] {
-  const batchStartMs = Math.min(...batchMessages.map((message) => Date.parse(message.created_at)));
-  if (!Number.isFinite(batchStartMs)) return [...recentTurns];
-
-  const active: RecentTurn[] = [];
-  let nextMessageMs = batchStartMs;
-  for (let index = recentTurns.length - 1; index >= 0; index -= 1) {
-    const turn = recentTurns[index]!;
-    const turnMs = Date.parse(turn.created_at);
-    if (!Number.isFinite(turnMs) || turnMs > nextMessageMs) continue;
-    if (nextMessageMs - turnMs > sessionIdleMs) break;
-    active.unshift(turn);
-    nextMessageMs = turnMs;
-  }
-  return active;
 }
 
 export async function claimBatch(
@@ -1005,7 +913,7 @@ export async function claimBatch(
     : null;
   const detailRequest = isCatalogDetailRequest(currentMessageTexts);
   const detailRequestOmitsSubject = catalogDetailRequestOmitsSubject(currentMessageTexts);
-  const detailOfferingCode = catalog_resolution.kind === 'exact'
+  const resolvedDetailOfferingCode = catalog_resolution.kind === 'exact'
     ? catalog_resolution.offeringCode
     : detailRequest
       && detailRequestOmitsSubject
@@ -1014,10 +922,18 @@ export async function claimBatch(
       ? currentSelection.offering_code ?? persistedDetailOffering
       : null;
 
+  const factualReferences = catalog_resolution.kind === 'no_catalog_intent' || catalog_resolution.kind === 'not_found'
+    ? currentFactualCourseReferencesV1(currentMessageTexts, catalog_index, latestAgentTurnMessages(logicalRecentTurns)) : [];
+  const detailOfferingCodes = [...new Set([
+    ...(resolvedDetailOfferingCode ? [resolvedDetailOfferingCode] : []),
+    ...factualReferences.map(reference => reference.offeringCode),
+    ...(catalog_resolution.kind === 'ambiguous' ? catalog_resolution.candidateCodes : []),
+  ])].slice(0, 3);
   // The index identifies every real offering without bringing every detailed
   // payload into the prompt. Once a course is exact, load only that detail and
   // merge it into the bounded snapshot for factual answers and protected facts.
-  if (detailOfferingCode !== null && deps.business?.loadByCode) {
+  for (const detailOfferingCode of detailOfferingCodes) {
+  if (deps.business?.loadByCode) {
     counters.catalog_calls += 1;
     try {
       const detailContext = await deps.business.loadByCode(detailOfferingCode);
@@ -1045,9 +961,7 @@ export async function claimBatch(
     }
   }
   if (
-    detailOfferingCode !== null
-    && detailRequest
-    && deps.knowledge.searchByOfferingCode
+    deps.knowledge.searchByOfferingCode
   ) {
     counters.knowledge_search_calls += 1;
     const startedAt = monotonicNow();
@@ -1085,6 +999,7 @@ export async function claimBatch(
     } finally {
       timings.knowledge_search_ms += Math.max(0, monotonicNow() - startedAt);
     }
+  }
   }
   // This legacy projection is contact-scoped. A fresh conversation must not
   // inherit a selection made in an older conversation on the same contact.
@@ -1238,7 +1153,9 @@ export async function claimBatch(
     });
     return null;
   }) ?? Promise.resolve(null);
-  const [callIntakeReadiness, paymentVerification, contactProfile, courseBonusCapability, negotiationFacts] = await Promise.all([
+  const courseProgramsTask = deps.courseProgramsCapability?.({ conversation_id: claim.conversation_id! })
+    .catch(() => null) ?? Promise.resolve(null);
+  const [callIntakeReadiness, paymentVerification, contactProfile, courseBonusCapability, negotiationFacts, salesProfile, courseProgramsCapability] = await Promise.all([
     readCallIntakeReadiness(facts.contact.id, claim.conversation_id!),
     readPaymentVerification(facts.contact.id, {
       offering_code: conversationStateV1?.selected_offering_code ?? null,
@@ -1253,6 +1170,13 @@ export async function claimBatch(
         error: error instanceof Error ? error.name : 'UNKNOWN' });
       return null;
     }) ?? null,
+    deps.salesProfile?.({ source_turn_id: facts.representative_turn_id, contact_id: facts.contact.id,
+      conversation_id: claim.conversation_id! }).catch((error) => {
+      log('orchestration.claim.sales_profile_unavailable', { trace_id: input.trace_id,
+        error: error instanceof Error ? error.name : 'UNKNOWN' });
+      return null;
+    }) ?? null,
+    courseProgramsTask,
   ]);
   const contactIntake = callIntakeReadiness.intake;
   const contactIntakeMissing = missingContactIntakeFieldsV1(contactIntake);
@@ -1286,6 +1210,28 @@ export async function claimBatch(
   ) {
     deterministic_route = 'call_phone_required';
   }
+  // A proposed phone correction the customer has not confirmed: no call
+  // action and no forced call route, so Agent A's own reply asks to confirm
+  // the number (replay 25dc2ab c06: the forced route replaced that reply with
+  // «Claro. Puedes atender ahora?» and the confirmation could never land).
+  const callPhone = contactIntake.telefono;
+  if (callPhone && (salesContext.allowed_actions.includes('request_call_now')
+    || deterministic_route === 'call_direct_request' || deterministic_route === 'call_accepted_offer')) {
+    const readPending = deps.phoneCorrectionPending ?? (deps.contactIntake ? async () => false
+      : async (pendingInput: { latest_message_id: string; call_phone: string }) => {
+          const [{ hasPendingPhoneCorrectionV1 }, { sql }] = await Promise.all([
+            import('@/lib/repositories/pending-phone-correction.repository'), import('@/lib/db/orchestrator')]);
+          return hasPendingPhoneCorrectionV1(sql, pendingInput);
+        });
+    const latest = batchMessages[batchMessages.length - 1];
+    if (latest && await readPending({ latest_message_id: latest.id, call_phone: callPhone }).catch(() => false)) {
+      salesContext = { ...salesContext,
+        allowed_actions: salesContext.allowed_actions.filter((action) => action !== 'request_call_now') };
+      if (deterministic_route === 'call_direct_request' || deterministic_route === 'call_accepted_offer') {
+        deterministic_route = 'call_phone_required';
+      }
+    }
+  }
 
   return {
     outcome: 'claimed',
@@ -1311,7 +1257,15 @@ export async function claimBatch(
     ...(contactProfile ? { contact_profile: contactProfile } : {}),
     payment_verification: paymentVerification,
     course_bonus_capability: courseBonusCapability,
+    ...(courseProgramsCapability ? { course_programs: courseProgramsCapability } : {}),
     negotiation_facts: negotiationFacts,
+    sales_profile: salesProfile,
+    catalog_fichas: claimFichasV1({
+      focusCode: catalog_resolution.kind === 'exact'
+        ? catalog_resolution.offeringCode : conversationStateV1?.selected_offering_code ?? null,
+      bonusCandidateCodes: courseBonusCapability?.bonus_candidates?.map((candidate) => candidate.code) ?? [],
+      activeCodes: new Set((resolvedCatalogIndex?.offerings ?? []).map((offering) => offering.code)),
+    }),
     contact: {
       id: facts.contact.id,
       status: facts.contact.status,

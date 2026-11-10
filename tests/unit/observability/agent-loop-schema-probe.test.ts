@@ -30,6 +30,7 @@ describe('probeAgentLoopSchema', () => {
       deferred_patch_applied_on: false,
       deferred_lead_projection: false,
       deferred_lead_projection_applied_on: false,
+      turn_evidence_append: true,
     }]));
 
     expect(probe).toMatchObject({
@@ -46,6 +47,7 @@ describe('probeAgentLoopSchema', () => {
       deferred_patch_applied_on: true,
       deferred_lead_projection: true,
       deferred_lead_projection_applied_on: true,
+      turn_evidence_append: true,
     }]));
 
     expect(probe).toMatchObject({
@@ -54,5 +56,14 @@ describe('probeAgentLoopSchema', () => {
       status: 'ok',
       detail: null,
     });
+  });
+  it('refuses traffic when the runtime cannot append turn evidence', async () => {
+    const probe = await probeAgentLoopSchema(databaseRows([{
+      deferred_state_patch: true, deferred_patch_applied_on: true,
+      deferred_lead_projection: true, deferred_lead_projection_applied_on: true,
+      turn_evidence_append: false,
+    }]));
+    expect(probe.status).toBe('down');
+    expect(probe.detail).toBe('missing: turn_evidence_append');
   });
 });

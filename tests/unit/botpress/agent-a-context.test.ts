@@ -10,7 +10,6 @@ import { resolveAgentAPlannerlessProposalV2 } from '../../../botpress-agent/src/
 import { authorizeAgentTurnV2 } from '@/features/conversation/domain/agent-turn-policy-v2';
 import { createDefaultConversationStateV1 } from '@/features/conversation/domain/conversation-planner';
 import type { AgentATurnProposalV1 } from '../../../botpress-agent/src/schemas/agent-a-brain';
-import { deriveCourseBonusLadderV1 } from '@/shared/conversation/bonus-ladder';
 
 const UUID = '18a823e8-27c2-4279-9956-058f45f33cd5';
 const NOW = '2026-08-28T12:00:00.000Z';
@@ -299,6 +298,42 @@ describe('buildAgentAContextV1', () => {
     });
   });
 
+  it('starts call intake from the current direct request before call preference is persisted', () => {
+    const claimed = claimedTurn();
+    claimed.context.batch_messages[0] = {
+      ...claimed.context.batch_messages[0]!,
+      content: 'Me puedes llamar?',
+    };
+    claimed.conversation_state_v1 = {
+      ...claimed.conversation_state_v1!,
+      call_preference: 'unknown',
+      call_offer_status: 'not_offered',
+      call_offer_count: 0,
+      awaiting_reply: 'none',
+    };
+    claimed.sales_context.open_call_offer = null;
+    claimed.sales_context.allowed_actions = ['offer_call'];
+    claimed.contact_intake_missing = ['nombre', 'apellido', 'correo'];
+    claimed.call_intake_readiness = {
+      status: 'needs_input',
+      requirements: [
+        { field: 'nombre', reason: 'missing' },
+        { field: 'apellido', reason: 'missing' },
+        { field: 'correo', reason: 'missing' },
+      ],
+    };
+
+    const context = buildAgentAContextV1(claimed)!;
+
+    expect(context.capabilities.call_execution).toEqual({
+      next_step: 'collect_contact_details',
+      request_call_now_authorized: false,
+    });
+    expect(context.capabilities.required_contact_fields?.call).toEqual([
+      'nombre', 'apellido', 'correo',
+    ]);
+  });
+
   it('retires the call execution checkpoint when the customer explicitly chooses chat', () => {
     const claimed = claimedTurn();
     claimed.context.batch_messages[0] = {
@@ -357,17 +392,14 @@ describe('buildAgentAContextV1', () => {
     const projected=buildAgentAContextV1(claimed)!;
     expect(projected.commercial_state.promotion).toEqual({promotion_code:'direct-package',promotion_cycle_id:UUID,
       offer_version:1,status:status==='offered'?'offer_available':'accepted',interest_offering_code:'redes-informaticas',
-      accepted_at:status==='offered'?null:NOW,
+      accepted_at:status==='offered'?null:NOW,courses_in_package:2,courses_in_package_after_next_offer:3,
       bonus_offerings:[{offering_code:'ingles_1',name:'Inglés 1',position:1,offered_at:NOW}]});
     expect(projected.capabilities.course_bonus).toMatchObject({enabled:false,may_offer_bonus:false,
       may_accept_offer:status==='offered',package_status:status});
   });
   it('preserves the backend ladder facts in the model context', () => {
     const claimed = claimedTurn();
-    const ladder = deriveCourseBonusLadderV1({
-      observed_price_objection_count: 2, call_invitation_status: 'offered',
-      call_offer_count: 1, may_offer_call: true,
-    });
+    const ladder = { retention_used: false, previous_turn_asked_price_question: true };
     claimed.course_bonus_capability = {
       status: 'not_eligible', may_schedule_checkin: false, may_request_review: false,
       may_accept_offer: false, may_send_promoted_payment: false,
@@ -386,7 +418,8 @@ describe('buildAgentAContextV1', () => {
       delivered_bonus_offerings:[{code:'ingles_1',display_name:'Inglés 1',position:1}]};
     expect(buildAgentAContextV1(claimed)!.commercial_state.promotion).toEqual({promotion_code:'p',
       promotion_cycle_id:UUID,offer_version:1,status:'offer_available',interest_offering_code:'redes-informaticas',
-      accepted_at:null,bonus_offerings:[{offering_code:'ingles_1',name:'Inglés 1',position:1,offered_at:NOW}]});
+      accepted_at:null,courses_in_package:2,courses_in_package_after_next_offer:3,
+      bonus_offerings:[{offering_code:'ingles_1',name:'Inglés 1',position:1,offered_at:NOW}]});
   });
   it('projects durable summary memory and twenty logical interventions to Agent A', () => {
     const claimed = claimedTurn();
@@ -1820,6 +1853,8 @@ describe('buildAgentAContextV1', () => {
 
   it('limits navigation to three candidates and rejects an unavailable conversation state', () => {
     const claimed = claimedTurn();
+    // Navigation has no current explicit course; exact references have their own tests.
+    claimed.context.batch_messages[0]!.content = '¿Qué opciones tienen?';
     claimed.conversation_state_v1 = {
       ...claimed.conversation_state_v1!,
       selected_offering_code: null,
@@ -2598,5 +2633,130 @@ it('separates missing contact data by the purpose Agent A is pursuing', () => {
     call: ['nombre', 'apellido', 'correo'],
     payment: ['nombre', 'apellido', 'correo'],
     identity: ['nombre', 'apellido', 'correo'],
+  });
+});
+
+describe('Agent A structured commercial context (sales_profile and fichas)', () => {
+  const memory = (key: string, value: string, source_quote: string) => ({ key, value, source_quote });
+  const emptyProfile = { objective: [], experience: [], tentative_interest: [], objections: [],
+    constraints: [], preferences: [], timeline: [], contact_preference: [] };
+
+  it('keeps the persisted objective even though customer.memories only carries the vector top-5', () => {
+    const claimed = claimedTurn();
+    Object.assign(claimed, { sales_profile: { ...emptyProfile,
+      objective: [memory('work_goal', 'trabajar con marcas', 'quiero trabajar con marcas')],
+      objections: [memory('price_objection', 'precio', 'está caro')] } });
+    const context = buildAgentAContextV1(claimed)!;
+    expect(context.customer.memories.some((item) => item.value.includes('marcas'))).toBe(false);
+    expect(context.commercial_state.sales_profile).toMatchObject({
+      objective: [{ key: 'work_goal', value: 'trabajar con marcas', source_quote: 'quiero trabajar con marcas' }],
+      objections: [{ key: 'price_objection', source_quote: 'está caro' }],
+      selected_course: { code: 'redes-informaticas' },
+    });
+  });
+
+  it('projects chat preference, missing data and allowed effects from persisted state only', () => {
+    const claimed = claimedTurn();
+    claimed.conversation_state_v1 = { ...claimed.conversation_state_v1!, call_preference: 'declined' };
+    claimed.contact_intake_missing = ['correo'];
+    const profile = buildAgentAContextV1(claimed)!.commercial_state.sales_profile!;
+    expect(profile.call_preference).toBe('chat');
+    expect(profile.missing_data).toEqual(['correo']);
+    expect(profile.retention_used).toBeNull();
+    expect(profile.bonus_courses).toEqual([]);
+  });
+
+  describe('M5: offer_course_bonus in next_allowed_effects', () => {
+    const cap = (ladder: unknown) => ({ enabled: true, max_bonus_courses: 3, may_offer_bonus: true, status: 'checkin_available',
+      may_schedule_checkin: false, may_request_review: false, may_accept_offer: false, may_send_promoted_payment: false,
+      promotion_code: null, interest_offering_code: 'redes-informaticas', bonus_offerings: [], delivered_bonus_offerings: [],
+      ...(ladder ? { ladder } : {}) });
+    const effects = (capability: unknown, patch: Record<string, unknown> = {}) => {
+      const claimed = claimedTurn();
+      claimed.conversation_state_v1 = { ...claimed.conversation_state_v1!, ...patch } as never;
+      Object.assign(claimed, { course_bonus_capability: capability });
+      return buildAgentAContextV1(claimed)!.commercial_state.sales_profile!.next_allowed_effects;
+    };
+    it('H4: an old-shape sales_flow never reaches the strict context', () => {
+      const claimed = claimedTurn();
+      Object.assign(claimed, { course_bonus_capability: { ...cap(undefined),
+        sales_flow: { price_probe: 'asked', retention_used: true, promo_expires_at: null, gift_request_pending_probe: null } } });
+      const context = buildAgentAContextV1(claimed)!;
+      expect(context.capabilities.course_bonus?.sales_flow).toEqual({ retention_used: true, promo_expires_at: null });
+    });
+    // Owner 2026-11-05: still advertised during checkout before the link; omitted once the link is sent.
+    it('labels it as a capability that needs a current-message motive, whatever the persisted ledger says, and omits it after the link', () => {
+      const label = 'offer_course_bonus_requires_current_motive';
+      for (const ladder of [{ retention_used: false, previous_turn_asked_price_question: false },
+        { retention_used: true, previous_turn_asked_price_question: true }, undefined]) {
+        const listed = effects(cap(ladder));
+        expect(listed).toContain(label);
+        expect(listed).not.toContain('offer_course_bonus');
+      }
+      for (const awaiting_reply of ['contact_details', 'payment_plan', 'payment_confirmation']) {
+        const inCheckout = effects(cap(undefined), { awaiting_reply });
+        expect(inCheckout).toContain(label);
+      }
+      for (const stage of ['payment_link_sent', 'closed']) {
+        const afterLink = effects(cap(undefined), { stage });
+        expect(afterLink.some((effect) => effect.startsWith('offer_course_bonus'))).toBe(false);
+      }
+    });
+  });
+
+  it('works without a claim projection (older backend) and never invents memories', () => {
+    const profile = buildAgentAContextV1(claimedTurn())!.commercial_state.sales_profile!;
+    expect(profile).toMatchObject(emptyProfile);
+  });
+
+  it('resumed informative-price conversation keeps the objective and the active promotion, and owes no probe or call', () => {
+    // Deterministic projection only: fixed persisted data in, context out. Not a claim about model behavior.
+    const claimed = claimedTurn();
+    Object.assign(claimed, { sales_profile: { ...emptyProfile,
+      objective: [memory('work_goal', 'trabajar con marcas', 'quiero trabajar con marcas')] },
+    course_bonus_capability: { enabled: true, max_bonus_courses: 3, may_offer_bonus: false, status: 'offer_available',
+      may_schedule_checkin: false, may_request_review: false, may_accept_offer: true, may_send_promoted_payment: false,
+      promotion_code: 'marketing-con-redes', promotion_cycle_id: UUID, offer_version: 1, package_status: 'offered',
+      interest_offering_code: 'redes-informaticas', accepted_at: null,
+      bonus_offerings: [{ code: 'publicidad_redes_sociales', display_name: 'Publicidad en Redes Sociales', position: 1, offered_at: NOW }],
+      delivered_bonus_offerings: [{ code: 'publicidad_redes_sociales', display_name: 'Publicidad en Redes Sociales', position: 1 }] } });
+    const context = buildAgentAContextV1(claimed)!;
+    const profile = context.commercial_state.sales_profile!;
+    expect(profile.objective).toEqual([{ key: 'work_goal', value: 'trabajar con marcas', source_quote: 'quiero trabajar con marcas' }]);
+    expect(profile.active_promotion).toMatchObject({ promotion_code: 'marketing-con-redes', status: 'offer_available' });
+    expect(profile.bonus_courses.map((course) => course.code)).toEqual(['publicidad_redes_sociales']);
+    expect(context.commercial_state.promotion?.bonus_offerings.map((course) => course.offering_code)).toEqual(['publicidad_redes_sociales']);
+    // The backend owes the model no price probe and no call: the default context has no obligations at all.
+    expect(context.obligations?.owes ?? []).toEqual([]);
+    expect(JSON.stringify(context.obligations ?? {})).not.toMatch(/call|price|precio|llamada/iu);
+  });
+
+  it('sends only the focus ficha and the current bonus-candidate fichas to the model', () => {
+    const claimed = claimedTurn();
+    const ficha = (code: string, role: 'focus' | 'bonus_candidate') =>
+      ({ offering_code: code, fact_id: `offering:${code}:ficha:v1`, role, value: `Ficha de ${code}` });
+    Object.assign(claimed, {
+      catalog_fichas: [ficha('redes-informaticas', 'focus'), ficha('otro-curso', 'bonus_candidate'),
+        ficha('no-candidato', 'bonus_candidate')],
+      course_bonus_capability: { enabled: true, status: 'checkin_available', may_schedule_checkin: false,
+        may_request_review: false, may_accept_offer: false, may_send_promoted_payment: false,
+        promotion_code: null, interest_offering_code: 'redes-informaticas', bonus_offerings: [],
+        bonus_candidates: [{ code: 'otro-curso', display_name: 'Otro curso' }] },
+    });
+    const { catalog } = buildAgentAContextV1(claimed)!;
+    expect(catalog.selected_offering?.facts).toContainEqual({
+      id: 'offering:redes-informaticas:ficha:v1', kind: 'offering_syllabus', value: 'Ficha de redes-informaticas' });
+    expect(catalog.bonus_candidate_fichas).toEqual([{ code: 'otro-curso',
+      fact: { id: 'offering:otro-curso:ficha:v1', kind: 'offering_syllabus', value: 'Ficha de otro-curso' } }]);
+  });
+
+  it('counts the courses of the package (paid + delivered bonuses) and after the next offer', () => {
+    const claimed = claimedTurn();
+    const bonuses = ['ingles_1', 'excel', 'word'].slice(0, 2).map((code, index) => ({ code, display_name: code, position: index + 1, offered_at: NOW }));
+    claimed.course_bonus_capability = { enabled: true, max_bonus_courses: 3, may_offer_bonus: true, status: 'offer_available',
+      may_schedule_checkin: false, may_request_review: false, may_accept_offer: true, may_send_promoted_payment: false,
+      promotion_code: 'p', promotion_cycle_id: UUID, offer_version: 2, package_status: 'offered', interest_offering_code: 'redes-informaticas',
+      accepted_at: null, bonus_offerings: bonuses, delivered_bonus_offerings: bonuses.map(({ code, display_name, position }) => ({ code, display_name, position })) } as never;
+    expect(buildAgentAContextV1(claimed)!.commercial_state.promotion).toMatchObject({ courses_in_package: 3, courses_in_package_after_next_offer: 4 });
   });
 });

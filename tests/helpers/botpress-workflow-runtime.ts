@@ -154,6 +154,7 @@ export const configuration: Record<string, unknown> & {
   decisionProvider: 'botpress_managed' | 'gemini_direct' | 'groq_direct';
   agentABrainDeepSeekModel: string;
   agentAPlannerlessV2Enabled: boolean;
+  agentACommercialPlanningEnabled: boolean;
   agentAAdvisorName: string;
 } = {
   emulatorPhoneE164: '+15550000001',
@@ -174,6 +175,9 @@ export const configuration: Record<string, unknown> & {
   // La ruta bajo prueba. Es la MISMA superficie que produccion lee, así que el
   // arnés no puede medir una ruta y producción correr otra.
   agentAPlannerlessV2Enabled: true,
+  // Off by default so fixtures that script one DeepSeek reply per turn stay
+  // exact; the planning pass has its own workflow tests and the golden runner.
+  agentACommercialPlanningEnabled: false,
   agentAAdvisorName: '',
 };
 

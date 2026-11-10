@@ -6,9 +6,12 @@ import {
   inferFailureAttribution,
   inferFailureLayer,
   judgeCaseSemantically,
+  asksWorkVsInvestmentChoice,
+  authorizedSuccessStoryObservedV1,
   type GoldenTurnObservationV1,
 } from './judge';
-import { GOLDEN_CASES } from './scenarios';
+import { GOLDEN_CASES, type GoldenTurnV1 } from './scenarios';
+import { OWNER_PROMOTION_MODE_REPLAY_CASES } from './owner-rules-scenarios';
 
 const extraClosingBraceFixture = JSON.parse(readFileSync(new URL(
   './fixtures/judge-trailing-closing-brace-06-bonus-2.json', import.meta.url,
@@ -32,6 +35,109 @@ function observation(overrides: Partial<GoldenTurnObservationV1> = {}): GoldenTu
     ...overrides,
   };
 }
+
+describe('discovery repetition detector', () => {
+  it('does not treat a descriptive use-case recap followed by a trial close as the old forced choice', () => {
+    expect(asksWorkVsInvestmentChoice(
+      'Te sirve para trabajar con una inmobiliaria o invertir por tu cuenta. Te hace sentido empezar por ahí?',
+    )).toBe(false);
+  });
+
+  it('detects the repeated question when the interrogative clause itself asks the same choice', () => {
+    expect(asksWorkVsInvestmentChoice(
+      'Quieres trabajar con una inmobiliaria o invertir por tu cuenta?',
+    )).toBe(true);
+  });
+});
+
+describe('authorized success story evidence', () => {
+  const authority = [
+    'docs/authority/prompt-agente-a-studyx-v2.md:66 | Historias de éxito: Amparo y Edson (Diseño Informático) consiguieron empleo como diseñadores gráficos y suman ingresos extra.',
+  ];
+
+  it('accepts an authorized story when the same named people and outcome are in authority', () => {
+    expect(authorizedSuccessStoryObservedV1(
+      'Amparo y Edson estudiaron Diseño Informático y hoy trabajan como diseñadores gráficos, sumando ingresos extra.',
+      authority,
+    )).toBe(true);
+  });
+
+  it('does not authorize an invented student or an invented outcome', () => {
+    expect(authorizedSuccessStoryObservedV1(
+      'María estudió Real Estate y hoy vende diez propiedades por mes.',
+      authority,
+    )).toBe(false);
+    expect(authorizedSuccessStoryObservedV1(
+      'Amparo y Edson ahora tienen una inmobiliaria propia.',
+      authority,
+    )).toBe(false);
+  });
+});
+
+describe('judge failure kind follows the referenced requirement', () => {
+  const evidenceRoot='../../docs/reports/evidence/2026-11-01-formal-acceptance-v149/raw/';
+  const stem='acceptance-f1f0f9c-flash-full16-20261101';
+  const provider=JSON.parse(readFileSync(new URL(`${evidenceRoot}${stem}-provider.json`,import.meta.url),'utf8')) as {
+    report:{records:Array<{call_id:string;response_content:string}>};
+  };
+  const recorded=JSON.parse(readFileSync(new URL(`${evidenceRoot}${stem}-observations.partial.json`,import.meta.url),'utf8')) as {
+    cases:Array<{scenario:{id:string};observations:GoldenTurnObservationV1[]}>;
+  };
+  const base=GOLDEN_CASES.find(scenario=>scenario.id==='13_real_syllabus')!;
+  const scenario={...base,turns:base.turns.filter(turn=>turn.id==='duration_followup')};
+  const current=recorded.cases.find(item=>item.scenario.id===base.id)!.observations[1]!;
+  const calls=['call-0099','call-0100','call-0101','call-0102'];
+  const outputs=calls.map(call_id=>({call_id,raw:provider.report.records.find(call=>call.call_id===call_id)!.response_content}));
+
+  const evaluate=async(raw:string,actual=current)=>{
+    const mock=vi.spyOn(globalThis,'fetch').mockImplementation(async()=>new Response(JSON.stringify({output_text:raw})));
+    try{
+      const result=await judgeCaseSemantically({apiKey:'offline-recorded-only',model:'test',scenario,observations:[actual]});
+      return {verdict:result[0],requestCount:mock.mock.calls.length};
+    }finally{mock.mockRestore();}
+  };
+
+  it.each(outputs)('resolves the recorded must_not/code mismatch from $call_id without retry or indeterminate',async({raw})=>{
+    const result=await evaluate(raw);
+    expect(result.verdict).toMatchObject({turn_id:'duration_followup',approved:false,evaluation_error:null,
+      failures:[{code:'SEMANTIC_MUST_FAILED',requirement_index:0},{code:'SEMANTIC_MUST_NOT_FAILED',requirement_index:0}]});
+    expect(result.requestCount).toBe(1);
+  });
+
+  const decoded=()=>JSON.parse(outputs[0]!.raw) as {verdict:{turn_id:string;approved:boolean;failures:Array<{
+    code:string;requirement_id:string;authority_line_index:number;evidence_source:string;observed_evidence:string;explanation:string;
+  }>}};
+
+  it('uses must semantics when a must ID is paired with the opposite code and legitimately absent evidence',async()=>{
+    const envelope=decoded();
+    envelope.verdict.failures=[{...envelope.verdict.failures[0]!,code:'SEMANTIC_MUST_NOT_FAILED',observed_evidence:''}];
+    const result=await evaluate(JSON.stringify(envelope));
+    expect(result.verdict).toMatchObject({approved:false,evaluation_error:null,
+      failures:[{code:'SEMANTIC_MUST_FAILED',requirement_index:0}]});
+    expect(result.requestCount).toBe(1);
+  });
+
+  it.each(['must_not:999','must_not:00','unknown:0'])('keeps an unknown or noncanonical requirement ID invalid: %s',async requirement_id=>{
+    const envelope=decoded();
+    envelope.verdict.failures=[{...envelope.verdict.failures[1]!,requirement_id}];
+    const result=await evaluate(JSON.stringify(envelope));
+    expect(result.verdict).toMatchObject({approved:null,evaluation_error:'GOLDEN_JUDGE_FAILURE_REFERENCE_INVALID',failures:[]});
+  });
+
+  it('still requires positive evidence for must_not after normalizing a misleading must code',async()=>{
+    const envelope=decoded();
+    envelope.verdict.failures=[{...envelope.verdict.failures[1]!,observed_evidence:''}];
+    const result=await evaluate(JSON.stringify(envelope));
+    expect(result.verdict).toMatchObject({approved:null,evaluation_error:'GOLDEN_JUDGE_FAILURE_EVIDENCE_INVALID',failures:[]});
+  });
+
+  it('still rejects a fabricated quotation after normalizing the failure kind',async()=>{
+    const envelope=decoded();
+    envelope.verdict.failures=[{...envelope.verdict.failures[1]!,observed_evidence:'Este texto nunca fue entregado.'}];
+    const result=await evaluate(JSON.stringify(envelope));
+    expect(result.verdict).toMatchObject({approved:null,evaluation_error:'GOLDEN_JUDGE_FAILURE_EVIDENCE_INVALID',failures:[]});
+  });
+});
 
 describe('golden judge recorded JSON boundary', () => {
   const base = GOLDEN_CASES[5]!;
@@ -138,6 +244,385 @@ describe('golden judge recorded JSON boundary', () => {
   });
 });
 
+describe('golden semantic judge cumulative evidence', () => {
+  it('derives approval from per-requirement assessments without a redundant approved flag', async () => {
+    const base = GOLDEN_CASES.find((candidate) => candidate.id === '03_single_course_recommendation')!;
+    const turn = base.turns.find((candidate) => candidate.id === 'test_close_reply')!;
+    const scenario = { ...base, evaluationMode: undefined, turns: [turn] };
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (_url, init) => {
+      const request = JSON.parse(String(init?.body)) as {
+        input: string;
+        text: { format: { schema: { properties: { verdict: { properties: Record<string, unknown> } } } } };
+      };
+      expect(request.text.format.schema.properties.verdict.properties).toHaveProperty('assessments');
+      expect(request.text.format.schema.properties.verdict.properties).not.toHaveProperty('approved');
+      const payload = JSON.parse(request.input) as {
+        turn_id: string;
+        requirements: Array<{ id: string }>;
+      };
+      const assessments = payload.requirements.map((requirement) => ({
+        requirement_id: requirement.id,
+        status: 'satisfied',
+        authority_line_index: 0,
+        evidence_source: 'response',
+        observed_evidence: 'Pásame tu nombre, apellido, correo y teléfono.',
+        explanation: 'La respuesta avanza al checkout pidiendo únicamente los datos faltantes.',
+      }));
+      return new Response(JSON.stringify({ output_text: JSON.stringify({ verdict: {
+        turn_id: payload.turn_id, assessments,
+      } }) }), { status: 200 });
+    });
+    try {
+      const verdicts = await judgeCaseSemantically({
+        apiKey: 'fixture-only', model: 'deepseek-test', scenario,
+        observations: [observation({ response: 'Pásame tu nombre, apellido, correo y teléfono.' })],
+      });
+      expect(verdicts).toEqual([{
+        turn_id: 'test_close_reply', approved: true, failures: [], evaluation_error: null,
+      }]);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    } finally { fetchMock.mockRestore(); }
+  });
+
+  it('treats a visible application question as a trial close when the judge denies it', async () => {
+    const base = GOLDEN_CASES.find((candidate) => candidate.id === '03_single_course_recommendation')!;
+    const turn = base.turns.find((candidate) => candidate.id === 'recommend')!;
+    const scenario = { ...base, evaluationMode: undefined, turns: [turn] };
+    const response = 'Fotografía Profesional encaja con lo que buscas. Te imaginas ofreciéndoles a esos emprendedores fotos con cámara y bien editadas?';
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      output_text: JSON.stringify({ verdict: { turn_id: 'recommend', approved: false, failures: [{
+        code: 'SEMANTIC_MUST_FAILED', requirement_id: 'must:2', authority_line_index: 1,
+        evidence_source: 'response', observed_evidence: 'Te imaginas ofreciéndoles a esos emprendedores fotos con cámara y bien editadas?',
+        explanation: 'Es visualización, no cierre de prueba.',
+      }] } }),
+    }), { status: 200 }));
+    try {
+      await expect(judgeCaseSemantically({
+        apiKey: 'fixture-only', model: 'deepseek-test', scenario,
+        observations: [observation({ response })],
+      })).resolves.toEqual([{
+        turn_id: 'recommend', approved: true, failures: [], evaluation_error: null,
+      }]);
+    } finally { fetchMock.mockRestore(); }
+  });
+
+  it('treats a contextual fit check as a trial close instead of repeated discovery', async () => {
+    const base = GOLDEN_CASES.find((candidate) => candidate.id === '02_info_discovery')!;
+    const turn = base.turns.find((candidate) => candidate.id === 'goal')!;
+    const scenario = { ...base, evaluationMode: undefined, turns: [turn] };
+    const response = 'Fotografía con Celulares para Tiendas Online conecta con lo que buscas. Va bien encaminado con lo que buscas?';
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      output_text: JSON.stringify({ verdict: { turn_id: 'goal', approved: false, failures: [{
+        code: 'SEMANTIC_MUST_NOT_FAILED', requirement_id: 'must_not:0', authority_line_index: 0,
+        evidence_source: 'response', observed_evidence: 'Va bien encaminado con lo que buscas?',
+        explanation: 'Vuelve a preguntar por el objetivo ya informado.',
+      }] } }),
+    }), { status: 200 }));
+    try {
+      await expect(judgeCaseSemantically({
+        apiKey: 'fixture-only', model: 'deepseek-test', scenario,
+        observations: [observation({ response })],
+      })).resolves.toEqual([{
+        turn_id: 'goal', approved: true, failures: [], evaluation_error: null,
+      }]);
+    } finally { fetchMock.mockRestore(); }
+  });
+
+  it('still treats an actual repeated discovery question as a failure', async () => {
+    const base = GOLDEN_CASES.find((candidate) => candidate.id === '02_info_discovery')!;
+    const turn = base.turns.find((candidate) => candidate.id === 'goal')!;
+    const scenario = { ...base, evaluationMode: undefined, turns: [turn] };
+    const response = 'Qué te gustaría aprender y para qué lo querés usar?';
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      output_text: JSON.stringify({ verdict: { turn_id: 'goal', approved: false, failures: [{
+        code: 'SEMANTIC_MUST_NOT_FAILED', requirement_id: 'must_not:0', authority_line_index: 0,
+        evidence_source: 'response', observed_evidence: response,
+        explanation: 'Vuelve a descubrir el objetivo ya informado.',
+      }] } }),
+    }), { status: 200 }));
+    try {
+      const verdicts = await judgeCaseSemantically({
+        apiKey: 'fixture-only', model: 'deepseek-test', scenario,
+        observations: [observation({ response })],
+      });
+      expect(verdicts[0]?.approved).toBe(false);
+    } finally { fetchMock.mockRestore(); }
+  });
+
+  it.each([
+    'Qué cámara encaja con tu presupuesto?',
+    'Te imaginas pagando en 12 cuotas?',
+  ])('does not misclassify equipment or payment discovery as a trial close: %s', async (response) => {
+    const base = GOLDEN_CASES.find((candidate) => candidate.id === '03_single_course_recommendation')!;
+    const turn = base.turns.find((candidate) => candidate.id === 'recommend')!;
+    const scenario = { ...base, evaluationMode: undefined, turns: [turn] };
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      output_text: JSON.stringify({ verdict: { turn_id: 'recommend', approved: false, failures: [{
+        code: 'SEMANTIC_MUST_FAILED', requirement_id: 'must:2', authority_line_index: 1,
+        evidence_source: 'response', observed_evidence: response,
+        explanation: 'No comprueba encaje ni aplicación del curso al objetivo.',
+      }] } }),
+    }), { status: 200 }));
+    try {
+      const verdicts = await judgeCaseSemantically({
+        apiKey: 'fixture-only', model: 'deepseek-test', scenario,
+        observations: [observation({ response })],
+      });
+      expect(verdicts[0]?.approved).toBe(false);
+    } finally { fetchMock.mockRestore(); }
+  });
+
+  it('retries a self-contradictory checkout failure instead of approving or failing it', async () => {
+    const scenario = GOLDEN_CASES.find((candidate) => candidate.id === '03_single_course_recommendation')!;
+    let closeAttempts = 0;
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (_url, init) => {
+      const request = JSON.parse(String(init?.body)) as { input: string };
+      const payload = JSON.parse(request.input) as { turn_id: string };
+      if (payload.turn_id === 'recommend') {
+        return new Response(JSON.stringify({ output_text: JSON.stringify({ verdict: {
+          turn_id: 'recommend', approved: true, failures: [],
+        } }) }), { status: 200 });
+      }
+      closeAttempts += 1;
+      const verdict = closeAttempts === 1 ? {
+        turn_id: 'test_close_reply', approved: false, failures: [{
+          code: 'SEMANTIC_MUST_FAILED', requirement_id: 'must:0', authority_line_index: 0,
+          evidence_source: 'previous_delivery', observed_evidence: 'Te ves aplicándolo con emprendedores?',
+          explanation: 'Pide los datos faltantes, por lo tanto el requisito se cumple.',
+        }],
+      } : { turn_id: 'test_close_reply', approved: true, failures: [] };
+      return new Response(JSON.stringify({ output_text: JSON.stringify({ verdict }) }), { status: 200 });
+    });
+    try {
+      const verdicts = await judgeCaseSemantically({
+        apiKey: 'fixture-only', model: 'deepseek-test', scenario,
+        observations: [
+          observation({ response: 'Fotografía Profesional encaja con lo que buscas. Te ves aplicándolo con emprendedores?' }),
+          observation({ response: 'Para avanzar, pásame tu nombre, apellido, correo y teléfono.' }),
+        ],
+      });
+      expect(verdicts[1]).toEqual({
+        turn_id: 'test_close_reply', approved: true, failures: [], evaluation_error: null,
+      });
+      expect(closeAttempts).toBe(2);
+    } finally { fetchMock.mockRestore(); }
+  });
+
+  it('does not retry a terminal provider balance error', async () => {
+    const base = GOLDEN_CASES.find((candidate) => candidate.id === '03_single_course_recommendation')!;
+    const turn = base.turns.find((candidate) => candidate.id === 'recommend')!;
+    const scenario = { ...base, evaluationMode: undefined, turns: [turn] };
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('Payment required', { status: 402 }));
+    try {
+      await expect(judgeCaseSemantically({
+        apiKey: 'fixture-only', model: 'deepseek-test', scenario,
+        observations: [observation({ response: 'Respuesta sintética.' })],
+      })).resolves.toEqual([{
+        turn_id: 'recommend', approved: null, failures: [], evaluation_error: 'GOLDEN_JUDGE_HTTP_402',
+      }]);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    } finally { fetchMock.mockRestore(); }
+  });
+
+  it('reports evaluator error when every verdict contradicts objective checkout evidence', async () => {
+    const scenario = GOLDEN_CASES.find((candidate) => candidate.id === '03_single_course_recommendation')!;
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (_url, init) => {
+      const request = JSON.parse(String(init?.body)) as { input: string };
+      const payload = JSON.parse(request.input) as { turn_id: string };
+      const verdict = payload.turn_id === 'recommend'
+        ? { turn_id: 'recommend', approved: true, failures: [] }
+        : { turn_id: 'test_close_reply', approved: false, failures: [{
+          code: 'SEMANTIC_MUST_FAILED', requirement_id: 'must:0', authority_line_index: 0,
+          evidence_source: 'previous_delivery', observed_evidence: 'Te ves aplicándolo con emprendedores?',
+          explanation: 'La respuesta pide los datos que faltan y cumple el requisito.',
+        }] };
+      return new Response(JSON.stringify({ output_text: JSON.stringify({ verdict }) }), { status: 200 });
+    });
+    try {
+      const verdicts = await judgeCaseSemantically({
+        apiKey: 'fixture-only', model: 'deepseek-test', scenario,
+        observations: [
+          observation({ response: 'Fotografía Profesional encaja con lo que buscas. Te ves aplicándolo con emprendedores?' }),
+          observation({ response: 'Para avanzar, pásame tu nombre, apellido, correo y teléfono.' }),
+        ],
+      });
+      expect(verdicts[1]).toEqual({
+        turn_id: 'test_close_reply', approved: null, failures: [],
+        evaluation_error: 'GOLDEN_JUDGE_VERDICT_INCOHERENT',
+      });
+    } finally { fetchMock.mockRestore(); }
+  });
+
+  it('does not confuse a conditional visualization with a guaranteed-income promise', async () => {
+    const base = GOLDEN_CASES.find((candidate) => candidate.id === '04_price_value_objection')!;
+    const turn = base.turns.find((candidate) => candidate.id === 'interest')!;
+    const scenario = { ...base, evaluationMode: undefined, turns: [turn] };
+    const response = 'Fotografía Profesional te prepara para ofrecer sesiones. Te imaginas ya con tus primeras sesiones y cobrando por ellas?';
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      output_text: JSON.stringify({ verdict: { turn_id: 'interest', approved: false, failures: [{
+        code: 'SEMANTIC_MUST_NOT_FAILED', requirement_id: 'must_not:0', authority_line_index: 0,
+        evidence_source: 'response', observed_evidence: 'Te imaginas ya con tus primeras sesiones y cobrando por ellas?',
+        explanation: 'La visualización roza una promesa de ingresos.',
+      }] } }),
+    }), { status: 200 }));
+    try {
+      await expect(judgeCaseSemantically({
+        apiKey: 'fixture-only', model: 'deepseek-test', scenario,
+        observations: [observation({ response })],
+      })).resolves.toEqual([{
+        turn_id: 'interest', approved: true, failures: [], evaluation_error: null,
+      }]);
+    } finally { fetchMock.mockRestore(); }
+  });
+
+  it.each([
+    'Te imaginas ganando USD 500 por día?',
+    'Con una sesión de fotos recuperas la cuota mensual. Te sirve?',
+  ])('does not forgive quantified income or asserted payback as conditional visualization: %s', async (response) => {
+    const base = GOLDEN_CASES.find((candidate) => candidate.id === '04_price_value_objection')!;
+    const turn = base.turns.find((candidate) => candidate.id === 'interest')!;
+    const scenario = { ...base, evaluationMode: undefined, turns: [turn] };
+    const observed = response.includes('USD') ? 'Te imaginas ganando USD 500 por día?' : 'Con una sesión de fotos recuperas la cuota mensual.';
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      output_text: JSON.stringify({ verdict: { turn_id: 'interest', approved: false, failures: [{
+        code: 'SEMANTIC_MUST_NOT_FAILED', requirement_id: 'must_not:0', authority_line_index: 0,
+        evidence_source: 'response', observed_evidence: observed,
+        explanation: 'Promete un ingreso o recuperación determinada.',
+      }] } }),
+    }), { status: 200 }));
+    try {
+      const verdicts = await judgeCaseSemantically({
+        apiKey: 'fixture-only', model: 'deepseek-test', scenario,
+        observations: [observation({ response })],
+      });
+      expect(verdicts[0]?.approved).toBe(false);
+    } finally { fetchMock.mockRestore(); }
+  });
+
+  it('does not require a programme again when image and PDF were delivered earlier than the immediately previous turn', async () => {
+    const base = OWNER_PROMOTION_MODE_REPLAY_CASES.find((candidate) => candidate.id === '45_real_trace_5b138536_20261105')!;
+    const turns = [base.turns[2]!, base.turns[3]!, base.turns[4]!];
+    const scenario = { ...base, evaluationMode: undefined, turns };
+    let finalPayload: { program_delivery_history?: unknown } | null = null;
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (_url, init) => {
+      const request = JSON.parse(String(init?.body)) as { input: string };
+      const payload = JSON.parse(request.input) as { turn_id: string; program_delivery_history?: unknown };
+      if (payload.turn_id === 't06_contents') finalPayload = payload;
+      const verdict = payload.turn_id === 't06_contents'
+        ? { turn_id: payload.turn_id, approved: false, failures: [{
+          code: 'SEMANTIC_MUST_FAILED', requirement_id: 'must:0', authority_line_index: 0,
+          evidence_source: 'program_delivery_history', observed_evidence: '',
+          explanation: 'No volvió a enviar el material.',
+        }] }
+        : { turn_id: payload.turn_id, approved: true, failures: [] };
+      return new Response(JSON.stringify({ output_text: JSON.stringify({ verdict }) }), { status: 200 });
+    });
+    try {
+      const verdicts = await judgeCaseSemantically({
+        apiKey: 'fixture-only', model: 'deepseek-test', scenario,
+        observations: [
+          observation({ programDocuments: ['real_estate'], programImages: ['real_estate'] }),
+          observation({ response: 'Sí, tenemos Real Estate.' }),
+          observation({ response: 'Vas a ver las bases legales, financieras y comerciales del negocio.' }),
+        ],
+      });
+      expect(finalPayload).toMatchObject({ program_delivery_history: [
+        { program_documents: ['real_estate'], program_images: ['real_estate'] },
+        { program_documents: [], program_images: [] },
+      ] });
+      expect(verdicts[2]).toMatchObject({ approved: true, failures: [], evaluation_error: null });
+    } finally { fetchMock.mockRestore(); }
+  });
+
+  it('accepts the exact authorized Felipe story while preserving independent repetition failures', async () => {
+    const base = OWNER_PROMOTION_MODE_REPLAY_CASES.find((candidate) => candidate.id === '47_discover_once_6bcc8efa_20261105')!;
+    const turn = base.turns.find((candidate) => candidate.id === 'g05_students')!;
+    const scenario = { ...base, evaluationMode: undefined, turns: [turn] };
+    const response = 'Felipe Serrano creó su empresa de instalación de paneles solares y aires acondicionados, y hoy tiene un equipo trabajando con él. Qué prefieres: trabajar con propiedades o invertir?';
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      output_text: JSON.stringify({ verdict: { turn_id: turn.id, approved: false, failures: [
+        { code: 'SEMANTIC_MUST_FAILED', requirement_id: 'must:0', authority_line_index: 0,
+          evidence_source: 'response', observed_evidence: '', explanation: 'No contó una historia real.' },
+        { code: 'SEMANTIC_MUST_NOT_FAILED', requirement_id: 'must_not:0', authority_line_index: 0,
+          evidence_source: 'response', observed_evidence: 'trabajar con propiedades o invertir',
+          explanation: 'Repitió la elección ya respondida.' },
+      ] } }),
+    }), { status: 200 }));
+    try {
+      const [verdict] = await judgeCaseSemantically({
+        apiKey: 'fixture-only', model: 'deepseek-test', scenario,
+        observations: [observation({ response })],
+      });
+      expect(verdict).toMatchObject({ approved: false, evaluation_error: null, failures: [
+        { code: 'SEMANTIC_MUST_NOT_FAILED', requirement_index: 0 },
+      ] });
+    } finally { fetchMock.mockRestore(); }
+  });
+
+  it('does not confuse denying an unavailable Felipe asset with denying his authorized story', async () => {
+    const base = OWNER_PROMOTION_MODE_REPLAY_CASES.find((candidate) => candidate.id === '45_real_trace_5b138536_20261105')!;
+    const turn = base.turns.find((candidate) => candidate.id === 't10_felipe')!;
+    const scenario = { ...base, evaluationMode: undefined, turns: [turn] };
+    const response = 'No tengo un video ni un testimonio escrito para enviarte, pero sí su caso real: Felipe Serrano creó su empresa y hoy tiene un equipo que instala paneles solares y aires acondicionados y hace reparaciones.';
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      output_text: JSON.stringify({ verdict: { turn_id: turn.id, approved: false, failures: [{
+        code: 'SEMANTIC_MUST_FAILED', requirement_id: 'must:0', authority_line_index: 0,
+        evidence_source: 'response', observed_evidence: 'No tengo un video ni un testimonio escrito',
+        explanation: 'Niega tener el testimonio de Felipe.',
+      }] } }),
+    }), { status: 200 }));
+    try {
+      const [verdict] = await judgeCaseSemantically({
+        apiKey: 'fixture-only', model: 'deepseek-test', scenario,
+        observations: [observation({ response })],
+      });
+      expect(verdict).toMatchObject({ approved: true, evaluation_error: null, failures: [] });
+    } finally { fetchMock.mockRestore(); }
+  });
+
+  it('does not treat explaining both Real Estate paths as re-asking the rejected choice', async () => {
+    const base = OWNER_PROMOTION_MODE_REPLAY_CASES.find((candidate) => candidate.id === '50_trial_close_vs_checkout_20261106')!;
+    const turn = base.turns.find((candidate) => candidate.id === 't03_undecided')!;
+    const scenario = { ...base, evaluationMode: undefined, turns: [turn] };
+    const response = 'El curso arranca por las dos bases: cómo funciona el negocio inmobiliario y cómo se analiza una inversión. Así puedes conocer ambas antes de decidir. Te hace sentido empezar así?';
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      output_text: JSON.stringify({ verdict: { turn_id: turn.id, approved: false, failures: [{
+        code: 'SEMANTIC_MUST_NOT_FAILED', requirement_id: 'must_not:0', authority_line_index: 0,
+        evidence_source: 'response', observed_evidence: 'conocer ambas antes de decidir',
+        explanation: 'Reformula la elección entre trabajar e invertir.',
+      }] } }),
+    }), { status: 200 }));
+    try {
+      const [verdict] = await judgeCaseSemantically({
+        apiKey: 'fixture-only', model: 'deepseek-test', scenario,
+        observations: [observation({ response })],
+      });
+      expect(verdict).toMatchObject({ approved: true, evaluation_error: null, failures: [] });
+    } finally { fetchMock.mockRestore(); }
+  });
+
+  it('accepts a future-path explanation followed by a trial close in the general-goal turn', async () => {
+    const base = OWNER_PROMOTION_MODE_REPLAY_CASES.find((candidate) => candidate.id === '50_trial_close_vs_checkout_20261106')!;
+    const turn = base.turns.find((candidate) => candidate.id === 't04_general_goal')!;
+    const scenario = { ...base, evaluationMode: undefined, turns: [turn] };
+    const response = 'Sí, te sirve para entender el negocio completo. Después vas a poder evaluar con calma qué camino te encaja mejor. Te hace sentido empezar así?';
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      output_text: JSON.stringify({ verdict: { turn_id: turn.id, approved: false, failures: [{
+        code: 'SEMANTIC_MUST_NOT_FAILED', requirement_id: 'must_not:0', authority_line_index: 0,
+        evidence_source: 'response', observed_evidence: 'qué camino te encaja mejor',
+        explanation: 'Vuelve a plantear trabajar o invertir.',
+      }] } }),
+    }), { status: 200 }));
+    try {
+      const [verdict] = await judgeCaseSemantically({
+        apiKey: 'fixture-only', model: 'deepseek-test', scenario,
+        observations: [observation({ response })],
+      });
+      expect(verdict).toMatchObject({ approved: true, evaluation_error: null, failures: [] });
+    } finally { fetchMock.mockRestore(); }
+  });
+});
+
 describe('golden hard judge', () => {
   it('passes the exact identity turn and fails a defensive administrative variant', () => {
     const turn = GOLDEN_CASES[0]!.turns[0]!;
@@ -151,16 +636,29 @@ describe('golden hard judge', () => {
   });
 
   it('uses persisted promotion state and actual action rather than sales copy', () => {
-    const turn = GOLDEN_CASES[5]!.turns.find((item) => item.id === 'bonus_2')!;
+    const turn = GOLDEN_CASES[5]!.turns.find((item) => item.id === 'isolate')!;
     const failed = evaluateHardRules(turn, observation({
       response: 'Puedo sumar otro curso.',
-      proposedAction: { type: 'none' },
+      proposedAction: { type: 'offer_course_bonus', bonus_offering_code: 'camaras_seguridad' },
+      backendAction: 'offer_course_bonus',
       state: { selectedCourse: 'fotografia_profesional', stage: 'course_selected', awaitingReply: 'none', plan: null,
-        promotion: { status: 'offer_available', bonusCount: 1,
+        promotion: { status: 'offer_available', bonusCount: 4,
           paidCourse: 'fotografia_profesional', bonusCourses: ['diseno_photoshop'] } },
     }));
-    expect(failed.failures.map((item) => item.code)).toContain('ACTION_MISMATCH');
+    expect(failed.failures.map((item) => item.code)).toContain('BONUS_AFFINITY_MISMATCH');
     expect(failed.failures.map((item) => item.code)).toContain('PROMOTION_BONUS_COUNT_MISMATCH');
+  });
+
+  it('14/installments: an offered bonus must be named in the delivered copy (H1)', () => {
+    const turn = GOLDEN_CASES.find((item) => item.id.startsWith('14_'))!.turns.find((item) => item.id === 'installments')!;
+    const base = {
+      proposedAction: { type: 'offer_course_bonus', bonus_offering_code: 'instagram_emprendedores' }, backendAction: 'offer_course_bonus',
+      availableOfferings: [{ code: 'instagram_emprendedores', displayName: 'Instagram para Emprendedores' }],
+    };
+    const unnamed = evaluateHardRules(turn, observation({ ...base, response: 'Te sumo otro curso, el de Inglés. Avanzamos?' }));
+    expect(unnamed.failures.map((item) => item.code)).toContain('BONUS_NOT_NAMED');
+    const named = evaluateHardRules(turn, observation({ ...base, response: 'Te sumo instagram para emprendedores. Avanzamos?' }));
+    expect(named.failures.map((item) => item.code)).not.toContain('BONUS_NOT_NAMED');
   });
 
   it('attributes missing syllabus context separately from a model refusal', () => {
@@ -298,7 +796,7 @@ describe('golden hard judge', () => {
   });
 
   it('audits the bonus gate configuration and a price objection from an earlier turn', () => {
-    const turn = GOLDEN_CASES[5]!.turns.find((candidate) => candidate.id === 'bonus_1')!;
+    const turn = GOLDEN_CASES[5]!.turns.find((candidate) => candidate.id === 'installments')!;
     const eligible = observation({
       response: 'Puedo sumar Fotografía con Celulares para Tiendas Online.',
       move: 'unknown',
@@ -323,8 +821,11 @@ describe('golden hard judge', () => {
     const ineligible = evaluateHardRules(turn, {
       ...eligible,
       courseBonus: { enabled: false, maxBonusCourses: 1, mayOfferBonus: false, status: 'disabled' },
-      priceObjectionMemory: { present: true, sourceMessageIds: ['current'], priorSourceMessageIds: [] },
+      priceObjectionMemory: { present: false, sourceMessageIds: [], priorSourceMessageIds: [] },
     });
+    // Model-owned sales (AGENTS.md:154): an objection quoted in the current turn is price evidence too.
+    expect(evaluateHardRules(turn, { ...eligible, priceObjectionMemory: { present: true, sourceMessageIds: ['current'], priorSourceMessageIds: [] } })
+      .failures.map((failure) => failure.code)).not.toContain('BONUS_PRIOR_PRICE_OBJECTION_MISSING');
     expect(ineligible.failures.map((failure) => failure.code)).toEqual(expect.arrayContaining([
       'BONUS_CONFIGURATION_DISABLED',
       'BONUS_MAX_COURSES_CONFIG_MISMATCH',
@@ -577,6 +1078,9 @@ describe('golden hard judge', () => {
     expect(judgeRequest.instructions).toContain(
       'preferencia entre contenidos de ese mismo curso (por ejemplo, cámara o edición) no equivale a abrir un menú',
     );
+    expect(judgeRequest.instructions).toContain(
+      'Nunca infieras que hubo un cierre de prueba sólo por el nombre del turno o por la respuesta actual del cliente',
+    );
     expect(judgeInput.requirements?.map((item) => item.text)).toEqual(expect.arrayContaining([
       'No abrir un menú de cursos ni ofrecer varias opciones.',
       'No prometer ingresos ni clientes.',
@@ -597,7 +1101,7 @@ describe('golden hard judge', () => {
       judgeRequest = JSON.parse(String(init?.body)) as { instructions?: string; input?: string };
       return new Response(JSON.stringify({ output_text: JSON.stringify({ verdict: {
         turn_id: 'price_1', approved: false, failures: [{
-          code: 'SEMANTIC_MUST_FAILED', requirement_id: 'must:1',
+          code: 'SEMANTIC_MUST_FAILED', requirement_id: 'must:0',
           authority_line_index: 0, evidence_source: 'preconditions', observed_evidence: '',
           explanation: 'No registró la objeción.',
         }],
@@ -887,6 +1391,36 @@ describe('negotiation invariant judge mode',()=>{
     const failures=evaluateHardRules(t,observation({priceObjectionMemory:{present:false,sourceMessageIds:[],priorSourceMessageIds:[]}}),null,'negotiation_invariants').failures;
     expect(failures.map(f=>f.code)).toContain('CURRENT_PRICE_OBJECTION_NOT_RECORDED');
   });
+  it('discards a false bonus obligation when structural Rule A evidence says the first objection is not eligible',async()=>{
+    const base=GOLDEN_CASES[5]!;
+    const sourceTurn=base.turns.find(turn=>turn.id==='value')!;
+    const scenario={...base,turns:[sourceTurn]};
+    const actual=observation({
+      response:'Te entiendo. Son 41 clases y podés pagarlo en 12 cuotas de USD 30. El precio es el único inconveniente? Puedo revisar una promoción.',
+      backendAction:null,
+      ruleOutcomes:{rule_a:'not_applicable',rule_b:'rewrite'},
+      ruleBonusBeforeTurn:{paid_offering_code:'fotografia_profesional',bonus_offering_code:'diseno_photoshop',position:1},
+      courseBonus:{enabled:true,maxBonusCourses:3,mayOfferBonus:false,status:'checkin_available'},
+      priceObjectionMemory:{present:true,sourceMessageIds:['current'],priorSourceMessageIds:[]},
+      negotiationFacts:{currentTurnId:'current',priorPriceSourceIds:[],currentPriceObjectionQuoted:true,
+        currentPriceObjectionPersisted:true,priceOnlyBarrierConfirmed:false,
+        ladder:{eligible:false,observed_price_objection_count:0,required_price_objection_count:2,
+          call_invitation_status:'not_offered',call_offer_count:0,may_offer_call:true,
+          missing_steps:['recorded_price_objections'],price_only_barrier_confirmed:false}},
+      workflow:{commitSucceeded:true,status:'waiting_user',errorCode:null,finalBackendDecisionError:null},
+    });
+    const mock=vi.spyOn(globalThis,'fetch').mockImplementation(async(_url,init)=>{
+      const payload=JSON.parse(JSON.parse(String(init?.body)).input);
+      return new Response(JSON.stringify({output_text:JSON.stringify({verdict:{turn_id:payload.turn_id,approved:false,failures:[
+        {code:'SEMANTIC_MUST_FAILED',requirement_id:'must:1',authority_line_index:0,evidence_source:'preconditions',observed_evidence:'\"eligible\":false',explanation:'Se debió bonificar.'},
+        {code:'SEMANTIC_MUST_FAILED',requirement_id:'must:2',authority_line_index:0,evidence_source:'response',observed_evidence:'',explanation:'Faltó presentar el curso.'},
+      ]}})}),{status:200});
+    });
+    try{
+      const [verdict]=await judgeCaseSemantically({apiKey:'offline',model:'test',scenario,observations:[actual]});
+      expect(verdict).toEqual({turn_id:'value',approved:true,failures:[],evaluation_error:null});
+    }finally{mock.mockRestore();}
+  });
   it('sends delivered chronological history and generation facts without skipping changed preconditions',async()=>{
     const base=GOLDEN_CASES[5]!;
     const scenario={...base,turns:[base.turns[0]!,base.turns.at(-1)!]};
@@ -903,8 +1437,8 @@ describe('negotiation invariant judge mode',()=>{
       expect(payloads[1]!.negotiation_ledger).toEqual(expect.arrayContaining([expect.objectContaining({ladder:facts.ladder})]));
       expect(JSON.stringify(payloads[1]!.requirements)).not.toContain('Mantener el paquete acumulado de tres');
       expect(JSON.stringify(payloads[1]!.requirements)).toContain('aislamiento');
-      expect(JSON.stringify(payloads[1]!.requirements)).toContain('insinuar');
-      expect(JSON.stringify(payloads[1]!.requirements)).toContain('te regalo');
+      expect(JSON.stringify(payloads[1]!.requirements)).toContain('No afirmar ni presentar un curso bonificado concreto');
+      expect(JSON.stringify(payloads[1]!.requirements)).toContain('de regalo');
       expect(JSON.stringify(payloads[1]!.requirements)).toContain('evitar responder por chat');
       expect(JSON.stringify(payloads[1]!.requirements)).toContain('repetir sólo');
     }finally{mock.mockRestore();}
@@ -950,7 +1484,7 @@ describe('semantic judge delivered-outcome boundary', () => {
     let sources: readonly string[] = [];
     const mock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (_url, init) => {
       const request = JSON.parse(String(init?.body)); payload = JSON.parse(request.input);
-      sources = request.text.format.schema.properties.verdict.properties.failures.items.properties.evidence_source.enum;
+      sources = request.text.format.schema.properties.verdict.properties.assessments.items.properties.evidence_source.enum;
       return new Response(JSON.stringify({ output_text: JSON.stringify({ verdict: {
         turn_id: 'delivered', approved: true, failures: [],
       } }) }));
@@ -1063,5 +1597,60 @@ describe('semantic judge delivered-outcome boundary', () => {
       } } });
       if (gift) expect(result[0]?.failures).toHaveLength(1);
     } finally { mock.mockRestore(); }
+  });
+});
+
+describe('cases 29-41 hard rules (current-message bonus motive, package, programme documents)', () => {
+  const turnWith = (customer: string, hard: GoldenTurnV1['hard'], over: Partial<GoldenTurnV1['expected']> = {}): GoldenTurnV1 => ({
+    id: 't', customer, must: [], mustNot: [], authority: [],
+    expected: { move: ['greeting', 'price_objection', 'ask_course_information'], action: ['none', 'offer_course_bonus', 'send_course_program'], state: {}, ...over }, hard });
+  const codes = (turn: GoldenTurnV1, current: GoldenTurnObservationV1, previous: GoldenTurnObservationV1 | null = null) =>
+    evaluateHardRules(turn, current, previous).failures.map(failure => failure.code);
+  const offering = (quote: string, kind = 'price_objection', move = 'price_objection') => observation({
+    move, backendAction: 'offer_course_bonus', response: 'Te sumo Community Manager.',
+    proposedAction: { type: 'offer_course_bonus', bonus_offering_code: 'community_manager', interest_offering_code: 'marketing_digital', motive: { kind, quote } } });
+
+  it('bonus_motive_current_message: the quote must be literal in this message and agree with the move', () => {
+    const turn = turnWith('igual sigue siendo caro', [{ type: 'bonus_motive_current_message' }]);
+    expect(codes(turn, offering('sigue siendo caro'))).toEqual([]);
+    expect(codes(turn, offering('es caro, no me alcanza'))).toContain('BONUS_MOTIVE_NOT_IN_CURRENT_MESSAGE');
+    expect(codes(turn, offering('sigue siendo caro', 'price_objection', 'ask_course_information'))).toContain('BONUS_MOTIVE_MOVE_INCOHERENT');
+    expect(codes(turn, observation({ move: 'price_objection' }))).toEqual([]);
+  });
+  it('package_unchanged and no_new_bonus compare with the previous turn (cycle, version, courses)', () => {
+    const promotion = (over: object) => ({ status: 'offer_available', bonusCount: 1, paidCourse: 'marketing_digital', bonusCourses: ['community_manager'], cycleId: 'c1', offerVersion: 1, ...over });
+    const before = observation({ state: { ...observation().state, promotion: promotion({}) } });
+    const turn = turnWith('x', [{ type: 'package_unchanged' }, { type: 'no_new_bonus' }]);
+    expect(codes(turn, before, before)).toEqual([]);
+    const bumped = observation({ state: { ...observation().state, promotion: promotion({ bonusCount: 2, bonusCourses: ['community_manager', 'oratoria'], offerVersion: 2 }) } });
+    expect(codes(turn, bumped, before)).toEqual(expect.arrayContaining(['PACKAGE_CHANGED', 'NEW_BONUS_UNEXPECTED']));
+  });
+  it('program documents, links, plans and prefab CTAs', () => {
+    expect(codes(turnWith('x', [{ type: 'program_document_sent', value: 'marketing_digital' }]), observation())).toContain('PROGRAM_DOCUMENT_MISSING');
+    expect(codes(turnWith('x', [{ type: 'program_document_sent', value: 'marketing_digital' }]), observation({ programDocuments: ['marketing_digital'] }))).toEqual([]);
+    expect(codes(turnWith('x', [{ type: 'no_program_document' }]), observation({ programDocuments: ['marketing_digital'] }))).toContain('PROGRAM_DOCUMENT_UNEXPECTED');
+    expect(codes(turnWith('x', [{ type: 'no_link_delivered' }]), observation({ deliveredLinks: ['https://pay.example/1'] }))).toContain('LINK_UNEXPECTED');
+    const link = (plan: string) => observation({ proposedAction: { type: 'send_payment_link', payment_plan: plan } });
+    const linkTurn = turnWith('x', [{ type: 'link_plan_in', values: ['monthly_12'] }], { action: ['send_payment_link'] });
+    expect(codes(linkTurn, link('monthly_12'))).toEqual([]);
+    expect(codes(linkTurn, link('one_time'))).toContain('LINK_PLAN_MISMATCH');
+    expect(codes(turnWith('x', [{ type: 'no_prefab_cta' }]), observation({ response: 'Con cuál plan te gustaría avanzar?' }))).toContain('PREFAB_CTA_PRESENT');
+  });
+  it('program_document_exactly_once: sent now XOR sent in the previous turn', () => {
+    const turn = turnWith('x', [{ type: 'program_document_exactly_once', value: 'real_estate' }]);
+    const sent = observation({ programDocuments: ['real_estate'], programImages: ['real_estate'] });
+    expect(codes(turn, sent, observation())).toEqual([]);
+    expect(codes(turn, observation(), sent)).toEqual([]);
+    expect(codes(turn, sent, sent)).toEqual(expect.arrayContaining(['PROGRAM_DOCUMENT_DUPLICATED', 'PROGRAM_IMAGE_DUPLICATED']));
+    expect(codes(turn, observation(), observation())).toContain('PROGRAM_DOCUMENT_MISSING');
+    expect(codes(turn, observation({ programDocuments: ['real_estate'] }), observation())).toContain('PROGRAM_MATERIAL_INCOMPLETE');
+    const kinds = turnWith('x', [{ type: 'program_image_sent', value: 'word' }, { type: 'program_document_kind', value: 'ficha' }]);
+    expect(codes(kinds, observation({ programImages: ['word'], programDocumentKinds: ['ficha'] }))).toEqual([]);
+    expect(codes(kinds, observation({ programDocumentKinds: ['program'] }))).toEqual(expect.arrayContaining(['PROGRAM_IMAGE_MISSING', 'PROGRAM_DOCUMENT_KIND_MISMATCH']));
+  });
+  it('a turn whose prior promotion precondition is not met is not judged (case 41 clarification)', () => {
+    const turn = { ...turnWith('osea me regalas otro curso?', [{ type: 'package_unchanged' }]),
+      priorPromotion: { status: ['offer_available'], bonusCount: [1, 2, 3] } };
+    expect(codes(turn, observation(), observation())).toEqual(['TURN_PRECONDITION_NOT_REACHED']);
   });
 });

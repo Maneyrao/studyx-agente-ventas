@@ -1,3 +1,4 @@
+import { declineQuoteInBatchV1, priceObservationQuoteInBatchV1, PURCHASE_DECLINE_MEMORY_KEY } from '@/shared/conversation/deterministic-sales-rules';
 import type { BusinessContextView, CatalogIndexView } from '@/features/orchestration/domain/business-context';
 import type { DecisionV4 } from '@/features/orchestration/domain/decision-v4';
 import type { ProtectedFactRef } from '@/features/orchestration/domain/egress-guard';
@@ -5,10 +6,13 @@ import {
   materializeCanonicalCatalogFacts,
   singleCanonicalOfferingReferenceV1,
 } from '@/features/orchestration/domain/canonical-offering-egress';
-import type { OrchestrationStore } from '@/features/orchestration/ports/orchestration-store';
+import type { OrchestrationStore, RecentTurn } from '@/features/orchestration/ports/orchestration-store';
+import { activeSessionRecentTurnsV1, deriveConversationCourseFocusV1 } from '@/features/orchestration/domain/course-focus';
 import { classifyBatchSalesSignal } from '@/features/orchestration/domain/sales-signal';
 import { loadConversationSessionConfig } from '@/lib/config';
 import type { AgentAProposedActionV1, AgentATurnProposalV1 } from '../domain/agent-a-brain';
+import { claimsProgramSendNowV1 } from '@/shared/conversation/program-send-claim';
+import type { BonusMotiveV1 } from '@/shared/conversation/bonus-motive';
 import { authorizeAgentTurnV2 } from '../domain/agent-turn-policy-v2';
 import {
   buildCanonicalFactRegistry,
@@ -51,7 +55,8 @@ export class AgentTurnV2RejectedError extends Error {
 
 export interface AgentActionRejectionV1 {
   readonly action: 'request_call_now' | 'send_payment_link' | 'send_test_payment_link'
-    | 'schedule_price_objection_checkin' | 'request_promotion_review' | 'offer_course_bonus' | 'accept_promotion';
+    | 'schedule_price_objection_checkin' | 'request_promotion_review' | 'offer_course_bonus' | 'accept_promotion'
+    | 'send_course_program';
   readonly status: 'needs_input' | 'rejected';
   readonly code: string;
   readonly codes: readonly string[];
@@ -159,11 +164,18 @@ function decisionFromAuthorizedTurn(input: {
         ? { type: 'send_test_payment_link', offering_sku: action.offering_code }
         : action.type === 'schedule_price_objection_checkin'
           ? action
-          : action.type === 'request_promotion_review' || action.type === 'offer_course_bonus'
+          : action.type === 'offer_course_bonus'
+            // The motive is validated in memory and rechecked in the bonus
+            // transaction; the persisted business_action keeps only identity.
+            ? { type: 'offer_course_bonus', interest_offering_code: action.interest_offering_code,
+                bonus_offering_code: action.bonus_offering_code }
+          : action.type === 'request_promotion_review'
             ? action
             : action.type === 'accept_promotion'
               ? action
-              : null;
+              : action.type === 'send_course_program'
+                ? { type: 'send_course_program', offering_code: action.offering_code }
+                : null;
   return {
     schema_version: 4,
     intent: input.proposal.move.move === 'greeting'
@@ -198,6 +210,11 @@ export async function prepareAgentTurnV2(input: {
   };
   readonly workspace_slug: string;
   readonly current_customer_messages?: readonly string[];
+  /** Internal server snapshot, never accepted from the model/wire proposal. */
+  readonly course_focus_context?: {
+    readonly recent_turns: readonly RecentTurn[];
+    readonly batch_started_at: string;
+  };
   readonly proposal: AgentATurnProposalV1;
   /** Retain semantic state while a model continuation cannot execute effects. */
   readonly conversation_only?: boolean;
@@ -211,6 +228,7 @@ export async function prepareAgentTurnV2(input: {
   /** Canonical knowledge rows reloaded by the backend from cited fact IDs. */
   readonly authorized_knowledge_facts?: readonly CanonicalFactV1[];
   readonly course_bonus_capability?: CourseBonusCapabilityV1;
+  readonly course_programs?: { readonly available_offering_codes: readonly string[]; readonly sent_offering_codes: readonly string[] };
 }, deps: {
   readonly state_store: Pick<ConversationStateStoreV1, 'load'>;
   readonly call_facts?: Pick<OrchestrationStore, 'loadClaimedCallFacts'>;
@@ -237,10 +255,14 @@ export async function prepareAgentTurnV2(input: {
   readonly discussed_offering_code: string | null;
   readonly commercial_interest_offering_code: string | null;
   readonly records_price_objection: boolean;
+  /** Rule A: accept the offered direct package before reserving the link. */
+  readonly auto_accept_promotion: boolean;
   /** A terminal sale followed by generic catalog browsing starts without the old promotion focus. */
   readonly resets_promotion_context: boolean;
   /** Explicit course switch retires open packages and prior unpaid intents. */
   readonly abandons_course_bonus_offer: boolean;
+  /** The authorized offer_course_bonus motive and declared moves, for the transactional recheck. */
+  readonly bonus_motive: { readonly motive: BonusMotiveV1; readonly declared_moves: readonly string[] } | null;
 }> {
   const nowMs = deps.now?.() ?? Date.now();
   const [loaded, callFacts, contactIntake, strictCallIntakeReadiness] = await Promise.all([
@@ -318,6 +340,20 @@ export async function prepareAgentTurnV2(input: {
       aliases: offering.aliases,
     }),
   );
+  const mentionFocus = deriveConversationCourseFocusV1({
+    currentMessageTexts:currentCustomerMessages,
+    recentTurns:activeSessionRecentTurnsV1(input.course_focus_context?.recent_turns ?? [],
+      [{created_at:input.course_focus_context?.batch_started_at ?? new Date(nowMs).toISOString()}],
+      loadConversationSessionConfig().sessionIdleMs),
+    catalogIndex:input.catalog_index ?? (input.business_context ? {
+      as_of:input.business_context.as_of,
+      offerings_total:offerings.length+input.business_context.offerings_truncated,
+      offerings:input.business_context.offerings.map(offering=>({
+        code:offering.code,display_name:offering.display_name,aliases:offering.aliases,academy:offering.academy,
+      })),
+      injection_suspected_count:input.business_context.injection_suspected_count,
+    } : null),
+  });
   const noActiveCall = callFacts?.active_call == null;
   const currentCallAuthorization = salesSignal.type === 'direct_call_request';
   const authorize = (proposal: AgentATurnProposalV1, effectsAllowed = input.conversation_only !== true,
@@ -338,7 +374,9 @@ export async function prepareAgentTurnV2(input: {
       && (state.selected_payment_plan === null
         || paymentVerification.plan_code === state.selected_payment_plan),
     current_customer_messages: input.current_customer_messages,
+    paid_mention_offering_code:mentionFocus.offering_code,
     course_bonus: input.course_bonus_capability,
+    course_programs: input.course_programs,
     semantic_rejections: semanticRejections,
     action_rejections: 'structured',
     effects_allowed: effectsAllowed,
@@ -360,8 +398,14 @@ export async function prepareAgentTurnV2(input: {
   if (input.requested_action !== undefined && input.conversation_only !== true) {
     throw new AgentTurnV2RejectedError(['ACTION_NOT_AUTHORIZED']);
   }
-  const effectiveProposal = input.requested_action === undefined ? input.proposal
+  const requestedProposal = input.requested_action === undefined ? input.proposal
     : { ...input.proposal, proposed_action: input.requested_action };
+  const effectiveProposal = { ...requestedProposal, memory_candidates: requestedProposal.memory_candidates.filter(candidate =>
+    candidate.type === 'objection' && candidate.key === PURCHASE_DECLINE_MEMORY_KEY
+      ? declineQuoteInBatchV1(candidate.source_quote, currentCustomerMessages)
+      : !(candidate.type === 'objection' && candidate.key === 'price_objection'
+        || candidate.type === 'constraint' && candidate.key === 'price_only_barrier' && candidate.value === 'confirmed')
+        || priceObservationQuoteInBatchV1(candidate.source_quote, currentCustomerMessages)) };
   const authority = authorize(effectiveProposal);
   let actionRejection: AgentActionRejectionV1 | null = null;
 
@@ -375,9 +419,12 @@ export async function prepareAgentTurnV2(input: {
     && input.course_bonus_capability.may_accept_offer
     && effectiveProposal.proposed_action.type === 'send_payment_link'
     && authority.action.type === 'none') {
+    // Name the real cause (architect F4, owner test 6bcc8efa): a missing
+    // checkout checkpoint is not a pending promotion acceptance.
     throw new AgentTurnV2RejectedError(
       ['ACTION_NOT_AUTHORIZED'],
-      ['promotion_acceptance_required'],
+      [authority.payment_link_refusal === 'confirmation_required'
+        ? 'payment_confirmation_required' : 'promotion_acceptance_required'],
     );
   }
 
@@ -428,6 +475,24 @@ export async function prepareAgentTurnV2(input: {
   if (authority.action.type !== 'send_payment_link' && authority.action.type !== 'send_test_payment_link'
     && claimsImmediatePaymentLinkDelivery(authority.response)) {
     throw new AgentTurnV2RejectedError(['ACTION_NOT_AUTHORIZED']);
+  }
+  // A programme "being sent now" is an effect: it needs an accepted send_course_program.
+  // Pruned (already sent / unavailable / not requested) or never proposed: repair the copy.
+  if (authority.action.type !== 'send_course_program'
+    && claimsProgramSendNowV1(authority.response, { programTopic: [effectiveProposal.move.move, ...effectiveProposal.move.secondary_moves].includes('request_course_program') })) {
+    const proposed = effectiveProposal.proposed_action.type === 'send_course_program' ? effectiveProposal.proposed_action.offering_code : null;
+    // Without a proposed action, judge availability on the course in focus:
+    // existing, unsent material is `not_proposed` (the repair may propose it),
+    // never `unavailable` (2026-11-05: that made the repair deny the PDF).
+    const sentCodes = input.course_programs?.sent_offering_codes ?? [];
+    const focus = proposed ?? authority.transition.selected_offering_code ?? state.selected_offering_code
+      ?? (sentCodes.length === 1 ? sentCodes[0]! : null);
+    const why = focus !== null && input.course_programs?.sent_offering_codes.includes(focus) ? 'already_sent'
+      : proposed !== null && input.course_programs?.available_offering_codes.includes(proposed) ? 'not_requested'
+      : proposed === null && focus !== null && input.course_programs?.available_offering_codes.includes(focus) ? 'not_proposed'
+      : 'unavailable';
+    throw new AgentTurnV2RejectedError(['ACTION_NOT_AUTHORIZED'],
+      why === 'not_proposed' ? [`program_send_not_executed:${why}`] : ['send_course_program', `program_send_not_executed:${why}`]);
   }
   if (authority.action.type !== 'request_call_now'
     && claimsImmediateCallDispatchV1(authority.response, callFacts?.active_call?.status)) {
@@ -509,7 +574,12 @@ export async function prepareAgentTurnV2(input: {
     discussed_offering_code: authority.discussed_offering_code,
     commercial_interest_offering_code: commercialInterestOfferingCode,
     records_price_objection: recordsPriceObjection,
+    auto_accept_promotion: authority.auto_accept_promotion === true,
     resets_promotion_context: resetsPromotionContext,
     abandons_course_bonus_offer: abandonsCourseBonusOffer,
+    bonus_motive: authority.action.type === 'offer_course_bonus'
+      ? { motive: authority.action.motive,
+          declared_moves: [effectiveProposal.move.move, ...effectiveProposal.move.secondary_moves] }
+      : null,
   };
 }

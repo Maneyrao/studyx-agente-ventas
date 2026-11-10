@@ -5,6 +5,7 @@ import {
   constrainModelToAdvisory,
   modelUnavailableFallback,
   policyRejectedStateFallback,
+  technicalContinuityFallback,
   validationExhaustedNotice,
 } from '../../../botpress-agent/src/utils/decision-policy';
 import type { ClaimedTurn, Decision } from '../../../botpress-agent/src/schemas/contracts';
@@ -37,6 +38,7 @@ function claimedTurn(overrides: {
   offering_code?: string | null;
   selected_payment_plan?: ClaimedTurn['sales_context']['selected_payment_plan'];
   catalog_resolution?: ClaimedTurn['catalog_resolution'];
+  payment_options?: NonNullable<ClaimedTurn['business_context']>['workspace']['payment_options'];
 } = {}): ClaimedTurn {
   return {
     outcome: 'claimed',
@@ -122,7 +124,8 @@ function claimedTurn(overrides: {
       as_of: NOW,
       prices_assertable: true,
       workspace: { slug: 'studyx', display_name: 'StudyX', environment: 'sandbox',
-        default_locale: 'es-AR', timezone: 'America/Argentina/Buenos_Aires', payment_options: [] },
+        default_locale: 'es-AR', timezone: 'America/Argentina/Buenos_Aires',
+        payment_options: overrides.payment_options ?? [] },
       offerings: overrides.offering_names.map((display_name, index) => ({
         code: `course_${index}`, display_name,
         academy: overrides.offering_areas?.[index] ?? null,
@@ -296,10 +299,116 @@ describe('applyDecisionPolicy — provider parity', () => {
     });
 
     expect(decision.response).toBe(
-      'Qué dato o qué curso revisamos?',
+      'Perdón, no te entendí bien, a qué te refieres?',
     );
     expect(decision.response_type).toBe('commercial_reply');
   });
+
+  it('continues a direct call request with the missing intake instead of the generic fallback', () => {
+    const claimed = claimedTurn({
+      allowed_response_types: ['commercial_reply', 'technical_fallback'],
+      batch_message_content: 'Me puedes llamar?',
+    });
+    claimed.deterministic_route = null;
+    claimed.contact_intake_missing = ['nombre', 'apellido', 'correo'];
+    claimed.call_intake_readiness = {
+      status: 'needs_input',
+      requirements: [
+        { field: 'nombre', reason: 'missing' },
+        { field: 'apellido', reason: 'missing' },
+        { field: 'correo', reason: 'missing' },
+      ],
+    };
+
+    const decisions = [
+      technicalContinuityFallback(claimed),
+      validationExhaustedNotice('technical_fallback', {
+        claimed,
+        failure_codes: ['PLANNERLESS_PROPOSAL_REJECTED:ACTION_NOT_AUTHORIZED:request_call_now'],
+      }),
+      modelUnavailableFallback(claimed, 'timeout'),
+      applyDecisionPolicy({
+        ...modelDecision(), response: null, response_type: null,
+      } as never, claimed),
+    ];
+
+    for (const decision of decisions) {
+      expect(decision).toMatchObject({
+        intent: 'commercial',
+        kind: 'reply',
+        response_type: 'commercial_reply',
+        business_action: null,
+        missing_information: ['nombre', 'apellido', 'correo'],
+        next_state: 'waiting_user',
+        reason_code: 'CALL_CONTACT_REQUIRED',
+      });
+      expect(decision.response).toMatch(/nombre/iu);
+      expect(decision.response).toMatch(/apellido/iu);
+      expect(decision.response).toMatch(/correo/iu);
+      expect(decision.response).not.toBe('Perdón, no te entendí bien, a qué te refieres?');
+    }
+  });
+
+  it('does not reopen call intake after the customer explicitly chooses chat', () => {
+    const claimed = claimedTurn({
+      allowed_response_types: ['commercial_reply', 'technical_fallback'],
+      batch_message_content: 'Prefiero seguir por chat',
+    });
+    claimed.conversation_state_v1 = {
+      selected_offering_code: null,
+      selected_payment_plan: null,
+      stage: 'exploring',
+      call_preference: 'call',
+      call_offer_status: 'accepted',
+      call_offer_count: 1,
+      awaiting_reply: 'call_or_chat',
+      version: 2,
+    };
+    claimed.contact_intake_missing = ['nombre', 'apellido', 'correo'];
+    claimed.call_intake_readiness = {
+      status: 'needs_input',
+      requirements: [
+        { field: 'nombre', reason: 'missing' },
+        { field: 'apellido', reason: 'missing' },
+        { field: 'correo', reason: 'missing' },
+      ],
+    };
+
+    const decision = modelUnavailableFallback(claimed, 'timeout');
+
+    expect(decision.reason_code).not.toBe('CALL_CONTACT_REQUIRED');
+    expect(decision.response).toMatch(/seguimos por chat/iu);
+    expect(decision.response).not.toMatch(/nombre|apellido|correo/iu);
+  });
+
+  it.each(['active', 'closed', 'historical'] as const)(
+    'does not reopen a %s call checkpoint after an unrelated provider failure',
+    (callState) => {
+      const claimed = claimedTurn({
+        allowed_response_types: ['commercial_reply', 'technical_fallback'],
+        batch_message_content: 'Mmm, contame otra cosa',
+      });
+      claimed.conversation_state_v1 = {
+        selected_offering_code: null,
+        selected_payment_plan: null,
+        stage: callState === 'closed' ? 'closed' : 'exploring',
+        call_preference: 'call',
+        call_offer_status: 'accepted',
+        call_offer_count: 1,
+        awaiting_reply: callState === 'historical' ? 'none' : 'call_or_chat',
+        version: 2,
+      };
+      claimed.sales_context.active_call = callState === 'active'
+        ? { call_id: UUID, status: 'in_progress' }
+        : null;
+      claimed.call_intake_readiness = { status: 'ready', requirements: [] };
+
+      const decision = modelUnavailableFallback(claimed, 'timeout');
+
+      expect(decision.reason_code).not.toBe('CALL_AVAILABILITY_REQUIRED');
+      expect(decision.response).not.toMatch(/puedes atender ahora/iu);
+    },
+  );
 
   it('normalizes a clarification with no missing field before the backend boundary', () => {
     const decision = applyDecisionPolicy(modelDecision({
@@ -879,5 +988,80 @@ describe('applyDecisionPolicy — provider parity', () => {
       key: 'target_course',
       value: 'Introducción al Catering',
     }));
+  });
+
+  describe('owner P0 (2026-11-03): price question during a provider outage', () => {
+    const plans = [
+      { code: 'monthly_12' as const, label: '12 cuotas', total: { amount: '360.00' as const, currency: 'USD' as const },
+        installments: 12, installment_amount: '30.00' as const, payment_link: 'https://pay.example/12' },
+      { code: 'monthly_6' as const, label: '6 cuotas', total: { amount: '360.00' as const, currency: 'USD' as const },
+        installments: 6, installment_amount: '60.00' as const, payment_link: 'https://pay.example/6' },
+      { code: 'one_time' as const, label: 'Contado', total: { amount: '360.00' as const, currency: 'USD' as const },
+        installments: 1, installment_amount: '360.00' as const, payment_link: 'https://pay.example/1' },
+    ];
+
+    it('answers the canonical price and plans and asks for the course when none is chosen', () => {
+      const fallback = modelUnavailableFallback(claimedTurn({
+        batch_message_content: 'quiero saber como es el tema del pago',
+        offering_names: ['Inglés 1'], payment_options: plans,
+      }));
+      expect(fallback.response).toBe('El valor es USD 360 y lo puedes pagar en 12 cuotas de USD 30, '
+        + '6 cuotas de USD 60 o un pago único de USD 360. Qué curso te interesa?');
+      expect(fallback.response).not.toMatch(/Qué dato o qué curso|no te entendí|https?:/u);
+    });
+
+    it('with a course in focus answers canonical data only: no fixed closing question (owner 2026-11-04)', () => {
+      const fallback = modelUnavailableFallback(claimedTurn({
+        batch_message_content: 'cuanto sale?', course_of_interest: 'Inglés 1', offering_code: 'course_1',
+        offering_names: ['Inglés 1'], payment_options: plans,
+      }));
+      expect(fallback.response).toBe('Inglés 1: El valor es USD 360 y lo puedes pagar en 12 cuotas de USD 30, '
+        + '6 cuotas de USD 60 o un pago único de USD 360.');
+    });
+
+    it.each(['cuanto sale?', 'quiero saber como es el tema del pago', 'ingles quiero saber el precio', 'mmm', 'hola'])(
+      'no live-path fallback ends with a removed prefab CTA or the old technical text: %s', (text) => {
+        for (const course_of_interest of [undefined, 'Inglés 1']) {
+          const fallback = modelUnavailableFallback(claimedTurn({
+            batch_message_content: text, course_of_interest, offering_code: course_of_interest ? 'course_1' : undefined,
+            offering_names: ['Inglés 1'], payment_options: plans,
+          } as never));
+          expect(fallback.response).not.toMatch(/Con cuál plan te gustaría avanzar\?|Así te cuento todo sobre ese|Hubo un problema/u);
+        }
+        const invalid = applyDecisionPolicy({ ...modelUnavailableFallback(claimedTurn({ batch_message_content: text, offering_names: ['Inglés 1'] })),
+          response: null, response_type: null } as never, claimedTurn({ batch_message_content: text, offering_names: ['Inglés 1'] }));
+        expect(invalid.response).toBe('Perdón, no te entendí bien, a qué te refieres?');
+      });
+
+    it('never asserts a price the backend did not authorize', () => {
+      const fallback = modelUnavailableFallback(claimedTurn({
+        batch_message_content: 'cuanto sale?', offering_names: ['Inglés 1'], payment_options: [],
+      }));
+      expect(fallback.response).not.toMatch(/USD|\d/u);
+    });
+
+    it.each(['ya pagué y no me llegó nada', 'no puedo pagar ahora', 'te mandé el comprobante del pago'])(
+      'never answers a payment report with the price pitch: %s', (text) => {
+        const fallback = modelUnavailableFallback(claimedTurn({
+          batch_message_content: text, offering_names: ['Inglés 1'], payment_options: plans,
+        }));
+        expect(fallback.response).not.toMatch(/USD/u);
+      });
+
+    it('a price question whose drafts were all rejected still gets the canonical price (golden 21)', () => {
+      const decision = validationExhaustedNotice('technical_fallback', { claimed: claimedTurn({
+        allowed_response_types: ['commercial_reply', 'technical_fallback'],
+        batch_message_content: 'ingles quiero saber el precio', offering_names: ['Inglés 1'], payment_options: plans,
+      }), failure_codes: ['FACT_VALUE_MISMATCH'] });
+      expect(decision.response).toMatch(/^El valor es USD 360 y lo puedes pagar en 12 cuotas de USD 30/u);
+      expect(decision.reason_code).toBe('AGENT_A_VALIDATION_EXHAUSTED');
+    });
+
+    it('uses the natural clarification only for an unclassifiable message', () => {
+      const fallback = modelUnavailableFallback(claimedTurn({
+        batch_message_content: 'mmm', offering_names: ['Inglés 1'], payment_options: plans,
+      }));
+      expect(fallback.response).toBe('Perdón, no te entendí bien, a qué te refieres?');
+    });
   });
 });

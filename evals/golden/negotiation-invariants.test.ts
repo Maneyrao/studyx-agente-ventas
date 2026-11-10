@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { evaluateNegotiationInvariantsV1, type NegotiationTurnEvidenceV1 } from './negotiation-invariants';
+import { usesCurrentModelOwnedNegotiationV1 } from './negotiation-evidence';
 function turn(count=3, codes=['extra']): NegotiationTurnEvidenceV1 {
   return { turnId:'t1', response:'Curso pago + Extra', customer:'precio', currentTurnId:'current',
     priorPriceSourceIds:['p1','p2','p3'], ladder:{observed_price_objection_count:count,required_price_objection_count:3,
@@ -9,6 +10,47 @@ function turn(count=3, codes=['extra']): NegotiationTurnEvidenceV1 {
     offerings:[{code:'paid',displayName:'Curso pago'},{code:'extra',displayName:'Extra'},{code:'two',displayName:'Dos'},{code:'three',displayName:'Tres'}] };
 }
 describe('negotiation invariants (authority:106-129; spec:39-40,59-71)',()=>{
+  it('selects current model-owned semantics from the runtime ladder shape',()=>{
+    expect(usesCurrentModelOwnedNegotiationV1({ladder:{retention_used:false,previous_turn_asked_price_question:false}})).toBe(true);
+    expect(usesCurrentModelOwnedNegotiationV1({ladder:{...turn().ladder!} as never})).toBe(false);
+  });
+  it('accepts the current motive-based ladder without retired objection counters or a prior call',()=>{
+    const current: NegotiationTurnEvidenceV1 = {
+      ...turn(),
+      customer:'El precio me sigue frenando.',
+      currentTurnId:'current',
+      priorPriceSourceIds:[],
+      ladder:{retention_used:false,previous_turn_asked_price_question:false} as never,
+      proposedAction:{
+        type:'offer_course_bonus',
+        bonus_offering_code:'extra',
+        interest_offering_code:'paid',
+        motive:{kind:'price_objection',quote:'El precio me sigue frenando.'},
+      },
+    };
+    const result=evaluateNegotiationInvariantsV1('17',[current],'PASS');
+    expect(result.status).toBe('PASS');
+    expect(result.checks.find(check=>check.id==='prior_call')).toBeUndefined();
+  });
+  it('counts a quoted and persisted current objection for owner rule A without requiring a prior call', () => {
+    const current: NegotiationTurnEvidenceV1 = { ...turn(1), priorPriceSourceIds: ['p1'],
+      currentPriceObjectionQuoted: true, currentPriceObjectionPersisted: true,
+      ladder: { ...turn(1).ladder!, required_price_objection_count: 2, call_invitation_status: 'not_offered', call_offer_count: 0 } };
+    expect(evaluateNegotiationInvariantsV1('17', [current], 'PASS').status).toBe('PASS');
+    expect(evaluateNegotiationInvariantsV1('17', [{ ...current, currentPriceObjectionQuoted: false }], 'PASS').status).toBe('FAIL');
+    expect(evaluateNegotiationInvariantsV1('17', [{ ...current, currentPriceObjectionPersisted: false }], 'PASS').status).toBe('FAIL');
+    expect(evaluateNegotiationInvariantsV1('17', [{ ...current, priorPriceSourceIds: ['current'] }], 'PASS').status).toBe('FAIL');
+  });
+
+  it('accepts the confirmed price-only exception with recorded objection evidence, never a cached eligible bit alone', () => {
+    const current: NegotiationTurnEvidenceV1 = { ...turn(0), priorPriceSourceIds: [],
+      currentPriceObjectionQuoted: true, currentPriceObjectionPersisted: true,
+      priceOnlyBarrierConfirmed: true,
+      ladder: { ...turn(0).ladder!, required_price_objection_count: 2, call_invitation_status: 'not_offered', call_offer_count: 0 } };
+    expect(evaluateNegotiationInvariantsV1('18', [current], 'PASS').status).toBe('PASS');
+    expect(evaluateNegotiationInvariantsV1('18', [{ ...current, priceOnlyBarrierConfirmed: false }], 'PASS').status).toBe('FAIL');
+    expect(evaluateNegotiationInvariantsV1('18', [{ ...current, currentPriceObjectionPersisted: false }], 'PASS').status).toBe('FAIL');
+  });
   it('rejects premature effects and same-turn objections without interpreting prose',()=>{
     expect(evaluateNegotiationInvariantsV1('06',[turn(2)],'PASS').status).toBe('FAIL');
     expect(evaluateNegotiationInvariantsV1('06',[{...turn(),priorPriceSourceIds:['p1','p2','current']}],'PASS').status).toBe('FAIL');
@@ -52,6 +94,18 @@ describe('negotiation invariants (authority:106-129; spec:39-40,59-71)',()=>{
   it('requires semantic recap evidence, allowing natural aliases rather than exact display names',()=>{
     expect(evaluateNegotiationInvariantsV1('06',[turn(),{...turn(3,['extra','two']),turnId:'t2',response:'Foto profesional más los dos complementos'}],'INDETERMINATE').checks.find(c=>c.id==='package_recap')?.status).toBe('INDETERMINATE');
     expect(evaluateNegotiationInvariantsV1('06',[turn(),{...turn(3,['extra','two']),turnId:'t2',response:'Foto profesional más los dos complementos'}],'PASS').checks.find(c=>c.id==='package_recap')?.status).toBe('PASS');
+  });
+  it('attributes recap semantics per bonus turn instead of contaminating valid turns with another failure',()=>{
+    const first=turn();
+    const second={...turn(3,['extra','two']),turnId:'t2',response:'Curso pago más Extra y Dos'};
+    const result=evaluateNegotiationInvariantsV1('06',[first,second],'FAIL','PASS',{t1:'PASS',t2:'FAIL'});
+    expect(result.checks.find(c=>c.id==='package_recap')).toMatchObject({
+      status:'FAIL',failedTurnIds:['t2'],indeterminateTurnIds:[],
+    });
+    expect(result.turn_results).toEqual([
+      {turnId:'t1',status:'PASS'},
+      {turnId:'t2',status:'FAIL'},
+    ]);
   });
   it('rejects a ghost bonus in the first snapshot of known setup-none cases',()=>{
     const ghost={...turn(),action:null,proposedAction:{type:'none'}};

@@ -1,10 +1,14 @@
 import { courseBonusLadderRejectionSubjectsV1 } from '@/shared/conversation/bonus-ladder-rejection';
+import { copyNamesCourseV1 } from '@/shared/conversation/course-bonus-claim';
+import { messageIndexOfSentenceV1 } from '@/shared/conversation/sentence-locator';
 import { backendReleaseSha } from './turn-evidence.service';
 import type { ConversationChannel } from '@/lib/contracts/channel';
 import { randomUUID } from 'node:crypto';
 import { collectNegotiationObservationsV1 } from '@/features/conversation/application/read-negotiation-facts';
 import { offerDirectCourseBonusV1, acceptDirectCourseBonusV1 } from '@/features/promotions/application/direct-course-bonus-service';
 import type { CourseBonusCapabilityV1 } from '@/features/promotions/application/read-course-bonus-capability';
+import { readCourseProgramsCapabilityV1 } from '@/features/programs/application/read-course-programs-capability';
+import { courseProgramAssetV1, courseProgramImageUrlV1, courseProgramUrlV1, programModuleCountV1 } from '@/shared/catalog/course-programs';
 import { withSerializableTransaction } from '@/lib/db/transaction';
 import { sql } from '@/lib/db/orchestrator';
 import { jsonbParam } from '@/lib/db/json';
@@ -26,6 +30,7 @@ import {
 import { auditLog } from '@/lib/audit/logger';
 import { resolveAgentTurnOfferingReferenceV2 } from '@/features/conversation/domain/agent-turn-policy-v2';
 import {
+  config,
   loadAgentARolloutConfig,
   loadBusinessWorkspaceConfig,
   loadSheetsProjectionConfig,
@@ -68,6 +73,7 @@ import {
   createValidatedPaymentLinkCourseSelectionV1,
   reserveStripeVerificationLink,
 } from '@/features/payments/application/reserve-payment-link';
+import { replacePendingCheckoutV1 } from '@/features/payments/application/replace-pending-checkout';
 import {
   PAYMENT_PLAN_PRESENTATIONS,
   isStripePaymentLinkUrl,
@@ -217,6 +223,8 @@ export interface CommitDecisionResult {
     authorized_egress: AuthorizedEgressV1;
     part_index: number;
     part_count: number;
+    /** Present on the official-programme document part; the URL is built here, never by the model. */
+    document?: CourseProgramDocumentV1;
   }>;
   /**
    * Present exactly when this decision reserved a call. On replay it carries
@@ -250,6 +258,8 @@ export class DecisionPolicyError extends Error {
   constructor(
     public readonly reason: string,
     public readonly subjects: readonly string[] = [],
+    /** Violating values and sentences, so the author can repair only that claim. */
+    public readonly violations: readonly { code: string; value: string; sentence: string; message_index?: number }[] = [],
   ) {
     super(reason);
     this.name = 'DecisionPolicyError';
@@ -298,8 +308,33 @@ interface DecisionRow {
   authorized_egress: unknown;
 }
 
+export interface CourseProgramDocumentV1 {
+  readonly kind: 'course_program';
+  /** `file`: the programme PDF (sent first); `image`: the course image (sent after the PDF). */
+  readonly media: 'file' | 'image';
+  readonly offering_code: string;
+  readonly file_url: string;
+  readonly filename: string;
+  readonly title: string;
+}
+
+/** The document descriptor of a persisted part, rebuilt from registry + env (replay-safe). */
+function courseProgramDocumentOf(metadata: unknown, title: string): CourseProgramDocumentV1 | undefined {
+  const program = (metadata as { course_program?: { offering_code?: unknown; kind?: unknown } } | null | undefined)?.course_program;
+  const code = typeof program?.offering_code === 'string' ? program.offering_code : null;
+  const asset = code ? courseProgramAssetV1(code) : null;
+  if (!code || !asset) return undefined;
+  if (program?.kind === 'image') {
+    const imageUrl = courseProgramImageUrlV1(code, process.env);
+    return imageUrl ? { kind: 'course_program', media: 'image', offering_code: code, file_url: imageUrl, filename: asset.image.filename, title } : undefined;
+  }
+  const url = courseProgramUrlV1(code, process.env);
+  return url ? { kind: 'course_program', media: 'file', offering_code: code, file_url: url, filename: asset.filename, title } : undefined;
+}
+
 interface PersistedOutboundPartRow {
   id: string;
+  metadata?: unknown;
   content: string;
   delivery_state: string | null;
   delivery_attempt: number | null;
@@ -350,6 +385,7 @@ async function loadDecisionOutbounds(
       delivery.state AS delivery_state,
       delivery.attempt_count AS delivery_attempt,
       message.metadata -> 'authorized_egress' AS authorized_egress,
+      message.metadata AS metadata,
       part.part_index::integer AS part_index
     FROM agent_decision_outbound_parts AS part
     JOIN messages AS message ON message.id = part.message_id
@@ -369,15 +405,15 @@ async function loadDecisionOutbounds(
       part_count: 1,
     }];
   }
-  return rows.map((row) => ({
-    id: row.id,
-    content: row.content,
-    status: mapDeliveryState(row.delivery_state),
-    delivery_attempt: Number(row.delivery_attempt ?? 1),
-    authorized_egress: verifyPersistedEgress(row.content, row.authorized_egress),
-    part_index: Number(row.part_index),
-    part_count: rows.length,
-  }));
+  return rows.map((row) => {
+    return {
+      id: row.id, content: row.content, status: mapDeliveryState(row.delivery_state),
+      delivery_attempt: Number(row.delivery_attempt ?? 1),
+      authorized_egress: verifyPersistedEgress(row.content, row.authorized_egress),
+      part_index: Number(row.part_index), part_count: rows.length,
+      ...(courseProgramDocumentOf(row.metadata, row.content) ? { document: courseProgramDocumentOf(row.metadata, row.content)! } : {}),
+    };
+  });
 }
 
 async function loadDecisionCommercialFollowups(
@@ -416,10 +452,8 @@ async function loadTurnPolicy(turnId: string, db: DbClient): Promise<TurnPolicyR
         WHERE candidate.direction = 'inbound'
           AND candidate.contact_id = m.contact_id
           AND candidate.conversation_id = m.conversation_id
-          AND (
-            (m.batch_id IS NOT NULL AND candidate.batch_id = m.batch_id)
-            OR (m.batch_id IS NULL AND candidate.id = m.id)
-          )
+          -- Same scope as the claim: the whole current intervention.
+          AND candidate.id IN (SELECT current_turn.id FROM agent_intervention_inbound_v1(m.id) AS current_turn)
           AND candidate.metadata @> '{"opt_out_ack_eligible": true}'::jsonb
       ), ARRAY[]::text[]) AS opt_out_ack_eligible_contents
     FROM messages AS m
@@ -478,8 +512,13 @@ function decisionPayload(input: CommitDecisionInput) {
     ...(input.conversation_pipeline_v1
       ? { conversation_pipeline_v1: input.conversation_pipeline_v1 }
       : {}),
+    // turn_reasoning is internal evidence, never part of the idempotency identity.
     ...(input.agent_turn_v2
-      ? { agent_turn_v2: input.agent_turn_v2 }
+      ? { agent_turn_v2: {
+          ...input.agent_turn_v2,
+          proposal: Object.fromEntries(Object.entries(input.agent_turn_v2.proposal)
+            .filter(([key]) => key !== 'turn_reasoning')) as typeof input.agent_turn_v2.proposal,
+        } }
       : {}),
     ...(input.supports_multi_outbound ? { supports_multi_outbound: true } : {}),
     ...(input.supports_turn_supersession ? { supports_turn_supersession: true } : {}),
@@ -701,6 +740,9 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
     let preparedAgentTurn: Awaited<ReturnType<typeof prepareAgentTurnV2>> | null = null;
     let preparedAgentWorkspaceId: string | null = null;
     let courseBonusCapability: CourseBonusCapabilityV1 | undefined;
+    let courseProgramsCapability: Awaited<ReturnType<typeof readCourseProgramsCapabilityV1>> | undefined;
+    /** Durations the official programme text itself states (e.g. its listed modules). */
+    let programStatedDurations: string[] = [];
     // El contador de fallbacks tiene que sobrevivir a la supresión, y
     // `preparedPipeline` no: la rama de egress lo anula y con él se iría la
     // única lectura del estado de la conversación.
@@ -820,13 +862,11 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
       const workspaceId = rawBusiness?.workspace.id ?? workspaceRows[0]?.id;
       if (!workspaceId) throw new DecisionPolicyError('AGENT_TURN_V2_CONTEXT_NOT_FOUND');
       try {
-        const currentMessages = turn.batch_id === null
-          ? [{ content: turn.content }]
-          : await db<Array<{ content: string }>>`
-              SELECT content FROM messages
-              WHERE batch_id = ${turn.batch_id}::uuid AND direction = 'inbound'
-              ORDER BY conversation_seq ASC, created_at ASC, id ASC
-            `;
+        // Owner 2026-11-10: validate against the whole current intervention
+        // (every unanswered message since the agent's last reply).
+        const currentMessages = await db<Array<{ content: string }>>`
+          SELECT content FROM agent_intervention_inbound_v1(${turn.id}::uuid)
+        `;
         const agentCatalogIndex = rawCatalogIndex ? buildCatalogIndexView(rawCatalogIndex) : null;
         const agentBusinessContext = rawBusiness ? buildBusinessContextView(rawBusiness) : null;
         const currentMoves=[agentTurnProposal.move.move,...agentTurnProposal.move.secondary_moves];
@@ -840,9 +880,16 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
             || (proposedActionType==='none' && currentMoves.includes('request_payment_link')));
         // Checkout owns the canonical selection of this complete turn. Reading
         // only the previous state can hide A's supersession or veto a valid B.
+        // Live 2026-11-10: with no persisted course, a link action names the course
+        // whose promotion capability applies; the policy still requires an exact
+        // catalog course declared `paid` before it authorizes anything. The capability
+        // may therefore be read for a course the policy later rejects: the policy
+        // stays authoritative and nothing is attached or sent by this read.
+        const recoveredLinkOfferingCode=agentTurnProposal.proposed_action.type==='send_payment_link'
+          ? agentTurnProposal.proposed_action.offering_code : null;
         const checkoutOfferingCode=checkoutSelectsCourse
           ? proposalOfferingCode
-          : pipelineStateBefore?.selected_offering_code ?? null;
+          : pipelineStateBefore?.selected_offering_code ?? recoveredLinkOfferingCode;
         const knowledgeOfferingCode=proposalOfferingCode ?? pipelineStateBefore?.selected_offering_code ?? null;
         const citedKnowledgeSourceIds=agentTurnProposal.used_fact_ids
           .flatMap((factId) => {
@@ -867,6 +914,14 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
               source:'knowledge_base',value:row.content,offering_code:row.offering_code});
           }
         }
+        if (knowledgeOfferingCode !== null) {
+          const programRows = await db<Array<{ content: string }>>`
+            SELECT content FROM knowledge_sources
+            WHERE workspace_id=${workspaceId}::uuid AND status='active' AND source_type='offering'
+              AND COALESCE(metadata->>'course_code',metadata->>'offering_code')=${knowledgeOfferingCode}`;
+          const modules = programModuleCountV1(programRows.map(row => row.content));
+          programStatedDurations = modules === null ? [] : [`${modules} módulos`];
+        }
         courseBonusCapability = await readCourseBonusCapabilityV1({
           workspace_slug: workspaceSlug,
           contact_id: turn.contact_id,
@@ -875,7 +930,19 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
           selected_offering_code: checkoutOfferingCode,
           source_turn_id: turn.id,
         }, { db });
+        courseProgramsCapability = await readCourseProgramsCapabilityV1({
+          workspace_slug: workspaceSlug, conversation_id: turn.conversation_id,
+        }, { db }) ?? undefined;
         preparedAgentWorkspaceId = workspaceId;
+        // The claim presents a server-derived dialogue focus without persisting
+        // a purchase selection. Reload the same logical history under this
+        // transaction so paid mentions use the same projector, not client metadata.
+        const courseFocusContext = turn.batch_id === null ? null
+          : await new PostgresOrchestrationStore(db).loadClaimedBatchContext({
+              batch_id:turn.batch_id,recent_turns_limit:config.recentTurnsLimit,
+            });
+        const courseFocusStart = courseFocusContext?.batch_messages
+          .map(message=>message.created_at).sort()[0];
         preparedAgentTurn = await prepareAgentTurnV2({
           turn: {
             id: turn.id,
@@ -890,10 +957,15 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
           operational_continuity: validatedInput.agent_turn_v2.operational_continuity,
           semantic_rejections: 'advisory',
           current_customer_messages: currentMessages.map((message) => message.content),
+          ...(courseFocusContext && courseFocusStart ? {course_focus_context:{
+            recent_turns:courseFocusContext.logical_recent_turns ?? courseFocusContext.facts.recent_turns,
+            batch_started_at:courseFocusStart,
+          }} : {}),
           business_context: agentBusinessContext,
           catalog_index: agentCatalogIndex,
           authorized_knowledge_facts: authorizedKnowledgeFacts,
           course_bonus_capability: courseBonusCapability,
+          ...(courseProgramsCapability ? { course_programs: courseProgramsCapability } : {}),
         }, {
           state_store: new PostgresConversationStateStoreV1(db),
           call_facts: new PostgresOrchestrationStore(db),
@@ -958,13 +1030,9 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
 
     const loadBatchMessages = async (): Promise<Array<{ content: string }>> => {
       if (loadedBatchMessages !== null) return loadedBatchMessages;
-      loadedBatchMessages = turn.batch_id === null
-        ? [{ content: turn.content }]
-        : await db<Array<{ content: string }>>`
-            SELECT content FROM messages
-            WHERE batch_id = ${turn.batch_id}::uuid AND direction = 'inbound'
-            ORDER BY conversation_seq ASC, created_at ASC, id ASC
-          `;
+      loadedBatchMessages = await db<Array<{ content: string }>>`
+        SELECT content FROM agent_intervention_inbound_v1(${turn.id}::uuid)
+      `;
       return loadedBatchMessages;
     };
 
@@ -1113,10 +1181,81 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
         throw new DecisionPolicyError('AGENT_TURN_V2_REJECTED:ACTION_NOT_AUTHORIZED');
       }
 
+      // Rule A automatic acceptance (owner 2026-11-02): the offered direct package
+      // is accepted in this same transaction before the link is reserved, so the
+      // link carries the exact sealed package without a model accept_promotion.
+      if (preparedAgentTurn?.auto_accept_promotion && canonicalWorkspaceId && action.offering_sku && courseBonusCapability?.promotion_code
+        && courseBonusCapability.promotion_cycle_id && courseBonusCapability.package_status === 'offered') {
+        const accepted = await acceptDirectCourseBonusV1(db, {
+          workspace_id: canonicalWorkspaceId, contact_id: turn.contact_id, conversation_id: turn.conversation_id,
+          paid_offering_code: action.offering_sku, source_turn_id: turn.id,
+          expected_offer_version: courseBonusCapability.offer_version ?? 0,
+          promotion_code: courseBonusCapability.promotion_code,
+          promotion_cycle_id: courseBonusCapability.promotion_cycle_id,
+        });
+        if (!accepted.ok) throw new DecisionPolicyError('AGENT_TURN_V2_REJECTED:COMMERCIAL_TRUTH_VIOLATION',
+          ['forbidden_promise', `direct_bonus:${accepted.reason}`]);
+        courseBonusCapability = { ...courseBonusCapability, package_status: 'accepted', status: 'accepted' };
+      }
+
+      // Incident B (owner 2026-11-10): an untouched checkout of this same
+      // course whose plan or registration e-mail no longer matches is replaced
+      // by one explicit revision (same package, same offer_version, no new
+      // redemption); it is never re-reserved against the attached package.
+      let revisedCheckout = false;
+      if (canonicalWorkspaceId && action.offering_sku) {
+        // The CURRENT unpaid checkout of this course (the newest one), and
+        // only then whether its plan or e-mail differ from the request.
+        const [pendingCheckout] = await db<Array<{ id: string; offering_id: string; has_package: boolean; stale: boolean }>>`
+          SELECT p.id, p.offering_id,
+            EXISTS (SELECT 1 FROM payment_bonus_offerings s WHERE s.payment_id=p.id) AS has_package,
+            (p.plan_code<>${action.plan_code} OR p.registration_email IS DISTINCT FROM (
+              SELECT lower(trim(email)) FROM contacts WHERE id=${turn.contact_id}::uuid)) AS stale
+          FROM payments p
+          JOIN offerings o ON o.id=p.offering_id AND o.workspace_id=p.workspace_id AND o.code=${action.offering_sku}
+          WHERE p.workspace_id=${canonicalWorkspaceId}::uuid AND p.contact_id=${turn.contact_id}::uuid
+            AND p.source_conversation_id=${turn.conversation_id}::uuid AND p.provider='stripe'
+            AND p.plan_code IS NOT NULL AND p.status='reserved' AND p.provider_session_id IS NULL
+            AND p.environment=${stripePaymentLinkEnvironment(materialized.block.url) ?? 'live'}
+            AND NOT EXISTS (SELECT 1 FROM payment_intent_supersessions s WHERE s.payment_id=p.id)
+          ORDER BY p.created_at DESC, p.id DESC
+          LIMIT 1
+        `;
+        // A plain checkout followed by a newly accepted package is a different
+        // obligation and keeps the ordinary reservation path below.
+        if (pendingCheckout?.stale && (pendingCheckout.has_package || !action.promotion_code)) {
+          try {
+            const revised = await replacePendingCheckoutV1(db, {
+              workspace_id: canonicalWorkspaceId,
+              contact_id: turn.contact_id,
+              conversation_id: turn.conversation_id,
+              offering_id: pendingCheckout.offering_id,
+              previous_payment_id: pendingCheckout.id,
+              plan_code: action.plan_code,
+              payment_link_url: materialized.block.url,
+              idempotency_key: `agent-a-payment-link:${turn.id}`,
+              source_turn_id: turn.id,
+              ...(action.promotion_code ? { promotion_code: action.promotion_code } : {}),
+            });
+            // `reused` only happens when a concurrent turn already aligned the
+            // checkout: the ordinary dedupe below re-delivers it once.
+            if (revised.outcome === 'replaced') {
+              const configuredUrl = materialized.block.url;
+              materialized = { ...materialized, block: { ...materialized.block, url: revised.url },
+                response_text: materialized.response_text.replaceAll(configuredUrl, revised.url) };
+              revisedCheckout = true;
+            }
+          } catch (error) {
+            if (error instanceof PaymentLinkReservationError) throw new DecisionPolicyError(error.code);
+            throw error;
+          }
+        }
+      }
+
       // Revalidation above must happen before this dedupe read. Otherwise a
       // mismatched SKU or a current veto could obtain a friendly acknowledgement
       // merely because an older valid link existed in the same conversation.
-      const priorPaymentLinks = await db<Array<{ id: string; checkout_url: string | null; status: string | null }>>`
+      const priorPaymentLinks = revisedCheckout ? [] : await db<Array<{ id: string; checkout_url: string | null; status: string | null }>>`
         SELECT ad.id, prior_payment.checkout_url, prior_payment.status
         FROM agent_decisions AS ad
         JOIN messages AS prior_turn ON prior_turn.id = ad.turn_id
@@ -1146,7 +1285,7 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
         LIMIT 1
       `;
 
-      if (priorPaymentLinks.length === 0) {
+      if (priorPaymentLinks.length === 0 && !revisedCheckout) {
         if (!canonicalWorkspaceId) {
           throw new DecisionPolicyError('PAYMENT_WORKSPACE_NOT_FOUND');
         }
@@ -1329,15 +1468,31 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
       });
       const proposedDirectBonusCode = committedBusinessAction?.type === 'offer_course_bonus'
         ? committedBusinessAction.bonus_offering_code : null;
+      // An offer may still be the conversational focus without being a
+      // persisted purchase selection. The direct-bonus transaction already
+      // authorizes its paid-course identity explicitly; reuse that server-
+      // validated identity only for the egress fact check. This must not turn
+      // the recommendation into a stored selection or authorize checkout.
+      const commercialTruthPaidOfferingCode = effectiveAuthorizedOfferingCode
+        ?? (committedBusinessAction?.type === 'offer_course_bonus'
+          ? committedBusinessAction.interest_offering_code
+          : null);
       const inspectCommercialText = (content: string) => enforceCommercialTruthV1({
         content,
         authorized_urls: authorizedUrls,
         canonical: {
           ...canonicalTruth,
-          paid_offering_names: offerings.filter(o => o.code === effectiveAuthorizedOfferingCode).map(o => o.display_name),
+          authorized_promo_expires_at: courseBonusCapability?.sales_flow?.promo_expires_at ?? null,
+          paid_offering_names: offerings.filter(o => o.code === commercialTruthPaidOfferingCode).map(o => o.display_name),
+          // Delivered gifts belong to their own paid course and open/accepted
+          // cycle; an authorized course switch does not inherit them.
           authorized_bonus_names: [
-            ...(courseBonusCapability?.delivered_bonus_offerings ??
-              (courseBonusCapability?.enabled ? [] : courseBonusCapability?.bonus_offerings ?? []))
+            ...((commercialTruthPaidOfferingCode === null
+              || courseBonusCapability?.interest_offering_code === commercialTruthPaidOfferingCode)
+              && !['cancelled', 'expired'].includes(courseBonusCapability?.package_status ?? '')
+              ? courseBonusCapability?.delivered_bonus_offerings ??
+                (courseBonusCapability?.enabled ? [] : courseBonusCapability?.bonus_offerings ?? [])
+              : [])
               .map(o => o.display_name),
             ...offerings.filter(o => o.code === proposedDirectBonusCode).map(o => o.display_name),
           ],
@@ -1358,12 +1513,14 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
           ],
           durations: [
             ...canonicalTruth.durations,
+            ...programStatedDurations,
             ...authorizedProtectedFacts
               .filter((fact) => fact.kind === 'duration')
               .map((fact) => fact.value),
           ],
         },
       });
+      const authoredMessages = validatedInput.agent_turn_v2?.proposal.response.messages ?? [];
       const inspectedVerdict = inspectCommercialText(finalResponse);
       // Agent A owns its wording and transition. Reject an unsupported fact
       // before the transaction commits so A can reformulate the complete turn;
@@ -1385,6 +1542,17 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
         throw new DecisionPolicyError(
           'AGENT_TURN_V2_REJECTED:COMMERCIAL_TRUTH_VIOLATION',
           subjects,
+          // Violating values and the sentences that carry them, so Agent A can
+          // repair that claim only. The backend itself never prunes.
+          [
+            ...verdict.violations.slice(0, 16).map((violation) => ({
+              code: violation.code.toLowerCase(), value: violation.value.slice(0, 80), sentence: '',
+            })),
+            ...verdict.removed.slice(0, 16).map((sentence) => ({
+              code: 'sentence', value: '', sentence: sentence.trim().slice(0, 600),
+              ...messageIndexOfSentenceV1(authoredMessages, sentence),
+            })),
+          ],
         );
       }
       // Un efecto ya comprometido no puede quedar sin respuesta que lo
@@ -1576,10 +1744,7 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
         offering_code: preparedAgentTurn.commercial_interest_offering_code,
         candidates: decision.memory_candidates,
         messages: await db<Array<{ id: string; content: string }>>`
-          SELECT id, content FROM messages WHERE contact_id=${turn.contact_id}::uuid
-            AND conversation_id=${turn.conversation_id}::uuid AND direction='inbound'
-            AND (id=${turn.id}::uuid OR batch_id=${turn.batch_id}::uuid)
-          ORDER BY conversation_seq, created_at, id`,
+          SELECT id, content FROM agent_intervention_inbound_v1(${turn.id}::uuid)`,
       }) : [];
     const inserted = await db<Array<{ id: string }>>`
       INSERT INTO agent_decisions (
@@ -1675,13 +1840,10 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
         // El consentimiento se deriva del batch completo, no sólo del turno
         // representativo: un "llamame" enterrado en la ráfaga autoriza y un
         // "mejor no" posterior lo revoca.
-        const consentMessages = turn.batch_id === null
-          ? [{ id: turn.id, content: turn.content }]
-          : await db<Array<{ id: string; content: string }>>`
-              SELECT id, content FROM messages
-              WHERE batch_id = ${turn.batch_id}::uuid AND direction = 'inbound'
-              ORDER BY conversation_seq ASC, created_at ASC, id ASC
-            `;
+        // Owner 2026-11-10: the whole current intervention, same as the claim.
+        const consentMessages = await db<Array<{ id: string; content: string }>>`
+          SELECT id, content FROM agent_intervention_inbound_v1(${turn.id}::uuid)
+        `;
         const authorizedSourceIndex = preparedPipeline || preparedAgentTurn
           ? selectAuthorizedVoiceConsentSourceIndex({
               mode: decision.business_action.reason,
@@ -1726,9 +1888,58 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
         final_response: finalResponse,
         authored_messages: preparedAgentTurn?.response_messages ?? null,
         enabled: validatedInput.supports_multi_outbound === true,
-        force_single_message: committedBusinessAction?.type === 'offer_course_bonus'
-          || (committedBusinessAction?.type === 'send_payment_link' && authorizedUrls.length > 0),
+        force_single_message: committedBusinessAction?.type === 'send_payment_link' && authorizedUrls.length > 0,
       });
+      // Rule A (owner 2026-11-02): a bonus reply may span bubbles. The offer is
+      // bound to the first bubble naming the bonus course exactly; deterministic
+      // across replays. The other bubbles are ordinary parts of the same decision.
+      let bonusPartIndex = -1;
+      if (committedBusinessAction?.type === 'offer_course_bonus') {
+        const [bonusCourse] = await db<Array<{ display_name: string }>>`
+          SELECT o.display_name FROM offerings o JOIN workspaces w ON w.id=o.workspace_id
+          WHERE w.slug=${workspaceSlug} AND o.code=${committedBusinessAction.bonus_offering_code} LIMIT 1`;
+        const named = bonusCourse ? partTexts.findIndex(text => copyNamesCourseV1(text, bonusCourse.display_name)) : -1;
+        bonusPartIndex = named;
+        // Never bind a bonus to a bubble that does not name it: without a naming
+        // bubble the effect is dropped (copy kept) and nothing is marked delivered.
+        if (named < 0) {
+          committedBusinessAction = null;
+          await db`UPDATE agent_decisions SET business_action = NULL WHERE id = ${decisionId}::uuid`;
+        }
+      }
+      // Official programme PDF (owner 2026-11-04): its own document part. The delivery
+      // ledger row is the idempotency fence: an existing pending/submitted row means it
+      // was already sent, so the action is dropped and the text stays.
+      let programDocument: { readonly offering_code: string; readonly asset_version: string; readonly sha256: string; readonly filename: string; readonly title: string } | null = null;
+      let programHasImage = false;
+      if (committedBusinessAction?.type === 'send_course_program') {
+        const code = committedBusinessAction.offering_code;
+        const asset = courseProgramAssetV1(code);
+        const workspace = await db<Array<{ id: string; display_name: string }>>`
+          SELECT w.id, o.display_name FROM workspaces w JOIN offerings o ON o.workspace_id=w.id AND o.code=${code} AND o.status='active'
+          WHERE w.slug=${workspaceSlug} LIMIT 1`;
+        const reserved = asset && courseProgramUrlV1(code, process.env) !== null && courseProgramImageUrlV1(code, process.env) !== null && workspace[0]
+          ? await db<Array<{ id: string }>>`
+              INSERT INTO course_program_deliveries (workspace_id, conversation_id, contact_id, offering_code, asset_version, sha256, status, decision_id)
+              VALUES (${workspace[0].id}::uuid, ${turn.conversation_id}::uuid, ${turn.contact_id}::uuid, ${code}, ${asset.version}, ${asset.sha256}, 'pending', ${decisionId}::uuid)
+              ON CONFLICT (conversation_id, offering_code, asset_version) DO UPDATE
+                SET status='pending', decision_id=EXCLUDED.decision_id, outbound_message_id=NULL, image_outbound_message_id=NULL, updated_at=now()
+                WHERE course_program_deliveries.status='failed'
+              RETURNING id`
+          : [];
+        if (asset && workspace[0] && reserved[0]) {
+          programDocument = { offering_code: code, asset_version: asset.version, sha256: asset.sha256, filename: asset.filename, title: workspace[0].display_name };
+          programHasImage = true;
+        } else {
+          committedBusinessAction = null;
+          await db`UPDATE agent_decisions SET business_action = NULL WHERE id = ${decisionId}::uuid`;
+        }
+      }
+      // Order of the media parts: course image first, then the PDF (both before the text bubbles on delivery).
+      const imageIndex = programHasImage ? partTexts.length : -1;
+      const documentIndex = programDocument === null ? -1 : partTexts.length + (programHasImage ? 1 : 0);
+      const partsToPersist = programDocument === null ? partTexts
+        : [...partTexts, ...(programHasImage ? [`[imagen enviada: ${programDocument.title}]`] : []), `[programa enviado: ${programDocument.title}]`];
       const profileRequests = preparedAgentTurn && validatedInput.agent_turn_v2
         ? contactProfileRequestsForPartsV1({
             authored_messages: validatedInput.agent_turn_v2.proposal.response.messages,
@@ -1741,7 +1952,9 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
           : 'support';
       const persistedParts: Array<{ message: Message; manifest: AuthorizedEgressV1 }> = [];
 
-      for (const [partIndex, content] of partTexts.entries()) {
+      for (const [partIndex, content] of partsToPersist.entries()) {
+        const isProgramDocument = programDocument !== null && partIndex === documentIndex;
+        const isProgramImage = programDocument !== null && partIndex === imageIndex;
         const partManifest = buildAuthorizedEgress({
           content,
           authorized_urls: authorizedUrls.filter((url) => content.includes(url)),
@@ -1749,26 +1962,40 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
         });
         let message: Message;
         try {
-          if (committedBusinessAction?.type === 'offer_course_bonus') {
+          if (committedBusinessAction?.type === 'offer_course_bonus' && partIndex === bonusPartIndex) {
             const workspace = await db<Array<{id:string}>>`SELECT id FROM workspaces WHERE slug=${workspaceSlug}`;
             canonicalWorkspaceId = workspace[0]?.id ?? null;
             if (!canonicalWorkspaceId) throw new DecisionPolicyError('AGENT_TURN_V2_CONTEXT_NOT_FOUND');
+            // Owner instant promo: the paid course may be named in this same turn,
+            // even the very first one. Ensure the minimal state row (source NULL, so
+            // the regular transition below still applies) and record that interest
+            // first (no objection counted) so the offer's identity lock sees it.
+            await db`INSERT INTO conversation_sales_context_states_v1 (workspace_id, conversation_id, contact_id, stage)
+              VALUES (${canonicalWorkspaceId}::uuid, ${turn.conversation_id}::uuid, ${turn.contact_id}::uuid, 'exploring')
+              ON CONFLICT (workspace_id, conversation_id) DO NOTHING`;
+            await recordPromotionConversationContextV1(db, {
+              workspace_id: canonicalWorkspaceId, contact_id: turn.contact_id, conversation_id: turn.conversation_id,
+              source_turn_id: turn.id, discussed_offering_code: committedBusinessAction.interest_offering_code,
+              records_price_objection: false,
+            });
             const result = await offerDirectCourseBonusV1(db,{
               workspace_id:canonicalWorkspaceId,contact_id:turn.contact_id,conversation_id:turn.conversation_id,
               paid_offering_code:committedBusinessAction.interest_offering_code,source_turn_id:turn.id,
               expected_offer_version:courseBonusCapability?.offer_version ?? 0,
               promotion_code:courseBonusCapability?.promotion_code,promotion_cycle_id:courseBonusCapability?.promotion_cycle_id,
               bonus_offering_codes:[committedBusinessAction.bonus_offering_code],
-              outbound:{id:randomUUID(),content,provider:turn.provider,integration_id:turn.integration_id,
+              ...(preparedAgentTurn?.bonus_motive ? {motive:preparedAgentTurn.bonus_motive.motive,
+                declared_moves:preparedAgentTurn.bonus_motive.declared_moves} : {}),
+              outbound:{id:randomUUID(),content,part_index:partIndex,provider:turn.provider,integration_id:turn.integration_id,
                 channel:turn.channel,destination:turn.phone,
                 idempotency_key:validatedInput.supports_multi_outbound ? `outbound:${decisionId}:part:${partIndex}` : `outbound:${decisionId}`},
             });
             if (!result.ok) throw new DecisionPolicyError('AGENT_TURN_V2_REJECTED:COMMERCIAL_TRUTH_VIOLATION',
-              result.reason === 'ladder_step_pending' ? courseBonusLadderRejectionSubjectsV1(result.ladder)
+              result.reason === 'ladder_step_pending' ? courseBonusLadderRejectionSubjectsV1(result.motive_reason)
                 : ['forbidden_promise',`direct_bonus:${result.reason}`]);
             const rows = await db<Message[]>`UPDATE messages SET metadata=${jsonbParam(db,{
               decision_id:decisionId,response_type:decision.response_type,model:validatedInput.model,
-              part_index:partIndex,part_count:partTexts.length,authorized_egress:partManifest,
+              part_index:partIndex,part_count:partsToPersist.length,authorized_egress:partManifest,
               ...(profileRequests[partIndex]?.length ? {contact_profile_requests_v1:profileRequests[partIndex]} : {}),
             })} WHERE id=${result.outbound_message_id}::uuid RETURNING *`;
             message = rows[0]!;
@@ -1789,8 +2016,10 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
               response_type: decision.response_type,
               model: validatedInput.model,
               part_index: partIndex,
-              part_count: partTexts.length,
+              part_count: partsToPersist.length,
               authorized_egress: partManifest,
+              ...(isProgramDocument || isProgramImage ? { course_program: { offering_code: programDocument!.offering_code, asset_version: programDocument!.asset_version,
+                sha256: programDocument!.sha256, filename: programDocument!.filename, kind: isProgramImage ? 'image' : 'document' } } : {}),
               ...(profileRequests[partIndex]?.length ? { contact_profile_requests_v1: profileRequests[partIndex] } : {}),
             },
           }, {
@@ -1818,6 +2047,16 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
           INSERT INTO agent_decision_outbound_parts (decision_id, part_index, message_id)
           VALUES (${decisionId}::uuid, ${partIndex}, ${message.id}::uuid)
         `;
+        if (isProgramImage) {
+          await db`UPDATE course_program_deliveries SET image_outbound_message_id=${message.id}::uuid, updated_at=now()
+            WHERE conversation_id=${turn.conversation_id}::uuid AND offering_code=${programDocument!.offering_code}
+              AND asset_version=${programDocument!.asset_version}`;
+        }
+        if (isProgramDocument) {
+          await db`UPDATE course_program_deliveries SET outbound_message_id=${message.id}::uuid, updated_at=now()
+            WHERE conversation_id=${turn.conversation_id}::uuid AND offering_code=${programDocument!.offering_code}
+              AND asset_version=${programDocument!.asset_version}`;
+        }
         persistedParts.push({ message, manifest: partManifest });
       }
 
@@ -1831,6 +2070,7 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
 
       for (const [partIndex, persisted] of persistedParts.entries()) {
         const { message, manifest } = persisted;
+        const isProgramPart = programDocument !== null && (partIndex === documentIndex || partIndex === imageIndex);
         const outboxPayload = {
           decision_id: decisionId,
           outbound_id: message.id,
@@ -1888,6 +2128,7 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
           authorized_egress: manifest,
           part_index: partIndex,
           part_count: persistedParts.length,
+          ...(isProgramPart ? { document: courseProgramDocumentOf(message.metadata, programDocument!.title)! } : {}),
         });
       }
 
@@ -1918,6 +2159,17 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
         canonicalWorkspaceId = workspaceRows[0]?.id ?? null;
       }
       if (preparedAgentTurn && canonicalWorkspaceId) {
+        // A fresh conversation has no state row until the final transition.
+        // Promotion context is written earlier in this transaction, so create
+        // only its scoped parent first. This preserves the course as
+        // negotiation interest without selecting it as a purchase; the
+        // authoritative transition below still owns every final state field.
+        await db`INSERT INTO conversation_sales_context_states_v1 (
+          workspace_id, conversation_id, contact_id, stage
+        ) VALUES (
+          ${canonicalWorkspaceId}::uuid, ${turn.conversation_id}::uuid,
+          ${turn.contact_id}::uuid, 'exploring'
+        ) ON CONFLICT (workspace_id, conversation_id) DO NOTHING`;
         if (preparedAgentTurn.abandons_course_bonus_offer
           && preparedAgentTurn.transition.selected_offering_code) {
           await cancelOpenCourseBonusOffersForCourseChangeV1(db, {
@@ -2279,6 +2531,9 @@ export class OutboundNotFoundError extends Error {
   }
 }
 
+/** Tolerated clock difference between Botpress and this server for a receipt. */
+const DELIVERY_RECEIPT_CLOCK_SKEW_MS = 5 * 60_000;
+
 export async function recordDeliveryReport(input: DeliveryReportInput): Promise<DeliveryReportResult> {
   const semanticPayload = {
     outbound_id: input.outbound_id,
@@ -2403,12 +2658,25 @@ export async function recordDeliveryReport(input: DeliveryReportInput): Promise<
     }
 
     if (input.status === 'delivered') {
-      const deliveredAt = input.delivered_at ? Date.parse(input.delivered_at) : NaN;
+      // A channel-acceptance receipt (Botpress, right after createMessage)
+      // carries no time: it is stamped with submitted_at, so retries keep the
+      // same payload and a fast customer reply stays ordered after it.
+      const acceptance = input.delivered_at == null;
+      const deliveredAt = acceptance ? NaN : Date.parse(input.delivered_at!);
       if (delivery.state !== 'submitted' || !input.botpress_message_id || input.error_code
-        || delivery.provider_message_id !== input.botpress_message_id || !Number.isFinite(deliveredAt)
-        || delivery.submitted_at === null || deliveredAt < new Date(delivery.submitted_at).getTime()
-        || deliveredAt > Date.now()) throw new DeliveryReportConflictError('Invalid confirmed delivery report');
-      await db`UPDATE outbound_deliveries SET state='delivered',delivered_at=${input.delivered_at!}::timestamptz
+        || delivery.provider_message_id !== input.botpress_message_id
+        || delivery.submitted_at === null
+        || (!acceptance && (!Number.isFinite(deliveredAt)
+          || deliveredAt < new Date(delivery.submitted_at).getTime() - DELIVERY_RECEIPT_CLOCK_SKEW_MS
+          || deliveredAt > Date.now() + DELIVERY_RECEIPT_CLOCK_SKEW_MS))) throw new DeliveryReportConflictError('Invalid confirmed delivery report');
+      // Channel acceptance is reported by Botpress right after createMessage
+      // resolves (its provider errors surface synchronously). Clocks differ
+      // between Botpress and this server: within a bounded skew, clamp the
+      // receipt to [submitted_at, now] so a later customer reply is always
+      // ordered after the confirmed delivery. Absurd timestamps stay rejected.
+      await db`UPDATE outbound_deliveries
+        SET state='delivered',
+          delivered_at=GREATEST(submitted_at, LEAST(COALESCE(${input.delivered_at ?? null}::timestamptz, submitted_at), now()))
         WHERE id=${delivery.id}::uuid AND attempt_count=${reportedAttempt}`;
     } else if (input.status === 'submitted_to_botpress') {
       if (!input.botpress_message_id || input.error_code) throw new DeliveryReportConflictError('Invalid submitted report');
@@ -2448,6 +2716,8 @@ export async function recordDeliveryReport(input: DeliveryReportInput): Promise<
         `;
       }
 
+      await db`UPDATE course_program_deliveries SET status='submitted', updated_at=now()
+        WHERE outbound_message_id=${input.outbound_id}::uuid AND status<>'submitted'`;
       await markPaymentProjectionJobDelivered(db, input.outbound_id);
       await applyAcceptedOutboundStatePatchV3(db, input.outbound_id);
       // P1-C (re-review 2026-09-05): a `prepare_lead_projection` commit is
@@ -2492,6 +2762,9 @@ export async function recordDeliveryReport(input: DeliveryReportInput): Promise<
           leased_by = NULL
         WHERE id = ${delivery.outbox_id}::uuid
       `;
+      // A programme PDF that did not leave can be proposed again (the ledger allows a retry).
+      await db`UPDATE course_program_deliveries SET status='failed', updated_at=now()
+        WHERE outbound_message_id=${input.outbound_id}::uuid AND status='pending'`;
     }
 
     await auditLog({

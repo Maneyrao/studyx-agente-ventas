@@ -1,4 +1,4 @@
-import { ContactProfileContextV1Schema, RecordedNegotiationFactsV1Schema, CourseBonusLadderV1Schema } from './agent-a-brain'
+import { ContactProfileContextV1Schema, RecordedNegotiationFactsV1Schema, CourseBonusLadderV1Schema, SalesProfileMemoriesV1Schema, ClaimFichaV1Schema } from './agent-a-brain'
 import { z } from '@botpress/runtime'
 import { ConversationPipelineCommitV1Schema } from './conversation-pipeline'
 import { AgentATurnCommitV2Schema } from './agent-turn-v2'
@@ -167,6 +167,11 @@ export const RequestPromotionReviewActionSchema = z.object({
   bonus_offering_code: z.string().regex(/^[a-z0-9][a-z0-9_-]{0,127}$/).optional(),
 }).strict()
 
+export const SendCourseProgramActionSchema = z.object({
+  type: z.literal('send_course_program'),
+  offering_code: z.string().trim().min(1).max(160),
+}).strict()
+
 export const OfferCourseBonusActionSchema = z.object({
   type: z.literal('offer_course_bonus'),
   bonus_offering_code: z.string().trim().min(1).max(160),
@@ -207,6 +212,7 @@ export const DecisionBusinessActionSchema = z.discriminatedUnion('type', [
   RequestPromotionReviewActionSchema,
   AcceptPromotionActionObjectSchema,
   OfferCourseBonusActionSchema,
+  SendCourseProgramActionSchema,
 ]).refine(hasCompletePromotionAcceptance, 'DIRECT_PROMOTION_ACCEPTANCE_FIELDS_REQUIRED')
 
 export const DecisionResponseTypeSchema = z.enum([
@@ -441,6 +447,7 @@ export const SalesContextSchema = z.object({
       call_id: z.string().uuid(),
       result: z.string().nullable(),
       ended_at: z.string(),
+      announced_to_customer: z.boolean().optional(),
     })
     .nullable(),
 })
@@ -581,6 +588,33 @@ export const CatalogIndexSchema = z.object({
   injection_suspected_count: z.number().int().nonnegative().default(0),
 }).strict().nullable().default(null)
 
+// Claim transport compatibility for a bot-first rollout: earlier backends sent
+// a count-based ladder, then an evidence ladder (eligible/price_evidence/...).
+// Neither carries permission any more: a persisted price objection no longer
+// authorizes a bonus (motive comes from the current message). Both collapse to
+// the persisted facts that remain. A malformed ladder falls through to the strict parser.
+const LegacyClaimCourseBonusLadderV1Schema = z.object({
+  eligible: z.boolean(),
+  observed_price_objection_count: z.number().int().nonnegative().optional(),
+  required_price_objection_count: z.union([z.literal(2), z.literal(3)]).optional(),
+  call_invitation_status: z.enum(['not_offered', 'offered', 'accepted', 'declined']).optional(),
+  call_offer_count: z.number().int().nonnegative().optional(),
+  may_offer_call: z.boolean().optional(),
+  missing_steps: z.array(z.enum(['recorded_price_objections', 'call_invitation', 'price_evidence'])),
+  price_evidence: z.boolean().optional(),
+  retention_decline: z.boolean().optional(),
+  retention_used: z.boolean().optional(),
+  price_only_barrier_confirmed: z.boolean().optional(),
+  current_turn_price_objection: z.boolean().optional(),
+  instant_trigger: z.boolean().optional(),
+}).strict()
+
+const IncomingClaimCourseBonusLadderV1Schema = z.preprocess((raw) => {
+  const legacy = LegacyClaimCourseBonusLadderV1Schema.safeParse(raw)
+  if (!legacy.success) return raw
+  return { retention_used: legacy.data.retention_used ?? false, previous_turn_asked_price_question: false }
+}, CourseBonusLadderV1Schema)
+
 export const ClaimedTurnSchema = z.object({
   outcome: z.literal('claimed'),
   trace_id: z.string().uuid(),
@@ -633,8 +667,17 @@ export const ClaimedTurnSchema = z.object({
     }).strict().nullable().optional(),
   }).strict().nullable().optional(),
   negotiation_facts: RecordedNegotiationFactsV1Schema.nullable().optional(),
+  sales_profile: SalesProfileMemoriesV1Schema.nullable().optional(),
+  catalog_fichas: z.array(ClaimFichaV1Schema).max(9).optional(),
+  course_programs: z.object({
+    available_offering_codes: z.array(z.string().min(1).max(160)).max(60),
+    sent_offering_codes: z.array(z.string().min(1).max(160)).max(60),
+    materials: z.array(z.object({
+      offering_code: z.string().min(1).max(160), has_program_pdf: z.boolean(), has_ficha_pdf: z.boolean(), has_image: z.boolean(),
+    }).strict()).max(60).optional(),
+  }).strict().optional(),
   course_bonus_capability: z.object({
-    ladder: CourseBonusLadderV1Schema.optional(),
+    ladder: IncomingClaimCourseBonusLadderV1Schema.optional(),
     enabled: z.boolean().optional(),
     may_offer_bonus: z.boolean().optional(),
     promotion_cycle_id: z.string().uuid().nullable().optional(),
@@ -642,6 +685,11 @@ export const ClaimedTurnSchema = z.object({
     accepted_at: z.string().nullable().optional(),
     package_status: z.enum(['pending_review','offered','accepted','cancelled','expired','attached']).nullable().optional(),
     delivered_bonus_offerings: z.array(z.object({code:z.string().trim().min(1),display_name:z.string().trim().min(1).max(240),position:z.number().int().min(1).max(3)}).strict()).max(3).optional(),
+    // Compat with a pre-model-owned backend during the bot/backend rollout: the retired probes are accepted here and dropped when the context is built.
+    sales_flow: z.object({retention_used:z.boolean(),promo_expires_at:z.string().nullable(),
+      price_probe:z.unknown().optional(),gift_request_pending_probe:z.unknown().optional()}).strict().optional(),
+    bonus_candidates: z.array(z.object({code:z.string().trim().min(1),display_name:z.string().trim().min(1).max(240)}).strict()).max(60).optional(),
+    rule_bonus: z.object({paid_offering_code:z.string().trim().min(1),paid_display_name:z.string().trim().min(1).max(240),bonus_offering_code:z.string().trim().min(1),display_name:z.string().trim().min(1).max(240),position:z.number().int().min(1).max(3),source:z.literal('customer_request').optional(),replaces_offering_code:z.string().trim().min(1).optional(),replaces_display_name:z.string().trim().min(1).max(240).optional()}).strict().nullable().optional(),
     max_bonus_courses: z.union([z.literal(1), z.literal(2), z.literal(3)]).optional(),
     status: z.enum([
       'unavailable', 'needs_interest', 'not_eligible', 'checkin_available',
@@ -905,9 +953,18 @@ export const CommitDecisionResponseSchema = z.object({
     .nullable()
     .default(null),
   outbounds: z.array(CommittedOutboundSchema.extend({
-    part_index: z.number().int().min(0).max(2),
-    part_count: z.number().int().min(1).max(3),
-  })).max(3).default([]),
+    // Up to two authored text bubbles with the course image and the official-programme PDF (0-4).
+    part_index: z.number().int().min(0).max(4),
+    part_count: z.number().int().min(1).max(5),
+    document: z.object({
+      kind: z.literal('course_program'),
+      media: z.enum(['file', 'image']),
+      offering_code: z.string().min(1).max(160),
+      file_url: z.string().url().refine(value => new URL(value).protocol === 'https:'),
+      filename: z.string().min(1).max(200),
+      title: z.string().min(1).max(200),
+    }).strict().optional(),
+  })).max(5).default([]),
   // Presente exactamente cuando la decisión reservó una llamada. En replay
   // trae el mismo call_id de la primera reserva; el workflow despacha por
   // call_id y nunca conoce el teléfono.

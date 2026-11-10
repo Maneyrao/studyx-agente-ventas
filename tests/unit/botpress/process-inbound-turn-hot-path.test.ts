@@ -1,3 +1,4 @@
+import { claimsImmediatePaymentLinkDeliveryV1 } from '../../../src/shared/conversation/payment-link-claim';
 import { buildAuthorizedEgress } from '../../../src/features/orchestration/domain/egress-guard';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as evidencePersistence from '../../../botpress-agent/src/lib/observability/persist-turn-evidence';
@@ -130,6 +131,7 @@ import {
   StudyxHttpError,
 } from '../../../botpress-agent/src/utils/http';
 import { dispatch } from '../../../botpress-agent/src/channels';
+import { WHATSAPP_TYPING_STOP_TIMEOUT_MS } from '../../../botpress-agent/src/lib/channels/whatsapp-typing-presence';
 
 const UUID = '18a823e8-27c2-4279-9956-058f45f33cd5';
 const NOW = '2026-08-21T12:00:00.000Z';
@@ -368,16 +370,82 @@ describe('processInboundTurn hot path', () => {
     actionSpies.claim.mockResolvedValue(claimed);
     configuration.agentAPlannerlessV2Enabled = true;
     actionSpies.commit.mockRejectedValue(new StudyxHttpError('INTERNAL_ERROR',true,500,3));
-    vi.spyOn(processInboundTurn,'getOrCreate').mockResolvedValue({id:'serialization-recovery'});
+    const getOrCreateWorkflow = vi.fn(async () => ({ workflow: { id: 'serialization-recovery', status: 'pending', tags: {} } }));
     const step = Object.assign(async (_name:string,run:()=>Promise<unknown>)=>run(),{sleep:vi.fn(async()=>undefined)});
     const result = await (processInboundTurn as unknown as {
       definition:{handler:(args:Record<string,unknown>)=>Promise<unknown>};
-    }).definition.handler({input:workflowInput(),state:processingState(),step,execute:vi.fn(),client:{},
+    }).definition.handler({input:workflowInput(),state:processingState(),step,execute:vi.fn(),client:{ getOrCreateWorkflow },
       signal:new AbortController().signal,workflow:{id:'serialization-test'}});
     expect(result).toMatchObject({status:'retry_pending',delivery_status:null});
     expect(actionSpies.recovery).toHaveBeenCalledTimes(1);
     expect(actionSpies.recovery.mock.calls[0]?.[0].input).toMatchObject({reason_code:'AGENT_A_COMMIT_FAILED'});
   });
+  it.each([false, true])('keeps the model-authored text of a backend repair that enables the bonus, without a third provider request (complete=%s)', async complete => {
+    const paid = 'introduccion_ecommerce';
+    const prior = 'fotografia_celulares_tiendas_online';
+    const next = 'publicidad_redes_sociales';
+    const priorName = 'Fotografía con Celulares para Tiendas Online';
+    const completeText = `Te quedan Introducción al Ecommerce + ${priorName} y Publicidad en Redes Sociales sin costo extra. Avanzamos?`;
+    const claimed = claimedResponse() as unknown as ClaimedTurn;
+    claimed.features = { agent_loop_v3_mode: 'off', conversation_pipeline_v1_enabled: false,
+      agent_a_brain_v1_enabled: true, agent_a_brain_v1_shadow: false, agent_a_repair_enabled: true };
+    claimed.context.batch_messages[0].content = 'me sigue pareciendo caro';
+    claimed.conversation_state_v1 = { selected_offering_code: paid, selected_payment_plan: null,
+      stage: 'course_selected', call_preference: 'unknown', call_offer_status: 'not_offered', call_offer_count: 0, awaiting_reply: 'none', version: 2 };
+    claimed.catalog_index = { as_of: NOW, offerings_total: 3, injection_suspected_count: 0, offerings: [
+      { code: paid, display_name: 'Introducción al Ecommerce', academy: 'Marketing', aliases: [] },
+      { code: prior, display_name: priorName, academy: 'Marketing', aliases: [] },
+      { code: next, display_name: 'Publicidad en Redes Sociales', academy: 'Marketing', aliases: [] },
+    ] };
+    claimed.business_context = paymentBusinessContext();
+    claimed.business_context.offerings[0] = { ...claimed.business_context.offerings[0], code: paid,
+      display_name: 'Introducción al Ecommerce', classes: 8 };
+    claimed.business_context_available = true;
+    claimed.course_bonus_capability = { status: 'offer_available', enabled: true, max_bonus_courses: 3, may_offer_bonus: true,
+      may_schedule_checkin: false, may_request_review: false, may_accept_offer: true, may_send_promoted_payment: false,
+      package_status: 'offered', promotion_code: 'test-offered', interest_offering_code: paid,
+      bonus_offerings: [{ code: prior, display_name: priorName, position: 1 }],
+      delivered_bonus_offerings: [{ code: prior, display_name: priorName, position: 1 }],
+      ladder: { retention_used: false, previous_turn_asked_price_question: false },
+      rule_bonus: { paid_offering_code: paid, paid_display_name: 'Introducción al Ecommerce', bonus_offering_code: next, display_name: 'Publicidad en Redes Sociales', position: 2 } };
+    actionSpies.claim.mockResolvedValue(claimed);
+    configuration.agentAPlannerlessV2Enabled = true;
+    const generated = (proposal: Record<string, unknown>) => ({ proposal,
+      provider: 'deepseek-direct', model: 'deepseek-v4-flash', latency_ms: 1, attempt_count: 1 });
+    const base = { schema_version: 1, proposed_action: { type: 'none' }, course_mentions: [],
+      profile_updates: [], profile_requests: [], used_fact_ids: [], used_memory_ids: [], memory_candidates: [], repair_of: null };
+    actionSpies.agentABrainDeepSeek.mockResolvedValueOnce(generated({ ...base,
+      move: { schema_version: 1, move: 'report_payment', secondary_moves: [], vetoes: [], confidence: 1 },
+      response: { messages: ['Te cuento las opciones.'], call_offer: null } }))
+      .mockImplementationOnce(async ({ context }: { context: AgentAContextV1 }) => generated({ ...base,
+        move: { schema_version: 1, move: 'ask_course_information', secondary_moves: [], vetoes: [], course_reference: paid, confidence: 1 },
+        response: { messages: [complete ? completeText : 'Te sumo Publicidad en Redes Sociales sin costo extra.'], call_offer: null },
+        proposed_action: { type: 'offer_course_bonus', motive:{kind:'price_objection',quote:'es caro'}, interest_offering_code: paid, bonus_offering_code: next },
+        course_mentions: complete ? [{ offering_code: paid, role: 'paid' }, { offering_code: prior, role: 'bonus' },
+          { offering_code: next, role: 'bonus' }] : [{ offering_code: next, role: 'bonus' }],
+        memory_candidates: [{ type: 'objection', key: 'price_objection', value: 'precio', source_quote: 'caro', confidence: 1 }],
+        repair_of: { rejection_id: context.turn_rejection!.rejection_id, attempt: 1 },
+      }));
+    actionSpies.commit.mockRejectedValueOnce(new StudyxHttpError('DECISION_REJECTED', false, 422, 1,
+      { reason: 'AGENT_TURN_V2_REJECTED:FACT_NOT_AUTHORIZED', subjects: ['course_logistics.classes'] }))
+      .mockResolvedValueOnce({ status: 'committed', replayed: false, trace_id: UUID, turn_id: UUID,
+        decision_id: UUID, next_state: 'waiting_user', outbound: null, outbounds: [], call_request: null });
+    const step = Object.assign(async (_name: string, run: () => Promise<unknown>) => run(),
+      { sleep: vi.fn(async () => undefined) });
+    const result = await (processInboundTurn as unknown as {
+      definition: { handler: (args: Record<string, unknown>) => Promise<unknown> };
+    }).definition.handler({ input: workflowInput(), state: processingState(), step, execute: vi.fn(),
+      client: {}, signal: new AbortController().signal, workflow: { id: 'rule-a-backend-finalization' } });
+    expect(result).toMatchObject({ status: 'waiting_user', error_code: null });
+    expect(actionSpies.agentABrainDeepSeek).toHaveBeenCalledTimes(2);
+    expect(actionSpies.commit).toHaveBeenCalledTimes(2);
+    const final = actionSpies.commit.mock.calls[1][0].input.agent_turn_v2.proposal;
+    expect(final.proposed_action).toEqual({ type: 'offer_course_bonus', motive:{kind:'price_objection',quote:'es caro'}, interest_offering_code: paid, bonus_offering_code: next });
+    // The model's own text is committed; the backend never substitutes fixed copy.
+    expect(final.response.messages).toEqual([complete ? completeText : 'Te sumo Publicidad en Redes Sociales sin costo extra.']);
+    expect(final.memory_candidates).toEqual(expect.arrayContaining([expect.objectContaining({ key: 'price_objection' })]));
+  });
+
   it('uses a stable 8–14 second WhatsApp reply target', () => {
     const first = whatsappReplyTargetLatencyMs('wamid.first');
     const repeated = whatsappReplyTargetLatencyMs('wamid.first');
@@ -620,10 +688,42 @@ describe('processInboundTurn hot path', () => {
     expect(stopTyping).toHaveBeenCalledWith({
       conversationId: 'bp-conversation', messageId: 'wamid.typing-test',
     });
-    expect(startTyping.mock.invocationCallOrder[0]).toBeLessThan(
-      actionSpies.claim.mock.invocationCallOrder[0]!,
+    expect(actionSpies.claim.mock.invocationCallOrder[0]).toBeLessThan(
+      startTyping.mock.invocationCallOrder[0]!,
     );
     expect(startTyping.mock.invocationCallOrder[0]).toBeLessThan(stopTyping.mock.invocationCallOrder[0]!);
+  });
+
+  it('never lets a losing batch workflow start or stop the owner typing presence', async () => {
+    configuration.whatsappPublicEnabled = true;
+    configuration.whatsappAllowedBotPhoneNumberId = 'allowed-business-number-75';
+    actionSpies.claim.mockResolvedValue({
+      outcome: 'absorbed', trace_id: UUID, batch_id: UUID, retry_after_ms: 0,
+    });
+    const startTyping = vi.spyOn(runtimeActions.whatsapp, 'startTypingIndicator');
+    const stopTyping = vi.spyOn(runtimeActions.whatsapp, 'stopTypingIndicator');
+    const input = {
+      ...workflowInput(), channel: 'whatsapp', external_message_id: 'wamid.losing-workflow',
+      message: {
+        ...workflowInput().message, text: 'Hola',
+        metadata: { bot_phone_number_id: 'allowed-business-number-75' },
+      },
+    };
+    const step = Object.assign(async (_name: string, run: () => Promise<unknown>) => run(), {
+      sleep: vi.fn(async () => undefined),
+    });
+
+    const result = await (processInboundTurn as unknown as {
+      definition: { handler: (args: Record<string, unknown>) => Promise<unknown> };
+    }).definition.handler({
+      input, state: processingState(), step, execute: vi.fn(), client: {},
+      signal: new AbortController().signal,
+      workflow: { id: 'losing-typing-test', setTimeout: vi.fn(async () => undefined) },
+    });
+
+    expect(result).toMatchObject({ status: 'absorbed' });
+    expect(startTyping).not.toHaveBeenCalled();
+    expect(stopTyping).not.toHaveBeenCalled();
   });
 
   it('keeps the commercial turn alive when WhatsApp typing presence fails', async () => {
@@ -1616,6 +1716,7 @@ describe('processInboundTurn hot path', () => {
 
   it('asks Agent A for one final fenced correction after a twice-rejected backend commit', async () => {
     const claimed = claimedResponse() as unknown as ClaimedTurn;
+    claimed.context.batch_messages[0].content = 'Me frena esto';
     claimed.features = {
       agent_loop_v3_mode: 'off',
       conversation_pipeline_v1_enabled: false,
@@ -1652,7 +1753,10 @@ describe('processInboundTurn hot path', () => {
           },
           response: { messages: ['Te cuento los detalles del curso.'], call_offer: null },
           proposed_action: { type: 'none' },
-          used_fact_ids: [], used_memory_ids: [], memory_candidates: [], repair_of: null,
+          used_fact_ids: [], used_memory_ids: [], memory_candidates: [{
+            type: 'objection', key: 'price_objection', value: 'precio',
+            source_quote: 'Me frena esto', confidence: 1,
+          }], repair_of: null,
         },
         provider: 'deepseek-direct', model: 'deepseek-v4-flash', latency_ms: 180, attempt_count: 1,
       })
@@ -1746,6 +1850,7 @@ describe('processInboundTurn hot path', () => {
         proposal: {
           response: { messages: ['Dime qué te interesa saber y lo vemos con la información confirmada.'] },
           proposed_action: { type: 'none' },
+          memory_candidates: [{ type: 'objection', key: 'price_objection', source_quote: 'Me frena esto' }],
         },
       },
       turn_diagnostics: { generation_attempts: 3, failure_stage: 'backend_commit', action_status: 'none' },
@@ -1853,7 +1958,8 @@ describe('processInboundTurn hot path', () => {
       conversation_only: true, proposal: { proposed_action: { type: 'none' } },
     });
     expect(createMessage).toHaveBeenCalledTimes(1);
-    expect(actionSpies.delivery).toHaveBeenCalledTimes(1);
+    // submission + channel acceptance receipt (2026-11-02)
+    expect(actionSpies.delivery.mock.calls.map(([call]) => call.input.status)).toEqual(['submitted_to_botpress', 'delivered']);
     expect(result).toMatchObject({ status: 'waiting_user', delivery_status: 'submitted_to_botpress', error_code: null });
   });
 
@@ -1875,7 +1981,8 @@ describe('processInboundTurn hot path', () => {
     expect(actionSpies.commit.mock.calls[0]![0].input.agent_turn_v2)
       .not.toHaveProperty('conversation_only');
     expect(createMessage).toHaveBeenCalledTimes(1);
-    expect(actionSpies.delivery).toHaveBeenCalledTimes(1);
+    // submission + channel acceptance receipt (2026-11-02)
+    expect(actionSpies.delivery.mock.calls.map(([call]) => call.input.status)).toEqual(['submitted_to_botpress', 'delivered']);
     expect(actionSpies.recovery).not.toHaveBeenCalled();
     expect(result).toMatchObject({ status: 'waiting_user', delivery_status: 'submitted_to_botpress',
       error_code: null });
@@ -1904,9 +2011,10 @@ describe('processInboundTurn hot path', () => {
     ['rejects the complete draft instead of cutting off a call-dispatch claim',
       ['Entiendo, el total sigue en USD 360.\nTe llamo ahora.'],
       null],
-    ['rejects the complete draft instead of selecting its later bubble',
+    // A rejected effect removes only the bubble that claims it.
+    ['removes only the bubble that claims the rejected call and keeps the later bubble',
       ['Te llamo ahora.', 'El total sigue en USD 360.'],
-      null],
+      ['El total sigue en USD 360.']],
     ['rejects the complete draft instead of selecting its later sentence',
       ['Te llamo ahora. El total sigue en USD 360.'],
       null],
@@ -1915,6 +2023,10 @@ describe('processInboundTurn hot path', () => {
       ['El total sigue en USD 360.', 'Podemos seguir por acá.'],
       ['El total sigue en USD 360.', 'Podemos seguir por acá.']],
   ])('%s', async (_case, modelMessages, expectedCommittedMessages) => {
+    const evidenceEvents: Array<{ kind: string; data: Record<string, unknown> }> = [];
+    vi.spyOn(evidencePersistence, 'persistTurnEvidence').mockImplementation(async (_subject, event) => {
+      evidenceEvents.push(event);
+    });
     const claimed = claimedResponse() as unknown as ClaimedTurn;
     claimed.features = {
       agent_loop_v3_mode: 'off', conversation_pipeline_v1_enabled: false,
@@ -1948,6 +2060,8 @@ describe('processInboundTurn hot path', () => {
           response: { messages: modelMessages, call_offer: null },
           proposed_action: { type: 'request_call_now', reason: 'accepted_offer' },
           used_fact_ids: [], used_memory_ids: [], memory_candidates: [], repair_of: null,
+          turn_reasoning: { phase: 'REASONING_MARK', customer_now: 'quiere llamada', already_said: '-',
+            customer_goal: 'info', next_step: 'call' },
         },
         provider: 'deepseek-direct', model: 'deepseek-v4-flash', latency_ms: 180, attempt_count: 1,
       })
@@ -2013,12 +2127,24 @@ describe('processInboundTurn hot path', () => {
     expect(actionSpies.agentABrainDeepSeek).toHaveBeenCalledTimes(2);
     if (_case === 'persists revoked consent when repair is unavailable') expect(actionSpies.commit.mock.calls.at(-1)![0].input.agent_turn_v2)
       .toMatchObject({ operational_continuity: 'call_consent_revoked', proposal: { move: { move: 'decline_call' } } });
+    // turn_reasoning is persisted as turn evidence and never reaches the customer.
+    if (_case !== 'persists revoked consent when repair is unavailable') {
+      expect(evidenceEvents.find(event => event.kind === 'turn_reasoning')?.data)
+        .toMatchObject({ turn_reasoning: { phase: 'REASONING_MARK', next_step: 'call' } });
+      expect(JSON.stringify(createMessage.mock.calls)).not.toContain('REASONING_MARK');
+    }
     if (expectedCommittedMessages === null) {
       expect(actionSpies.commit).toHaveBeenCalledTimes(_case === 'persists revoked consent when repair is unavailable' ? 3 : 2);
       expect(actionSpies.commit.mock.calls.at(-1)![0].input).toMatchObject({
-        agent_turn_v2: null,
-        decision: {
-          kind: 'reply', response_type: 'commercial_reply', reason_code: 'MODEL_UNAVAILABLE',
+        // Authority: prompt line 177 keeps the accepted/requested call as
+        // durable conversational state while the rejected effect stays fenced.
+        agent_turn_v2: {
+          conversation_only: true,
+          proposal: {
+            move: { move: 'request_call' },
+            response: { messages: ['Claro. Puedes atender ahora?'], call_offer: null },
+            proposed_action: { type: 'none' },
+          },
         },
       });
       expect(actionSpies.recovery).not.toHaveBeenCalled();
@@ -2041,7 +2167,7 @@ describe('processInboundTurn hot path', () => {
     }
   });
 
-  it('never cuts the bonus bubble out of a rejected complete draft', async () => {
+  it('removes only the bonus bubble of a rejected draft and commits the safe bubble', async () => {
     const claimed = claimedResponse() as unknown as ClaimedTurn;
     claimed.features = {
       agent_loop_v3_mode: 'off', conversation_pipeline_v1_enabled: false,
@@ -2084,7 +2210,7 @@ describe('processInboundTurn hot path', () => {
             course_reference: 'marketing_digital', confidence: 1 },
           response: { messages: [safeText, rejectedBonusText], call_offer: null },
           proposed_action: { type: 'offer_course_bonus',
-            interest_offering_code: 'marketing_digital', bonus_offering_code: 'community_manager' },
+            motive:{kind:'price_objection',quote:'es caro'}, interest_offering_code: 'marketing_digital', bonus_offering_code: 'community_manager' },
           used_fact_ids: [], used_memory_ids: [], memory_candidates: [], repair_of: null,
         },
         provider: 'deepseek-direct', model: 'deepseek-v4-flash', latency_ms: 1, attempt_count: 1,
@@ -2124,16 +2250,16 @@ describe('processInboundTurn hot path', () => {
     });
 
     expect(actionSpies.commit).toHaveBeenCalledTimes(2);
-    expect(actionSpies.commit.mock.calls[1]![0].input.agent_turn_v2).toBeNull();
-    expect(actionSpies.commit.mock.calls[1]![0].input.decision.response)
-      .toBe('Qué dato o qué curso revisamos?');
+    // Only the bubble that names the rejected gift is removed; the safe bubble is committed.
+    expect(actionSpies.commit.mock.calls[1]![0].input.agent_turn_v2.proposal.response.messages).toEqual([safeText]);
+    expect(actionSpies.commit.mock.calls[1]![0].input.agent_turn_v2.proposal.proposed_action).toEqual({ type: 'none' });
     expect(JSON.stringify(actionSpies.commit.mock.calls[1]![0].input)).not.toContain(rejectedBonusText);
     expect(result).toMatchObject({ status: 'waiting_user', delivery_status: 'submitted_to_botpress',
       error_code: null });
     expect(createMessage).toHaveBeenCalledTimes(1);
   });
 
-  it('keeps the full response boundary when precommit repair never removes a bonus promise', async () => {
+  it('removes only the bonus bubble when precommit repair never removes a bonus promise', async () => {
     const claimed = claimedResponse() as unknown as ClaimedTurn;
     claimed.features = {
       agent_loop_v3_mode: 'off', conversation_pipeline_v1_enabled: false,
@@ -2183,7 +2309,7 @@ describe('processInboundTurn hot path', () => {
           response: { messages: generation === 1
             ? [safeText, rejectedBonusText] : [rejectedBonusText], call_offer: null },
           proposed_action: {
-            type: 'offer_course_bonus', interest_offering_code: 'redes-informaticas',
+            type: 'offer_course_bonus', motive:{kind:'price_objection',quote:'es caro'}, interest_offering_code: 'redes-informaticas',
             bonus_offering_code: 'community_manager',
           },
           used_fact_ids: [], used_memory_ids: [], memory_candidates: [],
@@ -2213,9 +2339,8 @@ describe('processInboundTurn hot path', () => {
     // Authority prompt line 236: el rechazo de una acción no puede cortar la venta.
     expect(actionSpies.agentABrainDeepSeek).toHaveBeenCalledTimes(3);
     expect(actionSpies.commit).toHaveBeenCalledTimes(1);
-    expect(actionSpies.commit.mock.calls[0]![0].input.agent_turn_v2).toBeNull();
-    expect(actionSpies.commit.mock.calls[0]![0].input.decision.response)
-      .toBe('Qué dato o qué curso revisamos?');
+    expect(actionSpies.commit.mock.calls[0]![0].input.agent_turn_v2.proposal.response.messages).toEqual([safeText]);
+    expect(actionSpies.commit.mock.calls[0]![0].input.agent_turn_v2.proposal.proposed_action).toEqual({ type: 'none' });
     expect(JSON.stringify(actionSpies.commit.mock.calls[0]![0].input)).not.toContain(rejectedBonusText);
     expect(actionSpies.recovery).not.toHaveBeenCalled();
     expect(client.createMessage).toHaveBeenCalledTimes(1);
@@ -2256,7 +2381,7 @@ describe('processInboundTurn hot path', () => {
         move: { schema_version: 1, move: 'unknown', secondary_moves: [], vetoes: [], confidence: 1 },
         response: { messages: ['Te sumo otro curso sin costo extra.'], call_offer: null },
         proposed_action: generation === 1 ? {
-          type: 'offer_course_bonus', interest_offering_code: 'redes-informaticas',
+          type: 'offer_course_bonus', motive:{kind:'price_objection',quote:'es caro'}, interest_offering_code: 'redes-informaticas',
           bonus_offering_code: 'fotografia_celulares_tiendas_online',
         } : { type: 'none' },
         used_fact_ids: [], used_memory_ids: [], memory_candidates: [],
@@ -2836,6 +2961,247 @@ describe('processInboundTurn hot path', () => {
   });
 
   it.each([
+    ['Dale, lo dejamos en 12 cuotas de USD 30. Te reenvío el enlace ahora.', 'Dale, lo dejamos en 12 cuotas de USD 30.'],
+    // Nothing usable remains: ONE effect-fenced continuation of the model writes the reply.
+    ['Te reenvío el enlace en 12 cuotas.', 'Perfecto, queda en 12 cuotas.'],
+  ])('incident B: PROMOTION_NOT_AUTHORIZED keeps the understood 12-installment plan, never «no te entendí» nor a false link claim: %s', async (understood, expectedText) => {
+    const claimed = claimedResponse() as unknown as ClaimedTurn;
+    claimed.features = { agent_loop_v3_mode: 'off', conversation_pipeline_v1_enabled: false,
+      agent_a_brain_v1_enabled: true, agent_a_brain_v1_shadow: false, agent_a_repair_enabled: true };
+    claimed.context.batch_messages[0].content = 'dale mandame el link de pago en 12 veces';
+    claimed.conversation_state_v1 = { selected_offering_code: 'ingles_1', selected_payment_plan: 'one_time',
+      stage: 'plan_selected', call_preference: 'chat', call_offer_status: 'declined', call_offer_count: 1,
+      awaiting_reply: 'payment_confirmation', version: 7 };
+    claimed.catalog_index = { as_of: NOW, offerings_total: 2,
+      offerings: [{ code: 'ingles_1', display_name: 'Inglés 1', academy: 'Idiomas', aliases: ['ingles'] },
+        { code: 'ingles_2', display_name: 'Inglés 2', academy: 'Idiomas', aliases: [] }],
+      injection_suspected_count: 0 };
+    const business = paymentBusinessContext();
+    business.offerings = [
+      { ...business.offerings[0]!, code: 'ingles_1', display_name: 'Inglés 1', academy: 'Idiomas' },
+      { ...business.offerings[0]!, code: 'ingles_2', display_name: 'Inglés 2', academy: 'Idiomas' },
+    ];
+    business.workspace.payment_options = [...business.workspace.payment_options, {
+      code: 'monthly_12', label: '12 cuotas', total: { amount: '360.00', currency: 'USD' },
+      installments: 12, installment_amount: '30.00', payment_link: 'https://example.test/twelve',
+    }] as never;
+    claimed.business_context = business;
+    claimed.business_context_available = true;
+    claimed.contact_intake_missing = [];
+    // The one-time checkout already carries the attached gift (incident B).
+    claimed.course_bonus_capability = {
+      status: 'accepted', package_status: 'attached', may_schedule_checkin: false, may_request_review: false,
+      may_accept_offer: false, may_send_promoted_payment: true, promotion_code: 'BONUS',
+      interest_offering_code: 'ingles_1', bonus_offerings: [{ code: 'ingles_2', display_name: 'Inglés 2', position: 1 }],
+    } as never;
+    actionSpies.claim.mockResolvedValue(claimed);
+    configuration.agentAPlannerlessV2Enabled = true;
+    actionSpies.agentABrainValidate.mockImplementation(() => null);
+    actionSpies.agentABrainDeepSeek.mockImplementation(async (input: { context: AgentAContextV1; on_provider_request?: () => void;
+      conversation_only?: boolean }) => {
+      input.on_provider_request?.();
+      const fenced = input.conversation_only === true;
+      return { proposal: { schema_version: 1,
+        move: { schema_version: 1, move: 'request_payment_link', secondary_moves: ['select_payment_plan'], vetoes: [],
+          confidence: 1, payment_plan: 'monthly_12', course_reference: 'ingles_1' },
+        response: { messages: [fenced ? 'Perfecto, queda en 12 cuotas.' : understood], call_offer: null },
+        proposed_action: fenced ? { type: 'none' }
+          : { type: 'send_payment_link', offering_code: 'ingles_1', payment_plan: 'monthly_12', promotion_code: 'BONUS' },
+        used_fact_ids: [], used_memory_ids: [], memory_candidates: [],
+        repair_of: input.context.turn_rejection ? { rejection_id: input.context.turn_rejection.rejection_id, attempt: 1 } : null },
+        provider: 'deepseek-direct', model: 'deepseek-v4-flash', latency_ms: 1, attempt_count: 1 };
+    });
+    const rejected = () => new StudyxHttpError('DECISION_REJECTED', false, 422, 1,
+      { error: 'DECISION_REJECTED', reason: 'PROMOTION_NOT_AUTHORIZED' });
+    actionSpies.commit.mockReset().mockImplementation(async ({ input }) => {
+      const turn = input.agent_turn_v2;
+      const content = turn?.proposal.response.messages.join('\n\n') ?? input.decision?.response ?? '';
+      // The backend keeps refusing the reservation; a fenced reply that still
+      // claims the link is refused exactly like prepare-agent-turn-v2 does.
+      if (turn && !turn.conversation_only) throw rejected();
+      if (claimsImmediatePaymentLinkDeliveryV1(content)) throw new StudyxHttpError('DECISION_REJECTED', false, 422, 1,
+        { error: 'DECISION_REJECTED', reason: 'AGENT_TURN_V2_REJECTED:ACTION_NOT_AUTHORIZED' });
+      const outbound = { id: UUID, content, status: 'pending', delivery_attempt: 1,
+        authorized_egress: buildAuthorizedEgress({ content, authorized_urls: [], protected_facts: [] }) };
+      return { status: 'committed', replayed: false, trace_id: UUID, turn_id: UUID, decision_id: UUID,
+        next_state: 'waiting_user', outbound, outbounds: [outbound], call_request: null };
+    });
+    const createMessage = vi.fn(async () => ({ message: { id: 'bp-incident-b-message' } }));
+    const step = Object.assign(async (_name: string, run: () => Promise<unknown>) => run(),
+      { sleep: vi.fn(async () => undefined) });
+    const handler = (processInboundTurn as unknown as {
+      definition: { handler: (args: Record<string, unknown>) => Promise<unknown> };
+    }).definition.handler;
+    await handler({ input: workflowInput(), state: processingState(), step,
+      execute: vi.fn(async () => { throw new Error('LEGACY_MODEL_MUST_NOT_RUN'); }),
+      client: { createMessage }, signal: new AbortController().signal, workflow: { id: 'workflow-incident-b' } });
+
+    const commits = actionSpies.commit.mock.calls.map(call => call[0].input);
+    // The deterministically rejected effect reaches the backend once, not three times.
+    expect(commits.filter(input => input.agent_turn_v2?.proposal.proposed_action.type === 'send_payment_link'
+      && !input.agent_turn_v2.conversation_only)).toHaveLength(1);
+    expect(actionSpies.agentABrainDeepSeek.mock.calls.length).toBeLessThanOrEqual(2);
+    const final = commits.at(-1)!;
+    // Effects fenced by the backend (conversation_only); the interpretation survives.
+    expect(final.agent_turn_v2).toMatchObject({ conversation_only: true, proposal: {
+      move: { move: 'request_payment_link', payment_plan: 'monthly_12' } } });
+    const delivered = JSON.stringify(final);
+    expect(delivered).not.toMatch(/no te entend/iu);
+    expect(delivered).not.toMatch(/reenv[ií]o el enlace/iu);
+    const finalText = final.agent_turn_v2!.proposal.response.messages.join(' ');
+    expect(finalText.trim().length).toBeGreaterThan(0);
+    // Agent A's own words survive; only the false link sentence is gone.
+    expect(finalText).toBe(expectedText);
+  });
+
+  it('live 2026-11-10: a technical link failure (LINK_CONFIG_MISSING) keeps the model reply, fences the effect and never says «no te entendí» nor claims the link', async () => {
+    const claimed = claimedResponse() as unknown as ClaimedTurn;
+    claimed.features = { agent_loop_v3_mode: 'off', conversation_pipeline_v1_enabled: false,
+      agent_a_brain_v1_enabled: true, agent_a_brain_v1_shadow: false, agent_a_repair_enabled: true };
+    claimed.context.batch_messages[0].content = 'dale, mandame el link en un solo pago';
+    claimed.conversation_state_v1 = { selected_offering_code: 'ingles_1', selected_payment_plan: 'one_time',
+      stage: 'plan_selected', call_preference: 'chat', call_offer_status: 'declined', call_offer_count: 1,
+      awaiting_reply: 'payment_confirmation', version: 7 };
+    claimed.catalog_index = { as_of: NOW, offerings_total: 1,
+      offerings: [{ code: 'ingles_1', display_name: 'Inglés 1', academy: 'Idiomas', aliases: ['ingles'] }],
+      injection_suspected_count: 0 };
+    const business = paymentBusinessContext();
+    business.offerings = [{ ...business.offerings[0]!, code: 'ingles_1', display_name: 'Inglés 1', academy: 'Idiomas' }];
+    claimed.business_context = business;
+    claimed.business_context_available = true;
+    claimed.contact_intake_missing = [];
+    actionSpies.claim.mockResolvedValue(claimed);
+    configuration.agentAPlannerlessV2Enabled = true;
+    actionSpies.agentABrainValidate.mockImplementation(() => null);
+    actionSpies.agentABrainDeepSeek.mockImplementation(async (input: { context: AgentAContextV1; on_provider_request?: () => void;
+      conversation_only?: boolean }) => {
+      input.on_provider_request?.();
+      const fenced = input.conversation_only === true;
+      return { proposal: { schema_version: 1,
+        move: { schema_version: 1, move: 'request_payment_link', secondary_moves: [], vetoes: [],
+          confidence: 1, payment_plan: 'one_time', course_reference: 'ingles_1' },
+        response: { messages: [fenced ? 'Perfecto, queda en un solo pago.' : 'Dale, queda en un solo pago. Te mando el enlace ahora.'], call_offer: null },
+        proposed_action: fenced ? { type: 'none' }
+          : { type: 'send_payment_link', offering_code: 'ingles_1', payment_plan: 'one_time' },
+        course_mentions: [{ offering_code: 'ingles_1', role: 'paid' }],
+        used_fact_ids: [], used_memory_ids: [], memory_candidates: [],
+        repair_of: input.context.turn_rejection ? { rejection_id: input.context.turn_rejection.rejection_id, attempt: 1 } : null },
+        provider: 'deepseek-direct', model: 'deepseek-v4-flash', latency_ms: 1, attempt_count: 1 };
+    });
+    actionSpies.commit.mockReset().mockImplementation(async ({ input }) => {
+      const turn = input.agent_turn_v2;
+      const content = turn?.proposal.response.messages.join('\n\n') ?? input.decision?.response ?? '';
+      if (turn && !turn.conversation_only) throw new StudyxHttpError('DECISION_REJECTED', false, 422, 1,
+        { error: 'DECISION_REJECTED', reason: 'LINK_CONFIG_MISSING' });
+      const outbound = { id: UUID, content, status: 'pending', delivery_attempt: 1,
+        authorized_egress: buildAuthorizedEgress({ content, authorized_urls: [], protected_facts: [] }) };
+      return { status: 'committed', replayed: false, trace_id: UUID, turn_id: UUID, decision_id: UUID,
+        next_state: 'waiting_user', outbound, outbounds: [outbound], call_request: null };
+    });
+    const createMessage = vi.fn(async () => ({ message: { id: 'bp-link-config-message' } }));
+    const step = Object.assign(async (_name: string, run: () => Promise<unknown>) => run(),
+      { sleep: vi.fn(async () => undefined) });
+    const handler = (processInboundTurn as unknown as {
+      definition: { handler: (args: Record<string, unknown>) => Promise<unknown> };
+    }).definition.handler;
+    await handler({ input: workflowInput(), state: processingState(), step,
+      execute: vi.fn(async () => { throw new Error('LEGACY_MODEL_MUST_NOT_RUN'); }),
+      client: { createMessage }, signal: new AbortController().signal, workflow: { id: 'workflow-link-config' } });
+
+    const commits = actionSpies.commit.mock.calls.map(call => call[0].input);
+    const final = commits.at(-1)!;
+    // Effect fenced; Agent A's move (course and plan) survives; the false link claim is gone.
+    expect(final.agent_turn_v2).toMatchObject({ conversation_only: true, proposal: {
+      move: { move: 'request_payment_link', payment_plan: 'one_time' } } });
+    const delivered = JSON.stringify(final);
+    expect(delivered).not.toMatch(/no te entend/iu);
+    expect(delivered).not.toMatch(/te mando el enlace/iu);
+    expect(final.agent_turn_v2!.proposal.response.messages.join(' ')).toBe('Dale, queda en un solo pago.');
+  });
+
+  it.each([
+    { name: 'a rejected link schedules the whole-turn recovery', reason: 'PAYMENT_PLAN_MISMATCH', exhausted: false },
+    { name: 'exhausted recovery commits ONE fenced model reply instead of silence', reason: 'PAYMENT_PLAN_MISMATCH', exhausted: true },
+    { name: 'an unlisted reason (lost ownership) keeps the old path', reason: 'CLAIM_OWNERSHIP_LOST', exhausted: false },
+  ])('live 2026-11-10: $name, never «no te entendí» nor a false link claim', async ({ reason, exhausted, name }) => {
+    actionSpies.recovery.mockReset();
+    if (exhausted) actionSpies.recovery.mockResolvedValue({ outcome: 'exhausted', attempt: 3, delay_ms: 0 });
+    const claimed = claimedResponse() as unknown as ClaimedTurn;
+    claimed.features = { agent_loop_v3_mode: 'off', conversation_pipeline_v1_enabled: false,
+      agent_a_brain_v1_enabled: true, agent_a_brain_v1_shadow: false, agent_a_repair_enabled: true };
+    claimed.context.batch_messages[0].content = 'dale, mandame el link en un solo pago';
+    claimed.conversation_state_v1 = { selected_offering_code: 'ingles_1', selected_payment_plan: 'one_time',
+      stage: 'plan_selected', call_preference: 'chat', call_offer_status: 'declined', call_offer_count: 1,
+      awaiting_reply: 'payment_confirmation', version: 7 };
+    claimed.catalog_index = { as_of: NOW, offerings_total: 1,
+      offerings: [{ code: 'ingles_1', display_name: 'Inglés 1', academy: 'Idiomas', aliases: ['ingles'] }],
+      injection_suspected_count: 0 };
+    const business = paymentBusinessContext();
+    business.offerings = [{ ...business.offerings[0]!, code: 'ingles_1', display_name: 'Inglés 1', academy: 'Idiomas' }];
+    claimed.business_context = business;
+    claimed.business_context_available = true;
+    claimed.contact_intake_missing = [];
+    actionSpies.claim.mockResolvedValue(claimed);
+    configuration.agentAPlannerlessV2Enabled = true;
+    actionSpies.agentABrainValidate.mockImplementation(() => null);
+    actionSpies.agentABrainDeepSeek.mockImplementation(async (input: { context: AgentAContextV1; on_provider_request?: () => void;
+      conversation_only?: boolean }) => {
+      input.on_provider_request?.();
+      const fenced = input.conversation_only === true;
+      return { proposal: { schema_version: 1,
+        move: { schema_version: 1, move: 'request_payment_link', secondary_moves: [], vetoes: [],
+          confidence: 1, payment_plan: 'one_time', course_reference: 'ingles_1' },
+        response: { messages: [fenced ? 'Perfecto, queda en un solo pago.' : 'Te mando el enlace ahora.'], call_offer: null },
+        proposed_action: fenced ? { type: 'none' }
+          : { type: 'send_payment_link', offering_code: 'ingles_1', payment_plan: 'one_time' },
+        course_mentions: [{ offering_code: 'ingles_1', role: 'paid' }],
+        used_fact_ids: [], used_memory_ids: [], memory_candidates: [],
+        repair_of: input.context.turn_rejection ? { rejection_id: input.context.turn_rejection.rejection_id, attempt: 1 } : null },
+        provider: 'deepseek-direct', model: 'deepseek-v4-flash', latency_ms: 1, attempt_count: 1 };
+    });
+    actionSpies.commit.mockReset().mockImplementation(async ({ input }) => {
+      const turn = input.agent_turn_v2;
+      const content = turn?.proposal.response.messages.join('\n\n') ?? input.decision?.response ?? '';
+      if (turn && !turn.conversation_only) throw new StudyxHttpError('DECISION_REJECTED', false, 422, 1,
+        { error: 'DECISION_REJECTED', reason });
+      // Bounded repairs are exhausted: the fenced reply is refused too.
+      // After exhaustion the single fenced continuation is accepted by the backend.
+      if (turn && !(exhausted && actionSpies.recovery.mock.calls.length > 0)) throw new StudyxHttpError('DECISION_REJECTED', false, 422, 1,
+        { error: 'DECISION_REJECTED', reason: 'AGENT_TURN_V2_REJECTED:FACT_NOT_AUTHORIZED' });
+      const outbound = { id: UUID, content, status: 'pending', delivery_attempt: 1,
+        authorized_egress: buildAuthorizedEgress({ content, authorized_urls: [], protected_facts: [] }) };
+      return { status: 'committed', replayed: false, trace_id: UUID, turn_id: UUID, decision_id: UUID,
+        next_state: 'waiting_user', outbound, outbounds: [outbound], call_request: null };
+    });
+    const createMessage = vi.fn(async () => ({ message: { id: 'bp-link-config-message' } }));
+    const step = Object.assign(async (_name: string, run: () => Promise<unknown>) => run(),
+      { sleep: vi.fn(async () => undefined) });
+    const handler = (processInboundTurn as unknown as {
+      definition: { handler: (args: Record<string, unknown>) => Promise<unknown> };
+    }).definition.handler;
+    await handler({ input: workflowInput(), state: processingState(), step,
+      execute: vi.fn(async () => { throw new Error('LEGACY_MODEL_MUST_NOT_RUN'); }),
+      client: { createMessage }, signal: new AbortController().signal, workflow: { id: 'workflow-link-config' } });
+
+    const commits = actionSpies.commit.mock.calls.map(call => call[0].input);
+    expect(JSON.stringify(commits)).not.toMatch(/no te entend/iu);
+    expect(actionSpies.recovery).toHaveBeenCalledTimes(1);
+    const fencedCommits = commits.filter(input => input.agent_turn_v2?.conversation_only === true);
+    // The rejected effect commit is refused; nothing that was delivered claims the link.
+    expect(JSON.stringify(fencedCommits)).not.toMatch(/te mando el enlace|cuando se acredite/iu);
+    if (exhausted) {
+      // One model-authored fenced reply committed after exhaustion; the receipt says no link was created.
+      expect(commits.at(-1)!.agent_turn_v2).toMatchObject({ conversation_only: true,
+        proposal: { response: { messages: ['Perfecto, queda en un solo pago.'] } } });
+      expect(actionSpies.agentABrainDeepSeek.mock.calls.at(-1)![0]).toMatchObject({ conversation_only: true });
+      expect(createMessage).toHaveBeenCalled();
+    } else if (name.includes('unlisted')) {
+      expect(fencedCommits).toHaveLength(0);
+      expect(actionSpies.recovery.mock.calls[0]?.[0].input).toMatchObject({ reason_code: 'AGENT_A_COMMIT_FAILED' });
+    }
+  });
+
+  it.each([
     { finalBackendRejected: false, initialProviderRequests: 1, precommitProviderRequests: 1 },
     { finalBackendRejected: true, initialProviderRequests: 1, precommitProviderRequests: 1 },
     { finalBackendRejected: false, initialProviderRequests: 2, precommitProviderRequests: 1 },
@@ -3249,7 +3615,8 @@ describe('processInboundTurn hot path', () => {
     }).definition.handler;
 
     const result = await handler({
-      input: workflowInput(), state: processingState(), step, execute, client: {},
+      input: workflowInput(), state: processingState(), step, execute,
+      client: { getOrCreateWorkflow: vi.fn(async () => ({ workflow: { id: 'planner-recovery', status: 'pending', tags: {} } })) },
       signal: new AbortController().signal, workflow: { id: 'workflow-test' },
     });
 
@@ -3987,82 +4354,6 @@ describe('processInboundTurn hot path', () => {
     return { createMessage, result };
   }
 
-  it.each([
-    { multipart: false, continuation: 'authorized', authorizationOutage: false, expected: ['Primero'], status: 'completed' },
-    { multipart: true, continuation: 'authorized', authorizationOutage: false, expected: ['Primero', 'Segundo'], status: 'completed' },
-    { multipart: true, continuation: 'superseded', authorizationOutage: false, expected: ['Primero'], status: 'absorbed' },
-    { multipart: true, continuation: 'superseded', authorizationOutage: true, expected: ['Primero'], status: 'absorbed' },
-  ])('resumes only the receipt and current remaining parts after losing its HTTP response ($multipart/$continuation/$authorizationOutage)', async ({ multipart, continuation, authorizationOutage, expected, status }) => {
-    actionSpies.continuation.mockImplementation(async ({ input }: { input: { outbound_id: string } }) => ({
-      outcome: input.outbound_id === UUID ? 'authorized' : continuation, trace_id: UUID, outbound_id: input.outbound_id,
-    }));
-    const suspension = { [Symbol.for('StepSignal')]: true };
-    const savedSteps = new Map<string, unknown>();
-    const step = Object.assign(async (name: string, run: () => Promise<unknown>) => {
-      if (savedSteps.has(name)) return structuredClone(savedSteps.get(name));
-      const output = await run();
-      savedSteps.set(name, structuredClone(output));
-      return output;
-    }, { sleep: vi.fn(async (name: string, delayMs: number) => {
-      if (name.startsWith('await-batch-window-')) return;
-      expect(delayMs).toBeGreaterThanOrEqual(10_000);
-      if (savedSteps.has(name)) return;
-      savedSteps.set(name, undefined);
-      throw suspension;
-    }) });
-    const submittedTexts: string[] = [];
-    const createMessage = vi.fn(async ({ payload }: { payload: { text: string } }) => {
-      submittedTexts.push(payload.text);
-      return { message: { id: `bp-part-${submittedTexts.length}` } };
-    });
-    const recorded = new Map<string, string>();
-    let loseResponse = true;
-    actionSpies.delivery.mockImplementation(async ({ input }: { input: { outbound_id: string; botpress_message_id: string } }) => {
-      const existing = recorded.get(input.outbound_id);
-      if (existing) expect(input.botpress_message_id).toBe(existing);
-      recorded.set(input.outbound_id, input.botpress_message_id);
-      if (loseResponse) {
-        loseResponse = false;
-        throw new StudyxHttpError('STUDYX_TIMEOUT', true, null, 4);
-      }
-      return { status: existing ? 'duplicate' : 'recorded' };
-    });
-    const first = { id: UUID, content: 'Primero', status: 'pending', delivery_attempt: 1,
-      authorized_egress: { schema_version: 1, content_hash: '67d02dfce5ef9a0aa49675a19b9f92983e52abb2cceb96e6e932c26f171e68aa', authorized_urls: [], protected_facts: [] },
-      part_index: 0, part_count: multipart ? 2 : 1 };
-    const second = { id: '28a823e8-27c2-4279-9956-058f45f33cd6', content: 'Segundo', status: 'pending', delivery_attempt: 1,
-      authorized_egress: { schema_version: 1, content_hash: '2f50e3d71e066e86ebb03e28f5bac2e90cd0de1982f34ecef3f0753b14b27897', authorized_urls: [], protected_facts: [] },
-      part_index: 1, part_count: 2 };
-    const state = processingState();
-    const workflow = { id: 'receipt-recovery-test', setTimeout: vi.fn(async () => undefined) };
-    const run = () => runCommittedOutbound(first, {}, { step, state, workflow, createMessage,
-      ...(multipart ? { outbounds: [first, second] } : {}) });
-
-    await expect(run()).rejects.toBe(suspension);
-    expect(submittedTexts).toEqual(['Primero']);
-    expect(recorded.size).toBe(1);
-    expect(state).toMatchObject({ phase: 'retry_pending', errorCode: 'STUDYX_TIMEOUT' });
-    expect(workflow.setTimeout).toHaveBeenCalledWith({ in: '30m' });
-    if (authorizationOutage) {
-      actionSpies.continuation.mockRejectedValueOnce(new StudyxHttpError('STUDYX_TIMEOUT', true));
-      await expect(run()).rejects.toBe(suspension);
-      expect(submittedTexts).toEqual(['Primero']);
-      expect(state).toMatchObject({ pendingDeliveryReport: { stage: 'continuation', outboundId: second.id } });
-      // A later inbound invalidates this part while authorization is offline.
-      // No successful cached grant can bypass the next fresh backend check.
-    }
-    await expect(run()).resolves.toMatchObject({ result: { status,
-      error_code: continuation === 'superseded' ? 'OUTBOUND_SUPERSEDED' : null } });
-    expect(submittedTexts).toEqual(expected);
-    expect(recorded.size).toBe(expected.length);
-    if (multipart) expect(actionSpies.continuation.mock.calls.find(([call]) => call.input.outbound_id === second.id)?.[0]?.input).toEqual({
-      outbound_id: second.id, trace_id: UUID, delivery_attempt: 1,
-    });
-    await run();
-    expect(submittedTexts).toEqual(expected);
-    expect(actionSpies.commit).toHaveBeenCalledTimes(1);
-  });
-
   it('keeps a possibly accepted createMessage timeout ambiguous instead of authorizing a resend', async () => {
     const accepted: string[] = [];
     const createMessage = vi.fn(async ({ payload }: { payload: { text: string } }) => {
@@ -4076,6 +4367,84 @@ describe('processInboundTurn hot path', () => {
         authorized_urls: [], protected_facts: [] },
     }, {}, { createMessage, state })).rejects.toBe(DELIVERY_SUSPENSION);
     expect(accepted).toEqual(['Contenido autorizado']);
+    expect(actionSpies.delivery).not.toHaveBeenCalled();
+    expect(state).toMatchObject({ phase: 'retry_pending', deliveryStatus: null,
+      errorCode: 'OUTBOUND_SUBMISSION_AMBIGUOUS', needsOperator: true });
+  });
+
+  it('continues to createMessage when stopping WhatsApp typing presence hangs', async () => {
+    configuration.whatsappPublicEnabled = true;
+    configuration.whatsappCanaryEnabled = false;
+    configuration.whatsappAllowedBotPhoneNumberId = 'allowed-business-number-75';
+    let stopInvokedResolve: (() => void) | undefined;
+    const stopInvoked = new Promise<void>((resolve) => { stopInvokedResolve = resolve; });
+    const stopTyping = vi.spyOn(runtimeActions.whatsapp, 'stopTypingIndicator')
+      .mockImplementation(() => {
+        stopInvokedResolve?.();
+        return new Promise<Record<string, never>>(() => undefined);
+      });
+    const createMessage = vi.fn(async () => ({ message: { id: 'bp-after-typing-stop-timeout' } }));
+    vi.useFakeTimers();
+    try {
+      const run = runCommittedOutbound({
+        authorized_egress: {
+          schema_version: 1,
+          content_hash: 'e2dee359447348131358a63664853c018f5db0fcb31835e30a0aac56badab6bd',
+          authorized_urls: [],
+          protected_facts: [],
+        },
+      }, {
+        channel: 'whatsapp',
+        message: {
+          ...workflowInput().message,
+          metadata: { bot_phone_number_id: 'allowed-business-number-75' },
+        },
+      }, { createMessage });
+
+      await stopInvoked;
+      await vi.advanceTimersByTimeAsync(WHATSAPP_TYPING_STOP_TIMEOUT_MS - 1);
+      expect(createMessage).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1);
+      await run;
+
+      expect(stopTyping).toHaveBeenCalledTimes(1);
+      expect(createMessage).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it.each([false, true])('records the provider status and Error ID of an ambiguous send in evidence and log (multipart=%s)', async multipart => {
+    // Shape and text observed live on 2026-11-02 (Botpress → WhatsApp integration 502).
+    const providerError = Object.assign(new Error('[Create Message] Received error response when sending scheduled message to integration '
+      + '"8a7bb148-c95c-4527-a75f-611b4255f53c": [Internal] Request failed with status code 502 (Error ID: err_20261102095847xE9BC49AA)'),
+    { isApiError: true, code: 500, type: 'Runtime', id: 'err_20261102095847xE9BC49AA' });
+    const createMessage = vi.fn(async () => { throw providerError; });
+    const events: Array<{ kind: string; data: Record<string, unknown> }> = [];
+    vi.spyOn(evidencePersistence, 'persistTurnEvidence').mockImplementation(async (_subject, event) => {
+      events.push(event);
+    });
+    const logs = vi.spyOn(console, 'info').mockImplementation(() => undefined);
+    const state = processingState();
+    const part = { id: UUID, content: 'Contenido autorizado', status: 'pending', delivery_attempt: 1,
+      authorized_egress: { schema_version: 1,
+        content_hash: 'e2dee359447348131358a63664853c018f5db0fcb31835e30a0aac56badab6bd',
+        authorized_urls: [], protected_facts: [] },
+      part_index: 0, part_count: 1 };
+    await expect(runCommittedOutbound(part, {}, { createMessage, state,
+      ...(multipart ? { outbounds: [part] } : {}) })).rejects.toBe(DELIVERY_SUSPENSION);
+
+    const expected = { api_type: 'Runtime', api_code: 500, upstream_type: 'Internal', upstream_status: 502,
+      error_id: 'err_20261102095847xE9BC49AA' };
+    // Captured before the durable suspension; flushed on the next run (live: 07:03:49).
+    const ambiguous = [...events, ...((state as { pendingEvidence?: typeof events }).pendingEvidence ?? [])]
+      .find(event => event.kind === 'provider_send_ambiguous');
+    expect(ambiguous?.data).toMatchObject({ provider_error: expected });
+    const logged = logs.mock.calls.map(([line]) => { try { return JSON.parse(String(line)); } catch { return null; } })
+      .find(line => line?.event === 'studyx.turn.delivery_submission_ambiguous');
+    expect(logged).toMatchObject({ provider_error: { upstream_status: 502, error_id: 'err_20261102095847xE9BC49AA' } });
+    expect(JSON.stringify(logged)).not.toContain('Request failed');
+    // Behaviour unchanged: still ambiguous, held for an operator, never reported as failed.
     expect(actionSpies.delivery).not.toHaveBeenCalled();
     expect(state).toMatchObject({ phase: 'retry_pending', deliveryStatus: null,
       errorCode: 'OUTBOUND_SUBMISSION_AMBIGUOUS', needsOperator: true });
@@ -4206,7 +4575,8 @@ describe('processInboundTurn hot path', () => {
     }, {}, { step, state, createMessage, callRequest: { call_id: UUID, status: 'requested' } }))
       .rejects.toBe(suspension);
     expect(createMessage).toHaveBeenCalledTimes(1);
-    expect(actionSpies.delivery).toHaveBeenCalledTimes(1);
+    // submission + channel acceptance receipt (2026-11-02)
+    expect(actionSpies.delivery.mock.calls.map(([call]) => call.input.status)).toEqual(['submitted_to_botpress', 'delivered']);
     expect(actionSpies.dispatch).not.toHaveBeenCalled();
     expect(actionSpies.flush).not.toHaveBeenCalled();
     expect(state).toMatchObject({ phase: 'decision_committed', errorCode: null });
@@ -4288,9 +4658,78 @@ describe('processInboundTurn hot path', () => {
     expect(createMessage.mock.calls.map(([input]) => input.payload.text)).toEqual(['Primero', 'Segundo']);
     expect(actionSpies.delivery.mock.calls.map(([call]) => call.input)).toEqual([
       expect.objectContaining({ outbound_id: UUID, status: 'submitted_to_botpress', botpress_message_id: 'bp-part-1' }),
+      expect.objectContaining({ outbound_id: UUID, status: 'delivered', botpress_message_id: 'bp-part-1' }),
       expect.objectContaining({ outbound_id: '28a823e8-27c2-4279-9956-058f45f33cd6', status: 'submitted_to_botpress', botpress_message_id: 'bp-part-2' }),
+      expect.objectContaining({ outbound_id: '28a823e8-27c2-4279-9956-058f45f33cd6', status: 'delivered', botpress_message_id: 'bp-part-2' }),
     ]);
     expect(result).toMatchObject({ status: 'completed', delivery_status: 'submitted_to_botpress' });
+  });
+
+  describe('official programme document part (owner 2026-11-04)', () => {
+    const DOC_ID = '38a823e8-27c2-4279-9956-058f45f33cd7';
+    const IMG_ID = '48a823e8-27c2-4279-9956-058f45f33cd8';
+    const manifest = (hash: string) => ({ schema_version: 1, content_hash: hash, authorized_urls: [], protected_facts: [] });
+    const parts = () => [
+      { id: UUID, content: 'Primero', status: 'pending', delivery_attempt: 1, authorized_egress: manifest('67d02dfce5ef9a0aa49675a19b9f92983e52abb2cceb96e6e932c26f171e68aa'), part_index: 0, part_count: 4 },
+      { id: '28a823e8-27c2-4279-9956-058f45f33cd6', content: 'Segundo', status: 'pending', delivery_attempt: 1, authorized_egress: manifest('2f50e3d71e066e86ebb03e28f5bac2e90cd0de1982f34ecef3f0753b14b27897'), part_index: 1, part_count: 4 },
+      { id: DOC_ID, content: '[programa enviado: Real Estate]', status: 'pending', delivery_attempt: 1,
+        authorized_egress: buildAuthorizedEgress({ content: '[programa enviado: Real Estate]', authorized_urls: [], protected_facts: [] }), part_index: 3, part_count: 4,
+        document: { kind: 'course_program', media: 'file', offering_code: 'real_estate', file_url: 'https://assets.example.com/programas/real-estate.pdf',
+          filename: 'Programa Real Estate - Studyx.pdf', title: 'Real Estate' } },
+      { id: IMG_ID, content: '[imagen enviada: Real Estate]', status: 'pending', delivery_attempt: 1,
+        authorized_egress: buildAuthorizedEgress({ content: '[imagen enviada: Real Estate]', authorized_urls: [], protected_facts: [] }), part_index: 2, part_count: 4,
+        document: { kind: 'course_program', media: 'image', offering_code: 'real_estate', file_url: 'https://assets.example.com/material/imagenes/real_estate.png',
+          filename: 'Real Estate - Studyx.png', title: 'Real Estate' } },
+    ];
+    it('sends the PDF as a file, then the course image, then the text bubbles', async () => {
+      configuration.whatsappPublicEnabled = true;
+      configuration.whatsappCanaryEnabled = false;
+      configuration.whatsappAllowedBotPhoneNumberId = 'allowed-business-number-75';
+      const createMessage = vi.fn((input: Record<string, unknown>) => Promise.resolve({ message: { id: `bp-${String(input.type)}-${Math.random()}` } }));
+      await runCommittedOutbound({ authorized_egress: parts()[0]!.authorized_egress }, { channel: 'whatsapp',
+        message: { ...workflowInput().message, metadata: { bot_phone_number_id: 'allowed-business-number-75' } } },
+      { createMessage, outbounds: parts() });
+      expect(createMessage.mock.calls.map(([input]) => (input as { type: string }).type)).toEqual(['file', 'image', 'text', 'text']);
+      expect(createMessage.mock.calls[1]![0]).toMatchObject({ type: 'image', payload: { imageUrl: 'https://assets.example.com/material/imagenes/real_estate.png' } });
+      expect(createMessage.mock.calls[0]![0]).toMatchObject({ type: 'file', payload: { fileUrl: 'https://assets.example.com/programas/real-estate.pdf',
+        filename: 'Programa Real Estate - Studyx.pdf', title: 'Real Estate' } });
+      expect(createMessage.mock.calls.slice(2).map(([input]) => (input as { payload: { text: string } }).payload.text)).toEqual(['Primero', 'Segundo']);
+    });
+    it('stops WhatsApp typing presence before the first outbound part, with the planner off (owner 2026-11-09)', async () => {
+      configuration.whatsappPublicEnabled = true;
+      configuration.whatsappCanaryEnabled = false;
+      configuration.whatsappAllowedBotPhoneNumberId = 'allowed-business-number-75';
+      configuration.agentACommercialPlanningEnabled = false;
+      const startTyping = vi.spyOn(runtimeActions.whatsapp, 'startTypingIndicator');
+      const stopTyping = vi.spyOn(runtimeActions.whatsapp, 'stopTypingIndicator');
+      const createMessage = vi.fn((input: Record<string, unknown>) => Promise.resolve({ message: { id: `bp-${String(input.type)}-${Math.random()}` } }));
+      await runCommittedOutbound({ authorized_egress: parts()[0]!.authorized_egress }, { channel: 'whatsapp',
+        message: { ...workflowInput().message, metadata: { bot_phone_number_id: 'allowed-business-number-75' } } },
+      { createMessage, outbounds: parts() });
+      expect(createMessage.mock.calls.map(([input]) => (input as { type: string }).type)).toEqual(['file', 'image', 'text', 'text']);
+      expect(startTyping).toHaveBeenCalledTimes(4);
+      expect(stopTyping).toHaveBeenCalledTimes(4);
+      expect(startTyping.mock.invocationCallOrder[0]).toBeLessThan(createMessage.mock.invocationCallOrder[0]!);
+      expect(stopTyping.mock.invocationCallOrder[0]).toBeLessThan(createMessage.mock.invocationCallOrder[0]!);
+      for (let part = 1; part < createMessage.mock.invocationCallOrder.length; part += 1) {
+        expect(startTyping.mock.invocationCallOrder[part]).toBeLessThan(
+          createMessage.mock.invocationCallOrder[part]!,
+        );
+        expect(stopTyping.mock.invocationCallOrder[part]).toBeLessThan(
+          createMessage.mock.invocationCallOrder[part]!,
+        );
+      }
+    });
+    it('on a channel without file support the document is reported failed (never sent) and the text bubbles still go out', async () => {
+      const createMessage = vi.fn().mockResolvedValueOnce({ message: { id: 'bp-1' } }).mockResolvedValueOnce({ message: { id: 'bp-2' } });
+      await runCommittedOutbound({ authorized_egress: parts()[0]!.authorized_egress }, { channel: 'emulator' }, { createMessage, outbounds: parts() });
+      expect(createMessage).toHaveBeenCalledTimes(2);
+      expect(createMessage.mock.calls.map(([input]) => (input as { type: string }).type)).toEqual(['text', 'text']);
+      expect(actionSpies.delivery.mock.calls.map(([call]) => call.input)).toContainEqual(
+        expect.objectContaining({ outbound_id: DOC_ID, status: 'failed' }));
+      expect(actionSpies.delivery.mock.calls.map(([call]) => call.input)).toContainEqual(
+        expect.objectContaining({ outbound_id: UUID, status: 'submitted_to_botpress' }));
+    });
   });
 
   it('paces model-authored bubbles without rewriting or delaying the first one', async () => {
@@ -4315,8 +4754,8 @@ describe('processInboundTurn hot path', () => {
     });
 
     expect(submittedTexts).toEqual(['Primero', 'Segundo']);
-    expect(submittedAt[1] - submittedAt[0]).toBeGreaterThanOrEqual(650);
-    expect(submittedAt[1] - submittedAt[0]).toBeLessThanOrEqual(1_100);
+    expect(submittedAt[1] - submittedAt[0]).toBeGreaterThanOrEqual(1_000);
+    expect(submittedAt[1] - submittedAt[0]).toBeLessThanOrEqual(2_200);
   });
 
   it('stops after an ambiguous second part without authorizing any resend', async () => {
@@ -4341,7 +4780,7 @@ describe('processInboundTurn hot path', () => {
 
     expect(createMessage).toHaveBeenCalledTimes(2);
     expect(actionSpies.delivery.mock.calls.map(([call]) => call.input.status)).toEqual([
-      'submitted_to_botpress',
+      'submitted_to_botpress', 'delivered',
     ]);
     expect(state).toMatchObject({ phase: 'retry_pending', deliveryStatus: null,
       errorCode: 'OUTBOUND_SUBMISSION_AMBIGUOUS', needsOperator: true });
@@ -4433,7 +4872,8 @@ describe('processInboundTurn hot path', () => {
     });
 
     expect(createMessage).toHaveBeenCalledTimes(1);
-    expect(actionSpies.delivery).toHaveBeenCalledTimes(1);
+    // submission + channel acceptance receipt (2026-11-02)
+    expect(actionSpies.delivery.mock.calls.map(([call]) => call.input.status)).toEqual(['submitted_to_botpress', 'delivered']);
     expect(actionSpies.delivery.mock.calls[0]?.[0]?.input).toMatchObject({
       status: 'submitted_to_botpress',
       botpress_message_id: 'bp-message-1',
@@ -5382,6 +5822,122 @@ describe('processInboundTurn hot path', () => {
     expect(actionSpies.dispatch).not.toHaveBeenCalled();
   });
 
+  it.each([
+    {
+      label: 'exact Gabi direct-call request',
+      message: 'Me puedes llamar?',
+      route: null,
+      phone: '+5491169004497',
+      missing: ['nombre', 'apellido', 'correo'] as const,
+      response: 'Claro. Para llamarte me faltan tu nombre, tu apellido y tu correo. Me los compartes por acá?',
+    },
+    {
+      label: 'direct-call request with no callable phone',
+      message: 'Llámame por favor',
+      route: 'call_phone_required' as const,
+      phone: null,
+      missing: ['telefono'] as const,
+      response: 'De acuerdo. Pásame el número completo con código de país y área, por ejemplo +54 9 11…, para poder llamarte 🙂',
+    },
+  ])('persists $label as intake when the provider is unavailable', async ({
+    message, route, phone, missing, response,
+  }) => {
+    const claimed = claimedResponse() as unknown as ClaimedTurn;
+    claimed.features = {
+      agent_loop_v3_mode: 'off',
+      conversation_pipeline_v1_enabled: false,
+      agent_a_brain_v1_enabled: true,
+      agent_a_brain_v1_shadow: false,
+      agent_a_repair_enabled: true,
+    };
+    claimed.deterministic_route = route;
+    claimed.context.batch_messages[0].content = message;
+    claimed.sales_context.allowed_actions = ['offer_call'];
+    claimed.contact_intake = {
+      nombre: null,
+      apellido: null,
+      correo: null,
+      telefono: phone,
+    };
+    claimed.contact_intake_missing = [...missing];
+    claimed.call_intake_readiness = {
+      status: 'needs_input',
+      requirements: missing.map((field) => ({ field, reason: 'missing' as const })),
+    };
+    claimed.catalog_index = {
+      as_of: NOW,
+      offerings_total: 0,
+      offerings: [],
+      injection_suspected_count: 0,
+    };
+    claimed.business_context = paymentBusinessContext();
+    claimed.business_context_available = true;
+    claimed.conversation_state_v1 = {
+      selected_offering_code: null,
+      selected_payment_plan: null,
+      stage: 'exploring',
+      call_preference: 'unknown',
+      call_offer_status: 'not_offered',
+      call_offer_count: 0,
+      awaiting_reply: 'none',
+      version: 2,
+    };
+    actionSpies.claim.mockResolvedValue(claimed);
+    configuration.agentAPlannerlessV2Enabled = true;
+    actionSpies.agentABrainDeepSeek.mockRejectedValue(new Error('BRAIN_DEEPSEEK_TIMEOUT'));
+    actionSpies.commit.mockResolvedValueOnce({
+      status: 'committed',
+      replayed: false,
+      trace_id: UUID,
+      turn_id: UUID,
+      decision_id: UUID,
+      next_state: 'waiting_user',
+      outbound: null,
+      outbounds: [],
+      call_request: null,
+    });
+    const step = Object.assign(
+      async (_name: string, run: () => Promise<unknown>) => run(),
+      { sleep: vi.fn(async () => undefined) },
+    );
+    const handler = (processInboundTurn as unknown as {
+      definition: { handler: (args: Record<string, unknown>) => Promise<unknown> };
+    }).definition.handler;
+
+    const result = await handler({
+      input: { ...workflowInput(), message: { ...workflowInput().message, text: message } },
+      state: processingState(),
+      step,
+      execute: vi.fn(async () => { throw new Error('LEGACY_MODEL_MUST_NOT_RUN'); }),
+      client: {},
+      signal: new AbortController().signal,
+      workflow: { id: `workflow-call-intake-${route ?? 'model'}` },
+    });
+
+    expect(result).toMatchObject({ status: 'waiting_user', error_code: null });
+    expect(actionSpies.commit).toHaveBeenCalledTimes(1);
+    expect(actionSpies.commit.mock.calls[0]?.[0]?.input).toMatchObject({
+      agent_turn_v2: {
+        conversation_only: true,
+        proposal: {
+          move: { move: 'request_call' },
+          response: {
+            messages: [response],
+            call_offer: null,
+          },
+          proposed_action: { type: 'none' },
+          profile_requests: [{
+            message_index: 0,
+            fields: [...missing],
+            purpose: 'call',
+            mode: 'collect',
+          }],
+        },
+      },
+    });
+    expect(actionSpies.dispatch).not.toHaveBeenCalled();
+  });
+
   it.each(['policy', 'schema', 'timeout', 'prior_provider_retry'])('keeps safe Agent A prose and semantic state when optional continuation fails: %s', async failure => {
     const claimed = claimedResponse() as unknown as ClaimedTurn;
     claimed.features = { agent_loop_v3_mode: 'off', conversation_pipeline_v1_enabled: false,
@@ -5928,7 +6484,7 @@ describe('processInboundTurn — decision provider selection', () => {
     }
   });
 
-  function invokeHandler(execute: ReturnType<typeof vi.fn>, workflow = { id: 'workflow-test', tags: {} }) {
+  function invokeHandler(execute: ReturnType<typeof vi.fn>, workflow = { id: 'workflow-test', tags: {} }, client = {}) {
     const step = Object.assign(
       async (_name: string, run: () => Promise<unknown>) => run(),
       { sleep: vi.fn(async () => undefined) },
@@ -5942,7 +6498,7 @@ describe('processInboundTurn — decision provider selection', () => {
       state: processingState(),
       step,
       execute,
-      client: {},
+      client,
       signal: new AbortController().signal,
       workflow,
     });
@@ -5954,9 +6510,11 @@ describe('processInboundTurn — decision provider selection', () => {
     actionSpies.geminiDecision.mockResolvedValue({});
     vi.spyOn(evidencePersistence, 'persistTurnEvidence').mockRejectedValue(new Error('DB_UNAVAILABLE'));
     const workflow = { id: 'legacy-evidence-review', tags: {} };
-    const result = await invokeHandler(vi.fn(), workflow);
+    const updateWorkflow = vi.fn(async () => ({}));
+    const result = await invokeHandler(vi.fn(), workflow, { updateWorkflow });
     expect(result).toMatchObject({ error_code: 'TURN_EVIDENCE_UNAVAILABLE' });
-    expect(workflow.tags).toMatchObject({ studyxEvidenceReview: 'true' });
+    expect(updateWorkflow).toHaveBeenCalledWith({ id: workflow.id, tags: { studyxEvidenceReview: 'true' } });
+    expect(workflow.tags).toEqual({});
     expect(actionSpies.geminiDecision).toHaveBeenCalledTimes(1);
     expect(actionSpies.commit).not.toHaveBeenCalled();
   });

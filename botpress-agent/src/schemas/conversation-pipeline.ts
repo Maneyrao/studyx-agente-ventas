@@ -5,7 +5,8 @@ export const ConversationMoveKindV1Schema = z.enum([
   'ask_course_information', 'continue_by_chat', 'request_call', 'decline_call',
   'ask_payment_options', 'select_payment_plan', 'defer_payment',
   'request_payment_link', 'report_payment', 'ask_current_state',
-  'provide_contact_details', 'decline_purchase', 'unknown',
+  'provide_contact_details', 'decline_purchase', 'price_objection',
+  'explicit_promotion_request', 'request_course_program', 'unknown',
 ]);
 const ConversationVetoV1Schema = z.enum(['call', 'payment_link', 'purchase']);
 const PaymentPlanSchema = z.enum(['monthly_12', 'monthly_6', 'one_time']);
@@ -13,6 +14,7 @@ const PaymentPlanSchema = z.enum(['monthly_12', 'monthly_6', 'one_time']);
 const COURSE_REFERENCE_MOVES = new Set([
   'select_course', 'ask_course_information', 'request_call', 'ask_payment_options',
   'select_payment_plan', 'defer_payment', 'request_payment_link', 'decline_purchase',
+  'request_course_program',
 ]);
 const AREA_REFERENCE_MOVES = new Set(['browse_catalog', 'select_area']);
 const PAYMENT_PLAN_MOVES = new Set(['select_payment_plan', 'defer_payment', 'request_payment_link']);

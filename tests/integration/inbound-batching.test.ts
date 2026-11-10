@@ -280,8 +280,11 @@ run('durable inbound batching', () => {
     await store.claimBatch({ batch_id: delayed.batch.id, claimed_by: 'older' });
     const current = await processInboundMessage(followUp(original, 'Quiero los planes'));
     const context = await store.loadClaimedBatchContext({ batch_id: current.batch.id, recent_turns_limit: 10 });
-    expect(context?.facts.recent_turns.map(turn => turn.content)).toEqual(['Llamame', 'Prefiero chat']);
-    expect(context?.logical_recent_turns?.map(turn => turn.content)).toEqual(['Llamame', 'Prefiero chat']);
+    // Owner 2026-11-10: with no agent reply in between, the earlier batches are
+    // part of the current intervention, ordered by trusted provider time.
+    expect(context?.batch_messages.map(message => message.content)).toEqual(['Llamame', 'Prefiero chat', 'Quiero los planes']);
+    expect(context?.facts.recent_turns.map(turn => turn.content)).toEqual([]);
+    expect(context?.logical_recent_turns?.map(turn => turn.content)).toEqual([]);
   });
 
   it('answers waiting with a bounded retry delay before the window is due', async () => {

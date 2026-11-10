@@ -6,9 +6,6 @@ const { getOrCreate, ingestCanonicalTurnV1 } = vi.hoisted(() => ({
   ingestCanonicalTurnV1: vi.fn(),
 }));
 
-vi.mock('../../../botpress-agent/src/workflows/processInboundTurn', () => ({
-  processInboundTurn: { getOrCreate },
-}));
 vi.mock('../../../botpress-agent/src/lib/inbound/ingest-canonical-turn', () => ({
   ingestCanonicalTurnV1,
 }));
@@ -22,9 +19,12 @@ type RouterHandler = (props: {
   conversation: { id: string; alias?: string; integration?: string; tags?: Record<string, string> };
 }) => Promise<void>;
 
-const handler = (
+const registeredHandler = (
   router as unknown as { definition: { channel: string; handler: RouterHandler } }
 ).definition.handler;
+const handler = (props: Parameters<RouterHandler>[0]) => registeredHandler({ ...props,
+  client: { getOrCreateWorkflow: getOrCreate, deleteWorkflow: vi.fn() },
+} as Parameters<RouterHandler>[0]);
 
 const successSecrets = {
   messageId: 'wamid.raw-sensitive-success',
@@ -67,7 +67,7 @@ function expectSecretsAbsent(records: Array<Record<string, unknown>>, secrets: s
 
 beforeEach(() => {
   getOrCreate.mockReset();
-  getOrCreate.mockResolvedValue({ id: 'workflow-safe-reference' });
+  getOrCreate.mockResolvedValue({ workflow: { id: 'workflow-safe-reference', status: 'pending', tags: {} } });
   ingestCanonicalTurnV1.mockReset();
   ingestCanonicalTurnV1.mockResolvedValue({
     status: 'accepted', replayed: false,

@@ -60,7 +60,7 @@ export function renderUnknownCertification(input: UnknownCertificationCopyInput)
 
 export function renderCatalogOptions(input: CatalogOptionsCopyInput): string {
   const names = input.names.slice(0, Math.max(0, input.maxItems));
-  return `En ${input.area} tenemos ${names.join(', ')}. ¿Cuál querés revisar?`;
+  return `En ${input.area} tenemos ${names.join(', ')}. ¿Cuál quieres revisar?`;
 }
 
 function joinSpanish(values: readonly string[]): string {

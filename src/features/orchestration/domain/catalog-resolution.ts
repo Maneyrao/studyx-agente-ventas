@@ -227,7 +227,7 @@ function explicitCatalogReplacementSubject(text: string | readonly string[]): st
   const directives = values.flatMap((value) => value.split(/[.!?;\n]/u))
     .map((value) => normalizeSpanishCatalogText(value))
     .filter(Boolean);
-  const latest = directives.findLast((directive) => (
+  const latest = [...directives].reverse().find((directive) => (
     !NEUTRAL_CATALOG_TRAILING_FRAGMENT_PATTERN.test(directive)
   ));
   if (!latest) return null;

@@ -27,7 +27,7 @@ describe('brain unavailable is one behaviour, not two', () => {
     expect(canonicalFallbacks).toBeNull();
     expect(technicalAcknowledgements).toHaveLength(1);
     expect(workflowSource).toContain("decision.reason_code === 'AGENT_A_CONTINUATION_REJECTED'");
-    expect(workflowSource).toContain('return recoverRejectedTurn()');
+    expect(workflowSource).toContain('await recoverRejectedTurn()');
   });
 
   it('never routes a brain failure into the lexical fallback engine', () => {

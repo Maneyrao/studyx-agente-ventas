@@ -24,6 +24,10 @@ export const TURN_REJECTION_CODES_V1 = [
   /** Tercera oferta de llamada. */
   'CALL_BUDGET_EXHAUSTED',
   'CALL_OFFER_REQUIRED',
+  'BONUS_OFFER_REQUIRED',
+  'PRICE_PROBE_REQUIRED',
+  'PASSIVE_CLOSING_FORBIDDEN',
+  'RETENTION_REQUIRED',
   /** La invitación inicial debe ser el segundo outbound separado. */
   'CALL_OFFER_MESSAGE_BOUNDARY_INVALID',
   'PROPOSAL_SCHEMA_INVALID',
@@ -35,6 +39,7 @@ export const TURN_REJECTION_CODES_V1 = [
   'COURSE_ROLE_UNDECLARED',
   /** Devolvió el mismo mensaje que ya había mandado. */
   'REPEATED_AGENT_REPLY',
+  'PROGRAM_SEND_REQUIRED',
 ] as const;
 
 export type TurnRejectionCodeV1 = typeof TURN_REJECTION_CODES_V1[number];

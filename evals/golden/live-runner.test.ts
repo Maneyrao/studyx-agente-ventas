@@ -1,5 +1,5 @@
 import { evaluateNegotiationInvariantsV1, type InvariantStatusV1 } from './negotiation-invariants';
-import { negotiationEvidenceV1, negotiationSemanticTurnV1 } from './negotiation-evidence';
+import { negotiationEvidenceV1, negotiationSemanticTurnV1, usesCurrentModelOwnedNegotiationV1 } from './negotiation-evidence';
 import type { AgentAContextV1 } from '../../botpress-agent/src/schemas/agent-a-brain';
 import { execFileSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
@@ -14,16 +14,11 @@ import { configuration, secrets } from '../../tests/helpers/botpress-workflow-ru
 import { openLocalTestDatabase } from '../../tests/helpers/db';
 import { AGENT_A_BRAIN_PROMPT_VERSION } from '../../botpress-agent/src/prompts/agent-a-brain-v1';
 import {
-  STUDYX_AGENT_A_CANONICAL_PROMPT,
   STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION,
 } from '../../botpress-agent/src/prompts/studyx-agent-a-canonical.generated';
 import { AGENT_A_DEEPSEEK_MODEL } from '../../botpress-agent/src/config/agent-a-model';
-import { resolveCanonicalPromptIdentityV1 } from '../../botpress-agent/src/prompts/agent-a-identity';
 import { createConfigPaymentLinkResolver } from '../../src/features/payments/adapters/config-payment-link.resolver';
-import {
-  buildPostSaleInstructions,
-  fallbackPostSaleNarrative,
-} from '../../botpress-agent/src/utils/post-sale-instructions';
+import { postSaleAccessTestConfig } from '../../tests/helpers/post-sale-config';
 
 import {
   evaluateHardRules,
@@ -45,12 +40,24 @@ import {
   extractBackendRejectionsV1,
   extractContextEvidenceV1,
   extractFinalBackendDecisionErrorV1,
-  extractLastProposalV1,
+  extractCommittedProposalV1,
+  extractCommittedCallIdV1,
+  proposalEvidenceV1,
+  quotedCurrentPriceEvidenceV1,
+  appendEarlyCallOfferEvidenceV1,
+  deliveryAcknowledgementTargetsV1,
+  extractFinalDeterministicRuleOutcomeV1,
   extractModelAttemptsV1,
   normalizePromotionStatusV1,
+  reportTurnTotalsV1,
+  reportTurnLabelV1,
+  noVerdictReasonV1,
 } from './runner-support';
+import { settleGoldenCallOutcomeV1 } from './call-settlement';
 import { GOLDEN_BASE_SHA, GOLDEN_CASES, type GoldenCaseV1 } from './scenarios';
 import { selectGoldenCasesV1 } from './run-config.mjs';
+import { COURSE_PROGRAM_ASSETS_V1 } from '../../src/shared/catalog/course-programs';
+import { OWNER_GOLDEN_CASES, OWNER_PROMOTION_MODE_REPLAY_CASES, OWNER_REPLAY_CASES } from './owner-rules-scenarios';
 
 const live = process.env.STUDYX_GOLDEN_LIVE === 'true' ? describe : describe.skip;
 const databaseUrl = process.env.TEST_DATABASE_URL ?? '';
@@ -60,8 +67,10 @@ const providerName = process.env.STUDYX_GOLDEN_PROVIDER ?? 'deepseek';
 const providerBaseUrl = process.env.STUDYX_GOLDEN_PROVIDER_BASE_URL ?? 'https://api.deepseek.com';
 const providerModel = process.env.STUDYX_GOLDEN_PROVIDER_MODEL ?? model;
 const judgeModel = process.env.STUDYX_GOLDEN_JUDGE_MODEL ?? 'deepseek-v4-flash';
-const selectedCases = selectGoldenCasesV1(process.env.STUDYX_GOLDEN_CASE_IDS, GOLDEN_CASES);
-const isFullSuite = selectedCases.length === GOLDEN_CASES.length;
+const selectedCases = process.env.STUDYX_GOLDEN_CASE_IDS === undefined ? GOLDEN_CASES
+  : selectGoldenCasesV1(process.env.STUDYX_GOLDEN_CASE_IDS, [...GOLDEN_CASES, ...OWNER_GOLDEN_CASES, ...OWNER_REPLAY_CASES, ...OWNER_PROMOTION_MODE_REPLAY_CASES]);
+const isFullSuite = selectedCases.length === GOLDEN_CASES.length
+  && selectedCases.every(scenario => GOLDEN_CASES.some(original => original.id === scenario.id));
 const expectedTurns = selectedCases.reduce((count, scenario) => count + scenario.turns.length, 0);
 const resultsDirectory = path.resolve(process.cwd(), 'evals/golden/results');
 const reuseObservations = process.env.STUDYX_GOLDEN_REUSE_OBSERVATIONS === 'true';
@@ -69,12 +78,15 @@ const evaluatedSha = process.env.STUDYX_GOLDEN_EVALUATED_SHA ?? '';
 const resultStem = process.env.STUDYX_GOLDEN_RESULT_STEM ?? 'baseline-v9';
 
 type Sql = ReturnType<typeof openLocalTestDatabase>;
+const PROGRAM_CODE_BY_SLUG = new Map([...COURSE_PROGRAM_ASSETS_V1.values()].map(asset => [asset.slug, asset.offering_code]));
 
 interface PromotionEvidenceV1 {
   readonly status: string | null;
   readonly bonusCount: number;
   readonly paidCourse: string | null;
   readonly bonusCourses: readonly string[];
+  readonly cycleId?: string | null;
+  readonly offerVersion?: number | null;
 }
 
 interface TurnResultV1 {
@@ -120,12 +132,13 @@ interface PendingCaseV1 {
   readonly observations: GoldenTurnObservationV1[];
   readonly setupEvidence?: unknown;
   readonly executionError?: string;
+  readonly executionErrorTurnIndex?: number;
 }
 
 interface FulfilledSetupV1 {
   readonly evidence: Record<string, unknown>;
   readonly accessMessage: string;
-  readonly modelAttempt: GoldenTurnObservationV1['modelAttempts'][number];
+  readonly modelAttempts: GoldenTurnObservationV1['modelAttempts'];
   readonly backendRejections: readonly unknown[];
 }
 
@@ -175,26 +188,34 @@ function identity(caseId: string) {
   };
 }
 
+/** The workflow itself reports channel acceptance as the delivery receipt
+ * (2026-11-02). The harness only fills a gap for a bubble the workflow left
+ * `submitted` (for example a stopped turn); it never overwrites a receipt, so
+ * the live path is what later turns observe. */
 async function acknowledgeDelivery(evidence: WorkflowTurnEvidenceV1): Promise<void> {
-  const capture = evidence.adapterCaptures[0];
-  if (!evidence.outboundId || !capture) return;
-  await recordDeliveryReportFn({
-    outbound_id: evidence.outboundId,
-    trace_id: evidence.traceId,
-    status: 'delivered',
-    botpress_message_id: capture.providerMessageId,
-    replayed: false,
-    error_code: null,
-    delivery_attempt: 1,
-    delivered_at: new Date().toISOString(),
-  });
+  for (const target of deliveryAcknowledgementTargetsV1(evidence.adapterCaptures)) {
+    const [current] = await db<Array<{ state: string }>>`
+      SELECT state FROM outbound_deliveries WHERE message_id=${target.outboundId}::uuid`;
+    if (current?.state !== 'submitted') continue;
+    console.warn(`[golden] workflow left outbound ${target.outboundId} submitted; harness acknowledged it`);
+    await recordDeliveryReportFn({
+      outbound_id: target.outboundId,
+      trace_id: evidence.traceId,
+      status: 'delivered',
+      botpress_message_id: target.providerMessageId,
+      replayed: false,
+      error_code: null,
+      delivery_attempt: 1,
+      delivered_at: new Date().toISOString(),
+    });
+  }
 }
 
 async function promotionEvidence(externalConversationId: string): Promise<PromotionEvidenceV1> {
   const rows = await db<Array<{
-    id: string; status: string; paid_code: string; created_at: Date;
+    id: string; status: string; paid_code: string; created_at: Date; promotion_cycle_id: string | null; offer_version: number | null;
   }>>`
-    SELECT offer.id, offer.status, paid.code AS paid_code, offer.created_at
+    SELECT offer.id, offer.status, paid.code AS paid_code, offer.created_at, offer.promotion_cycle_id, offer.offer_version
     FROM channel_threads thread
     JOIN conversations conversation ON conversation.channel_thread_id=thread.id
     JOIN promotion_offers offer ON offer.conversation_id=conversation.id
@@ -213,6 +234,8 @@ async function promotionEvidence(externalConversationId: string): Promise<Promot
     bonusCount: bonuses.length,
     paidCourse: offer.paid_code,
     bonusCourses: bonuses.map((bonus) => bonus.offering_code_snapshot),
+    cycleId: offer.promotion_cycle_id,
+    offerVersion: offer.offer_version,
   };
 }
 
@@ -288,21 +311,43 @@ async function observeTurn(input: {
   readonly externalConversationId: string;
   readonly evidence: WorkflowTurnEvidenceV1;
   readonly accumulatedCaptures: readonly WorkflowTurnEvidenceV1['adapterCaptures'][number][];
+  readonly priorObservations: readonly GoldenTurnObservationV1[];
 }): Promise<GoldenTurnObservationV1> {
   const persisted = await readWorkflowDbEvidenceV1({
     databaseUrl,
     externalConversationId: input.externalConversationId,
     adapterCaptures: input.accumulatedCaptures,
   });
-  const proposal = extractLastProposalV1(input.evidence.httpExchanges);
+  const committedProposal = extractCommittedProposalV1(input.evidence.httpExchanges);
+  const proposal = proposalEvidenceV1(committedProposal);
   const context = extractContextEvidenceV1(input.evidence.httpExchanges);
   const generationContext = input.evidence.httpExchanges.filter(e=>e.boundary==='deepseek').map(e=>extractAuthorizedContextV1(e.requestBody)).filter(Boolean).at(-1) as AgentAContextV1|null|undefined;
   const promotion = await promotionEvidence(input.externalConversationId);
   const activeCourseEvidence = await activatedCourseEvidence(input.externalConversationId);
   const decision = persisted.decisions.find((item) => item.turnId === input.evidence.turnId);
+  const priceMemory = await priceObjectionMemoryEvidence(input.externalConversationId, input.evidence.turnId);
+  const currentPriceEvidence = quotedCurrentPriceEvidenceV1(generationContext as Record<string, unknown> | null, committedProposal);
+  const ruleEvent = extractFinalDeterministicRuleOutcomeV1(input.evidence.workflowEvents, input.evidence.httpExchanges);
+  const response = input.evidence.authorizedMessages.join('\n');
   return {
-    negotiationFacts:{currentTurnId:input.evidence.turnId,ladder:generationContext?.capabilities.course_bonus?.ladder,priorPriceSourceIds:generationContext?.commercial_state.negotiation?.price_objections.latest_source_turn_ids},
-    response: input.evidence.authorizedMessages.join('\n'),
+    conversationId: input.externalConversationId,
+    earlyCallOfferEvidence: appendEarlyCallOfferEvidenceV1({
+      prior: input.priorObservations.at(-1)?.earlyCallOfferEvidence ?? [],
+      conversationId: input.externalConversationId, turnId: input.evidence.turnId,
+      callOffer: proposal.callOffer, response, ruleBReason: ruleEvent?.rule_b_reason,
+      committed: input.evidence.commitSucceeded, persistedOfferCount: persisted.state?.callOfferCount ?? 0,
+    }),
+    ruleBonusBeforeTurn: generationContext?.capabilities.course_bonus?.rule_bonus ?? null,
+    negotiationFacts:{currentTurnId:input.evidence.turnId,ladder:generationContext?.capabilities.course_bonus?.ladder,
+      priorPriceSourceIds:generationContext?.commercial_state.negotiation?.price_objections.latest_source_turn_ids,
+      ...currentPriceEvidence,
+      currentPriceObjectionPersisted: input.evidence.turnId !== null && priceMemory.sourceMessageIds.includes(input.evidence.turnId),
+      priceOnlyBarrierConfirmed: generationContext?.commercial_state.negotiation?.price_only_barrier.status === 'confirmed'
+        || currentPriceEvidence.currentPriceOnlyBarrierQuoted},
+    callOffer: proposal.callOffer,
+    recordedCallOfferCount: persisted.state?.callOfferCount ?? 0,
+    ruleOutcomes: ruleEvent ? { rule_a: ruleEvent.rule_a, rule_b: ruleEvent.rule_b } : null,
+    response,
     move: proposal.move,
     secondaryMoves: proposal.secondaryMoves,
     proposedAction: proposal.proposedAction,
@@ -316,6 +361,11 @@ async function observeTurn(input: {
       promotion,
     },
     deliveredLinks: persisted.deliveredLinks,
+    programDocuments: input.evidence.documentMessages.map(document => (
+      /\/material\/fichas\/([a-z0-9_]+)\.pdf$/u.exec(document.fileUrl)?.[1]
+      ?? PROGRAM_CODE_BY_SLUG.get(/\/programas\/([a-z0-9-]+)\.pdf$/u.exec(document.fileUrl)?.[1] ?? '') ?? document.fileUrl)),
+    programImages: input.evidence.imageMessages.map(image => /\/material\/imagenes\/([a-z0-9_]+)\.png$/u.exec(image.imageUrl)?.[1] ?? image.imageUrl),
+    programDocumentKinds: input.evidence.documentMessages.map(document => (/\/material\/fichas\//u.test(document.fileUrl) ? 'ficha' : 'program')),
     authorizedFactIds: context.authorizedFactIds,
     authorizedFacts: context.authorizedFacts,
     usedFactIds: proposal.usedFactIds,
@@ -328,10 +378,7 @@ async function observeTurn(input: {
     activeCourseNames: activeCourseEvidence.names,
     mayOfferCall: context.mayOfferCall,
     courseBonus: context.courseBonus,
-    priceObjectionMemory: await priceObjectionMemoryEvidence(
-      input.externalConversationId,
-      input.evidence.turnId,
-    ),
+    priceObjectionMemory: priceMemory,
     workflow: {
       commitSucceeded: input.evidence.commitSucceeded,
       status: input.evidence.status,
@@ -369,6 +416,21 @@ async function prepareFulfilledBonusPackage(input: {
   const bonuses = ['fotografia_celulares_tiendas_online','marketing_digital']
     .map((code) => byCode.get(code)).filter((item): item is NonNullable<typeof item> => Boolean(item));
   if (!paid || bonuses.length !== 2) throw new Error('GOLDEN_FULFILLED_SETUP_CATALOG_MISSING');
+
+  // The real workflow creates this binding before a promotion can exist for a
+  // legacy Botpress conversation (workspace_id = NULL). Seed the same
+  // invariant before inserting the synthetic accepted offer; otherwise the
+  // database correctly rejects the fixture as an identity mismatch.
+  await db`INSERT INTO conversation_sales_context_states_v1(
+      workspace_id,conversation_id,contact_id,selected_offering_code,selected_payment_plan,
+      stage,awaiting_reply,source_turn_id)
+    VALUES (${identityRow.workspace_id},${identityRow.conversation_id},${identityRow.contact_id},${paid.code},
+      'monthly_12','payment_link_sent','none',${input.setupTurn.turnId})
+    ON CONFLICT (workspace_id,conversation_id) DO UPDATE SET
+      selected_offering_code=EXCLUDED.selected_offering_code,
+      selected_payment_plan=EXCLUDED.selected_payment_plan,
+      stage=EXCLUDED.stage,awaiting_reply=EXCLUDED.awaiting_reply,
+      source_turn_id=EXCLUDED.source_turn_id,updated_at=now()`;
 
   const promotionCode = `golden-review-${randomUUID()}`;
   const [promotion] = await db<Array<{ id: string }>>`
@@ -444,45 +506,12 @@ async function prepareFulfilledBonusPackage(input: {
   })) as typeof fetch;
   const notificationDeps = {
     db,
-    config: { enabled: true, environment: 'test' as const, paidAfter: new Date('2026-01-01') },
+    config: { enabled: true, environment: 'test' as const, paidAfter: new Date('2026-01-01'), accessTemplate: postSaleAccessTestConfig },
     fetchImpl: eventFetch,
   };
   await postSaleFns.dispatchNotifications(payment.id, notificationDeps);
   const claim = await postSaleFns.claimNotification(notice.id, input.externalConversationId, notificationDeps);
   if (!claim.claimed) throw new Error('GOLDEN_FULFILLED_SETUP_CLAIM_FAILED');
-  const resolvedIdentity = resolveCanonicalPromptIdentityV1(STUDYX_AGENT_A_CANONICAL_PROMPT, {
-    advisor_name: 'Emma', academy_name: claim.academy_name, website: null, instagram: null,
-  });
-  if (resolvedIdentity.unresolved.length > 0) throw new Error('GOLDEN_POST_SALE_IDENTITY_UNRESOLVED');
-  const providerResponse = await fetch('https://api.deepseek.com/responses', {
-    method: 'POST',
-    signal: AbortSignal.timeout(10_000),
-    headers: { authorization: `Bearer ${secrets.DEEPSEEK_API_KEY}`, 'content-type': 'application/json' },
-    body: JSON.stringify({
-      model: AGENT_A_DEEPSEEK_MODEL,
-      instructions: buildPostSaleInstructions(resolvedIdentity.prompt, claim),
-      input: JSON.stringify(claim),
-      reasoning: { effort: 'none' }, temperature: 0.3, stream: false, max_output_tokens: 350,
-      text: { format: { type: 'json_schema', name: 'studyx_post_sale', schema: {
-        type: 'object', additionalProperties: false, required: ['intro', 'suggestion'], properties: {
-          intro: { type: 'string', minLength: 1, maxLength: 500 },
-          suggestion: { type: 'string', maxLength: 180 },
-        },
-      } } },
-    }),
-  });
-  const providerPayload = await providerResponse.json() as {
-    output_text?: string;
-    output?: Array<{ content?: Array<{ type?: string; text?: string }> }>;
-  };
-  const providerText = typeof providerPayload.output_text === 'string' ? providerPayload.output_text
-    : providerPayload.output?.flatMap((item) => item.content ?? [])
-      .filter((item) => item.type === 'output_text' && typeof item.text === 'string')
-      .map((item) => item.text).join('') ?? '';
-  if (!providerResponse.ok || !providerText) {
-    throw new Error(`GOLDEN_POST_SALE_MODEL_FAILED:${providerResponse.status}`);
-  }
-  const narrative = JSON.parse(providerText) as { intro: string; suggestion: string };
   const accessMessages: string[] = [];
   const deliveryDeps = {
     ...notificationDeps,
@@ -493,32 +522,13 @@ async function prepareFulfilledBonusPackage(input: {
     },
   };
   const backendRejections: unknown[] = [];
-  let delivery = await postSaleFns.deliverNotification(notice.id, {
+  const delivery = await postSaleFns.deliverNotification(notice.id, {
     claim_token: claim.claim_token,
     botpress_conversation_id: input.externalConversationId,
-    narrative,
   }, deliveryDeps);
-  if (delivery.outcome === 'invalid_content') {
-    backendRejections.push({ subject: 'post_sale_narrative', reason: delivery.reason ?? 'invalid_content' });
-    delivery = await postSaleFns.deliverNotification(notice.id, {
-      claim_token: claim.claim_token,
-      botpress_conversation_id: input.externalConversationId,
-      narrative: fallbackPostSaleNarrative(claim),
-    }, deliveryDeps);
-  }
   if (delivery.outcome !== 'sent' || !accessMessages[0]) {
     throw new Error(`GOLDEN_POST_SALE_DELIVERY_FAILED:${delivery.outcome}`);
   }
-  await db`INSERT INTO conversation_sales_context_states_v1(
-      workspace_id,conversation_id,contact_id,selected_offering_code,selected_payment_plan,
-      stage,awaiting_reply,source_turn_id)
-    VALUES (${identityRow.workspace_id},${identityRow.conversation_id},${identityRow.contact_id},${paid.code},
-      'monthly_12','payment_link_sent','none',${input.setupTurn.turnId})
-    ON CONFLICT (workspace_id,conversation_id) DO UPDATE SET
-      selected_offering_code=EXCLUDED.selected_offering_code,
-      selected_payment_plan=EXCLUDED.selected_payment_plan,
-      stage=EXCLUDED.stage,awaiting_reply=EXCLUDED.awaiting_reply,
-      source_turn_id=EXCLUDED.source_turn_id,updated_at=now()`;
   return {
     evidence: {
       fixture_kind: 'controlled_local_paid_and_fulfilled_package',
@@ -528,18 +538,10 @@ async function prepareFulfilledBonusPackage(input: {
       bonus_courses: bonuses.map((bonus) => bonus.code),
       worker,
       access_message: accessMessages[0],
-      narrative_delivery: delivery,
+      template_delivery: delivery,
     },
     accessMessage: accessMessages[0],
-    modelAttempt: {
-      attempt: 1,
-      response: [narrative.intro, narrative.suggestion].filter(Boolean).join('\n'),
-      move: null,
-      proposedAction: null,
-      turnRejection: null,
-      providerStatus: providerResponse.status,
-      providerError: null,
-    },
+    modelAttempts: [],
     backendRejections,
   };
 }
@@ -568,14 +570,15 @@ function markdown(cases: readonly CaseResultV1[]): string {
     `- Tokens: entrada ${providerReport?.tokens?.input ?? 'no informado'}, salida ${providerReport?.tokens?.output ?? 'no informado'}, total ${providerReport?.tokens?.total ?? 'no informado'}`,
     `- Recuperaciones de formato del juez: ${cases.flatMap(item => item.turns).filter(turn => turn.judge_format_recovery).length}; originales y diagnóstico conservados en el JSON por turno.`,
     `- Casos: ${cases.filter((item) => item.approved === true).length} aprobados; ${cases.filter((item) => item.approved === false).length} fallidos; ${cases.filter((item) => item.approved === null).length} con error del evaluador`,
-    `- Turnos: ${cases.flatMap((item) => item.turns).filter((turn) => turn.approved === true).length} aprobados; ${cases.flatMap((item) => item.turns).filter((turn) => turn.approved === false).length} fallidos; ${cases.flatMap((item) => item.turns).filter((turn) => turn.execution_status === 'evaluation_error').length} con error del evaluador`, '',
+    (() => {
+      const totals = reportTurnTotalsV1(cases.flatMap((item) => item.turns));
+      return `- Turnos (${totals.total}): ${totals.approved} aprobados; ${totals.failed} fallidos; ${totals.no_verdict} sin veredicto (approved=null, de los cuales ${totals.evaluation_error} con error del evaluador)`;
+    })(), '',
     '| Caso/turno | Resultado | Autoridad | Borradores originales y reparaciones | Texto entregado al transporte | Move / acción | Rechazos backend | Hipótesis de capa |',
     '|---|---|---|---|---|---|---|---|',
   ];
   for (const item of cases) for (const turn of item.turns) {
-    const result = turn.execution_status === 'not_executed' ? 'NO_EJECUTADO'
-      : turn.execution_status === 'evaluation_error' ? 'ERROR_EVALUACIÓN'
-        : turn.approved ? 'APROBADO' : 'FALLIDO';
+    const result = reportTurnLabelV1(turn);
     const layer = turn.failure_layer === 'validador' && turn.validator_rejections.length > 0
       ? `validador — ${turn.validator_rejections.map((rejection) => `${rejection.code}${rejection.subject ? ` / ${rejection.subject}` : ''}`).join('; ')}`
       : turn.failure_layer ?? '—';
@@ -583,7 +586,7 @@ function markdown(cases: readonly CaseResultV1[]): string {
   }
   lines.push('', '## Fallos', '');
   for (const item of cases) for (const turn of item.turns.filter((candidate) => candidate.approved !== true)) {
-    lines.push(`- **${item.case_id}/${turn.turn_id} — ${turn.failure_layer ?? turn.execution_status}:** ${turn.failures.map((failure) => `${failure.code} [${failure.authorityReference ?? turn.authority[0] ?? 'sin referencia'}]: ${failure.detail}`).join(' | ')}`);
+    lines.push(`- **${item.case_id}/${turn.turn_id} — ${turn.failure_layer ?? turn.execution_status}:** ${turn.failures.length === 0 && turn.approved === null ? noVerdictReasonV1(turn) : turn.failures.map((failure) => `${failure.code} [${failure.authorityReference ?? turn.authority[0] ?? 'sin referencia'}]: ${failure.detail}`).join(' | ')}`);
   }
   lines.push('', '## Evidencia de entorno y precondiciones', '');
   for (const item of cases.filter((candidate) => ['06_repeated_price_bonus_ladder', '10_requested_call',
@@ -616,6 +619,7 @@ function baselineReport(cases: readonly CaseResultV1[]) {
     execution_harness: 'processInboundTurn',
     environment: 'isolated_local',
     environment_configuration: {
+      commercial_planning: configuration.agentACommercialPlanningEnabled === true,
       voice_provider: process.env.VOICE_PROVIDER ?? null,
       payment_provider: process.env.PAYMENT_PROVIDER ?? null,
       payment_link_environment: process.env.PAYMENT_LINK_ENVIRONMENT ?? null,
@@ -753,7 +757,10 @@ async function fingerprintHarness(): Promise<void> {
 
 beforeAll(async () => {
   const head = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
-  expect(evaluatedSha).toBe(head);
+  if (reuseObservations) {
+    expect(evaluatedSha).toMatch(/^[a-f0-9]{40}$/u);
+    expect(() => execFileSync('git', ['cat-file', '-e', `${evaluatedSha}^{commit}`])).not.toThrow();
+  } else expect(evaluatedSha).toBe(head);
   await fingerprintHarness();
   expect(harnessFingerprint).toMatch(/^[a-f0-9]{64}$/u);
   expect(() => execFileSync('git', ['merge-base', '--is-ancestor', GOLDEN_BASE_SHA, head]))
@@ -777,6 +784,8 @@ beforeAll(async () => {
   expect(new URL(databaseUrl).origin).toBe('null');
   configuration.apiBaseUrl = apiBaseUrl;
   configuration.agentAPlannerlessV2Enabled = true;
+  // A/B on the same SHA: 'false' measures the single-pass writer (byte-identical fallback).
+  configuration.agentACommercialPlanningEnabled = process.env.STUDYX_GOLDEN_COMMERCIAL_PLANNING === 'true';
   configuration.agentAAdvisorName = 'Emma';
   expect(model).toBe(AGENT_A_DEEPSEEK_MODEL);
   configuration.agentABrainDeepSeekModel = model;
@@ -850,10 +859,11 @@ live('authority-only Agent A golden baseline through the real workflow', () => {
           readonly observations?: readonly GoldenTurnObservationV1[];
           readonly setupEvidence?: unknown;
           readonly executionError?: string;
+          readonly executionErrorTurnIndex?: number;
         }[];
       };
       expect(raw.base_sha).toBe(evaluatedSha);
-      expect(raw.completed_cases).toBe(selectedCases.length);
+      expect(raw.completed_cases).toBe(raw.cases?.length);
       for (const scenario of selectedCases) {
         const saved = raw.cases?.find((candidate) => candidate.scenario?.id === scenario.id);
         expect(saved, `GOLDEN_REUSED_OBSERVATIONS_MISSING:${scenario.id}`).toBeTruthy();
@@ -862,6 +872,8 @@ live('authority-only Agent A golden baseline through the real workflow', () => {
           observations: [...(saved?.observations ?? [])],
           ...(saved?.setupEvidence === undefined ? {} : { setupEvidence: saved.setupEvidence }),
           ...(saved?.executionError ? { executionError: saved.executionError } : {}),
+          ...(saved?.executionErrorTurnIndex === undefined
+            ? {} : { executionErrorTurnIndex: saved.executionErrorTurnIndex }),
         });
       }
       expect(pendingCases).toHaveLength(selectedCases.length);
@@ -872,7 +884,10 @@ live('authority-only Agent A golden baseline through the real workflow', () => {
       const captures: WorkflowTurnEvidenceV1['adapterCaptures'][number][] = [];
       let setupEvidence: unknown;
       let executionError: string | undefined;
+      let executionErrorTurnIndex: number | undefined;
+      let activeTurnIndex = 0;
       const observations: GoldenTurnObservationV1[] = [];
+      let lastCommittedCallId: string | null = null;
       try {
         let firstConversationalTurn = 0;
         if (scenario.setup === 'fulfilled_bonus_package') {
@@ -908,7 +923,7 @@ live('authority-only Agent A golden baseline through the real workflow', () => {
             usedFactIds: [],
             availableOfferings: activeCourseEvidence.names,
             selectedOfferingFacts: [],
-            modelAttempts: [fulfilled.modelAttempt],
+            modelAttempts: fulfilled.modelAttempts,
             callRequirements: [],
             profileRequestedFields: [],
             activeCourses: activeCourseEvidence.codes,
@@ -926,20 +941,46 @@ live('authority-only Agent A golden baseline through the real workflow', () => {
           firstConversationalTurn = 1;
         }
         for (const turn of scenario.turns.slice(firstConversationalTurn)) {
-          const evidence = await runWorkflowTurnV1({ ...id, text: turn.customer });
+          activeTurnIndex = observations.length;
+          if (turn.settleLatestCallBefore) {
+            if (!lastCommittedCallId) {
+              throw new Error(`GOLDEN_CALL_SETTLEMENT_COMMITTED_ID_MISSING:${scenario.id}:${turn.id}`);
+            }
+            await settleGoldenCallOutcomeV1({
+              db,
+              callId: lastCommittedCallId,
+              externalConversationId: id.conversationId,
+              workspaceSlug: process.env.BUSINESS_WORKSPACE_SLUG ?? 'studyx',
+              result: turn.settleLatestCallBefore,
+            });
+          }
+          const evidence = await runWorkflowTurnV1({
+            ...id,
+            text: turn.customer,
+            syntheticCallDispatch: 'provider_accepted',
+          });
+          lastCommittedCallId = extractCommittedCallIdV1(evidence.httpExchanges) ?? lastCommittedCallId;
           captures.push(...evidence.adapterCaptures);
           await acknowledgeDelivery(evidence);
           observations.push(await observeTurn({
             externalConversationId: id.conversationId,
             evidence,
             accumulatedCaptures: captures,
+            priorObservations: observations,
           }));
           await projectAgentAMemoriesFn({ limit: 100 }, { db });
         }
       } catch (error) {
         executionError = errorText(error);
+        executionErrorTurnIndex = activeTurnIndex;
       }
-      pendingCases.push({ scenario, observations, setupEvidence, ...(executionError ? { executionError } : {}) });
+      pendingCases.push({
+        scenario,
+        observations,
+        setupEvidence,
+        ...(executionError ? { executionError } : {}),
+        ...(executionErrorTurnIndex === undefined ? {} : { executionErrorTurnIndex }),
+      });
       await writeRawProgress();
     }
     expect(pendingCases).toHaveLength(selectedCases.length);
@@ -949,22 +990,31 @@ live('authority-only Agent A golden baseline through the real workflow', () => {
     expect(pendingCases).toHaveLength(selectedCases.length);
     for (const pending of pendingCases) {
       let semantic: Awaited<ReturnType<typeof judgeCaseSemantically>> = [];
-      let evaluationError = pending.executionError;
-      if (!evaluationError && pending.observations.length === pending.scenario.turns.length) {
+      let semanticEvaluationError: string | undefined;
+      const observationMismatch = pending.observations.length !== pending.scenario.turns.length;
+      const executionError = pending.executionError
+        ?? (observationMismatch
+          ? `OBSERVATION_COUNT_MISMATCH:${pending.observations.length}/${pending.scenario.turns.length}`
+          : undefined);
+      const executionErrorTurnIndex = pending.executionErrorTurnIndex
+        ?? (executionError ? pending.observations.length : undefined);
+      if (pending.observations.length > 0) {
         try {
+          const observedScenario = pending.observations.length === pending.scenario.turns.length
+            ? pending.scenario
+            : { ...pending.scenario, turns: pending.scenario.turns.slice(0, pending.observations.length) };
           semantic = await judgeCaseSemantically({
-            apiKey: secrets.DEEPSEEK_API_KEY!, model: judgeModel, scenario: pending.scenario,
+            apiKey: secrets.DEEPSEEK_API_KEY!, model: judgeModel, scenario: observedScenario,
             observations: pending.observations,
           });
         } catch (error) {
-          evaluationError = errorText(error);
+          semanticEvaluationError = errorText(error);
         }
-      } else if (!evaluationError) {
-        evaluationError = `OBSERVATION_COUNT_MISMATCH:${pending.observations.length}/${pending.scenario.turns.length}`;
       }
       const turns: TurnResultV1[] = [];
       for (const [index, turn] of pending.scenario.turns.entries()) {
         const actualObservation = pending.observations[index];
+        const isExecutionFailureTurn = !actualObservation && index === executionErrorTurnIndex;
         const observation = actualObservation ?? blankObservation();
         const primaryCitation = await primaryAuthorityCitation(turn);
         const hard = actualObservation ? evaluateHardRules(
@@ -986,23 +1036,28 @@ live('authority-only Agent A golden baseline through the real workflow', () => {
           authorityReference: failure.authority_reference,
         }));
         const evaluatorErrors = [
-          ...(evaluationError ? [evaluationError] : []),
-          ...(!evaluationError && !semanticVerdict ? ['GOLDEN_JUDGE_VERDICT_MISSING'] : []),
+          ...(actualObservation && semanticEvaluationError ? [semanticEvaluationError] : []),
+          ...(actualObservation && !semanticEvaluationError && !semanticVerdict ? ['GOLDEN_JUDGE_VERDICT_MISSING'] : []),
           ...(semanticVerdict?.evaluation_error ? [semanticVerdict.evaluation_error] : []),
           ...hard.evaluatorErrors.map((error) => `${error.code}:${error.detail}`),
         ];
-        const technicalFailures: GoldenFailureV1[] = !actualObservation ? [{
-          code: 'TURN_NOT_EXECUTED',
-          detail: evaluationError ?? 'El runner no produjo una observación para este turno.',
-          ...(primaryCitation ? { authorityReference: primaryCitation } : {}),
-        }] : evaluatorErrors.map((detail) => ({
-          code: 'EVALUATOR_ERROR',
-          detail,
-          ...(primaryCitation ? { authorityReference: primaryCitation } : {}),
-        }));
+        const technicalFailures: GoldenFailureV1[] = actualObservation
+          ? evaluatorErrors.map((detail) => ({
+            code: 'EVALUATOR_ERROR',
+            detail,
+            ...(primaryCitation ? { authorityReference: primaryCitation } : {}),
+          }))
+          : [{
+            code: isExecutionFailureTurn ? 'EVALUATOR_ERROR' : 'TURN_NOT_EXECUTED',
+            detail: isExecutionFailureTurn
+              ? executionError ?? 'El runner falló antes de producir la observación de este turno.'
+              : `No ejecutado porque un turno anterior falló: ${executionError ?? 'causa desconocida'}`,
+            ...(primaryCitation ? { authorityReference: primaryCitation } : {}),
+          }];
         const failures = [...hardFailures, ...semanticFailures, ...technicalFailures];
-        const executionStatus: TurnResultV1['execution_status'] = !actualObservation
-          ? 'not_executed' : evaluatorErrors.length > 0 ? 'evaluation_error' : 'executed';
+        const executionStatus: TurnResultV1['execution_status'] = actualObservation
+          ? evaluatorErrors.length > 0 ? 'evaluation_error' : 'executed'
+          : isExecutionFailureTurn ? 'evaluation_error' : 'not_executed';
         const attribution = executionStatus !== 'executed' || failures.length === 0 ? null
           : inferFailureAttribution(turn, observation, failures.map((failure) => failure.code));
         turns.push({
@@ -1012,8 +1067,8 @@ live('authority-only Agent A golden baseline through the real workflow', () => {
           approved: executionStatus === 'executed' ? failures.length === 0 : null,
           execution_status: executionStatus,
           authority: primaryCitation ? [primaryCitation] : [],
-          must: pending.scenario.evaluationMode==='negotiation_invariants'?negotiationSemanticTurnV1(turn,index===pending.scenario.turns.length-1).must:turn.must,
-          must_not: pending.scenario.evaluationMode==='negotiation_invariants'?negotiationSemanticTurnV1(turn,index===pending.scenario.turns.length-1).mustNot:turn.mustNot,
+          must: pending.scenario.evaluationMode==='negotiation_invariants'?negotiationSemanticTurnV1(turn,index===pending.scenario.turns.length-1,usesCurrentModelOwnedNegotiationV1(observation.negotiationFacts)).must:turn.must,
+          must_not: pending.scenario.evaluationMode==='negotiation_invariants'?negotiationSemanticTurnV1(turn,index===pending.scenario.turns.length-1,usesCurrentModelOwnedNegotiationV1(observation.negotiationFacts)).mustNot:turn.mustNot,
           response_real: observation.response,
           move: observation.move,
           proposed_action: observation.proposedAction,
@@ -1035,7 +1090,15 @@ live('authority-only Agent A golden baseline through the real workflow', () => {
       }
       const hasUnevaluatedTurns = turns.some((turn) => turn.execution_status !== 'executed');
       const semanticStatus:InvariantStatusV1=semantic.some(t=>t.approved===false)?'FAIL':semantic.length!==pending.scenario.turns.length||semantic.some(t=>t.approved===null)?'INDETERMINATE':'PASS';
-      const negotiation = pending.scenario.evaluationMode==='negotiation_invariants'?evaluateNegotiationInvariantsV1(pending.scenario.id,pending.scenario.turns.map((t,i)=>negotiationEvidenceV1(t,pending.observations[i]??blankObservation())),semanticStatus,hasUnevaluatedTurns?'INDETERMINATE':turns.some(t=>t.failures.some(f=>!f.code.startsWith('SEMANTIC_')))?'FAIL':'PASS'):undefined;
+      const packageRecapStatusByTurn:Readonly<Record<string,InvariantStatusV1>>=Object.fromEntries(
+        pending.scenario.turns.map(turn=>{
+          const verdict=semantic.find(item=>item.turn_id===turn.id);
+          if(!verdict||verdict.approved===null)return [turn.id,'INDETERMINATE' as const];
+          const recapFailed=verdict.failures.some(failure=>failure.code==='SEMANTIC_MUST_FAILED'&&failure.requirement_index===2);
+          return [turn.id,recapFailed?'FAIL' as const:'PASS' as const];
+        }),
+      );
+      const negotiation = pending.scenario.evaluationMode==='negotiation_invariants'?evaluateNegotiationInvariantsV1(pending.scenario.id,pending.scenario.turns.map((t,i)=>negotiationEvidenceV1(t,pending.observations[i]??blankObservation())),semanticStatus,hasUnevaluatedTurns?'INDETERMINATE':turns.some(t=>t.failures.some(f=>!f.code.startsWith('SEMANTIC_')))?'FAIL':'PASS',packageRecapStatusByTurn):undefined;
       if(negotiation)for(const [index,turn] of turns.entries()){
         const structural=negotiation.turn_results[index]!;
         const failed=negotiation.checks.filter(c=>c.failedTurnIds.includes(turn.turn_id));

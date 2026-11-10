@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "source_sha": "d558f938f849422d2adc12797e4773bf95b29a0d",
+  "application_source_sha": "bac1af0dc90e68c2234184bee2d467fda03ed763",
+  "artifact": "botpress.bundle.cjs",
+  "artifact_sha256": "3718b45ff81a1981c88c58ef213330d828029c5ec4d15839ab3ed7042754e4a5",
+  "artifact_bytes": 24493132,
+  "botpress_source_tree": "c54cbff50ecc73af24af6072c8144ed2c65e8ce6",
+  "shared_source_tree": "597afcbd0d4898c45cb32b05eadb85659c14c8cc",
+  "adk_version": "2.0.8",
+  "profile": "studyx-detmaneyro",
+  "bot_id": "0d7c9ecb-4781-4c65-913d-f7e947fa14d4",
+  "workspace_id": "wkspace_01M4XEBZNC10HX2KDHKY36T6R0",
+  "preflight_at": "2026-11-01T23:57:20.900Z",
+  "contracts_match": true,
+  "remote_unchanged_during_build": true,
+  "remote_code_evidence": {
+    "status": "unavailable",
+    "type": "undefined",
+    "byteLength": null,
+    "matches": null
+  },
+  "published": false
+}

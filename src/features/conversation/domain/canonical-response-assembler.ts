@@ -63,10 +63,14 @@ function normalizeMentionText(value: string): string {
 }
 
 function canonicalPrerequisiteStatement(value: string): string | null {
-  if (/\bno requiere conocimientos previos\b/iu.test(value)) {
+  const normalized = value.replace(/\s+/gu, ' ').trim();
+  if (/\bno requiere conocimientos previos\b/iu.test(normalized)) {
     return 'No requiere conocimientos previos.';
   }
-  if (/\b(?:diseñad[oa]|disenad[oa]) para empezar desde cero\b/iu.test(value)) {
+  if (/\b(?:sin importar (?:su |tu |la )?|no (?:se )?(?:necesita|requiere) )experiencia previa\b/iu.test(normalized)) {
+    return 'No requiere experiencia previa.';
+  }
+  if (/\b(?:diseñad[oa]|disenad[oa]) para empezar desde cero\b/iu.test(normalized)) {
     return 'Está diseñado para empezar desde cero.';
   }
   return null;

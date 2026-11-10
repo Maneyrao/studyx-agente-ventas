@@ -244,6 +244,7 @@ export async function POST(
         error: error.code,
         reason: error.reason,
         ...(error.subjects.length > 0 ? { subjects: error.subjects } : {}),
+        ...(error.violations.length > 0 ? { violations: error.violations } : {}),
       }, { status: 422 });
     }
     // Serialization/deadlock exhaustion is transient and the commit is

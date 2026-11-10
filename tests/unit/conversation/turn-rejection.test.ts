@@ -18,6 +18,8 @@ describe('TurnRejectionV1', () => {
   it('expone todos los códigos de la especificación', () => {
     expect([...TURN_REJECTION_CODES_V1].sort()).toEqual([
       'ACTION_NOT_AUTHORIZED',
+      // Regla A del dueño (2026-11-02): el backend decidió la bonificación.
+      'BONUS_OFFER_REQUIRED',
       'CALL_BUDGET_EXHAUSTED',
       'CALL_OFFER_MESSAGE_BOUNDARY_INVALID',
       'CALL_OFFER_REQUIRED',
@@ -27,10 +29,16 @@ describe('TurnRejectionV1', () => {
       'FACT_NOT_AUTHORIZED',
       'FACT_VALUE_MISMATCH',
       'MISSING_INTAKE',
+      // Reglas C y D del dueño (2026-11-02, segunda revisión).
+      'PASSIVE_CLOSING_FORBIDDEN',
       'PLAN_NOT_SELECTED',
+      'PRICE_PROBE_REQUIRED',
+      'PROGRAM_SEND_REQUIRED',
       'PROPOSAL_SCHEMA_INVALID',
       // V8: devolver el mismo mensaje que ya se mandó no es contestar.
       'REPEATED_AGENT_REPLY',
+      // Regla E del dueño (2026-11-03): retención ante el primer «no».
+      'RETENTION_REQUIRED',
       'UNSUPPORTED_OPERATIONAL_CLAIM',
     ]);
   });

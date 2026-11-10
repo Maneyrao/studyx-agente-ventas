@@ -1,0 +1,59 @@
+{
+  "health": {
+    "http_status": 200,
+    "body": {
+      "status": "ok",
+      "service": "studyx-agente-ventas",
+      "timestamp": "2026-11-02T01:06:52.669Z",
+      "commit": "d558f938f849422d2adc12797e4773bf95b29a0d",
+      "region": "iad1"
+    }
+  },
+  "ready": {
+    "http_status": 200,
+    "body": {
+      "status": "ready",
+      "ready": true,
+      "trace_id": "46b7d572-5965-4afb-8f9f-c8690165f9f2",
+      "timestamp": "2026-11-02T01:06:53.139Z",
+      "probes": [
+        {
+          "name": "configuration",
+          "required": true,
+          "status": "ok",
+          "detail": null,
+          "latency_ms": null
+        },
+        {
+          "name": "agent_a_brain_configuration",
+          "required": true,
+          "status": "ok",
+          "detail": null,
+          "latency_ms": null
+        },
+        {
+          "name": "postgres",
+          "required": true,
+          "status": "ok",
+          "detail": null,
+          "latency_ms": 117
+        },
+        {
+          "name": "agent_loop_schema",
+          "required": true,
+          "status": "ok",
+          "detail": null,
+          "latency_ms": 25
+        },
+        {
+          "name": "commercial_snapshot",
+          "required": true,
+          "status": "ok",
+          "detail": null,
+          "latency_ms": 46
+        }
+      ],
+      "failed_required": []
+    }
+  }
+}

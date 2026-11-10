@@ -265,6 +265,14 @@ export async function reserveCallForDecision(
     throw new CallRequestRejectedError('CALL_PHONE_INVALID');
   }
 
+  // A confirmation in this same turn already moved the profile phone.
+  const { hasPendingPhoneCorrectionV1 } = await import('@/lib/repositories/pending-phone-correction.repository');
+  if (await hasPendingPhoneCorrectionV1(db, {
+    latest_message_id: input.consent_messages[input.consent_messages.length - 1]!.id, call_phone: callPhone,
+  })) {
+    throw new CallRequestRejectedError('CALL_PHONE_CONFIRMATION_PENDING');
+  }
+
   // Xendra can acknowledge creation without ever delivering a lifecycle
   // event. Such a call must not hold the one-active-call fence forever.
   await db`

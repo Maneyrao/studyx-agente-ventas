@@ -761,7 +761,7 @@ describe('Agent A conversation runner', () => {
     const commitBody = JSON.parse(String(fetchMock.mock.calls[4]?.[1]?.body));
     expect(commitBody.conversation_pipeline_v1).toBeNull();
     expect(result.turnDiagnostic).toMatchObject({ repairAttempted: true, proposalGenerationCalls: 2,
-      rejectionCodes: expect.arrayContaining(['ACTION_NOT_AUTHORIZED']) });
+      rejectionCodes: expect.arrayContaining([expect.stringMatching(/^ACTION_NOT_AUTHORIZED(?::|$)/u)]) });
     if (continuationResult === 'valid') {
       expect(commitBody.agent_turn_v2.conversation_only).toBe(true);
       expect(commitBody.agent_turn_v2).not.toHaveProperty('requested_action');
@@ -780,7 +780,7 @@ describe('Agent A conversation runner', () => {
       expect(commitBody.agent_turn_v2).toBeNull();
       expect(commitBody.decision).toMatchObject({
         kind: 'reply',
-        response: 'Qué dato o qué curso revisamos?',
+        response: 'Perdón, no te entendí bien, a qué te refieres?',
         response_type: 'commercial_reply',
         reason_code: 'AGENT_A_VALIDATION_EXHAUSTED',
       });

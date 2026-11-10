@@ -1,3 +1,4 @@
+import { answerTurn } from '../helpers/answer-turn';
 import { randomUUID } from 'node:crypto';
 import { afterAll, describe, expect, it, vi } from 'vitest';
 import { openLocalTestDatabase } from '../helpers/db';
@@ -157,6 +158,9 @@ run('controlled context at claim time', () => {
       batch_id: first.batch.id,
       claim_token: selected.batch.claim_token,
     });
+    // The agent answered the first message: the follow-up is a new intervention
+    // (owner 2026-11-10 — an unanswered message would belong to the same one).
+    await answerTurn(db!, first.turn_id);
 
     const second = await processInboundMessage(followUp(
       firstEnvelope,
@@ -516,7 +520,28 @@ run('sales_context at claim time', () => {
     expect(salesContext.last_call_result).toMatchObject({
       call_id: callId,
       result: 'seguimiento_agendado',
+      // 2026-11-05 (5b138536): calls 2–4 ended in voicemail and nobody told the
+      // customer; Agent A now knows whether the outcome was communicated.
+      announced_to_customer: false,
     });
+  });
+
+  it('marks the last call result as announced once a reply was delivered after it ended', async () => {
+    const seeded = await seedTurnWithIds('oki');
+    const callId = await insertCallSession({
+      turnId: seeded.turn_id, contactId: seeded.contact_id, conversationId: seeded.conversation_id,
+      status: 'completed', result: 'buzon_de_voz', completedAt: new Date(Date.now() - 60_000).toISOString(),
+    });
+    const [reply] = await db!<Array<{ id: string }>>`
+      INSERT INTO messages (conversation_id, contact_id, direction, content, in_reply_to)
+      VALUES (${seeded.conversation_id}::uuid, ${seeded.contact_id}::uuid, 'outbound', 'Te llamé y entró el buzón.', ${seeded.turn_id}::uuid)
+      RETURNING id`;
+    await db!`INSERT INTO outbound_deliveries (message_id, conversation_id, contact_id, provider, integration_id,
+      channel, destination, idempotency_key, state, provider_message_id, submitted_at)
+      SELECT ${reply.id}::uuid, ${seeded.conversation_id}::uuid, ${seeded.contact_id}::uuid, 'botpress', 'vitest',
+        'whatsapp', c.phone, ${randomUUID()}, 'submitted', ${randomUUID()}, now() FROM contacts c WHERE c.id = ${seeded.contact_id}::uuid`;
+    const salesContext = await claimSalesContext(seeded.batch.id);
+    expect(salesContext.last_call_result).toMatchObject({ call_id: callId, announced_to_customer: true });
   });
 
   it('projects a delivered post-call retry prompt into a fresh callable turn', async () => {
@@ -566,6 +591,36 @@ run('sales_context at claim time', () => {
       last_call_result: { call_id: callId },
     });
     expect(result.deterministic_route).toBe('call_direct_request');
+  });
+
+  // Replay 25dc2ab c06: «me volves a llamar?» with a correction pending was forced
+  // into the direct-call route and Agent A's confirmation question was replaced.
+  it('withholds the call action and route while a proposed phone correction is unconfirmed', async () => {
+    const firstEnvelope = envelope({ message: {
+      type: 'text', text: 'mi número termina en 8', occurred_at: new Date().toISOString(), reply_to_external_message_id: null,
+    } });
+    if (!firstEnvelope.phone_e164) throw new Error('fixture phone missing');
+    await seedWrittenCallIntakeV1({ phone: firstEnvelope.phone_e164 }, db!);
+    const seeded = await processInboundMessage(firstEnvelope);
+    const [identity] = await db!<Array<{ contact_id: string; conversation_id: string; telefono: string }>>`
+      SELECT m.contact_id, m.conversation_id, c.contact_profile_v1->'fields'->'telefono'->>'value' AS telefono
+      FROM messages m JOIN contacts c ON c.id = m.contact_id WHERE m.id = ${seeded.turn_id}::uuid`;
+    const known = identity.telefono ?? firstEnvelope.phone_e164;
+    const corrected = `${known.slice(0, -1)}${known.endsWith('8') ? '7' : '8'}`;
+    const [reply] = await db!<Array<{ id: string }>>`
+      INSERT INTO messages (conversation_id, contact_id, direction, content, in_reply_to)
+      VALUES (${identity.conversation_id}::uuid, ${identity.contact_id}::uuid, 'outbound',
+        ${`Entonces tu número es ${corrected}, ¿me confirmás?`}, ${seeded.turn_id}::uuid) RETURNING id`;
+    await db!`INSERT INTO outbound_deliveries (message_id, conversation_id, contact_id, provider, integration_id,
+      channel, destination, idempotency_key, state, provider_message_id, submitted_at)
+      SELECT ${reply.id}::uuid, ${identity.conversation_id}::uuid, ${identity.contact_id}::uuid, 'botpress', 'vitest',
+        'whatsapp', c.phone, ${randomUUID()}, 'submitted', ${randomUUID()}, now() FROM contacts c WHERE c.id = ${identity.contact_id}::uuid`;
+    const callAgain = await processInboundMessage(followUp(firstEnvelope, 'me volves a llamar?'));
+    await forceDue(callAgain.batch.id);
+    const result = await claimBatch({ batch_id: callAgain.batch.id, claimed_by: 'workflow-pending-phone', trace_id: randomUUID() }, deps);
+    if (result.outcome !== 'claimed') throw new Error('expected a claim');
+    expect(result.sales_context.allowed_actions).not.toContain('request_call_now');
+    expect(result.deterministic_route).not.toBe('call_direct_request');
   });
 
   it('enforces the 30-minute decline cooldown across turns from the durable decision log', async () => {

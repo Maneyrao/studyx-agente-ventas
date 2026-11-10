@@ -6,9 +6,9 @@ import { jsonbParam } from '@/lib/db/json';
 import type { ManagedOutboundSender } from '@/features/messaging/adapters/managed-outbound';
 import {
   isCentralCargaBonusConfigured,
-  isCentralCargaBonusEnabledForContact,
   loadCentralCargaBonusConfig,
 } from '@/features/fulfillment/central-carga/config';
+import { isCentralCargaBonusEnabledForStoredContact } from '@/features/fulfillment/central-carga/bonus-contact-permission';
 import {
   buildAuthorizedEgress,
   protectedFactsInContentV1,
@@ -186,9 +186,9 @@ export async function commitCommercialActionV1(
     readonly now?: Date;
   },
 ): Promise<CommitCommercialActionResultV1> {
-  if (!isCentralCargaBonusEnabledForContact(
+  if (!await isCentralCargaBonusEnabledForStoredContact(
     loadCentralCargaBonusConfig(),
-    input.contact_id,
+    { contactId: input.contact_id, workspaceId: input.workspace_id }, db,
   )) return { offer_id: null, followup: null };
   if (input.action.type === 'accept_promotion') {
     const accepted = await db<Array<{ id: string }>>`
@@ -445,14 +445,30 @@ export async function cancelOpenCourseBonusOffersForCourseChangeV1(
     WHERE offer.workspace_id = ${input.workspace_id}::uuid
       AND offer.contact_id = ${input.contact_id}::uuid
       AND offer.conversation_id = ${input.conversation_id}::uuid
-      AND offer.status IN ('pending_review','offered','accepted')
-      AND NOT (offer.package_mode = 'direct' AND offer.status IN ('accepted','attached'))
-      AND offer.payment_id IS NULL
+      AND (
+        (offer.status IN ('pending_review','offered','accepted')
+          AND NOT (offer.package_mode = 'direct' AND offer.status IN ('accepted','attached'))
+          AND offer.payment_id IS NULL)
+        -- Owner 2026-11-10 (Fotografía → Plomería): a package whose checkout
+        -- was just superseded by this course change closes with it. An
+        -- accepted package without a checkout still survives a detour.
+        OR offer.status IN ('accepted','attached') AND EXISTS (SELECT 1 FROM payment_intent_supersessions s
+          JOIN payments superseded ON superseded.id = s.payment_id
+          WHERE s.payment_id = offer.payment_id AND s.reason = 'COURSE_CHANGED'
+            -- A late-paid superseded checkout stays for reconciliation, never cancelled.
+            AND superseded.status NOT IN ('paid','refunded')))
       AND paid.id = offer.paid_offering_id
       AND paid.workspace_id = offer.workspace_id
       AND paid.code <> ${input.selected_offering_code}
     RETURNING offer.id
   `;
+  // The conversation no longer has an active promotion for the old course.
+  await db`UPDATE conversation_promotion_context_v1
+    SET interest_offering_code = NULL, source_turn_id = NULL, updated_at = now()
+    WHERE workspace_id = ${input.workspace_id}::uuid AND conversation_id = ${input.conversation_id}::uuid
+      AND contact_id = ${input.contact_id}::uuid
+      AND interest_offering_code IS DISTINCT FROM ${input.selected_offering_code}
+      AND interest_offering_code IS NOT NULL`;
   if (cancelled.length === 0) return 0;
   await db`
     UPDATE course_bonus_followups followup
@@ -543,9 +559,9 @@ async function followupSource(db: DbClient, id: string): Promise<FollowupSource 
 }
 
 async function cancellationReason(db: DbClient, source: FollowupSource): Promise<string | null> {
-  if (!isCentralCargaBonusEnabledForContact(
+  if (!await isCentralCargaBonusEnabledForStoredContact(
     loadCentralCargaBonusConfig(),
-    source.contact_id,
+    { contactId: source.contact_id, workspaceId: source.workspace_id }, db,
   )) return 'COURSE_BONUS_DISABLED';
   const now = Date.now();
   if (!source.promotion_active

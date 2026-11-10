@@ -10,25 +10,30 @@ export function mayOfferCallV1(input: {
     && !input.payment_reported && input.call_offer_count < 2;
 }
 
+/**
+ * Persisted facts the bonus motive check needs (AGENTS.md "Bonificación por
+ * motivo actual"). A persisted price objection is NOT among them: the motive
+ * must come from the current message. `retention_used`: the single retention
+ * offer of this conversation was already granted.
+ * `previous_turn_asked_price_question`: the previous agent turn declared, as a
+ * structured memory, that it asked the price question.
+ */
 export interface CourseBonusLadderV1 {
-  readonly eligible: boolean;
-  readonly observed_price_objection_count: number;
-  readonly required_price_objection_count: 3;
-  readonly call_invitation_status: 'not_offered' | 'offered' | 'accepted' | 'declined';
-  readonly call_offer_count: number;
-  readonly may_offer_call: boolean;
-  readonly missing_steps: readonly ('recorded_price_objections' | 'call_invitation')[];
-}
-
-/** Rule 10: prior committed facts only (authority prompt:106-120). */
-export function deriveCourseBonusLadderV1(input: {
-  observed_price_objection_count: number;
-  call_invitation_status: CourseBonusLadderV1['call_invitation_status'];
-  call_offer_count: number; may_offer_call: boolean;
-}): CourseBonusLadderV1 {
-  const missing: ('recorded_price_objections' | 'call_invitation')[] = [];
-  if (!Number.isInteger(input.observed_price_objection_count) || input.observed_price_objection_count < 3) missing.push('recorded_price_objections');
-  if (!['offered', 'declined'].includes(input.call_invitation_status)
-    && input.may_offer_call && input.call_offer_count < 2) missing.push('call_invitation');
-  return { ...input, eligible: missing.length === 0, required_price_objection_count: 3, missing_steps: missing };
+  readonly retention_used: boolean;
+  readonly previous_turn_asked_price_question: boolean;
+  /** An earlier agent message of this conversation stated the paid course price (fact, not interpretation). */
+  readonly price_presented?: boolean;
+  /**
+   * Owner 2026-11-10: a first price objection alone never opens the bonus. True
+   * when an earlier, already answered turn of this conversation recorded a
+   * price objection (memory objection/price_objection): the current one is the second.
+   */
+  readonly prior_price_objection_recorded?: boolean;
+  /**
+   * Owner 2026-11-10: the promotion follows the customer's main course. Gifts
+   * already delivered in this conversation for ANOTHER paid course; when
+   * present, the first gift of the current course needs no new motive and the
+   * customer is asked whether to keep the same gift or choose another.
+   */
+  readonly carried_over_bonus_offerings?: Array<{ code: string; display_name: string }>;
 }

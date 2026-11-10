@@ -176,6 +176,53 @@ run('direct outbound delivery', () => {
     db: db!,
   });
 
+  it('redacts trusted credential values only in sender audit evidence, preserving exact delivery and ledger', async () => {
+    const fixture = await seedContact({ telegram: true });
+    const telegram = recordingChannel('telegram');
+    const providerTexts: string[] = [];
+    const password = 'ESecret123';
+    const providerId = `provider-${password}-${randomUUID()}`;
+    const send = telegram.sendText.bind(telegram);
+    telegram.sendText = async input => {
+      providerTexts.push(input.text);
+      return { ...await send(input), providerMessageId: providerId };
+    };
+    const text = `Tu contraseña: ${password}\nOtra copia: ${password}`;
+    const input = request(fixture, { text, auditRedactions: [password],
+      authorizedEgress: buildAuthorizedEgress({ content: text, authorized_urls: [],
+        protected_facts: [{ kind: 'offering', value: password }] }) });
+    const result = await sendOutboundMessage(input, deps({ telegram }));
+    expect(result.outcome).toBe('sent');
+    expect(result.providerMessageId).toBe(providerId);
+    expect(providerTexts).toEqual([text]);
+    const [message] = await db!<Array<{ content: string }>>`
+      SELECT content FROM messages WHERE conversation_id=${fixture.conversationIds.telegram!}::uuid
+        AND direction='outbound'`;
+    expect(message.content).toBe(text);
+    const audit = await db!<Array<{ action: string; payload: Record<string, unknown> }>>`
+      SELECT action,payload FROM audit_log WHERE entity_id=${result.deliveryId!}::uuid
+        AND action IN ('outbound.provider.attempt','outbound.provider.result') ORDER BY occurred_at`;
+    expect(audit).toHaveLength(2);
+    expect(JSON.stringify(audit)).not.toContain(password);
+    expect(JSON.stringify(audit)).not.toContain(password.toLowerCase());
+    expect(audit.map(event => event.payload.text)).toEqual([
+      'Tu contraseña: [REDACTED]\nOtra copia: [REDACTED]',
+      'Tu contraseña: [REDACTED]\nOtra copia: [REDACTED]',
+    ]);
+    expect(audit[0].payload.authorized_egress).toEqual({ content_hash: input.authorizedEgress.content_hash });
+  });
+
+  it('retains complete sender evidence when no audit redactions are requested', async () => {
+    const fixture = await seedContact({ telegram: true });
+    const input = request(fixture);
+    const result = await sendOutboundMessage(input, deps({ telegram: recordingChannel('telegram') }));
+    const audit = await db!<Array<{ payload: Record<string, unknown> }>>`
+      SELECT payload FROM audit_log WHERE entity_id=${result.deliveryId!}::uuid
+        AND action='outbound.provider.attempt'`;
+    expect(audit).toHaveLength(1);
+    expect(audit[0].payload).toMatchObject({ text: input.text, authorized_egress: input.authorizedEgress });
+  });
+
   it('rejects a tampered authorized egress before contacting a provider', async () => {
     const fixture = await seedContact({ telegram: true });
     const telegram = recordingChannel('telegram');

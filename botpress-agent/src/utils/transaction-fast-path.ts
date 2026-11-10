@@ -244,7 +244,7 @@ export function matchCourseFactsFastPathMatch(
           amount: offering!.price!.amount,
         })
       : null,
-    asksPaymentOptions ? 'Podés elegir 12 cuotas, 6 cuotas o un pago único.' : null,
+    asksPaymentOptions ? 'Puedes elegir 12 cuotas, 6 cuotas o un pago único.' : null,
     asksRefund
       ? `La política de devolución o reembolso para ${courseName} no está especificada en la información disponible.`
       : null,
@@ -261,7 +261,7 @@ export function matchCourseFactsFastPathMatch(
     ? '¿Preferís 12 cuotas, 6 cuotas o un pago único?'
     : asksPaymentOptions
       ? '¿Cuál te conviene más?'
-      : '¿Querés que revisemos otro dato?'
+      : '¿Quieres que revisemos otro dato?'
   return {
     offeringCode: offering?.code ?? null,
     decision: {
@@ -338,7 +338,7 @@ export function matchCourseDiscoveryFastPathMatch(
     && !/\b(?:no (?:me gustan?|quiero|puedo) las? llamadas?|prefiero (?:texto|chat)|seguimos? por (?:aca|aqui|chat))\b/u
       .test(normalizeCourse(message.content))
   const response = mayOfferCall
-    ? `${answer} Si querés, coordinamos una llamada ahora con nuestra asesora o seguimos por chat. ¿Cómo preferís avanzar?`
+    ? `${answer} Si quieres, coordinamos una llamada ahora con nuestra asesora o seguimos por chat. ¿Cómo prefieres avanzar?`
     : `${answer} ¿Qué te gustaría saber?`
 
   return {
@@ -504,7 +504,7 @@ export function matchPaymentComparisonFastPath(claimed: ClaimedTurn): Decision |
       schema_version: 4,
       intent: 'commercial',
       kind: 'reply',
-      response: 'No tengo confirmada una ventaja adicional por pagar de una; lo que cambia es la forma de pago. Podés elegir pago único, 6 cuotas o 12 cuotas. ¿Con cuál querés avanzar?',
+      response: 'No tengo confirmada una ventaja adicional por pagar de una; lo que cambia es la forma de pago. Puedes elegir pago único, 6 cuotas o 12 cuotas. ¿Con cuál quieres avanzar?',
       response_type: 'commercial_reply',
       confidence: 1,
       reason_code: 'DETERMINISTIC_PAYMENT_COMPARISON',
@@ -528,7 +528,7 @@ export function matchPaymentComparisonFastPath(claimed: ClaimedTurn): Decision |
     schema_version: 4,
     intent: 'commercial',
     kind: 'reply',
-    response: 'El plan largo reparte el total en más cuotas y deja una cuota mensual más baja; el corto lo concentra en menos cuotas. ¿Cuál preferís?',
+    response: 'El plan largo reparte el total en más cuotas y deja una cuota mensual más baja; el corto lo concentra en menos cuotas. ¿Cuál prefieres?',
     response_type: 'commercial_reply',
     confidence: 1,
     reason_code: 'DETERMINISTIC_PAYMENT_COMPARISON',
@@ -554,7 +554,7 @@ export function matchContactCaptureFastPath(claimed: ClaimedTurn): Decision | nu
     schema_version: 4,
     intent: 'commercial',
     kind: 'reply',
-    response: 'Perfecto, ya tengo tus datos. Si querés, seguimos por acá con cualquier duda.',
+    response: 'Perfecto, ya tengo tus datos. Si quieres, seguimos por acá con cualquier duda.',
     response_type: 'commercial_reply',
     confidence: 1,
     reason_code: 'DETERMINISTIC_CONTACT_CAPTURE',

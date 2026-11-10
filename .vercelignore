@@ -18,10 +18,12 @@ evals/
 supabase/.temp/
 coverage/
 tests/
-scripts/
+# El hook prebuild verifica el material del curso también en el builder remoto.
+scripts/*
+!scripts/stage-course-programs.mjs
 specs/
 docs/
-data/
+/data/
 .superpowers/
 .claude/
 tsconfig.tsbuildinfo

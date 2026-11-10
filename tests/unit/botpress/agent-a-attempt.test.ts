@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   classifyAgentAAttemptFailure,
   runAgentADeepSeekAttemptV1,
+  AGENT_A_PROVIDER_RETRY_BACKOFF_MS,
 } from '../../../botpress-agent/src/lib/conversation/agent-a-attempt';
 
 describe('Agent A DeepSeek attempt boundary', () => {
@@ -76,4 +77,21 @@ describe('Agent A DeepSeek attempt boundary', () => {
       .rejects.toBe(second);
     expect(generate).toHaveBeenCalledTimes(2);
   });
+
+  it('waits a backoff before retrying a fast provider 5xx, but not after a timeout', async () => {
+    const wait = vi.fn().mockResolvedValue(undefined);
+    const http503 = vi.fn()
+      .mockRejectedValueOnce(Object.assign(new Error('503'), { code: 'BRAIN_DEEPSEEK_HTTP_503' }))
+      .mockResolvedValueOnce('ok');
+    await expect(runAgentADeepSeekAttemptV1({ generate: http503, onRetry: vi.fn(), wait }))
+      .resolves.toEqual({ value: 'ok', attempts: 2 });
+    expect(wait).toHaveBeenCalledWith(AGENT_A_PROVIDER_RETRY_BACKOFF_MS);
+    wait.mockClear();
+    const timeout = vi.fn()
+      .mockRejectedValueOnce(Object.assign(new Error('t'), { code: 'BRAIN_DEEPSEEK_TIMEOUT' }))
+      .mockResolvedValueOnce('ok');
+    await runAgentADeepSeekAttemptV1({ generate: timeout, onRetry: vi.fn(), wait });
+    expect(wait).not.toHaveBeenCalled();
+  });
 });
+

@@ -1,0 +1,140 @@
+ Failed Tests 8 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/workflow/agent-a-call-recovery.test.ts > retains a payment request through intake and executes it once after the separate confirmation
+AssertionError: expected 3 to be 2 // Object.is equality
+
+- Expected
++ Received
+
+- 2
++ 3
+
+ ❯ tests/workflow/agent-a-call-recovery.test.ts:158:27
+    156|   const initial = await runWorkflowTurnV1({ ...id, text: 'Quiero el en…
+    157|   expect(initial.commitSucceeded).toBe(true);
+    158|   expect(generationCount).toBe(2);
+       |                           ^
+    159|   expect(initial.authorizedMessages.join(' ')).toContain('nombre, apel…
+    160|   const payments = () => db`SELECT p.id,p.plan_code FROM payments p JO…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/8]⎯
+
+ FAIL  tests/workflow/agent-a-call-recovery.test.ts > persists Agus data before accepting “Sí, dale”, reserves once and keeps the exact consent source
+AssertionError: expected { call_preference: 'call', …(2) } to match object { call_preference: 'call', …(2) }
+
+- Expected
++ Received
+
+  {
+-   "awaiting_reply": "call_or_chat",
++   "awaiting_reply": "contact_details",
+    "call_offer_status": "accepted",
+    "call_preference": "call",
+  }
+
+ ❯ tests/workflow/agent-a-call-recovery.test.ts:193:25
+    191|   const [pendingIntent] = await db`SELECT s.call_preference,s.call_off…
+    192|     FROM conversation_sales_context_states_v1 s JOIN contacts c ON c.i…
+    193|   expect(pendingIntent).toMatchObject({ call_preference: 'call', call_…
+       |                         ^
+    194|   phase = 'agus_identity';
+    195|   const intake = await runWorkflowBurstV1({ ...id, messages: [
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/8]⎯
+
+ FAIL  tests/workflow/agent-a-call-recovery.test.ts > repairs the Lucas promise, records the real repair, retains full identity and reserves one consented call without requiring email
+AssertionError: expected { action_status: 'none', …(4) } to match object { generation_attempts: 2, …(3) }
+(1 matching property omitted from actual)
+
+- Expected
++ Received
+
+  {
+    "action_status": "none",
+    "failure_codes": [
+-     "UNSUPPORTED_OPERATIONAL_CLAIM",
++     "MISSING_INTAKE:nombre",
++     "MISSING_INTAKE:apellido",
++     "MISSING_INTAKE:correo",
++     "MISSING_INTAKE:telefono",
++     "UNSUPPORTED_OPERATIONAL_CLAIM:call_confirmation",
+    ],
+    "failure_stage": "proposal_validation",
+    "generation_attempts": 2,
+  }
+
+ ❯ tests/workflow/agent-a-call-recovery.test.ts:270:39
+    268|     SELECT diagnostics FROM agent_decisions WHERE trace_id = ${initial…
+    269|   `;
+    270|   expect(initialRows[0]?.diagnostics).toMatchObject({
+       |                                       ^
+    271|     generation_attempts: 2, failure_stage: 'proposal_validation',
+    272|     failure_codes: expect.arrayContaining(['UNSUPPORTED_OPERATIONAL_CL…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/8]⎯
+
+ FAIL  tests/workflow/agent-a-call-recovery.test.ts > lets Agent A request missing data after the rejected call promise without a protocol notice
+AssertionError: expected 3 to be 2 // Object.is equality
+
+- Expected
++ Received
+
+- 2
++ 3
+
+ ❯ tests/workflow/agent-a-call-recovery.test.ts:323:27
+    321|   const result = await runWorkflowTurnV1({ ...id, text: 'Dale llámenme…
+    322|   expect(result.commitSucceeded).toBe(true);
+    323|   expect(generationCount).toBe(2);
+       |                           ^
+    324|   expect(result.adapterCaptures).toHaveLength(1);
+    325|   expect(result.authorizedMessages).toHaveLength(1);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/8]⎯
+
+ FAIL  tests/workflow/agent-a-call-recovery.test.ts > keeps intake and executes the Agent A interpreted 1 pago plan after a call handoff
+ FAIL  tests/workflow/agent-a-call-recovery.test.ts > keeps intake and executes the Agent A interpreted un pago de 360 plan after a call handoff
+ FAIL  tests/workflow/agent-a-call-recovery.test.ts > keeps intake and executes the Agent A interpreted split plan after a call handoff
+AssertionError: expected 1 to be 2 // Object.is equality
+
+- Expected
++ Received
+
+- 2
++ 1
+
+ ❯ tests/workflow/agent-a-call-recovery.test.ts:363:27
+    361|   expect(result.errorCode).toBeNull();
+    362|   expect(result.commitSucceeded).toBe(true);
+    363|   expect(generationCount).toBe(2);
+       |                           ^
+    364|   expect(result.authorizedMessages.join(' ')).not.toContain('se cortó …
+    365|   expect(await db`SELECT p.id FROM payments p JOIN contacts c ON c.id=…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/8]⎯
+
+ FAIL  tests/workflow/agent-a-recorded-production-replay.test.ts > replays all twelve production turns through their deployed workflow and commit
+AssertionError: expected null to be 'Si Ludmi Medina' // Object.is equality
+
+- Expected:
+"Si Ludmi Medina"
+
++ Received:
+null
+
+ ❯ tests/workflow/agent-a-recorded-production-replay.test.ts:69:33
+     67|     }
+     68|     const final = await readWorkflowDbEvidenceV1({ databaseUrl: proces…
+     69|     expect(final.contact?.name).toBe('Si Ludmi Medina');
+       |                                 ^
+     70|     expect(final.contact?.declaredPhone).toBe('1155550101');
+     71|     expect(final.state?.callPreference).toBe('unknown');
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/8]⎯
+
+
+ Test Files  2 failed (2)
+      Tests  8 failed | 2 passed (10)
+   Start at  09:05:19
+   Duration  242.99s (transform 328ms, setup 0ms, import 579ms, tests 242.29s, environment 0ms)
+

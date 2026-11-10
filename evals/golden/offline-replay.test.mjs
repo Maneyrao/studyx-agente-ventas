@@ -12,7 +12,7 @@ import { prepareAgentTurnV2 } from '../../src/features/conversation/application/
 import { canonicalTruthSetFromOfferingsV1, enforceCommercialTruthV1 } from '../../src/features/orchestration/domain/commercial-truth-guard';
 import { physicalOutboundTexts } from '../../src/features/orchestration/domain/physical-outbound-texts';
 import { assemblePostSaleMessage } from '../../src/features/fulfillment/post-sale/service';
-import { fallbackPostSaleNarrative } from '../../botpress-agent/src/utils/post-sale-instructions';
+import { postSaleAccessTestConfig } from '../../tests/helpers/post-sale-config';
 import { technicalFallback, validationExhaustedNotice, modelUnavailableFallback } from '../../botpress-agent/src/utils/decision-policy';
 import { matchCallHandoffFastPath } from '../../botpress-agent/src/utils/call-handoff-fast-path';
 import { extractAuthorizedContextV1, extractModelAttemptsV1 } from './runner-support';
@@ -382,7 +382,7 @@ function postSale(row) {
     outcome: 'post_sale_snapshot', effect_executed: false };
   // This exact synthetic source is recorded by the golden setup, not guessed
   // from the model prose. This proves the assembler, not delivery/fulfillment.
-  const source = { kind: 'access_ready', student_was_created: true,
+  const source = { kind: 'access_ready', enrollment_status: 'active', student_was_created: true,
     login_email: 'ana.golden@example.test', login_url: null,
     offering_name: 'Fotografía Profesional',
     bonus_offerings: [
@@ -393,18 +393,9 @@ function postSale(row) {
       { offering_code: 'marketing_digital', enrollment_status: 'active', position: 2 },
     ],
   };
-  try { out.assembled = assemblePostSaleMessage(source, narrative); }
-  catch (error) {
-    out.rejections.push(errorInfo(error));
-    out.outcome = 'post_sale_rejected';
-    out.fallback_narrative = fallbackPostSaleNarrative({ kind: 'access_ready', new_user: true });
-    out.assembled_fallback = assemblePostSaleMessage(source, out.fallback_narrative);
-    out.transformations.push({ id: error.code === 'POST_SALE_CHANGE_MUST_BE_OPTIONAL'
-      ? 'post_sale_style_whitelist_and_fixed_fallback' : 'post_sale_rejection_and_fixed_fallback',
-      authority: 'P:13/17/230/236', contradiction: error.code === 'POST_SALE_CHANGE_MUST_BE_OPTIONAL' });
-  }
-  out.transformations.push({ id: 'post_sale_fixed_access_blocks',
-    authority: 'P:230/236;B:89-90', contradiction: false });
+  out.assembled = assemblePostSaleMessage(source, undefined, postSaleAccessTestConfig);
+  out.transformations.push({ id: 'owner_authorized_access_template',
+    authority: 'AGENTS.md post-sale owner exception 2026-11-01;B:89-90', contradiction: false });
   return out;
 }
 

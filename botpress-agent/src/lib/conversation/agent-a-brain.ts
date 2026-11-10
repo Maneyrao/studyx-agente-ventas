@@ -1,13 +1,16 @@
+import { rejectedProfileValuesInReplyV1 } from './contact-profile-receipt-claims';
 import { COURSE_MENTION_ROLES_V1 } from '../../../../src/shared/conversation/course-mentions';
 import { messagesWithoutExactCallOfferV1 } from '../../../../src/shared/conversation/call-offer-format';
 import type { ModelObservation } from '../observability/turn-evidence';
 import { courseLogisticsInV1 } from '../../../../src/shared/conversation/course-logistics';
-import { inspectCourseBonusClaimsV1 } from '../../../../src/shared/conversation/course-bonus-claim';
+import { copyNamesCourseV1, inspectCourseBonusClaimsV1 } from '../../../../src/shared/conversation/course-bonus-claim';
 import { eligibleContactRequestFieldsV1 } from './contact-profile-request-policy';
 import { supportsChatPreferenceV1 } from './channel-preference-evidence';
 import type { TurnRejectionV1 } from '../../schemas/turn-rejection'
+import { hardClaimKindsInTextV1, splitClaimSentencesV1 } from '../../../../src/shared/conversation/hard-claims';
 import {
   AgentATurnProposalV1Schema,
+  TURN_REASONING_NEXT_STEPS_V1,
   ContactProfileUpdateV1Schema,
   ContactProfileRequestV1Schema,
   type AgentAContextV1,
@@ -26,9 +29,17 @@ import {
   type ComposedNarrativeV1,
   type TurnPlanV1,
 } from '../../schemas/conversation-pipeline';
-import { buildAgentABrainInstructionsV1, hasDirectBonusContextV1 } from '../../prompts/agent-a-brain-v1';
+import {
+  buildAgentABrainInstructionsV1,
+  buildAgentACommercialPlanInstructionsV1,
+  hasDirectBonusContextV1,
+} from '../../prompts/agent-a-brain-v1';
+import {
+  COMMERCIAL_TURN_PLAN_JSON_SCHEMA,
+  CommercialTurnPlanV1Schema,
+  type CommercialTurnPlanV1,
+} from '../../schemas/agent-a-commercial-plan';
 import { assertedCommercialClausesV1, assertedCommercialPricesV1 } from '../../../../src/features/orchestration/domain/commercial-truth-guard';
-import { lastAgentReplyV1 } from './conversation-composer';
 import {
   extractProtectedFacts,
   extractUrlCandidates,
@@ -81,6 +92,13 @@ export interface GeneratedAgentATurnProposalV1 {
     readonly output_tokens: number;
     readonly total_tokens: number;
   };
+  /** Model-owned planning-pass reading used by the writer; repairs of the turn reuse it. */
+  readonly commercial_plan?: CommercialTurnPlanV1;
+  /** Physical planning requests made by this generation (0 or 1, never retried). */
+  readonly planner_requests?: 0 | 1;
+  readonly planner_status?: 'planned' | 'failed';
+  readonly planner_failure_code?: string | null;
+  readonly planner_latency_ms?: number;
 }
 
 function parseDeepSeekJsonContent(content: string): unknown {
@@ -108,6 +126,7 @@ const DEEPSEEK_PROPOSAL_ROOT_FIELDS = new Set([
   'used_memory_ids',
   'memory_candidates',
   'repair_of',
+  'turn_reasoning',
 ]);
 
 function stripDeepSeekRootMetadata(value: unknown): unknown {
@@ -215,6 +234,105 @@ function addTokenUsage(
   };
 }
 
+export const AGENT_A_COMMERCIAL_PLAN_DEADLINE_MS = 6_000;
+
+export interface CommercialTurnPlanResultV1 {
+  readonly plan: CommercialTurnPlanV1 | null;
+  readonly status: 'planned' | 'failed';
+  readonly failure_code: string | null;
+  readonly latency_ms: number;
+  readonly token_usage?: GeneratedAgentATurnProposalV1['token_usage'];
+}
+
+/**
+ * Planning pass (model-owned): one request, no retry, bounded deadline.
+ * Never throws: any failure returns plan=null and the writer runs with the
+ * original context, so a planner failure can never silence the turn.
+ * The backend does not read or judge the plan; it authorizes nothing.
+ */
+export async function generateCommercialTurnPlanV1(input: {
+  readonly context: AgentAContextV1;
+  readonly apiKey: string;
+  readonly signal: AbortSignal;
+  readonly model?: string;
+  readonly timeout_ms?: number;
+  readonly observe?: (event: ModelObservation) => void;
+}): Promise<CommercialTurnPlanResultV1> {
+  const startedAt = Date.now();
+  const controller = new AbortController();
+  const parentAbort = () => controller.abort();
+  const timeout = setTimeout(() => controller.abort(), Math.min(
+    AGENT_A_COMMERCIAL_PLAN_DEADLINE_MS,
+    Math.max(1, input.timeout_ms ?? AGENT_A_COMMERCIAL_PLAN_DEADLINE_MS),
+  ));
+  input.signal.addEventListener('abort', parentAbort, { once: true });
+  if (input.signal.aborted) controller.abort();
+  let tokenUsage: GeneratedAgentATurnProposalV1['token_usage'];
+  const finish = (plan: CommercialTurnPlanV1 | null, failureCode: string | null): CommercialTurnPlanResultV1 => {
+    const result: CommercialTurnPlanResultV1 = {
+      plan, status: plan ? 'planned' : 'failed', failure_code: failureCode,
+      latency_ms: Date.now() - startedAt, ...(tokenUsage ? { token_usage: tokenUsage } : {}),
+    };
+    input.observe?.({ kind: 'commercial_plan', status: result.status, failure_code: failureCode,
+      latency_ms: result.latency_ms, plan });
+    return result;
+  };
+  try {
+    const model = resolveAgentADeepSeekModelV1(input.model);
+    let response: Response;
+    try {
+      response = await fetch(DEEPSEEK_RESPONSES_URL, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${input.apiKey}`, 'content-type': 'application/json' },
+        body: JSON.stringify({
+          model,
+          instructions: buildAgentACommercialPlanInstructionsV1(input.context),
+          input: `Current customer messages: ${JSON.stringify(input.context.turn.batch_messages.map((message) => message.text))}\nReturn only the CommercialTurnPlanV1 JSON object.`,
+          reasoning: { effort: 'none' },
+          temperature: 0.2,
+          stream: false,
+          max_output_tokens: 900,
+          text: { format: { type: 'json_schema', name: 'studyx_agent_a_commercial_turn_plan_v1', schema: commercialTurnPlanWireSchemaV1() } },
+        }),
+        signal: controller.signal,
+      });
+    } catch {
+      return finish(null, controller.signal.aborted ? 'PLANNER_TIMEOUT' : 'PLANNER_NETWORK_ERROR');
+    }
+    if (!response.ok) return finish(null, `PLANNER_HTTP_${response.status}`);
+    let payload: unknown;
+    try { payload = await response.json(); } catch { return finish(null, 'PLANNER_INVALID_RESPONSE'); }
+    tokenUsage = extractResponsesTokenUsage(payload);
+    const content = extractResponsesContent(payload);
+    if (content === null) return finish(null, 'PLANNER_EMPTY_RESPONSE');
+    let decoded: unknown;
+    try { decoded = parseDeepSeekJsonContent(content); } catch { return finish(null, 'PLANNER_INVALID_JSON'); }
+    const parsed = CommercialTurnPlanV1Schema.safeParse(decoded);
+    if (!parsed.success) return finish(null, 'PLANNER_INVALID_SCHEMA');
+    // An unknown course code is not evidence of focus; keep the rest of the reading.
+    const knownFocus = parsed.data.course_focus !== null
+      && input.context.catalog.available_offerings.some(offering => offering.code === parsed.data.course_focus);
+    return finish(knownFocus ? parsed.data : { ...parsed.data, course_focus: null }, null);
+  } catch {
+    return finish(null, 'PLANNER_UNKNOWN_ERROR');
+  } finally {
+    clearTimeout(timeout);
+    input.signal.removeEventListener('abort', parentAbort);
+  }
+}
+
+/** The plan classifies the current message with the same move contract as the proposal. */
+export function commercialTurnPlanWireSchemaV1() {
+  const { current_move: _move, ...properties } = COMMERCIAL_TURN_PLAN_JSON_SCHEMA.properties;
+  return {
+    ...COMMERCIAL_TURN_PLAN_JSON_SCHEMA,
+    properties: {
+      current_move: { type: 'string', enum: [...MOVE_KINDS], description: MOVE_SEMANTICS },
+      ...properties,
+    },
+  };
+}
+
 export async function generateDeepSeekAgentATurnProposalV1(input: {
   readonly observe?: (event: ModelObservation) => void;
   readonly context: AgentAContextV1;
@@ -223,9 +341,28 @@ export async function generateDeepSeekAgentATurnProposalV1(input: {
   readonly model?: string;
   readonly timeout_ms?: number;
   readonly conversation_only?: boolean;
+  /** Rule B may authorize invitation copy while all physical actions stay fenced. */
   readonly on_provider_request?: () => void;
+  /** Run the model-owned planning pass before the first draft of a turn. */
+  readonly commercial_planning?: boolean;
 }): Promise<GeneratedAgentATurnProposalV1> {
   const model = resolveAgentADeepSeekModelV1(input.model);
+  // Planning runs once, for the first draft only. Repairs and continuations
+  // reuse context.commercial_plan from that draft and never plan again.
+  let plannerRequests: 0 | 1 = 0;
+  let plannerTokenUsage: GeneratedAgentATurnProposalV1['token_usage'];
+  let plannerOutcome: Pick<CommercialTurnPlanResultV1, 'status' | 'failure_code' | 'latency_ms'> | null = null;
+  let writerContext = input.context;
+  if (input.commercial_planning === true && input.conversation_only !== true
+    && !input.context.turn_rejection && !input.context.commercial_plan) {
+    plannerRequests = 1;
+    const planned = await generateCommercialTurnPlanV1({
+      context: input.context, apiKey: input.apiKey, signal: input.signal, model, observe: input.observe,
+    });
+    plannerTokenUsage = planned.token_usage;
+    plannerOutcome = { status: planned.status, failure_code: planned.failure_code, latency_ms: planned.latency_ms };
+    if (planned.plan) writerContext = { ...writerContext, commercial_plan: planned.plan };
+  }
   const timeoutMs = Math.min(
     AGENT_A_BRAIN_DEEPSEEK_DEADLINE_MS,
     Math.max(1, input.timeout_ms ?? AGENT_A_BRAIN_DEEPSEEK_DEADLINE_MS),
@@ -246,6 +383,13 @@ export async function generateDeepSeekAgentATurnProposalV1(input: {
     let retryDiagnostic: string | null = null;
     let recoveredProfileUpdates: ProfileUpdates = [];
     let retryProfileEvidence = '';
+    // Receipt for a payment-link request that was not executed: no link exists and the
+    // request is still being processed. Instruction to the model, never customer text.
+    const linkNotCreatedNote = (writerContext.turn_rejection?.rejections ?? []).some((reason) => (
+      reason.subject === 'send_payment_link' || reason.subject.startsWith('payment_reservation:')
+      || reason.code === 'PLAN_NOT_SELECTED' || reason.code === 'COURSE_NOT_RESOLVED'))
+      ? '\nThe payment link was NOT created and the request is still being processed. Never say or imply that a link is being sent now, that it was sent, or that anything depends on a payment being credited. Keep the course and plan the customer chose.'
+      : '';
     for (const attempt of [1, 2] as const) {
       input.on_provider_request?.();
       let response: Response;
@@ -258,9 +402,9 @@ export async function generateDeepSeekAgentATurnProposalV1(input: {
           },
           body: JSON.stringify({
             model,
-            instructions: buildAgentABrainInstructionsV1(input.context)
-              + (input.conversation_only ? '\nThe requested operation was not executed. This is a conversation-only continuation from the structured turn_rejection. Answer the customer in your own usual voice using the actual context and explain or ask for the relevant missing information. Do not claim an effect succeeded, repeat an action, invent a provider cause, or ask the customer to repeat a message that is already in context. Preserve the customer intent with the accurate structured move; never use unknown merely because the physical action is fenced. Use proposed_action none and no call_offer. These are internal effect boundaries, not wording instructions.' : ''),
-            input: `Current customer messages: ${JSON.stringify(input.context.turn.batch_messages.map((message) => message.text))}\nAnswer these messages and return only the single AgentATurnProposalV1 JSON object.${retryDiagnostic ? `\nThe previous output failed validation at ${retryDiagnostic}. Return a corrected full object. ${naturalnessRepairDirectiveV1(input.context)}${retryProfileEvidence}` : ''}`,
+            instructions: buildAgentABrainInstructionsV1(writerContext)
+              + (input.conversation_only ? `\nThe requested operation was not executed. This is a conversation-only continuation from the structured turn_rejection. Answer the customer in your own usual voice using the actual context and explain or ask for the relevant missing information. Do not claim an effect succeeded, repeat an action, invent a provider cause, or ask the customer to repeat a message that is already in context. Preserve the customer intent with the accurate structured move; never use unknown merely because the physical action is fenced. Use proposed_action none. Use no call_offer. These are internal effect boundaries, not wording instructions.${linkNotCreatedNote}` : ''),
+            input: `Current customer messages: ${JSON.stringify(writerContext.turn.batch_messages.map((message) => message.text))}\nAnswer these messages and return only the single AgentATurnProposalV1 JSON object.${retryDiagnostic ? `\nThe previous output failed validation at ${retryDiagnostic}. Return a corrected full object. ${naturalnessRepairDirectiveV1(writerContext)}${retryProfileEvidence}` : ''}`,
             reasoning: { effort: 'none' },
             temperature: 0.2,
             stream: false,
@@ -269,7 +413,7 @@ export async function generateDeepSeekAgentATurnProposalV1(input: {
               format: {
                 type: 'json_schema',
                 name: 'studyx_agent_a_turn_proposal_v1',
-                schema: proposalJsonSchema(input.context, input.conversation_only),
+                schema: proposalJsonSchema(writerContext, input.conversation_only),
               },
             },
           }),
@@ -318,7 +462,7 @@ export async function generateDeepSeekAgentATurnProposalV1(input: {
       try {
         proposal = parseAgentATurnProposalV1(
           carryProfileInterpretation(stripDeepSeekRootMetadata(decoded), recoveredProfileUpdates),
-          input.context,
+          writerContext,
         );
       } catch (error) {
         input.observe?.({ kind: 'model_schema_rejected', code: error instanceof AgentABrainError ? error.code : 'BRAIN_INVALID_SCHEMA',
@@ -337,15 +481,20 @@ export async function generateDeepSeekAgentATurnProposalV1(input: {
         }
         throw error;
       }
+      const tokenUsage = addTokenUsage(plannerTokenUsage, accumulatedTokenUsage);
       return {
         proposal,
         provider: 'deepseek-direct',
         model,
         latency_ms: Date.now() - startedAt,
         attempt_count: attempt,
-        ...(accumulatedTokenUsage
-          ? { token_usage: accumulatedTokenUsage }
+        ...(tokenUsage
+          ? { token_usage: tokenUsage }
           : {}),
+        ...(writerContext.commercial_plan ? { commercial_plan: writerContext.commercial_plan } : {}),
+        ...(plannerRequests === 1 ? { planner_requests: plannerRequests } : {}),
+        ...(plannerOutcome ? { planner_status: plannerOutcome.status,
+          planner_failure_code: plannerOutcome.failure_code, planner_latency_ms: plannerOutcome.latency_ms } : {}),
       };
     }
     throw new AgentABrainError('BRAIN_INVALID_SCHEMA');
@@ -460,7 +609,8 @@ const MOVE_KINDS = [
   'greeting', 'browse_catalog', 'select_area', 'select_course', 'ask_course_information',
   'continue_by_chat', 'request_call', 'decline_call', 'ask_payment_options',
   'select_payment_plan', 'defer_payment', 'request_payment_link', 'report_payment',
-  'ask_current_state', 'provide_contact_details', 'decline_purchase', 'unknown',
+  'ask_current_state', 'provide_contact_details', 'decline_purchase', 'price_objection',
+  'explicit_promotion_request', 'request_course_program', 'unknown',
 ] as const;
 const SECONDARY_MOVE_KINDS = MOVE_KINDS.filter(
   (kind) => kind !== 'greeting' && kind !== 'unknown',
@@ -473,10 +623,11 @@ const PAYMENT_PLANS = ['monthly_12', 'monthly_6', 'one_time'] as const;
 const COURSE_REFERENCE_MOVES = new Set([
   'select_course', 'ask_course_information', 'request_call', 'ask_payment_options',
   'select_payment_plan', 'defer_payment', 'request_payment_link', 'decline_purchase',
+  'request_course_program',
 ]);
 const AREA_REFERENCE_MOVES = new Set(['browse_catalog', 'select_area']);
 const PAYMENT_PLAN_MOVES = new Set(['select_payment_plan', 'defer_payment', 'request_payment_link']);
-const MOVE_SEMANTICS = `Classify only the current customer message, using prior state solely to resolve short contextual replies. continue_by_chat and decline_call require an explicit channel preference or a refusal of a pending call offer; study goals and ordinary diagnostic replies are not channel choices. greeting is a current greeting or social opening. report_payment requires an explicit current-message claim that payment already happened; never use it for a greeting, a status question, a future intention, or merely because a link was sent earlier. ask_current_state is a question about what is already selected, sent, or recorded. provide_contact_details means the current message actually supplies identity details. select_course requires exactly one resolved canonical course_reference; use browse_catalog when you present several courses and ask the customer to choose. select_payment_plan records a chosen plan; request_payment_link requires an explicit request to receive or advance with the link. Map postponement expressions such as "lo voy a pensar", "tengo que pensarlo", "no ahora" and "no me quiero inscribir todavía" to defer_payment. decline_purchase requires an explicit definitive refusal to purchase; postponement is not a definitive refusal. unknown is only for meaning that remains unresolved after applying awaiting_reply.`;
+const MOVE_SEMANTICS = `Classify only the current customer message, using prior state solely to resolve short contextual replies. continue_by_chat and decline_call require an explicit channel preference or a refusal of a pending call offer; study goals and ordinary diagnostic replies are not channel choices. greeting is a current greeting or social opening. report_payment requires an explicit current-message claim that payment already happened; never use it for a greeting, a status question, a future intention, or merely because a link was sent earlier. ask_current_state is a question about what is already selected, sent, or recorded. provide_contact_details means the current message actually supplies identity details. select_course requires exactly one resolved canonical course_reference; use browse_catalog when you present several courses and ask the customer to choose. select_payment_plan records a chosen plan; request_payment_link requires an explicit request to receive or advance with the link; an enrollment or purchase signal ("dale, cómo me inscribo", "quiero pagar") advances with it even while contact data is still being collected, and ask_payment_options is only for presenting or choosing plans. Map postponement expressions such as "lo voy a pensar", "tengo que pensarlo", "no ahora" and "no me quiero inscribir todavía" to defer_payment. decline_purchase requires an explicit definitive refusal to purchase; postponement is not a definitive refusal. price_objection requires a price complaint in the current message (an earlier objection is not a new one). explicit_promotion_request requires the current message to ask for a better promotion or a specific bonus course; a clarification such as "me regalas otro curso?" or "dos por uno?" about the current offer is ask_course_information. request_course_program is a request for a course program or syllabus. ask_payment_options never triggers a promotion. unknown is only for meaning that remains unresolved after applying awaiting_reply.`;
 
 function normalizedCurrentCustomerTextV1(context: AgentAContextV1): string {
   return context.turn.batch_messages
@@ -571,12 +722,20 @@ function proposalJsonSchema(context: AgentAContextV1, conversationOnly = false):
         reason: { type: 'string', enum: ['persistent_price_objection'] },
       })]
     : [];
-  const directBonusCodes = eligibleDynamicBonusCodes.filter(code => !courseBonus?.bonus_offerings.some(o => o.code === code));
+  // The model chooses among the backend's authorized set (affinity row, bridges,
+  // courses the customer named), plus the literal swap target when there is one.
+  const authorizedDirectBonusCodes = courseBonus?.bonus_candidates
+    ? new Set([...courseBonus.bonus_candidates.map(candidate => candidate.code),
+      ...(courseBonus.rule_bonus ? [courseBonus.rule_bonus.bonus_offering_code] : [])]) : null;
+  const directBonusCodes = eligibleDynamicBonusCodes.filter(code => !courseBonus?.bonus_offerings.some(o => o.code === code)
+    && (authorizedDirectBonusCodes === null || authorizedDirectBonusCodes.has(code)));
   const directBonusAlternatives = courseBonus?.enabled && courseBonus.may_offer_bonus
     && courseBonus.interest_offering_code && directBonusCodes.length
     ? [closedObject({type:{type:'string',enum:['offer_course_bonus']},
       interest_offering_code:{type:'string',enum:[courseBonus.interest_offering_code]},
-      bonus_offering_code:{type:'string',enum:directBonusCodes}})] : [];
+      bonus_offering_code:{type:'string',enum:directBonusCodes},
+      motive:closedObject({kind:{type:'string',enum:['price_objection','promotion_rejection','better_promotion_request','purchase_decline']},
+        quote:{type:'string',minLength:1,maxLength:2_048,description:'Verbatim text from the customer\'s CURRENT messages that motivates the bonus.'}})})] : [];
   const acceptanceAlternatives = courseBonus?.may_accept_offer
     ? hasDirectBonusContextV1(context)
       ? courseBonus.promotion_code && courseBonus.promotion_cycle_id && courseBonus.interest_offering_code && courseBonus.offer_version
@@ -611,6 +770,10 @@ function proposalJsonSchema(context: AgentAContextV1, conversationOnly = false):
       ...promotionReviewAlternatives,
       ...directBonusAlternatives,
       ...acceptanceAlternatives,
+      ...sendableProgramCodesV1(context).length ? [closedObject({
+        type: { type: 'string', enum: ['send_course_program'] },
+        offering_code: { type: 'string', enum: sendableProgramCodesV1(context) },
+      })] : [],
       closedObject(sendPaymentLinkProperties),
       closedObject({
         type: { type: 'string', enum: ['send_test_payment_link'] },
@@ -664,6 +827,19 @@ function proposalJsonSchema(context: AgentAContextV1, conversationOnly = false):
       items: profileRequestAlternatives.length ? { anyOf: profileRequestAlternatives }
         : profileRequest('clarify', CONTACT_PROFILE_FIELDS_V1),
     },
+    // Structured observations come before the internal reasoning so they are not crowded out by it.
+    memory_candidates: {
+      type: 'array',
+      maxItems: 10,
+      description: 'Record your interpretation of explicit customer statements with a verbatim inbound source_quote. For a customer confirmation that price is the only barrier, use type constraint, key price_only_barrier, value confirmed; if the customer reports another barrier, use the same type/key with value other_barriers_reported. Omit this observation when unknown. For an explicit purchase decline use type objection, key purchase_decline. For an actual price objection use type objection, key price_objection; a budget limit ("no me alcanza", "estoy muy justo", "está caro") is a price_objection, not a custom constraint key. The source_quote must be verbatim customer text. These are recorded observations, not permissions or sales-step instructions.',
+      items: closedObject({
+        type: { type: 'string', enum: [...MEMORY_TYPES] },
+        key: { type: 'string' },
+        value: { type: 'string' },
+        source_quote: { type: 'string' },
+        confidence: { type: 'number' },
+      }),
+    },
     // The single repair must echo its actual rejection. Omitting this field
     // from a closed provider schema made every conforming repair fail the
     // resolver's correlation check, even when its rewritten text was valid.
@@ -673,20 +849,18 @@ function proposalJsonSchema(context: AgentAContextV1, conversationOnly = false):
         attempt: { type: 'integer', enum: [1] },
       })
       : { type: 'null' },
+    turn_reasoning: {
+      ...closedObject({
+        phase: { type: 'string', maxLength: 120 },
+        customer_now: { type: 'string', maxLength: 400, description: 'What the customer wants or doubts right now.' },
+        already_said: { type: 'string', maxLength: 400, description: 'Internal evidence of prior content and questions, including whether answered, declined or unanswered; not a conversation policy.' },
+        customer_goal: { type: 'string', maxLength: 400 },
+        next_step: { type: 'string', enum: [...TURN_REASONING_NEXT_STEPS_V1] },
+      }),
+      description: 'Internal short reasoning, filled before the reply. Never sent to the customer.',
+    },
     used_fact_ids: { type: 'array', maxItems: 60, items: { type: 'string' } },
     used_memory_ids: { type: 'array', maxItems: 5, items: { type: 'string' } },
-    memory_candidates: {
-      type: 'array',
-      maxItems: 10,
-      description: 'Record your interpretation of explicit customer statements with a verbatim inbound source_quote. For a customer confirmation that price is the only barrier, use type constraint, key price_only_barrier, value confirmed; if the customer reports another barrier, use the same type/key with value other_barriers_reported. Omit this observation when unknown. These are recorded observations, not permissions or sales-step instructions.',
-      items: closedObject({
-        type: { type: 'string', enum: [...MEMORY_TYPES] },
-        key: { type: 'string' },
-        value: { type: 'string' },
-        source_quote: { type: 'string' },
-        confidence: { type: 'number' },
-      }),
-    },
   });
 }
 
@@ -871,6 +1045,19 @@ function normalizeStrictProposal(value: unknown, context: AgentAContextV1): unkn
     // every digit and let the canonical schema reject local/ambiguous values.
     normalizedProposal.confirmed_phone = proposal.confirmed_phone.replace(/[\s()-]/gu, '');
   }
+  // turn_reasoning is never allowed to fail a turn: clamp it or drop it.
+  if ('turn_reasoning' in proposal) {
+    const reasoning = proposal.turn_reasoning;
+    const clamp = (value: unknown, max: number) => (typeof value === 'string' ? value.slice(0, max) : '');
+    if (reasoning && typeof reasoning === 'object' && !Array.isArray(reasoning)) {
+      const raw = reasoning as Record<string, unknown>;
+      normalizedProposal.turn_reasoning = {
+        phase: clamp(raw.phase, 120), customer_now: clamp(raw.customer_now, 400),
+        already_said: clamp(raw.already_said, 400), customer_goal: clamp(raw.customer_goal, 400),
+        next_step: (TURN_REASONING_NEXT_STEPS_V1 as readonly unknown[]).includes(raw.next_step) ? raw.next_step : 'other',
+      };
+    } else delete normalizedProposal.turn_reasoning;
+  }
   const response = proposal.response;
   if (response && typeof response === 'object' && !Array.isArray(response)) {
     const messages = (response as Record<string, unknown>).messages;
@@ -1002,6 +1189,8 @@ function authorizedFactIds(context: AgentAContextV1): Set<string> {
     ids.add(offering.fact_id);
     for (const fact of offering.facts ?? []) ids.add(fact.id);
   }
+  for (const candidate of context.catalog.bonus_candidate_fichas ?? []) ids.add(candidate.fact.id);
+  for (const fact of context.catalog.general_facts ?? []) ids.add(fact.id);
   for (const plan of context.catalog.payment_plans) ids.add(plan.fact_id);
   for (const option of context.catalog.test_payment_options ?? []) ids.add(option.fact_id);
   return ids;
@@ -1085,6 +1274,8 @@ function commercialValuesByFactId(context: AgentAContextV1): ReadonlyMap<string,
     values.set(offering.fact_id, offering.display_name);
     for (const fact of offering.facts ?? []) values.set(fact.id, fact.value);
   }
+  for (const candidate of context.catalog.bonus_candidate_fichas ?? []) values.set(candidate.fact.id, candidate.fact.value);
+  for (const fact of context.catalog.general_facts ?? []) values.set(fact.id, fact.value);
   for (const plan of context.catalog.payment_plans) values.set(plan.fact_id, plan.label);
   for (const option of context.catalog.test_payment_options ?? []) {
     values.set(option.fact_id, option.label);
@@ -1097,18 +1288,39 @@ function canonicalPrerequisiteStatement(
   plannedIds: ReadonlySet<string>,
 ): { readonly factId: string; readonly message: string } | null {
   for (const [factId, fact] of facts) {
-    if (fact.kind !== 'offering_description' || !plannedIds.has(factId)) continue;
-    if (/\bno requiere conocimientos previos\b/iu.test(fact.value)) {
+    if (!['offering_description', 'offering_syllabus'].includes(fact.kind) || !plannedIds.has(factId)) continue;
+    const value = fact.value.replace(/\s+/gu, ' ').trim();
+    if (/\bno requiere conocimientos previos\b/iu.test(value)) {
       return { factId, message: 'No requiere conocimientos previos.' };
     }
-    if (/\b(?:diseñad[oa]|disenad[oa]) para empezar desde cero\b/iu.test(fact.value)) {
+    if (/\b(?:sin importar (?:su |tu |la )?|no (?:se )?(?:necesita|requiere) )experiencia previa\b/iu.test(value)) {
+      return { factId, message: 'No requiere experiencia previa.' };
+    }
+    if (/\b(?:diseñad[oa]|disenad[oa]) para empezar desde cero\b/iu.test(value)) {
       return { factId, message: 'Está diseñado para empezar desde cero.' };
     }
-    if (/\b(?:apuntad[oa]|pensad[oa]|dise[nñ]ad[oa])\b[^.!?]{0,80}\b(?:conocer|aprender|empezar|arrancar)\b[^.!?]{0,32}\bdesde cero\b/iu.test(fact.value)) {
+    if (/\b(?:apuntad[oa]|pensad[oa]|dise[nñ]ad[oa])\b[^.!?]{0,80}\b(?:conocer|aprender|empezar|arrancar)\b[^.!?]{0,32}\bdesde cero\b/iu.test(value)) {
       return { factId, message: 'Está pensado para aprender desde cero.' };
     }
   }
   return null;
+}
+
+/**
+ * Course-scoped prerequisite authorization shared by validation and salvage.
+ * The claim remains tied to an exact fact selected/cited for this turn; a
+ * generic prompt example or a fact from another course never authorizes it.
+ */
+export function hasAuthorizedPrerequisiteStatementV1(input: {
+  readonly context: AgentAContextV1;
+  readonly fact_ids: readonly string[];
+}): boolean {
+  const courseFacts = input.context.catalog.selected_offering?.facts
+    ?? input.context.catalog.candidate_offerings.flatMap((offering) => offering.facts ?? []);
+  const facts = new Map(
+    courseFacts.map((fact) => [fact.id, fact]),
+  );
+  return canonicalPrerequisiteStatement(facts, new Set(input.fact_ids)) !== null;
 }
 
 export function removeUnsupportedCourseLogisticsAssertionsV1(
@@ -1117,7 +1329,10 @@ export function removeUnsupportedCourseLogisticsAssertionsV1(
 ): string[] {
   const authorized = new Set(authorizedValues.flatMap(courseLogisticsInV1));
   return message
-    .split(/(?<=[.!?\n])/u)
+    // The model often joins a verified duration to an invented logistics
+    // promise with “, así que…”. Split that dependent clause so the factual
+    // answer survives while only the unsupported assertion is removed.
+    .split(/(?<=[.!?\n])|,\s+(?=(?:as[ií]\s+que)\b)|\s+(?=y\s+(?:pod[eé]s|vas\s+a\s+poder)\b)/iu)
     .map((sentence) => sentence.trim())
     .filter((sentence) => courseLogisticsInV1(sentence)
       .every((fact) => authorized.has(fact)));
@@ -1264,7 +1479,7 @@ function citesOnlyAuthorizedValues(
 function transactionalFallback(responseGoal: TurnPlanV1['response_goal']): string | null {
   switch (responseGoal) {
     case 'confirm_selected_plan':
-      return 'Queda registrada tu elección. Avisame cuando quieras avanzar.';
+      return 'Queda registrada tu elección. Avísame cuando quieras avanzar.';
     // `confirm_payment_link` tenía acá una cadena que pedía tres campos
     // fuera del contrato comercial y fusionaba nombre con apellido. Quién
     // pide los datos es el modelo; cuáles faltan lo dice `intake_missing`,
@@ -1283,9 +1498,9 @@ function safeContextualOpening(
 ): string {
   switch (responseGoal) {
     case 'greet_and_discover':
-      return '¿Ya tenés un curso en mente o querés que veamos opciones por área?';
+      return '¿Ya tienes un curso en mente o quieres que veamos opciones por área?';
     case 'guide_area_choice':
-      return 'Contame qué área te interesa y te ayudo a ordenar las opciones.';
+      return 'Cuéntame qué área te interesa y te ayudo a ordenar las opciones.';
     case 'guide_course_choice':
       return 'Elegí una de las opciones disponibles y seguimos desde ahí.';
     case 'explain_selected_course':
@@ -1295,9 +1510,9 @@ function safeContextualOpening(
         'Seguimos con los datos confirmados de la formación elegida.',
       ][callOfferCount]!;
     case 'continue_course_advice':
-      return 'Seguimos por chat con la información que necesitás.';
+      return 'Seguimos por chat con la información que necesitas.';
     case 'offer_call_or_chat':
-      return 'Podés elegir cómo preferís continuar.';
+      return 'Puedes elegir cómo prefieres continuar.';
     case 'acknowledge_chat_preference':
       return 'Perfecto, seguimos por chat.';
     case 'acknowledge_call_decline':
@@ -1309,7 +1524,7 @@ function safeContextualOpening(
     case 'present_payment_options':
       return 'Estas son las opciones disponibles para que elijas cómo avanzar.';
     case 'confirm_selected_plan':
-      return 'Queda registrada tu elección. Avisame cuando quieras avanzar.';
+      return 'Queda registrada tu elección. Avísame cuando quieras avanzar.';
     case 'acknowledge_payment_deferral':
       return 'De acuerdo, lo dejamos para más adelante.';
     case 'confirm_payment_link':
@@ -1321,11 +1536,11 @@ function safeContextualOpening(
     case 'confirm_current_state':
       return 'Te confirmo en qué punto quedamos.';
     case 'acknowledge_purchase_decline':
-      return 'Entendido. Si querés, podemos seguir revisando tus opciones.';
+      return 'Entendido. Si quieres, podemos seguir revisando tus opciones.';
     case 'catalog_temporarily_unavailable':
       return 'Ahora no puedo consultar las opciones confirmadas. Podemos retomar tu objetivo apenas estén disponibles.';
     case 'clarify_current_step':
-      return 'Decime cómo preferís continuar y te acompaño desde este punto.';
+      return 'Dime cómo prefieres continuar y te acompaño desde este punto.';
   }
 }
 
@@ -1486,7 +1701,7 @@ function sameVisibleText(messages: readonly string[], previous: string): boolean
 }
 
 const CUSTOMER_REQUESTS_REPEAT = /\b(?:rep(?:et|[ií]t)|otra\s+vez|no\s+entend|de\s+nuevo)\w*/iu;
-const UNSUPPORTED_PREREQUISITE_ASSERTION = /(?:\bno\s+(?:necesit\w*|hace\s+falta|se\s+requiere|tienen)\b[^.!?\n]{0,80}\b(?:experiencia|conocimientos?|requisitos?)\b|\bsin\s+(?:experiencia|conocimientos?\s+previos?)\b|\b(?:pod[eé]s|puedes|empez[aá]s?|part[ií]s?)\b[^.!?\n]{0,32}\bdesde\s+cero\b|\b(?:pensad[oa]|dise[nñ]ad[oa])\w*\b[^.!?\n]{0,80}\b(?:(?:empe\w*)\s+)?(?:desde\s+(?:cero|la\s+base|lo\s+b[aá]sico)|paso\s+a\s+paso)\b|\bdesde\s+los\s+fundamentos\b)/iu;
+const UNSUPPORTED_PREREQUISITE_ASSERTION = /(?:\bno\s+(?:necesit\w*|hace\s+falta|se\s+requiere|tienen)\b[^.!?\n]{0,80}\b(?:experiencia|conocimientos?|requisitos?)\b|\bsin\s+(?:experiencia|conocimientos?\s+previos?)\b|\b(?:pod[eé]s|puedes|empez[aá]s?|part[ií]s?)\b[^.!?\n]{0,32}\bdesde\s+cero\b|\b(?:pensad[oa]|dise[nñ]ad[oa])\w*\b[^.!?\n]{0,80}\b(?:(?:empe\w*)\s+)?(?:desde\s+(?:cero|la\s+base|lo\s+b[aá]sico)|paso\s+a\s+paso)\b)/iu;
 const REMOVABLE_UNSUPPORTED_PREREQUISITE_CLAUSE = /\s*,?\s*para\s+(?:quienes|personas?\s+que)\s+no\s+tienen\s+conocimientos?\s+previos\b/iu;
 
 /**
@@ -1520,6 +1735,21 @@ export function assertsUnsupportedPrerequisitesV1(message: string): boolean {
  * drop the whole assertion: a partial sentence must never turn an unconfirmed
  * course requirement into customer-facing copy.
  */
+/** Never-contingency salvage (2026-11-02 live): drop only the clause that
+ * asserts an unsupported prerequisite ("pensadas para que construyas la base
+ * desde cero"), keeping the model's factual answer around it. A sentence that
+ * still asserts it after clause removal is dropped whole. */
+export function withoutUnsupportedPrerequisiteClausesV1(message: string): string {
+  return splitClaimSentencesV1(message).map((sentence) => {
+    if (!assertsUnsupportedPrerequisitesV1(sentence)) return sentence;
+    const ending = /[.!?\n]\s*$/u.exec(sentence)?.[0] ?? '';
+    const body = sentence.slice(0, sentence.length - ending.length);
+    const kept = body.split(/[,:]\s+/u).filter((clause) => !assertsUnsupportedPrerequisitesV1(clause));
+    const rebuilt = kept.join(', ').trim();
+    return rebuilt && !assertsUnsupportedPrerequisitesV1(rebuilt) ? `${sentence.match(/^\s*/u)![0]}${rebuilt}${ending}` : '';
+  }).join('').replace(/\s{2,}/gu, ' ').trim();
+}
+
 export function removeUnsupportedPrerequisiteAssertionsV1(message: string): string[] {
   return message
     .split(/(?<=[.!?\n])/u)
@@ -1704,9 +1934,33 @@ function comparableProtectedFact(fact: ReturnType<typeof extractProtectedFacts>[
   // Complete raw tokens are checked separately below, so the portable
   // extractor cannot authorize a truncated three-place amount.
   const value = fact.kind === 'price'
-    ? fact.value.replace(/(\d),(\d{1,2})(?!\d)/gu, '$1.$2').replace(/(\d)\.0{1,2}(?!\d)/gu, '$1')
+    ? fact.value
+      .replace(/^(?:cuesta|sale|vale)\s+/u, '')
+      .replace(/(\d),(\d{1,2})(?!\d)/gu, '$1.$2')
+      .replace(/(\d)\.0{1,2}(?!\d)/gu, '$1')
     : fact.value;
   return `${fact.kind}\u0000${value}`;
+}
+
+/**
+ * The paid course this turn is validated against. It mirrors the backend
+ * authority (`agent-turn-policy-v2`): an explicit canonical `select_course`
+ * becomes the paid course; otherwise the durable selection; otherwise the
+ * course of the existing package. The conversational focus never is: asking
+ * about another course does not replace the sale (incident A, 2026-11-10).
+ */
+export function authorizedPaidOfferingCodeV1(
+  context: AgentAContextV1,
+  proposal: Pick<AgentATurnProposalV1, 'move'>,
+): string | null {
+  const reference = proposal.move.course_reference ?? null;
+  const selects = proposal.move.move === 'select_course' || proposal.move.secondary_moves.includes('select_course');
+  if (selects && reference !== null
+    && context.catalog.available_offerings.some(offering => offering.code === reference)) return reference;
+  return context.commercial_state.selected_offering_code
+    ?? context.capabilities.course_bonus?.interest_offering_code
+    ?? context.catalog.selected_offering?.code
+    ?? null;
 }
 
 export function validateAgentATurnProposalV1(input: {
@@ -1728,10 +1982,15 @@ export function validateAgentATurnProposalV1(input: {
   // El backend no reescribe la copia —eso sería redactar por el modelo— pero
   // sí puede rechazar y abrir la única reparación. No se piden hechos nuevos ni
   // se autoriza nada: la alternativa autorizada es exactamente la misma.
-  const previousReply = lastAgentReplyV1(input.context.turn.recent_turns);
+  // Al retomar una conversación el modelo puede repetir una respuesta anterior
+  // que no es la última: se compara contra todas las respuestas recientes del
+  // agente (chequeo factual de duplicado, no de calidad comercial).
+  const previousReplies = input.context.turn.recent_turns
+    .filter((turn) => turn.direction === 'outbound' && turn.content.trim().length > 0)
+    .map((turn) => turn.content);
   const currentCustomerText = input.context.turn.batch_messages.map((message) => message.text).join('\n');
   const customerRequestsRepeat = CUSTOMER_REQUESTS_REPEAT.test(currentCustomerText);
-  if (previousReply && !customerRequestsRepeat && sameVisibleText(input.proposal.response.messages, previousReply)) {
+  if (!customerRequestsRepeat && previousReplies.some((reply) => sameVisibleText(input.proposal.response.messages, reply))) {
     rejections.push({ code: 'REPEATED_AGENT_REPLY', subject: 'previous_agent_reply' });
   }
   const authorizedBonusOffer = input.context.capabilities.course_bonus?.status === 'offer_available'
@@ -1744,8 +2003,21 @@ export function validateAgentATurnProposalV1(input: {
     && directAction.bonus_offering_code !== directBonusCapability.interest_offering_code
     && !directBonusCapability.bonus_offerings.some(o => o.code === directAction.bonus_offering_code)
     ? input.context.catalog.available_offerings.find(o => o.code === directAction.bonus_offering_code) : null;
+  // The offer_course_bonus effect is real only if the visible copy names the
+  // bonus course; one repair chance, otherwise the backend rejects the effect.
+  if (directOffering && !copyNamesCourseV1([...input.proposal.response.messages,
+    ...(input.proposal.response.call_offer ? [input.proposal.response.call_offer] : [])].join('\n'),
+  directOffering.display_name)) {
+    rejections.push({ code: 'FACT_VALUE_MISMATCH', subject: 'bonus_not_named' });
+  }
+  const paidOfferingCode = authorizedPaidOfferingCodeV1(input.context, input.proposal);
+  // A delivered package is current only for its own paid course and while its
+  // cycle is open or accepted. A switched course or a cancelled cycle does not
+  // inherit those gifts.
+  const deliveredPackageIsCurrent = directBonusCapability?.interest_offering_code === paidOfferingCode
+    && !['cancelled', 'expired'].includes(directBonusCapability?.package_status ?? '');
   const authorizedBonusOfferingNames = hasDirectBonusContextV1(input.context)
-    ? [...(directBonusCapability?.delivered_bonus_offerings ?? []).flatMap(o => {
+    ? [...(deliveredPackageIsCurrent ? directBonusCapability?.delivered_bonus_offerings ?? [] : []).flatMap(o => {
       const active = input.context.catalog.available_offerings.find(offering => offering.code === o.code);
       return active ? [active.display_name] : [];
     }),
@@ -1753,10 +2025,8 @@ export function validateAgentATurnProposalV1(input: {
     : authorizedBonusOffer
     ? input.context.capabilities.course_bonus?.bonus_offerings.map((offering) => offering.display_name) ?? []
     : [];
-  const paidOffering = input.context.catalog.selected_offering
-    ?? input.context.catalog.available_offerings.find(offering => (
-      offering.code === directBonusCapability?.interest_offering_code
-    ));
+  const paidOffering = input.context.catalog.available_offerings.find(offering => offering.code === paidOfferingCode)
+    ?? (input.context.catalog.selected_offering?.code === paidOfferingCode ? input.context.catalog.selected_offering : undefined);
   const paidOfferingNames = paidOffering ? [paidOffering.display_name] : [];
   if (inspectCourseBonusClaimsV1({content:[...input.proposal.response.messages,
     ...(input.proposal.response.call_offer ? [input.proposal.response.call_offer] : [])].join('\n'),
@@ -1796,17 +2066,33 @@ export function validateAgentATurnProposalV1(input: {
       ...input.context.catalog.candidate_offerings.flatMap((offering) => offering.facts ?? []),
     ].map((fact) => [fact.id, fact]),
   );
+  // A prerequisite claim is backed only by facts of the course the turn is
+  // about: its canonical reference, else the course in focus, else the paid one.
+  const referencedCourse = input.proposal.move.course_reference ?? null;
+  const prerequisiteCourse = referencedCourse !== null
+    && input.context.catalog.available_offerings.some(offering => offering.code === referencedCourse)
+    ? referencedCourse : input.context.catalog.selected_offering?.code ?? paidOfferingCode;
+  const prerequisiteCourseFacts = prerequisiteCourse === null ? null : [
+    ...(input.context.catalog.selected_offering?.code === prerequisiteCourse ? input.context.catalog.selected_offering.facts : []),
+    ...input.context.catalog.candidate_offerings
+      .filter(offering => offering.code === prerequisiteCourse).flatMap(offering => offering.facts ?? []),
+  ];
+  const prerequisiteFactsById = prerequisiteCourseFacts === null
+    ? selectedFactsById
+    : new Map(prerequisiteCourseFacts.map((fact) => [fact.id, fact]));
   if (
-    canonicalPrerequisiteStatement(selectedFactsById, planned) === null
+    canonicalPrerequisiteStatement(prerequisiteFactsById, planned) === null
     && authoredNarrative.some(assertsUnsupportedPrerequisitesV1)
   ) {
     rejections.push({ code: 'FACT_VALUE_MISMATCH', subject: 'prerequisites' });
   }
-  const authorizedCourseLogistics = new Set(
-    [...selectedFactsById]
+  const authorizedCourseLogistics = new Set([
+    ...[...selectedFactsById]
       .filter(([factId]) => planned.has(factId))
       .flatMap(([, fact]) => courseLogisticsInV1(fact.value)),
-  );
+    // General facts are always in context; citing them is not required.
+    ...(input.context.catalog.general_facts ?? []).flatMap((fact) => courseLogisticsInV1(fact.value)),
+  ]);
   const unsupportedLogistics = [...new Set(authoredNarrative.flatMap(courseLogisticsInV1)
     .filter((fact) => !authorizedCourseLogistics.has(fact)))];
   if (unsupportedLogistics.length > 0) {
@@ -1880,6 +2166,12 @@ export function validateAgentATurnProposalV1(input: {
   for (const kind of unauthorizedKinds) {
     rejections.push({ code: 'FACT_VALUE_MISMATCH', subject: kind });
   }
+  // Hard factual controls: official title, guaranteed work/income, state
+  // license, invented quota/discount/deadline, 699, beca. Claim validation only.
+  for (const kind of new Set(authoredNarrative.flatMap(message => hardClaimKindsInTextV1(message, {
+    promoExpiresAt: input.context.capabilities.course_bonus?.sales_flow?.promo_expires_at })))) {
+    rejections.push({ code: 'FACT_VALUE_MISMATCH', subject: `hard_claim.${kind}` });
+  }
 
   // V4 — la acción y sus precondiciones.
   const missingIntakeFields = new Set<string>(input.context.capabilities.intake_missing ?? []);
@@ -1905,9 +2197,11 @@ export function validateAgentATurnProposalV1(input: {
         // "registro" is also a noun for an incomplete process. It is not
         // evidence of a completed write; actual receipt claims use a verb
         // or result (registré, quedó registrado, ya tengo).
-        const claim = /\b(?:quedo|registre|registrado|registrada|guarde|guardo|guardado|guardada|tengo|tenemos)\w*\b[^.!?]{0,60}\b(?:datos|nombre|apellido|correo|email|telefono)\b/u;
+        const claim = /(?:\b(?:quedo|registre|registrado|registrada|guarde|guardo|guardado|guardada|tengo|tenemos)\w*\b[^.!?]{0,60}\b(?:datos|nombre|apellido|correo|email|telefono|todo)\b|\b(?:datos|nombre|apellido|correo|email|telefono)\b[^.!?]{0,60}\b(?:queda|quedo)(?:\s+como)?\b)/u;
         const negatedClaim = /\b(?:no|aun\s+no|todavia\s+no)\b[^.!?]{0,24}\b(?:quedo|registre|registro|registrado|registrada|guarde|guardo|guardado|guardada|tengo|tenemos)\w*\b/u;
-        if (!claim.test(assertiveClause) || negatedClaim.test(assertiveClause)) return false;
+        const explicitlyNotRecorded = /\b(?:no\s+(?:lo|la)\s+)?(?:pude|pudimos|pudieron)\s+(?:tomar|guardar|registrar|cargar|anotar)(?:lo|la)?\b|\bno\s+(?:quedo|se\s+guardo|se\s+registro)\b/u;
+        if (!claim.test(assertiveClause) || negatedClaim.test(assertiveClause)
+          || explicitlyNotRecorded.test(assertiveClause)) return false;
 
         // Validar por campo, no como un bloque todo-o-nada. Si nombre y
         // teléfono ya son durables, el agente puede confirmarlos aunque aún
@@ -1926,6 +2220,11 @@ export function validateAgentATurnProposalV1(input: {
     });
   if (claimsIncompleteIntakeAsRecorded) {
     rejections.push({ code: 'UNSUPPORTED_OPERATIONAL_CLAIM', subject: 'contact_details' });
+  }
+  // The profile receipt refused these values: the reply must not present
+  // them as recorded or as the agent's own correction (2026-11-05).
+  for (const update of rejectedProfileValuesInReplyV1({ proposal: input.proposal, context: input.context })) {
+    rejections.push({ code: 'UNSUPPORTED_OPERATIONAL_CLAIM', subject: `contact_profile_rejected:${update.field}` });
   }
 
   // A known field is evidence, not a conversational suggestion. Return a
@@ -1953,22 +2252,33 @@ export function validateAgentATurnProposalV1(input: {
   }
 
   const action = input.proposal.proposed_action
-  const selectsCanonicalPlanNow = (input.proposal.move.move === 'select_payment_plan'
-    || input.proposal.move.secondary_moves.includes('select_payment_plan'))
-    && input.proposal.move.payment_plan !== undefined
-    && input.context.catalog.payment_plans.some((plan) => plan.code === input.proposal.move.payment_plan)
+  // Live 2026-11-10: mirrors the backend policy (`purchaseStepWithoutCourse`,
+  // `linkRequestFillsMissingPlan`). With NO persisted course, a link action may
+  // name an exact catalog course only if the model declares it as the paid
+  // course; the backend policy re-checks it against durable facts.
+  const recoversCourseNow = input.context.commercial_state.selected_offering_code === null
     && action.type === 'send_payment_link'
-    && action.payment_plan === input.proposal.move.payment_plan
-    && action.offering_code === input.context.commercial_state.selected_offering_code
-    && action.offering_code === input.context.catalog.selected_offering?.code
+    && input.context.catalog.available_offerings.some((offering) => offering.code === action.offering_code)
+    && (input.proposal.course_mentions ?? []).some((mention) => (
+      mention.offering_code === action.offering_code && mention.role === 'paid'
+    ))
   const requestsPaymentLink = input.proposal.move.move === 'request_payment_link'
     || input.proposal.move.secondary_moves.includes('request_payment_link')
-  const selectsKnownPlanNow = (input.proposal.move.move === 'select_payment_plan'
-    || input.proposal.move.secondary_moves.includes('select_payment_plan'))
-    && input.proposal.move.payment_plan !== undefined
-    && input.context.catalog.payment_plans.some(
-      (plan) => plan.code === input.proposal.move.payment_plan,
-    )
+  const selectsPlanMove = input.proposal.move.move === 'select_payment_plan'
+    || input.proposal.move.secondary_moves.includes('select_payment_plan')
+  const carriesCanonicalPlan = input.proposal.move.payment_plan !== undefined
+    && input.context.catalog.payment_plans.some((plan) => plan.code === input.proposal.move.payment_plan)
+  // A persisted plan still wins; a link request only fills a missing one.
+  const linkRequestFillsMissingPlan = requestsPaymentLink && !selectsPlanMove
+    && input.context.commercial_state.selected_payment_plan === null && carriesCanonicalPlan
+  const selectsCanonicalPlanNow = (selectsPlanMove || linkRequestFillsMissingPlan)
+    && carriesCanonicalPlan
+    && action.type === 'send_payment_link'
+    && action.payment_plan === input.proposal.move.payment_plan
+    && (recoversCourseNow
+      || (action.offering_code === input.context.commercial_state.selected_offering_code
+        && action.offering_code === input.context.catalog.selected_offering?.code))
+  const selectsKnownPlanNow = (selectsPlanMove || linkRequestFillsMissingPlan) && carriesCanonicalPlan
   if (action.type === 'none' && requestsPaymentLink
     && input.context.commercial_state.selected_payment_plan === null
     && !selectsKnownPlanNow
@@ -1979,7 +2289,7 @@ export function validateAgentATurnProposalV1(input: {
     if (!input.context.capabilities.may_send_payment_link) {
       rejections.push({ code: 'ACTION_NOT_AUTHORIZED', subject: 'send_payment_link' })
     }
-    if (input.context.commercial_state.selected_offering_code === null) {
+    if (input.context.commercial_state.selected_offering_code === null && !recoversCourseNow) {
       rejections.push({ code: 'COURSE_NOT_RESOLVED', subject: 'course_selection' })
     }
     if (input.context.commercial_state.selected_payment_plan === null && !selectsCanonicalPlanNow) {
@@ -1989,6 +2299,24 @@ export function validateAgentATurnProposalV1(input: {
     // default del schema. El validador no puede asumir que Zod ya corrió.
     for (const field of input.context.capabilities.intake_missing ?? []) {
       rejections.push({ code: 'MISSING_INTAKE', subject: field })
+    }
+  }
+  if (action.type === 'send_course_program' && !sendableProgramCodesV1(input.context).includes(action.offering_code)) {
+    rejections.push({ code: 'ACTION_NOT_AUTHORIZED', subject: 'send_course_program' })
+  }
+  // Explaining the content of the course in focus for the first time comes
+  // with its material in the same turn (summary + image + PDF). Structured:
+  // the move, the cited syllabus fact and the programme capability.
+  {
+    const focus = input.context.catalog.selected_offering
+    const turnMoves = new Set([input.proposal.move.move, ...input.proposal.move.secondary_moves])
+    const asksContents = turnMoves.has('request_course_program') || (turnMoves.has('ask_course_information')
+      && (focus?.facts ?? []).some((fact) => fact.kind === 'offering_syllabus' && input.proposal.used_fact_ids.includes(fact.id)))
+    const commercialTurn = ['price_objection', 'ask_payment_options', 'select_payment_plan', 'request_payment_link',
+      'explicit_promotion_request', 'decline_purchase', 'request_call', 'provide_contact_details'].some((move) => turnMoves.has(move as never))
+    if (focus && action.type === 'none' && asksContents && !commercialTurn
+      && sendableProgramCodesV1(input.context).includes(focus.code)) {
+      rejections.push({ code: 'PROGRAM_SEND_REQUIRED', subject: `send_course_program:${focus.code}` })
     }
   }
   if (action.type === 'send_test_payment_link') {
@@ -2035,7 +2363,10 @@ export function validateAgentATurnProposalV1(input: {
       || input.proposal.move.vetoes.includes('purchase')
     )
   );
-  const promotionEffectOwnsThisTurn = input.proposal.proposed_action.type === 'offer_course_bonus'
+  // A bonus the capability does not allow (checkout, no candidates) is pruned by the backend, so it
+  // cannot own the turn: the copy must still ask for the missing data.
+  const promotionEffectOwnsThisTurn = (input.proposal.proposed_action.type === 'offer_course_bonus'
+      && input.context.capabilities.course_bonus?.may_offer_bonus === true)
     || input.proposal.proposed_action.type === 'accept_promotion';
   const mustGuideIntake = missingIntake.length > 0
     && !paymentDeferred
@@ -2146,11 +2477,24 @@ export function validateAgentATurnProposalV1(input: {
   }
 }
 
+/** Programme PDFs that can be proposed now: available and not already delivered in this conversation. */
+export function sendableProgramCodesV1(context: AgentAContextV1): string[] {
+  const programs = context.capabilities.course_programs
+  if (!programs) return []
+  return programs.available_offering_codes.filter(code => !programs.sent_offering_codes.includes(code))
+}
+
 function authorizedActionsV1(context: AgentAContextV1): string[] {
   const actions: string[] = ['none']
+  if (sendableProgramCodesV1(context).length > 0) actions.push('send_course_program')
   if (context.capabilities.may_send_payment_link) actions.push('send_payment_link')
   if ((context.catalog.test_payment_options?.length ?? 0) > 0) actions.push('send_test_payment_link')
   if (context.capabilities.may_request_call_now) actions.push('request_call_now')
+  // A pure wording/fact rejection must not strip an effect the capability still allows: the repair
+  // of valid copy would otherwise be conversation-only and discard the model's authorized bonus.
+  const bonus = context.capabilities.course_bonus
+  if (bonus?.enabled === true && bonus.may_offer_bonus === true) actions.push('offer_course_bonus')
+  if (bonus?.may_accept_offer) actions.push('accept_promotion')
   return actions
 }
 
@@ -2227,7 +2571,6 @@ export function decideRepairLevelV1(input: {
     || reason.code === 'CALL_BUDGET_EXHAUSTED'
     || reason.code === 'MISSING_INTAKE'
     || reason.code === 'REPEATED_AGENT_REPLY'
-    || reason.code === 'CALL_OFFER_REQUIRED'
     || reason.code === 'CALL_OFFER_MESSAGE_BOUNDARY_INVALID'
     || reason.code === 'CHANNEL_PREFERENCE_NOT_SUPPORTED'
   ))

@@ -13,9 +13,6 @@ const { getOrCreate, ingestCanonicalTurnV1 } = vi.hoisted(() => ({
   ingestCanonicalTurnV1: vi.fn(),
 }));
 
-vi.mock('../../../botpress-agent/src/workflows/processInboundTurn', () => ({
-  processInboundTurn: { getOrCreate },
-}));
 vi.mock('../../../botpress-agent/src/lib/inbound/ingest-canonical-turn', () => ({
   ingestCanonicalTurnV1,
 }));
@@ -35,8 +32,11 @@ type RouterHandler = (props: {
   chat?: { clearTranscript: () => Promise<void>; saveTranscript: () => Promise<void> };
 }) => Promise<void>;
 
-const definition = (router as unknown as { definition: { channel: string; handler: RouterHandler } })
+const registered = (router as unknown as { definition: { channel: string; handler: RouterHandler } })
   .definition;
+const definition = { ...registered, handler: (props: Parameters<RouterHandler>[0]) => registered.handler({
+  ...props, client: { getOrCreateWorkflow: getOrCreate, deleteWorkflow: vi.fn() },
+} as Parameters<RouterHandler>[0]) };
 
 const PROD_TELEGRAM_USER_ID = '8464326323';
 
@@ -89,7 +89,7 @@ const preingested = {
 
 beforeEach(() => {
   getOrCreate.mockReset();
-  getOrCreate.mockResolvedValue({ id: 'wrkflow_test_1' });
+  getOrCreate.mockResolvedValue({ workflow: { id: 'wrkflow_test_1', status: 'pending', tags: {} } });
   ingestCanonicalTurnV1.mockReset();
   ingestCanonicalTurnV1.mockResolvedValue(preingested);
 });
@@ -176,7 +176,9 @@ describe('router dispatch for production Telegram events', () => {
     expect(getOrCreate).toHaveBeenCalledTimes(1);
     const call = getOrCreate.mock.calls[0][0];
     expect(ingestCanonicalTurnV1).not.toHaveBeenCalled();
-    expect(call.key).toBe(`turn:botpress:telegram:${telegramInbound.id}`);
+    expect(call.tags.key).toBe(`turn:botpress:telegram:${telegramInbound.id}`);
+    expect(call.discriminateByTags).toEqual(['key']);
+    expect(call.conversationId).toBe(telegramConversation.id);
     expect(call.input.preingested).toBeNull();
     expect(call.input.phone_e164).toBe('+9998464326323');
     expect(call.input.sandbox_provider).toBe('telegram_sandbox');
@@ -193,7 +195,7 @@ describe('router dispatch for production Telegram events', () => {
     await definition.handler(props);
 
     expect(getOrCreate).toHaveBeenCalledTimes(2);
-    expect(getOrCreate.mock.calls[0][0].key).toBe(getOrCreate.mock.calls[1][0].key);
+    expect(getOrCreate.mock.calls[0][0].tags.key).toBe(getOrCreate.mock.calls[1][0].tags.key);
   });
 
   it('never starts a workflow for an outbound Telegram message', async () => {
@@ -235,7 +237,7 @@ describe('router dispatch for production Telegram events', () => {
 
     expect(getOrCreate).toHaveBeenCalledTimes(1);
     const scheduled = getOrCreate.mock.calls[0][0];
-    expect(scheduled.key).toBe(`turn:botpress:telegram:${telegramInbound.id}`);
+    expect(scheduled.tags.key).toBe(`turn:botpress:telegram:${telegramInbound.id}`);
     expect(scheduled.input.external_message_id).toBe(telegramInbound.id);
     expect(scheduled.input.message.text).toBe('Hola');
     expect(scheduled.input.preingested).toBeNull();
@@ -272,6 +274,6 @@ describe('router dispatch for the emulator (webchat) channel', () => {
     expect(call.input.phone_e164).toBe(
       deriveEmulatorPhoneE164(configuration.emulatorPhoneE164, 'conv_01EMU'),
     );
-    expect(call.key).toBe('turn:botpress:webchat:msg-emulator-1');
+    expect(call.tags.key).toBe('turn:botpress:webchat:msg-emulator-1');
   });
 });

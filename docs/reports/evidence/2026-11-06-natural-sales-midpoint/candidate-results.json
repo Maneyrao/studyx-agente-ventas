@@ -1,0 +1,135 @@
+[
+  {
+    "name": "root-typecheck",
+    "command": [
+      "npm",
+      "run",
+      "typecheck"
+    ],
+    "exit_code": 0,
+    "elapsed_seconds": 10.65
+  },
+  {
+    "name": "bot-typecheck",
+    "command": [
+      "npm",
+      "--prefix",
+      "botpress-agent",
+      "run",
+      "typecheck"
+    ],
+    "exit_code": 0,
+    "elapsed_seconds": 1.65
+  },
+  {
+    "name": "manifest",
+    "command": [
+      "npx",
+      "--no-install",
+      "vitest",
+      "run",
+      "--config",
+      "vitest.config.mts",
+      "tests/unit/scripts/release-manifest-agent-loop.test.ts"
+    ],
+    "exit_code": 1,
+    "elapsed_seconds": 0.62
+  },
+  {
+    "name": "integration",
+    "command": [
+      "npx",
+      "--no-install",
+      "vitest",
+      "run",
+      "--config",
+      "vitest.integration.config.mts",
+      "tests/integration/contact-profile-phone-confirmation.test.ts",
+      "tests/integration/agent-a-call-handoff.test.ts",
+      "tests/integration/post-call-followup.test.ts",
+      "tests/integration/course-program-delivery.test.ts",
+      "tests/integration/direct-course-bonus-checkout.test.ts",
+      "tests/integration/direct-course-bonus-persistence.test.ts",
+      "tests/integration/payments-canonical.test.ts",
+      "tests/integration/stripe-webhook.test.ts",
+      "tests/integration/central-carga-enrollment-worker.test.ts",
+      "tests/integration/lead-course-interests.test.ts",
+      "tests/integration/agent-a-memory-projection.test.ts",
+      "tests/integration/inbound-receipts.test.ts",
+      "tests/integration/zero-silence.test.ts",
+      "tests/integration/post-sale.test.ts"
+    ],
+    "exit_code": 0,
+    "elapsed_seconds": 8.48
+  },
+  {
+    "name": "unit",
+    "command": [
+      "npx",
+      "--no-install",
+      "vitest",
+      "run",
+      "--config",
+      "vitest.config.mts",
+      "tests/unit/heuristics/opt-out.test.ts",
+      "tests/unit/botpress/botpress-media-downloader.test.ts",
+      "tests/unit/botpress/gemini-transcription.test.ts",
+      "tests/unit/botpress/groq-transcription.test.ts",
+      "tests/unit/botpress/commercial-followup-trigger.test.ts",
+      "tests/unit/promotions/commercial-followup-service.test.ts"
+    ],
+    "exit_code": 0,
+    "elapsed_seconds": 0.55
+  },
+  {
+    "name": "offline-replay",
+    "command": [
+      "npx",
+      "--no-install",
+      "vitest",
+      "run",
+      "--config",
+      "evals/golden/offline-replay.config.mts"
+    ],
+    "exit_code": 0,
+    "elapsed_seconds": 3.07
+  },
+  {
+    "name": "candidate-v8-replay",
+    "command": [
+      "npx",
+      "--no-install",
+      "vitest",
+      "run",
+      "--config",
+      "evals/golden/vitest.config.mts",
+      "evals/golden/replay-candidate-v8.test.ts"
+    ],
+    "exit_code": 1,
+    "elapsed_seconds": 0.3
+  },
+  {
+    "name": "baseline-v8-replay-corrected-path",
+    "command": [
+      "npx",
+      "--no-install",
+      "vitest",
+      "run",
+      "--config",
+      "evals/golden/vitest.config.mts",
+      "evals/golden/replay-baseline-v8.test.ts"
+    ],
+    "exit_code": 0,
+    "tests_passed": 6,
+    "reason": "Original invocation used a nonexistent path after label replacement; no replay tests ran in that attempt."
+  },
+  {
+    "name": "workflow-recorded-fixture",
+    "exit_code": 1,
+    "tests_failed": 8,
+    "tests_passed": 2,
+    "source_sha": "541ecf0",
+    "duration_seconds": 242.99,
+    "live_payment_consent_excluded": true
+  }
+]
