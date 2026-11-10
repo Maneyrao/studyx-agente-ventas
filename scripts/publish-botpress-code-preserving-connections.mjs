@@ -22,6 +22,7 @@ import {
 import {
   STUDYX_RELEASE_DESTINATION,
   assertBotpressReleaseDestination,
+  assertBotpressReleaseRemoteIdentity,
   normalizeBotpressIntegrationField,
 } from './lib/botpress-release-destination.mjs';
 
@@ -67,6 +68,7 @@ try {
   });
   const client = new Client({ ...ctx.credentials, headers: { 'x-multiple-integrations': 'true' } });
   const before = (await client.getBot({ id: ctx.botId })).bot;
+  assertBotpressReleaseRemoteIdentity(before);
   record('bot-before.private.json', before);
   assert(Object.keys(before.integrations).length > 0, 'EMPTY_REMOTE_DEPENDENCIES');
   await refreshDependencySnapshotOnce({ projectPath: root, env: 'prod', botId: ctx.botId, client, required: true });
