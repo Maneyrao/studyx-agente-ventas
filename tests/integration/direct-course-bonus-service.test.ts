@@ -1,3 +1,4 @@
+import { answerTurn } from '../helpers/answer-turn';
 import { recordModelPriceObjection, seedPriorModelNegotiation } from '../helpers/record-model-negotiation-facts';
 import { randomUUID } from 'node:crypto';
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -29,7 +30,7 @@ beforeEach(() => {
 });
 afterEach(() => vi.unstubAllEnvs());
 
-async function fixture(objectionCount=2) {
+async function fixture(objectionCount=2, answerPrior=true) {
   const key = randomUUID();
   const [w] = await db!`INSERT INTO workspaces(slug,display_name) VALUES (${key},'Service') RETURNING id`;
   const [c] = await db!`INSERT INTO contacts(phone,channel_origin,status) VALUES
@@ -55,8 +56,7 @@ async function fixture(objectionCount=2) {
   const objectionTurns=await seedPriorModelNegotiation(db!,{workspace_id:w.id,contact_id:c.id,conversation_id:v.id},objectionCount);
   // Emma answered the earlier objections: they are history, not the current
   // intervention (owner 2026-11-10 — only unanswered messages join the turn).
-  await db!`INSERT INTO messages(conversation_id,contact_id,direction,content,created_at)
-    VALUES (${v.id},${c.id},'outbound','Te entiendo.',now() - interval '1 second')`;
+  if (answerPrior) await answerTurn(db!, prior);
   const source = await inbound(0);
   const identity = {workspace_id:w.id as string,contact_id:c.id as string,conversation_id:v.id as string,
     paid_offering_code:courses[0].code as string,promotion_code:key,promotion_cycle_id:randomUUID()};
@@ -129,7 +129,8 @@ run('atomic direct bonus service', () => {
     expect((await db!`SELECT count(*)::int n FROM promotion_offer_bonus_offerings`)[0].n).toBeGreaterThanOrEqual(1);
   });
   it('a bare "sí" counts only as the whole fragment answering a price question the previous turn declared',async()=>{
-    const f=await fixture(0);
+    // The prior turn's answer is the model's own declaration below.
+    const f=await fixture(0,false);
     // Previous agent turn: structured declaration that it asked the price question.
     await recordModelPriceObjection(db!,f.prior,{key:'price_question_asked',source_quote:'Customer'});
     const yes=async(content:string,asksBefore:boolean)=>{

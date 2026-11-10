@@ -1,3 +1,4 @@
+import { answerTurn } from '../helpers/answer-turn';
 import { randomUUID } from 'node:crypto';
 import { afterAll, describe, expect, it, vi } from 'vitest';
 import { openLocalTestDatabase } from '../helpers/db';
@@ -159,9 +160,7 @@ run('controlled context at claim time', () => {
     });
     // The agent answered the first message: the follow-up is a new intervention
     // (owner 2026-11-10 — an unanswered message would belong to the same one).
-    await db!`INSERT INTO messages (conversation_id, contact_id, direction, content)
-      SELECT conversation_id, contact_id, 'outbound', 'Decoración de Interiores es un gran curso.'
-      FROM messages WHERE id = ${first.turn_id}::uuid`;
+    await answerTurn(db!, first.turn_id);
 
     const second = await processInboundMessage(followUp(
       firstEnvelope,

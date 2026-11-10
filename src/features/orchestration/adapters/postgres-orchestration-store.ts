@@ -270,7 +270,7 @@ export class PostgresOrchestrationStore implements OrchestrationStore {
         NOT EXISTS (
           SELECT 1
           FROM messages AS readable
-          WHERE readable.batch_id = b.id
+          WHERE readable.id = ANY(iv.ids)
             AND COALESCE(readable.metadata ->> 'message_type', 'text') <> 'unsupported'
         ) AS unsupported_message,
         ad.id AS decision_id,
@@ -296,7 +296,7 @@ export class PostgresOrchestrationStore implements OrchestrationStore {
           -- Owner 2026-11-10: the whole current intervention (every inbound
           -- message since the agent's last reply), not only this batch, so a
           -- superseded turn's messages keep their intent in the new generation.
-          FROM agent_intervention_inbound_v1(b.representative_turn_id) AS bm
+          FROM messages AS bm WHERE bm.id = ANY(iv.ids)
         ), '[]'::jsonb) AS batch_messages,
         COALESCE((
           SELECT jsonb_agg(
@@ -325,7 +325,7 @@ export class PostgresOrchestrationStore implements OrchestrationStore {
             ))
               AND rm.contact_id = b.contact_id
               AND rm.batch_id IS DISTINCT FROM b.id
-              AND rm.id NOT IN (SELECT current_turn.id FROM agent_intervention_inbound_v1(b.representative_turn_id) AS current_turn)
+              AND rm.id <> ALL(iv.ids)
               AND (rm.direction <> 'outbound'
                 OR NOT EXISTS (SELECT 1 FROM outbound_deliveries known WHERE known.message_id = rm.id)
                 OR EXISTS (SELECT 1 FROM outbound_deliveries sent WHERE sent.message_id = rm.id
@@ -382,7 +382,7 @@ export class PostgresOrchestrationStore implements OrchestrationStore {
             ))
                 AND rm.contact_id = b.contact_id
                 AND rm.batch_id IS DISTINCT FROM b.id
-                AND rm.id NOT IN (SELECT current_turn.id FROM agent_intervention_inbound_v1(b.representative_turn_id) AS current_turn)
+                AND rm.id <> ALL(iv.ids)
               AND (rm.direction <> 'outbound'
                 OR NOT EXISTS (SELECT 1 FROM outbound_deliveries known WHERE known.message_id = rm.id)
                 OR EXISTS (SELECT 1 FROM outbound_deliveries sent WHERE sent.message_id = rm.id
@@ -500,6 +500,11 @@ export class PostgresOrchestrationStore implements OrchestrationStore {
         ON ccp.contact_id = c.id AND ccp.channel = conv.channel
       LEFT JOIN agent_decisions AS ad ON ad.turn_id = b.representative_turn_id
       LEFT JOIN outbound_deliveries AS od ON od.message_id = ad.outbound_message_id
+      -- The current intervention, computed once per claim (owner 2026-11-10).
+      CROSS JOIN LATERAL (
+        SELECT COALESCE(array_agg(current_turn.id), ARRAY[]::uuid[]) AS ids
+        FROM agent_intervention_inbound_v1(b.representative_turn_id) AS current_turn
+      ) AS iv
       WHERE b.id = ${input.batch_id}::uuid
       LIMIT 1
     `;

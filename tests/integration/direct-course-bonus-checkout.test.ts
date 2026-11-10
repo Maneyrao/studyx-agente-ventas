@@ -364,6 +364,20 @@ run('direct bonus checkout exact accepted package',()=>{
       promotion_code:undefined,promotion_cycle_id:undefined,accepted_offer_version:undefined});
     expect(await db!`SELECT id FROM payment_bonus_offerings WHERE payment_id=${fresh.payment_id}`).toEqual([]);
   });
+  it('a legacy superseded checkout paid late keeps its package and does not abort a later course change',async()=>{
+    const f=await fixture();const old=await reservePaymentLink(db!,f.input);
+    // Pre-2026-11-10 state: superseded by a course change, package left attached.
+    await db!`INSERT INTO payment_intent_supersessions(payment_id,workspace_id,contact_id,conversation_id,
+        original_offering_id,replacement_offering_id,source_turn_id)
+      VALUES (${old.payment_id},${f.identity.workspace_id},${f.identity.contact_id},${f.identity.conversation_id},
+        ${f.courses[0].id},${f.courses[4].id},${await f.inbound()})`;
+    await recordPaymentEvent(db!,{payment_id:old.payment_id,provider:'internal',provider_event_id:randomUUID(),event:{type:'checkout_creation_started'},payload:{}});
+    await recordPaymentEvent(db!,{payment_id:old.payment_id,provider:'internal',provider_event_id:randomUUID(),event:{type:'checkout_created'},payload:{}});
+    await recordPaymentEvent(db!,{payment_id:old.payment_id,provider:'stripe',provider_event_id:randomUUID(),
+      event:{type:'checkout_completed_paid'},payload:{signed_evidence:'late'}});
+    await f.change();
+    expect((await db!`SELECT status FROM promotion_offers WHERE id=${f.offer.offer_id}`)[0].status).toBe('attached');
+  });
   it('the guard refuses cancelling an attached package whose payment was not superseded',async()=>{
     const f=await fixture();await reservePaymentLink(db!,f.input);
     await expect(db!`UPDATE promotion_offers SET status='cancelled',cancel_reason='CUSTOMER_CHANGED_COURSE' WHERE id=${f.offer.offer_id}`)

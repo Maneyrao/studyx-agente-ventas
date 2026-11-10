@@ -1,3 +1,4 @@
+import { answerTurn } from '../helpers/answer-turn';
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { openLocalTestDatabase } from '../helpers/db';
@@ -1536,6 +1537,8 @@ run('Fase 4 — pago y cierre de batch', () => {
     await expect(commitAgentDecision(deferredDecision)).rejects.toMatchObject({
       reason: 'AMBIGUOUS_OR_ABSENT_CHOICE',
     });
+    // The deferral was answered; «ahora sí» is a new intervention (owner 2026-11-10).
+    await answerTurn(db!, first.turn_id);
     await db!`
       UPDATE inbound_batches
       SET state = 'completed', completed_at = now(), updated_at = now()

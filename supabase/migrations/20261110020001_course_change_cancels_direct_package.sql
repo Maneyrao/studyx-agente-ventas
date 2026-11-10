@@ -32,6 +32,9 @@ BEGIN
       OR NEW.accepted_source_turn_id IS DISTINCT FROM OLD.accepted_source_turn_id
       OR NEW.bonus_snapshot_sealed_at IS DISTINCT FROM OLD.bonus_snapshot_sealed_at
       OR NEW.payment_id IS DISTINCT FROM OLD.payment_id
+      OR NEW.offered_at IS DISTINCT FROM OLD.offered_at
+      OR NEW.offered_outbound_message_id IS DISTINCT FROM OLD.offered_outbound_message_id
+      OR NEW.expires_at IS DISTINCT FROM OLD.expires_at
       OR OLD.payment_id IS NULL OR NOT EXISTS (
         SELECT 1 FROM public.payment_intent_supersessions s JOIN public.payments p ON p.id=s.payment_id
         WHERE s.payment_id=OLD.payment_id AND s.reason='COURSE_CHANGED' AND p.status NOT IN ('paid','refunded'))

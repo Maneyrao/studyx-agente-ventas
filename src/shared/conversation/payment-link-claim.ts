@@ -3,8 +3,9 @@ const LINK_NOUN = /\b(?:link|enlace)\b/u;
 const DELIVERY = /\b(?:te\s+(?:lo\s+)?(?:(?:he|hemos)\s+)?(?:re)?(?:paso|envio|mando|comparto|dejo|dejamos|pase|envie|mande|comparti|deje|pasado|enviado|mandado|compartido|dejado)|ahi\s+va|(?:link|enlace)\b.{0,48}\bya\s+(?:esta|quedo))\b/gu;
 const COMPLETED = /\b(?:pase|envie|mande|comparti|deje|pasado|enviado|mandado|compartido|dejado|ya\s+(?:esta|quedo))\b/u;
 const NEGATION_PREFIX = /\b(?:no|nunca|tampoco)\s+(?:ya\s+)?$/u;
-// "el link (de pago) que te mandé…": a relative clause that refers to an
-// earlier link; it identifies that link, it does not send one now.
+// "el link (de pago) que te mandé…": a past-tense relative clause refers to an
+// earlier link; it identifies that link, it does not send one now. A present
+// form ("el link que te mando ahora") is still a send.
 const RELATIVE_REFERENCE_PREFIX = /\b(?:link|enlace)(?:\s+(?:de|del|para)\s+(?:el\s+)?pago)?\s+que\s+$/u;
 const CONDITION_PREFIX = /(?:^|\b(?:as[ií]\s+que|entonces)\s+)\s*(?:si|cuando|en\s+caso\s+de(?:\s+que)?|una\s+vez\s+que)\s+\S[\s\S]*$/u;
 const CONDITION_SUFFIX = /^\s*(?:(?:de|para)\s+(?:el\s+)?pago\s*)?(?:ahora(?:\s+mismo)?\s*)?(?:si|cuando)\s+\S/u;
@@ -64,7 +65,7 @@ export function claimsImmediatePaymentLinkDeliveryV1(text: string): boolean {
         const completed = COMPLETED.test(claim[0]);
         if (clause.endsWith('?')
           || NEGATION_PREFIX.test(before) || CONDITION_PREFIX.test(before)
-          || RELATIVE_REFERENCE_PREFIX.test(folded(before))) continue;
+          || (completed && RELATIVE_REFERENCE_PREFIX.test(folded(before)))) continue;
         if (inheritedCondition && !completed) continue;
         // A suffix condition can qualify a proposed send, but cannot turn
         // "ya te envié el link, si quieres seguimos" into an unsent offer.

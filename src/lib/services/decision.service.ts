@@ -452,10 +452,8 @@ async function loadTurnPolicy(turnId: string, db: DbClient): Promise<TurnPolicyR
         WHERE candidate.direction = 'inbound'
           AND candidate.contact_id = m.contact_id
           AND candidate.conversation_id = m.conversation_id
-          AND (
-            (m.batch_id IS NOT NULL AND candidate.batch_id = m.batch_id)
-            OR (m.batch_id IS NULL AND candidate.id = m.id)
-          )
+          -- Same scope as the claim: the whole current intervention.
+          AND candidate.id IN (SELECT current_turn.id FROM agent_intervention_inbound_v1(m.id) AS current_turn)
           AND candidate.metadata @> '{"opt_out_ack_eligible": true}'::jsonb
       ), ARRAY[]::text[]) AS opt_out_ack_eligible_contents
     FROM messages AS m
@@ -864,13 +862,11 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
       const workspaceId = rawBusiness?.workspace.id ?? workspaceRows[0]?.id;
       if (!workspaceId) throw new DecisionPolicyError('AGENT_TURN_V2_CONTEXT_NOT_FOUND');
       try {
-        const currentMessages = turn.batch_id === null
-          ? [{ content: turn.content }]
-          : await db<Array<{ content: string }>>`
-              SELECT content FROM messages
-              WHERE batch_id = ${turn.batch_id}::uuid AND direction = 'inbound'
-              ORDER BY conversation_seq ASC, created_at ASC, id ASC
-            `;
+        // Owner 2026-11-10: validate against the whole current intervention
+        // (every unanswered message since the agent's last reply).
+        const currentMessages = await db<Array<{ content: string }>>`
+          SELECT content FROM agent_intervention_inbound_v1(${turn.id}::uuid)
+        `;
         const agentCatalogIndex = rawCatalogIndex ? buildCatalogIndexView(rawCatalogIndex) : null;
         const agentBusinessContext = rawBusiness ? buildBusinessContextView(rawBusiness) : null;
         const currentMoves=[agentTurnProposal.move.move,...agentTurnProposal.move.secondary_moves];
@@ -1027,13 +1023,9 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
 
     const loadBatchMessages = async (): Promise<Array<{ content: string }>> => {
       if (loadedBatchMessages !== null) return loadedBatchMessages;
-      loadedBatchMessages = turn.batch_id === null
-        ? [{ content: turn.content }]
-        : await db<Array<{ content: string }>>`
-            SELECT content FROM messages
-            WHERE batch_id = ${turn.batch_id}::uuid AND direction = 'inbound'
-            ORDER BY conversation_seq ASC, created_at ASC, id ASC
-          `;
+      loadedBatchMessages = await db<Array<{ content: string }>>`
+        SELECT content FROM agent_intervention_inbound_v1(${turn.id}::uuid)
+      `;
       return loadedBatchMessages;
     };
 
@@ -1745,10 +1737,7 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
         offering_code: preparedAgentTurn.commercial_interest_offering_code,
         candidates: decision.memory_candidates,
         messages: await db<Array<{ id: string; content: string }>>`
-          SELECT id, content FROM messages WHERE contact_id=${turn.contact_id}::uuid
-            AND conversation_id=${turn.conversation_id}::uuid AND direction='inbound'
-            AND (id=${turn.id}::uuid OR batch_id=${turn.batch_id}::uuid)
-          ORDER BY conversation_seq, created_at, id`,
+          SELECT id, content FROM agent_intervention_inbound_v1(${turn.id}::uuid)`,
       }) : [];
     const inserted = await db<Array<{ id: string }>>`
       INSERT INTO agent_decisions (
@@ -1844,13 +1833,10 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
         // El consentimiento se deriva del batch completo, no sólo del turno
         // representativo: un "llamame" enterrado en la ráfaga autoriza y un
         // "mejor no" posterior lo revoca.
-        const consentMessages = turn.batch_id === null
-          ? [{ id: turn.id, content: turn.content }]
-          : await db<Array<{ id: string; content: string }>>`
-              SELECT id, content FROM messages
-              WHERE batch_id = ${turn.batch_id}::uuid AND direction = 'inbound'
-              ORDER BY conversation_seq ASC, created_at ASC, id ASC
-            `;
+        // Owner 2026-11-10: the whole current intervention, same as the claim.
+        const consentMessages = await db<Array<{ id: string; content: string }>>`
+          SELECT id, content FROM agent_intervention_inbound_v1(${turn.id}::uuid)
+        `;
         const authorizedSourceIndex = preparedPipeline || preparedAgentTurn
           ? selectAuthorizedVoiceConsentSourceIndex({
               mode: decision.business_action.reason,

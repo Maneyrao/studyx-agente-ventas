@@ -22,6 +22,23 @@ run('direct decision atomic repair', () => {
       conversation_id:f.conversation_id,channel:'text',selected_offering_code:'entrenamiento_funcional',source_turn_id:f.turn_id},{db:sql}))
       .toMatchObject({enabled:true,max_bonus_courses:2,may_request_review:false,ladder:{retention_used:false,previous_turn_asked_price_question:false}});
   });
+  it('owner 2026-11-10: the commit accepts a motive sent in the previous, unanswered message', async () => {
+    vi.stubEnv('CENTRAL_CARGA_BONUS_ENABLED','true');vi.stubEnv('COURSE_BONUS_FLOW_MODE','direct');vi.stubEnv('COURSE_BONUS_MAX_COURSES','2');
+    // First batch: «Hola, soy Ana Pérez…» (never answered). Second batch: «Dale, seguimos».
+    const f = await seedConversationForAgentTurn({selected_offering_code:'entrenamiento_funcional',intake_complete:true});
+    await seedPriorModelNegotiation(sql,f);
+    const proposal = {...f.proposalWithCallOfferAndFalsePrice,move:PRICE_MOVE,
+      response:{messages:['Entrenamiento Funcional y Nutrición y Alimentación Saludable quedan incluidos en el paquete.'],call_offer:null},
+      course_mentions:[{offering_code:'nutricion_alimentacion',role:'bonus'}],
+      proposed_action:{type:'offer_course_bonus',motive:{kind:'price_objection',quote:'Hola, soy Ana Pérez'},
+        interest_offering_code:'entrenamiento_funcional',bonus_offering_code:'nutricion_alimentacion'}};
+    const result = await commitAgentDecision({turn_id:f.second_turn_id,trace_id:randomUUID(),supports_multi_outbound:true,
+      authorized_offering_code:'entrenamiento_funcional',authorized_payment_plan:null,
+      agent_turn_v2:{schema_version:2 as const,proposal:proposal as never},decision:f.placeholderDecision as never,model:f.model as never});
+    expect(result.status).toBe('committed');
+    expect(result.outbounds.map(outbound=>outbound.content).join(' ')).toContain('Nutrición y Alimentación Saludable');
+    expect(await sql`SELECT status FROM promotion_offers WHERE conversation_id=${f.conversation_id}`).toEqual([{status:'offered'}]);
+  });
   it.each(['direct','review','review_pending'] as const)('preserves multi-part delivery authority and the exact gift receipt in %s mode', async mode => {
     vi.stubEnv('CENTRAL_CARGA_BONUS_ENABLED','true');vi.stubEnv('COURSE_BONUS_FLOW_MODE','direct');vi.stubEnv('COURSE_BONUS_MAX_COURSES','2');
     const f = await seedConversationForAgentTurn({selected_offering_code:'entrenamiento_funcional',intake_complete:true});

@@ -453,7 +453,10 @@ export async function cancelOpenCourseBonusOffersForCourseChangeV1(
         -- was just superseded by this course change closes with it. An
         -- accepted package without a checkout still survives a detour.
         OR offer.status IN ('accepted','attached') AND EXISTS (SELECT 1 FROM payment_intent_supersessions s
-          WHERE s.payment_id = offer.payment_id AND s.reason = 'COURSE_CHANGED'))
+          JOIN payments superseded ON superseded.id = s.payment_id
+          WHERE s.payment_id = offer.payment_id AND s.reason = 'COURSE_CHANGED'
+            -- A late-paid superseded checkout stays for reconciliation, never cancelled.
+            AND superseded.status NOT IN ('paid','refunded')))
       AND paid.id = offer.paid_offering_id
       AND paid.workspace_id = offer.workspace_id
       AND paid.code <> ${input.selected_offering_code}
