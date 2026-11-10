@@ -161,6 +161,18 @@ function authorize(input: {
 }
 
 describe('plannerless Agent A authority', () => {
+  it('live 2026-11-10 17:36: a link request with a plan and no persisted plan sends that plan; a persisted plan still wins', () => {
+    const link = (plan: 'one_time' | 'monthly_12') => proposal({ move: { schema_version: 1, move: 'request_payment_link', secondary_moves: [],
+      vetoes: [], course_reference: 'Redes Informáticas', payment_plan: plan, confidence: 0.9 },
+      response: { messages: ['Te paso el enlace de pago.'] },
+      proposed_action: { type: 'send_payment_link', offering_code: 'redes_informaticas', payment_plan: plan } });
+    expect(authorize({ state: state({ selected_offering_code: 'redes_informaticas', selected_payment_plan: null,
+      stage: 'course_selected', awaiting_reply: 'payment_plan' }), intake: completeIntake, proposal: link('one_time') }))
+      .toMatchObject({ ok: true, action: { type: 'send_payment_link', payment_plan: 'one_time' } });
+    expect(authorize({ state: state({ selected_offering_code: 'redes_informaticas', selected_payment_plan: 'monthly_12',
+      stage: 'plan_selected', awaiting_reply: 'payment_confirmation' }), intake: completeIntake, proposal: link('one_time') }))
+      .not.toMatchObject({ action: { payment_plan: 'one_time' } });
+  });
   it('live 2026-11-10: a plan choice with no persisted course adopts the single course in focus', () => {
     const planMove = proposal({ move: { schema_version: 1, move: 'select_payment_plan', secondary_moves: [], vetoes: [],
       payment_plan: 'one_time', confidence: 0.93 },

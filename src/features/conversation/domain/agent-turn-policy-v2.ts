@@ -293,7 +293,13 @@ export function authorizeAgentTurnV2(input: {
   );
   // Agent A owns the current choice. Check its canonical resource rather than
   // reinterpreting the customer's wording with a second payment classifier.
-  const selectedCurrentPlan = moves.has('select_payment_plan') && canonicalPlan(proposal.move.payment_plan)
+  // Live 2026-11-10: with NO persisted plan, a link request that carries a
+  // canonical plan is the customer's choice (an earlier choice may have been
+  // dropped). A persisted plan still wins over an incidental model field.
+  const linkRequestFillsMissingPlan = moves.has('request_payment_link') && !moves.has('select_payment_plan')
+    && state.selected_payment_plan === null && canonicalPlan(proposal.move.payment_plan);
+  const selectedCurrentPlan = (moves.has('select_payment_plan') || linkRequestFillsMissingPlan)
+    && canonicalPlan(proposal.move.payment_plan)
     ? proposal.move.payment_plan : null;
   const selectsPaymentPlanNow = selectedCurrentPlan !== null;
   const invalidCurrentPaymentSelection = moves.has('select_payment_plan')
