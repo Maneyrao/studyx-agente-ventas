@@ -13,6 +13,7 @@ import { loadReviewedBotpressAdk, requireBotpressReleaseProfile } from './lib/bo
 import {
   buildBotpressAdditiveEventUpdate,
   inspectBotpressRemoteCode,
+  normalizeBotpressConfigurationForComparison,
   planBotpressAdditiveConversationTagPatch,
   planBotpressAdditiveEventPatch,
   planBotpressReviewedConfigurationUpdate,
@@ -183,7 +184,7 @@ try {
     record('bot-after.private.json', after);
     const expectedProtectedConfiguration = {
       ...protectedConfiguration(before),
-      configuration: configurationPlan.configuration,
+      configuration: normalizeBotpressConfigurationForComparison(configurationPlan.configuration),
     };
     const configurationMatchesExpected = equal(expectedProtectedConfiguration, protectedConfiguration(after));
     const configurationUnchanged = equal(before.configuration, after.configuration);

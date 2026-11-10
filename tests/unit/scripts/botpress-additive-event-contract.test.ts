@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildBotpressAdditiveEventUpdate,
   inspectBotpressRemoteCode,
+  normalizeBotpressConfigurationForComparison,
   planBotpressAdditiveConversationTagPatch,
   planBotpressAdditiveEventPatch,
   planBotpressReviewedConfigurationUpdate,
@@ -74,6 +75,40 @@ const generatedConfiguration = {
 };
 
 describe('Botpress additive event publication contract', () => {
+  it('compares configuration after Botpress applies schema defaults and drops legacy data', () => {
+    expect(normalizeBotpressConfigurationForComparison({
+      data: {
+        apiBaseUrl: 'https://backend.example',
+        agentACommercialPlanningEnabled: false,
+        models: { autonomous: ['legacy'] },
+      },
+      schema: {
+        type: 'object',
+        properties: {
+          apiBaseUrl: { type: 'string', default: 'http://localhost:3000' },
+          agentACommercialPlanningEnabled: { type: 'boolean', default: false },
+          geminiTranscriptionModel: { type: 'string', default: '' },
+          optionalWithoutDefault: { type: 'string' },
+        },
+      },
+    })).toEqual({
+      data: {
+        apiBaseUrl: 'https://backend.example',
+        agentACommercialPlanningEnabled: false,
+        geminiTranscriptionModel: '',
+      },
+      schema: {
+        type: 'object',
+        properties: {
+          apiBaseUrl: { type: 'string', default: 'http://localhost:3000' },
+          agentACommercialPlanningEnabled: { type: 'boolean', default: false },
+          geminiTranscriptionModel: { type: 'string', default: '' },
+          optionalWithoutDefault: { type: 'string' },
+        },
+      },
+    });
+  });
+
   it('permits only the reviewed commercial follow-up event as an additive patch', () => {
     const patch = planBotpressAdditiveEventPatch({
       remoteEvents: existingEvents,

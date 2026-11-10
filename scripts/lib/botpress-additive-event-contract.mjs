@@ -102,6 +102,23 @@ const assertRecord = (value, label) => {
   }
 };
 
+export function normalizeBotpressConfigurationForComparison(configuration) {
+  assertRecord(configuration, 'configuration-comparison');
+  assertRecord(configuration.data, 'configuration-comparison-data');
+  assertRecord(configuration.schema, 'configuration-comparison-schema');
+  assertRecord(configuration.schema.properties, 'configuration-comparison-properties');
+  const data = {};
+  for (const [key, property] of Object.entries(configuration.schema.properties)) {
+    if (Object.prototype.hasOwnProperty.call(configuration.data, key)) {
+      data[key] = configuration.data[key];
+    } else if (property && typeof property === 'object'
+      && Object.prototype.hasOwnProperty.call(property, 'default')) {
+      data[key] = property.default;
+    }
+  }
+  return { ...configuration, data };
+}
+
 export function planBotpressReviewedConfigurationUpdate({
   remoteConfiguration,
   generatedConfiguration,
