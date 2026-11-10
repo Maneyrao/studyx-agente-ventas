@@ -31,6 +31,15 @@ describe('scoped owner test lead reset', () => {
     if (condition === 'outbox') x.indirect.outbox_events[0].topic = 'payment.execute';
     expect(() => classifyOwnerReset(x, b)).toThrow();
   });
+  it('2026-11-10: a superseded, never-opened link reservation does not block; a live one does', () => {
+    const x = fixture() as ReturnType<typeof fixture> & { related: Record<string, unknown> };
+    (x.related.payments as object[]).push({ id: 'old', status: 'reserved', provider_session_id: null });
+    expect(() => classifyOwnerReset(x, bot())).toThrow('RESET_PENDING_PAYMENT');
+    x.related.payment_intent_supersessions = [{ payment_id: 'old' }];
+    expect(() => classifyOwnerReset(x, bot())).not.toThrow();
+    (x.related.payments as Array<Record<string, unknown>>)[1]!.provider_session_id = 'cs_test_open';
+    expect(() => classifyOwnerReset(x, bot())).toThrow('RESET_PENDING_PAYMENT');
+  });
   it('never reruns the contact swap when resuming the nontransactional Botpress phase', () => {
     expect(resetResumePhase({ phase: 'db_committed', oldContactId: s.contactId, newContactId: 'new' })).toBe('finish_botpress');
     expect(resetResumePhase({ phase: 'completed', oldContactId: s.contactId, newContactId: 'new' })).toBe('verify_only');

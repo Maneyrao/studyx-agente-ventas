@@ -30,6 +30,7 @@ const NON_CODE_EXACT = new Set([
   'scripts/lib/botpress-additive-event-contract.mjs',
   'scripts/lib/botpress-release-destination.mjs',
   'scripts/lib/botpress-release-provenance.mjs',
+  'scripts/lib/owner-test-lead-reset.mjs',
   'scripts/prepare-instrumented-botpress-release.mjs',
   'scripts/publish-botpress-code-preserving-connections.mjs',
 ]);

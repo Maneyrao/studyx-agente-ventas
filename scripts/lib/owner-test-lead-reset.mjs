@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 
 import { readFileSync as readScopeFile } from 'node:fs';
+import { STUDYX_RELEASE_DESTINATION } from './botpress-release-destination.mjs';
 // Owner 2026-11-03 ("resetea todos los números"): one test contact per run,
 // scope read from STUDYX_RESET_SCOPE_FILE (phone/contact/conversation ids) when set.
 const scopeOverride = process.env.STUDYX_RESET_SCOPE_FILE
@@ -10,9 +11,12 @@ export const OWNER_RESET_SCOPE = Object.freeze({
   workspaceId: 'b0000000-0000-4000-8000-000000000001',
   conversationId: 'b3b2b54e-f406-4d49-bb45-5cef2e4aae52',
   botpressConversationId: 'conv_01M6F5KAVBCN19E9GS7Z4DGXE9',
-  botId: '0d7c9ecb-4781-4c65-913d-f7e947fa14d4',
-  botpressWorkspaceId: 'wkspace_01M4XEBZNC10HX2KDHKY36T6R0',
-  botPhoneNumberId: '1300545066485709', profile: 'studyx-detmaneyro', databaseRef: 'eqspozrpzgzvtpowwprg',
+  // 2026-11-10: the WhatsApp number is served by the release destination bot
+  // («StudyX Pruebas»), not the former 0d7c9ecb; one source for both tools.
+  botId: STUDYX_RELEASE_DESTINATION.botId,
+  botpressWorkspaceId: STUDYX_RELEASE_DESTINATION.workspaceId,
+  botPhoneNumberId: STUDYX_RELEASE_DESTINATION.whatsappBotPhoneNumberId,
+  profile: STUDYX_RELEASE_DESTINATION.profile, databaseRef: 'eqspozrpzgzvtpowwprg',
   ...Object.fromEntries(['phone', 'contactId', 'conversationId', 'botpressConversationId']
     .filter(key => typeof scopeOverride[key] === 'string').map(key => [key, scopeOverride[key]])),
 });
@@ -54,7 +58,12 @@ export function classifyOwnerReset(snapshot, botpress) {
   ensure(related.outbound_deliveries.every(row => ['submitted', 'delivered', 'cancelled', 'dead_letter'].includes(row.state)
     && !row.lease_until && (['submitted', 'delivered'].includes(row.state) ? !!row.provider_message_id : true)), 'RESET_ACTIVE_OR_AMBIGUOUS_DELIVERY');
   ensure(related.call_sessions.every(row => ['completed', 'failed', 'cancelled', 'timed_out', 'no_answer'].includes(row.status)), 'RESET_ACTIVE_CALL');
-  ensure(related.payments.every(row => ['paid', 'failed', 'cancelled', 'expired'].includes(row.status)), 'RESET_PENDING_PAYMENT');
+  // 2026-11-10: a payment-link reservation never expires by itself. One already
+  // superseded (course/plan/e-mail change) and never opened in Stripe is dead:
+  // a late payment on it goes to reconciliation, never to enrollment.
+  const superseded = new Set((related.payment_intent_supersessions ?? []).map(row => row.payment_id));
+  ensure(related.payments.every(row => ['paid', 'failed', 'cancelled', 'expired'].includes(row.status)
+    || (row.status === 'reserved' && row.provider_session_id === null && superseded.has(row.id))), 'RESET_PENDING_PAYMENT');
   ensure(indirect.fulfillment_jobs.every(row => ['completed', 'cancelled', 'failed', 'dead_letter'].includes(row.status)), 'RESET_ACTIVE_FULFILLMENT');
   ensure(indirect.post_sale_notifications.every(row => ['sent', 'cancelled', 'dead_letter', 'failed'].includes(row.status)), 'RESET_ACTIVE_POST_SALE');
   ensure(indirect.course_bonus_followups.every(row => ['sent', 'cancelled', 'expired', 'dead_letter'].includes(row.status)), 'RESET_ACTIVE_COMMERCIAL_FOLLOWUP');
