@@ -2962,7 +2962,8 @@ describe('processInboundTurn hot path', () => {
 
   it.each([
     ['Dale, lo dejamos en 12 cuotas de USD 30. Te reenvío el enlace ahora.', 'Dale, lo dejamos en 12 cuotas de USD 30.'],
-    ['Te reenvío el enlace en 12 cuotas.', 'Entendí que lo quieres en 12 cuotas, pero no pude generar el enlace de pago todavía.'],
+    // Nothing usable remains: ONE effect-fenced continuation of the model writes the reply.
+    ['Te reenvío el enlace en 12 cuotas.', 'Perfecto, queda en 12 cuotas.'],
   ])('incident B: PROMOTION_NOT_AUTHORIZED keeps the understood 12-installment plan, never «no te entendí» nor a false link claim: %s', async (understood, expectedText) => {
     const claimed = claimedResponse() as unknown as ClaimedTurn;
     claimed.features = { agent_loop_v3_mode: 'off', conversation_pipeline_v1_enabled: false,
@@ -2996,13 +2997,16 @@ describe('processInboundTurn hot path', () => {
     actionSpies.claim.mockResolvedValue(claimed);
     configuration.agentAPlannerlessV2Enabled = true;
     actionSpies.agentABrainValidate.mockImplementation(() => null);
-    actionSpies.agentABrainDeepSeek.mockImplementation(async (input: { context: AgentAContextV1; on_provider_request?: () => void }) => {
+    actionSpies.agentABrainDeepSeek.mockImplementation(async (input: { context: AgentAContextV1; on_provider_request?: () => void;
+      conversation_only?: boolean }) => {
       input.on_provider_request?.();
+      const fenced = input.conversation_only === true;
       return { proposal: { schema_version: 1,
         move: { schema_version: 1, move: 'request_payment_link', secondary_moves: ['select_payment_plan'], vetoes: [],
           confidence: 1, payment_plan: 'monthly_12', course_reference: 'ingles_1' },
-        response: { messages: [understood], call_offer: null },
-        proposed_action: { type: 'send_payment_link', offering_code: 'ingles_1', payment_plan: 'monthly_12', promotion_code: 'BONUS' },
+        response: { messages: [fenced ? 'Perfecto, queda en 12 cuotas.' : understood], call_offer: null },
+        proposed_action: fenced ? { type: 'none' }
+          : { type: 'send_payment_link', offering_code: 'ingles_1', payment_plan: 'monthly_12', promotion_code: 'BONUS' },
         used_fact_ids: [], used_memory_ids: [], memory_candidates: [],
         repair_of: input.context.turn_rejection ? { rejection_id: input.context.turn_rejection.rejection_id, attempt: 1 } : null },
         provider: 'deepseek-direct', model: 'deepseek-v4-flash', latency_ms: 1, attempt_count: 1 };
@@ -3036,7 +3040,7 @@ describe('processInboundTurn hot path', () => {
     // The deterministically rejected effect reaches the backend once, not three times.
     expect(commits.filter(input => input.agent_turn_v2?.proposal.proposed_action.type === 'send_payment_link'
       && !input.agent_turn_v2.conversation_only)).toHaveLength(1);
-    expect(actionSpies.agentABrainDeepSeek.mock.calls.length).toBeLessThanOrEqual(3);
+    expect(actionSpies.agentABrainDeepSeek.mock.calls.length).toBeLessThanOrEqual(2);
     const final = commits.at(-1)!;
     // Effects fenced by the backend (conversation_only); the interpretation survives.
     expect(final.agent_turn_v2).toMatchObject({ conversation_only: true, proposal: {

@@ -521,9 +521,10 @@ run('incident B: safe replacement of a pending promoted checkout',()=>{
       const [a,b]=await Promise.all(clients.map(client=>f.replace({idempotency_key:key,source_turn_id:turn},client)));
       expect(a).toEqual(b);
       expect(await f.replace({idempotency_key:key,source_turn_id:turn})).toEqual(a);
-      // A different turn racing for the same old checkout cannot substitute it twice.
-      const settled=await Promise.allSettled(clients.map(client=>f.replace({},client)));
-      expect(settled.every(item=>item.status==='rejected')).toBe(true);
+      // A different turn asking for the same plan and data gets the current
+      // successor back; it never substitutes the old checkout twice.
+      const later=await Promise.all(clients.map(client=>f.replace({},client)));
+      for(const item of later) expect(item).toEqual({outcome:'reused',payment_id:a.payment_id,status:'reserved',url:a.url});
     } finally {await Promise.all(clients.map(client=>client.end()));}
     expect(await db!`SELECT id FROM payment_intent_supersessions WHERE payment_id=${f.old.payment_id}`).toHaveLength(1);
     expect(await db!`SELECT id FROM payments WHERE source_conversation_id=${f.identity.conversation_id}`).toHaveLength(2);
@@ -533,9 +534,9 @@ run('incident B: safe replacement of a pending promoted checkout',()=>{
     const f=await attached();const clients=openIndependentLocalTestDatabases(2);
     try {
       const turns=[await f.inbound(),await f.inbound()];
-      const settled=await Promise.allSettled(clients.map((client,index)=>f.replace({source_turn_id:turns[index]},client)));
-      expect(settled.filter(item=>item.status==='fulfilled')).toHaveLength(1);
-      expect(settled.filter(item=>item.status==='rejected')).toHaveLength(1);
+      const results=await Promise.all(clients.map((client,index)=>f.replace({source_turn_id:turns[index]},client)));
+      expect(results.map(item=>item.outcome).sort()).toEqual(['replaced','reused']);
+      expect(results[0]!.payment_id).toBe(results[1]!.payment_id);
     } finally {await Promise.all(clients.map(client=>client.end()));}
     expect(await db!`SELECT id FROM payment_intent_supersessions WHERE payment_id=${f.old.payment_id}`).toHaveLength(1);
     expect(await db!`SELECT id FROM payments WHERE source_conversation_id=${f.identity.conversation_id}`).toHaveLength(2);

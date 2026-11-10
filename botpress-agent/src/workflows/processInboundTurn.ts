@@ -91,7 +91,7 @@ import { resolveAgentAProposalV1 } from '../lib/conversation/resolve-agent-a-pro
 import { diagnosticRejectionCodesV1, resolveAgentAPlannerlessProposalV2 } from '../lib/conversation/resolve-agent-a-plannerless'
 import { preserveRuleTriggerEvidenceV1 } from '../lib/conversation/preserve-bonus-evidence'
 import { bindCustomerCallInterpretationV1, type CustomerCallInterpretationV1 } from '../lib/conversation/customer-call-interpretation'
-import { authorizedPromotionActionsV1, continueAgentAAfterActionFeedbackV1, fencedAgentARequestV1, paymentReservationRejectionSubjectsV1, plannerlessActionFeedbackV1, understoodIntentContinuityV1 } from '../lib/conversation/agent-a-action-feedback'
+import { authorizedPromotionActionsV1, continueAgentAAfterActionFeedbackV1, fencedAgentARequestV1, paymentReservationRejectionSubjectsV1, plannerlessActionFeedbackV1 } from '../lib/conversation/agent-a-action-feedback'
 import { evaluateCallOfferTurnPolicyV1 } from '../lib/conversation/call-offer-turn-policy'
 import { courseProgramChannelsV1 } from '../../../src/shared/catalog/course-programs'
 import { sendableProgramCodesV1 } from '../lib/conversation/agent-a-brain'
@@ -2666,7 +2666,70 @@ export const processInboundTurn = new Workflow({
         })
         let continuationFailure: ReturnType<typeof classifyAgentAAttemptFailure> | null = null
 
-        if (mayRepairWithAgentA) {
+        // Owner 2026-11-10: a payment reservation rejection keeps Agent A's own
+        // reply with only the false link claim removed (course, plan, e-mail,
+        // promotion and intent stay in its move, effects fenced). Only when no
+        // usable text remains does Agent A get ONE effect-fenced continuation.
+        // No fixed backend text and no «no te entendí» on this path.
+        const paymentReservationRejected = rejection.rejections.some((reason) => (
+          reason.subject.startsWith('payment_reservation:')))
+        const ownReply = modelAuthoredCommitCandidates[0]
+        if (paymentReservationRejected && ownReply !== undefined) {
+          repairEffectsAllowed = false
+          const claimsLink = [...ownReply.proposal.response.messages, ownReply.proposal.response.call_offer ?? '']
+            .some(claimsImmediatePaymentLinkDeliveryV1)
+          const withoutClaim = claimsLink
+            ? removeEffectClaimBubblesV1({ proposal: ownReply.proposal, context: repairContext, payment_link_sentences: true })
+            : { ...ownReply.proposal, proposed_action: { type: 'none' as const } }
+          if (withoutClaim !== null) {
+            try {
+              const revalidated = await resolveAgentAPlannerlessProposalV2({
+                observe: journal.capture,
+                initial: { ...ownReply, proposal: withoutClaim },
+                context: repairContext,
+                repair_enabled: false,
+                semantic_rejections: 'blocking',
+                rejection_id: currentBackendRejection.rejection_id,
+                repair: async () => { throw new Error('AGENT_A_CLAIM_REMOVAL_REPAIR_NOT_ALLOWED') },
+              })
+              agentTurnV2Commit = { schema_version: 2, proposal: revalidated.effective.proposal, ...fencedAgentARequestV1() }
+              pipelineCommit = null
+              pipelineMemoryCandidates = revalidated.effective.proposal.memory_candidates
+              decision = pipelinePlaceholder(pipelineMemoryCandidates)
+              decisionProvider = revalidated.effective.provider
+              decisionModel = revalidated.effective.model
+              pipelinePromptVersion = AGENT_A_BRAIN_PROMPT_VERSION
+              turnDiagnostics = {
+                schema_version: 1,
+                generation_attempts: agentAGenerationAttempts,
+                failure_stage: 'backend_commit',
+                failure_codes: rejectionCodes,
+                action_status: 'rejected',
+              }
+              committed = await commitCurrentDecision('commit-agent-a-reply-without-rejected-link-claim-v1')
+              safeLog('studyx.turn.agent_a_rejected_link_claim_removed', {
+                trace_id: input.trace_id,
+                turn_id: owned.turn_id,
+                rejection_codes: rejectionCodes,
+              })
+            } catch (claimRemovalError) {
+              if (isTurnEvidencePersistenceError(claimRemovalError)) throw claimRemovalError
+              if (!(claimRemovalError instanceof Error)) throw claimRemovalError
+              const failure = classifyAgentAAttemptFailure(claimRemovalError)
+              // An ambiguous transport outcome must not be committed twice.
+              if (failure.stage !== 'backend_rejected' && failure.stage !== 'policy' && failure.stage !== 'schema') {
+                throw claimRemovalError
+              }
+              safeLog('studyx.turn.agent_a_rejected_link_claim_removal_invalid', {
+                trace_id: input.trace_id,
+                turn_id: owned.turn_id,
+                error_code: errorCode(claimRemovalError),
+              })
+            }
+          }
+        }
+
+        if (mayRepairWithAgentA && committed === null) {
           agentAGenerationAttempts = Math.max(agentAGenerationAttempts, 2) as 2 | 3
           try {
             const repaired = await step(
@@ -2764,6 +2827,8 @@ export const processInboundTurn = new Workflow({
 
         if (committed === null
           && continuationFailure?.stage === 'backend_rejected'
+          // A payment reservation rejection gets exactly one continuation.
+          && !paymentReservationRejected
           && agentAGenerationAttempts < 3
           && typeof deepSeekApiKey === 'string'
           && deepSeekApiKey.length > 0) {
@@ -2878,7 +2943,7 @@ export const processInboundTurn = new Workflow({
                 const withoutEffectClaims = removeEffectClaimBubblesV1({
                   proposal: candidateProposal,
                   context: repairContext,
-                  payment_link_sentences: currentBackendRejection.rejections.some((reason) => (
+                  payment_link_sentences: paymentReservationRejected || currentBackendRejection.rejections.some((reason) => (
                     reason.subject === 'send_payment_link' || reason.subject.startsWith('payment'))),
                   bonus_offering_code: candidateProposal.proposed_action.type === 'offer_course_bonus'
                     ? candidateProposal.proposed_action.bonus_offering_code : null,
@@ -3023,56 +3088,6 @@ export const processInboundTurn = new Workflow({
                 throw floorError
               }
             }
-          }
-        }
-
-        const understoodCandidate = [...modelAuthoredCommitCandidates].reverse()[0]
-        // A later factual rejection of the floor must not erase the original
-        // effect rejection that motivated it.
-        const turnRejections = [...rejection.rejections, ...currentBackendRejection.rejections]
-        const callEffectRejected = turnRejections.some((reason) => (
-          reason.subject === 'request_call_now' || reason.subject.startsWith('call')))
-        const effectRejected = turnRejections.some((reason) => reason.code === 'ACTION_NOT_AUTHORIZED')
-        // Only a rejected effect qualifies; call rejections keep their dedicated
-        // operational continuity below and factual exhaustion the technical line.
-        if (committed === null && understoodCandidate !== undefined && effectRejected && !callEffectRejected) {
-          // Owner 2026-11-10: the model understood the turn; only its effect
-          // failed. Keep its interpretation (plan, pending request, course)
-          // with effects fenced and say only what is true. Never «no te entendí».
-          const continuityProposal = understoodIntentContinuityV1({
-            proposal: understoodCandidate.proposal, rejection: { ...currentBackendRejection, rejections: turnRejections } })
-          agentTurnV2Commit = { schema_version: 2, proposal: continuityProposal, ...fencedAgentARequestV1() }
-          pipelineCommit = null
-          pipelineMemoryCandidates = continuityProposal.memory_candidates
-          decision = pipelinePlaceholder(pipelineMemoryCandidates)
-          decisionProvider = understoodCandidate.provider
-          decisionModel = understoodCandidate.model
-          pipelinePromptVersion = AGENT_A_BRAIN_PROMPT_VERSION
-          turnDiagnostics = {
-            schema_version: 1,
-            generation_attempts: agentAGenerationAttempts,
-            failure_stage: 'backend_commit',
-            failure_codes: rejectionCodes,
-            action_status: 'rejected',
-          }
-          try {
-            committed = await commitCurrentDecision('commit-agent-a-understood-intent-continuity-v1')
-            safeLog('studyx.turn.agent_a_understood_intent_continuity_committed', {
-              trace_id: input.trace_id,
-              turn_id: owned.turn_id,
-              rejection_codes: rejectionCodes,
-            })
-          } catch (continuityError) {
-            if (isTurnEvidencePersistenceError(continuityError)) throw continuityError
-            if (!(continuityError instanceof Error)) throw continuityError
-            // Only a backend rejection may fall through to the technical line;
-            // an ambiguous transport outcome must not be committed twice.
-            if (classifyAgentAAttemptFailure(continuityError).stage !== 'backend_rejected') throw continuityError
-            safeLog('studyx.turn.agent_a_understood_intent_continuity_rejected', {
-              trace_id: input.trace_id,
-              turn_id: owned.turn_id,
-              error_code: errorCode(continuityError),
-            })
           }
         }
 

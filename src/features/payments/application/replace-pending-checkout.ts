@@ -122,7 +122,30 @@ export async function replacePendingCheckoutV1(
 
   const [superseded] = await db<Array<{ replacement_payment_id: string | null }>>`
     SELECT replacement_payment_id FROM payment_intent_supersessions WHERE payment_id=${previous.id}::uuid`;
-  if (superseded) return reject('CHECKOUT_ALREADY_SUPERSEDED');
+  if (superseded) {
+    // An equivalent substitution already happened (another turn won the race,
+    // or the turn is retried): hand back the CURRENT successor instead of
+    // failing. Only revision chains are followed; a course change never is.
+    const [successor] = await db<Array<{ id: string; status: string; checkout_url: string | null; equivalent: boolean }>>`
+      WITH RECURSIVE chain(payment_id, depth) AS (
+        SELECT replacement_payment_id, 1 FROM payment_intent_supersessions
+        WHERE payment_id=${previous.id}::uuid AND replacement_payment_id IS NOT NULL
+        UNION ALL
+        SELECT s.replacement_payment_id, chain.depth+1 FROM payment_intent_supersessions s
+        JOIN chain ON s.payment_id=chain.payment_id
+        WHERE s.replacement_payment_id IS NOT NULL AND chain.depth<10
+      )
+      SELECT p.id, p.status, p.checkout_url,
+        (p.plan_code=${input.plan_code} AND p.registration_email IS NOT DISTINCT FROM (
+          SELECT lower(trim(email)) FROM contacts WHERE id=${input.contact_id}::uuid)) AS equivalent
+      FROM chain JOIN payments p ON p.id=chain.payment_id
+      WHERE NOT EXISTS (SELECT 1 FROM payment_intent_supersessions s WHERE s.payment_id=p.id)
+      ORDER BY chain.depth DESC LIMIT 1`;
+    if (successor?.equivalent && successor.checkout_url && ['reserved', 'pending'].includes(successor.status)) {
+      return { outcome: 'reused', payment_id: successor.id, status: successor.status, url: successor.checkout_url };
+    }
+    return reject('CHECKOUT_ALREADY_SUPERSEDED');
+  }
 
   const [contact] = await db<Array<{ email: string | null }>>`
     SELECT lower(trim(email)) AS email FROM contacts WHERE id=${input.contact_id}::uuid`;
