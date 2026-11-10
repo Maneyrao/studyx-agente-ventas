@@ -73,6 +73,7 @@ import {
   createValidatedPaymentLinkCourseSelectionV1,
   reserveStripeVerificationLink,
 } from '@/features/payments/application/reserve-payment-link';
+import { replacePendingCheckoutV1 } from '@/features/payments/application/replace-pending-checkout';
 import {
   PAYMENT_PLAN_PRESENTATIONS,
   isStripePaymentLinkUrl,
@@ -1198,10 +1199,64 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
         courseBonusCapability = { ...courseBonusCapability, package_status: 'accepted', status: 'accepted' };
       }
 
+      // Incident B (owner 2026-11-10): an untouched checkout of this same
+      // course whose plan or registration e-mail no longer matches is replaced
+      // by one explicit revision (same package, same offer_version, no new
+      // redemption); it is never re-reserved against the attached package.
+      let revisedCheckout = false;
+      if (canonicalWorkspaceId && action.offering_sku) {
+        // The CURRENT unpaid checkout of this course (the newest one), and
+        // only then whether its plan or e-mail differ from the request.
+        const [pendingCheckout] = await db<Array<{ id: string; offering_id: string; has_package: boolean; stale: boolean }>>`
+          SELECT p.id, p.offering_id,
+            EXISTS (SELECT 1 FROM payment_bonus_offerings s WHERE s.payment_id=p.id) AS has_package,
+            (p.plan_code<>${action.plan_code} OR p.registration_email IS DISTINCT FROM (
+              SELECT lower(trim(email)) FROM contacts WHERE id=${turn.contact_id}::uuid)) AS stale
+          FROM payments p
+          JOIN offerings o ON o.id=p.offering_id AND o.workspace_id=p.workspace_id AND o.code=${action.offering_sku}
+          WHERE p.workspace_id=${canonicalWorkspaceId}::uuid AND p.contact_id=${turn.contact_id}::uuid
+            AND p.source_conversation_id=${turn.conversation_id}::uuid AND p.provider='stripe'
+            AND p.plan_code IS NOT NULL AND p.status='reserved' AND p.provider_session_id IS NULL
+            AND p.environment=${stripePaymentLinkEnvironment(materialized.block.url) ?? 'live'}
+            AND NOT EXISTS (SELECT 1 FROM payment_intent_supersessions s WHERE s.payment_id=p.id)
+          ORDER BY p.created_at DESC, p.id DESC
+          LIMIT 1
+        `;
+        // A plain checkout followed by a newly accepted package is a different
+        // obligation and keeps the ordinary reservation path below.
+        if (pendingCheckout?.stale && (pendingCheckout.has_package || !action.promotion_code)) {
+          try {
+            const revised = await replacePendingCheckoutV1(db, {
+              workspace_id: canonicalWorkspaceId,
+              contact_id: turn.contact_id,
+              conversation_id: turn.conversation_id,
+              offering_id: pendingCheckout.offering_id,
+              previous_payment_id: pendingCheckout.id,
+              plan_code: action.plan_code,
+              payment_link_url: materialized.block.url,
+              idempotency_key: `agent-a-payment-link:${turn.id}`,
+              source_turn_id: turn.id,
+              ...(action.promotion_code ? { promotion_code: action.promotion_code } : {}),
+            });
+            // `reused` only happens when a concurrent turn already aligned the
+            // checkout: the ordinary dedupe below re-delivers it once.
+            if (revised.outcome === 'replaced') {
+              const configuredUrl = materialized.block.url;
+              materialized = { ...materialized, block: { ...materialized.block, url: revised.url },
+                response_text: materialized.response_text.replaceAll(configuredUrl, revised.url) };
+              revisedCheckout = true;
+            }
+          } catch (error) {
+            if (error instanceof PaymentLinkReservationError) throw new DecisionPolicyError(error.code);
+            throw error;
+          }
+        }
+      }
+
       // Revalidation above must happen before this dedupe read. Otherwise a
       // mismatched SKU or a current veto could obtain a friendly acknowledgement
       // merely because an older valid link existed in the same conversation.
-      const priorPaymentLinks = await db<Array<{ id: string; checkout_url: string | null; status: string | null }>>`
+      const priorPaymentLinks = revisedCheckout ? [] : await db<Array<{ id: string; checkout_url: string | null; status: string | null }>>`
         SELECT ad.id, prior_payment.checkout_url, prior_payment.status
         FROM agent_decisions AS ad
         JOIN messages AS prior_turn ON prior_turn.id = ad.turn_id
@@ -1231,7 +1286,7 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
         LIMIT 1
       `;
 
-      if (priorPaymentLinks.length === 0) {
+      if (priorPaymentLinks.length === 0 && !revisedCheckout) {
         if (!canonicalWorkspaceId) {
           throw new DecisionPolicyError('PAYMENT_WORKSPACE_NOT_FOUND');
         }
