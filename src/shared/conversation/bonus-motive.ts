@@ -63,8 +63,13 @@ export function validateBonusMotiveV1(input: {
   readonly previous_turn_asked_price_question: boolean;
   /** Persisted fact: an earlier agent message of this conversation stated the paid course price. */
   readonly price_presented?: boolean;
+  /** Owner 2026-11-10: a promotion delivered for another main course carries over. */
+  readonly promotion_carried_over?: boolean;
 }): BonusMotiveRejectionV1 | null {
   const { motive } = input;
+  // The promotion was already earned in this conversation; it follows the
+  // main course, so its first gift for the new course needs no new motive.
+  if (input.promotion_carried_over === true && !input.has_delivered_bonus) return null;
   if (!motive || !motive.quote.trim()) return 'motive_missing';
   const [primary = ''] = input.moves;
   if (NON_MOTIVE_PRIMARY_MOVES.has(primary)

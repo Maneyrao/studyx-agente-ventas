@@ -90,6 +90,42 @@ run('atomic direct bonus service', () => {
     await db!`UPDATE messages SET content='me parece muy caro' WHERE id=${f.source}`;
     expect(await offerWithMotive(db!,f.input())).toMatchObject({ok:true,offer_version:1});
   });
+  it('owner 2026-11-10: the promotion follows the main course; the first gift of the new course needs no new motive',async()=>{
+    const f=await fixture();
+    const first=f.input();
+    expect(await offerWithMotive(db!,first)).toMatchObject({ok:true,offer_version:1});
+    await f.deliver(first.outbound.id);
+    // The customer switches to another main course.
+    await db!`INSERT INTO promotions(workspace_id,promotion_code,paid_offering_id,channels,active)
+      VALUES (${f.w.id},${f.identity.promotion_code + '-b'},${f.courses[4].id},ARRAY['text'],true)`;
+    const switchTurn=await f.inbound(1);
+    await db!.begin(async tx=>{
+      await cancelOpenCourseBonusOffersForCourseChangeV1(tx,{workspace_id:f.w.id,contact_id:f.c.id,conversation_id:f.v.id,
+        selected_offering_code:f.courses[4].code,source_turn_id:switchTurn});
+      await tx`UPDATE conversation_sales_context_states_v1 SET selected_offering_code=${f.courses[4].code} WHERE conversation_id=${f.v.id}`;
+    });
+    // (inbound(1) already recorded the model's answer to the switch turn.)
+    // «¿me dejás el mismo?»: a question, never a motive on its own.
+    const [keep]=await db!`INSERT INTO messages(conversation_id,contact_id,direction,content,created_at)
+      VALUES (${f.v.id},${f.c.id},'inbound','¿me dejás el mismo?',clock_timestamp()) RETURNING id`;
+    const [workspace]=await db!`SELECT slug FROM workspaces WHERE id=${f.w.id}`;
+    const cap=await readCourseBonusCapabilityV1({workspace_slug:workspace.slug,contact_id:f.c.id,conversation_id:f.v.id,
+      channel:'text',selected_offering_code:f.courses[4].code,source_turn_id:keep.id},{db:db!});
+    expect(cap.ladder?.carried_over_bonus_offerings).toEqual([{code:f.courses[1].code,display_name:'Course 1'}]);
+    expect(cap.bonus_candidates?.map(course=>course.code)).toContain(f.courses[1].code);
+    const id=randomUUID();
+    const carried=await offerWithMotive(db!,{...f.identity,paid_offering_code:f.courses[4].code,
+      promotion_code:f.identity.promotion_code + '-b',promotion_cycle_id:randomUUID(),source_turn_id:keep.id,expected_offer_version:0,
+      bonus_offering_codes:[f.courses[1].code],motive:{kind:'price_objection',quote:'¿me dejás el mismo?'},declared_moves:['price_objection'],
+      outbound:{id,content:'Te dejo el mismo de regalo.',provider:'test',integration_id:'test',channel:'whatsapp',destination:'test',idempotency_key:id}});
+    expect(carried).toMatchObject({ok:true,offer_version:1});
+  });
+  it('without a carried-over promotion the same unmotivated first gift is still rejected',async()=>{
+    const f=await fixture(0);
+    await db!`UPDATE messages SET content='¿me dejás el mismo?' WHERE id=${f.source}`;
+    expect(await offerWithMotive(db!,{...f.input(),motive:{kind:'price_objection',quote:'¿me dejás el mismo?'},declared_moves:['price_objection']}))
+      .toMatchObject({ok:false,reason:'ladder_step_pending'});
+  });
   it('validates the motive structurally inside the transaction: missing, incoherent move, question, quote not in batch',async()=>{
     const f=await fixture(0);
     const base=f.input();

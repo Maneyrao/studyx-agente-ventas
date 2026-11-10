@@ -617,7 +617,8 @@ export function authorizeAgentTurnV2(input: {
       retention_used: cap?.ladder?.retention_used ?? false,
       purchase_decline_recorded: draftDeclinesPurchaseV1(draftEvidence, batch),
       previous_turn_asked_price_question: cap?.ladder?.previous_turn_asked_price_question ?? false,
-      price_presented: cap?.ladder?.price_presented ?? false });
+      price_presented: cap?.ladder?.price_presented ?? false,
+      promotion_carried_over: (cap?.ladder?.carried_over_bonus_offerings?.length ?? 0) > 0 });
     const checkout = isBonusCheckoutV1({ stage: state.stage, awaiting_reply: state.awaiting_reply,
       payment_link_request_pending: state.payment_link_request?.status === 'pending' }, draftEvidence);
     // Owner 2026-11-03: a literal swap of the single offered bonus is not a new

@@ -430,7 +430,7 @@ describe('Agent A Brain prompt', () => {
     expect(JSON.parse(encoded)).toEqual(current);
     expect(instructions).not.toContain('<current_turn_guidance>');
     expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v120');
-    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v206');
+    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v207');
   });
 
   it('presents the current conversation after the large factual context without mutating it', () => {
@@ -671,6 +671,19 @@ describe('Agent A Brain prompt', () => {
     expect(repair).toContain('Do not claim a discount, promotion, gift, approval, income or result');
     expect(repair).toContain('Preserve the rest of the response only when its facts and effects remain authorized');
     expect(repair).not.toContain('contextual value');
+  });
+
+  it('owner 2026-11-10: a carried-over promotion is exposed so Agent A asks to keep or change the gift', () => {
+    const current = context();
+    current.capabilities.course_bonus = { enabled: true, max_bonus_courses: 2, may_offer_bonus: true, status: 'checkin_available',
+      may_schedule_checkin: false, may_request_review: false, may_accept_offer: false, may_send_promoted_payment: false,
+      promotion_code: null, interest_offering_code: 'plomeria', bonus_offerings: [],
+      bonus_candidates: [{ code: 'home_maintenance', display_name: 'Home Maintenance' }],
+      ladder: { retention_used: false, previous_turn_asked_price_question: false,
+        carried_over_bonus_offerings: [{ code: 'home_maintenance', display_name: 'Home Maintenance' }] } };
+    const instructions = buildAgentABrainInstructionsV1(current);
+    expect(instructions).toContain('The promotion carries over from the customer\'s previous main course, where it already included Home Maintenance.');
+    expect(instructions).toContain('ask the customer whether to keep that same course or choose another');
   });
 
   it('owner 2026-11-10: a rejected bonus effect returns only that effect, not a defensive rewrite', () => {

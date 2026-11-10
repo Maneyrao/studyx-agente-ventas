@@ -23,4 +23,11 @@ export interface CourseBonusLadderV1 {
   readonly previous_turn_asked_price_question: boolean;
   /** An earlier agent message of this conversation stated the paid course price (fact, not interpretation). */
   readonly price_presented?: boolean;
+  /**
+   * Owner 2026-11-10: the promotion follows the customer's main course. Gifts
+   * already delivered in this conversation for ANOTHER paid course; when
+   * present, the first gift of the current course needs no new motive and the
+   * customer is asked whether to keep the same gift or choose another.
+   */
+  readonly carried_over_bonus_offerings?: Array<{ code: string; display_name: string }>;
 }

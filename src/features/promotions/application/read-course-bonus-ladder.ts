@@ -44,8 +44,19 @@ export async function readCourseBonusLadderV1(input: {
       AND v.id=${input.conversation_id}::uuid AND c.id=${input.contact_id}::uuid
   `;
   if (!row) return null;
-  const [current] = await db<Array<{ candidates: Array<{type:string;key:string;value:string;source_quote:string}> | null; retention_used: boolean; asked: boolean; price_presented: boolean }>>`
+  const [current] = await db<Array<{ candidates: Array<{type:string;key:string;value:string;source_quote:string}> | null; retention_used: boolean; asked: boolean; price_presented: boolean;
+    carried: Array<{ code: string; display_name: string }> | null }>>`
     SELECT
+      -- Owner 2026-11-10: gifts delivered for another main course of this
+      -- conversation carry over to the current one (live or switch-cancelled packages).
+      (SELECT jsonb_agg(DISTINCT jsonb_build_object('code',gift.offering_code_snapshot,'display_name',gift.offering_display_name_snapshot))
+        FROM promotion_offers o JOIN offerings paid ON paid.id=o.paid_offering_id
+        JOIN promotion_offer_bonus_offerings gift ON gift.offer_id=o.id AND gift.delivered_at IS NOT NULL
+        WHERE o.conversation_id=${input.conversation_id}::uuid AND o.contact_id=${input.contact_id}::uuid
+          AND o.package_mode='direct' AND paid.code IS DISTINCT FROM ${input.selected_offering_code}
+          AND gift.offering_code_snapshot IS DISTINCT FROM ${input.selected_offering_code}
+          AND (o.status IN ('offered','accepted','attached')
+            OR (o.status='cancelled' AND o.cancel_reason='CUSTOMER_CHANGED_COURSE'))) carried,
       EXISTS(SELECT 1 FROM offerings paid JOIN workspaces pw ON pw.id=paid.workspace_id AND pw.slug=${row.workspace_slug}
         JOIN messages prior ON prior.conversation_id=${input.conversation_id}::uuid AND prior.contact_id=${input.contact_id}::uuid
           AND prior.direction='outbound'
@@ -80,5 +91,6 @@ export async function readCourseBonusLadderV1(input: {
     && candidate.key === PURCHASE_DECLINE_MEMORY_KEY && declineQuoteInBatchV1(candidate.source_quote, row.customer_messages)) === true;
   return { retention_used: current?.retention_used === true,
     previous_turn_asked_price_question: current?.asked === true, purchase_decline_recorded: decline,
-    price_presented: current?.price_presented === true };
+    price_presented: current?.price_presented === true,
+    ...(current?.carried?.length ? { carried_over_bonus_offerings: current.carried } : {}) };
 }

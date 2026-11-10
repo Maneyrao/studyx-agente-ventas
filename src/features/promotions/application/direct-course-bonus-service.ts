@@ -313,14 +313,17 @@ export async function offerDirectCourseBonusV1(db: DbClient, input: OfferDirectC
         has_delivered_bonus:offered.length>0,retention_used:evidence?.retention_used ?? false,
         purchase_decline_recorded:evidence?.purchase_decline_recorded ?? false,
         previous_turn_asked_price_question:evidence?.previous_turn_asked_price_question ?? false,
-        price_presented:evidence?.price_presented ?? false});
+        price_presented:evidence?.price_presented ?? false,
+        promotion_carried_over:(evidence?.carried_over_bonus_offerings?.length ?? 0) > 0});
       if (motiveReason) throw new Rejection('ladder_step_pending',motiveReason);
     }
     if (!swap && offer && offer.offer_version>=limit) reject('bonus_limit_reached');
     // The model chooses the course; it must belong to the authorized set: the
     // paid course's affinity row, the universal bridges or a course the customer named literally.
+    const carried=(await readCourseBonusLadderV1({...input,selected_offering_code:input.paid_offering_code},tx))
+      ?.carried_over_bonus_offerings?.map(course=>course.code) ?? [];
     if (!chosen && !authorizedBonusCodesV1({paid_code:input.paid_offering_code,active_codes:active.map(row=>row.code),
-      named_codes:courseCodesNamedInBatchV1(currentBatch,active)}).includes(input.bonus_offering_codes[0]!)
+      named_codes:[...courseCodesNamedInBatchV1(currentBatch,active),...carried]}).includes(input.bonus_offering_codes[0]!)
       && !offered.some(row=>row.code===input.bonus_offering_codes[0])) reject('invalid_offering');
     let replacedExpiresAt: Date | null = null;
     if (swap && offer) {

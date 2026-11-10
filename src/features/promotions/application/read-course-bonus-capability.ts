@@ -636,7 +636,8 @@ async function readDirectCapability(input: {
   const evidence=await readCourseBonusLadderV1(input,db);
   const ladder: CourseBonusLadderV1 | null = evidence ? {retention_used:evidence.retention_used,
     previous_turn_asked_price_question:evidence.previous_turn_asked_price_question,
-    price_presented:evidence.price_presented} : null;
+    price_presented:evidence.price_presented,
+    ...(evidence.carried_over_bonus_offerings ? {carried_over_bonus_offerings:evidence.carried_over_bonus_offerings} : {})} : null;
   const activeCourses=await db<Array<{code:string;display_name:string;aliases:string[]|null}>>`
     SELECT o.code,o.display_name,ARRAY(SELECT jsonb_array_elements_text(CASE WHEN jsonb_typeof(o.metadata->'aliases')='array'
       THEN o.metadata->'aliases' ELSE '[]'::jsonb END)) aliases
@@ -645,7 +646,9 @@ async function readDirectCapability(input: {
   const customerRequest = row.status === 'accepted' || row.status === 'attached' ? null
     : await customerBonusRequestThisTurnV1(input, db, activeCourses,
       row.status === 'offered' ? (row.courses ?? []).map(course => course.code) : [], max);
-  const namedCodes = courseCodesNamedInBatchV1(await currentBatchTexts(input, db), activeCourses);
+  // A carried-over gift may be kept for the new main course (owner 2026-11-10).
+  const namedCodes = [...new Set([...courseCodesNamedInBatchV1(await currentBatchTexts(input, db), activeCourses),
+    ...(ladder?.carried_over_bonus_offerings ?? []).map(course => course.code)])];
   // Checkout (by durable state) closes new gifts: never advertise the effect there.
   const [salesState] = await db<Array<{stage:string;awaiting_reply:string|null;link_status:string|null;handoff_call_settled:boolean}>>`
     SELECT state.stage,state.awaiting_reply,state.payment_link_request->>'status' AS link_status,
