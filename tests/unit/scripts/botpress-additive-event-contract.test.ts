@@ -192,6 +192,16 @@ describe('Botpress additive event publication contract', () => {
       remoteTags: existingTags,
       generatedTags: { ...existingTags, title: runtimeTitleTag },
     })).toEqual({ title: runtimeTitleTag });
+    expect(buildBotpressAdditiveEventUpdate({
+      botId: 'bot_123',
+      code: 'compiled-code',
+      eventPatch: {},
+      conversationTagPatch: { title: runtimeTitleTag },
+    })).toEqual({
+      id: 'bot_123',
+      code: 'compiled-code',
+      conversation: { tags: { title: runtimeTitleTag } },
+    });
 
     expect(() => planBotpressAdditiveConversationTagPatch({
       remoteTags: existingTags,

@@ -333,13 +333,15 @@ export function buildBotpressAdditiveEventUpdate({
   }
 
   const conversationTagKeys = Object.keys(conversationTagPatch);
-  if (conversationTagKeys.some((key) => key !== allowedConversationTagName)
-    || conversationTagKeys.length > 1) {
+  if (conversationTagKeys.some((key) => (
+    !Object.prototype.hasOwnProperty.call(allowedConversationTagContracts, key)
+  ))) {
     throw new Error('UNREVIEWED_CONVERSATION_TAG_PATCH');
   }
-  if (conversationTagKeys.length === 1
-    && !equal(conversationTagPatch[allowedConversationTagName], allowedConversationTagContract)) {
-    throw new Error(`CONTRACT_CHANGED:conversation.tags.${allowedConversationTagName}`);
+  for (const key of conversationTagKeys) {
+    if (!equal(conversationTagPatch[key], allowedConversationTagContracts[key])) {
+      throw new Error(`CONTRACT_CHANGED:conversation.tags.${key}`);
+    }
   }
 
   const actionKeys = Object.keys(actionPatch);
@@ -355,7 +357,7 @@ export function buildBotpressAdditiveEventUpdate({
     id: botId,
     code,
     ...(eventKeys.length === 1 ? { events: eventPatch } : {}),
-    ...(conversationTagKeys.length === 1 ? { conversation: { tags: conversationTagPatch } } : {}),
+    ...(conversationTagKeys.length > 0 ? { conversation: { tags: conversationTagPatch } } : {}),
     ...(actionKeys.length === 1 ? { actions: actionPatch } : {}),
     ...(configurationPlan?.changed ? { configuration: configurationPlan.configuration } : {}),
   };

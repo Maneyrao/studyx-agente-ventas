@@ -25,6 +25,7 @@ const REVIEWED_SOURCE_HASHES = Object.freeze({
 const NON_CODE_EXACT = new Set([
   'AGENTS.md',
   'scripts/lib/botpress-additive-event-contract.mjs',
+  'scripts/lib/botpress-release-destination.mjs',
   'scripts/lib/botpress-release-provenance.mjs',
   'scripts/prepare-instrumented-botpress-release.mjs',
   'scripts/publish-botpress-code-preserving-connections.mjs',
