@@ -14,8 +14,9 @@
  * Since 2026-11-09 it runs as the npm `prebuild` hook (`--build`): it stages into this checkout's public/ and the
  * build fails when any declared file is missing or altered. A file already in public/ with the registered
  * sha256 is kept, so a build without the source folders passes only when public/ was already staged.
- * Sources: STUDYX_PROGRAMS_SOURCE_DIR / STUDYX_MATERIAL_IMAGES_DIR, else the sibling folders of the main
- * checkout (`<parent>/programas-studyx`, `<parent>/studyx-material-whatsapp/imagenes`).
+ * Sources: STUDYX_PROGRAMS_SOURCE_DIR / STUDYX_MATERIAL_IMAGES_DIR, else the versioned copies in
+ * `assets/course-material/`, else the sibling folders of the main checkout
+ * (`<parent>/programas-studyx`, `<parent>/studyx-material-whatsapp/imagenes`).
  */
 import { createHash } from 'node:crypto';
 import { copyFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs';
@@ -94,13 +95,20 @@ export function declaredMaterialPaths() {
   ]);
 }
 
+// Versioned sources (2026-11-10): the material lives in the repo so every clone
+// and remote builder has it. Env vars still win; the sibling folders remain a fallback.
+const REPO_PROGRAMS_DIR = 'assets/course-material/programas-studyx';
+const REPO_IMAGES_DIR = 'assets/course-material/imagenes';
+
 if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
   try {
     const build = process.argv[2] === '--build';
     const parent = build ? materialParentDir() : null;
     const target = build ? ROOT : process.argv[2];
-    const programsDir = (build ? undefined : process.argv[3]) ?? process.env.STUDYX_PROGRAMS_SOURCE_DIR ?? (parent && join(parent, 'programas-studyx'));
-    const imagesDir = (build ? undefined : process.argv[4]) ?? process.env.STUDYX_MATERIAL_IMAGES_DIR ?? (parent && join(parent, 'studyx-material-whatsapp', 'imagenes'));
+    const programsDir = (build ? undefined : process.argv[3]) ?? process.env.STUDYX_PROGRAMS_SOURCE_DIR
+      ?? (build && existsSync(join(ROOT, REPO_PROGRAMS_DIR)) ? join(ROOT, REPO_PROGRAMS_DIR) : parent && join(parent, 'programas-studyx'));
+    const imagesDir = (build ? undefined : process.argv[4]) ?? process.env.STUDYX_MATERIAL_IMAGES_DIR
+      ?? (build && existsSync(join(ROOT, REPO_IMAGES_DIR)) ? join(ROOT, REPO_IMAGES_DIR) : parent && join(parent, 'studyx-material-whatsapp', 'imagenes'));
     const count = stageCoursePrograms(target, programsDir);
     const material = stageCourseMaterial(target, imagesDir);
     const declared = declaredMaterialPaths();
