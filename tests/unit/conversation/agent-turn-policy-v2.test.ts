@@ -664,6 +664,25 @@ describe('plannerless Agent A authority', () => {
     expect(result).toMatchObject(blocked ? {ok:false,reasons:['ACTION_NOT_AUTHORIZED']}
       : {ok:true,action:{type:'send_payment_link',offering_code:to,payment_plan:'one_time'}});
   });
+  it('owner 2026-11-10: an authorized paid+bonus action passes although the old course is still selected', () => {
+    // Fotografía (camaras_seguridad here) was selected; the customer moved to Plomería
+    // (redes_informaticas) and asked which course is included. The action declares the
+    // paid and the bonus course and both are in the capability: the copy that names
+    // both must not be rejected because it also names the paid course.
+    const cap: NonNullable<Parameters<typeof authorizeAgentTurnV2>[0]['course_bonus']> = { status: 'checkin_available', enabled: true, max_bonus_courses: 2,
+      ladder: { retention_used: false, previous_turn_asked_price_question: false },
+      may_offer_bonus: true, may_schedule_checkin: false, may_request_review: false,
+      may_accept_offer: false, may_send_promoted_payment: false, promotion_code: null,
+      interest_offering_code: 'redes_informaticas', bonus_offerings: [],
+      bonus_candidates: [{ code: 'excel_integral', display_name: 'Excel Integral' }] };
+    const p = proposal({ move: PRICE_MOVE,
+      response: { messages: ['Con Redes Informáticas te queda incluido Excel Integral, sin costo extra.'] },
+      course_mentions: [{ offering_code: 'redes_informaticas', role: 'paid' }, { offering_code: 'excel_integral', role: 'bonus' }],
+      proposed_action: { type: 'offer_course_bonus', motive:{kind:'price_objection',quote:'me parece muy caro'},
+        interest_offering_code: 'redes_informaticas', bonus_offering_code: 'excel_integral' } });
+    expect(authorize({ proposal: p, state: state({ selected_offering_code: 'camaras_seguridad' }),
+      customerText: 'me parece muy caro', courseBonus: cap })).toMatchObject({ ok: true, action: p.proposed_action });
+  });
   it('authorizes exactly one active direct course only with the capability', () => {
     const p = proposal({ move: PRICE_MOVE, response: { messages: ['Te sumo Excel Integral y el precio sigue igual.'] },
       course_mentions: [{ offering_code: 'redes_informaticas', role: 'paid' }, { offering_code: 'excel_integral', role: 'bonus' }],

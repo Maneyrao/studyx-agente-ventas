@@ -722,9 +722,13 @@ export function authorizeAgentTurnV2(input: {
         && input.offerings.some(offering=>offering.code===mention.offering_code)
         ? {...mention,role:'alternative' as const} : mention))
     : proposal.course_mentions;
+  // Owner 2026-11-10: structural check only. An authorized bonus action
+  // declares its paid course; that is the paid identity of this copy, even
+  // while an older course is still the persisted selection.
+  const mentionPaidCourse = action.type==='offer_course_bonus' ? action.interest_offering_code : primaryCourse;
   const courseMentions = validateCourseMentionsV1({
     messages:proposal.response.messages,call_offer:proposal.response.call_offer,catalog:input.offerings,
-    course_mentions:mentionsForValidation,paid_offering_code:primaryCourse,
+    course_mentions:mentionsForValidation,paid_offering_code:mentionPaidCourse,
     paid_mention_offering_code:!startsFreshSalesCycle && !(changesCourse && requestedOffering!==null)
       ? input.paid_mention_offering_code : null,
     ...(action.type==='offer_course_bonus' ? {authorized_bonus_action:{
