@@ -18,9 +18,11 @@ import {
   planBotpressReviewedConfigurationUpdate,
   planBotpressReviewedActionPatch,
 } from './lib/botpress-additive-event-contract.mjs';
+import {
+  STUDYX_RELEASE_DESTINATION,
+  assertBotpressReleaseDestination,
+} from './lib/botpress-release-destination.mjs';
 
-const expectedBotId = '0d7c9ecb-4781-4c65-913d-f7e947fa14d4';
-const expectedWorkspaceId = 'wkspace_01M4XEBZNC10HX2KDHKY36T6R0';
 const expectedProfile = process.env.STUDYX_BOTPRESS_PROFILE;
 const root = process.cwd();
 const outputDirectory = process.env.STUDYX_RELEASE_EVIDENCE_DIR;
@@ -50,6 +52,11 @@ try {
   fs.mkdirSync(outputDirectory, { recursive: true, mode: 0o700 });
   const sdkPackage = JSON.parse(fs.readFileSync(path.join(root, 'node_modules/@botpress/adk-cli/package.json'), 'utf8'));
   requireBotpressReleaseProfile(expectedProfile);
+  assertBotpressReleaseDestination({
+    profile: expectedProfile,
+    workspaceId: STUDYX_RELEASE_DESTINATION.workspaceId,
+    botId: STUDYX_RELEASE_DESTINATION.botId,
+  });
   const { auth, resolveCommandContext, refreshDependencySnapshotOnce, adkBuild }
     = await loadReviewedBotpressAdk(sdkPackage.version, load);
   auth.setProfileOverride(expectedProfile);
@@ -57,7 +64,11 @@ try {
   const { prepareCreateBotBody } = await load('node_modules/@botpress/cli/dist/api/bot-body.js');
   const ctx = await resolveCommandContext({ target: 'prod', projectLoadOptions: { adkCommand: 'adk-deploy' },
     require: ['project', 'credentials', 'workspace', 'bot'] });
-  assert(ctx.botId === expectedBotId && ctx.workspaceId === expectedWorkspaceId, 'DESTINATION_MISMATCH');
+  assertBotpressReleaseDestination({
+    profile: expectedProfile,
+    botId: ctx.botId,
+    workspaceId: ctx.workspaceId,
+  });
   const client = new Client({ ...ctx.credentials, headers: { 'x-multiple-integrations': 'true' } });
   const before = (await client.getBot({ id: ctx.botId })).bot;
   record('bot-before.private.json', before);

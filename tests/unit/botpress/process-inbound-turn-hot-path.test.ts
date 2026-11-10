@@ -686,10 +686,42 @@ describe('processInboundTurn hot path', () => {
     expect(stopTyping).toHaveBeenCalledWith({
       conversationId: 'bp-conversation', messageId: 'wamid.typing-test',
     });
-    expect(startTyping.mock.invocationCallOrder[0]).toBeLessThan(
-      actionSpies.claim.mock.invocationCallOrder[0]!,
+    expect(actionSpies.claim.mock.invocationCallOrder[0]).toBeLessThan(
+      startTyping.mock.invocationCallOrder[0]!,
     );
     expect(startTyping.mock.invocationCallOrder[0]).toBeLessThan(stopTyping.mock.invocationCallOrder[0]!);
+  });
+
+  it('never lets a losing batch workflow start or stop the owner typing presence', async () => {
+    configuration.whatsappPublicEnabled = true;
+    configuration.whatsappAllowedBotPhoneNumberId = 'allowed-business-number-75';
+    actionSpies.claim.mockResolvedValue({
+      outcome: 'absorbed', trace_id: UUID, batch_id: UUID, retry_after_ms: 0,
+    });
+    const startTyping = vi.spyOn(runtimeActions.whatsapp, 'startTypingIndicator');
+    const stopTyping = vi.spyOn(runtimeActions.whatsapp, 'stopTypingIndicator');
+    const input = {
+      ...workflowInput(), channel: 'whatsapp', external_message_id: 'wamid.losing-workflow',
+      message: {
+        ...workflowInput().message, text: 'Hola',
+        metadata: { bot_phone_number_id: 'allowed-business-number-75' },
+      },
+    };
+    const step = Object.assign(async (_name: string, run: () => Promise<unknown>) => run(), {
+      sleep: vi.fn(async () => undefined),
+    });
+
+    const result = await (processInboundTurn as unknown as {
+      definition: { handler: (args: Record<string, unknown>) => Promise<unknown> };
+    }).definition.handler({
+      input, state: processingState(), step, execute: vi.fn(), client: {},
+      signal: new AbortController().signal,
+      workflow: { id: 'losing-typing-test', setTimeout: vi.fn(async () => undefined) },
+    });
+
+    expect(result).toMatchObject({ status: 'absorbed' });
+    expect(startTyping).not.toHaveBeenCalled();
+    expect(stopTyping).not.toHaveBeenCalled();
   });
 
   it('keeps the commercial turn alive when WhatsApp typing presence fails', async () => {
@@ -4390,10 +4422,18 @@ describe('processInboundTurn hot path', () => {
         message: { ...workflowInput().message, metadata: { bot_phone_number_id: 'allowed-business-number-75' } } },
       { createMessage, outbounds: parts() });
       expect(createMessage.mock.calls.map(([input]) => (input as { type: string }).type)).toEqual(['file', 'image', 'text', 'text']);
-      expect(startTyping).toHaveBeenCalledTimes(1);
-      expect(stopTyping).toHaveBeenCalledTimes(1);
+      expect(startTyping).toHaveBeenCalledTimes(4);
+      expect(stopTyping).toHaveBeenCalledTimes(4);
       expect(startTyping.mock.invocationCallOrder[0]).toBeLessThan(createMessage.mock.invocationCallOrder[0]!);
       expect(stopTyping.mock.invocationCallOrder[0]).toBeLessThan(createMessage.mock.invocationCallOrder[0]!);
+      for (let part = 1; part < createMessage.mock.invocationCallOrder.length; part += 1) {
+        expect(startTyping.mock.invocationCallOrder[part]).toBeLessThan(
+          createMessage.mock.invocationCallOrder[part]!,
+        );
+        expect(stopTyping.mock.invocationCallOrder[part]).toBeLessThan(
+          createMessage.mock.invocationCallOrder[part]!,
+        );
+      }
     });
     it('on a channel without file support the document is reported failed (never sent) and the text bubbles still go out', async () => {
       const createMessage = vi.fn().mockResolvedValueOnce({ message: { id: 'bp-1' } }).mockResolvedValueOnce({ message: { id: 'bp-2' } });
@@ -4429,8 +4469,8 @@ describe('processInboundTurn hot path', () => {
     });
 
     expect(submittedTexts).toEqual(['Primero', 'Segundo']);
-    expect(submittedAt[1] - submittedAt[0]).toBeGreaterThanOrEqual(650);
-    expect(submittedAt[1] - submittedAt[0]).toBeLessThanOrEqual(1_100);
+    expect(submittedAt[1] - submittedAt[0]).toBeGreaterThanOrEqual(1_000);
+    expect(submittedAt[1] - submittedAt[0]).toBeLessThanOrEqual(2_200);
   });
 
   it('stops after an ambiguous second part without authorizing any resend', async () => {

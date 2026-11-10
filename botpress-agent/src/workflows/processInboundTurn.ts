@@ -195,11 +195,12 @@ const MAX_CLAIM_ATTEMPTS = 6
 const INBOUND_RECOVERY_BASE_DELAY_MS = 2_000
 const INBOUND_RECOVERY_MAX_DELAY_MS = 15_000
 
-const MIN_INTER_BUBBLE_DELAY_MS = 650
-const INTER_BUBBLE_DELAY_RANGE_MS = 251
+const MIN_INTER_BUBBLE_DELAY_MS = 1_000
+const INTER_BUBBLE_DELAY_RANGE_MS = 1_001
 const MIN_WHATSAPP_REPLY_LATENCY_MS = 8_000
 const WHATSAPP_REPLY_LATENCY_RANGE_MS = 6_001
 const VISIBLE_OUTBOUND_BUDGET_MS = 15_000
+const TYPING_INDICATOR_BUDGET_MS = 25_000
 
 function interBubbleDelayMs(outboundId: string): number {
   let hash = 0
@@ -614,10 +615,20 @@ export const processInboundTurn = new Workflow({
     state.errorCode = null
     let evidenceJournal: ReturnType<typeof createTurnEvidenceJournal> | null = null
     let whatsappTypingActive = false
+    let firstWhatsappTypingAttemptAtMs: number | null = null
     const startWhatsAppTyping = async (): Promise<void> => {
       if (whatsappTypingActive
         || input.channel !== 'whatsapp'
         || input.sandbox_provider === 'telegram_sandbox') return
+      const requestedAtMs = Date.now()
+      if (firstWhatsappTypingAttemptAtMs === null) {
+        firstWhatsappTypingAttemptAtMs = requestedAtMs
+        if (Number.isFinite(occurredAtMs)) {
+          timings.event_to_typing_request_ms = Math.max(0, requestedAtMs - occurredAtMs)
+          timings.event_to_typing_request_over_budget =
+            timings.event_to_typing_request_ms >= TYPING_INDICATOR_BUDGET_MS ? 1 : 0
+        }
+      }
       try {
         await getWhatsappRuntimeActions().startTypingIndicator({
           conversationId: input.botpress_conversation_id,
@@ -625,6 +636,7 @@ export const processInboundTurn = new Workflow({
           timeout: 60_000,
         })
         whatsappTypingActive = true
+        timings.typing_indicator_start_success = 1
         safeLog('studyx.turn.typing_indicator_started', { trace_id: input.trace_id })
       } catch (error) {
       if (isTurnEvidencePersistenceError(error)) throw error
@@ -635,6 +647,7 @@ export const processInboundTurn = new Workflow({
           trace_id: input.trace_id,
           error_code: errorCode(error),
         })
+        timings.typing_indicator_start_failed = 1
       }
     }
     const stopWhatsAppTyping = async (): Promise<void> => {
@@ -951,13 +964,6 @@ export const processInboundTurn = new Workflow({
       return finish()
     }
 
-    // Ingest already contains the canonical contact policy. Start presence
-    // before the durable batch wait so WhatsApp shows activity during the
-    // entire customer-visible wait, without leaking it to blocked contacts.
-    if (ingest.policy.may_respond && !ingest.contact.blocked) {
-      await startWhatsAppTyping()
-    }
-
     // ---- Pasos 4-6: dormir hasta due_at y reclamar ------------------------
     //
     // El sueño es un step durable: si el runtime recicla el workflow, se
@@ -1092,6 +1098,12 @@ export const processInboundTurn = new Workflow({
       latestInboundAtMs = Number.isFinite(latestInboundAtMs)
         ? Math.max(latestInboundAtMs, lastBatchEventAtMs)
         : lastBatchEventAtMs
+    }
+    // Only the durable batch owner may own WhatsApp presence. Starting it
+    // before the claim allowed an absorbed workflow to stop the winner's
+    // indicator when several customer bubbles arrived together.
+    if (owned.policy.may_respond && !owned.contact.blocked) {
+      await startWhatsAppTyping()
     }
     Object.assign(timings, owned.diagnostics.timings, owned.diagnostics.counters)
     safeLog('studyx.turn.claimed', {
@@ -3357,6 +3369,7 @@ export const processInboundTurn = new Workflow({
       const multiSendStartedAt = Date.now()
       let lastBotpressMessageId: string | null = null
       let submittedPartsThisRun = 0
+      let lastSubmissionAcceptedAtMs: number | null = null
 
       // Owner order (2026-11-09): programme PDF, then the course image, then the text bubbles.
       // A document that is confirmed NOT sent never silences the reply: its text parts still go out.
@@ -3437,7 +3450,15 @@ export const processInboundTurn = new Workflow({
             await waitForNaturalWhatsAppReply(outboundPart.id)
           }
           if (submittedPartsThisRun > 0) {
-            await new Promise<void>(resolve => { setTimeout(resolve, interBubbleDelayMs(outboundPart.id)) })
+            await startWhatsAppTyping()
+            const targetGapMs = interBubbleDelayMs(outboundPart.id)
+            const elapsedSinceAcceptanceMs = lastSubmissionAcceptedAtMs === null
+              ? 0
+              : Math.max(0, Date.now() - lastSubmissionAcceptedAtMs)
+            const remainingGapMs = Math.max(0, targetGapMs - elapsedSinceAcceptanceMs)
+            if (remainingGapMs > 0) {
+              await new Promise<void>(resolve => { setTimeout(resolve, remainingGapMs) })
+            }
           }
           delivery = await submitWithOwnership(
             `submit-outbound-to-botpress-part-${outboundPart.part_index}`,
@@ -3561,6 +3582,7 @@ export const processInboundTurn = new Workflow({
           emitTimings()
           return finish()
         }
+        lastSubmissionAcceptedAtMs = Date.now()
 
         // Report immediately. If this becomes ambiguous after createMessage
         // returned an id, stop before the next part; never resend this one.
