@@ -3,15 +3,16 @@ import { readFileSync, readdirSync, readlinkSync } from 'node:fs';
 import path from 'node:path';
 import ts from 'typescript';
 
-// Last reviewed commit that changed deployable code (brain v208, prompt v120,
+// Last reviewed commit that changed deployable code (brain v209, prompt v120,
 // owner-only WhatsApp typing presence with bounded start/stop, natural
 // multipart cadence, the active StudyX WhatsApp release destination, and the
 // 2026-11-10 course switch / checkout revision / effect-rejection fixes, and the
-// 2026-11-10 intervention / structural validator / effect-only repair fixes).
+// 2026-11-10 intervention / structural validator / effect-only repair fixes, and the
+// 2026-11-10 link request that persists course and plan and sends the link).
 // Anything committed after it must be docs/evals/tests only (see assertOnlyNonCodeChangesSinceBaseV1), so a release
 // prepared from the branch HEAD runs exactly this code. Re-pin whenever a code file changes.
-export const BOT_RELEASE_BASE_SHA = '92b7bd66ad0ab7eb97b414c42916e2f11dd53cc9';
-export const BOT_RELEASE_BRAIN_VERSION = 'studyx-agent-a-brain-v208';
+export const BOT_RELEASE_BASE_SHA = 'd64431dcb7cff3e61bfed5cf3ac6477586e135cc';
+export const BOT_RELEASE_BRAIN_VERSION = 'studyx-agent-a-brain-v209';
 export const BOT_RELEASE_PROMPT_VERSION = 'studyx-agent-a-canonical-v120';
 export const BOT_RELEASE_INSTRUMENTATION_VERSION = 'studyx-release-provenance-v1';
 export const BOT_RELEASE_SOURCE_PATHS = Object.freeze([
@@ -21,7 +22,7 @@ export const BOT_RELEASE_SOURCE_PATHS = Object.freeze([
 ]);
 const REVIEWED_SOURCE_HASHES = Object.freeze({
   [BOT_RELEASE_SOURCE_PATHS[0]]: 'c1a85e1d95000cd56f885e02d3cf900d7900ea5102b08ed51910500387c2de93',
-  [BOT_RELEASE_SOURCE_PATHS[1]]: '4dc066a70de69a7a7e5aeb541632dedf67070237e20be3d2061d2694c0f90409',
+  [BOT_RELEASE_SOURCE_PATHS[1]]: '190e28102dc2fb6f108b9e3c7edcf541e87be9cfea4d5e488d556b9572ac596a',
   [BOT_RELEASE_SOURCE_PATHS[2]]: '77809dcfbf8e605affe2eeb746f56bcf5ce91ca07ef05726ec5fe20111c07fd2',
 });
 // Paths that may change after the pinned base without altering what is deployed.
