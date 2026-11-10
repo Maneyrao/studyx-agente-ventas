@@ -430,7 +430,7 @@ describe('Agent A Brain prompt', () => {
     expect(JSON.parse(encoded)).toEqual(current);
     expect(instructions).not.toContain('<current_turn_guidance>');
     expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v120');
-    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v205');
+    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v206');
   });
 
   it('presents the current conversation after the large factual context without mutating it', () => {
@@ -597,7 +597,7 @@ describe('Agent A Brain prompt', () => {
     expect(instructions).not.toContain('Choose the wording and structure yourself');
   });
 
-  it.each([false,true])('forbids every bonus mention while repairing ladder_step_pending (retention used=%s)', evidence=>{
+  it.each([false,true])('forbids hinting a gift while repairing ladder_step_pending (retention used=%s)', evidence=>{
     const current=context();
     current.capabilities.course_bonus={enabled:true,max_bonus_courses:3,may_offer_bonus:false,status:'not_eligible',
       may_schedule_checkin:false,may_request_review:false,may_accept_offer:false,may_send_promoted_payment:false,
@@ -607,8 +607,9 @@ describe('Agent A Brain prompt', () => {
       rejections:[{code:'FACT_VALUE_MISMATCH',subject:'direct_bonus:ladder_step_pending'}],
       authorized_alternatives:{fact_ids:[],actions:['none'],missing_information:[]}};
     const repair=buildAgentABrainInstructionsV1(current).split('<mandatory_repair')[1]!.split('</mandatory_repair>')[0]!;
-    expect(repair).toContain('Do not mention, suggest or imply any bonus');
-    expect(repair).toContain('including a generic, conditional, questioned or hinted gift');
+    // Owner 2026-11-10: only the rejected effect goes back; the ladder still forbids hinting a gift.
+    expect(repair).toContain('The proposed bonus effect was not executed (direct_bonus:ladder_step_pending)');
+    expect(repair).toContain('do not offer, hint at or present that gift as granted');
     expect(repair).toContain('Use proposed_action=none for bonus effects');
     expect(repair).toContain('never invent objections or completed steps');
   });
@@ -670,6 +671,26 @@ describe('Agent A Brain prompt', () => {
     expect(repair).toContain('Do not claim a discount, promotion, gift, approval, income or result');
     expect(repair).toContain('Preserve the rest of the response only when its facts and effects remain authorized');
     expect(repair).not.toContain('contextual value');
+  });
+
+  it('owner 2026-11-10: a rejected bonus effect returns only that effect, not a defensive rewrite', () => {
+    const current = context();
+    current.turn_rejection = {
+      schema_version: 1,
+      rejection_id: '00000000-0000-4000-8000-000000000001',
+      attempt: 1,
+      rejections: [{ code: 'FACT_VALUE_MISMATCH', subject: 'forbidden_promise' },
+        { code: 'FACT_VALUE_MISMATCH', subject: 'direct_bonus:ladder_step_pending' }],
+      authorized_alternatives: { fact_ids: [], actions: ['none'], missing_information: [] },
+    };
+    const repair = buildAgentABrainInstructionsV1(current)
+      .split('<mandatory_repair')[1]!
+      .split('</mandatory_repair>')[0]!;
+    expect(repair).toContain('The proposed bonus effect was not executed (direct_bonus:ladder_step_pending)');
+    expect(repair).toContain('Only that effect is rejected');
+    expect(repair).toContain('commercial intent');
+    expect(repair).not.toContain('remove the unauthorized promise completely');
+    expect(repair).not.toContain('Delete every customer-visible sentence');
   });
 
   it('does not validate or autocorrect a rejected email receipt', () => {

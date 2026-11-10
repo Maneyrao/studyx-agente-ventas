@@ -5,7 +5,7 @@ import {
 } from './studyx-agent-a-canonical.generated';
 import { resolveCanonicalPromptIdentityV1 } from './agent-a-identity';
 
-export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v205' as const;
+export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v206' as const;
 
 /**
  * Runtime contract only. The sales behavior lives in the canonical prompt so
@@ -235,7 +235,15 @@ Preserve an already resolved course reference. Use only authorized duration, syl
   ));
   const courseDeclarationRepair = repairsBonusPromise || repairsUndeclaredCourse
     ? 'Rebuild course_mentions for the final rewritten response; remove declarations of courses no longer mentioned, without inventing authorization.' : '';
-  const forbiddenPromiseRepair = repairsBonusPromise ? `
+  // Owner 2026-11-10: when the model PROPOSED a bonus and only that effect was
+  // rejected, return just the rejected effect. The strict rewrite below is for
+  // a gift invented in prose without any proposed effect.
+  const rejectedBonusEffects = rejection.rejections.map(reason => reason.subject)
+    .filter(subject => subject.startsWith('direct_bonus:') || subject === 'ladder_step_pending')
+  const forbiddenPromiseRepair = repairsBonusPromise && rejectedBonusEffects.length > 0 ? `
+The proposed bonus effect was not executed (${rejectedBonusEffects.join(', ')}). Only that effect is rejected.
+Use proposed_action=none for bonus effects; do not offer, hint at or present that gift as granted in this reply. Keep the course in focus, the customer's question and the commercial intent of your reply, and continue naturally from there; never invent objections or completed steps. Keep delivered_bonus_offerings and existing obligations in durable state; pending additions remain pending.`
+    : repairsBonusPromise ? `
 For ladder_step_pending or forbidden_promise, remove the unauthorized promise completely.
 Do not mention, suggest or imply any bonus in this rewrite, including a generic, conditional, questioned or hinted gift. Delete every customer-visible sentence that does so. Phrases such as "puedo buscarte otra promoción", "puedo sumarte otro curso" or an unnamed future benefit are still promises and must be removed. Do not anticipate a gift or invent a quantity. This repair boundary takes precedence over the course_bonus effect contract, including previously delivered bonuses.
 Use proposed_action=none for bonus effects; do not offer, accept or request review of a bonus in this rewrite. Keep delivered_bonus_offerings and existing obligations in durable state without mentioning them; never delete them. Pending additions remain pending and unconfirmed.
