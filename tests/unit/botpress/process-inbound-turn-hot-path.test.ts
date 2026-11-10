@@ -130,6 +130,7 @@ import {
   StudyxHttpError,
 } from '../../../botpress-agent/src/utils/http';
 import { dispatch } from '../../../botpress-agent/src/channels';
+import { WHATSAPP_TYPING_STOP_TIMEOUT_MS } from '../../../botpress-agent/src/lib/channels/whatsapp-typing-presence';
 
 const UUID = '18a823e8-27c2-4279-9956-058f45f33cd5';
 const NOW = '2026-08-21T12:00:00.000Z';
@@ -4127,6 +4128,48 @@ describe('processInboundTurn hot path', () => {
     expect(actionSpies.delivery).not.toHaveBeenCalled();
     expect(state).toMatchObject({ phase: 'retry_pending', deliveryStatus: null,
       errorCode: 'OUTBOUND_SUBMISSION_AMBIGUOUS', needsOperator: true });
+  });
+
+  it('continues to createMessage when stopping WhatsApp typing presence hangs', async () => {
+    configuration.whatsappPublicEnabled = true;
+    configuration.whatsappCanaryEnabled = false;
+    configuration.whatsappAllowedBotPhoneNumberId = 'allowed-business-number-75';
+    let stopInvokedResolve: (() => void) | undefined;
+    const stopInvoked = new Promise<void>((resolve) => { stopInvokedResolve = resolve; });
+    const stopTyping = vi.spyOn(runtimeActions.whatsapp, 'stopTypingIndicator')
+      .mockImplementation(() => {
+        stopInvokedResolve?.();
+        return new Promise<Record<string, never>>(() => undefined);
+      });
+    const createMessage = vi.fn(async () => ({ message: { id: 'bp-after-typing-stop-timeout' } }));
+    vi.useFakeTimers();
+    try {
+      const run = runCommittedOutbound({
+        authorized_egress: {
+          schema_version: 1,
+          content_hash: 'e2dee359447348131358a63664853c018f5db0fcb31835e30a0aac56badab6bd',
+          authorized_urls: [],
+          protected_facts: [],
+        },
+      }, {
+        channel: 'whatsapp',
+        message: {
+          ...workflowInput().message,
+          metadata: { bot_phone_number_id: 'allowed-business-number-75' },
+        },
+      }, { createMessage });
+
+      await stopInvoked;
+      await vi.advanceTimersByTimeAsync(WHATSAPP_TYPING_STOP_TIMEOUT_MS - 1);
+      expect(createMessage).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1);
+      await run;
+
+      expect(stopTyping).toHaveBeenCalledTimes(1);
+      expect(createMessage).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it.each([false, true])('records the provider status and Error ID of an ambiguous send in evidence and log (multipart=%s)', async multipart => {
