@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   STUDYX_RELEASE_DESTINATION,
   assertBotpressReleaseDestination,
+  normalizeBotpressIntegrationField,
 } from '../../../scripts/lib/botpress-release-destination.mjs';
 
 describe('Botpress StudyX release destination', () => {
@@ -28,5 +29,18 @@ describe('Botpress StudyX release destination', () => {
       ...STUDYX_RELEASE_DESTINATION,
       botId: 'bot_other',
     })).toThrow('DESTINATION_MISMATCH');
+  });
+
+  it('normalizes only reviewed provider defaults that do not alter a connection', () => {
+    expect(normalizeBotpressIntegrationField('telegram', 'configuration', {})).toEqual({
+      typingIndicatorEmoji: false,
+    });
+    expect(normalizeBotpressIntegrationField('telegram', 'configuration', {
+      typingIndicatorEmoji: true,
+    })).toEqual({ typingIndicatorEmoji: true });
+    expect(normalizeBotpressIntegrationField('whatsapp', 'configuration', {})).toEqual({
+      listenMessageEchoes: false,
+    });
+    expect(normalizeBotpressIntegrationField('telegram', 'enabled', false)).toBe(false);
   });
 });

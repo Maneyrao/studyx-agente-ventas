@@ -11,3 +11,14 @@ export function assertBotpressReleaseDestination({ profile, workspaceId, botId }
     throw new Error('DESTINATION_MISMATCH');
   }
 }
+
+export function normalizeBotpressIntegrationField(alias, field, value) {
+  if (field !== 'configuration') return value;
+  if (alias === 'whatsapp') {
+    return { ...(value ?? {}), listenMessageEchoes: value?.listenMessageEchoes ?? false };
+  }
+  if (alias === 'telegram') {
+    return { ...(value ?? {}), typingIndicatorEmoji: value?.typingIndicatorEmoji ?? false };
+  }
+  return value;
+}

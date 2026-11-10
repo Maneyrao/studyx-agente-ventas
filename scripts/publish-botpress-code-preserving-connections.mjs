@@ -21,6 +21,7 @@ import {
 import {
   STUDYX_RELEASE_DESTINATION,
   assertBotpressReleaseDestination,
+  normalizeBotpressIntegrationField,
 } from './lib/botpress-release-destination.mjs';
 
 const expectedProfile = process.env.STUDYX_BOTPRESS_PROFILE;
@@ -40,12 +41,6 @@ const protectedConfiguration = (bot) => ({
   integrations: bot.integrations, plugins: bot.plugins, configuration: bot.configuration,
   subscriptions: bot.subscriptions, secretNames: [...bot.secrets].sort(), name: bot.name, blocked: bot.blocked,
 });
-const normalizedIntegrationField = (alias, field, value) => {
-  if (alias === 'whatsapp' && field === 'configuration') {
-    return { ...(value ?? {}), listenMessageEchoes: value?.listenMessageEchoes ?? false };
-  }
-  return value;
-};
 
 try {
   assert(outputDirectory && path.isAbsolute(outputDirectory), 'ABSOLUTE_EVIDENCE_DIRECTORY_REQUIRED');
@@ -120,8 +115,8 @@ try {
     for (const field of ['enabled', 'configurationType', 'configuration', 'disabledChannels']) {
       const fallback = field === 'configurationType' ? null : field === 'disabledChannels' ? [] : undefined;
       assert(equal(
-        normalizedIntegrationField(alias, field, integration[field] ?? fallback),
-        normalizedIntegrationField(alias, field, remote[field] ?? fallback),
+        normalizeBotpressIntegrationField(alias, field, integration[field] ?? fallback),
+        normalizeBotpressIntegrationField(alias, field, remote[field] ?? fallback),
       ), `INTEGRATION_CHANGED:${alias}.${field}`);
     }
     // ADK gives this pre-existing, unused namespaced integration a friendly local alias.
