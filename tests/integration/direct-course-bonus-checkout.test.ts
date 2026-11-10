@@ -214,7 +214,9 @@ run('direct bonus checkout exact accepted package',()=>{
     const retry=await next('Pasame el link de pago');
     const returned=await readCourseBonusCapabilityV1({workspace_slug:'studyx',contact_id:f.contact_id,conversation_id:f.conversation_id,
       channel:'text',selected_offering_code:'entrenamiento_funcional',source_turn_id:retry.turn_id},{db:db!});
-    expect(returned).toMatchObject({package_status:'attached',promotion_cycle_id:offer.promotion_cycle_id,may_send_promoted_payment:false});
+    // Owner 2026-11-10: the switch cancelled the package of the superseded checkout.
+    expect(returned).toMatchObject({may_send_promoted_payment:false});
+    expect(returned.package_status ?? null).toBeNull();
     await expect(commitAgentDecision({turn_id:retry.turn_id,trace_id:randomUUID(),supports_multi_outbound:true,
       authorized_offering_code:'entrenamiento_funcional',authorized_payment_plan:'one_time',
       agent_turn_v2:{schema_version:2,proposal:{...f.proposalWithCallOfferAndFalsePrice,
@@ -224,7 +226,7 @@ run('direct bonus checkout exact accepted package',()=>{
       .rejects.toMatchObject({reason:'AGENT_TURN_V2_REJECTED:ACTION_NOT_AUTHORIZED'});
     expect(await db!`SELECT id FROM payments WHERE source_conversation_id=${f.conversation_id}`).toHaveLength(1);
     expect((await db!`SELECT status,promotion_cycle_id FROM promotion_offers WHERE id=${offer.offer_id}`)[0])
-      .toEqual({status:'attached',promotion_cycle_id:offer.promotion_cycle_id});
+      .toEqual({status:'cancelled',promotion_cycle_id:offer.promotion_cycle_id});
     expect((await combinedCheckout('ingles_1','Inglés 1')).status).toBe('committed');
     expect(await db!`SELECT id FROM payments WHERE source_conversation_id=${f.conversation_id}`).toHaveLength(2);
   });
@@ -315,7 +317,7 @@ run('direct bonus checkout exact accepted package',()=>{
       }
     }
   });
-  it.each(['direct','review'])('keeps superseded history but no checkout capability in %s mode',async mode=>{
+  it.each(['direct','review'])('after a superseded promoted checkout, returning shows no package in %s mode',async mode=>{
     const f=await fixture();await reservePaymentLink(db!,f.input);await f.change();
     await db!`UPDATE conversation_sales_context_states_v1 SET selected_offering_code=${f.identity.paid_offering_code}
       WHERE conversation_id=${f.identity.conversation_id}`;
@@ -323,8 +325,9 @@ run('direct bonus checkout exact accepted package',()=>{
     vi.stubEnv('COURSE_BONUS_FLOW_MODE',mode);
     expect(await readCourseBonusCapabilityV1({workspace_slug:workspace.slug,contact_id:f.identity.contact_id,
       conversation_id:f.identity.conversation_id,selected_offering_code:f.identity.paid_offering_code,channel:'text',source_turn_id:await f.inbound()},{db:db!}))
-      .toMatchObject({package_status:'attached',promotion_cycle_id:f.offer.promotion_cycle_id,offer_version:1,
-        bonus_offerings:[{code:f.courses[1].code}],may_send_promoted_payment:false});
+      .toMatchObject({bonus_offerings:[],may_send_promoted_payment:false});
+    // The cancelled package stays only as audit.
+    expect((await db!`SELECT status FROM promotion_offers WHERE id=${f.offer.offer_id}`)[0].status).toBe('cancelled');
   });
   it('rejects mismatched replay versions and returns one reference for concurrent identical requests',async()=>{
     const f=await fixture();const clients=openIndependentLocalTestDatabases(2);
@@ -343,6 +346,29 @@ run('direct bonus checkout exact accepted package',()=>{
       .toEqual([{payload:expect.objectContaining({promotion_cycle_id:f.offer.promotion_cycle_id,offer_version:1,replacement_offering_code:f.courses[4].code})}]);
     await expect(reservePaymentLink(db!,f.input)).rejects.toMatchObject({code:'PROMOTION_NOT_AUTHORIZED'});
   });
+  it('Fotografía → Plomería: supersedes checkout, cancels attached promo, clears active promo, keeps audit',async()=>{
+    const f=await fixture();const old=await reservePaymentLink(db!,f.input);
+    await db!`INSERT INTO conversation_promotion_context_v1(workspace_id,conversation_id,contact_id,interest_offering_code)
+      VALUES (${f.identity.workspace_id},${f.identity.conversation_id},${f.identity.contact_id},${f.courses[0].code})
+      ON CONFLICT (workspace_id,conversation_id) DO UPDATE SET interest_offering_code=EXCLUDED.interest_offering_code`;
+    await f.change();
+    expect(await db!`SELECT reason FROM payment_intent_supersessions WHERE payment_id=${old.payment_id}`).toEqual([{reason:'COURSE_CHANGED'}]);
+    expect((await db!`SELECT status,payment_id,cancel_reason FROM promotion_offers WHERE id=${f.offer.offer_id}`)[0])
+      .toEqual({status:'cancelled',payment_id:old.payment_id,cancel_reason:'CUSTOMER_CHANGED_COURSE'});
+    expect((await db!`SELECT interest_offering_code FROM conversation_promotion_context_v1 WHERE conversation_id=${f.identity.conversation_id}`)[0])
+      .toEqual({interest_offering_code:null});
+    // Audit evidence of the old package stays intact.
+    expect(await db!`SELECT id FROM payment_bonus_offerings WHERE payment_id=${old.payment_id}`).not.toHaveLength(0);
+    // A new cycle for the new course starts clean.
+    const fresh=await reservePaymentLink(db!,{...f.input,idempotency_key:randomUUID(),offering_id:f.courses[4].id,
+      promotion_code:undefined,promotion_cycle_id:undefined,accepted_offer_version:undefined});
+    expect(await db!`SELECT id FROM payment_bonus_offerings WHERE payment_id=${fresh.payment_id}`).toEqual([]);
+  });
+  it('the guard refuses cancelling an attached package whose payment was not superseded',async()=>{
+    const f=await fixture();await reservePaymentLink(db!,f.input);
+    await expect(db!`UPDATE promotion_offers SET status='cancelled',cancel_reason='CUSTOMER_CHANGED_COURSE' WHERE id=${f.offer.offer_id}`)
+      .rejects.toThrow(/Accepted direct obligations are immutable/);
+  });
   it('supersedes the unpaid intent without mutating the package and reconciles a late paid event once',async()=>{
     const f=await fixture(2);const old=await reservePaymentLink(db!,f.input);
     const source=await f.change();await f.change();
@@ -352,7 +378,7 @@ run('direct bonus checkout exact accepted package',()=>{
     const fresh=await reservePaymentLink(db!,{...f.input,idempotency_key:randomUUID(),offering_id:f.courses[4].id,
       promotion_code:undefined,promotion_cycle_id:undefined,accepted_offer_version:undefined});
     expect(fresh.payment_id).not.toBe(old.payment_id);
-    expect((await db!`SELECT status,payment_id FROM promotion_offers WHERE id=${f.offer.offer_id}`)[0]).toEqual({status:'attached',payment_id:old.payment_id});
+    expect((await db!`SELECT status,payment_id FROM promotion_offers WHERE id=${f.offer.offer_id}`)[0]).toEqual({status:'cancelled',payment_id:old.payment_id});
     await recordPaymentEvent(db!,{payment_id:old.payment_id,provider:'internal',provider_event_id:randomUUID(),event:{type:'checkout_creation_started'},payload:{}});
     await recordPaymentEvent(db!,{payment_id:old.payment_id,provider:'internal',provider_event_id:randomUUID(),event:{type:'checkout_created'},payload:{}});
     const paid={payment_id:old.payment_id,provider:'stripe',provider_event_id:randomUUID(),event:{type:'checkout_completed_paid' as const},payload:{signed_evidence:'old reference'}};
@@ -386,12 +412,13 @@ run('direct bonus checkout exact accepted package',()=>{
       promotion_code:undefined,promotion_cycle_id:undefined,accepted_offer_version:undefined});
     expect(await db!`SELECT id FROM payment_bonus_offerings WHERE payment_id=${fresh.payment_id}`).toEqual([]);
   });
-  it('refuses a new ordinary reservation for the superseded attached paid course without a promotion code',async()=>{
+  it('returning to the old course after a switch starts an ordinary unpromoted reservation',async()=>{
     const f=await fixture();const old=await reservePaymentLink(db!,f.input);await f.change();
-    await expect(reservePaymentLink(db!,{...f.input,idempotency_key:randomUUID(),promotion_code:undefined,
-      promotion_cycle_id:undefined,accepted_offer_version:undefined})).rejects.toMatchObject({code:'PROMOTION_NOT_AUTHORIZED'});
+    const back=await reservePaymentLink(db!,{...f.input,idempotency_key:randomUUID(),promotion_code:undefined,
+      promotion_cycle_id:undefined,accepted_offer_version:undefined});
+    expect(back.payment_id).not.toBe(old.payment_id);
+    expect(await db!`SELECT id FROM payment_bonus_offerings WHERE payment_id=${back.payment_id}`).toEqual([]);
     expect((await db!`SELECT payment_id FROM promotion_offers WHERE id=${f.offer.offer_id}`)[0].payment_id).toBe(old.payment_id);
-    expect(await db!`SELECT id FROM payments WHERE source_conversation_id=${f.identity.conversation_id}`).toHaveLength(1);
   });
   it('requires correlated course-change evidence and grants the production role append-only access',async()=>{
     const f=await fixture();const old=await reservePaymentLink(db!,f.input);

@@ -445,14 +445,27 @@ export async function cancelOpenCourseBonusOffersForCourseChangeV1(
     WHERE offer.workspace_id = ${input.workspace_id}::uuid
       AND offer.contact_id = ${input.contact_id}::uuid
       AND offer.conversation_id = ${input.conversation_id}::uuid
-      AND offer.status IN ('pending_review','offered','accepted')
-      AND NOT (offer.package_mode = 'direct' AND offer.status IN ('accepted','attached'))
-      AND offer.payment_id IS NULL
+      AND (
+        (offer.status IN ('pending_review','offered','accepted')
+          AND NOT (offer.package_mode = 'direct' AND offer.status IN ('accepted','attached'))
+          AND offer.payment_id IS NULL)
+        -- Owner 2026-11-10 (Fotografía → Plomería): a package whose checkout
+        -- was just superseded by this course change closes with it. An
+        -- accepted package without a checkout still survives a detour.
+        OR offer.status IN ('accepted','attached') AND EXISTS (SELECT 1 FROM payment_intent_supersessions s
+          WHERE s.payment_id = offer.payment_id AND s.reason = 'COURSE_CHANGED'))
       AND paid.id = offer.paid_offering_id
       AND paid.workspace_id = offer.workspace_id
       AND paid.code <> ${input.selected_offering_code}
     RETURNING offer.id
   `;
+  // The conversation no longer has an active promotion for the old course.
+  await db`UPDATE conversation_promotion_context_v1
+    SET interest_offering_code = NULL, source_turn_id = NULL, updated_at = now()
+    WHERE workspace_id = ${input.workspace_id}::uuid AND conversation_id = ${input.conversation_id}::uuid
+      AND contact_id = ${input.contact_id}::uuid
+      AND interest_offering_code IS DISTINCT FROM ${input.selected_offering_code}
+      AND interest_offering_code IS NOT NULL`;
   if (cancelled.length === 0) return 0;
   await db`
     UPDATE course_bonus_followups followup
