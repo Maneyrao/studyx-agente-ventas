@@ -281,12 +281,11 @@ export async function offerDirectCourseBonusV1(db: DbClient, input: OfferDirectC
       if (input.expected_offer_version!==0) reject('stale_offer_version');
     }
     const currentBatch = (await tx<Array<{ content: string }>>`
-      SELECT fragment.content FROM messages current JOIN messages fragment
-        ON fragment.conversation_id=current.conversation_id AND fragment.contact_id=current.contact_id
-        AND fragment.direction='inbound' AND (fragment.id=current.id OR (fragment.batch_id=current.batch_id AND current.batch_id IS NOT NULL))
+      SELECT fragment.content FROM messages current
+      CROSS JOIN LATERAL agent_intervention_inbound_v1(current.id) fragment
       WHERE current.id=${input.source_turn_id}::uuid AND current.conversation_id=${input.conversation_id}::uuid
         AND current.contact_id=${input.contact_id}::uuid
-      ORDER BY fragment.conversation_seq`).map(row => row.content);
+      ORDER BY fragment.occurred_at, fragment.conversation_seq`).map(row => row.content);
     if (isBonusCheckoutStateV1({ stage: context.stage, awaiting_reply: context.awaiting_reply,
       payment_link_request_pending: context.payment_link_request?.status === 'pending',
       handoff_call_settled: context.handoff_call_settled })) reject('sale_already_closed');

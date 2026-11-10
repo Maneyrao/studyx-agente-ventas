@@ -157,6 +157,11 @@ run('controlled context at claim time', () => {
       batch_id: first.batch.id,
       claim_token: selected.batch.claim_token,
     });
+    // The agent answered the first message: the follow-up is a new intervention
+    // (owner 2026-11-10 — an unanswered message would belong to the same one).
+    await db!`INSERT INTO messages (conversation_id, contact_id, direction, content)
+      SELECT conversation_id, contact_id, 'outbound', 'Decoración de Interiores es un gran curso.'
+      FROM messages WHERE id = ${first.turn_id}::uuid`;
 
     const second = await processInboundMessage(followUp(
       firstEnvelope,

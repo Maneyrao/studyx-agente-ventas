@@ -293,10 +293,10 @@ export class PostgresOrchestrationStore implements OrchestrationStore {
               bm.conversation_seq,
               bm.id
           )
-          FROM messages AS bm
-          WHERE bm.batch_id = b.id
-            AND bm.conversation_id = b.conversation_id
-            AND bm.contact_id = b.contact_id
+          -- Owner 2026-11-10: the whole current intervention (every inbound
+          -- message since the agent's last reply), not only this batch, so a
+          -- superseded turn's messages keep their intent in the new generation.
+          FROM agent_intervention_inbound_v1(b.representative_turn_id) AS bm
         ), '[]'::jsonb) AS batch_messages,
         COALESCE((
           SELECT jsonb_agg(
@@ -325,6 +325,7 @@ export class PostgresOrchestrationStore implements OrchestrationStore {
             ))
               AND rm.contact_id = b.contact_id
               AND rm.batch_id IS DISTINCT FROM b.id
+              AND rm.id NOT IN (SELECT current_turn.id FROM agent_intervention_inbound_v1(b.representative_turn_id) AS current_turn)
               AND (rm.direction <> 'outbound'
                 OR NOT EXISTS (SELECT 1 FROM outbound_deliveries known WHERE known.message_id = rm.id)
                 OR EXISTS (SELECT 1 FROM outbound_deliveries sent WHERE sent.message_id = rm.id
@@ -381,6 +382,7 @@ export class PostgresOrchestrationStore implements OrchestrationStore {
             ))
                 AND rm.contact_id = b.contact_id
                 AND rm.batch_id IS DISTINCT FROM b.id
+                AND rm.id NOT IN (SELECT current_turn.id FROM agent_intervention_inbound_v1(b.representative_turn_id) AS current_turn)
               AND (rm.direction <> 'outbound'
                 OR NOT EXISTS (SELECT 1 FROM outbound_deliveries known WHERE known.message_id = rm.id)
                 OR EXISTS (SELECT 1 FROM outbound_deliveries sent WHERE sent.message_id = rm.id

@@ -31,10 +31,8 @@ export async function readCourseBonusLadderV1(input: {
 }, db: DbClient): Promise<BonusMotiveEvidenceV1 | null> {
   const [row] = await db<Array<{ workspace_slug: string; source_turn_id: string; customer_messages: string[] }>>`
     SELECT w.slug workspace_slug,current.id source_turn_id,
-      ARRAY(SELECT fragment.content FROM messages fragment WHERE fragment.direction='inbound'
-        AND fragment.contact_id=c.id AND fragment.conversation_id=v.id
-        AND (fragment.id=current.id OR (fragment.batch_id=current.batch_id AND current.batch_id IS NOT NULL))
-        ORDER BY fragment.conversation_seq) customer_messages
+      ARRAY(SELECT fragment.content FROM agent_intervention_inbound_v1(current.id) fragment
+        ORDER BY fragment.occurred_at, fragment.conversation_seq) customer_messages
     FROM workspaces w JOIN conversation_sales_context_states_v1 s ON s.workspace_id=w.id
     JOIN contacts c ON c.id=s.contact_id JOIN conversations v ON v.id=s.conversation_id AND v.contact_id=c.id
     JOIN workspace_contacts wc ON wc.workspace_id=w.id AND wc.contact_id=c.id

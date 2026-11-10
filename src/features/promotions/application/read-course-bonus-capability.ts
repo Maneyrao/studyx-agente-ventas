@@ -458,13 +458,13 @@ async function currentBatchTexts(input: {
   contact_id: string; conversation_id: string; source_turn_id?: string;
 }, db: DbClient): Promise<string[]> {
   if (!input.source_turn_id) return [];
+  // The whole current intervention: everything since Emma's last reply (owner 2026-11-10).
   const batch = await db<Array<{ content: string }>>`
-    SELECT fragment.content FROM messages current JOIN messages fragment
-      ON fragment.conversation_id=current.conversation_id AND fragment.contact_id=current.contact_id
-      AND fragment.direction='inbound' AND (fragment.id=current.id OR (fragment.batch_id=current.batch_id AND current.batch_id IS NOT NULL))
+    SELECT fragment.content FROM messages current
+    CROSS JOIN LATERAL agent_intervention_inbound_v1(current.id) fragment
     WHERE current.id=${input.source_turn_id}::uuid AND current.conversation_id=${input.conversation_id}::uuid
       AND current.contact_id=${input.contact_id}::uuid
-    ORDER BY fragment.conversation_seq`;
+    ORDER BY fragment.occurred_at, fragment.conversation_seq`;
   return batch.map(row => row.content);
 }
 
