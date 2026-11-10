@@ -1957,7 +1957,9 @@ describe('el guard de prerequisitos distingue pregunta de afirmación', () => {
   it('la afirmación sin respaldo canónico se sigue rechazando', () => {
     expect(rechazoDePrerequisitos('No necesitás experiencia previa para este curso.')).toBe(true);
     expect(rechazoDePrerequisitos('Podés empezar desde cero sin problema.')).toBe(true);
-    expect(rechazoDePrerequisitos('Está pensado para arrancar desde los fundamentos.')).toBe(true);
+    // Dueño 2026-11-10 (incidente A, Plomería): «desde los fundamentos» describe
+    // el temario; no afirma por sí solo «no necesitás experiencia».
+    expect(rechazoDePrerequisitos('Está pensado para arrancar desde los fundamentos.')).toBe(false);
   });
 
   it('una afirmación no se salva por venir acompañada de una pregunta', () => {

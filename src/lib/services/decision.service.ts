@@ -1430,9 +1430,15 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
           ...canonicalTruth,
           authorized_promo_expires_at: courseBonusCapability?.sales_flow?.promo_expires_at ?? null,
           paid_offering_names: offerings.filter(o => o.code === commercialTruthPaidOfferingCode).map(o => o.display_name),
+          // Delivered gifts belong to their own paid course and open/accepted
+          // cycle; an authorized course switch does not inherit them.
           authorized_bonus_names: [
-            ...(courseBonusCapability?.delivered_bonus_offerings ??
-              (courseBonusCapability?.enabled ? [] : courseBonusCapability?.bonus_offerings ?? []))
+            ...((commercialTruthPaidOfferingCode === null
+              || courseBonusCapability?.interest_offering_code === commercialTruthPaidOfferingCode)
+              && !['cancelled', 'expired'].includes(courseBonusCapability?.package_status ?? '')
+              ? courseBonusCapability?.delivered_bonus_offerings ??
+                (courseBonusCapability?.enabled ? [] : courseBonusCapability?.bonus_offerings ?? [])
+              : [])
               .map(o => o.display_name),
             ...offerings.filter(o => o.code === proposedDirectBonusCode).map(o => o.display_name),
           ],

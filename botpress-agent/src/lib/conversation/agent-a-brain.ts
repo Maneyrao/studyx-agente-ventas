@@ -1694,7 +1694,7 @@ function sameVisibleText(messages: readonly string[], previous: string): boolean
 }
 
 const CUSTOMER_REQUESTS_REPEAT = /\b(?:rep(?:et|[ií]t)|otra\s+vez|no\s+entend|de\s+nuevo)\w*/iu;
-const UNSUPPORTED_PREREQUISITE_ASSERTION = /(?:\bno\s+(?:necesit\w*|hace\s+falta|se\s+requiere|tienen)\b[^.!?\n]{0,80}\b(?:experiencia|conocimientos?|requisitos?)\b|\bsin\s+(?:experiencia|conocimientos?\s+previos?)\b|\b(?:pod[eé]s|puedes|empez[aá]s?|part[ií]s?)\b[^.!?\n]{0,32}\bdesde\s+cero\b|\b(?:pensad[oa]|dise[nñ]ad[oa])\w*\b[^.!?\n]{0,80}\b(?:(?:empe\w*)\s+)?(?:desde\s+(?:cero|la\s+base|lo\s+b[aá]sico)|paso\s+a\s+paso)\b|\bdesde\s+los\s+fundamentos\b)/iu;
+const UNSUPPORTED_PREREQUISITE_ASSERTION = /(?:\bno\s+(?:necesit\w*|hace\s+falta|se\s+requiere|tienen)\b[^.!?\n]{0,80}\b(?:experiencia|conocimientos?|requisitos?)\b|\bsin\s+(?:experiencia|conocimientos?\s+previos?)\b|\b(?:pod[eé]s|puedes|empez[aá]s?|part[ií]s?)\b[^.!?\n]{0,32}\bdesde\s+cero\b|\b(?:pensad[oa]|dise[nñ]ad[oa])\w*\b[^.!?\n]{0,80}\b(?:(?:empe\w*)\s+)?(?:desde\s+(?:cero|la\s+base|lo\s+b[aá]sico)|paso\s+a\s+paso)\b)/iu;
 const REMOVABLE_UNSUPPORTED_PREREQUISITE_CLAUSE = /\s*,?\s*para\s+(?:quienes|personas?\s+que)\s+no\s+tienen\s+conocimientos?\s+previos\b/iu;
 
 /**
@@ -1935,6 +1935,27 @@ function comparableProtectedFact(fact: ReturnType<typeof extractProtectedFacts>[
   return `${fact.kind}\u0000${value}`;
 }
 
+/**
+ * The paid course this turn is validated against. It mirrors the backend
+ * authority (`agent-turn-policy-v2`): an explicit canonical `select_course`
+ * becomes the paid course; otherwise the durable selection; otherwise the
+ * course of the existing package. The conversational focus never is: asking
+ * about another course does not replace the sale (incident A, 2026-11-10).
+ */
+export function authorizedPaidOfferingCodeV1(
+  context: AgentAContextV1,
+  proposal: Pick<AgentATurnProposalV1, 'move'>,
+): string | null {
+  const reference = proposal.move.course_reference ?? null;
+  const selects = proposal.move.move === 'select_course' || proposal.move.secondary_moves.includes('select_course');
+  if (selects && reference !== null
+    && context.catalog.available_offerings.some(offering => offering.code === reference)) return reference;
+  return context.commercial_state.selected_offering_code
+    ?? context.capabilities.course_bonus?.interest_offering_code
+    ?? context.catalog.selected_offering?.code
+    ?? null;
+}
+
 export function validateAgentATurnProposalV1(input: {
   readonly proposal: AgentATurnProposalV1;
   readonly context: AgentAContextV1;
@@ -1982,8 +2003,14 @@ export function validateAgentATurnProposalV1(input: {
   directOffering.display_name)) {
     rejections.push({ code: 'FACT_VALUE_MISMATCH', subject: 'bonus_not_named' });
   }
+  const paidOfferingCode = authorizedPaidOfferingCodeV1(input.context, input.proposal);
+  // A delivered package is current only for its own paid course and while its
+  // cycle is open or accepted. A switched course or a cancelled cycle does not
+  // inherit those gifts.
+  const deliveredPackageIsCurrent = directBonusCapability?.interest_offering_code === paidOfferingCode
+    && !['cancelled', 'expired'].includes(directBonusCapability?.package_status ?? '');
   const authorizedBonusOfferingNames = hasDirectBonusContextV1(input.context)
-    ? [...(directBonusCapability?.delivered_bonus_offerings ?? []).flatMap(o => {
+    ? [...(deliveredPackageIsCurrent ? directBonusCapability?.delivered_bonus_offerings ?? [] : []).flatMap(o => {
       const active = input.context.catalog.available_offerings.find(offering => offering.code === o.code);
       return active ? [active.display_name] : [];
     }),
@@ -1991,10 +2018,8 @@ export function validateAgentATurnProposalV1(input: {
     : authorizedBonusOffer
     ? input.context.capabilities.course_bonus?.bonus_offerings.map((offering) => offering.display_name) ?? []
     : [];
-  const paidOffering = input.context.catalog.selected_offering
-    ?? input.context.catalog.available_offerings.find(offering => (
-      offering.code === directBonusCapability?.interest_offering_code
-    ));
+  const paidOffering = input.context.catalog.available_offerings.find(offering => offering.code === paidOfferingCode)
+    ?? (input.context.catalog.selected_offering?.code === paidOfferingCode ? input.context.catalog.selected_offering : undefined);
   const paidOfferingNames = paidOffering ? [paidOffering.display_name] : [];
   if (inspectCourseBonusClaimsV1({content:[...input.proposal.response.messages,
     ...(input.proposal.response.call_offer ? [input.proposal.response.call_offer] : [])].join('\n'),
@@ -2034,9 +2059,20 @@ export function validateAgentATurnProposalV1(input: {
       ...input.context.catalog.candidate_offerings.flatMap((offering) => offering.facts ?? []),
     ].map((fact) => [fact.id, fact]),
   );
-  const prerequisiteFactsById = input.context.catalog.selected_offering === null
+  // A prerequisite claim is backed only by facts of the course the turn is
+  // about: its canonical reference, else the course in focus, else the paid one.
+  const referencedCourse = input.proposal.move.course_reference ?? null;
+  const prerequisiteCourse = referencedCourse !== null
+    && input.context.catalog.available_offerings.some(offering => offering.code === referencedCourse)
+    ? referencedCourse : input.context.catalog.selected_offering?.code ?? paidOfferingCode;
+  const prerequisiteCourseFacts = prerequisiteCourse === null ? null : [
+    ...(input.context.catalog.selected_offering?.code === prerequisiteCourse ? input.context.catalog.selected_offering.facts : []),
+    ...input.context.catalog.candidate_offerings
+      .filter(offering => offering.code === prerequisiteCourse).flatMap(offering => offering.facts ?? []),
+  ];
+  const prerequisiteFactsById = prerequisiteCourseFacts === null
     ? selectedFactsById
-    : new Map(input.context.catalog.selected_offering.facts.map((fact) => [fact.id, fact]));
+    : new Map(prerequisiteCourseFacts.map((fact) => [fact.id, fact]));
   if (
     canonicalPrerequisiteStatement(prerequisiteFactsById, planned) === null
     && authoredNarrative.some(assertsUnsupportedPrerequisitesV1)

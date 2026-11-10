@@ -367,6 +367,24 @@ run('direct bonus checkout exact accepted package',()=>{
     expect(cases).toEqual([{status:'open',case_type:'SUPERSEDED_PAYMENT_PAID',provider_event_id:paid.provider_event_id}]);
     expect((await db!`SELECT offering_id,status FROM payments WHERE id=${old.payment_id}`)[0]).toEqual({offering_id:f.courses[0].id,status:'paid'});
   });
+  it('incident A: an explicit switch supersedes the unpaid checkout and the old package is not current for the new course',async()=>{
+    const f=await fixture();const old=await reservePaymentLink(db!,f.input);
+    await f.change();
+    expect(await db!`SELECT reason FROM payment_intent_supersessions WHERE payment_id=${old.payment_id}`)
+      .toEqual([{reason:'COURSE_CHANGED'}]);
+    const [workspace]=await db!`SELECT slug FROM workspaces WHERE id=${f.identity.workspace_id}`;
+    const cap=await readCourseBonusCapabilityV1({workspace_slug:workspace.slug,contact_id:f.identity.contact_id,
+      conversation_id:f.identity.conversation_id,channel:'text',selected_offering_code:f.courses[4].code,
+      source_turn_id:await f.inbound()},{db:db!});
+    // The old gift never travels: no promoted payment and no delivered bonus for the new paid course.
+    expect(cap.may_send_promoted_payment).toBe(false);
+    expect(cap.interest_offering_code===f.courses[4].code
+      ? cap.delivered_bonus_offerings ?? [] : []).toEqual([]);
+    // A plain checkout for the new course is a fresh, unpromoted reservation.
+    const fresh=await reservePaymentLink(db!,{...f.input,idempotency_key:randomUUID(),offering_id:f.courses[4].id,
+      promotion_code:undefined,promotion_cycle_id:undefined,accepted_offer_version:undefined});
+    expect(await db!`SELECT id FROM payment_bonus_offerings WHERE payment_id=${fresh.payment_id}`).toEqual([]);
+  });
   it('refuses a new ordinary reservation for the superseded attached paid course without a promotion code',async()=>{
     const f=await fixture();const old=await reservePaymentLink(db!,f.input);await f.change();
     await expect(reservePaymentLink(db!,{...f.input,idempotency_key:randomUUID(),promotion_code:undefined,
