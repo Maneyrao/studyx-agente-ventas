@@ -52,6 +52,11 @@ const facts: CanonicalFactV1[] = [
     source: 'business_snapshot', value: '1 pago de USD 360',
     offering_code: 'excel_integral', payment_plan: 'one_time',
   },
+  {
+    id: 'payment:community_manager:one_time:label:v1', kind: 'payment_plan_label',
+    source: 'business_snapshot', value: '1 pago de USD 360',
+    offering_code: 'community_manager', payment_plan: 'one_time',
+  },
 ];
 
 function state(overrides: Partial<ConversationStateV1> = {}): ConversationStateV1 {
@@ -192,6 +197,32 @@ describe('plannerless Agent A authority', () => {
     // No focus at all: nothing is invented.
     expect(authorize({ state: state({ selected_offering_code: null, stage: 'exploring' }), proposal: planMove }))
       .not.toMatchObject({ transition: { selected_offering_code: expect.any(String) } });
+  });
+  it('live 2026-11-10: a link request recovers a null course and plan only from an exact catalog course declared paid', () => {
+    const link = (course: string, plan: 'one_time' | 'monthly_6', mentions: AgentATurnProposalV1['course_mentions']) => proposal({
+      move: { schema_version: 1, move: 'request_payment_link', secondary_moves: [], vetoes: [], payment_plan: plan, confidence: 0.9 },
+      response: { messages: ['Dale, en un solo pago.'] },
+      proposed_action: { type: 'send_payment_link', offering_code: course, payment_plan: plan },
+      course_mentions: mentions });
+    const empty = state({ selected_offering_code: null, selected_payment_plan: null, stage: 'exploring' });
+    expect(authorize({ state: empty, intake: completeIntake, customerText: 'dale, mandame el link',
+      proposal: link('community_manager', 'one_time', [{ offering_code: 'community_manager', role: 'paid' }]) }))
+      .toMatchObject({ ok: true, action: { type: 'send_payment_link', offering_code: 'community_manager', payment_plan: 'one_time' },
+        transition: { selected_offering_code: 'community_manager', selected_payment_plan: 'one_time' } });
+    // Invented course, undeclared/not-paid course and invented plan stay rejected.
+    for (const rejected of [
+      link('curso_inventado', 'one_time', [{ offering_code: 'curso_inventado', role: 'paid' }]),
+      link('community_manager', 'one_time', [{ offering_code: 'community_manager', role: 'alternative' }]),
+      link('community_manager', 'one_time', []),
+      link('community_manager', 'monthly_6', [{ offering_code: 'community_manager', role: 'paid' }]),
+    ]) {
+      expect(authorize({ state: empty, intake: completeIntake, customerText: 'dale, mandame el link', proposal: rejected }))
+        .not.toMatchObject({ action: { type: 'send_payment_link' } });
+    }
+    // A different focus still wins: the action is rejected by mismatch.
+    expect(authorize({ state: empty, intake: completeIntake, customerText: 'dale, mandame el link', paidMention: 'redes_informaticas',
+      proposal: link('community_manager', 'one_time', [{ offering_code: 'community_manager', role: 'paid' }]) }))
+      .not.toMatchObject({ action: { type: 'send_payment_link', offering_code: 'community_manager' } });
   });
   it('uses conversational paid identity for prose only, keeping purchase state and effects unchanged',()=>{
     const result=authorize({state:state({selected_offering_code:null}),paidMention:'redes_informaticas',

@@ -232,9 +232,19 @@ export function authorizeAgentTurnV2(input: {
   // only; never a reading of the customer's wording.
   const purchaseStepWithoutCourse = (moves.has('select_payment_plan') || moves.has('request_payment_link'))
     && requestedOffering === null && !startsFreshSalesCycle && state.selected_offering_code === null;
-  const focusOffering = ['offered', 'accepted', 'attached'].includes(input.course_bonus?.package_status ?? '')
+  const packageOrMentionFocus = ['offered', 'accepted', 'attached'].includes(input.course_bonus?.package_status ?? '')
     ? capabilityInterestOffering
     : input.paid_mention_offering_code ?? null;
+  // With no focus at all, a link action may name an exact catalog course the
+  // model declares as the paid one. A different focus still wins (mismatch).
+  const linkAction = proposal.proposed_action.type === 'send_payment_link' ? proposal.proposed_action : null;
+  const proposedLinkCourse = linkAction !== null
+    && input.offerings.some(offering => offering.code === linkAction.offering_code)
+    && proposal.course_mentions?.some(mention => (
+      mention.offering_code === linkAction.offering_code && mention.role === 'paid'
+    )) === true
+    ? linkAction.offering_code : null;
+  const focusOffering = packageOrMentionFocus ?? proposedLinkCourse;
   const selectedOfferingCandidate = acceptsPresentedPromotion
     ? capabilityInterestOffering
     : changesCourse ? requestedOffering

@@ -11,6 +11,8 @@ const PAYMENT_RESERVATION_REJECTIONS_V1 = new Set([
   'PAYMENT_WORKSPACE_NOT_FOUND', 'CHECKOUT_REPLACEMENT_BLOCKED', 'CHECKOUT_REPLACEMENT_NOT_FOUND',
   'CHECKOUT_REPLACEMENT_IDENTITY_MISMATCH', 'CHECKOUT_ALREADY_SUPERSEDED', 'CHECKOUT_REPLACEMENT_CONTACT_MISSING',
   'CHECKOUT_REPLACEMENT_UNSUPPORTED', 'CHECKOUT_REPLACEMENT_NOT_RESERVED',
+  // Technical link configuration failure (materializer): an unexecuted effect, not an unreadable turn.
+  'LINK_CONFIG_MISSING',
 ])
 
 /**
@@ -21,6 +23,17 @@ export function paymentReservationRejectionSubjectsV1(reason: string): string[] 
   return PAYMENT_RESERVATION_REJECTIONS_V1.has(reason)
     ? ['send_payment_link', `payment_reservation:${reason.toLowerCase()}`]
     : null
+}
+
+/**
+ * A rejection of the payment-link request itself or of its course/plan resolution
+ * (validation). A technical `payment_reservation:*` failure is not retried as a link.
+ */
+export function rejectsPaymentLinkRequestV1(rejection: TurnRejectionV1): boolean {
+  return rejection.rejections.some((reason) => (reason.subject === 'send_payment_link'
+    || reason.code === 'PLAN_NOT_SELECTED' || reason.code === 'COURSE_NOT_RESOLVED')
+    && !reason.subject.startsWith('payment_reservation:'))
+    && !rejection.rejections.some((reason) => reason.subject.startsWith('payment_reservation:'))
 }
 
 /** Fence every effect; the continuation's own safe move carries conversation state. */

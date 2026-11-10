@@ -91,3 +91,38 @@ describe('durable factual rejection feedback', () => {
     expect(rebound?.authorized_alternatives.actions).toEqual(['none']);
   });
 });
+
+describe('recovery of a rejected payment-link request (live 2026-11-10)', () => {
+  const linkFeedback = (rejections: RecoveryFeedbackV1['rejection']['rejections']): RecoveryFeedbackV1 => {
+    const prior = feedback();
+    prior.rejection.rejections = rejections;
+    prior.rejection.authorized_alternatives.actions = ['none'];
+    return prior;
+  };
+  const mayLink = (value: boolean) => {
+    const context = current();
+    (context.capabilities as { may_send_payment_link?: boolean }).may_send_payment_link = value;
+    return context;
+  };
+  const rebind = (prior: RecoveryFeedbackV1, context: AgentAContextV1) => bindRecoveryFeedbackV1({
+    feedback: prior, batch_id: id, conversation_id: id, turn_id: id, context });
+
+  it.each([
+    [{ code: 'COURSE_NOT_RESOLVED', subject: 'course_selection' }],
+    [{ code: 'PLAN_NOT_SELECTED', subject: 'payment_plan' }],
+    [{ code: 'ACTION_NOT_AUTHORIZED', subject: 'send_payment_link' }],
+  ] as const)('keeps send_payment_link among the alternatives so the retry can execute it: %j', (rejection) => {
+    expect(rebind(linkFeedback([rejection]), mayLink(true))?.authorized_alternatives.actions)
+      .toContain('send_payment_link');
+    expect(rebind(linkFeedback([rejection]), mayLink(false))?.authorized_alternatives.actions)
+      .not.toContain('send_payment_link');
+  });
+
+  it('never re-authorizes a link after a technical reservation failure', () => {
+    const rebound = rebind(linkFeedback([
+      { code: 'ACTION_NOT_AUTHORIZED', subject: 'send_payment_link' },
+      { code: 'ACTION_NOT_AUTHORIZED', subject: 'payment_reservation:link_config_missing' },
+    ]), mayLink(true));
+    expect(rebound?.authorized_alternatives.actions).not.toContain('send_payment_link');
+  });
+});

@@ -880,9 +880,16 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
             || (proposedActionType==='none' && currentMoves.includes('request_payment_link')));
         // Checkout owns the canonical selection of this complete turn. Reading
         // only the previous state can hide A's supersession or veto a valid B.
+        // Live 2026-11-10: with no persisted course, a link action names the course
+        // whose promotion capability applies; the policy still requires an exact
+        // catalog course declared `paid` before it authorizes anything. The capability
+        // may therefore be read for a course the policy later rejects: the policy
+        // stays authoritative and nothing is attached or sent by this read.
+        const recoveredLinkOfferingCode=agentTurnProposal.proposed_action.type==='send_payment_link'
+          ? agentTurnProposal.proposed_action.offering_code : null;
         const checkoutOfferingCode=checkoutSelectsCourse
           ? proposalOfferingCode
-          : pipelineStateBefore?.selected_offering_code ?? null;
+          : pipelineStateBefore?.selected_offering_code ?? recoveredLinkOfferingCode;
         const knowledgeOfferingCode=proposalOfferingCode ?? pipelineStateBefore?.selected_offering_code ?? null;
         const citedKnowledgeSourceIds=agentTurnProposal.used_fact_ids
           .flatMap((factId) => {

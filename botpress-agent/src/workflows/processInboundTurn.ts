@@ -465,6 +465,23 @@ function attemptFailureDiagnosticCodes(input: {
     : ['UNKNOWN_ERROR']
 }
 
+/**
+ * Live 2026-11-10: a rejected payment-link request (the link action or a
+ * course/plan resolution failure on a link request) is never an unreadable
+ * turn. The caller retries the whole turn instead of the generic fallback.
+ */
+function rejectionConcernsPaymentLinkV1(
+  rejection: TurnRejectionV1 | null,
+  proposals: ReadonlyArray<AgentATurnProposalV1>,
+): boolean {
+  if (rejection === null) return false
+  const linkProposal = proposals.some((proposal) => proposal.proposed_action.type === 'send_payment_link'
+    || proposal.move.move === 'request_payment_link'
+    || proposal.move.secondary_moves.includes('request_payment_link'))
+  return rejection.rejections.some((reason) => reason.subject === 'send_payment_link'
+    || (linkProposal && (reason.code === 'PLAN_NOT_SELECTED' || reason.code === 'COURSE_NOT_RESOLVED')))
+}
+
 function backendCommitTurnRejectionV1(input: {
   readonly error: unknown
   readonly proposal: AgentATurnProposalV1
@@ -2100,7 +2117,10 @@ export const processInboundTurn = new Workflow({
                 }
               }
             }
-            if (pipelineFailureDecision?.reason_code === 'AGENT_A_CONTINUATION_REJECTED') {
+            // A rejected link request keeps the suppress decision: the whole-turn
+            // recovery retries it. No generic «no te entendí».
+            if (pipelineFailureDecision?.reason_code === 'AGENT_A_CONTINUATION_REJECTED'
+              && !rejectionConcernsPaymentLinkV1(latestRejection, precommitModelAuthoredCandidates.map(({ proposal }) => proposal))) {
               pipelineFailureDecision = technicalContinuityFallback(owned)
               safeLog('studyx.turn.agent_a_precommit_technical_continuity', {
                 trace_id: input.trace_id,
@@ -2469,7 +2489,67 @@ export const processInboundTurn = new Workflow({
     // a fresh, bounded workflow with current facts. Delays are 2s/10s, not the
     // old five-minute operator pause, and every replay is fenced by the batch
     // claim token so it cannot duplicate a send or an effect.
-    const recoverRejectedTurn = async (): Promise<WorkflowResult> => {
+    // Exhausted recovery of a rejected link request: ONE conversation-only continuation
+    // of Agent A (receipt: link not created, still processing) committed so course, plan
+    // and data persist. Returns true when it was committed. No fixed backend text.
+    const linkContinuation: { committed: CommitDecisionResponse | null } = { committed: null }
+    const commitFencedContinuationAfterLink = async (): Promise<boolean> => {
+      const apiKey = secrets.DEEPSEEK_API_KEY
+      if (!plannerlessV2Enabled || latestRejection === null || agentABrainContext === null
+        || typeof apiKey !== 'string' || apiKey.length === 0) return false
+      const receipt = latestRejection
+      try {
+        const continuation = await step('continue-agent-a-link-not-created-v1',
+          () => continueAgentAAfterActionFeedbackV1({
+            customer_call_interpretation: customerCallInterpretation,
+            context: agentABrainContext!,
+            on_provider_request: accountAgentAProviderRequest,
+            rejection: receipt,
+            effects_allowed: false,
+            apiKey, signal,
+            generate: generateDeepSeekAgentATurnProposalV1,
+            model: typeof configuration.agentABrainDeepSeekModel === 'string'
+              ? configuration.agentABrainDeepSeekModel : DEFAULT_AGENT_A_BRAIN_DEEPSEEK_MODEL,
+          }), { maxAttempts: 1 })
+        await persistProfileProposal(continuation.proposal, receipt)
+        const resolved = await resolveAgentAPlannerlessProposalV2({
+          observe: journal.capture,
+          initial: continuation,
+          context: agentABrainContext!,
+          repair_enabled: false,
+          semantic_rejections: 'blocking',
+          rejection_id: receipt.rejection_id,
+          repair: async () => { throw new Error('AGENT_A_LINK_CONTINUATION_REPAIR_NOT_ALLOWED') },
+        })
+        agentTurnV2Commit = { schema_version: 2, proposal: resolved.effective.proposal, ...fencedAgentARequestV1() }
+        pipelineCommit = null
+        pipelineMemoryCandidates = resolved.effective.proposal.memory_candidates
+        decision = pipelinePlaceholder(pipelineMemoryCandidates)
+        decisionProvider = resolved.effective.provider
+        decisionModel = resolved.effective.model
+        pipelinePromptVersion = AGENT_A_BRAIN_PROMPT_VERSION
+        agentAGenerationAttempts = 3
+        turnDiagnostics = {
+          schema_version: 1,
+          generation_attempts: agentAGenerationAttempts,
+          failure_stage: 'backend_commit',
+          failure_codes: diagnosticRejectionCodesV1(receipt.rejections),
+          action_status: 'rejected',
+        }
+        linkContinuation.committed = await commitCurrentDecision('commit-agent-a-link-not-created-reply-v1')
+        return true
+      } catch (continuationError) {
+        if (isTurnEvidencePersistenceError(continuationError)) throw continuationError
+        if (!(continuationError instanceof Error)) throw continuationError
+        safeLog('studyx.turn.agent_a_link_continuation_failed', {
+          trace_id: input.trace_id,
+          turn_id: owned.turn_id,
+          error_code: errorCode(continuationError),
+        })
+        return false
+      }
+    }
+    const recoverRejectedTurn = async (): Promise<WorkflowResult | null> => {
       try {
         const recoveryCause = turnDiagnostics?.failure_codes.map((code) => code.split(':', 1)[0]!).find(
           (code) => /^[A-Z0-9_]{1,128}$/u.test(code),
@@ -2496,6 +2576,15 @@ export const processInboundTurn = new Workflow({
           outcome: recovery.outcome,
           attempt: recovery.attempt,
         })
+        if (recovery.outcome === 'exhausted' && latestRejection !== null
+          && rejectionConcernsPaymentLinkV1(latestRejection, [
+            ...(agentTurnV2Commit ? [agentTurnV2Commit.proposal] : []),
+            ...precommitModelAuthoredCandidates.map(({ proposal }) => proposal),
+          ])
+          && await commitFencedContinuationAfterLink()) {
+          state.errorCode = null
+          return null
+        }
         if (recovery.outcome === 'scheduled') {
           await step.sleep(`rejected-turn-recovery-wait-${recovery.attempt}`, recovery.delay_ms)
           await step('start-rejected-turn-recovery-v1', () => getOrCreateEvidenceWorkflow(client, {
@@ -2538,10 +2627,6 @@ export const processInboundTurn = new Workflow({
       emitTimings()
       return finish()
     }
-    if (decision.reason_code === 'AGENT_A_CONTINUATION_REJECTED') {
-      return recoverRejectedTurn()
-    }
-
     // ---- Paso 10: commitear en Next.js -----------------------------------
     let committed: CommitDecisionResponse | null = null
     const commitStartedAt = Date.now()
@@ -2580,9 +2665,14 @@ export const processInboundTurn = new Workflow({
           },
         }),
     })
+    if (decision.reason_code === 'AGENT_A_CONTINUATION_REJECTED') {
+      const recovered = await recoverRejectedTurn()
+      if (recovered !== null) return recovered
+      committed = linkContinuation.committed
+    }
     try {
       try {
-        committed = await commitCurrentDecision('commit-canonical-decision')
+        if (committed === null) committed = await commitCurrentDecision('commit-canonical-decision')
       } catch (initialCommitError) {
       if (isTurnEvidencePersistenceError(initialCommitError)) throw initialCommitError
         if (!(initialCommitError instanceof Error)) throw initialCommitError
@@ -3091,6 +3181,25 @@ export const processInboundTurn = new Workflow({
           }
         }
 
+        if (committed === null && rejectionConcernsPaymentLinkV1(currentBackendRejection, [
+          rejectedProposal, ...modelAuthoredCommitCandidates.map(({ proposal }) => proposal),
+        ])) {
+          // A failed link is retried as a whole turn (order kept), never turned
+          // into the generic «no te entendí».
+          turnDiagnostics = {
+            schema_version: 1,
+            generation_attempts: agentAGenerationAttempts,
+            failure_stage: 'backend_commit',
+            failure_codes: rejectionCodes,
+            action_status: 'rejected',
+          }
+          {
+            const recovered = await recoverRejectedTurn()
+            if (recovered !== null) return recovered
+            committed = linkContinuation.committed
+          }
+        }
+
         if (committed === null) {
           // No authorized model-authored response survived both boundaries.
           // The existing technical continuity reply is deliberately free of
@@ -3152,7 +3261,9 @@ export const processInboundTurn = new Workflow({
               turn_id: owned.turn_id,
               error_code: errorCode(continuityError),
             })
-            return await recoverRejectedTurn()
+            const recovered = await recoverRejectedTurn()
+            if (recovered !== null) return recovered
+            committed = linkContinuation.committed
           }
         }
       }
@@ -3175,7 +3286,12 @@ export const processInboundTurn = new Workflow({
       if (agentTurnV2Commit !== null) {
         turnDiagnostics = {schema_version:1,generation_attempts:agentAGenerationAttempts,
           failure_stage:'backend_commit',failure_codes:['AGENT_A_COMMIT_FAILED'],action_status:'rejected'}
-        return recoverRejectedTurn()
+        const recovered = await recoverRejectedTurn()
+        if (recovered !== null) return recovered
+        committed = linkContinuation.committed
+      } else {
+        emitTimings()
+        return finish()
       }
       emitTimings()
       return finish()

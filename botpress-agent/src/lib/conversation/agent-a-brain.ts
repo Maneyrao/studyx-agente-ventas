@@ -383,6 +383,13 @@ export async function generateDeepSeekAgentATurnProposalV1(input: {
     let retryDiagnostic: string | null = null;
     let recoveredProfileUpdates: ProfileUpdates = [];
     let retryProfileEvidence = '';
+    // Receipt for a payment-link request that was not executed: no link exists and the
+    // request is still being processed. Instruction to the model, never customer text.
+    const linkNotCreatedNote = (writerContext.turn_rejection?.rejections ?? []).some((reason) => (
+      reason.subject === 'send_payment_link' || reason.subject.startsWith('payment_reservation:')
+      || reason.code === 'PLAN_NOT_SELECTED' || reason.code === 'COURSE_NOT_RESOLVED'))
+      ? '\nThe payment link was NOT created and the request is still being processed. Never say or imply that a link is being sent now, that it was sent, or that anything depends on a payment being credited. Keep the course and plan the customer chose.'
+      : '';
     for (const attempt of [1, 2] as const) {
       input.on_provider_request?.();
       let response: Response;
@@ -396,7 +403,7 @@ export async function generateDeepSeekAgentATurnProposalV1(input: {
           body: JSON.stringify({
             model,
             instructions: buildAgentABrainInstructionsV1(writerContext)
-              + (input.conversation_only ? `\nThe requested operation was not executed. This is a conversation-only continuation from the structured turn_rejection. Answer the customer in your own usual voice using the actual context and explain or ask for the relevant missing information. Do not claim an effect succeeded, repeat an action, invent a provider cause, or ask the customer to repeat a message that is already in context. Preserve the customer intent with the accurate structured move; never use unknown merely because the physical action is fenced. Use proposed_action none. Use no call_offer. These are internal effect boundaries, not wording instructions.` : ''),
+              + (input.conversation_only ? `\nThe requested operation was not executed. This is a conversation-only continuation from the structured turn_rejection. Answer the customer in your own usual voice using the actual context and explain or ask for the relevant missing information. Do not claim an effect succeeded, repeat an action, invent a provider cause, or ask the customer to repeat a message that is already in context. Preserve the customer intent with the accurate structured move; never use unknown merely because the physical action is fenced. Use proposed_action none. Use no call_offer. These are internal effect boundaries, not wording instructions.${linkNotCreatedNote}` : ''),
             input: `Current customer messages: ${JSON.stringify(writerContext.turn.batch_messages.map((message) => message.text))}\nAnswer these messages and return only the single AgentATurnProposalV1 JSON object.${retryDiagnostic ? `\nThe previous output failed validation at ${retryDiagnostic}. Return a corrected full object. ${naturalnessRepairDirectiveV1(writerContext)}${retryProfileEvidence}` : ''}`,
             reasoning: { effort: 'none' },
             temperature: 0.2,
@@ -2245,22 +2252,33 @@ export function validateAgentATurnProposalV1(input: {
   }
 
   const action = input.proposal.proposed_action
-  const selectsCanonicalPlanNow = (input.proposal.move.move === 'select_payment_plan'
-    || input.proposal.move.secondary_moves.includes('select_payment_plan'))
-    && input.proposal.move.payment_plan !== undefined
-    && input.context.catalog.payment_plans.some((plan) => plan.code === input.proposal.move.payment_plan)
+  // Live 2026-11-10: mirrors the backend policy (`purchaseStepWithoutCourse`,
+  // `linkRequestFillsMissingPlan`). With NO persisted course, a link action may
+  // name an exact catalog course only if the model declares it as the paid
+  // course; the backend policy re-checks it against durable facts.
+  const recoversCourseNow = input.context.commercial_state.selected_offering_code === null
     && action.type === 'send_payment_link'
-    && action.payment_plan === input.proposal.move.payment_plan
-    && action.offering_code === input.context.commercial_state.selected_offering_code
-    && action.offering_code === input.context.catalog.selected_offering?.code
+    && input.context.catalog.available_offerings.some((offering) => offering.code === action.offering_code)
+    && (input.proposal.course_mentions ?? []).some((mention) => (
+      mention.offering_code === action.offering_code && mention.role === 'paid'
+    ))
   const requestsPaymentLink = input.proposal.move.move === 'request_payment_link'
     || input.proposal.move.secondary_moves.includes('request_payment_link')
-  const selectsKnownPlanNow = (input.proposal.move.move === 'select_payment_plan'
-    || input.proposal.move.secondary_moves.includes('select_payment_plan'))
-    && input.proposal.move.payment_plan !== undefined
-    && input.context.catalog.payment_plans.some(
-      (plan) => plan.code === input.proposal.move.payment_plan,
-    )
+  const selectsPlanMove = input.proposal.move.move === 'select_payment_plan'
+    || input.proposal.move.secondary_moves.includes('select_payment_plan')
+  const carriesCanonicalPlan = input.proposal.move.payment_plan !== undefined
+    && input.context.catalog.payment_plans.some((plan) => plan.code === input.proposal.move.payment_plan)
+  // A persisted plan still wins; a link request only fills a missing one.
+  const linkRequestFillsMissingPlan = requestsPaymentLink && !selectsPlanMove
+    && input.context.commercial_state.selected_payment_plan === null && carriesCanonicalPlan
+  const selectsCanonicalPlanNow = (selectsPlanMove || linkRequestFillsMissingPlan)
+    && carriesCanonicalPlan
+    && action.type === 'send_payment_link'
+    && action.payment_plan === input.proposal.move.payment_plan
+    && (recoversCourseNow
+      || (action.offering_code === input.context.commercial_state.selected_offering_code
+        && action.offering_code === input.context.catalog.selected_offering?.code))
+  const selectsKnownPlanNow = (selectsPlanMove || linkRequestFillsMissingPlan) && carriesCanonicalPlan
   if (action.type === 'none' && requestsPaymentLink
     && input.context.commercial_state.selected_payment_plan === null
     && !selectsKnownPlanNow
@@ -2271,7 +2289,7 @@ export function validateAgentATurnProposalV1(input: {
     if (!input.context.capabilities.may_send_payment_link) {
       rejections.push({ code: 'ACTION_NOT_AUTHORIZED', subject: 'send_payment_link' })
     }
-    if (input.context.commercial_state.selected_offering_code === null) {
+    if (input.context.commercial_state.selected_offering_code === null && !recoversCourseNow) {
       rejections.push({ code: 'COURSE_NOT_RESOLVED', subject: 'course_selection' })
     }
     if (input.context.commercial_state.selected_payment_plan === null && !selectsCanonicalPlanNow) {

@@ -2038,3 +2038,67 @@ describe('nunca contingencia por una cláusula de requisitos sin respaldo (en vi
     expect(result.effective.proposal.response.messages).toEqual(['Son clases online, con material teórico de apoyo.']);
   });
 });
+
+// Live 2026-11-10 (Community Manager + one_time): the bot validator mirrors the
+// backend policy; a null persisted course/plan is recovered only from exact,
+// declared catalog data.
+describe('recuperación de curso y plan nulos en un pedido de link', () => {
+  const planFact = 'plan:one_time:v1';
+  const nullState = (over: Partial<AgentAContextV1['capabilities']> = {}) => context({
+    commercial_state: { ...context().commercial_state, selected_offering_code: null, selected_payment_plan: null },
+    catalog: {
+      available_offerings: [
+        { code: 'community_manager', fact_id: 'offering:community_manager:name:v1', display_name: 'Community Manager', area_code: 'marketing' },
+      ],
+      selected_offering: null,
+      areas: [],
+      candidate_offerings: [],
+      payment_plans: [{ code: 'one_time', fact_id: planFact, label: 'Pago único' }],
+    },
+    capabilities: { ...context().capabilities, may_send_payment_link: true, intake_missing: [], ...over },
+  } as Partial<AgentAContextV1>);
+  const linkProposal = (over: { course?: string; plan?: string; role?: 'paid' | 'alternative'; mentions?: boolean } = {}) => proposal({
+    move: { schema_version: 1, move: 'request_payment_link', secondary_moves: [], vetoes: [], confidence: 1,
+      payment_plan: (over.plan ?? 'one_time') } as never,
+    response: { messages: ['Dale, lo dejamos en un solo pago.'], call_offer: null },
+    proposed_action: { type: 'send_payment_link', offering_code: over.course ?? 'community_manager',
+      payment_plan: over.plan ?? 'one_time' } as never,
+    course_mentions: over.mentions === false ? [] : [{ offering_code: over.course ?? 'community_manager', role: over.role ?? 'paid' }],
+    used_fact_ids: [],
+  } as Partial<AgentATurnProposalV1>);
+  const check = (p: AgentATurnProposalV1, c: AgentAContextV1) => validateAgentATurnProposalV1({
+    proposal: p, context: c, planned_fact_ids: [], rejection_id: '00000000-0000-4000-8000-000000000001' });
+
+  it('acepta community_manager + one_time declarados cuando no hay curso ni plan persistidos', () => {
+    expect(check(linkProposal(), nullState())).toBeNull();
+  });
+
+  it('sigue rechazando un curso inventado, un curso no declarado como paid y un plan inventado', () => {
+    const invented = check(linkProposal({ course: 'curso_inventado' }), nullState());
+    expect(invented?.rejections).toContainEqual({ code: 'COURSE_NOT_RESOLVED', subject: 'course_selection' });
+    const notPaid = check(linkProposal({ role: 'alternative' }), nullState());
+    expect(notPaid?.rejections).toContainEqual({ code: 'COURSE_NOT_RESOLVED', subject: 'course_selection' });
+    const undeclared = check(linkProposal({ mentions: false }), nullState());
+    expect(undeclared?.rejections).toContainEqual({ code: 'COURSE_NOT_RESOLVED', subject: 'course_selection' });
+    const plan = check(linkProposal({ plan: 'monthly_99' }), nullState());
+    expect(plan?.rejections).toContainEqual({ code: 'PLAN_NOT_SELECTED', subject: 'payment_plan' });
+  });
+
+  it('con curso persistido la recuperación no se aplica y el curso no se rechaza', () => {
+    const persisted = nullState();
+    persisted.commercial_state.selected_payment_plan = 'monthly_12';
+    persisted.commercial_state.selected_offering_code = 'community_manager';
+    expect(check(linkProposal(), persisted)?.rejections ?? []).not.toContainEqual({ code: 'COURSE_NOT_RESOLVED', subject: 'course_selection' });
+  });
+
+  it('un pedido de link sin acción con plan canónico rellena el plan nulo; sin plan sigue rechazado', () => {
+    const noAction = (plan?: string) => proposal({
+      move: { schema_version: 1, move: 'request_payment_link', secondary_moves: [], vetoes: [], confidence: 1,
+        ...(plan ? { payment_plan: plan } : {}) } as never,
+      response: { messages: ['Dale, avanzamos.'], call_offer: null },
+      proposed_action: { type: 'none' }, used_fact_ids: [],
+    } as Partial<AgentATurnProposalV1>);
+    expect(check(noAction('one_time'), nullState())?.rejections ?? []).not.toContainEqual({ code: 'PLAN_NOT_SELECTED', subject: 'payment_plan' });
+    expect(check(noAction(), nullState())?.rejections).toContainEqual({ code: 'PLAN_NOT_SELECTED', subject: 'payment_plan' });
+  });
+});
