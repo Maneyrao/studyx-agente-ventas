@@ -7,7 +7,7 @@ import ts from 'typescript';
 // owner-only WhatsApp typing presence and natural multipart cadence).
 // Anything committed after it must be docs/evals/tests only (see assertOnlyNonCodeChangesSinceBaseV1), so a release
 // prepared from the branch HEAD runs exactly this code. Re-pin whenever a code file changes.
-export const BOT_RELEASE_BASE_SHA = '94636b11ecf04eb1d3abc1fe400dc1f01e0c5fb2';
+export const BOT_RELEASE_BASE_SHA = '8c0369c6281846c90af6b418ac7ed321c383aa18';
 export const BOT_RELEASE_BRAIN_VERSION = 'studyx-agent-a-brain-v205';
 export const BOT_RELEASE_PROMPT_VERSION = 'studyx-agent-a-canonical-v120';
 export const BOT_RELEASE_INSTRUMENTATION_VERSION = 'studyx-release-provenance-v1';
