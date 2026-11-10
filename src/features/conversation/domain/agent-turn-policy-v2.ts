@@ -882,6 +882,24 @@ export function authorizeAgentTurnV2(input: {
     stage = selectedPlan === null ? 'course_selected' : 'plan_selected';
     awaitingReply = 'payment_confirmation';
   }
+  // Incident B (owner 2026-11-10): correcting the registration e-mail during
+  // checkout, even after a link was sent, invalidates the earlier confirmation.
+  // The structured profile update (not wording) reopens the confirmation
+  // checkpoint; the next affirmative turn may then request the new link. The
+  // stage is kept: a delivered link still closes bonuses and call offers.
+  if (
+    moves.has('provide_contact_details')
+    && (proposal.profile_updates ?? []).some((update) => update.field === 'correo' && update.value !== null)
+    && selectedOffering !== null
+    && selectedPlan !== null
+    && stateFacts.has('state:intake_recorded:v1')
+    && !(changesCourse && courseChanged)
+    && action.type !== 'send_payment_link'
+    && (state.stage === 'payment_link_sent' || state.awaiting_reply === 'payment_confirmation'
+      || pendingPaymentRequest !== null)
+  ) {
+    awaitingReply = 'payment_confirmation';
+  }
   if (
     moves.has('ask_payment_options')
     && selectedOffering !== null

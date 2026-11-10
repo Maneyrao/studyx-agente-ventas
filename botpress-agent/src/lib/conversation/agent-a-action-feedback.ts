@@ -1,8 +1,59 @@
 import { bindCustomerCallInterpretationV1, type CustomerCallInterpretationV1 } from './customer-call-interpretation'
-import type { AgentAContextV1 } from '../../schemas/agent-a-brain'
+import type { AgentAContextV1, AgentATurnProposalV1 } from '../../schemas/agent-a-brain'
 import { TurnRejectionCodeSchema, type TurnRejectionV1 } from '../../schemas/turn-rejection'
 import { generateDeepSeekAgentATurnProposalV1 } from './agent-a-brain'
 import { resolveAgentAPlannerlessProposalV2 } from './resolve-agent-a-plannerless'
+
+/** Deterministic payment reservation outcomes (reserve-payment-link / replace-pending-checkout). */
+const PAYMENT_RESERVATION_REJECTIONS_V1 = new Set([
+  'PROMOTION_NOT_AUTHORIZED', 'PROMOTION_SNAPSHOT_INCOMPLETE', 'PROMOTION_SNAPSHOT_NOT_SEALED',
+  'COURSE_BONUS_DISABLED', 'IDEMPOTENCY_KEY_CONFLICT', 'PAYMENT_LINK_INVALID', 'PLAN_INVALID',
+  'PAYMENT_WORKSPACE_NOT_FOUND', 'CHECKOUT_REPLACEMENT_BLOCKED', 'CHECKOUT_REPLACEMENT_NOT_FOUND',
+  'CHECKOUT_REPLACEMENT_IDENTITY_MISMATCH', 'CHECKOUT_ALREADY_SUPERSEDED', 'CHECKOUT_REPLACEMENT_CONTACT_MISSING',
+  'CHECKOUT_REPLACEMENT_UNSUPPORTED', 'CHECKOUT_REPLACEMENT_NOT_RESERVED',
+])
+
+/**
+ * A payment reservation failure rejects the payment-link EFFECT with its real
+ * code. It is never an unreadable turn (incident B, owner 2026-11-10).
+ */
+export function paymentReservationRejectionSubjectsV1(reason: string): string[] | null {
+  return PAYMENT_RESERVATION_REJECTIONS_V1.has(reason)
+    ? ['send_payment_link', `payment_reservation:${reason.toLowerCase()}`]
+    : null
+}
+
+const PLAN_LABELS_V1: Record<string, string> = { monthly_12: '12 cuotas', monthly_6: '6 cuotas', one_time: 'un pago único' }
+
+/**
+ * Last resort after the model understood the turn but its effect stayed
+ * rejected and none of its own wording survived (owner 2026-11-10). Agent A's
+ * interpretation (move, plan, memories, profile updates) is kept, effects are
+ * fenced by the caller (`conversation_only`), and the visible text only states
+ * what is true: the request was understood and the effect did not happen. It
+ * never claims the effect, never says «no te entendí» and adds no sales copy.
+ */
+export function understoodIntentContinuityV1(input: {
+  readonly proposal: AgentATurnProposalV1
+  readonly rejection: TurnRejectionV1
+}): AgentATurnProposalV1 {
+  const subjects = input.rejection.rejections.map(item => item.subject)
+  const payment = subjects.some(subject => subject === 'send_payment_link' || subject.startsWith('payment'))
+  const plan = input.proposal.move.payment_plan ? PLAN_LABELS_V1[input.proposal.move.payment_plan] ?? null : null
+  const text = payment
+    ? plan ? `Entendí que lo quieres en ${plan}, pero no pude generar el enlace de pago todavía.`
+      : 'Entendí tu pedido, pero no pude generar el enlace de pago todavía.'
+    : 'Entendí tu pedido, pero no pude completarlo todavía.'
+  return {
+    ...input.proposal,
+    response: { messages: [text], call_offer: null },
+    proposed_action: { type: 'none' },
+    course_mentions: [],
+    used_fact_ids: [],
+    used_memory_ids: [],
+    profile_requests: [],
+  }
+}
 
 /** Fence every effect; the continuation's own safe move carries conversation state. */
 export function fencedAgentARequestV1() {

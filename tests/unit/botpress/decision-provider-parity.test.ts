@@ -7,6 +7,7 @@ import {
   policyRejectedStateFallback,
   technicalContinuityFallback,
   validationExhaustedNotice,
+  TECHNICAL_CONTINUITY_TEXT_V1,
 } from '../../../botpress-agent/src/utils/decision-policy';
 import type { ClaimedTurn, Decision } from '../../../botpress-agent/src/schemas/contracts';
 
@@ -298,9 +299,9 @@ describe('applyDecisionPolicy — provider parity', () => {
       failure_codes: ['FACT_VALUE_MISMATCH'],
     });
 
-    expect(decision.response).toBe(
-      'Perdón, no te entendí bien, a qué te refieres?',
-    );
+    // Owner 2026-11-10 replaces the 2026-11-03 wording: exhaustion is a
+    // technical failure, never «no te entendí».
+    expect(decision.response).toBe(TECHNICAL_CONTINUITY_TEXT_V1);
     expect(decision.response_type).toBe('commercial_reply');
   });
 
@@ -1030,7 +1031,8 @@ describe('applyDecisionPolicy — provider parity', () => {
         }
         const invalid = applyDecisionPolicy({ ...modelUnavailableFallback(claimedTurn({ batch_message_content: text, offering_names: ['Inglés 1'] })),
           response: null, response_type: null } as never, claimedTurn({ batch_message_content: text, offering_names: ['Inglés 1'] }));
-        expect(invalid.response).toBe('Perdón, no te entendí bien, a qué te refieres?');
+        // Owner 2026-11-10: a provider outage is a technical failure, never «no te entendí».
+        expect(invalid.response).toBe(TECHNICAL_CONTINUITY_TEXT_V1);
       });
 
     it('never asserts a price the backend did not authorize', () => {
@@ -1057,11 +1059,11 @@ describe('applyDecisionPolicy — provider parity', () => {
       expect(decision.reason_code).toBe('AGENT_A_VALIDATION_EXHAUSTED');
     });
 
-    it('uses the natural clarification only for an unclassifiable message', () => {
+    it('uses the true technical line, not «no te entendí», for an unclassifiable message during an outage', () => {
       const fallback = modelUnavailableFallback(claimedTurn({
         batch_message_content: 'mmm', offering_names: ['Inglés 1'], payment_options: plans,
       }));
-      expect(fallback.response).toBe('Perdón, no te entendí bien, a qué te refieres?');
+      expect(fallback.response).toBe(TECHNICAL_CONTINUITY_TEXT_V1);
     });
   });
 });

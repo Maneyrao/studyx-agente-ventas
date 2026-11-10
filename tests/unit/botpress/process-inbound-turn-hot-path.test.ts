@@ -1,3 +1,4 @@
+import { claimsImmediatePaymentLinkDeliveryV1 } from '../../../src/shared/conversation/payment-link-claim';
 import { buildAuthorizedEgress } from '../../../src/features/orchestration/domain/egress-guard';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as evidencePersistence from '../../../botpress-agent/src/lib/observability/persist-turn-evidence';
@@ -2957,6 +2958,96 @@ describe('processInboundTurn hot path', () => {
       error_code: null });
     expect(createMessage).toHaveBeenCalledWith(expect.objectContaining({ payload: { text: replyText } }));
     expect(actionSpies.recovery).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['Dale, lo dejamos en 12 cuotas de USD 30. Te reenvío el enlace ahora.', 'Dale, lo dejamos en 12 cuotas de USD 30.'],
+    ['Te reenvío el enlace en 12 cuotas.', 'Entendí que lo quieres en 12 cuotas, pero no pude generar el enlace de pago todavía.'],
+  ])('incident B: PROMOTION_NOT_AUTHORIZED keeps the understood 12-installment plan, never «no te entendí» nor a false link claim: %s', async (understood, expectedText) => {
+    const claimed = claimedResponse() as unknown as ClaimedTurn;
+    claimed.features = { agent_loop_v3_mode: 'off', conversation_pipeline_v1_enabled: false,
+      agent_a_brain_v1_enabled: true, agent_a_brain_v1_shadow: false, agent_a_repair_enabled: true };
+    claimed.context.batch_messages[0].content = 'dale mandame el link de pago en 12 veces';
+    claimed.conversation_state_v1 = { selected_offering_code: 'ingles_1', selected_payment_plan: 'one_time',
+      stage: 'plan_selected', call_preference: 'chat', call_offer_status: 'declined', call_offer_count: 1,
+      awaiting_reply: 'payment_confirmation', version: 7 };
+    claimed.catalog_index = { as_of: NOW, offerings_total: 2,
+      offerings: [{ code: 'ingles_1', display_name: 'Inglés 1', academy: 'Idiomas', aliases: ['ingles'] },
+        { code: 'ingles_2', display_name: 'Inglés 2', academy: 'Idiomas', aliases: [] }],
+      injection_suspected_count: 0 };
+    const business = paymentBusinessContext();
+    business.offerings = [
+      { ...business.offerings[0]!, code: 'ingles_1', display_name: 'Inglés 1', academy: 'Idiomas' },
+      { ...business.offerings[0]!, code: 'ingles_2', display_name: 'Inglés 2', academy: 'Idiomas' },
+    ];
+    business.workspace.payment_options = [...business.workspace.payment_options, {
+      code: 'monthly_12', label: '12 cuotas', total: { amount: '360.00', currency: 'USD' },
+      installments: 12, installment_amount: '30.00', payment_link: 'https://example.test/twelve',
+    }] as never;
+    claimed.business_context = business;
+    claimed.business_context_available = true;
+    claimed.contact_intake_missing = [];
+    // The one-time checkout already carries the attached gift (incident B).
+    claimed.course_bonus_capability = {
+      status: 'accepted', package_status: 'attached', may_schedule_checkin: false, may_request_review: false,
+      may_accept_offer: false, may_send_promoted_payment: true, promotion_code: 'BONUS',
+      interest_offering_code: 'ingles_1', bonus_offerings: [{ code: 'ingles_2', display_name: 'Inglés 2', position: 1 }],
+    } as never;
+    actionSpies.claim.mockResolvedValue(claimed);
+    configuration.agentAPlannerlessV2Enabled = true;
+    actionSpies.agentABrainValidate.mockImplementation(() => null);
+    actionSpies.agentABrainDeepSeek.mockImplementation(async (input: { context: AgentAContextV1; on_provider_request?: () => void }) => {
+      input.on_provider_request?.();
+      return { proposal: { schema_version: 1,
+        move: { schema_version: 1, move: 'request_payment_link', secondary_moves: ['select_payment_plan'], vetoes: [],
+          confidence: 1, payment_plan: 'monthly_12', course_reference: 'ingles_1' },
+        response: { messages: [understood], call_offer: null },
+        proposed_action: { type: 'send_payment_link', offering_code: 'ingles_1', payment_plan: 'monthly_12', promotion_code: 'BONUS' },
+        used_fact_ids: [], used_memory_ids: [], memory_candidates: [],
+        repair_of: input.context.turn_rejection ? { rejection_id: input.context.turn_rejection.rejection_id, attempt: 1 } : null },
+        provider: 'deepseek-direct', model: 'deepseek-v4-flash', latency_ms: 1, attempt_count: 1 };
+    });
+    const rejected = () => new StudyxHttpError('DECISION_REJECTED', false, 422, 1,
+      { error: 'DECISION_REJECTED', reason: 'PROMOTION_NOT_AUTHORIZED' });
+    actionSpies.commit.mockReset().mockImplementation(async ({ input }) => {
+      const turn = input.agent_turn_v2;
+      const content = turn?.proposal.response.messages.join('\n\n') ?? input.decision?.response ?? '';
+      // The backend keeps refusing the reservation; a fenced reply that still
+      // claims the link is refused exactly like prepare-agent-turn-v2 does.
+      if (turn && !turn.conversation_only) throw rejected();
+      if (claimsImmediatePaymentLinkDeliveryV1(content)) throw new StudyxHttpError('DECISION_REJECTED', false, 422, 1,
+        { error: 'DECISION_REJECTED', reason: 'AGENT_TURN_V2_REJECTED:ACTION_NOT_AUTHORIZED' });
+      const outbound = { id: UUID, content, status: 'pending', delivery_attempt: 1,
+        authorized_egress: buildAuthorizedEgress({ content, authorized_urls: [], protected_facts: [] }) };
+      return { status: 'committed', replayed: false, trace_id: UUID, turn_id: UUID, decision_id: UUID,
+        next_state: 'waiting_user', outbound, outbounds: [outbound], call_request: null };
+    });
+    const createMessage = vi.fn(async () => ({ message: { id: 'bp-incident-b-message' } }));
+    const step = Object.assign(async (_name: string, run: () => Promise<unknown>) => run(),
+      { sleep: vi.fn(async () => undefined) });
+    const handler = (processInboundTurn as unknown as {
+      definition: { handler: (args: Record<string, unknown>) => Promise<unknown> };
+    }).definition.handler;
+    await handler({ input: workflowInput(), state: processingState(), step,
+      execute: vi.fn(async () => { throw new Error('LEGACY_MODEL_MUST_NOT_RUN'); }),
+      client: { createMessage }, signal: new AbortController().signal, workflow: { id: 'workflow-incident-b' } });
+
+    const commits = actionSpies.commit.mock.calls.map(call => call[0].input);
+    // The deterministically rejected effect reaches the backend once, not three times.
+    expect(commits.filter(input => input.agent_turn_v2?.proposal.proposed_action.type === 'send_payment_link'
+      && !input.agent_turn_v2.conversation_only)).toHaveLength(1);
+    expect(actionSpies.agentABrainDeepSeek.mock.calls.length).toBeLessThanOrEqual(3);
+    const final = commits.at(-1)!;
+    // Effects fenced by the backend (conversation_only); the interpretation survives.
+    expect(final.agent_turn_v2).toMatchObject({ conversation_only: true, proposal: {
+      move: { move: 'request_payment_link', payment_plan: 'monthly_12' } } });
+    const delivered = JSON.stringify(final);
+    expect(delivered).not.toMatch(/no te entend/iu);
+    expect(delivered).not.toMatch(/reenv[ií]o el enlace/iu);
+    const finalText = final.agent_turn_v2!.proposal.response.messages.join(' ');
+    expect(finalText.trim().length).toBeGreaterThan(0);
+    // Agent A's own words survive; only the false link sentence is gone.
+    expect(finalText).toBe(expectedText);
   });
 
   it.each([

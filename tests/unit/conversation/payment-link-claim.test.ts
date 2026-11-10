@@ -27,6 +27,10 @@ const cases: ReadonlyArray<readonly [string, boolean]> = [
   ['No te lo he enviado; me falta tu correo para el enlace.', false],
   ['¿Ya te envié el enlace?', false],
   ['Te paso el link ahora.', true],
+  // Incident B (2026-11-10): a resend is the same effect claim.
+  ['Dale, te reenvío el enlace en 12 cuotas.', true],
+  ['Listo, ya te reenvié el link con el correo corregido.', true],
+  ['Si me confirmas el correo, te reenvío el enlace.', false],
   ['Te dejo el enlace para que lo hagas.', true],
   ['Ahí va el link.', true],
   ['Ahí va, Matía. El enlace es de Stripe.', true],

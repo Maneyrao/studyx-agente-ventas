@@ -780,7 +780,8 @@ describe('Agent A conversation runner', () => {
       expect(commitBody.agent_turn_v2).toBeNull();
       expect(commitBody.decision).toMatchObject({
         kind: 'reply',
-        response: 'Perdón, no te entendí bien, a qué te refieres?',
+        // Owner 2026-11-10: exhaustion is a technical failure, never «no te entendí».
+        response: 'Perdón, tuve un problema técnico al responderte. Me lo escribes de nuevo?',
         response_type: 'commercial_reply',
         reason_code: 'AGENT_A_VALIDATION_EXHAUSTED',
       });

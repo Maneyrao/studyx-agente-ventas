@@ -254,6 +254,8 @@ export function removeEffectClaimBubblesV1(input: {
   readonly proposal: AgentATurnProposalV1
   readonly context: AgentAContextV1
   readonly bonus_offering_code?: string | null
+  /** Workflow floor only (incident B): drop just the sentences claiming a rejected payment link. */
+  readonly payment_link_sentences?: boolean
 }): AgentATurnProposalV1 | null {
   const { proposal, context } = input
   const bonusName = input.bonus_offering_code
@@ -267,11 +269,24 @@ export function removeEffectClaimBubblesV1(input: {
     || claimsImmediateCallDispatchV1(message, status)
     || (bonusName !== null && normalizedIncludes(message, bonusName))
     || rejectedValues.some((update) => textMentionsRejectedValueV1(message, update))
-  const keptIndices = proposal.response.messages.flatMap((message, index) => (claims(message) ? [] : [index]))
-  const messages = keptIndices.map((index) => proposal.response.messages[index]!)
+  let keptIndices = proposal.response.messages.flatMap((message, index) => (claims(message) ? [] : [index]))
+  let messages = keptIndices.map((index) => proposal.response.messages[index]!)
   const offer = proposal.response.call_offer
   const offerClaims = typeof offer === 'string' && claims(offer)
   if (messages.length === proposal.response.messages.length && !offerClaims) return null
+  if (messages.length === 0 && input.payment_link_sentences === true) {
+    // Every bubble asserts the rejected effect (incident B: «Dale, en 12
+    // cuotas. Te reenvío el enlace.»). Remove only the sentences asserting the
+    // payment link and keep the rest of Agent A's own reply, provided nothing
+    // else in it claims an effect. Call claims are never cut mid-bubble.
+    const reduced = proposal.response.messages.map((message) => message
+      .split(/(?<=[.!?\n])/u)
+      .filter((sentence) => !claimsImmediatePaymentLinkDeliveryV1(sentence))
+      .join('')
+      .trim())
+    keptIndices = reduced.flatMap((message, index) => (message.length > 0 && !claims(message) ? [index] : []))
+    messages = keptIndices.map((index) => reduced[index]!)
+  }
   if (messages.length === 0) return null
   return {
     ...proposal,

@@ -316,3 +316,28 @@ describe('focused-29-41-r3 recorded attempts: salvage instead of the P0 sentence
     expect(priceCase!.response.messages.join(' ')).toContain('USD 30');
   });
 });
+
+describe('incident B: a rejected payment link removes only the sentence that claims it', () => {
+  const catalog = { commercial_state: {}, capabilities: { course_bonus: { delivered_bonus_offerings: [] } },
+    catalog: { selected_offering: null, available_offerings: [], candidate_offerings: [], payment_plans: [] } } as unknown as AgentAContextV1;
+  const linkProposal = (messages: string[]) => ({
+    schema_version: 1, move: { schema_version: 1, move: 'request_payment_link', secondary_moves: ['select_payment_plan'],
+      vetoes: [], confidence: 1, payment_plan: 'monthly_12' },
+    response: { messages, call_offer: null },
+    proposed_action: { type: 'send_payment_link', offering_code: 'fotografia', payment_plan: 'monthly_12' }, course_mentions: [],
+  }) as unknown as AgentATurnProposalV1;
+  it('keeps the model\'s own confirmation of the plan and drops «te reenvío el enlace»', () => {
+    const fixed = removeEffectClaimBubblesV1({
+      proposal: linkProposal(['Dale, lo dejamos en 12 cuotas de USD 30. Te reenvío el enlace ahora.']), context: catalog,
+      payment_link_sentences: true });
+    expect(fixed?.response.messages).toEqual(['Dale, lo dejamos en 12 cuotas de USD 30.']);
+    expect(fixed?.proposed_action).toEqual({ type: 'none' });
+    expect(fixed?.move).toEqual(linkProposal([]).move);
+  });
+  it('never returns an empty reply: a reply that is only the claim goes back to the caller', () => {
+    expect(removeEffectClaimBubblesV1({ proposal: linkProposal(['Te reenvío el enlace.']), context: catalog,
+      payment_link_sentences: true })).toBeNull();
+    // Outside the payment floor, whole-bubble semantics are unchanged.
+    expect(removeEffectClaimBubblesV1({ proposal: linkProposal(['Dale. Te reenvío el enlace.']), context: catalog })).toBeNull();
+  });
+});

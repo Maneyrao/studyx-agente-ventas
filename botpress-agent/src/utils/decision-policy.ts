@@ -21,6 +21,14 @@ import { supportsChatPreferenceV1 } from '../lib/conversation/channel-preference
  * `workflows/processInboundTurn.ts`.
  */
 
+/**
+ * Owner 2026-11-10 (incidents A/B): a technical failure is never presented as
+ * incomprehension. «No te entendí» is only for a genuinely ambiguous message,
+ * which Agent A itself asks to clarify. This line is the last resort when no
+ * model-authored reply survives: brief, true, no commercial content.
+ */
+export const TECHNICAL_CONTINUITY_TEXT_V1 = 'Perdón, tuve un problema técnico al responderte. Me lo escribes de nuevo?'
+
 export function suppress(reasonCode: string): Decision {
   return {
     schema_version: 3,
@@ -47,7 +55,7 @@ export function technicalFallback(
     kind: 'reply',
     // Last-resort continuity only. Never expose a provider failure. Owner
     // wording (2026-11-03): a short, human clarification request.
-    response: 'Perdón, no te entendí bien, a qué te refieres?',
+    response: TECHNICAL_CONTINUITY_TEXT_V1,
     response_type: responseType,
     business_action: null,
     memory_candidates: [],
@@ -249,7 +257,7 @@ export function validationExhaustedNotice(
     kind: 'reply',
     response: comparisonIsAmbiguous
       ? 'Qué dos cursos comparamos?'
-      : (recovery ? groundedPriceReplyV1(recovery.claimed) : null) ?? 'Perdón, no te entendí bien, a qué te refieres?',
+      : (recovery ? groundedPriceReplyV1(recovery.claimed) : null) ?? TECHNICAL_CONTINUITY_TEXT_V1,
     response_type: responseType === 'technical_fallback' ? 'commercial_reply' : responseType,
     business_action: null,
     memory_candidates: [],
@@ -435,7 +443,7 @@ export function modelUnavailableFallback(
         ? 'Puedo ayudarte a ordenar la consulta según tu presupuesto. Qué te preocupa del precio?'
         : course
           ? `Sigo con ${course}. Qué aspecto quieres confirmar?`
-          : 'Perdón, no te entendí bien, a qué te refieres?')
+          : TECHNICAL_CONTINUITY_TEXT_V1)
   return {
     schema_version: 4,
     intent: 'commercial',
@@ -505,7 +513,7 @@ function allowedTextFallback(claimed: ClaimedTurn, reasonCode: string): Decision
     schema_version: 3,
     intent: 'unknown',
     kind: 'reply',
-    response: 'Perdón, no te entendí bien, a qué te refieres?',
+    response: TECHNICAL_CONTINUITY_TEXT_V1,
     response_type: responseType,
     business_action: null,
     memory_candidates: [],
