@@ -19,6 +19,7 @@ export const CourseBonusLadderV1Schema = z.object({
   retention_used: z.boolean(),
   previous_turn_asked_price_question: z.boolean(),
   price_presented: z.boolean().optional(),
+  prior_price_objection_recorded: z.boolean().optional(),
   carried_over_bonus_offerings: z.array(z.object({ code: z.string(), display_name: z.string() }).strict()).optional(),
 }).strict();
 

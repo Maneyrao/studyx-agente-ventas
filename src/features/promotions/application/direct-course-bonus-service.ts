@@ -314,6 +314,7 @@ export async function offerDirectCourseBonusV1(db: DbClient, input: OfferDirectC
         purchase_decline_recorded:evidence?.purchase_decline_recorded ?? false,
         previous_turn_asked_price_question:evidence?.previous_turn_asked_price_question ?? false,
         price_presented:evidence?.price_presented ?? false,
+        prior_price_objection_recorded:evidence?.prior_price_objection_recorded ?? false,
         promotion_carried_over:(evidence?.carried_over_bonus_offerings?.length ?? 0) > 0});
       if (motiveReason) throw new Rejection('ladder_step_pending',motiveReason);
     }

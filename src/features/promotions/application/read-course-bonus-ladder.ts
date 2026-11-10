@@ -45,8 +45,17 @@ export async function readCourseBonusLadderV1(input: {
   `;
   if (!row) return null;
   const [current] = await db<Array<{ candidates: Array<{type:string;key:string;value:string;source_quote:string}> | null; retention_used: boolean; asked: boolean; price_presented: boolean;
-    carried: Array<{ code: string; display_name: string }> | null }>>`
+    carried: Array<{ code: string; display_name: string }> | null; prior_objection: boolean }>>`
     SELECT
+      -- Owner 2026-11-10: a price objection recorded on an earlier, answered turn
+      -- (outside the current intervention) makes the current one the second.
+      EXISTS(SELECT 1 FROM agent_decisions d JOIN messages src ON src.id=d.turn_id
+        WHERE src.conversation_id=${input.conversation_id}::uuid AND src.contact_id=${input.contact_id}::uuid
+          AND src.direction='inbound' AND d.decision_kind='reply'
+          AND src.id NOT IN (SELECT current_turn.id FROM agent_intervention_inbound_v1(${row.source_turn_id}::uuid) current_turn)
+          AND jsonb_typeof(d.memory_candidates)='array'
+          AND EXISTS(SELECT 1 FROM jsonb_array_elements(d.memory_candidates) candidate
+            WHERE candidate->>'type'='objection' AND candidate->>'key'='price_objection')) prior_objection,
       -- Owner 2026-11-10: gifts delivered for another main course of this
       -- conversation carry over to the current one (live or switch-cancelled packages).
       (SELECT jsonb_agg(DISTINCT jsonb_build_object('code',gift.offering_code_snapshot,'display_name',gift.offering_display_name_snapshot))
@@ -92,5 +101,6 @@ export async function readCourseBonusLadderV1(input: {
   return { retention_used: current?.retention_used === true,
     previous_turn_asked_price_question: current?.asked === true, purchase_decline_recorded: decline,
     price_presented: current?.price_presented === true,
+    prior_price_objection_recorded: current?.prior_objection === true,
     ...(current?.carried?.length ? { carried_over_bonus_offerings: current.carried } : {}) };
 }

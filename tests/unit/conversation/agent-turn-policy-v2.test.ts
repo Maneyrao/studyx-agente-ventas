@@ -161,6 +161,26 @@ function authorize(input: {
 }
 
 describe('plannerless Agent A authority', () => {
+  it('live 2026-11-10: a plan choice with no persisted course adopts the single course in focus', () => {
+    const planMove = proposal({ move: { schema_version: 1, move: 'select_payment_plan', secondary_moves: [], vetoes: [],
+      payment_plan: 'one_time', confidence: 0.93 },
+      response: { messages: ['Perfecto, pago único. Para dejarte la inscripción lista necesito tu nombre, apellido y correo.'] } });
+    // Focus from the live promotion package (Community Manager with a gift offered).
+    const offered = authorize({ state: state({ selected_offering_code: null, stage: 'exploring' }), proposal: planMove,
+      courseBonus: { status: 'offer_available', package_status: 'offered', enabled: true, max_bonus_courses: 3,
+        may_offer_bonus: false, may_schedule_checkin: false, may_request_review: false, may_accept_offer: true,
+        may_send_promoted_payment: false, promotion_code: 'p', interest_offering_code: 'redes_informaticas',
+        bonus_offerings: [{ code: 'excel_integral', display_name: 'Excel Integral', position: 1 }],
+        delivered_bonus_offerings: [{ code: 'excel_integral', display_name: 'Excel Integral', position: 1 }] } });
+    expect(offered).toMatchObject({ ok: true, transition: { selected_offering_code: 'redes_informaticas', selected_payment_plan: 'one_time' } });
+    // Focus from the conversation's paid mention when there is no promotion.
+    expect(authorize({ state: state({ selected_offering_code: null, stage: 'exploring' }), proposal: planMove,
+      paidMention: 'redes_informaticas' })).toMatchObject({ ok: true,
+      transition: { selected_offering_code: 'redes_informaticas', selected_payment_plan: 'one_time' } });
+    // No focus at all: nothing is invented.
+    expect(authorize({ state: state({ selected_offering_code: null, stage: 'exploring' }), proposal: planMove }))
+      .not.toMatchObject({ transition: { selected_offering_code: expect.any(String) } });
+  });
   it('uses conversational paid identity for prose only, keeping purchase state and effects unchanged',()=>{
     const result=authorize({state:state({selected_offering_code:null}),paidMention:'redes_informaticas',
       proposal:proposal({response:{messages:['Redes Informáticas puede servirte.']},
@@ -284,7 +304,7 @@ describe('plannerless Agent A authority', () => {
   it('uses the paid identity of a validated bonus effect without inventing a purchase selection',()=>{
     const result=authorize({state:state(),customerText:'me parece muy caro',courseBonus:{enabled:true,max_bonus_courses:3,may_offer_bonus:true,status:'checkin_available',
       may_schedule_checkin:false,may_request_review:false,may_accept_offer:false,may_send_promoted_payment:false,promotion_code:null,
-      interest_offering_code:'redes_informaticas',bonus_offerings:[],bonus_candidates:[{code:'excel_integral',display_name:'Excel Integral'}],ladder:{retention_used:false,previous_turn_asked_price_question:false}},
+      interest_offering_code:'redes_informaticas',bonus_offerings:[],bonus_candidates:[{code:'excel_integral',display_name:'Excel Integral'}],ladder:{retention_used:false,previous_turn_asked_price_question:false,prior_price_objection_recorded:true}},
       proposal:proposal({move:PRICE_MOVE,response:{messages:['Redes Informáticas e Excel Integral pueden servirte.']},
         course_mentions:[{offering_code:'redes_informaticas',role:'paid'},{offering_code:'excel_integral',role:'bonus'}],
         proposed_action:{type:'offer_course_bonus',motive:{kind:'price_objection',quote:'me parece muy caro'}, interest_offering_code:'redes_informaticas',bonus_offering_code:'excel_integral'}})});
@@ -670,7 +690,7 @@ describe('plannerless Agent A authority', () => {
     // paid and the bonus course and both are in the capability: the copy that names
     // both must not be rejected because it also names the paid course.
     const cap: NonNullable<Parameters<typeof authorizeAgentTurnV2>[0]['course_bonus']> = { status: 'checkin_available', enabled: true, max_bonus_courses: 2,
-      ladder: { retention_used: false, previous_turn_asked_price_question: false },
+      ladder: { retention_used: false, previous_turn_asked_price_question:false,prior_price_objection_recorded:true },
       may_offer_bonus: true, may_schedule_checkin: false, may_request_review: false,
       may_accept_offer: false, may_send_promoted_payment: false, promotion_code: null,
       interest_offering_code: 'redes_informaticas', bonus_offerings: [],
@@ -689,7 +709,7 @@ describe('plannerless Agent A authority', () => {
       proposed_action: { type: 'offer_course_bonus',
       motive:{kind:'price_objection',quote:'me parece muy caro'}, interest_offering_code: 'redes_informaticas', bonus_offering_code: 'excel_integral' } });
     const cap: NonNullable<Parameters<typeof authorizeAgentTurnV2>[0]['course_bonus']> = { status: 'checkin_available', enabled: true, max_bonus_courses: 2,
-      ladder: { retention_used: false, previous_turn_asked_price_question: false },
+      ladder: { retention_used: false, previous_turn_asked_price_question:false,prior_price_objection_recorded:true },
       may_offer_bonus: true, may_schedule_checkin: false, may_request_review: false,
       may_accept_offer: false, may_send_promoted_payment: false, promotion_code: null,
       interest_offering_code: 'redes_informaticas', bonus_offerings: [],
@@ -718,7 +738,7 @@ describe('plannerless Agent A authority', () => {
     delivered_bonus_offerings: [{ code: 'camaras_seguridad', display_name: 'Cámaras', position: 1 }],
     status: 'offer_available', package_status: 'offered', promotion_code: 'p' };
   const ruleCap = (delivered: boolean, extra: Record<string, unknown> = {}) => ({ status: 'checkin_available' as const, enabled: true, max_bonus_courses: 3 as const, may_offer_bonus: true,
-    ladder: { retention_used: false, previous_turn_asked_price_question: false },
+    ladder: { retention_used: false, previous_turn_asked_price_question:false,prior_price_objection_recorded:true },
     may_schedule_checkin: false, may_request_review: false, may_accept_offer: false, may_send_promoted_payment: false,
     promotion_code: null, interest_offering_code: 'redes_informaticas', bonus_offerings: [],
     bonus_candidates: [{ code: 'excel_integral', display_name: 'Excel Integral' }, { code: 'community_manager', display_name: 'Community Manager' }],
@@ -743,8 +763,13 @@ describe('plannerless Agent A authority', () => {
     authorize({ state: selected(), customerText, proposal: p, courseBonus: courseBonus as never });
   const noClaim = 'Entiendo, te explico cómo funciona lo que ya tienes incluido.';
 
-  it('a price complaint in the current message authorizes the first bonus', () => {
-    expect(run('me parece muy caro', bonusProposal(), ruleCap(false))).toMatchObject({ ok: true, action: { type: 'offer_course_bonus' } });
+  it('owner 2026-11-10: the first price objection alone never opens the first bonus; the second does', () => {
+    const first = ruleCap(false, { ladder: { retention_used: false, previous_turn_asked_price_question: false } });
+    expect(run('me parece muy caro', bonusProposal(), first)).toMatchObject({ ok: false,
+      rejection_subjects: expect.arrayContaining(['bonus_motive:motive_first_price_objection']) });
+    const second = ruleCap(false, { ladder: { retention_used: false, previous_turn_asked_price_question: false,
+      prior_price_objection_recorded: true } });
+    expect(run('me parece muy caro', bonusProposal(), second)).toMatchObject({ ok: true, action: { type: 'offer_course_bonus' } });
   });
   it('no instant trigger: a promo request whose quote is not in the current message is rejected', () => {
     expect(run('me hacés un descuento?', bonusProposal(), ruleCap(false))).toMatchObject(motiveRejected);

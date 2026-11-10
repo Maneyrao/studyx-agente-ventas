@@ -16,7 +16,8 @@ export interface BonusMotiveV1 { readonly kind: BonusMotiveKindV1; readonly quot
 
 export type BonusMotiveRejectionV1 =
   | 'motive_missing' | 'motive_move_incoherent' | 'motive_quote_not_in_batch'
-  | 'motive_price_quote_invalid' | 'motive_needs_delivered_offer' | 'motive_retention_unavailable';
+  | 'motive_price_quote_invalid' | 'motive_needs_delivered_offer' | 'motive_retention_unavailable'
+  | 'motive_first_price_objection';
 
 /** Moves that are never a promotion motive on their own (payment, data, greeting). */
 const NON_MOTIVE_PRIMARY_MOVES = new Set([
@@ -63,6 +64,8 @@ export function validateBonusMotiveV1(input: {
   readonly previous_turn_asked_price_question: boolean;
   /** Persisted fact: an earlier agent message of this conversation stated the paid course price. */
   readonly price_presented?: boolean;
+  /** Owner 2026-11-10: an earlier answered turn recorded a price objection. */
+  readonly prior_price_objection_recorded?: boolean;
   /** Owner 2026-11-10: a promotion delivered for another main course carries over. */
   readonly promotion_carried_over?: boolean;
 }): BonusMotiveRejectionV1 | null {
@@ -83,7 +86,12 @@ export function validateBonusMotiveV1(input: {
       const words = normalize(motive.quote).split(/[^\p{L}\p{N}]+/u).filter(Boolean).length;
       const answersPriceQuestion = input.previous_turn_asked_price_question
         && quoteIsWholeFragment(motive.quote, input.batch);
-      return words >= MIN_WORDS_FOR_ORDINARY_PRICE_QUOTE || answersPriceQuestion ? null : 'motive_price_quote_invalid';
+      if (answersPriceQuestion) return null;
+      if (words < MIN_WORDS_FOR_ORDINARY_PRICE_QUOTE) return 'motive_price_quote_invalid';
+      // Owner 2026-11-10: the first price objection alone never opens the first
+      // gift; it takes a second objection or the «sí» to the price question.
+      return input.has_delivered_bonus || input.prior_price_objection_recorded === true
+        ? null : 'motive_first_price_objection';
     }
     case 'purchase_decline':
       return input.retention_used || !input.purchase_decline_recorded ? 'motive_retention_unavailable' : null;

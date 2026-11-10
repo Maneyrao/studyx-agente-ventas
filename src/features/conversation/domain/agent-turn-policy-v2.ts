@@ -225,10 +225,21 @@ export function authorizeAgentTurnV2(input: {
   const effectiveCallOfferCount = startsFreshSalesCycle ? 0 : state.call_offer_count;
   const effectiveStage = startsFreshSalesCycle ? 'exploring' as const : state.stage;
   const effectiveAwaitingReply = startsFreshSalesCycle ? 'none' as const : state.awaiting_reply;
+  // Live 2026-11-10: «prefiero un solo pago» with Community Manager in focus was
+  // dropped because no course was ever persisted. A declared purchase step
+  // without a named course adopts the single course in focus: the live
+  // promotion's paid course, else the conversation's paid focus. Durable facts
+  // only; never a reading of the customer's wording.
+  const purchaseStepWithoutCourse = (moves.has('select_payment_plan') || moves.has('request_payment_link'))
+    && requestedOffering === null && !startsFreshSalesCycle && state.selected_offering_code === null;
+  const focusOffering = ['offered', 'accepted', 'attached'].includes(input.course_bonus?.package_status ?? '')
+    ? capabilityInterestOffering
+    : input.paid_mention_offering_code ?? null;
   const selectedOfferingCandidate = acceptsPresentedPromotion
     ? capabilityInterestOffering
     : changesCourse ? requestedOffering
       : startsFreshSalesCycle ? null
+        : purchaseStepWithoutCourse ? focusOffering
         : state.selected_offering_code;
   const selectedOffering = input.offerings.some(offering => offering.code === selectedOfferingCandidate)
     ? selectedOfferingCandidate : null;
@@ -618,6 +629,7 @@ export function authorizeAgentTurnV2(input: {
       purchase_decline_recorded: draftDeclinesPurchaseV1(draftEvidence, batch),
       previous_turn_asked_price_question: cap?.ladder?.previous_turn_asked_price_question ?? false,
       price_presented: cap?.ladder?.price_presented ?? false,
+      prior_price_objection_recorded: cap?.ladder?.prior_price_objection_recorded ?? false,
       promotion_carried_over: (cap?.ladder?.carried_over_bonus_offerings?.length ?? 0) > 0 });
     const checkout = isBonusCheckoutV1({ stage: state.stage, awaiting_reply: state.awaiting_reply,
       payment_link_request_pending: state.payment_link_request?.status === 'pending' }, draftEvidence);

@@ -170,7 +170,7 @@ describe('prepareAgentTurnV2', () => {
       current_customer_messages:['me parece muy caro'],
       proposal:proposal({move:{schema_version:1,move:'price_objection',secondary_moves:[],vetoes:[],confidence:1},proposed_action:action,course_mentions:[{offering_code:'excel_integral',role:'bonus'}],response:{messages:['Te regalo Excel Integral.']}}),
       course_bonus_capability:{status:'checkin_available',enabled:true,max_bonus_courses:2,may_offer_bonus:true,
-        ladder:{retention_used:false,previous_turn_asked_price_question:false},
+        ladder:{retention_used:false,previous_turn_asked_price_question:false,prior_price_objection_recorded:true},
         may_schedule_checkin:false,may_request_review:false,may_accept_offer:false,may_send_promoted_payment:false,
         promotion_code:null,interest_offering_code:'redes_informaticas',bonus_offerings:[],
         // The model chooses among the backend's authorized set.

@@ -75,7 +75,7 @@ async function fixture(objectionCount=2, answerPrior=true) {
 }
 
 run('atomic direct bonus service', () => {
-  it.each([0,1,2])('persisted price objections authorize nothing: only the current message does (%s prior objections)',async count=>{
+  it.each([0,1,2])('a persisted objection alone authorizes nothing; the current complaint is a motive only as the second objection (%s prior objections)',async count=>{
     const f=await fixture(count);
     const cap=await readCourseBonusCapabilityV1({workspace_slug:f.w.slug ?? f.identity.promotion_code,
       contact_id:f.c.id,conversation_id:f.v.id,channel:'text',selected_offering_code:f.courses[0].code,
@@ -86,9 +86,11 @@ run('atomic direct bonus service', () => {
     await db!`UPDATE messages SET content='ok, gracias' WHERE id=${f.source}`;
     expect(await offerWithMotive(db!,f.input())).toMatchObject({ok:false,reason:'ladder_step_pending',motive_reason:'motive_quote_not_in_batch'});
     expect((await db!`SELECT count(*)::int n FROM promotion_offers WHERE conversation_id=${f.v.id}`)[0].n).toBe(0);
-    // The complaint in the current batch is the permission, with no prior objection needed.
+    // Owner 2026-11-10: the current complaint opens the first gift only when an
+    // earlier objection was recorded (it is the second); the first alone never does.
     await db!`UPDATE messages SET content='me parece muy caro' WHERE id=${f.source}`;
-    expect(await offerWithMotive(db!,f.input())).toMatchObject({ok:true,offer_version:1});
+    expect(await offerWithMotive(db!,f.input())).toMatchObject(count===0
+      ? {ok:false,reason:'ladder_step_pending',motive_reason:'motive_first_price_objection'} : {ok:true,offer_version:1});
   });
   it('owner 2026-11-10: the promotion follows the main course; the first gift of the new course needs no new motive',async()=>{
     const f=await fixture();
@@ -142,7 +144,7 @@ run('atomic direct bonus service', () => {
     expect((await db!`SELECT count(*)::int n FROM promotion_offers WHERE conversation_id=${f.v.id}`)[0].n).toBe(0);
   });
   it('keeps a literal price complaint valid when the same customer message begins with a discount question',async()=>{
-    const f=await fixture(0);
+    const f=await fixture(1);
     const quote='No me hacés un descuento? USD 360 me parece caro.';
     await db!`UPDATE messages SET content=${quote} WHERE id=${f.source}`;
     const input={...f.input(),motive:{kind:'price_objection' as const,quote},declared_moves:['price_objection']};
@@ -415,8 +417,9 @@ run('atomic direct bonus service', () => {
       WHERE conversation_id=${f.conversation_id}`;
     const cap=await readCourseBonusCapabilityV1({workspace_slug:'studyx',contact_id:f.contact_id,conversation_id:f.conversation_id,
       channel:'text',selected_offering_code:scenario==='interest_current'?null:course,source_turn_id:f.second_turn_id},{db:db!});
-    // The objection committed on the first turn is not evidence: the ledger only carries retention and the price-question flag.
-    expect(cap.ladder).toEqual({retention_used:false,previous_turn_asked_price_question:false,price_presented:false});
+    // Owner 2026-11-10: the objection recorded on the first (answered) turn makes the current one the second.
+    expect(cap.ladder).toEqual({retention_used:false,previous_turn_asked_price_question:false,price_presented:false,
+      prior_price_objection_recorded:true});
     const id=randomUUID();
     expect(await offerWithMotive(db!,{workspace_id:f.workspace_id,contact_id:f.contact_id,conversation_id:f.conversation_id,
       paid_offering_code:course,source_turn_id:f.second_turn_id,expected_offer_version:0,
@@ -487,7 +490,8 @@ run('atomic direct bonus service', () => {
     expect(await offerWithMotive(db!,{workspace_id:f.workspace_id,contact_id:contact,conversation_id:f.conversation_id,
       paid_offering_code:'entrenamiento_funcional',source_turn_id:source,expected_offer_version:0,bonus_offering_codes:['nutricion_alimentacion'],
       outbound:{id,content:'Te regalo Inglés 1.',provider:'test',integration_id:'test',channel:'whatsapp',destination:'test',idempotency_key:id}}))
-      .toMatchObject({ok:false,reason:kind==='current_objection'?'stale_offer_version':'invalid_offering'});
+      // current_objection: the first turn's own objection is not a second one (owner 2026-11-10).
+      .toMatchObject({ok:false,reason:kind==='current_objection'?'ladder_step_pending':'invalid_offering'});
     expect(await db!`SELECT id FROM promotion_offers WHERE conversation_id=${f.conversation_id}`).toHaveLength(0);
   });
   it('authorizes durable interest and committed objection without purchase selection or semantic memory',async()=>{
@@ -668,7 +672,7 @@ run('atomic direct bonus service', () => {
       .toMatchObject({ok:false,reason:'ladder_step_pending'});
   });
   it('retention does not block a later price-evidence bonus',async()=>{
-    const f=await fixture(0);
+    const f=await fixture(1);
     vi.stubEnv('COURSE_BONUS_MAX_COURSES','3');
     await recordModelPriceObjection(db!,f.source,{key:'purchase_decline'});
     const first=f.input();

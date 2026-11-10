@@ -60,6 +60,8 @@ run('model-owned bonus at the actual commit and transactional boundaries', () =>
       supports_multi_outbound: true, agent_turn_v2: { schema_version: 2 as const, proposal: first },
       decision: f.placeholderDecision as never, model: f.model as never });
     expect(firstCommit.status).toBe('committed');
+    // Owner 2026-11-10: the first gift needs a second objection; an earlier one was answered.
+    await seedPriorModelNegotiation(db!, f, 1);
     await db!`UPDATE messages SET content=${customerReply},created_at=clock_timestamp(),
       metadata=metadata-'occurred_at_trusted' WHERE id=${f.second_turn_id}::uuid`;
     const capability = await readCourseBonusCapabilityV1({ workspace_slug: 'studyx', contact_id: f.contact_id,
@@ -126,7 +128,8 @@ run('model-owned bonus at the actual commit and transactional boundaries', () =>
     const capability = await readCourseBonusCapabilityV1({ workspace_slug: 'studyx', contact_id: f.contact_id,
       conversation_id: f.conversation_id, channel: 'text', selected_offering_code: null,
       source_turn_id: f.second_turn_id }, { db: db! });
-    expect(capability.ladder).toEqual({ retention_used: false, previous_turn_asked_price_question: false, price_presented: false });
+    expect(capability.ladder).toEqual({ retention_used: false, previous_turn_asked_price_question: false, price_presented: false,
+      prior_price_objection_recorded: false });
   });
 
   it.each([
@@ -163,6 +166,8 @@ run('model-owned bonus at the actual commit and transactional boundaries', () =>
       WHERE conversation_id=${f.conversation_id}::uuid`;
     expect(persistedInterest).toMatchObject({ interest_offering_code: marketing });
 
+    // Owner 2026-11-10: the first gift needs a second objection; an earlier one was answered.
+    await seedPriorModelNegotiation(db!, f, 1);
     await db!`UPDATE messages SET content=${customerReply},created_at=clock_timestamp(),
       metadata=metadata-'occurred_at_trusted'
       WHERE id=${f.second_turn_id}::uuid`;

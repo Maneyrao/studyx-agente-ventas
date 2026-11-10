@@ -24,6 +24,12 @@ export interface CourseBonusLadderV1 {
   /** An earlier agent message of this conversation stated the paid course price (fact, not interpretation). */
   readonly price_presented?: boolean;
   /**
+   * Owner 2026-11-10: a first price objection alone never opens the bonus. True
+   * when an earlier, already answered turn of this conversation recorded a
+   * price objection (memory objection/price_objection): the current one is the second.
+   */
+  readonly prior_price_objection_recorded?: boolean;
+  /**
    * Owner 2026-11-10: the promotion follows the customer's main course. Gifts
    * already delivered in this conversation for ANOTHER paid course; when
    * present, the first gift of the current course needs no new motive and the

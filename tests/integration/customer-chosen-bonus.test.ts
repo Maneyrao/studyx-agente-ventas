@@ -6,7 +6,7 @@ import { seedConversationForAgentTurn } from '../helpers/agent-turn-fixtures';
 import { recordDeliveryReport } from '@/lib/services/decision.service';
 import { readCourseBonusCapabilityV1 } from '@/features/promotions/application/read-course-bonus-capability';
 import { hashCallContext } from '@/features/calls/domain/call-context';
-import { recordModelPriceObjection } from '../helpers/record-model-negotiation-facts';
+import { recordModelPriceObjection, seedPriorModelNegotiation } from '../helpers/record-model-negotiation-facts';
 
 /** Owner "Emma vende" (2026-11-03), live 07:38/07:41: the customer chooses the
  * gift or swaps the only gift while the package is open. Same literal detector
@@ -41,6 +41,8 @@ async function offeredWithIngles2() {
   const f = await seedConversationForAgentTurn({ selected_offering_code: paid, first_message: 'Me parece caro' });
   // The model recorded the price objection of the first turn: persisted price evidence.
   await recordModelPriceObjection(db!, f.turn_id, { source_quote: 'Me parece caro' });
+  // Owner 2026-11-10: the first gift needs a second objection; an earlier one was answered.
+  await seedPriorModelNegotiation(db!, f, 1);
   const first = randomUUID();
   const offer = await offerBonusWithMotive(db!, { workspace_id: f.workspace_id, contact_id: f.contact_id,
     conversation_id: f.conversation_id, paid_offering_code: paid, source_turn_id: f.turn_id,

@@ -637,6 +637,7 @@ async function readDirectCapability(input: {
   const ladder: CourseBonusLadderV1 | null = evidence ? {retention_used:evidence.retention_used,
     previous_turn_asked_price_question:evidence.previous_turn_asked_price_question,
     price_presented:evidence.price_presented,
+    prior_price_objection_recorded:evidence.prior_price_objection_recorded ?? false,
     ...(evidence.carried_over_bonus_offerings ? {carried_over_bonus_offerings:evidence.carried_over_bonus_offerings} : {})} : null;
   const activeCourses=await db<Array<{code:string;display_name:string;aliases:string[]|null}>>`
     SELECT o.code,o.display_name,ARRAY(SELECT jsonb_array_elements_text(CASE WHEN jsonb_typeof(o.metadata->'aliases')='array'
