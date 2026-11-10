@@ -112,6 +112,7 @@ import {
   AGENT_A_BRAIN_PROMPT_VERSION,
 } from '../prompts/agent-a-brain-v1'
 import { evaluateWhatsAppCanarySend } from '../channels/whatsapp.channel'
+import { settleWhatsAppTypingStartV1 } from '../lib/channels/whatsapp-typing-presence'
 
 // ADK 2.0.6 exposes integration actions at runtime, while its generated
 // aggregate declaration can omit the alias in mixed workspace typechecks.
@@ -630,13 +631,28 @@ export const processInboundTurn = new Workflow({
         }
       }
       try {
-        await getWhatsappRuntimeActions().startTypingIndicator({
+        const typingStart = await settleWhatsAppTypingStartV1(
+          getWhatsappRuntimeActions().startTypingIndicator({
           conversationId: input.botpress_conversation_id,
           messageId: input.external_message_id,
           timeout: 60_000,
-        })
+          }),
+        )
+        if (typingStart === 'timed_out') {
+          timings.typing_indicator_start_failed = 1
+          safeLog('studyx.turn.typing_indicator_start_failed', {
+            trace_id: input.trace_id,
+            error_code: 'WHATSAPP_TYPING_START_TIMEOUT',
+          })
+          return
+        }
         whatsappTypingActive = true
         timings.typing_indicator_start_success = 1
+        if (Number.isFinite(occurredAtMs)) {
+          timings.event_to_typing_accepted_ms = Math.max(0, Date.now() - occurredAtMs)
+          timings.event_to_typing_accepted_over_budget =
+            timings.event_to_typing_accepted_ms >= TYPING_INDICATOR_BUDGET_MS ? 1 : 0
+        }
         safeLog('studyx.turn.typing_indicator_started', { trace_id: input.trace_id })
       } catch (error) {
       if (isTurnEvidencePersistenceError(error)) throw error
