@@ -10,7 +10,7 @@ import ts from 'typescript';
 // 2026-11-10 intervention / structural validator / effect-only repair fixes).
 // Anything committed after it must be docs/evals/tests only (see assertOnlyNonCodeChangesSinceBaseV1), so a release
 // prepared from the branch HEAD runs exactly this code. Re-pin whenever a code file changes.
-export const BOT_RELEASE_BASE_SHA = '4486e1922a8bfc82eb7d7cb75594da43e580a97f';
+export const BOT_RELEASE_BASE_SHA = 'a98926492e793471c572e0ec740e6f0f96898b7d';
 export const BOT_RELEASE_BRAIN_VERSION = 'studyx-agent-a-brain-v208';
 export const BOT_RELEASE_PROMPT_VERSION = 'studyx-agent-a-canonical-v120';
 export const BOT_RELEASE_INSTRUMENTATION_VERSION = 'studyx-release-provenance-v1';
