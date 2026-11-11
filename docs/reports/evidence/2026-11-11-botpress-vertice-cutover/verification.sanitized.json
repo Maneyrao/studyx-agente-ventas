@@ -1,9 +1,10 @@
 {
-  "capturedAt": "2026-11-11T18:06:00Z",
+  "capturedAt": "2026-11-11T18:50:18Z",
   "approvedRelease": {
-    "sha": "d5549583eb4140b66e56484efbc1aa0e209ac72a",
-    "brain": "studyx-agent-a-brain-v210",
+    "sha": "f0f164c63b695b40b56312e447bfa10106233dcd",
+    "brain": "studyx-agent-a-brain-v211",
     "prompt": "studyx-agent-a-canonical-v121",
+    "backendSha": "d5549583eb4140b66e56484efbc1aa0e209ac72a",
     "backendUrl": "https://studyx-agente-ventas.vercel.app"
   },
   "origin": {
@@ -22,7 +23,7 @@
     "workspaceId": "wkspace_01M75G5S9RYXD656HZ6J4SAHYQ",
     "botId": "e0f6be70-db0e-48e0-a9b7-f7864b6699d1",
     "botName": "Asesor de admisiones Studyx",
-    "deployedAt": "2026-11-11T17:20:22.136Z",
+    "deployedAt": "2026-11-11T18:46:56.883Z",
     "automationEnabled": true,
     "whatsappPublicEnabled": true,
     "whatsappCanaryEnabled": false,
@@ -100,6 +101,36 @@
     "typingIndicator": "FAILED_NON_BLOCKING",
     "observedLatency": "approximately 41 seconds from first fragment to outbound"
   },
+  "v211Correction": {
+    "sourceBaseSha": "f0f164c63b695b40b56312e447bfa10106233dcd",
+    "brainVersion": "studyx-agent-a-brain-v211",
+    "promptVersion": "studyx-agent-a-canonical-v121",
+    "bundleSha256": "a7aa3b8d744af17175878b33d3848481c20f7916950562edc694de2fb01665f6",
+    "deployedAt": "2026-11-11T18:46:56.883Z",
+    "typingActionCanary": "PASS",
+    "courseMaterialPdf": {
+      "status": 200,
+      "contentType": "application/pdf",
+      "bytes": 99224
+    },
+    "courseMaterialImage": {
+      "status": 200,
+      "contentType": "image/png",
+      "bytes": 832487
+    },
+    "courseMaterialOrder": "PDF_IMAGE_TEXT",
+    "unitTests": {
+      "passed": 5460,
+      "failed": 0,
+      "skipped": 17,
+      "todo": 7
+    },
+    "typecheckRoot": "PASS",
+    "typecheckBotpress": "PASS",
+    "backendHealth": "PASS",
+    "backendReady": "PASS",
+    "liveWhatsappMaterialRequest": "PENDING_OWNER_MESSAGE"
+  },
   "verification": [
     {
       "check": "origin_disabled",
@@ -143,7 +174,11 @@
     },
     {
       "check": "typing_indicator",
-      "status": "FAIL_NON_BLOCKING"
+      "status": "PASS_DIRECT_ACTION_CANARY"
+    },
+    {
+      "check": "course_material_pdf_image_text",
+      "status": "PASS_CODE_AND_ASSETS_PENDING_LIVE_INBOUND"
     },
     {
       "check": "commercial_material_call_promotion_checkout_enrollment",
@@ -154,6 +189,6 @@
     "cutoverPerformed": true,
     "rollbackBotPreservedAndDisabled": true,
     "dualLiveOverlapObserved": false,
-    "acceptance": "CORE_MIGRATION_PASS_WITH_TYPING_AND_FULL_E2E_PENDING"
+    "acceptance": "MIGRATION_COMPLETE_V211_DEPLOYED_LIVE_OWNER_E2E_PENDING"
   }
 }
