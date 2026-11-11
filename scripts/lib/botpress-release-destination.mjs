@@ -24,14 +24,14 @@ export function assertBotpressReleaseRemoteIdentity(remote, { mode = 'live' } = 
   }
   const whatsapp = remote?.integrations?.whatsapp;
   if (whatsapp?.id !== STUDYX_RELEASE_DESTINATION.whatsappIntegrationId
-    || whatsapp.status !== 'registered'
     || remote?.configuration?.data?.whatsappAllowedBotPhoneNumberId
       !== STUDYX_RELEASE_DESTINATION.whatsappBotPhoneNumberId) {
     throw new Error('REMOTE_WHATSAPP_CONNECTION_MISMATCH');
   }
   const configuration = remote?.configuration?.data ?? {};
   if (mode === 'live') {
-    if (whatsapp.enabled !== true
+    if (whatsapp.status !== 'registered'
+      || whatsapp.enabled !== true
       || configuration.automationEnabled !== true
       || configuration.whatsappPublicEnabled !== true
       || configuration.whatsappCanaryEnabled !== false) {
@@ -39,7 +39,8 @@ export function assertBotpressReleaseRemoteIdentity(remote, { mode = 'live' } = 
     }
     return;
   }
-  if (whatsapp.enabled !== false
+  if (!['registered', 'registration_pending'].includes(whatsapp.status)
+    || whatsapp.enabled !== false
     || configuration.automationEnabled !== false
     || configuration.whatsappPublicEnabled !== false
     || configuration.whatsappCanaryEnabled !== false) {

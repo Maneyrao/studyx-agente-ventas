@@ -89,6 +89,28 @@ describe('Botpress StudyX release destination', () => {
     }, { mode: 'preparation' })).toThrow('REMOTE_PREPARATION_SAFETY_MISMATCH');
   });
 
+  it('permits registration_pending while WhatsApp remains disabled in preparation mode', () => {
+    const remote = {
+      name: STUDYX_RELEASE_DESTINATION.botName,
+      configuration: { data: {
+        automationEnabled: false,
+        whatsappPublicEnabled: false,
+        whatsappCanaryEnabled: false,
+        whatsappAllowedBotPhoneNumberId: STUDYX_RELEASE_DESTINATION.whatsappBotPhoneNumberId,
+      } },
+      integrations: { whatsapp: {
+        id: STUDYX_RELEASE_DESTINATION.whatsappIntegrationId,
+        enabled: false,
+        status: 'registration_pending',
+      } },
+    };
+
+    expect(() => assertBotpressReleaseRemoteIdentity(remote, { mode: 'preparation' }))
+      .not.toThrow();
+    expect(() => assertBotpressReleaseRemoteIdentity(remote))
+      .toThrow('REMOTE_WHATSAPP_CONNECTION_MISMATCH');
+  });
+
   it('normalizes only reviewed provider defaults that do not alter a connection', () => {
     expect(normalizeBotpressIntegrationField('telegram', 'configuration', {})).toEqual({
       typingIndicatorEmoji: false,
