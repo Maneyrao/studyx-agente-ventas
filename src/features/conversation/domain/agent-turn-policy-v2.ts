@@ -648,7 +648,8 @@ export function authorizeAgentTurnV2(input: {
       prior_price_objection_recorded: cap?.ladder?.prior_price_objection_recorded ?? false,
       promotion_carried_over: (cap?.ladder?.carried_over_bonus_offerings?.length ?? 0) > 0 });
     const checkout = isBonusCheckoutV1({ stage: state.stage, awaiting_reply: state.awaiting_reply,
-      payment_link_request_pending: state.payment_link_request?.status === 'pending' }, draftEvidence);
+      payment_link_request_pending: state.payment_link_request?.status === 'pending',
+      may_reopen_negotiation: cap?.may_reopen_negotiation }, draftEvidence);
     // Owner 2026-11-03: a literal swap of the single offered bonus is not a new
     // gift, so it needs no price evidence; naming the course is its subject, not a course change.
     const chosen = cap?.rule_bonus?.source === 'customer_request' ? cap.rule_bonus : null;
@@ -659,7 +660,7 @@ export function authorizeAgentTurnV2(input: {
     const swap = chosen !== null && proposed.bonus_offering_code === chosen.bonus_offering_code;
     const inCandidates = cap?.bonus_candidates?.some(candidate => candidate.code === proposed.bonus_offering_code) === true;
     const reason = cap?.enabled !== true ? 'bonus_disabled'
-      : checkout || ['accepted', 'attached'].includes(cap.package_status ?? '') ? 'sale_already_closed'
+      : checkout || (['accepted', 'attached'].includes(cap.package_status ?? '') && !cap.may_reopen_negotiation) ? 'sale_already_closed'
       : !swap && motiveReason !== null ? 'ladder_step_pending'
       : proposed.bonus_offering_code === capabilityInterestOffering ? 'same_as_paid_course'
       : !swap && !inCandidates && !cap.bonus_offerings.some(o => o.code === proposed.bonus_offering_code) ? 'invalid_offering'
@@ -941,6 +942,11 @@ export function authorizeAgentTurnV2(input: {
   ) {
     stage = selectedPlan === null ? 'course_selected' : 'plan_selected';
     awaitingReply = 'payment_plan';
+  }
+  if (action.type === 'offer_course_bonus' && input.course_bonus?.may_reopen_negotiation === true) {
+    stage = selectedPlan === null ? 'course_selected' : 'plan_selected';
+    awaitingReply = 'none';
+    paymentLinkRequest = null;
   }
   if (supportedChannelChoice) {
     // A refusal rejects the current invitation; it is not a global opt-out.

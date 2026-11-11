@@ -1,3 +1,4 @@
+import { withNegotiationPaymentSaleLockV1 } from '@/features/payments/application/negotiation-payment-state';
 import { randomUUID } from 'node:crypto';
 import { sql as orchestratorSql } from '@/lib/db/orchestrator';
 import { jsonbParam } from '@/lib/db/json';
@@ -37,6 +38,8 @@ interface ClaimedJob {
 interface SourceRow extends EnrollmentSource {
   payment_status: string;
   sandbox_contact: boolean;
+  negotiation_lineage?: boolean;
+  negotiation_blocked?: boolean;
 }
 
 export interface EnrollmentWorkerResult {
@@ -134,22 +137,31 @@ export async function runEnrollmentWorker(
     if (!job) break;
     result.claimed += 1;
 
-    let terminal: Terminal;
+    const executeJob = async (connection: postgres.Sql, source?: SourceRow | null): Promise<Terminal | null> => {
+      let terminal: Terminal;
+      try {
+        terminal = await decide(connection, job, config, bonusConfig, client, now, source);
+      } catch (error) {
+        terminal = { kind: 'retry', code: 'worker_error' };
+        logger.error({event:'central_carga.worker_error',payment_id:job.payment_id,job_id:job.id,
+          error_name:error instanceof Error ? error.name : 'unknown'});
+      }
+      return settle(connection,job,workerId,terminal,random);
+    };
+    // A lineage already exists before its successor can be paid. Hold one
+    // session lock across the external call and evidence persistence, while
+    // leaving ordinary enrollments on their existing path.
+    let applied: Terminal | null;
     try {
-      terminal = await decide(sql, job, config, bonusConfig, client, now);
+      const initialSource = await loadSource(sql,job.payment_id);
+      applied = initialSource?.negotiation_lineage
+        ? await withNegotiationPaymentSaleLockV1(sql,job.payment_id,connection=>executeJob(connection))
+        : await executeJob(sql,initialSource);
     } catch (error) {
-      // Unexpected local failure (DB read etc.): the Central outcome is
-      // unknown, so retry rather than assume anything.
-      terminal = { kind: 'retry', code: 'worker_error' };
-      logger.error({
-        event: 'central_carga.worker_error',
-        payment_id: job.payment_id,
-        job_id: job.id,
-        error_name: error instanceof Error ? error.name : 'unknown',
-      });
+      logger.error({event:'central_carga.worker_error',payment_id:job.payment_id,job_id:job.id,
+        error_name:error instanceof Error ? error.name : 'unknown'});
+      applied=await settle(sql,job,workerId,{kind:'retry',code:'worker_error'},random);
     }
-
-    const applied = await settle(sql, job, workerId, terminal, random);
     if (!applied) {
       result.lease_lost += 1;
       logger.warn({ event: 'central_carga.lease_lost', payment_id: job.payment_id, job_id: job.id });
@@ -171,6 +183,20 @@ async function loadSource(sql: postgres.Sql, paymentId: string): Promise<SourceR
       p.id AS payment_id, p.workspace_id, p.contact_id, p.environment, p.provider,
       p.provider_session_id, p.paid_at, p.amount::text AS amount, p.currency,
       p.plan_code, p.status AS payment_status,
+      EXISTS(SELECT 1 FROM payment_intent_supersessions s WHERE s.workspace_id=p.workspace_id
+        AND s.contact_id=p.contact_id AND s.conversation_id=p.source_conversation_id
+        AND s.original_offering_id=p.offering_id AND s.reason='NEGOTIATION_REOPENED') AS negotiation_lineage,
+      (EXISTS(SELECT 1 FROM payment_intent_supersessions s WHERE s.payment_id=p.id AND s.reason='NEGOTIATION_REOPENED')
+        OR EXISTS(SELECT 1 FROM payments ancestor JOIN payment_reconciliation_cases c ON c.payment_id=ancestor.id
+          WHERE ancestor.workspace_id=p.workspace_id AND ancestor.contact_id=p.contact_id
+            AND ancestor.source_conversation_id=p.source_conversation_id AND ancestor.offering_id=p.offering_id
+            AND c.status='open')
+        OR EXISTS(SELECT 1 FROM payments ancestor JOIN payment_intent_supersessions s ON s.payment_id=ancestor.id
+          WHERE ancestor.workspace_id=p.workspace_id AND ancestor.contact_id=p.contact_id
+            AND ancestor.source_conversation_id=p.source_conversation_id AND ancestor.offering_id=p.offering_id
+            AND s.reason='NEGOTIATION_REOPENED' AND ancestor.status NOT IN ('paid','refunded','failed','expired')
+            AND (ancestor.status='pending' OR EXISTS(SELECT 1 FROM payment_events e WHERE e.payment_id=ancestor.id
+              AND e.event_type='checkout_completed_unpaid')))) AS negotiation_blocked,
       COALESCE(p.registration_name, c.name) AS contact_name,
       COALESCE(p.registration_email, c.email) AS contact_email, c.phone AS contact_phone,
       c.declared_phone AS contact_declared_phone,
@@ -220,9 +246,13 @@ async function decide(
   bonusConfig: CentralCargaBonusConfig,
   client: CentralCargaClient,
   now: () => number,
+  initialSource?: SourceRow | null,
 ): Promise<Terminal> {
-  const source = await loadSource(sql, job.payment_id);
+  const source = initialSource === undefined ? await loadSource(sql, job.payment_id) : initialSource;
   if (!source) return { kind: 'dead_letter', code: 'payment_not_found' };
+  if (source.negotiation_lineage && source.negotiation_blocked) {
+    return {kind:'dead_letter',code:'payment_reconciliation_required'};
+  }
   if (source.bonus_offerings.length > 0
     && !isCentralCargaBonusFulfillmentAllowedForContact(bonusConfig, source.contact_id, source.contact_phone)) {
     return { kind: 'dead_letter', code: 'bonus_fulfillment_paused' };
@@ -351,7 +381,7 @@ async function settle(
   outcome: Terminal,
   random: () => number,
 ): Promise<Terminal | null> {
-  return sql.begin(async (tx) => {
+  const persist = async (tx: postgres.Sql) => {
     const scoped = tx as unknown as postgres.Sql;
     const [owned] = await tx`
       SELECT id FROM fulfillment_jobs WHERE id=${job.id}::uuid AND status='leased'
@@ -363,7 +393,19 @@ async function settle(
     const applied = await settleStatus(scoped, job, workerId, outcome, random);
     if (applied?.kind === 'dead_letter') await openBonusFulfillmentCase(scoped, job.payment_id, applied.code);
     return applied;
-  }) as Promise<Terminal | null>;
+  };
+  if (typeof sql.begin === 'function') return sql.begin(tx=>persist(tx as unknown as postgres.Sql)) as Promise<Terminal | null>;
+  // A reserved connection is already pinned to this sale's session lock. Its
+  // short settlement transaction starts only after the external call ended.
+  await sql`BEGIN`;
+  try {
+    const applied = await persist(sql);
+    await sql`COMMIT`;
+    return applied;
+  } catch (error) {
+    await sql`ROLLBACK`;
+    throw error;
+  }
 }
 
 async function persistEvidence(tx: postgres.Sql, job: ClaimedJob, body: EnrollmentResponse,

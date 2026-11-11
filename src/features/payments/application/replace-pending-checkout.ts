@@ -1,3 +1,4 @@
+import { readNegotiationPaymentStateV1 } from './negotiation-payment-state';
 import { randomUUID } from 'node:crypto';
 import type { DbClient } from '@/lib/db/types';
 import { jsonbParam } from '@/lib/db/json';
@@ -83,6 +84,13 @@ export async function replacePendingCheckoutV1(
   await db`SELECT conversation_id FROM conversation_sales_context_states_v1
     WHERE workspace_id=${input.workspace_id}::uuid AND contact_id=${input.contact_id}::uuid
       AND conversation_id=${input.conversation_id}::uuid FOR UPDATE`;
+  const paymentState = await readNegotiationPaymentStateV1(db,{workspace_id:input.workspace_id,
+    contact_id:input.contact_id,conversation_id:input.conversation_id,offering_id:input.offering_id},true);
+  const [renegotiated] = await db`SELECT 1 FROM payment_intent_supersessions
+    WHERE workspace_id=${input.workspace_id}::uuid AND contact_id=${input.contact_id}::uuid
+      AND conversation_id=${input.conversation_id}::uuid AND original_offering_id=${input.offering_id}::uuid
+      AND reason='NEGOTIATION_REOPENED' LIMIT 1`;
+  if (renegotiated && paymentState.blocked) reject('PAYMENT_RECONCILIATION_REQUIRED');
   const loadPayment = async (where: { id?: string; key?: string }, lock: boolean) => (await db<PaymentRow[]>`
     SELECT p.id,p.workspace_id,p.contact_id,p.offering_id,p.source_conversation_id,p.status,p.provider,
       p.provider_session_id,p.environment,p.plan_code,p.checkout_url,p.registration_email,

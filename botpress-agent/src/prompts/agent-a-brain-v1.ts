@@ -5,7 +5,7 @@ import {
 } from './studyx-agent-a-canonical.generated';
 import { resolveCanonicalPromptIdentityV1 } from './agent-a-identity';
 
-export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v211' as const;
+export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v212' as const;
 
 /**
  * Runtime contract only. The sales behavior lives in the canonical prompt so
@@ -341,6 +341,7 @@ function currentCourseBonusEffectContractV1(context: AgentAContextV1): string {
   if (effectGuidance === null) return '';
   return `<current_effect_contract kind="course_bonus">
 ${effectGuidance}
+${courseBonus?.may_reopen_negotiation ? 'This sale has an unpaid link that can be superseded ONLY if this authorized bonus action commits. Keep every delivered gift in the resulting package. Do not claim payment or enrollment; a new payment reference requires acceptance of the updated package. Pending payments or reconciliation never authorize reopening.' : ''}
 This block exposes only action shape, capability and package identity. It does not choose sales strategy, sequence or wording.
 Never claim a completed effect before the matching action commits.
 </current_effect_contract>`;

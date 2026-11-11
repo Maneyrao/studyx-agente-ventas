@@ -1,3 +1,4 @@
+import { readNegotiationPaymentStateV1 } from '@/features/payments/application/negotiation-payment-state';
 import { readCourseBonusLadderV1 } from './read-course-bonus-ladder';
 import { TERMINAL_CALL_STATUSES } from '@/features/calls/domain/call-state';
 import { authorizedBonusCodesV1, courseCodesNamedInBatchV1, isBonusCheckoutStateV1 } from '@/shared/conversation/deterministic-sales-rules';
@@ -27,6 +28,7 @@ export interface CourseBonusCapabilityV1 {
   readonly enabled?: boolean;
   readonly max_bonus_courses?: CourseBonusMaxCoursesV1;
   readonly may_offer_bonus?: boolean;
+  readonly may_reopen_negotiation?: boolean;
   readonly promotion_cycle_id?: string | null;
   readonly offer_version?: number;
   readonly accepted_at?: string | null;
@@ -370,6 +372,7 @@ interface CapabilityRow {
 
 export function deriveDirectCourseBonusCapabilityV1(input: {
   readonly interest_offering_code: string;
+  readonly may_reopen_negotiation?: boolean;
   readonly max_bonus_courses: CourseBonusMaxCoursesV1;
   readonly ladder?: CourseBonusLadderV1;
   readonly package: {
@@ -395,7 +398,8 @@ export function deriveDirectCourseBonusCapabilityV1(input: {
   const offer = input.package;
   const expiresAt = timestamp(offer?.expires_at ?? null);
   const expired = expiresAt !== null && expiresAt <= Date.now();
-  const open = offer === null || (offer.status === 'offered' && !expired);
+  const open = offer === null || (offer.status === 'offered' && !expired)
+    || (input.may_reopen_negotiation === true && ['accepted','attached'].includes(offer.status) && !expired);
   const ready = offer === null || (offer.delivered && offer.later_reply);
   const swapBonus = customerSwapBonus(input, open && ready);
   const candidates = bonusCandidates(input, open && ready);
@@ -403,6 +407,7 @@ export function deriveDirectCourseBonusCapabilityV1(input: {
   return {
     ...hidden(accepted ? 'accepted' : offer ? 'offer_available' : 'checkin_available'),
     enabled: true, max_bonus_courses: input.max_bonus_courses,
+    ...(input.may_reopen_negotiation ? {may_reopen_negotiation:true} : {}),
     ...(input.ladder ? {ladder:input.ladder} : {}),
     // Structural availability only. The motive is validated per proposal
     // against the current message, never decided here.
@@ -661,12 +666,19 @@ async function readDirectCapability(input: {
   const inCheckout = salesState !== undefined && isBonusCheckoutStateV1({stage:salesState.stage,
     awaiting_reply:salesState.awaiting_reply ?? 'none',payment_link_request_pending:salesState.link_status==='pending',
     handoff_call_settled:salesState.handoff_call_settled});
+  const [scope] = await db<Array<{workspace_id:string;offering_id:string}>>`SELECT o.workspace_id,o.id AS offering_id
+    FROM offerings o JOIN workspaces w ON w.id=o.workspace_id
+    WHERE w.slug=${input.workspace_slug} AND o.code=${input.selected_offering_code}`;
+  const paymentState = scope ? await readNegotiationPaymentStateV1(db,{...scope,
+    contact_id:input.contact_id,conversation_id:input.conversation_id}) : null;
+  const mayReopen = salesState?.stage==='payment_link_sent' && paymentState?.may_reopen===true;
   const derived = deriveDirectCourseBonusCapabilityV1({interest_offering_code:input.selected_offering_code!,
+    may_reopen_negotiation:mayReopen,
     active_courses:activeCourses,named_codes:namedCodes,
     ...(ladder ? {ladder} : {}),
     max_bonus_courses:max,customer_request:customerRequest,
     package:row.promotion_code ? {...row,promotion_code:row.promotion_code} : null});
-  return {...derived, ...(inCheckout ? {may_offer_bonus:false} : {}),
+  return {...derived, ...((inCheckout && !mayReopen) || paymentState?.blocked ? {may_offer_bonus:false,may_accept_offer:false,may_send_promoted_payment:false} : {}),
     sales_flow:{retention_used:ladder?.retention_used ?? false,
       promo_expires_at:row.status==='offered' && row.expires_at ? new Date(row.expires_at).toISOString() : null}};
 }

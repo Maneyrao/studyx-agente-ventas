@@ -1,3 +1,4 @@
+import { lockPaymentSaleV1, paymentSaleScopeV1 } from './negotiation-payment-state';
 import type postgres from 'postgres';
 import { jsonbParam } from '@/lib/db/json';
 import { reducePaymentState, type PaymentStateEvent, type PaymentStatus } from '../domain/payment-state';
@@ -44,6 +45,8 @@ export async function recordPaymentEvent(
   input: RecordPaymentEventInput
 ): Promise<RecordPaymentEventResult> {
   return db.begin(async (tx) => {
+    const scope = await paymentSaleScopeV1(tx as unknown as postgres.Sql,input.payment_id);
+    if (scope) await lockPaymentSaleV1(tx as unknown as postgres.Sql,scope);
     const payments = await tx<Array<{ id: string; status: PaymentStatus }>>`
       SELECT id, status FROM payments WHERE id = ${input.payment_id}::uuid FOR UPDATE
     `;
@@ -81,6 +84,15 @@ export async function recordPaymentEvent(
         reconciliation={reconciliation_required:true as const};
       }
     }
+    if (scope) {
+      const [ancestorCase] = await tx`SELECT 1 FROM payments ancestor
+        JOIN payment_reconciliation_cases c ON c.payment_id=ancestor.id AND c.status='open'
+        JOIN payment_intent_supersessions s ON s.payment_id=ancestor.id AND s.reason='NEGOTIATION_REOPENED'
+        WHERE ancestor.workspace_id=${scope.workspace_id}::uuid AND ancestor.contact_id=${scope.contact_id}::uuid
+          AND ancestor.source_conversation_id IS NOT DISTINCT FROM ${scope.conversation_id}::uuid
+          AND ancestor.offering_id=${scope.offering_id}::uuid LIMIT 1`;
+      if (ancestorCase) reconciliation={reconciliation_required:true as const};
+    }
     if (appended.length === 0) {
       return { outcome: 'duplicate' as const, status: current,...reconciliation };
     }
@@ -99,7 +111,7 @@ export async function recordPaymentEvent(
     `;
 
     if (transition.next === 'paid') {
-      if(!supersessions[0]) await tx`
+      if(!supersessions[0] && !('reconciliation_required' in reconciliation)) await tx`
         INSERT INTO fulfillment_jobs (payment_id, workspace_id)
         SELECT id, workspace_id FROM payments WHERE id = ${input.payment_id}::uuid
         ON CONFLICT (payment_id) DO NOTHING

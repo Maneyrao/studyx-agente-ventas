@@ -921,6 +921,17 @@ describe('plannerless Agent A authority', () => {
       expect(authorize({ state: state({ selected_offering_code: 'redes_informaticas', stage }), customerText: 'me parece muy caro',
         proposal: bonusProposal(), courseBonus: ruleCap(true) as never })).toMatchObject(rejectedBy('sale_already_closed'));
   });
+  it('reabre sólo una bonificación autorizada sobre un enlace pendiente y conserva curso y plan', () => {
+    const result = authorize({state:state({selected_offering_code:'redes_informaticas',selected_payment_plan:'one_time',
+      stage:'payment_link_sent',awaiting_reply:'none'}),customerText:'me parece muy caro',proposal:bonusProposal(),
+      courseBonus:ruleCap(true,{package_status:'attached',may_reopen_negotiation:true}) as never});
+    expect(result).toMatchObject({ok:true,action:{type:'offer_course_bonus'},transition:{
+      stage:'plan_selected',selected_offering_code:'redes_informaticas',selected_payment_plan:'one_time',
+      awaiting_reply:'none',payment_link_request:null}});
+    expect(authorize({state:state({selected_offering_code:'redes_informaticas',stage:'closed'}),customerText:'me parece muy caro',
+      proposal:bonusProposal(),courseBonus:ruleCap(true,{may_reopen_negotiation:true}) as never}))
+      .toMatchObject(rejectedBy('sale_already_closed'));
+  });
   it('a literal swap of the single bonus adds no course and needs no motive', () => {
     const swapCap = ruleCap(true, { bonus_candidates: [],
       rule_bonus: { paid_offering_code: 'redes_informaticas', paid_display_name: 'Redes Informáticas', bonus_offering_code: 'excel_integral',

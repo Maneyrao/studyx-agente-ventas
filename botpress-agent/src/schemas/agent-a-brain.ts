@@ -368,6 +368,7 @@ export const AgentAContextV1Schema = z.object({
       ladder: CourseBonusLadderV1Schema.optional(),
       enabled: z.boolean().optional(),
       may_offer_bonus: z.boolean().optional(),
+      may_reopen_negotiation: z.boolean().optional(),
       promotion_cycle_id: z.string().uuid().nullable().optional(),
       offer_version: z.number().int().min(0).optional(),
       accepted_at: z.string().nullable().optional(),

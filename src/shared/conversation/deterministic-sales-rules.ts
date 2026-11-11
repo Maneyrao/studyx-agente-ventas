@@ -166,6 +166,7 @@ type CheckoutStateV1 = {
   /** Durable: the conversation's latest call session is terminal. A handoff
    * whose own call already ended no longer owns the sale (2026-11-05). */
   readonly handoff_call_settled?: boolean;
+  readonly may_reopen_negotiation?: boolean;
 };
 
 /** Whole checkout by durable state only (data, summary, plan, link); no customer-text exception. */
@@ -178,7 +179,7 @@ export function isCheckoutStateV1(context: CheckoutStateV1): boolean {
  * until the link is sent. Blocked only after the link, once closed, or while
  * the handoff's own call is still open. Durable state only. */
 export function isBonusCheckoutStateV1(context: CheckoutStateV1): boolean {
-  return ['payment_link_sent', 'closed'].includes(context.stage)
+  return context.stage === 'closed' || (context.stage === 'payment_link_sent' && context.may_reopen_negotiation !== true)
     || (context.stage === 'handoff' && context.handoff_call_settled !== true);
 }
 

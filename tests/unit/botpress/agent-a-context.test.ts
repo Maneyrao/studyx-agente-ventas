@@ -2667,6 +2667,16 @@ describe('Agent A structured commercial context (sales_profile and fichas)', () 
   });
 
   describe('M5: offer_course_bonus in next_allowed_effects', () => {
+    it('anuncia la reapertura autorizada después del enlace sin contradecir la capacidad', () => {
+      const claimed = claimedTurn();
+      claimed.conversation_state_v1!.stage='payment_link_sent';
+      claimed.course_bonus_capability={enabled:true,max_bonus_courses:3,may_offer_bonus:true,may_reopen_negotiation:true,
+        status:'checkin_available',may_schedule_checkin:false,may_request_review:false,may_accept_offer:false,
+        may_send_promoted_payment:false,promotion_code:null,interest_offering_code:'redes_informaticas',bonus_offerings:[]};
+      const context=buildAgentAContextV1(claimed)!;
+      expect(context.capabilities.course_bonus).toMatchObject({may_offer_bonus:true,may_reopen_negotiation:true});
+      expect(context.commercial_state.sales_profile!.next_allowed_effects).toContain('offer_course_bonus_requires_current_motive');
+    });
     const cap = (ladder: unknown) => ({ enabled: true, max_bonus_courses: 3, may_offer_bonus: true, status: 'checkin_available',
       may_schedule_checkin: false, may_request_review: false, may_accept_offer: false, may_send_promoted_payment: false,
       promotion_code: null, interest_offering_code: 'redes-informaticas', bonus_offerings: [], delivered_bonus_offerings: [],
