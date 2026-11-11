@@ -5,7 +5,7 @@ import {
 } from './studyx-agent-a-canonical.generated';
 import { resolveCanonicalPromptIdentityV1 } from './agent-a-identity';
 
-export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v210' as const;
+export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v211' as const;
 
 /**
  * Runtime contract only. The sales behavior lives in the canonical prompt so
@@ -355,7 +355,7 @@ function currentCourseProgramEffectContractV1(context: AgentAContextV1): string 
     .map(item => `${item.offering_code}(${item.has_program_pdf ? 'official programme PDF' : 'manual ficha PDF'}${item.has_image ? ' + course image' : ''})`)
   return `<current_effect_contract kind="course_program">
 Course material can be sent over WhatsApp with ONE action, proposed_action={type:"send_course_program", offering_code}: the programme PDF (the official programme when it exists, otherwise the manual ficha) and then the official course image go out before your text. Available now: ${materials.join(', ') || '(none left to send)'}.
-Never send material on your own initiative. Propose the action only when the customer asks for the programme, temario, ficha, PDF or the detailed contents of a course, or answers yes to your offer to share it (both are move=request_course_program). While the customer has not chosen a course, advise: answer briefly and ask one diagnostic question (goal, or current level when the subject has several levels such as Inglés 1, 2, 3) instead of picking a level for them. Once the customer has chosen a course, give the key information and you may ask whether they want to see the programme (or the ficha), without sending it. Not on pure price or payment turns, and never more than once per course.
+Never send material on your own initiative. Propose the action only when the customer asks for the programme, temario, ficha, PDF or the detailed contents of a course, or answers yes to your offer to share it (both are move=request_course_program). While the customer has not chosen a course, advise: answer briefly and ask one diagnostic question (goal, or current level when the subject has several levels such as Inglés 1, 2, 3) instead of picking a level for them. Once the customer has chosen a course and you first present it on an informational turn, give the key information and offer once to share the programme or ficha. Do not send it until the customer accepts that offer. A real purchase or checkout signal takes priority: do not interrupt it with the material offer. Not on pure price or payment turns, and never more than once per course.
 With the material, write one or two human sentences summarizing what the course teaches, from its authorized description or syllabus facts (cite them in used_fact_ids); the files carry the detail, so never paste the whole syllabus. The backend resolves the files; never write a URL.
 Phrase it as something you are sharing only together with the action; never state as already done what the backend has not delivered. Name the file by what it is: an official programme PDF is "el programa"; a manual ficha PDF is "la ficha" or "el detalle de contenidos", never "el programa" or "el programa completo".
 A course that is not in the list above has no material available: say naturally that you do not have the file for it and offer the information you do have; never say you are sending it, and do not propose the action.

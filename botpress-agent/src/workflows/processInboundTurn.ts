@@ -145,6 +145,43 @@ const getWhatsappRuntimeActions = (): WhatsappRuntimeActions => (runtimeActions 
   }
 }).whatsapp
 
+type BotpressActionClient = {
+  callAction(input: {
+    type: 'whatsapp:startTypingIndicator' | 'whatsapp:stopTypingIndicator'
+    input: { conversationId: string; messageId: string }
+  }): Promise<unknown>
+}
+
+/**
+ * The integration action proxy can fail after a bot is copied across
+ * workspaces even though the destination integration itself is healthy.
+ * The bot-scoped client resolves the action against the destination bot and
+ * is the same path verified by the production canary. Keep the runtime proxy
+ * only as a compatibility fallback for local/emulated runtimes.
+ */
+function whatsappTypingActionsV1(client: unknown): WhatsappRuntimeActions {
+  const actionClient = client as Partial<BotpressActionClient>
+  if (typeof actionClient.callAction === 'function') {
+    return {
+      startTypingIndicator: async ({ conversationId, messageId }) => {
+        await actionClient.callAction!({
+          type: 'whatsapp:startTypingIndicator',
+          input: { conversationId, messageId },
+        })
+        return {}
+      },
+      stopTypingIndicator: async ({ conversationId, messageId }) => {
+        await actionClient.callAction!({
+          type: 'whatsapp:stopTypingIndicator',
+          input: { conversationId, messageId },
+        })
+        return {}
+      },
+    }
+  }
+  return getWhatsappRuntimeActions()
+}
+
 /**
  * One inbound turn, end to end.
  *
@@ -641,6 +678,7 @@ export const processInboundTurn = new Workflow({
     state.phase = 'processing'
     state.errorCode = null
     let evidenceJournal: ReturnType<typeof createTurnEvidenceJournal> | null = null
+    const whatsappTypingActions = whatsappTypingActionsV1(client)
     let whatsappTypingActive = false
     let firstWhatsappTypingAttemptAtMs: number | null = null
     const startWhatsAppTyping = async (): Promise<void> => {
@@ -658,7 +696,7 @@ export const processInboundTurn = new Workflow({
       }
       try {
         const typingStart = await settleWhatsAppTypingStartV1(
-          getWhatsappRuntimeActions().startTypingIndicator({
+          whatsappTypingActions.startTypingIndicator({
           conversationId: input.botpress_conversation_id,
           messageId: input.external_message_id,
           timeout: 60_000,
@@ -688,6 +726,7 @@ export const processInboundTurn = new Workflow({
         safeLog('studyx.turn.typing_indicator_start_failed', {
           trace_id: input.trace_id,
           error_code: errorCode(error),
+          provider_error: summarizeProviderError(error),
         })
         timings.typing_indicator_start_failed = 1
       }
@@ -697,7 +736,7 @@ export const processInboundTurn = new Workflow({
       whatsappTypingActive = false
       try {
         const typingStop = await settleWhatsAppTypingStopV1(
-          getWhatsappRuntimeActions().stopTypingIndicator({
+          whatsappTypingActions.stopTypingIndicator({
             conversationId: input.botpress_conversation_id,
             messageId: input.external_message_id,
           }),
@@ -715,6 +754,7 @@ export const processInboundTurn = new Workflow({
         safeLog('studyx.turn.typing_indicator_stop_failed', {
           trace_id: input.trace_id,
           error_code: errorCode(error),
+          provider_error: summarizeProviderError(error),
         })
         timings.typing_indicator_stop_failed = 1
       }

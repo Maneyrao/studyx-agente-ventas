@@ -662,6 +662,7 @@ describe('processInboundTurn hot path', () => {
     actionSpies.claim.mockResolvedValue(claimed);
     const startTyping = vi.spyOn(runtimeActions.whatsapp, 'startTypingIndicator');
     const stopTyping = vi.spyOn(runtimeActions.whatsapp, 'stopTypingIndicator');
+    const callAction = vi.fn(async () => ({ output: {}, meta: {} }));
     const input = {
       ...workflowInput(), channel: 'whatsapp', external_message_id: 'wamid.typing-test',
       message: {
@@ -678,20 +679,24 @@ describe('processInboundTurn hot path', () => {
     }).definition.handler({
       input, state: processingState(), step,
       execute: vi.fn(async () => { throw new Error('MODEL_MUST_NOT_RUN'); }),
-      client: {}, signal: new AbortController().signal,
+      client: { callAction }, signal: new AbortController().signal,
       workflow: { id: 'authorized-typing-test', setTimeout: vi.fn(async () => undefined) },
     });
 
-    expect(startTyping).toHaveBeenCalledWith({
-      conversationId: 'bp-conversation', messageId: 'wamid.typing-test', timeout: 60_000,
+    expect(callAction).toHaveBeenNthCalledWith(1, {
+      type: 'whatsapp:startTypingIndicator',
+      input: { conversationId: 'bp-conversation', messageId: 'wamid.typing-test' },
     });
-    expect(stopTyping).toHaveBeenCalledWith({
-      conversationId: 'bp-conversation', messageId: 'wamid.typing-test',
+    expect(callAction).toHaveBeenNthCalledWith(2, {
+      type: 'whatsapp:stopTypingIndicator',
+      input: { conversationId: 'bp-conversation', messageId: 'wamid.typing-test' },
     });
+    expect(startTyping).not.toHaveBeenCalled();
+    expect(stopTyping).not.toHaveBeenCalled();
     expect(actionSpies.claim.mock.invocationCallOrder[0]).toBeLessThan(
-      startTyping.mock.invocationCallOrder[0]!,
+      callAction.mock.invocationCallOrder[0]!,
     );
-    expect(startTyping.mock.invocationCallOrder[0]).toBeLessThan(stopTyping.mock.invocationCallOrder[0]!);
+    expect(callAction.mock.invocationCallOrder[0]).toBeLessThan(callAction.mock.invocationCallOrder[1]!);
   });
 
   it('never lets a losing batch workflow start or stop the owner typing presence', async () => {
