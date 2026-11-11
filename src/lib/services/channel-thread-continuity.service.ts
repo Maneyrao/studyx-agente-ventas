@@ -7,6 +7,9 @@ export class ChannelIdentityConflictError extends Error {
   constructor() { super('The provider conversation is already bound to another identity'); this.name = 'ChannelIdentityConflictError'; }
 }
 
+export const BOTPRESS_WORKSPACE_MIGRATION_STALE_ROUTE_REASON =
+  'BOTPRESS_ROUTE_NOT_FOUND_AFTER_WORKSPACE_MIGRATION';
+
 /** Resolve a transport alias only through an exact tenant/account/contact proof. */
 export async function resolveInboundChannelThread(input: {
   db: DbClient; envelope: InboundEnvelope; contactId: string; provider: string;
@@ -67,7 +70,13 @@ export async function resolveInboundChannelThread(input: {
     // Older provider events must never restore a deleted Botpress destination.
     await db`UPDATE channel_threads SET last_seen_at = now(),
       metadata = CASE WHEN COALESCE(metadata->>'destination_observed_at', first_seen_at::text)::timestamptz < ${destinationObservedAt}::timestamptz
-        THEN COALESCE(metadata, '{}'::jsonb) || ${jsonbParam(db, metadata)} ELSE metadata END
+        THEN COALESCE(metadata, '{}'::jsonb) || ${jsonbParam(db, metadata)} ELSE metadata END,
+      unusable_at = CASE WHEN unusable_reason = ${BOTPRESS_WORKSPACE_MIGRATION_STALE_ROUTE_REASON}
+        AND COALESCE(metadata->>'destination_observed_at', first_seen_at::text)::timestamptz < ${destinationObservedAt}::timestamptz
+        THEN NULL ELSE unusable_at END,
+      unusable_reason = CASE WHEN unusable_reason = ${BOTPRESS_WORKSPACE_MIGRATION_STALE_ROUTE_REASON}
+        AND COALESCE(metadata->>'destination_observed_at', first_seen_at::text)::timestamptz < ${destinationObservedAt}::timestamptz
+        THEN NULL ELSE unusable_reason END
       WHERE id = ${threadId}::uuid`;
   }
   if (account && !alias) await db`INSERT INTO channel_thread_aliases

@@ -1935,16 +1935,20 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
           await db`UPDATE agent_decisions SET business_action = NULL WHERE id = ${decisionId}::uuid`;
         }
       }
-      // Order of the media parts: course image first, then the PDF (both before the text bubbles on delivery).
-      const imageIndex = programHasImage ? partTexts.length : -1;
-      const documentIndex = programDocument === null ? -1 : partTexts.length + (programHasImage ? 1 : 0);
-      const partsToPersist = programDocument === null ? partTexts
-        : [...partTexts, ...(programHasImage ? [`[imagen enviada: ${programDocument.title}]`] : []), `[programa enviado: ${programDocument.title}]`];
-      const profileRequests = preparedAgentTurn && validatedInput.agent_turn_v2
+      // WhatsApp material handoff: the useful files arrive before the model's
+      // short explanation. This keeps the promise and the physical delivery in
+      // the same visual order: PDF, course image, then authored text.
+      const documentIndex = programDocument === null ? -1 : 0;
+      const imageIndex = programHasImage ? 1 : -1;
+      const mediaParts = programDocument === null ? []
+        : [`[programa enviado: ${programDocument.title}]`, ...(programHasImage ? [`[imagen enviada: ${programDocument.title}]`] : [])];
+      const partsToPersist = [...mediaParts, ...partTexts];
+      const authoredProfileRequests = preparedAgentTurn && validatedInput.agent_turn_v2
         ? contactProfileRequestsForPartsV1({
             authored_messages: validatedInput.agent_turn_v2.proposal.response.messages,
             part_texts: partTexts, requests: validatedInput.agent_turn_v2.proposal.profile_requests ?? [],
           }) : partTexts.map(() => []);
+      const profileRequests = [...mediaParts.map(() => []), ...authoredProfileRequests];
       const purpose = decision.response_type === 'opt_out_ack'
         ? 'consent_confirmation'
         : decision.response_type === 'commercial_reply' || decision.response_type === 'clarification'
