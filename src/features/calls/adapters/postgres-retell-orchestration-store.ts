@@ -1,7 +1,7 @@
 import type postgres from 'postgres';
 import { acceptDirectCourseBonusByVoiceV1 } from '@/features/promotions/application/direct-course-bonus-service';
 import { loadCourseBonusFlowConfig } from '@/features/promotions/application/course-bonus-flow-config';
-import { cancelOpenCourseBonusOffersForCourseChangeV1 } from '@/features/promotions/application/commercial-followup-service';
+import { cancelOpenCourseBonusOffersForCourseChangeV1, CourseChangeBlockedByPaymentError } from '@/features/promotions/application/commercial-followup-service';
 import {
   buildAuthorizedEgress,
   protectedFactsInContentV1,
@@ -300,7 +300,13 @@ export class PostgresRetellOrchestrationStore implements RetellOrchestrationStor
       `;
       if (!offerings[0]) return { recorded: false, reason: 'COURSE_UNAVAILABLE' };
     }
-    return this.db.begin((tx) => this.recordConfirmedSelectionInTransaction(tx, workspace, input));
+    try {
+      return await this.db.begin((tx) => this.recordConfirmedSelectionInTransaction(tx, workspace, input));
+    } catch (error) {
+      // A processing, paid, reconciling or uncertain checkout keeps its course; the whole selection rolls back.
+      if (error instanceof CourseChangeBlockedByPaymentError) return { recorded: false, reason: 'COURSE_CHANGE_BLOCKED_BY_CHECKOUT' };
+      throw error;
+    }
   }
 
   private async recordConfirmedSelectionInTransaction(

@@ -158,3 +158,5 @@ regla del dueño, no tocar.
   origen cerrada no se heredan.
 - No hay candados de sesión: el candado de venta es `pg_advisory_xact_lock` (compatible con Supavisor en modo transacción).
   Un linaje bloqueado (cobro en curso, incierto, pagado o en conciliación) conserva el curso, el paquete y el enlace.
+- Un sucesor ya inscripto en Central cuyo linaje se bloqueó durante la llamada termina en `dead_letter` con la evidencia
+  persistida y un caso humano: los pasos que sólo ocurren al completar (mensaje de bienvenida/acceso) requieren seguimiento humano.

@@ -1,3 +1,4 @@
+import { recordPaymentEvent } from '@/features/payments/application/record-payment-event';
 import { offerBonusWithMotive } from '../helpers/offer-bonus';
 import { recordModelPriceObjection, seedPriorModelNegotiation } from '../helpers/record-model-negotiation-facts';
 import { randomUUID } from 'node:crypto';
@@ -120,6 +121,20 @@ run('direct course bonus voice continuity',()=>{
     expect((await db!`SELECT status FROM promotion_offers WHERE id=${f.first.offer_id}`)[0].status).toBe('cancelled');
     expect(await db!`SELECT call_id FROM voice_course_selections WHERE conversation_id=${f.common.conversationId}`).toHaveLength(2);
     expect(await db!`SELECT id FROM messages WHERE conversation_id=${f.common.conversationId} AND direction='inbound'`).toEqual(before);
+  });
+  it('a pending checkout keeps its course: the voice course change is not recorded and nothing is superseded',async()=>{
+    const f=await fixture();
+    expect(await f.store.requestAgentAPaymentLink(f.payment())).toMatchObject({sent:true});
+    const [payment]=await db!`SELECT id FROM payments WHERE promotion_offer_id=${f.first.offer_id}`;
+    for (const type of ['checkout_creation_started','checkout_created','checkout_completed_unpaid'] as const) {
+      await recordPaymentEvent(db!,{payment_id:payment.id,provider:'stripe',provider_event_id:randomUUID(),event:{type},payload:{}});
+    }
+    expect(await f.store.recordConfirmedSelection({...f.common,course:f.courses[3].code}))
+      .toEqual({recorded:false,reason:'COURSE_CHANGE_BLOCKED_BY_CHECKOUT'});
+    expect(await db!`SELECT id FROM payment_intent_supersessions WHERE payment_id=${payment.id}`).toEqual([]);
+    expect(await db!`SELECT call_id FROM voice_course_selections WHERE conversation_id=${f.common.conversationId}`).toEqual([]);
+    expect((await db!`SELECT selected_offering_code FROM conversation_sales_context_states_v1 WHERE conversation_id=${f.common.conversationId}`)[0])
+      .toEqual({selected_offering_code:f.courses[0].code});
   });
   it('supersedes the exact existing checkout with current voice selection evidence and never retargets it',async()=>{
     const f=await fixture();

@@ -1030,15 +1030,12 @@ export async function claimBatch(
   const persistedDisplayName = persistedOffering === null
     ? null
     : resolvedCatalogIndex?.offerings.find((offering) => offering.code === persistedOffering)?.display_name ?? null;
-  // A broad family reference ("fotografía") must not erase an already
-  // selected member of that family. It is not a switch; a genuinely different
-  // family cannot inherit because its candidates omit the stored SKU.
-  const mayInheritPersistedSelection = catalog_resolution.kind === 'no_catalog_intent'
-    || (
-      catalog_resolution.kind === 'ambiguous'
-      && persistedOffering !== null
-      && catalog_resolution.candidateCodes.includes(persistedOffering)
-    );
+  // Owner rule: asking about or mentioning another course never changes the selected course;
+  // only an explicit select_course does. While the batch resolves no concrete course (no
+  // catalog intent, an ambiguous family, not found or unavailable) the persisted selection
+  // (course, plan, stage, awaiting_reply, payment_link_request) stays. An exact different
+  // course is the only case that does not inherit.
+  const mayInheritPersistedSelection = currentSelection.offering_code === null;
   const selection = currentSelection.offering_code === null
     && persistedOffering !== null
     && mayInheritPersistedSelection

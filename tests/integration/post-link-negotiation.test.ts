@@ -706,4 +706,27 @@ run('negociación con venta continuada en una conversación enlazada', () => {
       .toMatchObject({ status: 'dead_letter', last_error_code: 'payment_reconciliation_required' });
     expect(await db!`SELECT enrollment_id FROM central_enrollments WHERE payment_id=${next.payment_id}::uuid`).toEqual([{ enrollment_id: 'enr_late' }]);
   });
+
+  it('t. un pago que llega entre la lectura de candidatos y el candado se rechaza limpio', async () => {
+    const f = await linkedFixture(0);
+    let go!: () => void;
+    const gate = new Promise<void>(resolve => { go = resolve; });
+    let held!: () => void;
+    const holding = new Promise<void>(resolve => { held = resolve; });
+    const webhook = competitor!.begin(async tx => {
+      await lockPaymentSaleV1(tx as never, { ...f.input, conversation_id: f.source, offering_id: f.courses[0].id });
+      held();
+      await gate;
+      await tx`INSERT INTO payment_events(payment_id,provider,provider_event_id,event_type,payload)
+        VALUES (${f.payment.payment_id}::uuid,'stripe',${randomUUID()},'checkout_completed_unpaid','{}'::jsonb)`;
+    });
+    await holding;
+    const change = cancelOpenCourseBonusOffersForCourseChangeV1(db!, { ...f.input, selected_offering_code: f.courses[3].code, source_turn_id: await f.inboundC('otro curso') });
+    const settled = change.then(() => 'ok', (error: Error) => error.message);
+    await new Promise(resolve => setTimeout(resolve, 300));
+    go();
+    await webhook;
+    expect(await settled).toBe('COURSE_CHANGE_BLOCKED_BY_PAYMENT');
+    expect(await db!`SELECT id FROM payment_intent_supersessions WHERE payment_id=${f.payment.payment_id}::uuid`).toEqual([]);
+  });
 });

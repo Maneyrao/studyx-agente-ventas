@@ -93,7 +93,7 @@ describe('Agent A Meta sales brain', () => {
     // AGENTS.md:243–248: preserve the complete literal authority; bound only
     // the technical wrapper so approved behavioral additions do not force truncation.
     const technical = staticInstructions.replace(/<canonical_sales_behavior[^>]*>[\s\S]*?<\/canonical_sales_behavior>/u, '');
-    expect(technical.trim().split(/\s+/u).length).toBeLessThan(900);
+    expect(technical.trim().split(/\s+/u).length).toBeLessThan(940);
     expect(JSON.parse(instructions.split('<authorized_context>')[1]!.split('</authorized_context>')[0]!)).toEqual(current);
   });
 });

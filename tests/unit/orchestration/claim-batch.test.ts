@@ -356,7 +356,7 @@ describe('claimBatch', () => {
     ['not_found', 'Quiero estudiar Medicina'],
     ['ambiguous', 'Quiero estudiar fotografía'],
   ] as const)(
-    'does not restore a persisted course or payment plan for a current %s request',
+    'keeps the persisted course and payment plan for a current %s request (only an explicit select_course changes it)',
     async (expectedKind, current) => {
       const business = businessContextView({
         offerings: [
@@ -387,13 +387,55 @@ describe('claimBatch', () => {
         outcome: 'claimed',
         catalog_resolution: { kind: expectedKind },
         sales_context: {
-          offering_code: null,
-          course_of_interest: null,
-          selected_payment_plan: null,
+          offering_code: 'redes_informaticas',
+          selected_payment_plan: 'monthly_12',
+          stage: 'plan_selected',
         },
       });
     },
   );
+
+  it('keeps course, plan and stage when the customer accepts a gift course that resolves no catalog course', async () => {
+    const business = businessContextView({
+      offerings: [
+        businessOffering('redes_informaticas', 'Redes Informáticas', 'Tecnología'),
+        businessOffering('fotografia_profesional', 'Fotografía Profesional', 'Emprendedores'),
+      ],
+    });
+    const persisted = {
+      workspace_id: 'workspace-1', contact_id: 'contact-1', conversation_id: 'conversation-1',
+      selected_offering_code: 'redes_informaticas', selected_payment_plan: 'monthly_12',
+      stage: 'payment_link_sent', call_preference: 'unknown', call_offer_status: 'not_offered', call_offer_count: 0,
+      awaiting_reply: 'payment_confirmation', payment_link_request: null, payment_reported_at: null,
+      human_review_requested_at: null, consecutive_technical_fallbacks: 0,
+      source_turn_id: 'turn-0', version: 4,
+      created_at: '2026-08-11T11:00:00.000Z', updated_at: '2026-08-11T11:59:00.000Z',
+    };
+    const courseBonusCapability = vi.fn().mockResolvedValue({ may_accept_offer: true, status: 'offer_available' });
+    const result = await claimBatch(input, {
+      ...buildDeps({ messagesResult: [{
+        id: 'm1', conversation_seq: 1, content: 'acepto el curso de regalo',
+        created_at: '2026-08-11T12:00:00.000Z', message_type: 'text',
+      }] }),
+      business: { load: vi.fn().mockResolvedValue(business) },
+      sales: { load: vi.fn().mockResolvedValue(persisted) },
+      agentABrainEnabled: true,
+      conversationState: { load: vi.fn().mockResolvedValue(persisted) },
+      courseBonusCapability,
+      now: () => '2026-08-11T12:00:00.000Z',
+    });
+
+    expect(result).toMatchObject({
+      outcome: 'claimed',
+      sales_context: { offering_code: 'redes_informaticas', selected_payment_plan: 'monthly_12' },
+      conversation_state_v1: {
+        selected_offering_code: 'redes_informaticas', selected_payment_plan: 'monthly_12',
+        stage: 'payment_link_sent', awaiting_reply: 'payment_confirmation',
+      },
+      course_bonus_capability: { may_accept_offer: true },
+    });
+    expect(courseBonusCapability).toHaveBeenCalledWith(expect.objectContaining({ selected_offering_code: 'redes_informaticas' }));
+  });
 
   it('keeps the active course when a broad family reference still includes it', async () => {
     const catalog = businessContextView({

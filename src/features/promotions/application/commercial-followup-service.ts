@@ -408,7 +408,8 @@ export async function cancelOpenCourseBonusOffersForCourseChangeV1(
     WHERE workspace_id=${input.workspace_id}::uuid AND contact_id=${input.contact_id}::uuid
       AND conversation_id=${input.conversation_id}::uuid FOR UPDATE`;
   // Lock order: sale lock K (per distinct offering, sorted) BEFORE any payment row lock.
-  const candidates=await db<Array<{id:string;offering_id:string;replacement_id:string;source_conversation_id:string}>>`
+  type Candidate={id:string;offering_id:string;replacement_id:string;source_conversation_id:string};
+  const selectCandidates=()=>db<Candidate[]>`
     SELECT p.id,p.offering_id,replacement.id AS replacement_id,p.source_conversation_id FROM payments p
     JOIN offerings replacement ON replacement.workspace_id=p.workspace_id AND replacement.code=${input.selected_offering_code}
     WHERE p.workspace_id=${input.workspace_id}::uuid AND p.contact_id=${input.contact_id}::uuid
@@ -417,10 +418,19 @@ export async function cancelOpenCourseBonusOffersForCourseChangeV1(
       AND p.status NOT IN ('paid','refunded','failed','expired')
       AND NOT EXISTS (SELECT 1 FROM payment_intent_supersessions s WHERE s.payment_id=p.id)
     ORDER BY p.id`;
-  for(const offeringId of [...new Set(candidates.map(payment=>payment.offering_id))].sort()) {
-    await lockPaymentSaleV1(db,{workspace_id:input.workspace_id,contact_id:input.contact_id,
-      conversation_id:input.conversation_id,offering_id:offeringId});
-  }
+  const locked=new Set<string>();
+  const lockSales=async (rows:Candidate[])=>{
+    for(const offeringId of [...new Set(rows.map(payment=>payment.offering_id))].sort()) {
+      if(locked.has(offeringId)) continue;
+      await lockPaymentSaleV1(db,{workspace_id:input.workspace_id,contact_id:input.contact_id,
+        conversation_id:input.conversation_id,offering_id:offeringId});
+      locked.add(offeringId);
+    }
+  };
+  await lockSales(await selectCandidates());
+  // A webhook may land between the first read and the lock: decide on a fresh read taken under K.
+  const candidates=await selectCandidates();
+  await lockSales(candidates);
   // A processing, paid, reconciling or uncertain lineage keeps its course: reject, never skip silently.
   const unpaid=[];
   for(const payment of candidates) {
