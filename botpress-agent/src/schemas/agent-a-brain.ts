@@ -180,6 +180,8 @@ export const AgentAContextV1Schema = z.object({
     assistant_has_spoken: z.boolean(),
     first_name_status: z.enum(['missing', 'requested', 'known']),
     last_agent_reply: z.string().trim().min(1).max(6_002).nullable(),
+    /** Model-authored markers of what earlier turns of the verified conversation family already said (newest first). */
+    prior_already_said: z.array(z.string().max(200)).max(5).optional(),
   }).strict().optional(),
   customer: z.object({
     display_name: z.string().trim().min(1).max(321).nullable(),
@@ -231,6 +233,11 @@ export const AgentAContextV1Schema = z.object({
       courses_in_package_after_next_offer: z.number().int().min(2).max(4).optional(),
       accepted_at: z.string().min(1).nullable(),
     }).strict().nullable().optional(),
+    /** Verified sale continuity from a linked WhatsApp conversation. Absent = none. */
+    sale_continuity: z.object({
+      status: z.enum(['none', 'single', 'ambiguous']),
+      candidate_offering_codes: z.array(IdentifierSchema).max(10).optional(),
+    }).strict().optional(),
     selected_offering_code: IdentifierSchema.nullable(),
     selected_payment_plan: PaymentPlanSchema.nullable(),
     stage: z.enum(['exploring', 'qualified', 'course_selected', 'plan_selected', 'payment_link_sent', 'handoff', 'closed']),

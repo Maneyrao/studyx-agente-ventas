@@ -53,6 +53,7 @@ import type {
   RetrievedKnowledge,
   RetrievedMemory,
 } from '../ports/retrieval';
+import type { SaleContinuityV1 } from '@/features/payments/application/resolve-sale-continuity';
 import type { PaymentVerificationV1 } from '@/features/payments/application/read-payment-verification';
 import {
   unknownCallIntakeReadinessV1,
@@ -105,6 +106,10 @@ export interface ClaimBatchDependencies {
   readonly conversationState?: {
     load(conversationId: string, contactId: string): Promise<ConversationStateV1 | null>;
   };
+  /** Earlier model-authored `already_said` markers of the verified conversation family. */
+  readonly priorAlreadySaid?: (input: { conversationId: string; contactId: string; sourceTurnId: string }) => Promise<readonly string[]>;
+  /** Copies a verified sale from a linked conversation into this one's empty state, before it is loaded. */
+  readonly saleContinuity?: (input: { conversationId: string; contactId: string }) => Promise<SaleContinuityV1>;
   /** Single backend-owned rollout flag projected into the claimed contract. */
   readonly conversationPipelineEnabled?: boolean;
   /** Independent Agent A brain rollout controls. They are mutually exclusive at config load. */
@@ -236,6 +241,10 @@ export interface ClaimedTurn {
   readonly negotiation_facts?: RecordedNegotiationFactsV1 | null;
   /** Persisted commercial memories (latest per type/key), each with its source quote. */
   readonly sales_profile?: SalesProfileMemoriesV1 | null;
+  /** Model-authored `already_said` markers of the verified family's earlier turns, newest first (<=5). */
+  readonly continuity?: { readonly prior_already_said: readonly string[] };
+  /** Verified sale continuity from a linked WhatsApp conversation. Absent = none. */
+  readonly sale_continuity?: { readonly status: 'none' | 'single' | 'ambiguous'; readonly candidate_offering_codes?: readonly string[] };
   /** Gabi's fichas: the course in focus and the current bonus candidates only. */
   readonly catalog_fichas?: readonly ClaimFichaV1[];
   readonly contact: {
@@ -724,9 +733,18 @@ export async function claimBatch(
   const conversationStateEnabled = deps.conversationPipelineEnabled === true
     || deps.agentABrainEnabled === true
     || deps.agentABrainShadow === true;
+  const continuity: { value: SaleContinuityV1 } = { value: { kind: 'none' } };
   const conversationStateTask = (async () => {
     if (!conversationStateEnabled || !deps.conversationState) return;
     try {
+      if (deps.saleContinuity) {
+        try {
+          continuity.value = await deps.saleContinuity({ conversationId: claim.conversation_id!, contactId: facts.contact.id });
+        } catch (error) {
+          log('orchestration.claim.sale_continuity_unavailable', { trace_id: input.trace_id, batch_id: claim.batch_id,
+            error: error instanceof Error ? error.name : 'UNKNOWN' });
+        }
+      }
       persisted_conversation_state = await deps.conversationState.load(
         claim.conversation_id!,
         facts.contact.id,
@@ -1155,7 +1173,7 @@ export async function claimBatch(
   }) ?? Promise.resolve(null);
   const courseProgramsTask = deps.courseProgramsCapability?.({ conversation_id: claim.conversation_id! })
     .catch(() => null) ?? Promise.resolve(null);
-  const [callIntakeReadiness, paymentVerification, contactProfile, courseBonusCapability, negotiationFacts, salesProfile, courseProgramsCapability] = await Promise.all([
+  const [callIntakeReadiness, paymentVerification, contactProfile, courseBonusCapability, negotiationFacts, salesProfile, courseProgramsCapability, priorAlreadySaid] = await Promise.all([
     readCallIntakeReadiness(facts.contact.id, claim.conversation_id!),
     readPaymentVerification(facts.contact.id, {
       offering_code: conversationStateV1?.selected_offering_code ?? null,
@@ -1177,6 +1195,8 @@ export async function claimBatch(
       return null;
     }) ?? null,
     courseProgramsTask,
+    deps.priorAlreadySaid?.({ conversationId: claim.conversation_id!, contactId: facts.contact.id,
+      sourceTurnId: facts.representative_turn_id }).catch(() => [] as readonly string[]) ?? [],
   ]);
   const contactIntake = callIntakeReadiness.intake;
   const contactIntakeMissing = missingContactIntakeFieldsV1(contactIntake);
@@ -1260,6 +1280,10 @@ export async function claimBatch(
     ...(courseProgramsCapability ? { course_programs: courseProgramsCapability } : {}),
     negotiation_facts: negotiationFacts,
     sales_profile: salesProfile,
+    ...(priorAlreadySaid.length > 0 ? { continuity: { prior_already_said: priorAlreadySaid } } : {}),
+    ...(continuity.value.kind === 'none' ? {} : { sale_continuity: continuity.value.kind === 'ambiguous'
+      ? { status: 'ambiguous' as const, candidate_offering_codes: continuity.value.candidate_offering_codes }
+      : { status: 'single' as const } }),
     catalog_fichas: claimFichasV1({
       focusCode: catalog_resolution.kind === 'exact'
         ? catalog_resolution.offeringCode : conversationStateV1?.selected_offering_code ?? null,

@@ -193,17 +193,28 @@ async function lockIdentity(tx: DbClient, input: Identity) {
   return {...context,selected_offering_code:resolved ?? livePackage?.paid_code ?? null};
 }
 async function resolveOffer(tx: DbClient, input: Identity, paidId: string): Promise<OfferRow | undefined> {
+  // The sale may continue in another conversation of the proven family; two live
+  // packages in different conversations are ambiguous and never resolved by guessing.
+  const live = await tx<Array<{conversation_id:string}>>`SELECT DISTINCT o.conversation_id FROM promotion_offers o
+    WHERE o.workspace_id=${input.workspace_id}::uuid AND o.contact_id=${input.contact_id}::uuid
+      AND sale_family_root_v1(o.workspace_id,o.contact_id,o.conversation_id)
+        IS NOT DISTINCT FROM sale_family_root_v1(${input.workspace_id}::uuid,${input.contact_id}::uuid,${input.conversation_id}::uuid)
+      AND o.paid_offering_id=${paidId}::uuid AND o.package_mode='direct'
+      AND o.status IN ('pending_review','offered','accepted','attached')`;
+  if (live.length>1) reject('stale_offer_version');
   const [offer] = await tx<OfferRow[]>`
     SELECT o.*,p.promotion_code FROM promotion_offers o JOIN promotions p ON p.id=o.promotion_id
     WHERE o.workspace_id=${input.workspace_id}::uuid AND o.contact_id=${input.contact_id}::uuid
-      AND o.conversation_id=${input.conversation_id}::uuid AND o.paid_offering_id=${paidId}::uuid
+      AND sale_family_root_v1(o.workspace_id,o.contact_id,o.conversation_id)
+        IS NOT DISTINCT FROM sale_family_root_v1(${input.workspace_id}::uuid,${input.contact_id}::uuid,${input.conversation_id}::uuid)
+      AND o.paid_offering_id=${paidId}::uuid
       AND o.package_mode='direct'
       AND (${input.promotion_cycle_id ?? null}::uuid IS NULL OR o.promotion_cycle_id=${input.promotion_cycle_id ?? null}::uuid)
       AND (${input.promotion_code ?? null}::text IS NULL OR p.promotion_code=${input.promotion_code ?? null})
       AND (o.status IN ('pending_review','offered','accepted','attached') OR o.promotion_cycle_id=${input.promotion_cycle_id ?? null}::uuid
         OR EXISTS(SELECT 1 FROM promotion_offer_bonus_offerings b WHERE b.offer_id=o.id AND b.source_turn_id=${input.source_turn_id}::uuid AND b.inherited_from_bonus_id IS NULL))
     ORDER BY EXISTS(SELECT 1 FROM promotion_offer_bonus_offerings b WHERE b.offer_id=o.id AND b.source_turn_id=${input.source_turn_id}::uuid AND b.inherited_from_bonus_id IS NULL) DESC,
-      o.created_at DESC LIMIT 1 FOR UPDATE OF o
+      (o.conversation_id=${input.conversation_id}::uuid) DESC,o.created_at DESC LIMIT 1 FOR UPDATE OF o
   `;
   return offer;
 }
@@ -214,7 +225,8 @@ async function validateOpen(tx: DbClient, input: Identity, context: {stage:strin
   const [facts] = await tx<Array<{paid: boolean;eligible: boolean}>>`
     SELECT EXISTS(SELECT 1 FROM payments WHERE workspace_id=${input.workspace_id}::uuid
       AND contact_id=${input.contact_id}::uuid AND offering_id=${context.paid_id}::uuid
-      AND source_conversation_id=${input.conversation_id}::uuid
+      AND sale_family_root_v1(workspace_id,contact_id,source_conversation_id)
+        IS NOT DISTINCT FROM sale_family_root_v1(${input.workspace_id}::uuid,${input.contact_id}::uuid,${input.conversation_id}::uuid)
       AND status='paid') AS paid,
       EXISTS(SELECT 1 FROM contacts WHERE id=${input.contact_id}::uuid AND status<>'inactivo'
         AND coalesce(lifecycle_status,'active')='active' AND deleted_at IS NULL AND NOT EXISTS (SELECT 1 FROM contact_channel_permissions permission

@@ -163,6 +163,14 @@ export async function POST(
             contactId,
           ),
         },
+        saleContinuity: async (input) => {
+          const [{ materializeSaleContinuityV1 }, { sql }] = await Promise.all([
+            import('@/features/payments/application/resolve-sale-continuity'), import('@/lib/db/orchestrator'),
+          ]);
+          const [workspace] = await sql<Array<{ id: string }>>`SELECT id FROM workspaces WHERE slug=${workspaceSlug} AND status='active'`;
+          return workspace ? materializeSaleContinuityV1(sql, { workspace_id: workspace.id,
+            contact_id: input.contactId, conversation_id: input.conversationId }) : { kind: 'none' as const };
+        },
         conversationPipelineEnabled: loadConversationPipelineConfig().enabled,
         agentABrainEnabled: brainConfig.enabled,
         agentAContextScoping: rolloutConfig.contextScoping,
@@ -209,6 +217,13 @@ export async function POST(
             import('@/features/conversation/application/read-sales-profile'), import('@/lib/db/orchestrator'),
           ]);
           return readSalesProfileMemoriesV1({ workspace_slug: workspaceSlug, ...input }, { db: sql });
+        },
+        priorAlreadySaid: async (input) => {
+          const [{ readPriorAlreadySaidV1 }, { sql }] = await Promise.all([
+            import('@/features/conversation/application/read-prior-already-said'), import('@/lib/db/orchestrator'),
+          ]);
+          return readPriorAlreadySaidV1({ workspace_slug: workspaceSlug, contact_id: input.contactId,
+            conversation_id: input.conversationId, source_turn_id: input.sourceTurnId }, { db: sql });
         },
         agentLoopRollout,
       }

@@ -668,6 +668,11 @@ export const ClaimedTurnSchema = z.object({
   }).strict().nullable().optional(),
   negotiation_facts: RecordedNegotiationFactsV1Schema.nullable().optional(),
   sales_profile: SalesProfileMemoriesV1Schema.nullable().optional(),
+  continuity: z.object({ prior_already_said: z.array(z.string().max(200)).max(5) }).strict().optional(),
+  sale_continuity: z.object({
+    status: z.enum(['none', 'single', 'ambiguous']),
+    candidate_offering_codes: z.array(z.string()).max(10).optional(),
+  }).strict().optional(),
   catalog_fichas: z.array(ClaimFichaV1Schema).max(9).optional(),
   course_programs: z.object({
     available_offering_codes: z.array(z.string().min(1).max(160)).max(60),

@@ -183,4 +183,75 @@ BEGIN
   THEN RAISE EXCEPTION 'Negotiation successor package is incomplete'; END IF;
   RETURN NULL;
 END $$;
+
+-- A plan/e-mail revision made from the canonical conversation creates the
+-- replacement payment there (source_conversation_id = current conversation)
+-- while the attached package still belongs to the original conversation.
+-- Same body as 20261110010001 except the conversation equality is a family one.
+CREATE OR REPLACE FUNCTION public.enforce_payment_direct_package()
+RETURNS trigger LANGUAGE plpgsql SET search_path=pg_catalog,public AS $$
+BEGIN
+  IF TG_OP='UPDATE' THEN
+    IF ROW(NEW.promotion_offer_id,NEW.promotion_cycle_id,NEW.accepted_offer_version)
+      IS DISTINCT FROM ROW(OLD.promotion_offer_id,OLD.promotion_cycle_id,OLD.accepted_offer_version)
+      OR (OLD.promotion_offer_id IS NOT NULL AND NEW.source_conversation_id IS DISTINCT FROM OLD.source_conversation_id) THEN
+      RAISE EXCEPTION 'Payment accepted package is immutable';
+    END IF;
+  ELSIF NEW.promotion_offer_id IS NOT NULL AND NOT EXISTS (
+    SELECT 1 FROM public.promotion_offers o WHERE o.id=NEW.promotion_offer_id
+      AND o.promotion_cycle_id=NEW.promotion_cycle_id AND o.offer_version=NEW.accepted_offer_version
+      AND o.workspace_id=NEW.workspace_id AND o.contact_id=NEW.contact_id
+      AND (o.conversation_id=NEW.source_conversation_id OR (o.status='attached' AND
+        public.sale_family_root_v1(o.workspace_id,o.contact_id,o.conversation_id)
+          =public.sale_family_root_v1(NEW.workspace_id,NEW.contact_id,NEW.source_conversation_id)))
+      AND o.paid_offering_id=NEW.offering_id
+      AND o.package_mode='direct' AND o.bonus_snapshot_sealed_at IS NOT NULL
+      AND (o.status='accepted' OR (o.status='attached' AND EXISTS (
+        SELECT 1 FROM public.payment_intent_supersessions s WHERE s.payment_id=o.payment_id
+          AND s.replacement_payment_id=NEW.id AND s.reason IN ('PLAN_CHANGED','CONTACT_DATA_CHANGED'))))
+      AND (o.accepted_source_turn_id IS NOT NULL OR EXISTS (
+        SELECT 1 FROM public.promotion_voice_acceptances e WHERE e.offer_id=o.id
+          AND e.promotion_cycle_id=o.promotion_cycle_id AND e.offer_version=o.offer_version))
+  ) THEN RAISE EXCEPTION 'Payment accepted package identity mismatch'; END IF;
+  RETURN NEW;
+END $$;
+
+-- The replacement of a checkout revised from the canonical conversation belongs to
+-- the same sale family, not necessarily to the same conversation.
+CREATE OR REPLACE FUNCTION public.validate_payment_checkout_revision() RETURNS trigger
+LANGUAGE plpgsql SET search_path=pg_catalog,public AS $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM public.payments p JOIN public.payments r ON r.id=NEW.replacement_payment_id
+    WHERE p.id=NEW.payment_id AND r.id<>p.id
+      AND r.workspace_id=p.workspace_id AND r.contact_id=p.contact_id
+      AND public.sale_family_root_v1(r.workspace_id,r.contact_id,r.source_conversation_id)
+        IS NOT DISTINCT FROM public.sale_family_root_v1(p.workspace_id,p.contact_id,p.source_conversation_id)
+      AND r.offering_id=p.offering_id
+      AND r.environment=p.environment AND r.provider=p.provider
+      AND ROW(r.promotion_offer_id,r.promotion_cycle_id,r.accepted_offer_version)
+        IS NOT DISTINCT FROM ROW(p.promotion_offer_id,p.promotion_cycle_id,p.accepted_offer_version)
+      AND r.created_at>=p.created_at AND r.bonus_snapshot_sealed_at IS NOT NULL
+      AND r.status='reserved' AND r.provider_session_id IS NULL
+      AND ((NEW.reason='PLAN_CHANGED' AND r.plan_code IS DISTINCT FROM p.plan_code)
+        OR (NEW.reason='CONTACT_DATA_CHANGED' AND r.plan_code IS NOT DISTINCT FROM p.plan_code
+          AND r.registration_email IS DISTINCT FROM p.registration_email))
+      AND NOT EXISTS (
+        (SELECT offering_id,promotion_id,position FROM public.payment_bonus_offerings WHERE payment_id=p.id
+         EXCEPT SELECT offering_id,promotion_id,position FROM public.payment_bonus_offerings WHERE payment_id=r.id)
+        UNION ALL
+        (SELECT offering_id,promotion_id,position FROM public.payment_bonus_offerings WHERE payment_id=r.id
+         EXCEPT SELECT offering_id,promotion_id,position FROM public.payment_bonus_offerings WHERE payment_id=p.id))
+      AND (p.promotion_offer_id IS NULL OR EXISTS (SELECT 1 FROM public.promotion_offers o
+        WHERE o.id=p.promotion_offer_id AND o.status='attached' AND o.payment_id=r.id))
+  ) THEN RAISE EXCEPTION 'Payment checkout revision pair mismatch'; END IF;
+  RETURN NULL;
+END $$;
+
+-- Model-authored `proposal.turn_reasoning.already_said`, persisted per committed
+-- Agent A turn so a linked conversation can read what was already said. Never customer-visible text.
+ALTER TABLE public.agent_decisions ADD COLUMN IF NOT EXISTS already_said text;
+ALTER TABLE public.agent_decisions DROP CONSTRAINT IF EXISTS agent_decisions_already_said_len;
+ALTER TABLE public.agent_decisions ADD CONSTRAINT agent_decisions_already_said_len
+  CHECK (already_said IS NULL OR length(already_said)<=400);
 COMMIT;

@@ -6,7 +6,7 @@ const DECISION_WINDOW = 60;
 const EVIDENCE_WINDOW = 12;
 
 /**
- * Latest model-recorded memory per (type, key) of this conversation, read from
+ * Latest model-recorded memory per (type, key) of this conversation and its verified linked family, read from
  * agent_decisions.memory_candidates of earlier turns. Persisted data only:
  * agent replies and audit_log are never consulted. Null outside the workspace.
  */
@@ -29,7 +29,9 @@ export async function readSalesProfileMemoriesV1(input: {
         ORDER BY answered.created_at, answered.id) evidence
     FROM workspaces w
     JOIN workspace_contacts membership ON membership.workspace_id=w.id AND membership.contact_id=${input.contact_id}::uuid
-    JOIN messages source ON source.contact_id=membership.contact_id AND source.conversation_id=${input.conversation_id}::uuid
+    JOIN messages source ON source.contact_id=membership.contact_id
+      AND sale_family_root_v1(w.id,source.contact_id,source.conversation_id)
+        IS NOT DISTINCT FROM sale_family_root_v1(w.id,${input.contact_id}::uuid,${input.conversation_id}::uuid)
       AND source.direction='inbound' AND source.id<>${input.source_turn_id}::uuid
     JOIN agent_decisions decision ON decision.turn_id=source.id AND decision.decision_kind='reply'
     WHERE w.slug=${input.workspace_slug} AND w.status='active'

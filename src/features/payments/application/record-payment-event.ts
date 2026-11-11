@@ -89,7 +89,8 @@ export async function recordPaymentEvent(
         JOIN payment_reconciliation_cases c ON c.payment_id=ancestor.id AND c.status='open'
         JOIN payment_intent_supersessions s ON s.payment_id=ancestor.id AND s.reason='NEGOTIATION_REOPENED'
         WHERE ancestor.workspace_id=${scope.workspace_id}::uuid AND ancestor.contact_id=${scope.contact_id}::uuid
-          AND ancestor.source_conversation_id IS NOT DISTINCT FROM ${scope.conversation_id}::uuid
+          AND sale_family_root_v1(ancestor.workspace_id,ancestor.contact_id,ancestor.source_conversation_id)
+            IS NOT DISTINCT FROM sale_family_root_v1(${scope.workspace_id}::uuid,${scope.contact_id}::uuid,${scope.conversation_id}::uuid)
           AND ancestor.offering_id=${scope.offering_id}::uuid LIMIT 1`;
       if (ancestorCase) reconciliation={reconciliation_required:true as const};
     }

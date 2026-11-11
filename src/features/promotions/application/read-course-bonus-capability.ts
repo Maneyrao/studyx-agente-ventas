@@ -624,9 +624,11 @@ async function readDirectCapability(input: {
       ORDER BY m.conversation_seq DESC,m.created_at DESC LIMIT 1) current ON true
     LEFT JOIN LATERAL(SELECT candidate.* FROM promotion_offers candidate
       WHERE candidate.workspace_id=w.id AND candidate.contact_id=wc.contact_id
-        AND candidate.conversation_id=current.conversation_id AND candidate.paid_offering_id=paid.id
+        AND sale_family_root_v1(candidate.workspace_id,candidate.contact_id,candidate.conversation_id)
+          IS NOT DISTINCT FROM sale_family_root_v1(candidate.workspace_id,candidate.contact_id,current.conversation_id)
+        AND candidate.paid_offering_id=paid.id
         AND candidate.package_mode='direct' AND candidate.status IN ('offered','accepted','attached')
-      ORDER BY candidate.created_at DESC LIMIT 1) o ON true
+      ORDER BY (candidate.conversation_id=current.conversation_id) DESC,candidate.created_at DESC LIMIT 1) o ON true
     LEFT JOIN promotions p ON p.id=o.promotion_id
     LEFT JOIN LATERAL(SELECT jsonb_agg(jsonb_build_object('code',s.offering_code_snapshot,
       'display_name',s.offering_display_name_snapshot,'position',s.position,'offered_at',s.offered_at) ORDER BY s.position) courses,

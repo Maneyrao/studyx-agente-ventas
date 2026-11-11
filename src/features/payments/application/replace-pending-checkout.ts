@@ -37,6 +37,8 @@ interface PaymentRow {
   readonly contact_id: string;
   readonly offering_id: string;
   readonly source_conversation_id: string | null;
+  /** The payment belongs to the sale family of the current conversation (continuity proof, never phone). */
+  readonly in_family: boolean;
   readonly status: string;
   readonly provider: string;
   readonly provider_session_id: string | null;
@@ -88,11 +90,16 @@ export async function replacePendingCheckoutV1(
     contact_id:input.contact_id,conversation_id:input.conversation_id,offering_id:input.offering_id},true);
   const [renegotiated] = await db`SELECT 1 FROM payment_intent_supersessions
     WHERE workspace_id=${input.workspace_id}::uuid AND contact_id=${input.contact_id}::uuid
-      AND conversation_id=${input.conversation_id}::uuid AND original_offering_id=${input.offering_id}::uuid
+      AND sale_family_root_v1(workspace_id,contact_id,conversation_id)
+        IS NOT DISTINCT FROM sale_family_root_v1(${input.workspace_id}::uuid,${input.contact_id}::uuid,${input.conversation_id}::uuid)
+      AND original_offering_id=${input.offering_id}::uuid
       AND reason='NEGOTIATION_REOPENED' LIMIT 1`;
   if (renegotiated && paymentState.blocked) reject('PAYMENT_RECONCILIATION_REQUIRED');
   const loadPayment = async (where: { id?: string; key?: string }, lock: boolean) => (await db<PaymentRow[]>`
-    SELECT p.id,p.workspace_id,p.contact_id,p.offering_id,p.source_conversation_id,p.status,p.provider,
+    SELECT p.id,p.workspace_id,p.contact_id,p.offering_id,p.source_conversation_id,
+      sale_family_root_v1(p.workspace_id,p.contact_id,p.source_conversation_id)
+        IS NOT DISTINCT FROM sale_family_root_v1(${input.workspace_id}::uuid,${input.contact_id}::uuid,${input.conversation_id}::uuid) AS in_family,
+      p.status,p.provider,
       p.provider_session_id,p.environment,p.plan_code,p.checkout_url,p.registration_email,
       p.promotion_offer_id,p.promotion_cycle_id,p.accepted_offer_version,p.bonus_snapshot_sealed_at,
       COALESCE((SELECT array_agg(DISTINCT s.promotion_code_snapshot ORDER BY s.promotion_code_snapshot)
@@ -112,7 +119,7 @@ export async function replacePendingCheckoutV1(
   }
   const previous = await loadPayment({ id: input.previous_payment_id }, true);
   if (!previous || previous.workspace_id !== input.workspace_id || previous.contact_id !== input.contact_id
-    || previous.source_conversation_id !== input.conversation_id || previous.offering_id !== input.offering_id
+    || !previous.in_family || previous.offering_id !== input.offering_id
     || previous.provider !== 'stripe' || previous.environment !== environment || !previous.checkout_url) {
     return reject('CHECKOUT_REPLACEMENT_IDENTITY_MISMATCH');
   }
@@ -177,6 +184,8 @@ export async function replacePendingCheckoutV1(
   if (blocked || previous.status !== 'reserved' || previous.provider_session_id !== null) {
     reject('CHECKOUT_REPLACEMENT_BLOCKED');
   }
+  // Another payment of the lineage is processing, paid, reconciling or uncertain.
+  if (paymentState.blocked) reject('PAYMENT_RECONCILIATION_REQUIRED');
   if (previous.promotion_codes.length > 0 && previous.promotion_offer_id === null) {
     // A legacy review-mode package has no direct offer identity to move.
     reject('CHECKOUT_REPLACEMENT_UNSUPPORTED');
@@ -187,7 +196,7 @@ export async function replacePendingCheckoutV1(
   const checkoutUrl = addPaymentReference(input.payment_link_url, paymentId);
   await db`INSERT INTO payment_intent_supersessions(payment_id,workspace_id,contact_id,conversation_id,
       original_offering_id,replacement_offering_id,source_turn_id,reason,replacement_payment_id)
-    VALUES (${previous.id}::uuid,${input.workspace_id}::uuid,${input.contact_id}::uuid,${input.conversation_id}::uuid,
+    VALUES (${previous.id}::uuid,${input.workspace_id}::uuid,${input.contact_id}::uuid,${previous.source_conversation_id}::uuid,
       ${input.offering_id}::uuid,${input.offering_id}::uuid,${input.source_turn_id}::uuid,${reason},${paymentId}::uuid)`;
   const inserted = await db<Array<{ id: string; status: string; checkout_url: string }>>`
     WITH inserted_payment AS (

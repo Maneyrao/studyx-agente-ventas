@@ -1214,7 +1214,9 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
           FROM payments p
           JOIN offerings o ON o.id=p.offering_id AND o.workspace_id=p.workspace_id AND o.code=${action.offering_sku}
           WHERE p.workspace_id=${canonicalWorkspaceId}::uuid AND p.contact_id=${turn.contact_id}::uuid
-            AND p.source_conversation_id=${turn.conversation_id}::uuid AND p.provider='stripe'
+            AND sale_family_root_v1(p.workspace_id,p.contact_id,p.source_conversation_id)
+              IS NOT DISTINCT FROM sale_family_root_v1(${canonicalWorkspaceId}::uuid,${turn.contact_id}::uuid,${turn.conversation_id}::uuid)
+            AND p.provider='stripe'
             AND p.plan_code IS NOT NULL AND p.status='reserved' AND p.provider_session_id IS NULL
             AND p.environment=${stripePaymentLinkEnvironment(materialized.block.url) ?? 'live'}
             AND NOT EXISTS (SELECT 1 FROM payment_intent_supersessions s WHERE s.payment_id=p.id)
@@ -1261,7 +1263,9 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
         JOIN messages AS prior_turn ON prior_turn.id = ad.turn_id
         LEFT JOIN payments AS prior_payment
           ON prior_payment.idempotency_key = 'agent-a-payment-link:' || ad.turn_id::text
-        WHERE prior_turn.conversation_id = ${turn.conversation_id}::uuid
+        WHERE sale_family_root_v1(${canonicalWorkspaceId ?? null}::uuid, prior_turn.contact_id, prior_turn.conversation_id)
+            IS NOT DISTINCT FROM sale_family_root_v1(${canonicalWorkspaceId ?? null}::uuid, ${turn.contact_id}::uuid, ${turn.conversation_id}::uuid)
+          AND prior_turn.contact_id = ${turn.contact_id}::uuid
           AND ad.outbound_message_id IS NOT NULL
           AND ad.business_action ->> 'type' = 'send_payment_link'
           AND ad.business_action ->> 'plan_code' = ${action.plan_code}
@@ -1767,7 +1771,8 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
         prompt_version,
         payload_hash,
         diagnostics,
-        negotiation_observations
+        negotiation_observations,
+        already_said
       )
       VALUES (
         ${validatedInput.turn_id}::uuid,
@@ -1789,7 +1794,8 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
         ${validatedInput.model.prompt_version},
         decode(${payloadHash}, 'hex'),
         ${jsonbParam(db, actualDiagnostics)},
-        ${jsonbParam(db, negotiationObservations.length ? negotiationObservations : null)}
+        ${jsonbParam(db, negotiationObservations.length ? negotiationObservations : null)},
+        ${validatedInput.agent_turn_v2?.proposal.turn_reasoning?.already_said?.trim().slice(0, 400) || null}
       )
       RETURNING id
     `;

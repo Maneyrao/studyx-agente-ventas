@@ -184,16 +184,16 @@ async function loadSource(sql: postgres.Sql, paymentId: string): Promise<SourceR
       p.provider_session_id, p.paid_at, p.amount::text AS amount, p.currency,
       p.plan_code, p.status AS payment_status,
       EXISTS(SELECT 1 FROM payment_intent_supersessions s WHERE s.workspace_id=p.workspace_id
-        AND s.contact_id=p.contact_id AND s.conversation_id=p.source_conversation_id
+        AND s.contact_id=p.contact_id AND sale_family_root_v1(s.workspace_id,s.contact_id,s.conversation_id) IS NOT DISTINCT FROM sale_family_root_v1(p.workspace_id,p.contact_id,p.source_conversation_id)
         AND s.original_offering_id=p.offering_id AND s.reason='NEGOTIATION_REOPENED') AS negotiation_lineage,
       (EXISTS(SELECT 1 FROM payment_intent_supersessions s WHERE s.payment_id=p.id AND s.reason='NEGOTIATION_REOPENED')
         OR EXISTS(SELECT 1 FROM payments ancestor JOIN payment_reconciliation_cases c ON c.payment_id=ancestor.id
           WHERE ancestor.workspace_id=p.workspace_id AND ancestor.contact_id=p.contact_id
-            AND ancestor.source_conversation_id=p.source_conversation_id AND ancestor.offering_id=p.offering_id
+            AND sale_family_root_v1(ancestor.workspace_id,ancestor.contact_id,ancestor.source_conversation_id) IS NOT DISTINCT FROM sale_family_root_v1(p.workspace_id,p.contact_id,p.source_conversation_id) AND ancestor.offering_id=p.offering_id
             AND c.status='open')
         OR EXISTS(SELECT 1 FROM payments ancestor JOIN payment_intent_supersessions s ON s.payment_id=ancestor.id
           WHERE ancestor.workspace_id=p.workspace_id AND ancestor.contact_id=p.contact_id
-            AND ancestor.source_conversation_id=p.source_conversation_id AND ancestor.offering_id=p.offering_id
+            AND sale_family_root_v1(ancestor.workspace_id,ancestor.contact_id,ancestor.source_conversation_id) IS NOT DISTINCT FROM sale_family_root_v1(p.workspace_id,p.contact_id,p.source_conversation_id) AND ancestor.offering_id=p.offering_id
             AND s.reason='NEGOTIATION_REOPENED' AND ancestor.status NOT IN ('paid','refunded','failed','expired')
             AND (ancestor.status='pending' OR EXISTS(SELECT 1 FROM payment_events e WHERE e.payment_id=ancestor.id
               AND e.event_type='checkout_completed_unpaid')))) AS negotiation_blocked,

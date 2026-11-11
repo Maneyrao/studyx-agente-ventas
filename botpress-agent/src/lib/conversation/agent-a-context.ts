@@ -755,6 +755,8 @@ export function buildAgentAContextV1(
       assistant_has_spoken: previousAgentReplies.length > 0,
       first_name_status: firstNameStatus,
       last_agent_reply: lastAgentReply,
+      ...(claimed.continuity && claimed.continuity.prior_already_said.length > 0
+        ? { prior_already_said: [...claimed.continuity.prior_already_said] } : {}),
     },
     customer: {
       display_name: nonBlankOrNull(claimed.contact.name),
@@ -782,6 +784,8 @@ export function buildAgentAContextV1(
     identity: agentAIdentityFromClaim(claimed, advisorName),
     commercial_state: {
       sales_profile: salesProfile,
+      ...(claimed.sale_continuity && claimed.sale_continuity.status !== 'none'
+        ? { sale_continuity: claimed.sale_continuity } : {}),
       negotiation: {
         price_objections: {
           count: claimed.negotiation_facts?.price_objection_count ?? null,
