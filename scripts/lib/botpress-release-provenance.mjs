@@ -3,20 +3,21 @@ import { readFileSync, readdirSync, readlinkSync } from 'node:fs';
 import path from 'node:path';
 import ts from 'typescript';
 
-// Last reviewed commit that changed deployable code (brain v211, prompt v121,
+// Last reviewed commit that changed deployable code (brain v211, prompt v122,
 // owner-only WhatsApp typing presence with bounded start/stop, natural
 // multipart cadence, the active StudyX WhatsApp release destination, and the
 // 2026-11-10 course switch / checkout revision / effect-rejection fixes, and the
 // 2026-11-10 intervention / structural validator / effect-only repair fixes, and the
 // 2026-11-10 link request that persists course and plan and sends the link, and the
 // 2026-11-11 advise-before-material / bubble split fixes, offer-then-send material,
-// advise-until-chosen (canonical v121), and the destination-scoped WhatsApp
-// typing action plus deterministic programme handoff).
+// advise-until-chosen, short useful course comparisons, and a single Google
+// rating mention per conversation (canonical v122), plus the destination-scoped
+// WhatsApp typing action and deterministic programme handoff).
 // Anything committed after it must be docs/evals/tests only (see assertOnlyNonCodeChangesSinceBaseV1), so a release
 // prepared from the branch HEAD runs exactly this code. Re-pin whenever a code file changes.
-export const BOT_RELEASE_BASE_SHA = '4d1f5315ea0b3c2d8c0deeed2e2e0e63c6fd519a';
+export const BOT_RELEASE_BASE_SHA = 'd81aac051e29db309ce5f5ab97b7a077a7ad4952';
 export const BOT_RELEASE_BRAIN_VERSION = 'studyx-agent-a-brain-v211';
-export const BOT_RELEASE_PROMPT_VERSION = 'studyx-agent-a-canonical-v121';
+export const BOT_RELEASE_PROMPT_VERSION = 'studyx-agent-a-canonical-v122';
 export const BOT_RELEASE_INSTRUMENTATION_VERSION = 'studyx-release-provenance-v1';
 export const BOT_RELEASE_SOURCE_PATHS = Object.freeze([
   'botpress-agent/src/lib/observability/persist-turn-evidence.ts',
