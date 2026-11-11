@@ -1158,7 +1158,9 @@ describe('Agent A Brain prompt', () => {
       expect(contract).toContain('ingles_4(manual ficha PDF + course image)');
       expect(contract).toContain('a manual ficha PDF is "la ficha" or "el detalle de contenidos", never "el programa" or "el programa completo"');
       expect(contract).not.toContain('barista(official');
-      expect(contract).toContain('When the customer first names a subject or asks what a course is for, do not send material');
+      expect(contract).toContain('Never send material on your own initiative');
+      expect(contract).toContain('answers yes to your offer to share it');
+      expect(contract).toContain('you may ask whether they want to see the programme');
       expect(contract).toContain('instead of picking a level for them');
       expect(contract).not.toContain('for the first time in this conversation, propose the action in that same turn');
       expect(contract).toContain('do not bring the earlier file up on your own');
