@@ -14,7 +14,7 @@ import ts from 'typescript';
 // typing action plus deterministic programme handoff).
 // Anything committed after it must be docs/evals/tests only (see assertOnlyNonCodeChangesSinceBaseV1), so a release
 // prepared from the branch HEAD runs exactly this code. Re-pin whenever a code file changes.
-export const BOT_RELEASE_BASE_SHA = 'f0f164c63b695b40b56312e447bfa10106233dcd';
+export const BOT_RELEASE_BASE_SHA = '4d1f5315ea0b3c2d8c0deeed2e2e0e63c6fd519a';
 export const BOT_RELEASE_BRAIN_VERSION = 'studyx-agent-a-brain-v211';
 export const BOT_RELEASE_PROMPT_VERSION = 'studyx-agent-a-canonical-v121';
 export const BOT_RELEASE_INSTRUMENTATION_VERSION = 'studyx-release-provenance-v1';
