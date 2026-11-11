@@ -222,7 +222,7 @@ async function resolveOffer(tx: DbClient, input: Identity, paidId: string): Prom
   return offer;
 }
 async function validateOpen(tx: DbClient, input: Identity, context: {stage:string;selected_offering_code:string|null;paid_id:string;paid_status:string;paid_type:string}, offer?: OfferRow, reopening = false) {
-  if (context.stage==='closed' || (offer && !['pending_review','offered'].includes(offer.status) && !reopening)) reject('sale_already_closed');
+  if ((context.stage==='closed' && !reopening) || (offer && !['pending_review','offered'].includes(offer.status) && !reopening)) reject('sale_already_closed');
   if (context.selected_offering_code!==input.paid_offering_code || context.paid_status!=='active' || context.paid_type!=='course') reject('invalid_offering');
   if (offer?.expires_at && offer.expires_at.getTime()<=Date.now()) reject('stale_offer_version');
   const [facts] = await tx<Array<{paid: boolean;eligible: boolean}>>`
@@ -309,7 +309,7 @@ export async function offerDirectCourseBonusV1(db: DbClient, input: OfferDirectC
     const paymentScope = {workspace_id:input.workspace_id,contact_id:input.contact_id,
       conversation_id:input.conversation_id,offering_id:context.paid_id};
     const paymentState = await readNegotiationPaymentStateV1(tx,paymentScope,true);
-    const reopening = context.stage==='payment_link_sent' && paymentState.may_reopen
+    const reopening = (context.stage==='payment_link_sent' || context.stage==='closed') && paymentState.may_reopen
       && (paymentState.payment?.promotion_offer_id ?? null)===(offer?.id ?? null);
     if (paymentState.blocked) reject('sale_already_closed');
     if (isBonusCheckoutStateV1({ stage: context.stage, awaiting_reply: context.awaiting_reply,
@@ -423,7 +423,7 @@ export async function offerDirectCourseBonusV1(db: DbClient, input: OfferDirectC
         await tx`UPDATE promotion_offers SET expires_at=${replacedExpiresAt} WHERE id=${created.id}::uuid`;
         offer={...offer,expires_at:replacedExpiresAt};
       }
-      await validateOpen(tx,input,context,offer);
+      await validateOpen(tx,input,context,offer,reopening);
     }
     await tx`INSERT INTO messages(id,conversation_id,contact_id,direction,content,in_reply_to,part_index)
       VALUES (${input.outbound.id}::uuid,${input.conversation_id}::uuid,${input.contact_id}::uuid,'outbound',${input.outbound.content},${input.source_turn_id}::uuid,${input.outbound.part_index ?? 0})`;

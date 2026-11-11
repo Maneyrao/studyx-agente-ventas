@@ -124,6 +124,13 @@ describe('checkout por estado', () => {
     expect(isBonusCheckoutStateV1({ ...idle, payment_link_request_pending: true })).toBe(false);
     expect(isCheckoutStateV1({ ...idle, payment_link_request_pending: true })).toBe(true);
   });
+  it('cerrada o con enlace enviado se reabre sólo cuando el backend lo permite (enlace impago seguro)', () => {
+    for (const stage of ['closed', 'payment_link_sent']) {
+      expect(isBonusCheckoutStateV1({ ...idle, stage, may_reopen_negotiation: true })).toBe(false);
+      expect(isBonusCheckoutStateV1({ ...idle, stage, may_reopen_negotiation: false })).toBe(true);
+    }
+    expect(isBonusCheckoutStateV1({ ...idle, stage: 'handoff', may_reopen_negotiation: true })).toBe(true);
+  });
   it('un efecto de link, plan o pago del borrador también cuenta (ofertas de llamada)', () => {
     expect(isCheckoutV1(idle, draft([], { proposed_action: { type: 'send_payment_link' } }))).toBe(true);
     expect(isCheckoutV1(idle, draft([], { move: { move: 'select_payment_plan', secondary_moves: [] } }))).toBe(true);

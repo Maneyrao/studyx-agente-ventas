@@ -928,8 +928,13 @@ describe('plannerless Agent A authority', () => {
     expect(result).toMatchObject({ok:true,action:{type:'offer_course_bonus'},transition:{
       stage:'plan_selected',selected_offering_code:'redes_informaticas',selected_payment_plan:'one_time',
       awaiting_reply:'none',payment_link_request:null}});
+    // Owner 2026-11-11: a sale closed by a decline reopens like a sent link when the backend allows it.
+    expect(authorize({state:state({selected_offering_code:'redes_informaticas',selected_payment_plan:'one_time',stage:'closed'}),
+      customerText:'me parece muy caro',proposal:bonusProposal(),courseBonus:ruleCap(true,{may_reopen_negotiation:true}) as never}))
+      .toMatchObject({ok:true,action:{type:'offer_course_bonus'},transition:{stage:'plan_selected',
+        selected_offering_code:'redes_informaticas',awaiting_reply:'none'}});
     expect(authorize({state:state({selected_offering_code:'redes_informaticas',stage:'closed'}),customerText:'me parece muy caro',
-      proposal:bonusProposal(),courseBonus:ruleCap(true,{may_reopen_negotiation:true}) as never}))
+      proposal:bonusProposal(),courseBonus:ruleCap(true,{may_reopen_negotiation:false}) as never}))
       .toMatchObject(rejectedBy('sale_already_closed'));
   });
   it('a literal swap of the single bonus adds no course and needs no motive', () => {

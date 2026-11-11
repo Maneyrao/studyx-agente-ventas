@@ -675,7 +675,7 @@ async function readDirectCapability(input: {
     WHERE w.slug=${input.workspace_slug} AND o.code=${input.selected_offering_code}`;
   const paymentState = scope ? await readNegotiationPaymentStateV1(db,{...scope,
     contact_id:input.contact_id,conversation_id:input.conversation_id}) : null;
-  const mayReopen = salesState?.stage==='payment_link_sent' && paymentState?.may_reopen===true;
+  const mayReopen = (salesState?.stage==='payment_link_sent' || salesState?.stage==='closed') && paymentState?.may_reopen===true;
   const derived = deriveDirectCourseBonusCapabilityV1({interest_offering_code:input.selected_offering_code!,
     may_reopen_negotiation:mayReopen,
     active_courses:activeCourses,named_codes:namedCodes,

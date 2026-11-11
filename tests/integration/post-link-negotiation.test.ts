@@ -729,4 +729,54 @@ run('negociación con venta continuada en una conversación enlazada', () => {
     expect(await settled).toBe('COURSE_CHANGE_BLOCKED_BY_PAYMENT');
     expect(await db!`SELECT id FROM payment_intent_supersessions WHERE payment_id=${f.payment.payment_id}::uuid`).toEqual([]);
   });
+
+  describe('venta cerrada por rechazo con un enlace impago seguro', () => {
+    const close = (conversation: string) => db!`UPDATE conversation_sales_context_states_v1 SET stage='closed',awaiting_reply='none'
+      WHERE conversation_id=${conversation}::uuid`;
+
+    it('un saludo no muta nada y una objeción nueva reabre, cobra el sucesor y da de alta una sola vez', async () => {
+      const f = await fixture(0);
+      await close(f.identity.conversation_id);
+      const count = async () => (await db!`SELECT (SELECT count(*) FROM payments WHERE contact_id=${f.identity.contact_id})::int p,
+        (SELECT count(*) FROM promotion_offers WHERE contact_id=${f.identity.contact_id})::int o,
+        (SELECT count(*) FROM payment_intent_supersessions WHERE contact_id=${f.identity.contact_id})::int s`)[0];
+      const before = await count();
+      const [hello] = await db!`INSERT INTO messages(conversation_id,contact_id,direction,content)
+        VALUES (${f.identity.conversation_id},${f.identity.contact_id},'inbound','hola') RETURNING id`;
+      expect(await readCourseBonusCapabilityV1({ workspace_slug: f.slug, channel: 'text', ...f.identity,
+        selected_offering_code: f.identity.paid_offering_code, source_turn_id: hello.id }, { db: db! })).toMatchObject({ may_offer_bonus: true });
+      expect(await count()).toEqual(before);
+      const result = await offerDirectCourseBonusV1(db!, await f.proposal(1));
+      if (!result.ok) throw new Error(result.reason);
+      expect(await db!`SELECT reason FROM payment_intent_supersessions WHERE payment_id=${f.payment.payment_id}::uuid`).toEqual([{ reason: 'NEGOTIATION_REOPENED' }]);
+      expect((await db!`SELECT stage FROM conversation_sales_context_states_v1 WHERE conversation_id=${f.identity.conversation_id}::uuid`)[0]).toEqual({ stage: 'plan_selected' });
+      await f.delivered(result.outbound_message_id);
+      expect(await acceptDirectCourseBonusV1(db!, { ...f.identity, ...result, source_turn_id: await f.inbound(), expected_offer_version: 1 })).toMatchObject({ ok: true });
+      const successor = await reservePaymentLink(db!, { ...f.paymentInput, idempotency_key: randomUUID(), promotion_code: result.promotion_code,
+        promotion_cycle_id: result.promotion_cycle_id, accepted_offer_version: 1 });
+      await db!`UPDATE payments SET provider_session_id=${'cs_test_' + successor.payment_id} WHERE id=${successor.payment_id}::uuid`;
+      await f.pay(successor.payment_id);
+      const external = vi.fn(async (_input: unknown, init?: RequestInit) => {
+        expect(JSON.parse(String(init?.body)).bonus_offerings.map((course: { code: string }) => course.code)).toEqual([f.courses[1].code]);
+        return new Response(JSON.stringify({ payment_id: successor.payment_id, enrollment_id: 'enr_closed', student_id: 'stu_closed',
+          enrollment_status: 'active', student_was_created: true, access: { login_email: 'prueba@example.com', welcome_sent: true },
+          created_at: new Date().toISOString(), bonus_enrollments: [{ offering_code: f.courses[1].code, enrollment_status: 'active' }] }),
+          { status: 201, headers: { 'content-type': 'application/json' } });
+      });
+      expect(await runEnrollmentWorker({ limit: 1, scoped: true, payment_id: successor.payment_id }, { sql: db!, fetchImpl: external,
+        config: { enabled: true, baseUrl: 'https://central.test/central-carga', signingSecret: 'integration-secret-0123456789',
+          environment: 'test', paidAfter: new Date('2026-01-01T00:00:00Z'), allowSandboxContacts: true } })).toMatchObject({ completed: 1 });
+      expect(external).toHaveBeenCalledTimes(1);
+    });
+
+    it('cerrada con un pago real no se puede reabrir', async () => {
+      const f = await fixture(0);
+      await close(f.identity.conversation_id);
+      await f.pay(f.payment.payment_id);
+      const turn = await f.inbound();
+      expect(await readCourseBonusCapabilityV1({ workspace_slug: f.slug, channel: 'text', ...f.identity,
+        selected_offering_code: f.identity.paid_offering_code, source_turn_id: turn }, { db: db! })).toMatchObject({ may_offer_bonus: false });
+      expect(await offerDirectCourseBonusV1(db!, await f.proposal(1, turn))).toMatchObject({ ok: false, reason: 'sale_already_closed' });
+    });
+  });
 });

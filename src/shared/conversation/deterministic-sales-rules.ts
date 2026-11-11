@@ -179,7 +179,8 @@ export function isCheckoutStateV1(context: CheckoutStateV1): boolean {
  * until the link is sent. Blocked only after the link, once closed, or while
  * the handoff's own call is still open. Durable state only. */
 export function isBonusCheckoutStateV1(context: CheckoutStateV1): boolean {
-  return context.stage === 'closed' || (context.stage === 'payment_link_sent' && context.may_reopen_negotiation !== true)
+  // Owner 2026-11-11: a closed sale with a safe unpaid link reopens like a sent link (the backend sets may_reopen_negotiation).
+  return ((context.stage === 'closed' || context.stage === 'payment_link_sent') && context.may_reopen_negotiation !== true)
     || (context.stage === 'handoff' && context.handoff_call_settled !== true);
 }
 
