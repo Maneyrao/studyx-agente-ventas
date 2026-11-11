@@ -11,7 +11,8 @@ export function contactProfileRequestsForPartsV1(input: {
 }): Array<Array<Omit<ContactProfileRequestV1, 'message_index'>>> {
   const result: Array<Array<Omit<ContactProfileRequestV1, 'message_index'>>> = input.part_texts.map(() => []);
   for (const request of input.requests) {
-    const original = input.authored_messages[request.message_index]?.trim();
+    // A split message carries its question in its last paragraph bubble.
+    const original = splitAuthoredParagraphsV1(input.authored_messages[request.message_index] ?? '').at(-1);
     if (!original) continue;
     const matches = input.part_texts.flatMap((part, index) => {
       const at = part.indexOf(original);
@@ -40,13 +41,35 @@ export function physicalOutboundTexts(input: {
   if (authored.length === 0) return [input.final_response];
 
   const joined = authored.join('\n\n');
-  if (input.final_response === joined) return fitIntoTransport(authored);
+  const bubbles = authored.flatMap(splitAuthoredParagraphsV1);
+  if (input.final_response === joined) return fitIntoTransport(bubbles);
 
   const prefix = `${joined}\n\n`;
   if (!input.final_response.startsWith(prefix)) return [input.final_response];
 
   const suffix = input.final_response.slice(prefix.length).trim();
-  return suffix ? fitIntoTransport([...authored, suffix]) : fitIntoTransport(authored);
+  return suffix ? fitIntoTransport([...bubbles, suffix]) : fitIntoTransport(bubbles);
+}
+
+const LIST_LINE = /^(?:[-•*]|\d+[.)])\s/u;
+
+/**
+ * One authored message with a paragraph break reads as two WhatsApp bubbles
+ * (owner 2026-11-11: long messages go out in two bubbles). A line break splits
+ * only after a finished sentence and never inside a list.
+ */
+export function splitAuthoredParagraphsV1(message: string): string[] {
+  const lines = message.split(/\n+/u).map((line) => line.trim()).filter(Boolean);
+  const paragraphs: string[] = [];
+  for (const line of lines) {
+    const previous = paragraphs.at(-1);
+    if (previous !== undefined && (!/[.!?…)]$/u.test(previous) || LIST_LINE.test(line))) {
+      paragraphs[paragraphs.length - 1] = `${previous}\n${line}`;
+    } else {
+      paragraphs.push(line);
+    }
+  }
+  return paragraphs;
 }
 
 /** Preserve every authored word while keeping the channel's three-part cap. */

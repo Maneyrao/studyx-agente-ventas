@@ -44,4 +44,30 @@ describe('physicalOutboundTexts', () => {
 
     expect(result).toEqual([`${authored[0]}\n\n${payment}`]);
   });
+
+  it('splits a long authored message at its paragraph break into separate bubbles', () => {
+    const first = 'Tienes razón en preguntarlo, no doy por hecho que necesites el básico. Inglés 1 arranca con conceptos básicos.';
+    const second = 'Si quieres seguir subiendo, después de Inglés 1 viene Inglés 2. Cuéntame para qué quieres el inglés: trabajo, viajar o algo más?';
+    const authored = [`${first}\n${second}`];
+
+    const result = physicalOutboundTexts({ final_response: authored[0]!, authored_messages: authored, enabled: true });
+
+    expect(result).toEqual([first, second]);
+  });
+
+  it('keeps a list attached to the sentence that introduces it', () => {
+    const authored = ['Tienes estas opciones:\n- Inglés 1\n- Inglés 2'];
+
+    const result = physicalOutboundTexts({ final_response: authored[0]!, authored_messages: authored, enabled: true });
+
+    expect(result).toEqual(authored);
+  });
+
+  it('keeps the three-part cap after splitting paragraphs', () => {
+    const authored = ['Uno.\nDos.', 'Tres.\nCuatro.'];
+
+    const result = physicalOutboundTexts({ final_response: authored.join('\n\n'), authored_messages: authored, enabled: true });
+
+    expect(result).toEqual(['Uno.', 'Dos.\n\nTres.', 'Cuatro.']);
+  });
 });

@@ -2304,14 +2304,13 @@ export function validateAgentATurnProposalV1(input: {
   if (action.type === 'send_course_program' && !sendableProgramCodesV1(input.context).includes(action.offering_code)) {
     rejections.push({ code: 'ACTION_NOT_AUTHORIZED', subject: 'send_course_program' })
   }
-  // Explaining the content of the course in focus for the first time comes
-  // with its material in the same turn (summary + image + PDF). Structured:
-  // the move, the cited syllabus fact and the programme capability.
+  // An explicit request for the programme of the course in focus comes with
+  // its material in the same turn. Explaining the course is not a request
+  // (owner 2026-11-11: advise first, the ficha is not thrown on first mention).
   {
     const focus = input.context.catalog.selected_offering
     const turnMoves = new Set([input.proposal.move.move, ...input.proposal.move.secondary_moves])
-    const asksContents = turnMoves.has('request_course_program') || (turnMoves.has('ask_course_information')
-      && (focus?.facts ?? []).some((fact) => fact.kind === 'offering_syllabus' && input.proposal.used_fact_ids.includes(fact.id)))
+    const asksContents = turnMoves.has('request_course_program')
     const commercialTurn = ['price_objection', 'ask_payment_options', 'select_payment_plan', 'request_payment_link',
       'explicit_promotion_request', 'decline_purchase', 'request_call', 'provide_contact_details'].some((move) => turnMoves.has(move as never))
     if (focus && action.type === 'none' && asksContents && !commercialTurn

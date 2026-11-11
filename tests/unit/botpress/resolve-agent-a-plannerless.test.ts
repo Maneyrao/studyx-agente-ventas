@@ -3739,7 +3739,10 @@ describe('PROGRAM_SEND_REQUIRED never silences the turn', () => {
     current.capabilities.course_programs = { available_offering_codes: ['maquillaje-profesional'], sent_offering_codes: [] };
     return current;
   };
-  const contents = proposal({ response: { messages: ['Vas a ver piel, ojos y labios en 38 clases.'], call_offer: null },
+  // 2026-11-11: only an explicit programme request requires the material.
+  const contents = proposal({ move: { schema_version: 1, move: 'request_course_program', secondary_moves: [], vetoes: [],
+    course_reference: 'Maquillaje Profesional', confidence: 1 },
+    response: { messages: ['Vas a ver piel, ojos y labios en 38 clases.'], call_offer: null },
     used_fact_ids: [NAME_FACT, DURATION_FACT, SYLLABUS] });
 
   it('asks for the action once; a repair that still omits it is delivered', async () => {
