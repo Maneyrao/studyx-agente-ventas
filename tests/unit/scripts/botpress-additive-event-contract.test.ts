@@ -2,11 +2,14 @@ import { describe, expect, it } from 'vitest';
 
 import {
   buildBotpressAdditiveEventUpdate,
+  inspectBotpressPreservedMessageTagContract,
+  inspectBotpressPreservedPublicationContracts,
   inspectBotpressPreservedStateContract,
   inspectBotpressRemoteCode,
   normalizeBotpressConfigurationForComparison,
   planBotpressAdditiveConversationTagPatch,
   planBotpressAdditiveEventPatch,
+  planBotpressReviewedActionPatch,
   planBotpressReviewedConfigurationUpdate,
 } from '../../../scripts/lib/botpress-additive-event-contract.mjs';
 
@@ -110,6 +113,81 @@ describe('Botpress additive event publication contract', () => {
       },
       generatedStates,
     })).toThrow('CONTRACT_CHANGED:states.conversation');
+  });
+
+  it('preserves only the reviewed remote actions and message tag inherited by the admissions workspace', () => {
+    const generatedActions = {
+      analyzeImage: { input: { schema: { type: 'object' } } },
+      ingestTurn: { input: { schema: { type: 'object' } } },
+    };
+    const remoteOnlyActions = Object.fromEntries([
+      'addWebsitePageToDraft',
+      'generateQuestionsFromConversations',
+      'runtimeHealth',
+      'startSimulationBatch',
+      'syncWebsiteKnowledge',
+    ].map((key) => [key, { input: { schema: { type: 'object' } } }]));
+    expect(planBotpressReviewedActionPatch({
+      remoteActions: { ...generatedActions, ...remoteOnlyActions },
+      generatedActions,
+    })).toEqual({});
+    expect(() => planBotpressReviewedActionPatch({
+      remoteActions: { ...generatedActions, unexpectedAction: {} },
+      generatedActions,
+    })).toThrow('CONTRACT_KEYS_CHANGED:actions:remote_only=unexpectedAction');
+    expect(() => planBotpressReviewedActionPatch({
+      remoteActions: { analyzeImage: generatedActions.analyzeImage },
+      generatedActions,
+    })).toThrow('CONTRACT_KEYS_CHANGED:actions:generated_only=ingestTurn');
+    expect(() => planBotpressReviewedActionPatch({
+      remoteActions: {
+        ...generatedActions,
+        analyzeImage: { input: { schema: { type: 'string' } } },
+      },
+      generatedActions,
+    })).toThrow('CONTRACT_CHANGED:actions.analyzeImage');
+
+    const generatedTags = { studyxTraceId: { title: 'Trace' } };
+    expect(inspectBotpressPreservedMessageTagContract({
+      remoteTags: { ...generatedTags, playbook: { title: 'Playbook' } },
+      generatedTags,
+    })).toEqual({ remoteOnlyKeys: ['playbook'] });
+    expect(() => inspectBotpressPreservedMessageTagContract({
+      remoteTags: { ...generatedTags, unexpected: { title: 'No' } },
+      generatedTags,
+    })).toThrow('CONTRACT_KEYS_CHANGED:message.tags:remote_only=unexpected');
+  });
+
+  it('detects any mutation of preserved contracts after publication', () => {
+    const before = {
+      actions: { analyzeImage: { input: 'same' }, runtimeHealth: { input: 'preserve' } },
+      states: { conversation: { type: 'conversation' }, viberReadiness: { type: 'conversation' } },
+      recurringEvents: {},
+      events: { existing: { schema: {} } },
+      message: { tags: { playbook: { title: 'Playbook' } } },
+      user: { tags: {} },
+      conversation: { tags: { existing: { title: 'Existing' } } },
+    };
+    const patches = {
+      actionPatch: { reportDelivery: { input: 'reviewed' } },
+      eventPatch: { followup: { schema: {} } },
+      conversationTagPatch: { title: { title: 'Conversation title' } },
+    };
+    const after = {
+      ...before,
+      actions: { ...before.actions, ...patches.actionPatch },
+      events: { ...before.events, ...patches.eventPatch },
+      conversation: { tags: { ...before.conversation.tags, ...patches.conversationTagPatch } },
+    };
+    expect(inspectBotpressPreservedPublicationContracts({ before, after, ...patches })).toBe(true);
+    expect(inspectBotpressPreservedPublicationContracts({
+      before,
+      after: {
+        ...after,
+        actions: { ...after.actions, runtimeHealth: { input: 'mutated' } },
+      },
+      ...patches,
+    })).toBe(false);
   });
 
   it('compares configuration after Botpress applies schema defaults and drops legacy data', () => {
