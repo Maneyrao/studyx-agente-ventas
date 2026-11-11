@@ -23,7 +23,7 @@ const outputPaths = [
 // v110: owner-approved natural sales midpoint; literal authority plus unchanged technical annex.
 // v109: v108 plus the 2026-11-04 bonus motive rules (motive from the current message; owner-authorized edit).
 // v108: v107 plus the owner's 03-04/11 price guidance moved from retired runtime rules to model guidance (owner-authorized edit)
-const expectedSha256 = '6ace9025d0b906631266e6d55251432fbd3b4c342ee9bdb348bef28264a6f402';
+const expectedSha256 = '1e817d30dbb7517e02b03c006a6235805b2a349f168bad7e61ef0ea77dd15419';
 const prompt = readFileSync(sourcePath, 'utf8');
 const sha256 = createHash('sha256').update(prompt).digest('hex');
 const lineCount = prompt.match(/\n/g)?.length ?? 0;
