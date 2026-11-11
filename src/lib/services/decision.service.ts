@@ -1,3 +1,4 @@
+import { isCheckoutLockedV1 } from '@/features/payments/application/negotiation-payment-state';
 import { courseBonusLadderRejectionSubjectsV1 } from '@/shared/conversation/bonus-ladder-rejection';
 import { copyNamesCourseV1 } from '@/shared/conversation/course-bonus-claim';
 import { messageIndexOfSentenceV1 } from '@/shared/conversation/sentence-locator';
@@ -86,6 +87,7 @@ import {
 } from '@/features/promotions/application/read-course-bonus-capability';
 import {
   cancelOpenCourseBonusOffersForCourseChangeV1,
+  CourseChangeBlockedByPaymentError,
   commitCommercialActionV1,
   type ScheduledCommercialFollowupV1,
 } from '@/features/promotions/application/commercial-followup-service';
@@ -982,6 +984,7 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
             );
             return loadLatestPaymentVerificationV1(paymentInput, db);
           },
+          checkout_locked: async (lock) => isCheckoutLockedV1(db, { workspace_id: workspaceId, ...lock }),
         });
       } catch (error) {
         if (error instanceof AgentTurnV2RejectedError) {
@@ -1258,16 +1261,21 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
       // mismatched SKU or a current veto could obtain a friendly acknowledgement
       // merely because an older valid link existed in the same conversation.
       const priorPaymentLinks = revisedCheckout ? [] : await db<Array<{ id: string; checkout_url: string | null; status: string | null }>>`
+        WITH root AS (SELECT sale_family_root_v1(${canonicalWorkspaceId ?? null}::uuid, ${turn.contact_id}::uuid, ${turn.conversation_id}::uuid) AS id),
+        family AS (SELECT id FROM root WHERE id IS NOT NULL
+          UNION SELECT l.source_conversation_id FROM conversation_history_recovery_links l JOIN root ON l.canonical_conversation_id=root.id
+            WHERE l.workspace_id=${canonicalWorkspaceId ?? null}::uuid AND l.contact_id=${turn.contact_id}::uuid)
         SELECT ad.id, prior_payment.checkout_url, prior_payment.status
         FROM agent_decisions AS ad
         JOIN messages AS prior_turn ON prior_turn.id = ad.turn_id
         LEFT JOIN payments AS prior_payment
           ON prior_payment.idempotency_key = 'agent-a-payment-link:' || ad.turn_id::text
-        WHERE sale_family_root_v1(${canonicalWorkspaceId ?? null}::uuid, prior_turn.contact_id, prior_turn.conversation_id)
-            IS NOT DISTINCT FROM sale_family_root_v1(${canonicalWorkspaceId ?? null}::uuid, ${turn.contact_id}::uuid, ${turn.conversation_id}::uuid)
+        WHERE prior_turn.conversation_id IN (SELECT id FROM family)
           AND prior_turn.contact_id = ${turn.contact_id}::uuid
           AND ad.outbound_message_id IS NOT NULL
           AND ad.business_action ->> 'type' = 'send_payment_link'
+          -- A match from another conversation of the family counts only when a real payment backs it.
+          AND (prior_turn.conversation_id = ${turn.conversation_id}::uuid OR prior_payment.id IS NOT NULL)
           AND ad.business_action ->> 'plan_code' = ${action.plan_code}
           AND ad.business_action ->> 'offering_sku' = ${action.offering_sku}
           AND COALESCE(prior_payment.environment, 'live') = ${stripePaymentLinkEnvironment(materialized.block.url) ?? 'live'}
@@ -2182,13 +2190,19 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
         ) ON CONFLICT (workspace_id, conversation_id) DO NOTHING`;
         if (preparedAgentTurn.abandons_course_bonus_offer
           && preparedAgentTurn.transition.selected_offering_code) {
-          await cancelOpenCourseBonusOffersForCourseChangeV1(db, {
-            workspace_id: canonicalWorkspaceId,
-            contact_id: turn.contact_id,
-            conversation_id: turn.conversation_id,
-            selected_offering_code: preparedAgentTurn.transition.selected_offering_code,
-            source_turn_id:turn.id,
-          });
+          try {
+            await cancelOpenCourseBonusOffersForCourseChangeV1(db, {
+              workspace_id: canonicalWorkspaceId,
+              contact_id: turn.contact_id,
+              conversation_id: turn.conversation_id,
+              selected_offering_code: preparedAgentTurn.transition.selected_offering_code,
+              source_turn_id:turn.id,
+            });
+          } catch (error) {
+            // Backstop of the authorization layer: the new course is never persisted over a locked checkout.
+            if (error instanceof CourseChangeBlockedByPaymentError) throw new DecisionPolicyError('COURSE_CHANGE_BLOCKED_BY_CHECKOUT');
+            throw error;
+          }
         }
         await recordPromotionConversationContextV1(db, {
           workspace_id: canonicalWorkspaceId,

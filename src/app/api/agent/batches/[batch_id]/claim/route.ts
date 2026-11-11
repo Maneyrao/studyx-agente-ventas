@@ -164,12 +164,13 @@ export async function POST(
           ),
         },
         saleContinuity: async (input) => {
-          const [{ materializeSaleContinuityV1 }, { sql }] = await Promise.all([
+          const [{ materializeSaleContinuityV1, resolveSaleContinuityV1 }, { sql }] = await Promise.all([
             import('@/features/payments/application/resolve-sale-continuity'), import('@/lib/db/orchestrator'),
           ]);
           const [workspace] = await sql<Array<{ id: string }>>`SELECT id FROM workspaces WHERE slug=${workspaceSlug} AND status='active'`;
-          return workspace ? materializeSaleContinuityV1(sql, { workspace_id: workspace.id,
-            contact_id: input.contactId, conversation_id: input.conversationId }) : { kind: 'none' as const };
+          if (!workspace) return { kind: 'none' as const };
+          const scope = { workspace_id: workspace.id, contact_id: input.contactId, conversation_id: input.conversationId };
+          return input.materialize ? materializeSaleContinuityV1(sql, scope) : resolveSaleContinuityV1(sql, scope);
         },
         conversationPipelineEnabled: loadConversationPipelineConfig().enabled,
         agentABrainEnabled: brainConfig.enabled,

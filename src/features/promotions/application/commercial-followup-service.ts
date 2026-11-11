@@ -1,4 +1,4 @@
-import { readNegotiationPaymentStateV1 } from '@/features/payments/application/negotiation-payment-state';
+import { lockPaymentSaleV1, readNegotiationPaymentStateV1 } from '@/features/payments/application/negotiation-payment-state';
 import { createHash, randomUUID } from 'node:crypto';
 import type postgres from 'postgres';
 import { z } from 'zod';
@@ -384,6 +384,10 @@ export async function commitCommercialActionV1(
   };
 }
 
+export class CourseChangeBlockedByPaymentError extends Error {
+  constructor() { super('COURSE_CHANGE_BLOCKED_BY_PAYMENT'); }
+}
+
 /** Retires only model-owned open packages whose paid course was explicitly
  * replaced by another canonical course. This is not text interpretation: the
  * caller supplies the committed select_course result from Agent A. */
@@ -403,6 +407,7 @@ export async function cancelOpenCourseBonusOffersForCourseChangeV1(
   await db`SELECT conversation_id FROM conversation_sales_context_states_v1
     WHERE workspace_id=${input.workspace_id}::uuid AND contact_id=${input.contact_id}::uuid
       AND conversation_id=${input.conversation_id}::uuid FOR UPDATE`;
+  // Lock order: sale lock K (per distinct offering, sorted) BEFORE any payment row lock.
   const candidates=await db<Array<{id:string;offering_id:string;replacement_id:string;source_conversation_id:string}>>`
     SELECT p.id,p.offering_id,replacement.id AS replacement_id,p.source_conversation_id FROM payments p
     JOIN offerings replacement ON replacement.workspace_id=p.workspace_id AND replacement.code=${input.selected_offering_code}
@@ -411,14 +416,18 @@ export async function cancelOpenCourseBonusOffersForCourseChangeV1(
         IS NOT DISTINCT FROM sale_family_root_v1(${input.workspace_id}::uuid,${input.contact_id}::uuid,${input.conversation_id}::uuid) AND p.offering_id<>replacement.id
       AND p.status NOT IN ('paid','refunded','failed','expired')
       AND NOT EXISTS (SELECT 1 FROM payment_intent_supersessions s WHERE s.payment_id=p.id)
-    ORDER BY p.id FOR UPDATE OF p
-  `;
-  // A processing, paid, reconciling or uncertain lineage is never superseded by a course change.
+    ORDER BY p.id`;
+  for(const offeringId of [...new Set(candidates.map(payment=>payment.offering_id))].sort()) {
+    await lockPaymentSaleV1(db,{workspace_id:input.workspace_id,contact_id:input.contact_id,
+      conversation_id:input.conversation_id,offering_id:offeringId});
+  }
+  // A processing, paid, reconciling or uncertain lineage keeps its course: reject, never skip silently.
   const unpaid=[];
   for(const payment of candidates) {
     const state=await readNegotiationPaymentStateV1(db,{workspace_id:input.workspace_id,contact_id:input.contact_id,
       conversation_id:payment.source_conversation_id,offering_id:payment.offering_id},true);
-    if(!state.blocked) unpaid.push(payment);
+    if(state.in_flight) throw new CourseChangeBlockedByPaymentError();
+    unpaid.push(payment);
   }
   if(input.source_turn_id && input.source_voice_selection_id) throw new Error('COURSE_CHANGE_SOURCE_AMBIGUOUS');
   if(input.source_voice_selection_id) {

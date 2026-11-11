@@ -1,4 +1,4 @@
-import { withNegotiationPaymentSaleLockV1 } from '@/features/payments/application/negotiation-payment-state';
+import { lockPaymentSaleV1, paymentSaleScopeV1 } from '@/features/payments/application/negotiation-payment-state';
 import { randomUUID } from 'node:crypto';
 import { sql as orchestratorSql } from '@/lib/db/orchestrator';
 import { jsonbParam } from '@/lib/db/json';
@@ -137,10 +137,10 @@ export async function runEnrollmentWorker(
     if (!job) break;
     result.claimed += 1;
 
-    const executeJob = async (connection: postgres.Sql, source?: SourceRow | null): Promise<Terminal | null> => {
+    const executeJob = async (connection: postgres.Sql): Promise<Terminal | null> => {
       let terminal: Terminal;
       try {
-        terminal = await decide(connection, job, config, bonusConfig, client, now, source);
+        terminal = await decide(connection, job, config, bonusConfig, client, now);
       } catch (error) {
         terminal = { kind: 'retry', code: 'worker_error' };
         logger.error({event:'central_carga.worker_error',payment_id:job.payment_id,job_id:job.id,
@@ -148,15 +148,11 @@ export async function runEnrollmentWorker(
       }
       return settle(connection,job,workerId,terminal,random);
     };
-    // A lineage already exists before its successor can be paid. Hold one
-    // session lock across the external call and evidence persistence, while
-    // leaving ordinary enrollments on their existing path.
+    // No session-level lock: Supavisor transaction pooling cannot carry one. A lineage that
+    // became blocked during the external call is caught by settle's short transaction.
     let applied: Terminal | null;
     try {
-      const initialSource = await loadSource(sql,job.payment_id);
-      applied = initialSource?.negotiation_lineage
-        ? await withNegotiationPaymentSaleLockV1(sql,job.payment_id,connection=>executeJob(connection))
-        : await executeJob(sql,initialSource);
+      applied = await executeJob(sql);
     } catch (error) {
       logger.error({event:'central_carga.worker_error',payment_id:job.payment_id,job_id:job.id,
         error_name:error instanceof Error ? error.name : 'unknown'});
@@ -383,20 +379,33 @@ async function settle(
 ): Promise<Terminal | null> {
   const persist = async (tx: postgres.Sql) => {
     const scoped = tx as unknown as postgres.Sql;
+    let terminal: Terminal = outcome;
+    if (terminal.kind === 'completed') {
+      // The sale lock orders this settlement against a reopening or a late payment of the lineage.
+      const scope = await paymentSaleScopeV1(scoped, job.payment_id);
+      if (scope) {
+        await lockPaymentSaleV1(scoped, scope);
+        const fresh = await loadSource(scoped, job.payment_id);
+        if (fresh?.negotiation_lineage && fresh.negotiation_blocked) {
+          // Keep the Central evidence; pause for a human instead of enrolling again.
+          terminal = { kind: 'dead_letter', code: 'payment_reconciliation_required', body: terminal.body,
+            ...(terminal.paidOffering ? { paidOffering: terminal.paidOffering } : {}) };
+        }
+      }
+    }
     const [owned] = await tx`
       SELECT id FROM fulfillment_jobs WHERE id=${job.id}::uuid AND status='leased'
         AND leased_by=${workerId} AND attempt_count=${job.attempt_count} FOR UPDATE
     `;
     if (!owned) return null;
-    if (outcome.priorEvidence) await persistEvidence(scoped, job, outcome.priorEvidence, outcome.paidOffering!);
-    if ('body' in outcome && outcome.body) await persistEvidence(scoped, job, outcome.body, outcome.paidOffering!);
-    const applied = await settleStatus(scoped, job, workerId, outcome, random);
+    if (terminal.priorEvidence) await persistEvidence(scoped, job, terminal.priorEvidence, terminal.paidOffering!);
+    if ('body' in terminal && terminal.body) await persistEvidence(scoped, job, terminal.body, terminal.paidOffering!);
+    const applied = await settleStatus(scoped, job, workerId, terminal, random);
     if (applied?.kind === 'dead_letter') await openBonusFulfillmentCase(scoped, job.payment_id, applied.code);
     return applied;
   };
   if (typeof sql.begin === 'function') return sql.begin(tx=>persist(tx as unknown as postgres.Sql)) as Promise<Terminal | null>;
-  // A reserved connection is already pinned to this sale's session lock. Its
-  // short settlement transaction starts only after the external call ended.
+  // A single pinned connection (tests): the short settlement transaction starts after the external call ended.
   await sql`BEGIN`;
   try {
     const applied = await persist(sql);

@@ -227,8 +227,44 @@ run('direct bonus checkout exact accepted package',()=>{
     expect(await db!`SELECT id FROM payments WHERE source_conversation_id=${f.conversation_id}`).toHaveLength(1);
     expect((await db!`SELECT status,promotion_cycle_id FROM promotion_offers WHERE id=${offer.offer_id}`)[0])
       .toEqual({status:'cancelled',promotion_cycle_id:offer.promotion_cycle_id});
-    expect((await combinedCheckout('ingles_1','Inglés 1')).status).toBe('committed');
-    expect(await db!`SELECT id FROM payments WHERE source_conversation_id=${f.conversation_id}`).toHaveLength(2);
+    // The late-paid superseded checkout is still reconciling: the course and its checkout stay locked.
+    await expect(combinedCheckout('ingles_1','Inglés 1')).rejects.toMatchObject({reason:'AGENT_TURN_V2_REJECTED:ACTION_NOT_AUTHORIZED'});
+    expect(await db!`SELECT id FROM payments WHERE source_conversation_id=${f.conversation_id}`).toHaveLength(1);
+  });
+  it('a pending checkout keeps its course: an explicit switch is rejected, nothing is superseded or linked',async()=>{
+    vi.stubEnv('PAYMENT_LINK_CONTADO','https://buy.stripe.com/test_locked');
+    const f=await seedConversationForAgentTurn({selected_offering_code:'entrenamiento_funcional',intake_complete:true});
+    await db!`UPDATE conversation_sales_context_states_v1 SET selected_payment_plan='one_time',awaiting_reply='payment_confirmation'
+      WHERE workspace_id=${f.workspace_id} AND conversation_id=${f.conversation_id}`;
+    const [contact]=await db!`SELECT phone FROM contacts WHERE id=${f.contact_id}`;
+    async function next(text:string) {
+      return processInboundMessage({schema_version:1,source:'botpress',channel:'whatsapp',integration_id:'vitest-agent-turn-fixture',
+        external_message_id:randomUUID(),external_conversation_id:`agent-turn-fixture-${f.trace_id}`,
+        external_user_id:`agent-turn-fixture-user-${f.trace_id}`,phone_e164:contact.phone,trace_id:randomUUID(),identity_owner:'agent_a_v1',
+        message:{type:'text',text,occurred_at:new Date().toISOString(),reply_to_external_message_id:null}});
+    }
+    const link=await commitAgentDecision({turn_id:f.second_turn_id,trace_id:f.trace_id,supports_multi_outbound:true,
+      authorized_offering_code:'entrenamiento_funcional',authorized_payment_plan:'one_time',
+      agent_turn_v2:{schema_version:2,proposal:{...f.proposalWithCallOfferAndFalsePrice,
+        move:{schema_version:1,move:'request_payment_link',secondary_moves:[],vetoes:[],confidence:1,payment_plan:'one_time'},
+        proposed_action:{type:'send_payment_link',offering_code:'entrenamiento_funcional',payment_plan:'one_time'},
+        response:{messages:['Te comparto el enlace para pagar.'],call_offer:null}} as never},decision:f.placeholderDecision as never,model:f.model as never});
+    expect(link.status).toBe('committed');
+    const [payment]=await db!`SELECT id FROM payments WHERE source_conversation_id=${f.conversation_id}`;
+    for (const type of ['checkout_creation_started','checkout_created','checkout_completed_unpaid'] as const) {
+      await recordPaymentEvent(db!,{payment_id:payment.id,provider:'stripe',provider_event_id:randomUUID(),event:{type},payload:{}});
+    }
+    const turn=await next('Quiero Inglés 1');
+    await expect(commitAgentDecision({turn_id:turn.turn_id,trace_id:randomUUID(),supports_multi_outbound:true,
+      authorized_offering_code:'ingles_1',authorized_payment_plan:null,
+      agent_turn_v2:{schema_version:2,proposal:{...f.proposalWithCallOfferAndFalsePrice,
+        move:{schema_version:1,move:'select_course',secondary_moves:[],vetoes:[],confidence:1,course_reference:'Inglés 1'},
+        proposed_action:{type:'none'},response:{messages:['Seguimos con Inglés 1.'],call_offer:null}} as never},
+      decision:f.placeholderDecision as never,model:f.model as never})).rejects.toMatchObject({reason:'AGENT_TURN_V2_REJECTED:ACTION_NOT_AUTHORIZED'});
+    expect((await db!`SELECT selected_offering_code FROM conversation_sales_context_states_v1 WHERE conversation_id=${f.conversation_id}`)[0])
+      .toEqual({selected_offering_code:'entrenamiento_funcional'});
+    expect(await db!`SELECT id FROM payment_intent_supersessions WHERE payment_id=${payment.id}`).toEqual([]);
+    expect(await db!`SELECT id FROM payments WHERE source_conversation_id=${f.conversation_id}`).toHaveLength(1);
   });
   it('projects an accepted obligation in review rollback without authorizing offers or acceptance',async()=>{
     const f=await fixture(2);vi.stubEnv('COURSE_BONUS_FLOW_MODE','review');

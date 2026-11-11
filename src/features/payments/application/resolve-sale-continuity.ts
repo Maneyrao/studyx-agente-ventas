@@ -37,7 +37,7 @@ export async function resolveSaleContinuityV1(db: DbClient, input: Input): Promi
           AND sale_family_root_v1(p.workspace_id,p.contact_id,p.source_conversation_id)=link.canonical_conversation_id) AS paid,
       EXISTS (SELECT 1 FROM payments p JOIN offerings o ON o.id=p.offering_id AND o.workspace_id=p.workspace_id
         WHERE p.workspace_id=s.workspace_id AND p.contact_id=s.contact_id AND o.code=s.selected_offering_code
-          AND p.status IN ('reserved','pending')
+          AND p.status IN ('reserved','creating_checkout','creation_ambiguous','pending')
           AND NOT EXISTS (SELECT 1 FROM payment_intent_supersessions x WHERE x.payment_id=p.id)
           AND sale_family_root_v1(p.workspace_id,p.contact_id,p.source_conversation_id)=link.canonical_conversation_id) AS has_unpaid_link
     FROM conversation_history_recovery_links link
@@ -52,7 +52,7 @@ export async function resolveSaleContinuityV1(db: DbClient, input: Input): Promi
   const own = await db<Array<{ code: string }>>`
     SELECT DISTINCT o.code FROM payments p JOIN offerings o ON o.id=p.offering_id AND o.workspace_id=p.workspace_id
     WHERE p.workspace_id=${input.workspace_id}::uuid AND p.contact_id=${input.contact_id}::uuid
-      AND p.source_conversation_id=${input.conversation_id}::uuid AND p.status IN ('reserved','pending')
+      AND p.source_conversation_id=${input.conversation_id}::uuid AND p.status IN ('reserved','creating_checkout','creation_ambiguous','pending')
       AND NOT EXISTS (SELECT 1 FROM payment_intent_supersessions x WHERE x.payment_id=p.id)`;
   const codes = [...new Set([...open.map(candidate => candidate.offering_code), ...own.map(row => row.code)])].sort();
   if (codes.length > 1) return { kind: 'ambiguous', candidate_offering_codes: codes };

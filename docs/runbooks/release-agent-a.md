@@ -146,3 +146,15 @@ Largo de los mensajes: tope orientativo ~250 caracteres por turno, no repetir
 datos ya dichos (temario, certificado, ficha), «Conecta siempre» sólo al
 recomendar. El dueño lo dejó para después de probar v210/v121. Tuteo siempre:
 regla del dueño, no tocar.
+
+## Venta impaga flexible (v123/v212)
+
+- Orden de despliegue: migración `20261111020001` → Botpress v123/v212 → backend.
+- Rollback del backend a `303e775` es seguro con el bot v212: los campos nuevos son opcionales.
+- Revertir sólo Botpress con el backend nuevo en producción rompe los claims (`ClaimedTurnSchema` estricto):
+  revertir primero el backend. La migración se queda (es aditiva).
+- La continuidad de venta es de un solo salto: las pruebas de enlace
+  (`conversation_history_recovery_links`) no encadenan. Los paquetes sin enlace de pago de una conversación
+  origen cerrada no se heredan.
+- No hay candados de sesión: el candado de venta es `pg_advisory_xact_lock` (compatible con Supavisor en modo transacción).
+  Un linaje bloqueado (cobro en curso, incierto, pagado o en conciliación) conserva el curso, el paquete y el enlace.

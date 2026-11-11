@@ -109,7 +109,7 @@ export interface ClaimBatchDependencies {
   /** Earlier model-authored `already_said` markers of the verified conversation family. */
   readonly priorAlreadySaid?: (input: { conversationId: string; contactId: string; sourceTurnId: string }) => Promise<readonly string[]>;
   /** Copies a verified sale from a linked conversation into this one's empty state, before it is loaded. */
-  readonly saleContinuity?: (input: { conversationId: string; contactId: string }) => Promise<SaleContinuityV1>;
+  readonly saleContinuity?: (input: { conversationId: string; contactId: string; materialize: boolean }) => Promise<SaleContinuityV1>;
   /** Single backend-owned rollout flag projected into the claimed contract. */
   readonly conversationPipelineEnabled?: boolean;
   /** Independent Agent A brain rollout controls. They are mutually exclusive at config load. */
@@ -739,7 +739,9 @@ export async function claimBatch(
     try {
       if (deps.saleContinuity) {
         try {
-          continuity.value = await deps.saleContinuity({ conversationId: claim.conversation_id!, contactId: facts.contact.id });
+          continuity.value = await deps.saleContinuity({ conversationId: claim.conversation_id!, contactId: facts.contact.id,
+            // The shadow run never mutates durable state: it only reads the resolution.
+            materialize: deps.agentABrainShadow !== true });
         } catch (error) {
           log('orchestration.claim.sale_continuity_unavailable', { trace_id: input.trace_id, batch_id: claim.batch_id,
             error: error instanceof Error ? error.name : 'UNKNOWN' });

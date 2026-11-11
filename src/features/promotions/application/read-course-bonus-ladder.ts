@@ -46,12 +46,15 @@ export async function readCourseBonusLadderV1(input: {
   if (!row) return null;
   const [current] = await db<Array<{ candidates: Array<{type:string;key:string;value:string;source_quote:string}> | null; retention_used: boolean; asked: boolean; price_presented: boolean;
     carried: Array<{ code: string; display_name: string }> | null; prior_objection: boolean }>>`
+    WITH root AS (SELECT sale_family_root_v1(${row.workspace_id}::uuid,${input.contact_id}::uuid,${input.conversation_id}::uuid) AS id),
+    family AS (SELECT id FROM root WHERE id IS NOT NULL
+      UNION SELECT l.source_conversation_id FROM conversation_history_recovery_links l JOIN root ON l.canonical_conversation_id=root.id
+        WHERE l.workspace_id=${row.workspace_id}::uuid AND l.contact_id=${input.contact_id}::uuid)
     SELECT
       -- Owner 2026-11-10: a price objection recorded on an earlier, answered turn
       -- (outside the current intervention) makes the current one the second.
       EXISTS(SELECT 1 FROM agent_decisions d JOIN messages src ON src.id=d.turn_id
-        WHERE sale_family_root_v1(${row.workspace_id}::uuid,src.contact_id,src.conversation_id)
-          IS NOT DISTINCT FROM sale_family_root_v1(${row.workspace_id}::uuid,${input.contact_id}::uuid,${input.conversation_id}::uuid) AND src.contact_id=${input.contact_id}::uuid
+        WHERE src.conversation_id IN (SELECT id FROM family) AND src.contact_id=${input.contact_id}::uuid
           AND src.direction='inbound' AND d.decision_kind='reply'
           AND src.id NOT IN (SELECT current_turn.id FROM agent_intervention_inbound_v1(${row.source_turn_id}::uuid) current_turn)
           AND jsonb_typeof(d.memory_candidates)='array'
@@ -62,15 +65,13 @@ export async function readCourseBonusLadderV1(input: {
       (SELECT jsonb_agg(DISTINCT jsonb_build_object('code',gift.offering_code_snapshot,'display_name',gift.offering_display_name_snapshot))
         FROM promotion_offers o JOIN offerings paid ON paid.id=o.paid_offering_id
         JOIN promotion_offer_bonus_offerings gift ON gift.offer_id=o.id AND gift.delivered_at IS NOT NULL
-        WHERE sale_family_root_v1(${row.workspace_id}::uuid,o.contact_id,o.conversation_id)
-          IS NOT DISTINCT FROM sale_family_root_v1(${row.workspace_id}::uuid,${input.contact_id}::uuid,${input.conversation_id}::uuid) AND o.contact_id=${input.contact_id}::uuid
+        WHERE o.conversation_id IN (SELECT id FROM family) AND o.contact_id=${input.contact_id}::uuid
           AND o.package_mode='direct' AND paid.code IS DISTINCT FROM ${input.selected_offering_code}
           AND gift.offering_code_snapshot IS DISTINCT FROM ${input.selected_offering_code}
           AND (o.status IN ('offered','accepted','attached')
             OR (o.status='cancelled' AND o.cancel_reason='CUSTOMER_CHANGED_COURSE'))) carried,
       EXISTS(SELECT 1 FROM offerings paid JOIN workspaces pw ON pw.id=paid.workspace_id AND pw.slug=${row.workspace_slug}
-        JOIN messages prior ON sale_family_root_v1(${row.workspace_id}::uuid,prior.contact_id,prior.conversation_id)
-          IS NOT DISTINCT FROM sale_family_root_v1(${row.workspace_id}::uuid,${input.contact_id}::uuid,${input.conversation_id}::uuid) AND prior.contact_id=${input.contact_id}::uuid
+        JOIN messages prior ON prior.conversation_id IN (SELECT id FROM family) AND prior.contact_id=${input.contact_id}::uuid
           AND prior.direction='outbound'
           AND prior.created_at < (SELECT created_at FROM messages WHERE id=${row.source_turn_id}::uuid)
           AND (NOT EXISTS (SELECT 1 FROM outbound_deliveries known WHERE known.message_id=prior.id)
@@ -83,8 +84,7 @@ export async function readCourseBonusLadderV1(input: {
         WHERE d.turn_id=${row.source_turn_id}::uuid AND d.decision_kind='reply' LIMIT 1) candidates,
       EXISTS(SELECT 1 FROM promotion_offers o JOIN promotion_offer_bonus_offerings b ON b.offer_id=o.id
         JOIN agent_decisions d ON d.turn_id=b.source_turn_id AND d.decision_kind='reply'
-        WHERE sale_family_root_v1(${row.workspace_id}::uuid,o.contact_id,o.conversation_id)
-          IS NOT DISTINCT FROM sale_family_root_v1(${row.workspace_id}::uuid,${input.contact_id}::uuid,${input.conversation_id}::uuid) AND o.contact_id=${input.contact_id}::uuid
+        WHERE o.conversation_id IN (SELECT id FROM family) AND o.contact_id=${input.contact_id}::uuid
           AND o.package_mode='direct' AND b.source_turn_id<>${row.source_turn_id}::uuid
           AND jsonb_typeof(d.memory_candidates)='array'
           AND EXISTS(SELECT 1 FROM jsonb_array_elements(d.memory_candidates) candidate
@@ -93,8 +93,7 @@ export async function readCourseBonusLadderV1(input: {
           SELECT 1 FROM jsonb_array_elements(last.memory_candidates) candidate
           WHERE candidate->>'key'=${PRICE_QUESTION_ASKED_MEMORY_KEY})
         FROM agent_decisions last JOIN messages source ON source.id=last.turn_id
-        WHERE last.decision_kind='reply' AND sale_family_root_v1(${row.workspace_id}::uuid,source.contact_id,source.conversation_id)
-          IS NOT DISTINCT FROM sale_family_root_v1(${row.workspace_id}::uuid,${input.contact_id}::uuid,${input.conversation_id}::uuid)
+        WHERE last.decision_kind='reply' AND source.conversation_id IN (SELECT id FROM family)
           AND source.contact_id=${input.contact_id}::uuid AND source.direction='inbound'
           AND source.id<>${row.source_turn_id}::uuid
           AND message_occurrence_v1(source.metadata,source.created_at) < (SELECT message_occurrence_v1(metadata,created_at)

@@ -627,6 +627,8 @@ async function readDirectCapability(input: {
         AND sale_family_root_v1(candidate.workspace_id,candidate.contact_id,candidate.conversation_id)
           IS NOT DISTINCT FROM sale_family_root_v1(candidate.workspace_id,candidate.contact_id,current.conversation_id)
         AND candidate.paid_offering_id=paid.id
+        -- Another family conversation's package counts only when attached to a payment (the reopen path).
+        AND (candidate.conversation_id=current.conversation_id OR candidate.status='attached')
         AND candidate.package_mode='direct' AND candidate.status IN ('offered','accepted','attached')
       ORDER BY (candidate.conversation_id=current.conversation_id) DESC,candidate.created_at DESC LIMIT 1) o ON true
     LEFT JOIN promotions p ON p.id=o.promotion_id

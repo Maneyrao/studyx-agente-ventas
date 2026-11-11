@@ -1,4 +1,4 @@
-import { readNegotiationPaymentStateV1, retirePaymentForNegotiationV1 } from '@/features/payments/application/negotiation-payment-state';
+import { lockPaymentSaleV1, readNegotiationPaymentStateV1, retirePaymentForNegotiationV1 } from '@/features/payments/application/negotiation-payment-state';
 import { readCourseBonusLadderV1 } from './read-course-bonus-ladder';
 import { customerBonusRequestThisTurnV1 } from './read-course-bonus-capability';
 import { validateBonusMotiveV1, type BonusMotiveV1 } from '@/shared/conversation/bonus-motive';
@@ -200,6 +200,8 @@ async function resolveOffer(tx: DbClient, input: Identity, paidId: string): Prom
       AND sale_family_root_v1(o.workspace_id,o.contact_id,o.conversation_id)
         IS NOT DISTINCT FROM sale_family_root_v1(${input.workspace_id}::uuid,${input.contact_id}::uuid,${input.conversation_id}::uuid)
       AND o.paid_offering_id=${paidId}::uuid AND o.package_mode='direct'
+      -- Another family conversation's package counts only when attached to a payment (the reopen path).
+      AND (o.conversation_id=${input.conversation_id}::uuid OR o.status='attached')
       AND o.status IN ('pending_review','offered','accepted','attached')`;
   if (live.length>1) reject('stale_offer_version');
   const [offer] = await tx<OfferRow[]>`
@@ -209,6 +211,7 @@ async function resolveOffer(tx: DbClient, input: Identity, paidId: string): Prom
         IS NOT DISTINCT FROM sale_family_root_v1(${input.workspace_id}::uuid,${input.contact_id}::uuid,${input.conversation_id}::uuid)
       AND o.paid_offering_id=${paidId}::uuid
       AND o.package_mode='direct'
+      AND (o.conversation_id=${input.conversation_id}::uuid OR o.status='attached')
       AND (${input.promotion_cycle_id ?? null}::uuid IS NULL OR o.promotion_cycle_id=${input.promotion_cycle_id ?? null}::uuid)
       AND (${input.promotion_code ?? null}::text IS NULL OR p.promotion_code=${input.promotion_code ?? null})
       AND (o.status IN ('pending_review','offered','accepted','attached') OR o.promotion_cycle_id=${input.promotion_cycle_id ?? null}::uuid
@@ -257,6 +260,9 @@ export async function offerDirectCourseBonusV1(db: DbClient, input: OfferDirectC
     if (!Number.isInteger(input.expected_offer_version) || input.expected_offer_version<0
       || (input.expected_offer_version>0 && (!input.promotion_code || !input.promotion_cycle_id))) reject('stale_offer_version');
     const context=await lockIdentity(tx,input);
+    // Lock order: the sale lock K precedes every offer and payment row lock (as in reserve and replace).
+    await lockPaymentSaleV1(tx,{workspace_id:input.workspace_id,contact_id:input.contact_id,
+      conversation_id:input.conversation_id,offering_id:context.paid_id});
     let offer=await resolveOffer(tx,input,context.paid_id);
     // Owner 2026-11-03 swap replay: the new cycle created by this exact reply.
     const [swapReplay]=await tx<Array<OfferRow & {replay_version:number;exact:boolean}>>`
@@ -434,6 +440,9 @@ export async function acceptDirectCourseBonusV1(db: DbClient, input: AcceptDirec
     if (!await mayAcceptExistingPackage(input, tx)) reject('bonus_disabled');
     if (!input.promotion_code || !input.promotion_cycle_id || !Number.isInteger(input.expected_offer_version) || input.expected_offer_version<1) reject('stale_offer_version');
     const context=await lockIdentity(tx,input);
+    // Lock order: the sale lock K precedes every offer and payment row lock (as in reserve and replace).
+    await lockPaymentSaleV1(tx,{workspace_id:input.workspace_id,contact_id:input.contact_id,
+      conversation_id:input.conversation_id,offering_id:context.paid_id});
     const offer=await resolveOffer(tx,input,context.paid_id);
     if (!offer || offer.offer_version!==input.expected_offer_version) reject('stale_offer_version');
     await validateExistingPackage(tx,offer);
@@ -455,6 +464,9 @@ export async function acceptDirectCourseBonusByVoiceV1(db: DbClient, input: Acce
     if (!input.promotion_code || !input.promotion_cycle_id || !Number.isInteger(input.expected_offer_version)
       || input.expected_offer_version<1) reject('stale_offer_version');
     const context=await lockIdentity(tx,input);
+    // Lock order: the sale lock K precedes every offer and payment row lock (as in reserve and replace).
+    await lockPaymentSaleV1(tx,{workspace_id:input.workspace_id,contact_id:input.contact_id,
+      conversation_id:input.conversation_id,offering_id:context.paid_id});
     const offer=await resolveOffer(tx,input,context.paid_id);
     if (!offer || offer.offer_version!==input.expected_offer_version) reject('stale_offer_version');
     await validateExistingPackage(tx,offer);

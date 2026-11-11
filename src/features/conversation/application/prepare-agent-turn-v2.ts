@@ -243,6 +243,8 @@ export async function prepareAgentTurnV2(input: {
     offering_code?: string | null;
     plan_code?: 'monthly_12' | 'monthly_6' | 'one_time' | null;
   }) => Promise<PaymentVerificationV1 | null>;
+  /** True when the sale of that course has a processing, paid, reconciling or uncertain payment. */
+  readonly checkout_locked?: (input: { contact_id: string; conversation_id: string; offering_code: string }) => Promise<boolean>;
   readonly now?: () => number;
 }): Promise<{
   readonly decision: DecisionV4;
@@ -455,6 +457,14 @@ export async function prepareAgentTurnV2(input: {
 
   if (!authority.ok) {
     throw new AgentTurnV2RejectedError(authority.reasons, authority.rejection_subjects);
+  }
+  // A checkout that is processing, paid, reconciling or uncertain keeps its course: the
+  // conversation continues, but the selection cannot move to another course.
+  if (state.selected_offering_code !== null && authority.transition.selected_offering_code !== null
+    && authority.transition.selected_offering_code !== state.selected_offering_code
+    && await deps.checkout_locked?.({ contact_id: input.turn.contact_id, conversation_id: input.turn.conversation_id,
+      offering_code: state.selected_offering_code }) === true) {
+    throw new AgentTurnV2RejectedError(['ACTION_NOT_AUTHORIZED'], ['course_change_blocked_by_checkout']);
   }
   // P:208–212/236: a revoked consent cannot survive as a stale accepted
   // semantic transition. The agent repairs the complete proposal, not its copy.

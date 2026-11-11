@@ -9,7 +9,8 @@ import { recordPaymentEvent } from '@/features/payments/application/record-payme
 import { runEnrollmentWorker } from '@/features/fulfillment/central-carga/worker';
 import { replacePendingCheckoutV1 } from '@/features/payments/application/replace-pending-checkout';
 import { readPriorAlreadySaidV1 } from '@/features/conversation/application/read-prior-already-said';
-import { readNegotiationPaymentStateV1 } from '@/features/payments/application/negotiation-payment-state';
+import { lockPaymentSaleV1, readNegotiationPaymentStateV1 } from '@/features/payments/application/negotiation-payment-state';
+import { reserveStripeVerificationLink as reserveVerification } from '@/features/payments/application/reserve-payment-link';
 import { resolveSaleContinuityV1, materializeSaleContinuityV1 } from '@/features/payments/application/resolve-sale-continuity';
 import { cancelOpenCourseBonusOffersForCourseChangeV1 } from '@/features/promotions/application/commercial-followup-service';
 import type { OfferDirectCourseBonusInputV1, DirectCourseBonusResultV1 } from '@/features/promotions/application/direct-course-bonus-service';
@@ -513,7 +514,9 @@ run('negociación con venta continuada en una conversación enlazada', () => {
       .rejects.toMatchObject({ code: expect.stringMatching(/^(CHECKOUT_REPLACEMENT_BLOCKED|PAYMENT_RECONCILIATION_REQUIRED)$/) });
     await expect(reservePaymentLink(db!, { ...f.paymentInput, conversation_id: f.canon.conversation_id, idempotency_key: randomUUID() }))
       .rejects.toMatchObject({ code: 'PAYMENT_RECONCILIATION_REQUIRED' });
-    await cancelOpenCourseBonusOffersForCourseChangeV1(db!, { ...f.input, selected_offering_code: f.courses[3].code, source_turn_id: await f.inboundC('otro curso') });
+    const changeCourse = async () => cancelOpenCourseBonusOffersForCourseChangeV1(db!, { ...f.input, selected_offering_code: f.courses[3].code, source_turn_id: await f.inboundC('otro curso') });
+    // A completed purchase is not in flight (a new sale may start); a pending one keeps its course.
+    if (evidence === 'pending') await expect(changeCourse()).rejects.toThrow('COURSE_CHANGE_BLOCKED_BY_PAYMENT'); else await changeCourse();
     expect(await db!`SELECT id FROM payment_intent_supersessions WHERE payment_id=${f.payment.payment_id}::uuid`).toEqual([]);
     expect(await f.counts()).toEqual(before);
   });
@@ -616,5 +619,91 @@ run('negociación con venta continuada en una conversación enlazada', () => {
     await say(g.source, 'no heredable', g.identity.contact_id);
     expect(await readPriorAlreadySaidV1({ workspace_slug: g.slug, contact_id: g.identity.contact_id,
       conversation_id: g.canon.conversation_id, source_turn_id: await g.inboundC('hola') }, { db: db! })).toEqual([]);
+  });
+
+  it('o. un paquete sin enlace en el origen cerrado no se hereda: sin excepciones crudas', async () => {
+    const f = await linkedFixture(0);
+    const offered = await offerDirectCourseBonusV1(db!, await f.proposal(1));
+    if (!offered.ok) throw new Error(offered.reason);
+    await f.delivered(offered.outbound_message_id);
+    expect(await acceptDirectCourseBonusV1(db!, { ...f.identity, ...offered, source_turn_id: await f.inbound(), expected_offer_version: 1 })).toMatchObject({ ok: true });
+    await materializeSaleContinuityV1(db!, f.input);
+    const turn = await f.inboundC();
+    expect(await f.capability(turn)).toMatchObject({ package_status: null, bonus_offerings: [] });
+    const accepted = await acceptDirectCourseBonusV1(db!, { ...f.canon, ...offered, source_turn_id: turn, expected_offer_version: 1 });
+    expect(accepted).toMatchObject({ ok: false });
+    const fresh = await offerDirectCourseBonusV1(db!, await f.proposalC(2));
+    expect(typeof fresh.ok).toBe('boolean');
+  });
+
+  it.each(['creating_checkout', 'creation_ambiguous'] as const)('p. un cobro %s bloquea y cuenta como enlace pendiente', async status => {
+    const f = await linkedFixture(0);
+    const events = status === 'creating_checkout' ? ['checkout_creation_started'] as const : ['checkout_creation_started', 'checkout_creation_ambiguous'] as const;
+    for (const type of events) await recordPaymentEvent(db!, { payment_id: f.payment.payment_id, provider: 'internal', provider_event_id: randomUUID(), event: { type }, payload: {} });
+    expect((await db!`SELECT status FROM payments WHERE id=${f.payment.payment_id}::uuid`)[0]).toEqual({ status });
+    expect(await readNegotiationPaymentStateV1(db!, { ...f.input, offering_id: f.courses[0].id })).toMatchObject({ blocked: true, in_flight: true, may_reopen: false });
+    expect(await resolveSaleContinuityV1(db!, f.input)).toMatchObject({ kind: 'single', has_unpaid_link: true, stage: 'payment_link_sent' });
+    await expect(reservePaymentLink(db!, { ...f.paymentInput, conversation_id: f.canon.conversation_id, idempotency_key: randomUUID() }))
+      .rejects.toMatchObject({ code: 'PAYMENT_RECONCILIATION_REQUIRED' });
+  });
+
+  it('q. el pago de verificación de USD 0,50 sin conversación no bloquea un enlace real sin conversación', async () => {
+    const f = await linkedFixture(0);
+    const test = await reserveVerification(db!, { workspace_id: f.identity.workspace_id, contact_id: f.identity.contact_id,
+      offering_id: f.courses[0].id, idempotency_key: randomUUID(), payment_link_url: 'https://buy.stripe.com/test_verification' });
+    await f.pay(test.payment_id);
+    expect((await db!`SELECT status FROM payments WHERE id=${test.payment_id}::uuid`)[0]).toEqual({ status: 'paid' });
+    const scope = { workspace_id: f.identity.workspace_id, contact_id: f.identity.contact_id, conversation_id: null, offering_id: f.courses[0].id };
+    expect(await readNegotiationPaymentStateV1(db!, scope)).toMatchObject({ blocked: false });
+    const real = await reservePaymentLink(db!, { workspace_id: scope.workspace_id, contact_id: scope.contact_id, offering_id: scope.offering_id,
+      plan_code: 'one_time', payment_link_url: 'https://buy.stripe.com/test_null_conversation', idempotency_key: randomUUID() });
+    expect(real.payment_id).not.toBe(test.payment_id);
+  });
+
+  it('r. el candado de venta es el mismo desde el origen y desde el canónico', async () => {
+    const f = await linkedFixture(0);
+    const offering_id = f.courses[0].id as string;
+    let release!: () => void;
+    const held = new Promise<void>(resolve => { release = resolve; });
+    let entered!: () => void;
+    const holding = new Promise<void>(resolve => { entered = resolve; });
+    const first = db!.begin(async tx => {
+      await lockPaymentSaleV1(tx as never, { ...f.input, conversation_id: f.source, offering_id });
+      entered();
+      await held;
+    });
+    await holding;
+    let acquired = false;
+    const second = competitor!.begin(async tx => {
+      await lockPaymentSaleV1(tx as never, { ...f.input, offering_id });
+      acquired = true;
+    });
+    await new Promise(resolve => setTimeout(resolve, 300));
+    expect(acquired).toBe(false);
+    release();
+    await Promise.all([first, second]);
+    expect(acquired).toBe(true);
+  });
+
+  it('s. un linaje que se bloquea durante la llamada externa conserva la evidencia y no cierra el alta', async () => {
+    const f = await linkedFixture(1);
+    await materializeSaleContinuityV1(db!, f.input);
+    const result = await f.reopenInCanonical(2, f.previous);
+    const next = await reservePaymentLink(db!, { ...f.paymentInput, conversation_id: f.canon.conversation_id, idempotency_key: randomUUID(),
+      promotion_code: result.promotion_code, promotion_cycle_id: result.promotion_cycle_id, accepted_offer_version: 2 });
+    await db!`UPDATE payments SET provider_session_id=${'cs_test_' + next.payment_id} WHERE id=${next.payment_id}::uuid`;
+    await f.pay(next.payment_id);
+    const external = vi.fn(async () => {
+      await f.pay(f.payment.payment_id); // the retired link is paid while Central is being called
+      return new Response(JSON.stringify({ payment_id: next.payment_id, enrollment_id: 'enr_late', student_id: 'stu_late',
+        enrollment_status: 'active', student_was_created: true, access: { login_email: 'prueba@example.com', welcome_sent: true },
+        created_at: new Date().toISOString(), bonus_enrollments: f.courses.slice(1, 3).map(course => ({ offering_code: course.code, enrollment_status: 'active' })) }),
+        { status: 201, headers: { 'content-type': 'application/json' } });
+    });
+    const outcome = await f.worker(next.payment_id, external as unknown as typeof fetch);
+    expect(outcome).toMatchObject({ completed: 0, dead_lettered: 1 });
+    expect((await db!`SELECT status,last_error_code FROM fulfillment_jobs WHERE payment_id=${next.payment_id}::uuid`)[0])
+      .toMatchObject({ status: 'dead_letter', last_error_code: 'payment_reconciliation_required' });
+    expect(await db!`SELECT enrollment_id FROM central_enrollments WHERE payment_id=${next.payment_id}::uuid`).toEqual([{ enrollment_id: 'enr_late' }]);
   });
 });
