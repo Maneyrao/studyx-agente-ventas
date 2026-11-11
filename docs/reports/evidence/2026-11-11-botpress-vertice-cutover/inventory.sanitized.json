@@ -1,0 +1,105 @@
+{
+  "capturedAt": "2026-11-11T16:54:55Z",
+  "approvedRelease": {
+    "sha": "d5549583eb4140b66e56484efbc1aa0e209ac72a",
+    "brain": "studyx-agent-a-brain-v210",
+    "prompt": "studyx-agent-a-canonical-v121",
+    "backendUrl": "https://studyx-agente-ventas.vercel.app",
+    "backendHealth": "ok",
+    "backendReady": true
+  },
+  "origin": {
+    "profile": "default",
+    "workspaceId": "wkspace_01M0X4K3H2EE7RGM39Q29GF6VS",
+    "botId": "15050253-3088-47a4-940d-dc849c03860c",
+    "botName": "StudyX Pruebas",
+    "deployedAt": "2026-11-11T16:22:20.707Z",
+    "whatsapp": {
+      "installed": true,
+      "enabled": true,
+      "status": "registered",
+      "integrationId": "intver_01KZV3JDSXJDX3AVKT00J3J5RW",
+      "botPhoneNumberId": "1300545066485709"
+    },
+    "configuration": {
+      "apiBaseUrl": "https://studyx-agente-ventas.vercel.app",
+      "orchestratorKeyId": "botpress-dev",
+      "automationEnabled": true,
+      "whatsappPublicEnabled": true,
+      "whatsappCanaryEnabled": false,
+      "agentACommercialPlanningEnabled": false,
+      "advisorName": "Emma"
+    },
+    "secretNames": [
+      "CRON_SECRET",
+      "DEEPSEEK_API_KEY",
+      "GEMINI_API_KEY",
+      "GROQ_API_KEY",
+      "STUDYX_ORCHESTRATOR_KEY",
+      "STUDYX_SIGNING_SECRET",
+      "TELEGRAM_BOT_A_TOKEN"
+    ]
+  },
+  "destination": {
+    "account": "ipsj.thiagomaneyro@gmail.com",
+    "profileAvailable": false,
+    "workspaceId": "wkspace_01M75G5S9RYXD656HZ6J4SAHYQ",
+    "workspaceName": "studyx's workspace",
+    "botId": "e0f6be70-db0e-48e0-a9b7-f7864b6699d1",
+    "botName": "Asesor de admisiones Studyx",
+    "deployedAt": "2026-11-11T14:30:10.808Z",
+    "whatsapp": {
+      "installed": false,
+      "enabled": false,
+      "status": "missing"
+    },
+    "configuration": {
+      "apiBaseUrl": null,
+      "orchestratorKeyId": null,
+      "automationEnabled": null,
+      "whatsappPublicEnabled": null,
+      "whatsappCanaryEnabled": null,
+      "whatsappAllowedBotPhoneNumberId": null,
+      "agentACommercialPlanningEnabled": null,
+      "advisorName": null
+    },
+    "secretNames": [],
+    "creditObservableByCurrentAdministrator": false
+  },
+  "backendQueues": {
+    "workspace": "studyx",
+    "activeLeases": {
+      "inbound": 0,
+      "outbound": 0,
+      "calls": 0,
+      "fulfillment": 0,
+      "knowledge": 0
+    },
+    "openCalls": 0,
+    "ambiguousPayments": 0,
+    "activeOrAmbiguousDeliveries": 6,
+    "ambiguousPausedDeliveries": 6,
+    "pendingPostSaleNotifications": 0,
+    "pendingFulfillmentJobs": 0
+  },
+  "continuity": {
+    "canonicalIntegrationId": "whatsapp",
+    "allowedBotPhoneNumberId": "1300545066485709",
+    "historicalBindingsForAllowedPhone": 23,
+    "ownerTestContactIsCleanAndAwaitingFirstInbound": true,
+    "ownerTestContactCanProveHistoricalContinuity": false
+  },
+  "decision": {
+    "prepareDestination": "GO",
+    "publishDestinationWithoutTraffic": "CONDITIONAL",
+    "cutover": "NO_GO",
+    "blockers": [
+      "Destination has no StudyX secrets or operational configuration",
+      "Destination has no WhatsApp integration",
+      "Workspace credit cannot be confirmed with the current administrator permission",
+      "Six outbound deliveries remain in ambiguous_paused reconciliation state",
+      "Managed egress bot credentials and historical Botpress conversation routing are not migrated",
+      "Meta webhook ownership has not been verified for the destination"
+    ]
+  }
+}

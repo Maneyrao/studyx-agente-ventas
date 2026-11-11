@@ -1,0 +1,82 @@
+{
+  "capturedAt": "2026-11-11T17:39:24Z",
+  "destination": {
+    "profile": "studyx-admissions",
+    "workspaceId": "wkspace_01M75G5S9RYXD656HZ6J4SAHYQ",
+    "botId": "e0f6be70-db0e-48e0-a9b7-f7864b6699d1",
+    "botName": "Asesor de admisiones Studyx",
+    "deployedAt": "2026-11-11T17:20:22.136Z",
+    "configuration": {
+      "apiBaseUrl": "https://studyx-agente-ventas.vercel.app",
+      "orchestratorKeyId": "botpress-dev",
+      "automationEnabled": false,
+      "whatsappPublicEnabled": false,
+      "whatsappCanaryEnabled": false,
+      "whatsappAllowedBotPhoneNumberId": "1300545066485709",
+      "agentACommercialPlanningEnabled": false,
+      "agentAAdvisorName": "Emma"
+    },
+    "whatsapp": {
+      "integrationId": "intver_01KZV3JDSXJDX3AVKT00J3J5RW",
+      "enabled": false,
+      "status": "registration_pending",
+      "manualCredentialFieldsPresent": true,
+      "botPhoneNumberId": "1300545066485709"
+    },
+    "requiredSecretsValidated": [
+      "CRON_SECRET",
+      "DEEPSEEK_API_KEY",
+      "STUDYX_ORCHESTRATOR_KEY",
+      "STUDYX_SIGNING_SECRET"
+    ],
+    "activeOptionalSecretsValidated": [
+      "GEMINI_API_KEY",
+      "GROQ_API_KEY",
+      "TELEGRAM_BOT_A_TOKEN"
+    ],
+    "deepseek": {
+      "credentialValidatedAgainstProvider": true,
+      "creditAvailable": true,
+      "valueRecorded": false
+    },
+    "integrationCount": 15,
+    "pluginCount": 2
+  },
+  "approvedArtifact": {
+    "commit": "d5549583eb4140b66e56484efbc1aa0e209ac72a",
+    "brain": "studyx-agent-a-brain-v210",
+    "prompt": "studyx-agent-a-canonical-v121",
+    "bundleSha256": "3a74d4c76cf0cf802c6592eeb9087ae66776b03cc430235e12084d17a387990a",
+    "bundleBytes": 21114726,
+    "remoteCodeHashObservable": false
+  },
+  "originStillLive": {
+    "botId": "15050253-3088-47a4-940d-dc849c03860c",
+    "deployedAt": "2026-11-11T16:22:20.707Z",
+    "whatsappEnabled": true,
+    "whatsappStatus": "registered",
+    "automationEnabled": true,
+    "whatsappPublicEnabled": true
+  },
+  "backend": {
+    "health": "ok",
+    "ready": true,
+    "commit": "d5549583eb4140b66e56484efbc1aa0e209ac72a"
+  },
+  "accessConstraint": {
+    "botAdministration": true,
+    "workspaceAssetInstallation": false,
+    "publicationPath": "approved source-workspace build followed by code-only target update"
+  },
+  "decision": {
+    "destinationPrepared": true,
+    "destinationReceivingTraffic": false,
+    "cutover": "NO_GO",
+    "remainingBlockers": [
+      "Record the six ancient terminal ambiguous_paused deliveries as excluded from this cutover",
+      "Migrate managed egress bot credentials to the destination bot",
+      "Register the copied WhatsApp integration and verify Meta webhook transfer during the single cutover",
+      "Run the owner inbound canary and end-to-end verification"
+    ]
+  }
+}

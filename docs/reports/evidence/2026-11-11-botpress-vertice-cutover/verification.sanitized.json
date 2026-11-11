@@ -1,0 +1,143 @@
+{
+  "capturedAt": "2026-11-11T18:03:00Z",
+  "approvedRelease": {
+    "sha": "d5549583eb4140b66e56484efbc1aa0e209ac72a",
+    "brain": "studyx-agent-a-brain-v210",
+    "prompt": "studyx-agent-a-canonical-v121",
+    "backendUrl": "https://studyx-agente-ventas.vercel.app"
+  },
+  "origin": {
+    "workspaceId": "wkspace_01M0X4K3H2EE7RGM39Q29GF6VS",
+    "botId": "15050253-3088-47a4-940d-dc849c03860c",
+    "botName": "StudyX Pruebas",
+    "automationEnabled": false,
+    "whatsappPublicEnabled": false,
+    "whatsappEnabled": false,
+    "whatsappStatus": "registered",
+    "postCutoverConversationCount": 0,
+    "postCutoverMessageCount": 0
+  },
+  "destination": {
+    "account": "ipsj.thiagomaneyro@gmail.com",
+    "workspaceId": "wkspace_01M75G5S9RYXD656HZ6J4SAHYQ",
+    "botId": "e0f6be70-db0e-48e0-a9b7-f7864b6699d1",
+    "botName": "Asesor de admisiones Studyx",
+    "deployedAt": "2026-11-11T17:20:22.136Z",
+    "automationEnabled": true,
+    "whatsappPublicEnabled": true,
+    "whatsappCanaryEnabled": false,
+    "whatsappEnabled": true,
+    "whatsappStatus": "registered",
+    "allowedBotPhoneNumberId": "1300545066485709",
+    "plannerEnabled": false,
+    "secretNamesPresent": [
+      "CRON_SECRET",
+      "DEEPSEEK_API_KEY",
+      "GEMINI_API_KEY",
+      "GROQ_API_KEY",
+      "STUDYX_ORCHESTRATOR_KEY",
+      "STUDYX_SIGNING_SECRET",
+      "TELEGRAM_BOT_A_TOKEN"
+    ]
+  },
+  "backend": {
+    "health": "ok",
+    "ready": true,
+    "commit": "d5549583eb4140b66e56484efbc1aa0e209ac72a",
+    "requiredProbeFailures": 0,
+    "managedEgressBotIdMigrated": true,
+    "managedEgressTokenMigrated": true,
+    "productionRedeployedAfterEgressMigration": true
+  },
+  "catalogAssets": {
+    "checked": 114,
+    "failed": 0
+  },
+  "queueBarrier": {
+    "openCalls": 0,
+    "pendingPaymentReconciliation": 0,
+    "pendingPostSaleNotifications": 0,
+    "pendingFulfillmentJobs": 0,
+    "activeLeases": 0,
+    "excludedAncientTerminalAmbiguousPausedDeliveries": 6
+  },
+  "runtimeCorrection": {
+    "initialCanaryInboundReceived": true,
+    "initialCanaryFallbackSent": true,
+    "cause": "destination retained Vibe/VDK routing tags after code-only ADK publication",
+    "removedTags": [
+      "deployment",
+      "framework",
+      "runtimeHash",
+      "viberBootstrapDraft",
+      "viberBuilderConversation",
+      "viberChecklistReady",
+      "viberRuntimeReadyDeployment",
+      "viberRuntimeTargetKeyId",
+      "viberRuntimeTransport",
+      "viberRuntimeUrl",
+      "viberUnpublishedChanges"
+    ],
+    "externalRuntimeUrlCleared": true,
+    "preservedTags": {
+      "runtime": "adk",
+      "runtimeVersion": "2.0.8",
+      "branding": true
+    },
+    "promptChanged": false,
+    "brainChanged": false,
+    "whatsappConnectionChanged": false
+  },
+  "verification": [
+    {
+      "check": "origin_disabled",
+      "status": "PASS"
+    },
+    {
+      "check": "single_public_whatsapp_consumer",
+      "status": "PASS"
+    },
+    {
+      "check": "destination_registered_and_live",
+      "status": "PASS"
+    },
+    {
+      "check": "approved_backend_sha_ready",
+      "status": "PASS"
+    },
+    {
+      "check": "managed_egress_switched",
+      "status": "PASS"
+    },
+    {
+      "check": "deepseek_credential_and_credit",
+      "status": "PASS"
+    },
+    {
+      "check": "catalog_materials",
+      "status": "PASS"
+    },
+    {
+      "check": "no_active_queues_or_leases",
+      "status": "PASS"
+    },
+    {
+      "check": "meta_webhook_reaches_destination",
+      "status": "PASS"
+    },
+    {
+      "check": "post_runtime_fix_real_whatsapp_reply",
+      "status": "PENDING_CANARY"
+    },
+    {
+      "check": "commercial_material_call_promotion_checkout_enrollment",
+      "status": "PENDING_END_TO_END"
+    }
+  ],
+  "decision": {
+    "cutoverPerformed": true,
+    "rollbackBotPreservedAndDisabled": true,
+    "dualLiveOverlapObserved": false,
+    "acceptance": "PENDING_POST_FIX_CANARY"
+  }
+}
