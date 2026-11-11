@@ -18,6 +18,11 @@ const allowedRemoteOnlyActionNames = new Set([
   'syncWebsiteKnowledge',
 ]);
 const allowedRemoteOnlyMessageTagNames = new Set(['playbook']);
+const allowedRemoteOnlyConversationTagNames = new Set([
+  'preview',
+  'previewAccountId',
+  'version',
+]);
 // Owner decision 2026-11-09 ("v202 sin planner"): the planner is OFF by
 // default. The remote schema may still carry the previously reviewed
 // default:true contract; a publish replaces it with the generated one.
@@ -334,12 +339,12 @@ export function planBotpressAdditiveConversationTagPatch({ remoteTags, generated
   const removed = remoteKeys.filter((key) => !generatedKeys.includes(key));
   const added = generatedKeys.filter((key) => !remoteKeys.includes(key));
 
-  if (removed.length > 0
+  if (removed.some((key) => !allowedRemoteOnlyConversationTagNames.has(key))
     || added.some((key) => !Object.prototype.hasOwnProperty.call(allowedConversationTagContracts, key))) {
     throw new Error(`CONTRACT_KEYS_CHANGED:conversation.tags:added=${added.join(',')}:removed=${removed.join(',')}`);
   }
 
-  for (const key of remoteKeys) {
+  for (const key of remoteKeys.filter((key) => generatedKeys.includes(key))) {
     if (!equal(remoteTags[key], generatedTags[key])) {
       throw new Error(`CONTRACT_CHANGED:conversation.tags.${key}`);
     }
