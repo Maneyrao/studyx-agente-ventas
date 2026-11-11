@@ -1,5 +1,5 @@
 {
-  "capturedAt": "2026-11-11T18:03:00Z",
+  "capturedAt": "2026-11-11T18:06:00Z",
   "approvedRelease": {
     "sha": "d5549583eb4140b66e56484efbc1aa0e209ac72a",
     "brain": "studyx-agent-a-brain-v210",
@@ -88,6 +88,18 @@
     "brainChanged": false,
     "whatsappConnectionChanged": false
   },
+  "postFixCanary": {
+    "incomingMessagesReceived": 3,
+    "workflowStarted": true,
+    "brainVersionObserved": "studyx-agent-a-brain-v210",
+    "brainModelObserved": "deepseek-v4-flash",
+    "backendDecisionCommitted": true,
+    "outgoingMessagesSent": 1,
+    "fallbackUnavailableSent": false,
+    "latestOutgoingAt": "2026-11-11T18:05:48.385Z",
+    "typingIndicator": "FAILED_NON_BLOCKING",
+    "observedLatency": "approximately 41 seconds from first fragment to outbound"
+  },
   "verification": [
     {
       "check": "origin_disabled",
@@ -127,7 +139,11 @@
     },
     {
       "check": "post_runtime_fix_real_whatsapp_reply",
-      "status": "PENDING_CANARY"
+      "status": "PASS"
+    },
+    {
+      "check": "typing_indicator",
+      "status": "FAIL_NON_BLOCKING"
     },
     {
       "check": "commercial_material_call_promotion_checkout_enrollment",
@@ -138,6 +154,6 @@
     "cutoverPerformed": true,
     "rollbackBotPreservedAndDisabled": true,
     "dualLiveOverlapObserved": false,
-    "acceptance": "PENDING_POST_FIX_CANARY"
+    "acceptance": "CORE_MIGRATION_PASS_WITH_TYPING_AND_FULL_E2E_PENDING"
   }
 }

@@ -164,7 +164,7 @@
 
   En `Asesor de admisiones Studyx`: habilitar WhatsApp y comprobar `registered`; después `whatsappPublicEnabled=true` y `automationEnabled=true`. Mantener canary apagado salvo prueba acotada explícita.
 
-- [ ] **Step 3: Probar un único inbound del dueño**
+- [x] **Step 3: Probar un único inbound del dueño**
 
   Confirmar que el mensaje aparece sólo en el bot compartido, genera una única entrega y conserva el contexto canónico del backend.
 
