@@ -11,7 +11,8 @@ sin pasos implícitos. Probado de punta a punta el 2026-11-11 con `d554958`
 | Rama | `claude/agent-a-two-pass-clean` (remoto `personal`), worktree `.worktrees/agent-a-natural-sales-midpoint` |
 | Código en producción | `d5549583eb4140b66e56484efbc1aa0e209ac72a` |
 | Pin de release | `BOT_RELEASE_BASE_SHA=027a89eba06c92e302c689e79288fdb00ec46456`, brain `studyx-agent-a-brain-v210`, prompt `studyx-agent-a-canonical-v121` |
-| Bot | «StudyX Pruebas» `15050253-3088-47a4-940d-dc849c03860c`, perfil ADK `default`, bundle `87fa45a5…` publicado 15:19:48Z |
+| Bot origen/rollback | «StudyX Pruebas» `15050253-3088-47a4-940d-dc849c03860c`, perfil ADK `default`, bundle `87fa45a5…` publicado 16:22:20Z; sigue activo hasta el corte único |
+| Bot destino | «Asesor de admisiones Studyx» `e0f6be70-db0e-48e0-a9b7-f7864b6699d1`, workspace compartido `wkspace_01M75G5S9RYXD656HZ6J4SAHYQ`, perfil ADK `studyx-admissions` |
 | Backend | Vercel `studyx-agente-ventas` (scope `maneyraos-projects`), `dpl_3o3hgThvnRpGf5tpU5JTUj7v6HAU`, health → commit `d554958` |
 | Contacto de prueba del dueño | +5491169004497, contacto `6726e652-e8dd-4bab-b77e-e286c41b5489`, `ready_for_first_inbound` (reset `01336faf`) |
 
@@ -26,6 +27,15 @@ sin pasos implícitos. Probado de punta a punta el 2026-11-11 con `d554958`
 - La CLI de Botpress imprime el PAT en errores: no vuelques sus logs; filtrá
   `bp_pat_[A-Za-z0-9]+`.
 - Orden: primero el bot, después el backend.
+- El destino único de próximos releases es «Asesor de admisiones Studyx». «StudyX
+  Pruebas» se conserva apagado como rollback y nunca se elimina.
+- Durante la preparación del destino, WhatsApp, `automationEnabled` y
+  `whatsappPublicEnabled` deben permanecer apagados. El modo
+  `STUDYX_BOTPRESS_RELEASE_MODE=preparation` permite publicar sólo si la
+  integración ya está registrada y el bot/teléfono coinciden exactamente.
+- Después del corte, los releases normales usan
+  `STUDYX_BOTPRESS_RELEASE_MODE=live`; ese modo exige que WhatsApp y el tráfico
+  público estén habilitados.
 
 ## 1. Cambio de código → commit → re-pin
 
@@ -67,17 +77,24 @@ cd $R/repo && node scripts/prepare-instrumented-botpress-release.mjs prepare --b
 cd $R/source && npm ci > $R/npm-root.log 2>&1
 cd $R/source/botpress-agent && npm ci > $R/npm-bot.log 2>&1
 # preflight de sólo lectura (con bun: con node falla «__require is not a function»)
-STUDYX_BOTPRESS_PROFILE=default STUDYX_RELEASE_EVIDENCE_DIR=$R/evidence-readonly \
+STUDYX_BOTPRESS_PROFILE=studyx-admissions STUDYX_BOTPRESS_RELEASE_MODE=preparation \
+  STUDYX_RELEASE_EVIDENCE_DIR=$R/evidence-readonly \
   bun ../scripts/publish-botpress-code-preserving-connections.mjs > $R/readonly.log 2>&1; echo exit=$?
 # publicar
-STUDYX_BOTPRESS_PROFILE=default STUDYX_RELEASE_EVIDENCE_DIR=$R/evidence-publish \
+STUDYX_BOTPRESS_PROFILE=studyx-admissions STUDYX_BOTPRESS_RELEASE_MODE=preparation \
+  STUDYX_RELEASE_EVIDENCE_DIR=$R/evidence-publish \
   bun ../scripts/publish-botpress-code-preserving-connections.mjs --publish > $R/publish.log 2>&1; echo exit=$?
 ```
 
-Esperado: `prepared:true`; preflight exit 0 con botId `15050253…`, nombre «StudyX
-Pruebas», `contractsMatch:true`, `publicationMode: code-only`; publish exit 0 y
+Esperado: `prepared:true`; preflight exit 0 con botId `e0f6be70…`, nombre
+«Asesor de admisiones Studyx», `releaseMode: preparation`, `contractsMatch:true`,
+`publicationMode: code-only`; publish exit 0 y
 `deployedAt` nuevo en `$R/evidence-publish/publication.json`. La Mac tiene que
 estar enchufada (un ECONNRESET por suspensión ya tiró un preflight).
+
+Una vez completado y verificado el corte de WhatsApp, reemplazar
+`preparation` por `live` en releases posteriores. No habilitar el origen y el
+destino al mismo tiempo.
 
 ## 4. Desplegar el backend
 

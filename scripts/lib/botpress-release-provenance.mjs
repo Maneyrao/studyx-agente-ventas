@@ -29,6 +29,7 @@ const REVIEWED_SOURCE_HASHES = Object.freeze({
 // Paths that may change after the pinned base without altering what is deployed.
 const NON_CODE_EXACT = new Set([
   'AGENTS.md',
+  'botpress-agent/agent.json',
   'scripts/lib/botpress-additive-event-contract.mjs',
   'scripts/lib/botpress-release-destination.mjs',
   'scripts/lib/botpress-release-provenance.mjs',

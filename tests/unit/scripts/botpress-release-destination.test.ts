@@ -8,12 +8,12 @@ import {
 } from '../../../scripts/lib/botpress-release-destination.mjs';
 
 describe('Botpress StudyX release destination', () => {
-  it('pins publication to the bot that owns the live WhatsApp ingress', () => {
+  it('pins publication to the shared StudyX admissions bot', () => {
     expect(STUDYX_RELEASE_DESTINATION).toEqual({
-      profile: 'default',
-      workspaceId: 'wkspace_01M0X4K3H2EE7RGM39Q29GF6VS',
-      botId: '15050253-3088-47a4-940d-dc849c03860c',
-      botName: 'StudyX Pruebas',
+      profile: 'studyx-admissions',
+      workspaceId: 'wkspace_01M75G5S9RYXD656HZ6J4SAHYQ',
+      botId: 'e0f6be70-db0e-48e0-a9b7-f7864b6699d1',
+      botName: 'Asesor de admisiones Studyx',
       whatsappIntegrationId: 'intver_01KZV3JDSXJDX3AVKT00J3J5RW',
       whatsappBotPhoneNumberId: '1300545066485709',
     });
@@ -35,10 +35,13 @@ describe('Botpress StudyX release destination', () => {
     })).toThrow('DESTINATION_MISMATCH');
   });
 
-  it('requires the expected live WhatsApp connection on the pinned bot', () => {
+  it('requires the expected live WhatsApp connection in live mode', () => {
     const remote = {
       name: STUDYX_RELEASE_DESTINATION.botName,
       configuration: { data: {
+        automationEnabled: true,
+        whatsappPublicEnabled: true,
+        whatsappCanaryEnabled: false,
         whatsappAllowedBotPhoneNumberId: STUDYX_RELEASE_DESTINATION.whatsappBotPhoneNumberId,
       } },
       integrations: { whatsapp: {
@@ -54,6 +57,36 @@ describe('Botpress StudyX release destination', () => {
       ...remote,
       integrations: { whatsapp: { ...remote.integrations.whatsapp, enabled: false } },
     })).toThrow('REMOTE_WHATSAPP_CONNECTION_MISMATCH');
+  });
+
+  it('permits a registered but disabled WhatsApp connection only in preparation mode', () => {
+    const remote = {
+      name: STUDYX_RELEASE_DESTINATION.botName,
+      configuration: { data: {
+        automationEnabled: false,
+        whatsappPublicEnabled: false,
+        whatsappCanaryEnabled: false,
+        whatsappAllowedBotPhoneNumberId: STUDYX_RELEASE_DESTINATION.whatsappBotPhoneNumberId,
+      } },
+      integrations: { whatsapp: {
+        id: STUDYX_RELEASE_DESTINATION.whatsappIntegrationId,
+        enabled: false,
+        status: 'registered',
+      } },
+    };
+
+    expect(() => assertBotpressReleaseRemoteIdentity(remote, { mode: 'preparation' }))
+      .not.toThrow();
+    expect(() => assertBotpressReleaseRemoteIdentity(remote)).toThrow(
+      'REMOTE_WHATSAPP_CONNECTION_MISMATCH',
+    );
+    expect(() => assertBotpressReleaseRemoteIdentity({
+      ...remote,
+      configuration: { data: {
+        ...remote.configuration.data,
+        whatsappPublicEnabled: true,
+      } },
+    }, { mode: 'preparation' })).toThrow('REMOTE_PREPARATION_SAFETY_MISMATCH');
   });
 
   it('normalizes only reviewed provider defaults that do not alter a connection', () => {
