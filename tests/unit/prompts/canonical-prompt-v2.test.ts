@@ -16,12 +16,14 @@ const source = readFileSync(
 describe('canonical prompt deployment parity', () => {
   it('loads the same source used to generate the deployed behavior', () => {
     // Authority: prompt lines 91-129 replace the previous commercial ladder.
-    expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v120');
+    expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v121');
     expect(STUDYX_AGENT_A_CANONICAL_PROMPT).toBe(source);
   });
 
   it('keeps diagnosis, value-based objection handling and calls while fencing promotions', () => {
     expect(source).toContain('Descubre sólo lo que te sirve para vender');
+    expect(source).toContain('Mientras no eligió un curso, asesora');
+    expect(source).toContain('no elijas el nivel por él');
     expect(source).toContain('La llamada es una herramienta de cierre complementaria');
     expect(source).toContain('Motivo del mensaje actual');
     expect(source).toContain('en el mismo turno, presenta el curso en tu respuesta');

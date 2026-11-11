@@ -50,7 +50,7 @@ describe('Agent A post-call narrative', () => {
     expect(events).toEqual([{
       event: 'calls.agent_a_post_call_narrative.composed',
       call_id: 'call-test', provider: 'deepseek-direct', model: 'deepseek-v4-flash',
-      canonical_prompt_version: 'studyx-agent-a-canonical-v120', attempt: 1,
+      canonical_prompt_version: 'studyx-agent-a-canonical-v121', attempt: 1,
     }]);
     const serialized = JSON.stringify(events);
     expect(serialized).not.toContain('Lucas');

@@ -29,7 +29,7 @@ describe('Agent A canonical sales prompt authority', () => {
     expect(`## Anexo técnico\n${annex}`).toBe(TECHNICAL_ANNEX);
   });
 
-  it('keeps both generated modules byte-identical to the canonical source at v120', () => {
+  it('keeps both generated modules byte-identical to the canonical source at v121', () => {
     const prompt = readFileSync(PROMPT_PATH, 'utf8');
     const generated = GENERATED_PATHS.map((path) => readFileSync(path, 'utf8'));
 
@@ -38,7 +38,7 @@ describe('Agent A canonical sales prompt authority', () => {
       `export const STUDYX_AGENT_A_CANONICAL_PROMPT = ${JSON.stringify(prompt)} as const;`,
     );
     expect(generated[0]).toContain(
-      "export const STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION = 'studyx-agent-a-canonical-v120' as const;",
+      "export const STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION = 'studyx-agent-a-canonical-v121' as const;",
     );
   });
 
@@ -53,7 +53,7 @@ describe('Agent A canonical sales prompt authority', () => {
   });
 });
 
-describe('Agent A canonical prompt v120 (Gabi manual integration)', () => {
+describe('Agent A canonical prompt v121 (Gabi manual integration)', () => {
   const prompt = readFileSync(PROMPT_PATH, 'utf8');
   const authority = readFileSync(AUTHORITY_PATH, 'utf8');
 
@@ -135,7 +135,7 @@ describe('Agent A canonical prompt v120 (Gabi manual integration)', () => {
 
   it('pins the canonical source in the generator', () => {
     const generator = readFileSync('scripts/generate-agent-a-prompt-module.mjs', 'utf8');
-    expect(generator).toContain('studyx-agent-a-canonical-v120');
+    expect(generator).toContain('studyx-agent-a-canonical-v121');
     expect(generator).toContain(`lineCount !== ${prompt.match(/\n/gu)!.length}`);
   });
 
