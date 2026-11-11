@@ -4,6 +4,12 @@ const allowedEventName = 'studyxCommercialFollowup';
 const allowedConversationTagName = 'triggerE5F2C';
 const allowedActionName = 'reportDelivery';
 const allowedConfigurationPropertyName = 'agentACommercialPlanningEnabled';
+const allowedRemoteOnlyStateNames = new Set([
+  'conversationIdle120000',
+  'conversationIdle300000',
+  'playbookState',
+  'viberReadiness',
+]);
 // Owner decision 2026-11-09 ("v202 sin planner"): the planner is OFF by
 // default. The remote schema may still carry the previously reviewed
 // default:true contract; a publish replaces it with the generated one.
@@ -101,6 +107,28 @@ const assertRecord = (value, label) => {
     throw new Error(`INVALID_EVENT_CONTRACT:${label}`);
   }
 };
+
+export function inspectBotpressPreservedStateContract({ remoteStates, generatedStates }) {
+  assertRecord(remoteStates, 'remote-states');
+  assertRecord(generatedStates, 'generated-states');
+  const remoteKeys = Object.keys(remoteStates).sort();
+  const generatedKeys = Object.keys(generatedStates).sort();
+  const generatedOnly = generatedKeys.filter((key) => !remoteKeys.includes(key));
+  if (generatedOnly.length > 0) {
+    throw new Error(`CONTRACT_KEYS_CHANGED:states:generated_only=${generatedOnly.join(',')}`);
+  }
+  const remoteOnlyKeys = remoteKeys.filter((key) => !generatedKeys.includes(key));
+  const unknownRemoteOnly = remoteOnlyKeys.filter((key) => !allowedRemoteOnlyStateNames.has(key));
+  if (unknownRemoteOnly.length > 0) {
+    throw new Error(`CONTRACT_KEYS_CHANGED:states:remote_only=${unknownRemoteOnly.join(',')}`);
+  }
+  for (const key of generatedKeys) {
+    if (!equal(remoteStates[key], generatedStates[key])) {
+      throw new Error(`CONTRACT_CHANGED:states.${key}`);
+    }
+  }
+  return { remoteOnlyKeys };
+}
 
 export function normalizeBotpressConfigurationForComparison(configuration) {
   assertRecord(configuration, 'configuration-comparison');

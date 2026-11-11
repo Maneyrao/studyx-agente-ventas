@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   buildBotpressAdditiveEventUpdate,
+  inspectBotpressPreservedStateContract,
   inspectBotpressRemoteCode,
   normalizeBotpressConfigurationForComparison,
   planBotpressAdditiveConversationTagPatch,
@@ -75,6 +76,42 @@ const generatedConfiguration = {
 };
 
 describe('Botpress additive event publication contract', () => {
+  it('preserves only the exact Botpress states inherited by the admissions workspace', () => {
+    const generatedStates = {
+      conversation: { type: 'conversation', schema: { type: 'object' } },
+      userState: { type: 'user', schema: { type: 'object' } },
+    };
+    const inheritedStates = {
+      conversationIdle120000: { type: 'conversation', schema: { type: 'object' } },
+      conversationIdle300000: { type: 'conversation', schema: { type: 'object' } },
+      playbookState: { type: 'conversation', schema: { type: 'object' } },
+      viberReadiness: { type: 'conversation', schema: { type: 'object' } },
+    };
+
+    expect(inspectBotpressPreservedStateContract({
+      remoteStates: { ...generatedStates, ...inheritedStates },
+      generatedStates,
+    })).toEqual({ remoteOnlyKeys: Object.keys(inheritedStates).sort() });
+
+    expect(() => inspectBotpressPreservedStateContract({
+      remoteStates: { ...generatedStates, unexpectedState: { type: 'bot' } },
+      generatedStates,
+    })).toThrow('CONTRACT_KEYS_CHANGED:states:remote_only=unexpectedState');
+
+    expect(() => inspectBotpressPreservedStateContract({
+      remoteStates: { conversation: generatedStates.conversation },
+      generatedStates,
+    })).toThrow('CONTRACT_KEYS_CHANGED:states:generated_only=userState');
+
+    expect(() => inspectBotpressPreservedStateContract({
+      remoteStates: {
+        ...generatedStates,
+        conversation: { ...generatedStates.conversation, type: 'bot' },
+      },
+      generatedStates,
+    })).toThrow('CONTRACT_CHANGED:states.conversation');
+  });
+
   it('compares configuration after Botpress applies schema defaults and drops legacy data', () => {
     expect(normalizeBotpressConfigurationForComparison({
       data: {

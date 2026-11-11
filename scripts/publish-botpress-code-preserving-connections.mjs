@@ -12,6 +12,7 @@ import { createHash } from 'node:crypto';
 import { loadReviewedBotpressAdk, requireBotpressReleaseProfile } from './lib/botpress-reviewed-adk.mjs';
 import {
   buildBotpressAdditiveEventUpdate,
+  inspectBotpressPreservedStateContract,
   inspectBotpressRemoteCode,
   normalizeBotpressConfigurationForComparison,
   planBotpressAdditiveConversationTagPatch,
@@ -77,12 +78,17 @@ try {
   const { default: definition } = await load('.adk/bot/bot.definition.ts');
   const body = await prepareCreateBotBody(definition);
   const contractDifferences = [];
-  for (const field of ['states', 'recurringEvents']) {
-    const expected = body[field] ?? {};
-    assert(equal(Object.keys(expected).sort(), Object.keys(before[field] ?? {}).sort()), `CONTRACT_KEYS_CHANGED:${field}`);
-    for (const [key, value] of Object.entries(expected)) {
-      for (const [property, item] of Object.entries(value)) {
-        if (!equal(item, before[field]?.[key]?.[property])) contractDifferences.push(`${field}.${key}.${property}`);
+  const stateContract = inspectBotpressPreservedStateContract({
+    remoteStates: before.states ?? {},
+    generatedStates: body.states ?? {},
+  });
+  const expectedRecurringEvents = body.recurringEvents ?? {};
+  assert(equal(Object.keys(expectedRecurringEvents).sort(), Object.keys(before.recurringEvents ?? {}).sort()),
+    'CONTRACT_KEYS_CHANGED:recurringEvents');
+  for (const [key, value] of Object.entries(expectedRecurringEvents)) {
+    for (const [property, item] of Object.entries(value)) {
+      if (!equal(item, before.recurringEvents?.[key]?.[property])) {
+        contractDifferences.push(`recurringEvents.${key}.${property}`);
       }
     }
   }
@@ -159,7 +165,8 @@ try {
       remoteCode: before.code,
       expectedSha256: bundleSha256,
     }), integrationCount: aliasesPreserved.length,
-    pluginCount: Object.keys(definition.plugins).length, aliasesPreserved, contractsMatch: true,
+    pluginCount: Object.keys(definition.plugins).length, aliasesPreserved,
+    preservedRemoteStateKeys: stateContract.remoteOnlyKeys, contractsMatch: true,
     additiveEventKeys, additiveConversationTagKeys,
     reviewedActionKeys: Object.keys(actionPatch).sort(),
     reviewedConfigurationKeys: configurationPlan.changed ? ['agentACommercialPlanningEnabled'] : [],
