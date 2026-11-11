@@ -3,16 +3,17 @@ import { readFileSync, readdirSync, readlinkSync } from 'node:fs';
 import path from 'node:path';
 import ts from 'typescript';
 
-// Last reviewed commit that changed deployable code (brain v209, prompt v120,
+// Last reviewed commit that changed deployable code (brain v210, prompt v120,
 // owner-only WhatsApp typing presence with bounded start/stop, natural
 // multipart cadence, the active StudyX WhatsApp release destination, and the
 // 2026-11-10 course switch / checkout revision / effect-rejection fixes, and the
 // 2026-11-10 intervention / structural validator / effect-only repair fixes, and the
-// 2026-11-10 link request that persists course and plan and sends the link).
+// 2026-11-10 link request that persists course and plan and sends the link, and the
+// 2026-11-11 advise-before-material / bubble split fixes).
 // Anything committed after it must be docs/evals/tests only (see assertOnlyNonCodeChangesSinceBaseV1), so a release
 // prepared from the branch HEAD runs exactly this code. Re-pin whenever a code file changes.
-export const BOT_RELEASE_BASE_SHA = 'd64431dcb7cff3e61bfed5cf3ac6477586e135cc';
-export const BOT_RELEASE_BRAIN_VERSION = 'studyx-agent-a-brain-v209';
+export const BOT_RELEASE_BASE_SHA = '5d78c014f2700b7f163e3655f5bd55f96eef75b9';
+export const BOT_RELEASE_BRAIN_VERSION = 'studyx-agent-a-brain-v210';
 export const BOT_RELEASE_PROMPT_VERSION = 'studyx-agent-a-canonical-v120';
 export const BOT_RELEASE_INSTRUMENTATION_VERSION = 'studyx-release-provenance-v1';
 export const BOT_RELEASE_SOURCE_PATHS = Object.freeze([
