@@ -14,10 +14,11 @@ import ts from 'typescript';
 // rating mention per conversation (canonical v122), plus the destination-scoped
 // WhatsApp typing action and deterministic programme handoff, and the 2026-11-11
 // flexible unpaid sale: reopening after a link, verified cross-conversation
-// continuity and durable selections through unresolved course mentions).
+// continuity and durable selections through unresolved course mentions, plus
+// workspace-scoped recovery of prior conversation markers).
 // Anything committed after it must be docs/evals/tests only (see assertOnlyNonCodeChangesSinceBaseV1), so a release
 // prepared from the branch HEAD runs exactly this code. Re-pin whenever a code file changes.
-export const BOT_RELEASE_BASE_SHA = '3fc9ceeb3dd34146572f2fb15d973d85f0a0dd22';
+export const BOT_RELEASE_BASE_SHA = 'f84392a4b14d47568c825ec3fa20e7aa0ff1e812';
 export const BOT_RELEASE_BRAIN_VERSION = 'studyx-agent-a-brain-v212';
 export const BOT_RELEASE_PROMPT_VERSION = 'studyx-agent-a-canonical-v123';
 export const BOT_RELEASE_INSTRUMENTATION_VERSION = 'studyx-release-provenance-v1';
