@@ -62,6 +62,12 @@ Botpress son:
 
 - Vercel `ORCHESTRATOR_API_KEY` = Botpress `STUDYX_ORCHESTRATOR_KEY`.
 - Vercel `STUDYX_SIGNING_SECRET` = Botpress `STUDYX_SIGNING_SECRET`.
+- Vercel `DEEPSEEK_API_KEY` = Botpress `DEEPSEEK_API_KEY`.
+
+La conversación principal invoca DeepSeek desde el runtime de Botpress; la
+clave de Vercel no se comparte automáticamente con ese runtime. El backend usa
+la misma credencial para la narrativa post-llamada. Por eso el mismo valor debe
+estar cargado como secreto en los dos entornos antes del corte.
 
 `ORCHESTRATOR_KEY_ID` debe conservar `botpress-dev` en ambos lados. Nunca se
 copian valores sensibles al repositorio, al PR o a capturas.
@@ -98,8 +104,9 @@ perfil: studyx-admissions
 configuración: apiBaseUrl=https://studyx-agente-ventas-sigma.vercel.app
 ```
 
-En el mismo corte se verifica por presencia que las claves de Botpress estén
-cargadas, se publica sin tocar WhatsApp ni las integraciones, y se realiza un
+En el mismo corte se carga `DEEPSEEK_API_KEY` en Botpress con el mismo valor
+privado que Lucas conserva en Vercel, se verifica por presencia el resto de las
+claves, se publica sin tocar WhatsApp ni las integraciones, y se realiza un
 smoke real. Si falla, el rollback es restaurar únicamente `apiBaseUrl` a
 `https://studyx-agente-ventas.vercel.app`; no se cambia el prompt, el brain ni
 la base.
