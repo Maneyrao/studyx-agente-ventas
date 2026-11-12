@@ -18,4 +18,9 @@ describe('durable profile questions follow physical messages', () => {
     expect(contactProfileRequestsForPartsV1({ authored_messages: ['Curso', '¿Tu nombre?'],
       part_texts: ['Dice: ¿Tu nombre?', '¿Tu nombre? repetido'], requests: [request] })).toEqual([[], []]);
   });
+  it('tags the last paragraph of an authored message that was split into bubbles', () => {
+    expect(contactProfileRequestsForPartsV1({ authored_messages: ['Curso', 'Te ayudo con eso.\n¿Tu nombre?'],
+      part_texts: ['Curso', 'Te ayudo con eso.', '¿Tu nombre?'], requests: [request] }))
+      .toEqual([[], [], [{ fields: ['nombre'], purpose: 'identity', mode: 'collect' }]]);
+  });
 });

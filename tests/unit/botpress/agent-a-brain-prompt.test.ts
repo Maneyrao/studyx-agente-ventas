@@ -429,8 +429,8 @@ describe('Agent A Brain prompt', () => {
     const encoded = instructions.split('<authorized_context>')[1]!.split('</authorized_context>')[0]!;
     expect(JSON.parse(encoded)).toEqual(current);
     expect(instructions).not.toContain('<current_turn_guidance>');
-    expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v120');
-    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v209');
+    expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v123');
+    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v212');
   });
 
   it('presents the current conversation after the large factual context without mutating it', () => {
@@ -1153,12 +1153,19 @@ describe('Agent A Brain prompt', () => {
       const text = buildAgentABrainInstructionsV1(current);
       const contract = text.split('<current_effect_contract kind="course_program">')[1]!.split('</current_effect_contract>')[0]!;
       expect(contract).toContain('send_course_program');
-      expect(contract).toContain('request_course_program when the customer asks for the programme');
+      expect(contract).toContain('Propose the action only when the customer asks for the programme');
       expect(contract).toContain('real_estate(official programme PDF + course image)');
       expect(contract).toContain('ingles_4(manual ficha PDF + course image)');
       expect(contract).toContain('a manual ficha PDF is "la ficha" or "el detalle de contenidos", never "el programa" or "el programa completo"');
       expect(contract).not.toContain('barista(official');
-      expect(contract).toContain('for the first time in this conversation, propose the action in that same turn');
+      expect(contract).toContain('Never send material on your own initiative');
+      expect(contract).toContain('answers yes to your offer to share it');
+      expect(contract).toContain('offer once to share the programme or ficha');
+      expect(contract).toContain('Do not send it until the customer accepts that offer');
+      expect(contract).toContain('instead of picking a level for them');
+      expect(contract).not.toContain('for the first time in this conversation, propose the action in that same turn');
+      expect(contract).toContain('do not bring the earlier file up on your own');
+      expect(contract).toContain('La ficha ya te la dejé más arriba en este chat; si quieres repasamos algún punto.');
       expect(contract).toContain('Not on pure price or payment turns, and never more than once per course');
       expect(contract).toContain('never write a URL');
       expect(contract).toContain('Already delivered in this conversation: barista');

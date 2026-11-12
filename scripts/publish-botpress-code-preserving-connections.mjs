@@ -12,6 +12,9 @@ import { createHash } from 'node:crypto';
 import { loadReviewedBotpressAdk, requireBotpressReleaseProfile } from './lib/botpress-reviewed-adk.mjs';
 import {
   buildBotpressAdditiveEventUpdate,
+  inspectBotpressPreservedMessageTagContract,
+  inspectBotpressPreservedPublicationContracts,
+  inspectBotpressPreservedStateContract,
   inspectBotpressRemoteCode,
   normalizeBotpressConfigurationForComparison,
   planBotpressAdditiveConversationTagPatch,
@@ -27,6 +30,7 @@ import {
 } from './lib/botpress-release-destination.mjs';
 
 const expectedProfile = process.env.STUDYX_BOTPRESS_PROFILE;
+const releaseMode = process.env.STUDYX_BOTPRESS_RELEASE_MODE ?? 'live';
 const root = process.cwd();
 const outputDirectory = process.env.STUDYX_RELEASE_EVIDENCE_DIR;
 const publish = process.argv.includes('--publish');
@@ -68,7 +72,7 @@ try {
   });
   const client = new Client({ ...ctx.credentials, headers: { 'x-multiple-integrations': 'true' } });
   const before = (await client.getBot({ id: ctx.botId })).bot;
-  assertBotpressReleaseRemoteIdentity(before);
+  assertBotpressReleaseRemoteIdentity(before, { mode: releaseMode });
   record('bot-before.private.json', before);
   assert(Object.keys(before.integrations).length > 0, 'EMPTY_REMOTE_DEPENDENCIES');
   await refreshDependencySnapshotOnce({ projectPath: root, env: 'prod', botId: ctx.botId, client, required: true });
@@ -76,12 +80,17 @@ try {
   const { default: definition } = await load('.adk/bot/bot.definition.ts');
   const body = await prepareCreateBotBody(definition);
   const contractDifferences = [];
-  for (const field of ['states', 'recurringEvents']) {
-    const expected = body[field] ?? {};
-    assert(equal(Object.keys(expected).sort(), Object.keys(before[field] ?? {}).sort()), `CONTRACT_KEYS_CHANGED:${field}`);
-    for (const [key, value] of Object.entries(expected)) {
-      for (const [property, item] of Object.entries(value)) {
-        if (!equal(item, before[field]?.[key]?.[property])) contractDifferences.push(`${field}.${key}.${property}`);
+  const stateContract = inspectBotpressPreservedStateContract({
+    remoteStates: before.states ?? {},
+    generatedStates: body.states ?? {},
+  });
+  const expectedRecurringEvents = body.recurringEvents ?? {};
+  assert(equal(Object.keys(expectedRecurringEvents).sort(), Object.keys(before.recurringEvents ?? {}).sort()),
+    'CONTRACT_KEYS_CHANGED:recurringEvents');
+  for (const [key, value] of Object.entries(expectedRecurringEvents)) {
+    for (const [property, item] of Object.entries(value)) {
+      if (!equal(item, before.recurringEvents?.[key]?.[property])) {
+        contractDifferences.push(`recurringEvents.${key}.${property}`);
       }
     }
   }
@@ -89,6 +98,9 @@ try {
     remoteActions: before.actions ?? {},
     generatedActions: body.actions ?? {},
   });
+  const preservedRemoteActionKeys = Object.keys(before.actions ?? {})
+    .filter((key) => !Object.prototype.hasOwnProperty.call(body.actions ?? {}, key))
+    .sort();
   const configurationPlan = planBotpressReviewedConfigurationUpdate({
     remoteConfiguration: before.configuration,
     generatedConfiguration: body.configuration,
@@ -98,11 +110,13 @@ try {
     generatedEvents: body.events ?? {},
   });
   const additiveEventKeys = Object.keys(additiveEventPatch).sort();
-  for (const field of ['user', 'message']) {
-    if (!equal(Object.keys(body[field]?.tags ?? {}).sort(), Object.keys(before[field]?.tags ?? {}).sort())) {
-      contractDifferences.push(`${field}.tags`);
-    }
+  if (!equal(body.user?.tags ?? {}, before.user?.tags ?? {})) {
+    contractDifferences.push('user.tags');
   }
+  const messageTagContract = inspectBotpressPreservedMessageTagContract({
+    remoteTags: before.message?.tags ?? {},
+    generatedTags: body.message?.tags ?? {},
+  });
   const conversationTagPatch = planBotpressAdditiveConversationTagPatch({
     remoteTags: before.conversation?.tags ?? {},
     generatedTags: body.conversation?.tags ?? {},
@@ -152,12 +166,17 @@ try {
     && before.deployedAt === current.deployedAt,
     'REMOTE_CHANGED_DURING_BUILD');
   const bundleSha256 = createHash('sha256').update(bundle).digest('hex');
-  const preflight = { at: new Date().toISOString(), profile: expectedProfile, adkVersion: sdkPackage.version, botId: ctx.botId, workspaceId: ctx.workspaceId,
+  const preflight = { at: new Date().toISOString(), profile: expectedProfile, releaseMode,
+    adkVersion: sdkPackage.version, botId: ctx.botId, workspaceId: ctx.workspaceId,
     bundleSha256, remoteCodeEvidence: inspectBotpressRemoteCode({
       remoteCode: before.code,
       expectedSha256: bundleSha256,
     }), integrationCount: aliasesPreserved.length,
-    pluginCount: Object.keys(definition.plugins).length, aliasesPreserved, contractsMatch: true,
+    pluginCount: Object.keys(definition.plugins).length, aliasesPreserved,
+    preservedRemoteStateKeys: stateContract.remoteOnlyKeys,
+    preservedRemoteActionKeys,
+    preservedRemoteMessageTagKeys: messageTagContract.remoteOnlyKeys,
+    contractsMatch: true,
     additiveEventKeys, additiveConversationTagKeys,
     reviewedActionKeys: Object.keys(actionPatch).sort(),
     reviewedConfigurationKeys: configurationPlan.changed ? ['agentACommercialPlanningEnabled'] : [],
@@ -211,10 +230,18 @@ try {
       expectedSha256: preflight.bundleSha256,
     });
     const remoteCodeMatches = remoteCodeEvidence.matches;
+    const preservedRemoteContractsUnchanged = inspectBotpressPreservedPublicationContracts({
+      before,
+      after,
+      actionPatch,
+      eventPatch: additiveEventPatch,
+      conversationTagPatch,
+    });
     const result = { ...preflight, deployedAt: after.deployedAt, previousDeployedAt: before.deployedAt,
       configurationUnchanged, configurationMatchesExpected, configurationContractCurrent,
       eventContractCurrent, conversationTagContractCurrent,
       actionContractCurrent,
+      preservedRemoteContractsUnchanged,
       remoteCodeEvidence, remoteCodeMatches,
       codeOnly: additiveEventKeys.length === 0
         && additiveConversationTagKeys.length === 0
@@ -224,6 +251,7 @@ try {
     assert(configurationMatchesExpected && configurationContractCurrent
       && eventContractCurrent && conversationTagContractCurrent
       && actionContractCurrent
+      && preservedRemoteContractsUnchanged
       && remoteCodeMatches !== false
       && after.deployedAt !== before.deployedAt, 'POST_PUBLICATION_PARITY_FAILED');
     console.log(JSON.stringify(result));

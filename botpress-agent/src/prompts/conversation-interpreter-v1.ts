@@ -1,6 +1,6 @@
 import type { ConversationInterpreterInputV1 } from '../lib/conversation/conversation-interpreter'
 
-export const CONVERSATION_INTERPRETER_PROMPT_VERSION = 'studyx-conversation-interpreter-v1.7'
+export const CONVERSATION_INTERPRETER_PROMPT_VERSION = 'studyx-conversation-interpreter-v1.8'
 
 const CONTRACT = `You are a semantic interpreter for one StudyX sales conversation turn.
 Return only ConversationMoveV1. Interpret meaning; never write customer-facing copy and never
@@ -31,7 +31,7 @@ Choose one primary move and at most two compatible secondary moves:
 - decline_purchase: explicitly ends the purchase intention.
 - price_objection: the current message complains that the price is high or unaffordable.
 - explicit_promotion_request: the current message asks for a better promotion or a specific bonus course.
-- request_course_program: asks to receive the program or syllabus of a course.
+- request_course_program: asks to receive the program or syllabus of a course, including a contextual yes to the advisor's immediately preceding offer to share it.
 - unknown: meaning is too ambiguous for a safe move.
 
 Payment-link authorization requires an unambiguous forward-looking or imperative request to receive

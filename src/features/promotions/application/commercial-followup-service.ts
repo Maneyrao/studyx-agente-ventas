@@ -1,3 +1,4 @@
+import { lockPaymentSaleV1, readNegotiationPaymentStateV1 } from '@/features/payments/application/negotiation-payment-state';
 import { createHash, randomUUID } from 'node:crypto';
 import type postgres from 'postgres';
 import { z } from 'zod';
@@ -383,6 +384,10 @@ export async function commitCommercialActionV1(
   };
 }
 
+export class CourseChangeBlockedByPaymentError extends Error {
+  constructor() { super('COURSE_CHANGE_BLOCKED_BY_PAYMENT'); }
+}
+
 /** Retires only model-owned open packages whose paid course was explicitly
  * replaced by another canonical course. This is not text interpretation: the
  * caller supplies the committed select_course result from Agent A. */
@@ -402,15 +407,38 @@ export async function cancelOpenCourseBonusOffersForCourseChangeV1(
   await db`SELECT conversation_id FROM conversation_sales_context_states_v1
     WHERE workspace_id=${input.workspace_id}::uuid AND contact_id=${input.contact_id}::uuid
       AND conversation_id=${input.conversation_id}::uuid FOR UPDATE`;
-  const unpaid=await db<Array<{id:string;offering_id:string;replacement_id:string}>>`
-    SELECT p.id,p.offering_id,replacement.id AS replacement_id FROM payments p
+  // Lock order: sale lock K (per distinct offering, sorted) BEFORE any payment row lock.
+  type Candidate={id:string;offering_id:string;replacement_id:string;source_conversation_id:string};
+  const selectCandidates=()=>db<Candidate[]>`
+    SELECT p.id,p.offering_id,replacement.id AS replacement_id,p.source_conversation_id FROM payments p
     JOIN offerings replacement ON replacement.workspace_id=p.workspace_id AND replacement.code=${input.selected_offering_code}
     WHERE p.workspace_id=${input.workspace_id}::uuid AND p.contact_id=${input.contact_id}::uuid
-      AND p.source_conversation_id=${input.conversation_id}::uuid AND p.offering_id<>replacement.id
+      AND sale_family_root_v1(p.workspace_id,p.contact_id,p.source_conversation_id)
+        IS NOT DISTINCT FROM sale_family_root_v1(${input.workspace_id}::uuid,${input.contact_id}::uuid,${input.conversation_id}::uuid) AND p.offering_id<>replacement.id
       AND p.status NOT IN ('paid','refunded','failed','expired')
       AND NOT EXISTS (SELECT 1 FROM payment_intent_supersessions s WHERE s.payment_id=p.id)
-    ORDER BY p.id FOR UPDATE OF p
-  `;
+    ORDER BY p.id`;
+  const locked=new Set<string>();
+  const lockSales=async (rows:Candidate[])=>{
+    for(const offeringId of [...new Set(rows.map(payment=>payment.offering_id))].sort()) {
+      if(locked.has(offeringId)) continue;
+      await lockPaymentSaleV1(db,{workspace_id:input.workspace_id,contact_id:input.contact_id,
+        conversation_id:input.conversation_id,offering_id:offeringId});
+      locked.add(offeringId);
+    }
+  };
+  await lockSales(await selectCandidates());
+  // A webhook may land between the first read and the lock: decide on a fresh read taken under K.
+  const candidates=await selectCandidates();
+  await lockSales(candidates);
+  // A processing, paid, reconciling or uncertain lineage keeps its course: reject, never skip silently.
+  const unpaid=[];
+  for(const payment of candidates) {
+    const state=await readNegotiationPaymentStateV1(db,{workspace_id:input.workspace_id,contact_id:input.contact_id,
+      conversation_id:payment.source_conversation_id,offering_id:payment.offering_id},true);
+    if(state.in_flight) throw new CourseChangeBlockedByPaymentError();
+    unpaid.push(payment);
+  }
   if(input.source_turn_id && input.source_voice_selection_id) throw new Error('COURSE_CHANGE_SOURCE_AMBIGUOUS');
   if(input.source_voice_selection_id) {
     const [evidence]=await db`SELECT e.id FROM voice_course_selections e
@@ -425,7 +453,7 @@ export async function cancelOpenCourseBonusOffersForCourseChangeV1(
   if(unpaid.length && !input.source_turn_id && !input.source_voice_selection_id) throw new Error('COURSE_CHANGE_SOURCE_TURN_REQUIRED');
   for(const payment of unpaid) await db`INSERT INTO payment_intent_supersessions(
     payment_id,workspace_id,contact_id,conversation_id,original_offering_id,replacement_offering_id,source_turn_id,source_voice_selection_id)
-    VALUES (${payment.id}::uuid,${input.workspace_id}::uuid,${input.contact_id}::uuid,${input.conversation_id}::uuid,
+    VALUES (${payment.id}::uuid,${input.workspace_id}::uuid,${input.contact_id}::uuid,${payment.source_conversation_id}::uuid,
       ${payment.offering_id}::uuid,${payment.replacement_id}::uuid,${input.source_turn_id ?? null}::uuid,${input.source_voice_selection_id ?? null}::uuid)
     ON CONFLICT(payment_id) DO NOTHING`;
   const sourceId=input.source_turn_id ?? input.source_voice_selection_id;
@@ -436,7 +464,8 @@ export async function cancelOpenCourseBonusOffersForCourseChangeV1(
       'promotion-path:' || offer.id::text || ':' || ${sourceId},NULL::uuid,NULL::uuid,NULL::uuid)
     FROM promotion_offers offer JOIN offerings paid ON paid.id=offer.paid_offering_id
     WHERE offer.workspace_id=${input.workspace_id}::uuid AND offer.contact_id=${input.contact_id}::uuid
-      AND offer.conversation_id=${input.conversation_id}::uuid AND offer.package_mode='direct'
+      AND sale_family_root_v1(offer.workspace_id,offer.contact_id,offer.conversation_id)
+        IS NOT DISTINCT FROM sale_family_root_v1(${input.workspace_id}::uuid,${input.contact_id}::uuid,${input.conversation_id}::uuid) AND offer.package_mode='direct'
       AND offer.status IN ('accepted','attached') AND paid.code<>${input.selected_offering_code}`;
   const cancelled = await db<Array<{ id: string }>>`
     UPDATE promotion_offers offer
@@ -444,7 +473,8 @@ export async function cancelOpenCourseBonusOffersForCourseChangeV1(
     FROM offerings paid
     WHERE offer.workspace_id = ${input.workspace_id}::uuid
       AND offer.contact_id = ${input.contact_id}::uuid
-      AND offer.conversation_id = ${input.conversation_id}::uuid
+      AND sale_family_root_v1(offer.workspace_id,offer.contact_id,offer.conversation_id)
+        IS NOT DISTINCT FROM sale_family_root_v1(${input.workspace_id}::uuid,${input.contact_id}::uuid,${input.conversation_id}::uuid)
       AND (
         (offer.status IN ('pending_review','offered','accepted')
           AND NOT (offer.package_mode = 'direct' AND offer.status IN ('accepted','attached'))
@@ -477,7 +507,8 @@ export async function cancelOpenCourseBonusOffersForCourseChangeV1(
     WHERE followup.offer_id = offer.id
       AND offer.workspace_id = ${input.workspace_id}::uuid
       AND offer.contact_id = ${input.contact_id}::uuid
-      AND offer.conversation_id = ${input.conversation_id}::uuid
+      AND sale_family_root_v1(offer.workspace_id,offer.contact_id,offer.conversation_id)
+        IS NOT DISTINCT FROM sale_family_root_v1(${input.workspace_id}::uuid,${input.contact_id}::uuid,${input.conversation_id}::uuid)
       AND offer.cancel_reason = 'CUSTOMER_CHANGED_COURSE'
       AND followup.status = 'pending'
   `;

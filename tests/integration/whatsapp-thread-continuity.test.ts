@@ -8,6 +8,7 @@ import { persistedInboundReceipts } from '@/lib/services/inbound-receipts.servic
 import { PostgresChannelIdentityStore } from '@/features/messaging/adapters/postgres-channel-identity-store';
 import { BotpressManagedIdentityStore } from '@/features/messaging/adapters/botpress-managed-identity-store';
 import { sql } from '@/lib/db/orchestrator';
+import { BOTPRESS_WORKSPACE_MIGRATION_STALE_ROUTE_REASON } from '@/lib/services/channel-thread-continuity.service';
 
 const run = process.env.TEST_DATABASE_URL ? describe : describe.skip;
 const db = process.env.TEST_DATABASE_URL ? openLocalTestDatabase() : null;
@@ -78,6 +79,40 @@ run('WhatsApp canonical thread continuity', () => {
     const [thread] = await db!`SELECT metadata FROM channel_threads WHERE id =
       (SELECT channel_thread_id FROM conversations WHERE id = ${first.conversation_id}::uuid)`;
     expect(thread.metadata.botpress_conversation_id).toBe(replacement);
+  });
+
+  it('reactivates a migrated route only after a newer verified inbound supplies the destination conversation', async () => {
+    const input = envelope();
+    const first = await processInboundMessage(input);
+    const [canonical] = await db!`SELECT channel_thread_id FROM conversations WHERE id=${first.conversation_id}::uuid`;
+    await db!`UPDATE channel_threads SET unusable_at=now(), unusable_reason=${BOTPRESS_WORKSPACE_MIGRATION_STALE_ROUTE_REASON}
+      WHERE id=${canonical.channel_thread_id}::uuid`;
+
+    const replacement = `new-${randomUUID()}`;
+    await processInboundMessage(next(input, replacement, new Date(Date.now() + 1_000).toISOString()));
+
+    const [thread] = await db!<{ metadata: Record<string, string>; unusable_at: string | null; unusable_reason: string | null }[]>`
+      SELECT metadata, unusable_at, unusable_reason FROM channel_threads WHERE id=${canonical.channel_thread_id}::uuid`;
+    expect(thread.metadata.botpress_conversation_id).toBe(replacement);
+    expect(thread.unusable_at).toBeNull();
+    expect(thread.unusable_reason).toBeNull();
+  });
+
+  it('does not clear an unrelated unusable reason when a newer inbound updates the route', async () => {
+    const input = envelope();
+    const first = await processInboundMessage(input);
+    const [canonical] = await db!`SELECT channel_thread_id FROM conversations WHERE id=${first.conversation_id}::uuid`;
+    await db!`UPDATE channel_threads SET unusable_at=now(), unusable_reason='PROVIDER_POLICY_BLOCK'
+      WHERE id=${canonical.channel_thread_id}::uuid`;
+
+    const replacement = `new-${randomUUID()}`;
+    await processInboundMessage(next(input, replacement, new Date(Date.now() + 1_000).toISOString()));
+
+    const [thread] = await db!<{ metadata: Record<string, string>; unusable_at: string | null; unusable_reason: string | null }[]>`
+      SELECT metadata, unusable_at, unusable_reason FROM channel_threads WHERE id=${canonical.channel_thread_id}::uuid`;
+    expect(thread.metadata.botpress_conversation_id).toBe(replacement);
+    expect(thread.unusable_at).not.toBeNull();
+    expect(thread.unusable_reason).toBe('PROVIDER_POLICY_BLOCK');
   });
 
   it('rejects an external alias presented by another account or contact', async () => {

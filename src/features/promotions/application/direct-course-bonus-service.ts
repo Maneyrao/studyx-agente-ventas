@@ -1,3 +1,4 @@
+import { lockPaymentSaleV1, readNegotiationPaymentStateV1, retirePaymentForNegotiationV1 } from '@/features/payments/application/negotiation-payment-state';
 import { readCourseBonusLadderV1 } from './read-course-bonus-ladder';
 import { customerBonusRequestThisTurnV1 } from './read-course-bonus-capability';
 import { validateBonusMotiveV1, type BonusMotiveV1 } from '@/shared/conversation/bonus-motive';
@@ -192,28 +193,43 @@ async function lockIdentity(tx: DbClient, input: Identity) {
   return {...context,selected_offering_code:resolved ?? livePackage?.paid_code ?? null};
 }
 async function resolveOffer(tx: DbClient, input: Identity, paidId: string): Promise<OfferRow | undefined> {
+  // The sale may continue in another conversation of the proven family; two live
+  // packages in different conversations are ambiguous and never resolved by guessing.
+  const live = await tx<Array<{conversation_id:string}>>`SELECT DISTINCT o.conversation_id FROM promotion_offers o
+    WHERE o.workspace_id=${input.workspace_id}::uuid AND o.contact_id=${input.contact_id}::uuid
+      AND sale_family_root_v1(o.workspace_id,o.contact_id,o.conversation_id)
+        IS NOT DISTINCT FROM sale_family_root_v1(${input.workspace_id}::uuid,${input.contact_id}::uuid,${input.conversation_id}::uuid)
+      AND o.paid_offering_id=${paidId}::uuid AND o.package_mode='direct'
+      -- Another family conversation's package counts only when attached to a payment (the reopen path).
+      AND (o.conversation_id=${input.conversation_id}::uuid OR o.status='attached')
+      AND o.status IN ('pending_review','offered','accepted','attached')`;
+  if (live.length>1) reject('stale_offer_version');
   const [offer] = await tx<OfferRow[]>`
     SELECT o.*,p.promotion_code FROM promotion_offers o JOIN promotions p ON p.id=o.promotion_id
     WHERE o.workspace_id=${input.workspace_id}::uuid AND o.contact_id=${input.contact_id}::uuid
-      AND o.conversation_id=${input.conversation_id}::uuid AND o.paid_offering_id=${paidId}::uuid
+      AND sale_family_root_v1(o.workspace_id,o.contact_id,o.conversation_id)
+        IS NOT DISTINCT FROM sale_family_root_v1(${input.workspace_id}::uuid,${input.contact_id}::uuid,${input.conversation_id}::uuid)
+      AND o.paid_offering_id=${paidId}::uuid
       AND o.package_mode='direct'
+      AND (o.conversation_id=${input.conversation_id}::uuid OR o.status='attached')
       AND (${input.promotion_cycle_id ?? null}::uuid IS NULL OR o.promotion_cycle_id=${input.promotion_cycle_id ?? null}::uuid)
       AND (${input.promotion_code ?? null}::text IS NULL OR p.promotion_code=${input.promotion_code ?? null})
       AND (o.status IN ('pending_review','offered','accepted','attached') OR o.promotion_cycle_id=${input.promotion_cycle_id ?? null}::uuid
-        OR EXISTS(SELECT 1 FROM promotion_offer_bonus_offerings b WHERE b.offer_id=o.id AND b.source_turn_id=${input.source_turn_id}::uuid))
-    ORDER BY EXISTS(SELECT 1 FROM promotion_offer_bonus_offerings b WHERE b.offer_id=o.id AND b.source_turn_id=${input.source_turn_id}::uuid) DESC,
-      o.created_at DESC LIMIT 1 FOR UPDATE OF o
+        OR EXISTS(SELECT 1 FROM promotion_offer_bonus_offerings b WHERE b.offer_id=o.id AND b.source_turn_id=${input.source_turn_id}::uuid AND b.inherited_from_bonus_id IS NULL))
+    ORDER BY EXISTS(SELECT 1 FROM promotion_offer_bonus_offerings b WHERE b.offer_id=o.id AND b.source_turn_id=${input.source_turn_id}::uuid AND b.inherited_from_bonus_id IS NULL) DESC,
+      (o.conversation_id=${input.conversation_id}::uuid) DESC,o.created_at DESC LIMIT 1 FOR UPDATE OF o
   `;
   return offer;
 }
-async function validateOpen(tx: DbClient, input: Identity, context: {stage:string;selected_offering_code:string|null;paid_id:string;paid_status:string;paid_type:string}, offer?: OfferRow) {
-  if (context.stage==='closed' || (offer && !['pending_review','offered'].includes(offer.status))) reject('sale_already_closed');
+async function validateOpen(tx: DbClient, input: Identity, context: {stage:string;selected_offering_code:string|null;paid_id:string;paid_status:string;paid_type:string}, offer?: OfferRow, reopening = false) {
+  if ((context.stage==='closed' && !reopening) || (offer && !['pending_review','offered'].includes(offer.status) && !reopening)) reject('sale_already_closed');
   if (context.selected_offering_code!==input.paid_offering_code || context.paid_status!=='active' || context.paid_type!=='course') reject('invalid_offering');
   if (offer?.expires_at && offer.expires_at.getTime()<=Date.now()) reject('stale_offer_version');
   const [facts] = await tx<Array<{paid: boolean;eligible: boolean}>>`
     SELECT EXISTS(SELECT 1 FROM payments WHERE workspace_id=${input.workspace_id}::uuid
       AND contact_id=${input.contact_id}::uuid AND offering_id=${context.paid_id}::uuid
-      AND source_conversation_id=${input.conversation_id}::uuid
+      AND sale_family_root_v1(workspace_id,contact_id,source_conversation_id)
+        IS NOT DISTINCT FROM sale_family_root_v1(${input.workspace_id}::uuid,${input.contact_id}::uuid,${input.conversation_id}::uuid)
       AND status='paid') AS paid,
       EXISTS(SELECT 1 FROM contacts WHERE id=${input.contact_id}::uuid AND status<>'inactivo'
         AND coalesce(lifecycle_status,'active')='active' AND deleted_at IS NULL AND NOT EXISTS (SELECT 1 FROM contact_channel_permissions permission
@@ -228,7 +244,8 @@ async function validateOpen(tx: DbClient, input: Identity, context: {stage:strin
       AND workspace_id=${input.workspace_id}::uuid AND active=true AND 'text'=ANY(channels)
       AND (valid_from IS NULL OR valid_from<=now()) AND (valid_until IS NULL OR valid_until>now())
       AND (SELECT count(*) FROM promotion_offers WHERE promotion_id=${offer.promotion_id}::uuid
-        AND contact_id=${input.contact_id}::uuid AND status='attached')<max_redemptions_per_contact FOR SHARE`;
+        AND contact_id=${input.contact_id}::uuid AND status='attached'
+          AND (${reopening}=false OR id<>${offer.id}::uuid))<max_redemptions_per_contact FOR SHARE`;
     if (!promotion) reject('bonus_disabled');
   }
 }
@@ -243,6 +260,9 @@ export async function offerDirectCourseBonusV1(db: DbClient, input: OfferDirectC
     if (!Number.isInteger(input.expected_offer_version) || input.expected_offer_version<0
       || (input.expected_offer_version>0 && (!input.promotion_code || !input.promotion_cycle_id))) reject('stale_offer_version');
     const context=await lockIdentity(tx,input);
+    // Lock order: the sale lock K precedes every offer and payment row lock (as in reserve and replace).
+    await lockPaymentSaleV1(tx,{workspace_id:input.workspace_id,contact_id:input.contact_id,
+      conversation_id:input.conversation_id,offering_id:context.paid_id});
     let offer=await resolveOffer(tx,input,context.paid_id);
     // Owner 2026-11-03 swap replay: the new cycle created by this exact reply.
     const [swapReplay]=await tx<Array<OfferRow & {replay_version:number;exact:boolean}>>`
@@ -254,7 +274,7 @@ export async function offerDirectCourseBonusV1(db: DbClient, input: OfferDirectC
       FROM promotion_offer_bonus_offerings b JOIN promotion_offers o ON o.id=b.offer_id
       JOIN promotions p ON p.id=o.promotion_id JOIN messages m ON m.id=b.offered_outbound_message_id
       JOIN outbound_deliveries d ON d.message_id=m.id
-      WHERE b.source_turn_id=${input.source_turn_id}::uuid AND d.idempotency_key=${input.outbound.idempotency_key}
+      WHERE b.source_turn_id=${input.source_turn_id}::uuid AND b.inherited_from_bonus_id IS NULL AND d.idempotency_key=${input.outbound.idempotency_key}
         AND o.conversation_id=${input.conversation_id}::uuid AND o.contact_id=${input.contact_id}::uuid
         AND o.package_mode='direct' AND o.id IS DISTINCT FROM ${offer?.id ?? null}::uuid`;
     if (swapReplay) {
@@ -271,7 +291,7 @@ export async function offerDirectCourseBonusV1(db: DbClient, input: OfferDirectC
             AND d.idempotency_key=${input.outbound.idempotency_key}) AS exact
         FROM promotion_offer_bonus_offerings b JOIN messages m ON m.id=b.offered_outbound_message_id
         JOIN outbound_deliveries d ON d.message_id=m.id
-        WHERE b.offer_id=${offer.id}::uuid AND b.source_turn_id=${input.source_turn_id}::uuid
+        WHERE b.offer_id=${offer.id}::uuid AND b.source_turn_id=${input.source_turn_id}::uuid AND b.inherited_from_bonus_id IS NULL
       `;
       if (replay?.exact) return {...durable(offer,replay.offer_version),outbound_message_id:replay.offered_outbound_message_id};
       if (offer.offer_version!==input.expected_offer_version) reject(replay?.offered_outbound_message_id===input.outbound.id ? 'multiple_bonus_in_turn' : 'stale_offer_version');
@@ -286,10 +306,16 @@ export async function offerDirectCourseBonusV1(db: DbClient, input: OfferDirectC
       WHERE current.id=${input.source_turn_id}::uuid AND current.conversation_id=${input.conversation_id}::uuid
         AND current.contact_id=${input.contact_id}::uuid
       ORDER BY fragment.occurred_at, fragment.conversation_seq`).map(row => row.content);
+    const paymentScope = {workspace_id:input.workspace_id,contact_id:input.contact_id,
+      conversation_id:input.conversation_id,offering_id:context.paid_id};
+    const paymentState = await readNegotiationPaymentStateV1(tx,paymentScope,true);
+    const reopening = (context.stage==='payment_link_sent' || context.stage==='closed') && paymentState.may_reopen
+      && (paymentState.payment?.promotion_offer_id ?? null)===(offer?.id ?? null);
+    if (paymentState.blocked) reject('sale_already_closed');
     if (isBonusCheckoutStateV1({ stage: context.stage, awaiting_reply: context.awaiting_reply,
       payment_link_request_pending: context.payment_link_request?.status === 'pending',
-      handoff_call_settled: context.handoff_call_settled })) reject('sale_already_closed');
-    await validateOpen(tx,input,context,offer);
+      handoff_call_settled: context.handoff_call_settled,may_reopen_negotiation:reopening })) reject('sale_already_closed');
+    await validateOpen(tx,input,context,offer,reopening);
     if (input.bonus_offering_codes[0]===input.paid_offering_code) reject('same_as_paid_course');
     const [bonus]=await tx`SELECT id FROM offerings WHERE workspace_id=${input.workspace_id}::uuid
       AND code=${input.bonus_offering_codes[0]} AND status='active' AND offering_type='course' FOR SHARE`;
@@ -326,6 +352,40 @@ export async function offerDirectCourseBonusV1(db: DbClient, input: OfferDirectC
     if (!chosen && !authorizedBonusCodesV1({paid_code:input.paid_offering_code,active_codes:active.map(row=>row.code),
       named_codes:[...courseCodesNamedInBatchV1(currentBatch,active),...carried]}).includes(input.bonus_offering_codes[0]!)
       && !offered.some(row=>row.code===input.bonus_offering_codes[0])) reject('invalid_offering');
+    if (reopening) {
+      await retirePaymentForNegotiationV1(tx,paymentScope,paymentState.payment!.id,input.source_turn_id);
+      if (offer) {
+        await validateExistingPackage(tx,offer);
+        const [delivery] = await tx<Array<{delivered:boolean}>>`SELECT bool_and(delivered_at IS NOT NULL) AS delivered
+          FROM promotion_offer_bonus_offerings WHERE offer_id=${offer.id}::uuid`;
+        if (!delivery?.delivered) reject('bonus_without_reply');
+        const previous = offer;
+        await tx`UPDATE promotion_offers SET status='cancelled',cancel_reason='NEGOTIATION_REOPENED'
+          WHERE id=${previous.id}::uuid`;
+        await tx`UPDATE course_bonus_followups SET status='cancelled',terminal_reason='NEGOTIATION_REOPENED'
+          WHERE offer_id=${previous.id}::uuid AND status='pending'`;
+        const [successor] = await tx<OfferRow[]>`INSERT INTO promotion_offers(workspace_id,contact_id,conversation_id,
+          promotion_id,paid_offering_id,package_mode,predecessor_offer_id)
+          VALUES (${input.workspace_id}::uuid,${input.contact_id}::uuid,${input.conversation_id}::uuid,
+            ${previous.promotion_id}::uuid,${context.paid_id}::uuid,'direct',${previous.id}::uuid) RETURNING *`;
+        const inherited = await tx<Array<{id:string}>>`SELECT id FROM promotion_offer_bonus_offerings
+          WHERE offer_id=${previous.id}::uuid ORDER BY position`;
+        for (const gift of inherited) await tx`INSERT INTO promotion_offer_bonus_offerings(offer_id,promotion_id,offering_id,promotion_code_snapshot,
+          offering_code_snapshot,offering_display_name_snapshot,position,source_turn_id,offered_at,
+          offered_outbound_message_id,delivered_at,offer_version,inherited_from_bonus_id)
+          SELECT ${successor.id}::uuid,promotion_id,offering_id,promotion_code_snapshot,offering_code_snapshot,
+            offering_display_name_snapshot,position,source_turn_id,offered_at,offered_outbound_message_id,delivered_at,offer_version,id
+          FROM promotion_offer_bonus_offerings WHERE id=${gift.id}::uuid`;
+        [offer] = await tx<OfferRow[]>`SELECT o.*,p.promotion_code FROM promotion_offers o
+          JOIN promotions p ON p.id=o.promotion_id WHERE o.id=${successor.id}::uuid`;
+        if (previous.expires_at) await tx`UPDATE promotion_offers SET expires_at=${previous.expires_at} WHERE id=${successor.id}::uuid`;
+      }
+      // The outer decision uses the same transition; no version is consumed here.
+      await tx`UPDATE conversation_sales_context_states_v1
+        SET stage=CASE WHEN selected_payment_plan IS NULL THEN 'course_selected' ELSE 'plan_selected' END,
+          awaiting_reply='none',payment_link_request=NULL WHERE workspace_id=${input.workspace_id}::uuid
+          AND conversation_id=${input.conversation_id}::uuid AND contact_id=${input.contact_id}::uuid`;
+    }
     let replacedExpiresAt: Date | null = null;
     if (swap && offer) {
       // Never swap under a live call: the voice store reads the offered cycle.
@@ -363,7 +423,7 @@ export async function offerDirectCourseBonusV1(db: DbClient, input: OfferDirectC
         await tx`UPDATE promotion_offers SET expires_at=${replacedExpiresAt} WHERE id=${created.id}::uuid`;
         offer={...offer,expires_at:replacedExpiresAt};
       }
-      await validateOpen(tx,input,context,offer);
+      await validateOpen(tx,input,context,offer,reopening);
     }
     await tx`INSERT INTO messages(id,conversation_id,contact_id,direction,content,in_reply_to,part_index)
       VALUES (${input.outbound.id}::uuid,${input.conversation_id}::uuid,${input.contact_id}::uuid,'outbound',${input.outbound.content},${input.source_turn_id}::uuid,${input.outbound.part_index ?? 0})`;
@@ -380,10 +440,16 @@ export async function acceptDirectCourseBonusV1(db: DbClient, input: AcceptDirec
     if (!await mayAcceptExistingPackage(input, tx)) reject('bonus_disabled');
     if (!input.promotion_code || !input.promotion_cycle_id || !Number.isInteger(input.expected_offer_version) || input.expected_offer_version<1) reject('stale_offer_version');
     const context=await lockIdentity(tx,input);
+    // Lock order: the sale lock K precedes every offer and payment row lock (as in reserve and replace).
+    await lockPaymentSaleV1(tx,{workspace_id:input.workspace_id,contact_id:input.contact_id,
+      conversation_id:input.conversation_id,offering_id:context.paid_id});
     const offer=await resolveOffer(tx,input,context.paid_id);
     if (!offer || offer.offer_version!==input.expected_offer_version) reject('stale_offer_version');
     await validateExistingPackage(tx,offer);
     if (['accepted','attached'].includes(offer.status) && offer.accepted_source_turn_id===input.source_turn_id) return durable(offer);
+    const paymentState = await readNegotiationPaymentStateV1(tx,{workspace_id:input.workspace_id,
+      contact_id:input.contact_id,conversation_id:input.conversation_id,offering_id:context.paid_id},true);
+    if (paymentState.blocked) reject('sale_already_closed');
     await validateOpen(tx,input,context,offer);
     await tx`SELECT accept_direct_course_bonus(${offer.id}::uuid,${input.source_turn_id}::uuid,${input.expected_offer_version})`;
     return durable(offer);
@@ -398,6 +464,9 @@ export async function acceptDirectCourseBonusByVoiceV1(db: DbClient, input: Acce
     if (!input.promotion_code || !input.promotion_cycle_id || !Number.isInteger(input.expected_offer_version)
       || input.expected_offer_version<1) reject('stale_offer_version');
     const context=await lockIdentity(tx,input);
+    // Lock order: the sale lock K precedes every offer and payment row lock (as in reserve and replace).
+    await lockPaymentSaleV1(tx,{workspace_id:input.workspace_id,contact_id:input.contact_id,
+      conversation_id:input.conversation_id,offering_id:context.paid_id});
     const offer=await resolveOffer(tx,input,context.paid_id);
     if (!offer || offer.offer_version!==input.expected_offer_version) reject('stale_offer_version');
     await validateExistingPackage(tx,offer);

@@ -30,7 +30,7 @@ const report = (outbound_id: string, status: 'submitted_to_botpress' | 'failed')
 const ledger = (conversation: string) => sql`SELECT offering_code, asset_version, status, outbound_message_id, image_outbound_message_id FROM course_program_deliveries WHERE conversation_id=${conversation}::uuid`;
 
 run('send_course_program at the commit boundary', () => {
-  it('commits the course image and the PDF as their own parts (after the two authored bubbles; a call offer cannot ride with an action), URLs built from env + registry', async () => {
+  it('commits PDF first, image second and authored explanation last; a call offer cannot ride with an action', async () => {
     const f = await seedConversationForAgentTurn({ selected_offering_code: CODE, intake_complete: true });
     const cap = await readCourseProgramsCapabilityV1({ workspace_slug: 'studyx', conversation_id: f.conversation_id }, { db: sql });
     expect(cap?.available_offering_codes).toContain(CODE);
@@ -38,16 +38,20 @@ run('send_course_program at the commit boundary', () => {
     const result = await commit(f, f.turn_id, proposal(['Te comparto el programa.', 'Cualquier duda me dices.'], null, SEND));
     expect(result.status).toBe('committed');
     expect(result.outbounds.map(part => part.part_index)).toEqual([0, 1, 2, 3]);
-    const image = result.outbounds[2]!;
-    const doc = result.outbounds[3]!;
+    const doc = result.outbounds[0]!;
+    const image = result.outbounds[1]!;
+    expect(doc.content).toMatch(/^\[programa enviado: .+\]$/u);
+    expect(doc.document).toMatchObject({ kind: 'course_program', media: 'file', offering_code: CODE,
+      file_url: `${BASE}/programas/entrenamiento-funcional.pdf`, filename: 'Programa Entrenamiento Funcional - Studyx.pdf' });
     expect(image.content).toMatch(/^\[imagen enviada: .+\]$/u);
     expect(image.document).toMatchObject({ kind: 'course_program', media: 'image', offering_code: CODE,
       file_url: `${BASE}/material/imagenes/${CODE}.png` });
-    expect(doc.content).toMatch(/^\[programa enviado: .+\]$/u);
     expect(doc.part_count).toBe(4);
-    expect(doc.document).toMatchObject({ kind: 'course_program', media: 'file', offering_code: CODE,
-      file_url: `${BASE}/programas/entrenamiento-funcional.pdf`, filename: 'Programa Entrenamiento Funcional - Studyx.pdf' });
-    expect(result.outbounds.slice(0, 2).every(part => part.document === undefined)).toBe(true);
+    expect(result.outbounds.slice(2).map(part => part.content)).toEqual([
+      'Te comparto el programa.',
+      'Cualquier duda me dices.',
+    ]);
+    expect(result.outbounds.slice(2).every(part => part.document === undefined)).toBe(true);
     expect((await ledger(f.conversation_id))[0]).toMatchObject({ image_outbound_message_id: image.id });
     const [decision] = await sql`SELECT business_action FROM agent_decisions WHERE turn_id=${f.turn_id}`;
     expect(decision.business_action).toEqual(SEND);

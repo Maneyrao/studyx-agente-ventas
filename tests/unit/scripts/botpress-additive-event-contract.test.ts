@@ -2,10 +2,14 @@ import { describe, expect, it } from 'vitest';
 
 import {
   buildBotpressAdditiveEventUpdate,
+  inspectBotpressPreservedMessageTagContract,
+  inspectBotpressPreservedPublicationContracts,
+  inspectBotpressPreservedStateContract,
   inspectBotpressRemoteCode,
   normalizeBotpressConfigurationForComparison,
   planBotpressAdditiveConversationTagPatch,
   planBotpressAdditiveEventPatch,
+  planBotpressReviewedActionPatch,
   planBotpressReviewedConfigurationUpdate,
 } from '../../../scripts/lib/botpress-additive-event-contract.mjs';
 
@@ -75,6 +79,117 @@ const generatedConfiguration = {
 };
 
 describe('Botpress additive event publication contract', () => {
+  it('preserves only the exact Botpress states inherited by the admissions workspace', () => {
+    const generatedStates = {
+      conversation: { type: 'conversation', schema: { type: 'object' } },
+      userState: { type: 'user', schema: { type: 'object' } },
+    };
+    const inheritedStates = {
+      conversationIdle120000: { type: 'conversation', schema: { type: 'object' } },
+      conversationIdle300000: { type: 'conversation', schema: { type: 'object' } },
+      playbookState: { type: 'conversation', schema: { type: 'object' } },
+      viberReadiness: { type: 'conversation', schema: { type: 'object' } },
+    };
+
+    expect(inspectBotpressPreservedStateContract({
+      remoteStates: { ...generatedStates, ...inheritedStates },
+      generatedStates,
+    })).toEqual({ remoteOnlyKeys: Object.keys(inheritedStates).sort() });
+
+    expect(() => inspectBotpressPreservedStateContract({
+      remoteStates: { ...generatedStates, unexpectedState: { type: 'bot' } },
+      generatedStates,
+    })).toThrow('CONTRACT_KEYS_CHANGED:states:remote_only=unexpectedState');
+
+    expect(() => inspectBotpressPreservedStateContract({
+      remoteStates: { conversation: generatedStates.conversation },
+      generatedStates,
+    })).toThrow('CONTRACT_KEYS_CHANGED:states:generated_only=userState');
+
+    expect(() => inspectBotpressPreservedStateContract({
+      remoteStates: {
+        ...generatedStates,
+        conversation: { ...generatedStates.conversation, type: 'bot' },
+      },
+      generatedStates,
+    })).toThrow('CONTRACT_CHANGED:states.conversation');
+  });
+
+  it('preserves only the reviewed remote actions and message tag inherited by the admissions workspace', () => {
+    const generatedActions = {
+      analyzeImage: { input: { schema: { type: 'object' } } },
+      ingestTurn: { input: { schema: { type: 'object' } } },
+    };
+    const remoteOnlyActions = Object.fromEntries([
+      'addWebsitePageToDraft',
+      'generateQuestionsFromConversations',
+      'runtimeHealth',
+      'startSimulationBatch',
+      'syncWebsiteKnowledge',
+    ].map((key) => [key, { input: { schema: { type: 'object' } } }]));
+    expect(planBotpressReviewedActionPatch({
+      remoteActions: { ...generatedActions, ...remoteOnlyActions },
+      generatedActions,
+    })).toEqual({});
+    expect(() => planBotpressReviewedActionPatch({
+      remoteActions: { ...generatedActions, unexpectedAction: {} },
+      generatedActions,
+    })).toThrow('CONTRACT_KEYS_CHANGED:actions:remote_only=unexpectedAction');
+    expect(() => planBotpressReviewedActionPatch({
+      remoteActions: { analyzeImage: generatedActions.analyzeImage },
+      generatedActions,
+    })).toThrow('CONTRACT_KEYS_CHANGED:actions:generated_only=ingestTurn');
+    expect(() => planBotpressReviewedActionPatch({
+      remoteActions: {
+        ...generatedActions,
+        analyzeImage: { input: { schema: { type: 'string' } } },
+      },
+      generatedActions,
+    })).toThrow('CONTRACT_CHANGED:actions.analyzeImage');
+
+    const generatedTags = { studyxTraceId: { title: 'Trace' } };
+    expect(inspectBotpressPreservedMessageTagContract({
+      remoteTags: { ...generatedTags, playbook: { title: 'Playbook' } },
+      generatedTags,
+    })).toEqual({ remoteOnlyKeys: ['playbook'] });
+    expect(() => inspectBotpressPreservedMessageTagContract({
+      remoteTags: { ...generatedTags, unexpected: { title: 'No' } },
+      generatedTags,
+    })).toThrow('CONTRACT_KEYS_CHANGED:message.tags:remote_only=unexpected');
+  });
+
+  it('detects any mutation of preserved contracts after publication', () => {
+    const before = {
+      actions: { analyzeImage: { input: 'same' }, runtimeHealth: { input: 'preserve' } },
+      states: { conversation: { type: 'conversation' }, viberReadiness: { type: 'conversation' } },
+      recurringEvents: {},
+      events: { existing: { schema: {} } },
+      message: { tags: { playbook: { title: 'Playbook' } } },
+      user: { tags: {} },
+      conversation: { tags: { existing: { title: 'Existing' } } },
+    };
+    const patches = {
+      actionPatch: { reportDelivery: { input: 'reviewed' } },
+      eventPatch: { followup: { schema: {} } },
+      conversationTagPatch: { title: { title: 'Conversation title' } },
+    };
+    const after = {
+      ...before,
+      actions: { ...before.actions, ...patches.actionPatch },
+      events: { ...before.events, ...patches.eventPatch },
+      conversation: { tags: { ...before.conversation.tags, ...patches.conversationTagPatch } },
+    };
+    expect(inspectBotpressPreservedPublicationContracts({ before, after, ...patches })).toBe(true);
+    expect(inspectBotpressPreservedPublicationContracts({
+      before,
+      after: {
+        ...after,
+        actions: { ...after.actions, runtimeHealth: { input: 'mutated' } },
+      },
+      ...patches,
+    })).toBe(false);
+  });
+
   it('compares configuration after Botpress applies schema defaults and drops legacy data', () => {
     expect(normalizeBotpressConfigurationForComparison({
       data: {
@@ -242,6 +357,27 @@ describe('Botpress additive event publication contract', () => {
       remoteTags: existingTags,
       generatedTags: { ...existingTags, title: { ...runtimeTitleTag, title: 'Changed' } },
     })).toThrow('CONTRACT_CHANGED:conversation.tags.title');
+  });
+
+  it('preserves only the reviewed conversation tags inherited by the admissions workspace', () => {
+    const runtimeTitleTag = {
+      title: 'Conversation title',
+      description: 'Auto-generated by the Botpress runtime.',
+    };
+    const shared = { status: { title: 'Conversation status' } };
+    const remoteOnly = {
+      preview: { title: 'Preview' },
+      previewAccountId: { title: 'Preview account' },
+      version: { title: 'Version' },
+    };
+    expect(planBotpressAdditiveConversationTagPatch({
+      remoteTags: { ...shared, ...remoteOnly },
+      generatedTags: { ...shared, title: runtimeTitleTag },
+    })).toEqual({ title: runtimeTitleTag });
+    expect(() => planBotpressAdditiveConversationTagPatch({
+      remoteTags: { ...shared, unexpected: { title: 'Unexpected' } },
+      generatedTags: shared,
+    })).toThrow('CONTRACT_KEYS_CHANGED:conversation.tags');
   });
 
   it('builds a narrow update without dependency, configuration, secret, or null fields', () => {

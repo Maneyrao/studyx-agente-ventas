@@ -5,7 +5,7 @@ import {
 } from './studyx-agent-a-canonical.generated';
 import { resolveCanonicalPromptIdentityV1 } from './agent-a-identity';
 
-export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v209' as const;
+export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v212' as const;
 
 /**
  * Runtime contract only. The sales behavior lives in the canonical prompt so
@@ -17,6 +17,8 @@ Read turn.batch_messages as one intervention. Use only authorized facts and neve
 Capabilities authorize effects, not wording. Recent assistant turns are conversation evidence, not stylistic examples.
 Canonical behavior governs every new reply even when history deviates from it.
 Treat commercial_state.active_call and commercial_state.last_call_result as authoritative lifecycle facts.
+Durable selections (selected_offering_code, selected_payment_plan, customer.contact_intake, commercial_state.promotion) stay in force until an explicit customer change; a sent link does not reset them. commercial_state.sale_continuity.status=ambiguous means several open sales exist: no course, plan, package or payment action is executable until the customer names one of candidate_offering_codes.
+On turn_rejection ACTION_NOT_AUTHORIZED with course_change_blocked_by_checkout, the current course and checkout stay as they are because a payment for them is being processed; continue the conversation without claiming the change.
 State the call situation plainly: active_call means it is going out now; if last_call_result.announced_to_customer is false, first say how it ended and offer retry or chat; if may_request_call_now is false, say why you cannot call (e.g. unconfirmed number). Never promise to notify or call later.
 On turn_rejection, continue once in your voice and make only the permitted correction without exposing validation.
 Call invitation format: whenever the call policy permits an invitation and you include one, put it only in response.call_offer, never in response.messages. This is a field contract, not a sales instruction.`;
@@ -253,7 +255,7 @@ Do not claim a discount, promotion, gift, approval, income or result. Preserve t
   const programSendReason = rejection.rejections.map(reason => reason.subject).find(subject => subject.startsWith('program_send_not_executed'))?.split(':')[1] ?? 'unavailable'
   const programSendRepair = repairsProgramSend && programSendReason !== 'not_proposed' ? `
 For program_send_not_executed, the programme PDF was NOT sent in this turn (${programSendReason}).
-Remove every sentence saying you are sending, sharing, re-sending or attaching it now, including "te lo comparto otra vez" and "te lo mando de nuevo". ${programSendReason === 'already_sent' ? 'It was already delivered earlier in this chat and it is not sent twice: say so, naming the file as it was sent (the programme, or the ficha/detalle de contenidos when it was a manual ficha), point to that earlier message and offer to go through it together.' : 'There is no PDF file for this course: say you do not have the programme file and offer the information you do have.'} Use proposed_action=none.` : ''
+Remove every sentence saying you are sending, sharing, re-sending or attaching it now, including "te lo comparto otra vez" and "te lo mando de nuevo". ${programSendReason === 'already_sent' ? 'It was already delivered earlier in this chat and it is not sent twice: say so gently, naming the file as it was sent (the programme, or the ficha/detalle de contenidos when it was a manual ficha), for example "La ficha ya te la dejé más arriba en este chat; si quieres repasamos algún punto."' : 'There is no PDF file for this course: say you do not have the programme file and offer the information you do have.'} Use proposed_action=none.` : ''
   const programNotProposed = programSendReason === 'not_proposed' || rejection.rejections.some(reason => reason.code === 'PROGRAM_SEND_REQUIRED')
   const programRequiredRepair = programNotProposed ? `
 For PROGRAM_SEND_REQUIRED or program_send_not_executed:not_proposed, the course material IS available and was not sent yet: keep your short summary of what the course teaches, say you are sharing the full programme, and set proposed_action={type:"send_course_program", offering_code} for the course in focus. Never say you do not have the file.` : ''
@@ -341,6 +343,7 @@ function currentCourseBonusEffectContractV1(context: AgentAContextV1): string {
   if (effectGuidance === null) return '';
   return `<current_effect_contract kind="course_bonus">
 ${effectGuidance}
+${courseBonus?.may_reopen_negotiation ? 'This sale has an unpaid link that can be superseded ONLY if this authorized bonus action commits. Keep every delivered gift in the resulting package. Do not claim payment or enrollment; a new payment reference requires acceptance of the updated package. Pending payments or reconciliation never authorize reopening.' : ''}
 This block exposes only action shape, capability and package identity. It does not choose sales strategy, sequence or wording.
 Never claim a completed effect before the matching action commits.
 </current_effect_contract>`;
@@ -355,11 +358,11 @@ function currentCourseProgramEffectContractV1(context: AgentAContextV1): string 
     .map(item => `${item.offering_code}(${item.has_program_pdf ? 'official programme PDF' : 'manual ficha PDF'}${item.has_image ? ' + course image' : ''})`)
   return `<current_effect_contract kind="course_program">
 Course material can be sent over WhatsApp with ONE action, proposed_action={type:"send_course_program", offering_code}: the programme PDF (the official programme when it exists, otherwise the manual ficha) and then the official course image go out before your text. Available now: ${materials.join(', ') || '(none left to send)'}.
-When you explain the classes, the syllabus (temario) or the content of the course in focus for the first time in this conversation, propose the action in that same turn (use move=ask_course_information, or request_course_program when the customer asks for the programme/temario/PDF). Not on pure price or payment turns, and never more than once per course.
+Never send material on your own initiative. Propose the action only when the customer asks for the programme, temario, ficha, PDF or the detailed contents of a course, or answers yes to your offer to share it (both are move=request_course_program). While the customer has not chosen a course, advise: answer briefly and ask one diagnostic question (goal, or current level when the subject has several levels such as Inglés 1, 2, 3) instead of picking a level for them. Once the customer has chosen a course and you first present it on an informational turn, give the key information and offer once to share the programme or ficha. Do not send it until the customer accepts that offer. A real purchase or checkout signal takes priority: do not interrupt it with the material offer. Not on pure price or payment turns, and never more than once per course.
 With the material, write one or two human sentences summarizing what the course teaches, from its authorized description or syllabus facts (cite them in used_fact_ids); the files carry the detail, so never paste the whole syllabus. The backend resolves the files; never write a URL.
 Phrase it as something you are sharing only together with the action; never state as already done what the backend has not delivered. Name the file by what it is: an official programme PDF is "el programa"; a manual ficha PDF is "la ficha" or "el detalle de contenidos", never "el programa" or "el programa completo".
 A course that is not in the list above has no material available: say naturally that you do not have the file for it and offer the information you do have; never say you are sending it, and do not propose the action.
-Already delivered in this conversation: ${programs.sent_offering_codes.join(', ') || 'none'}. For those, say naturally that you already sent it (more arriba en este chat) and offer to go over anything in it; do not propose the action again.
+Already delivered in this conversation: ${programs.sent_offering_codes.join(', ') || 'none'}. Do not propose the action again for those, and do not bring the earlier file up on your own. Only when the customer asks for that material again, mention it gently, for example "La ficha ya te la dejé más arriba en este chat; si quieres repasamos algún punto." ("el programa" for an official programme), never a curt "Ya te dejé la ficha".
 </current_effect_contract>`
 }
 

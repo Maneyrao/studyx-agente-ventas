@@ -73,10 +73,11 @@ describe('conversation interpreter V1', () => {
 
   it('builds bounded instructions from complete batch and structured context', () => {
     const instructions = buildConversationInterpreterInstructionsV1(baseInput);
-    expect(CONVERSATION_INTERPRETER_PROMPT_VERSION).toBe('studyx-conversation-interpreter-v1.7');
+    expect(CONVERSATION_INTERPRETER_PROMPT_VERSION).toBe('studyx-conversation-interpreter-v1.8');
     expect(instructions).toContain('Necesito orientación');
     expect(instructions).toContain('call_or_chat');
     expect(instructions).toContain('redes-informaticas');
+    expect(instructions).toContain("a contextual yes to the advisor's immediately preceding offer to share it");
     expect(instructions).not.toContain('https://');
     expect(instructions.length).toBeLessThan(12_000);
   });

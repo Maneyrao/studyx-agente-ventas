@@ -4,6 +4,25 @@ const allowedEventName = 'studyxCommercialFollowup';
 const allowedConversationTagName = 'triggerE5F2C';
 const allowedActionName = 'reportDelivery';
 const allowedConfigurationPropertyName = 'agentACommercialPlanningEnabled';
+const allowedRemoteOnlyStateNames = new Set([
+  'conversationIdle120000',
+  'conversationIdle300000',
+  'playbookState',
+  'viberReadiness',
+]);
+const allowedRemoteOnlyActionNames = new Set([
+  'addWebsitePageToDraft',
+  'generateQuestionsFromConversations',
+  'runtimeHealth',
+  'startSimulationBatch',
+  'syncWebsiteKnowledge',
+]);
+const allowedRemoteOnlyMessageTagNames = new Set(['playbook']);
+const allowedRemoteOnlyConversationTagNames = new Set([
+  'preview',
+  'previewAccountId',
+  'version',
+]);
 // Owner decision 2026-11-09 ("v202 sin planner"): the planner is OFF by
 // default. The remote schema may still carry the previously reviewed
 // default:true contract; a publish replaces it with the generated one.
@@ -101,6 +120,69 @@ const assertRecord = (value, label) => {
     throw new Error(`INVALID_EVENT_CONTRACT:${label}`);
   }
 };
+
+export function inspectBotpressPreservedStateContract({ remoteStates, generatedStates }) {
+  assertRecord(remoteStates, 'remote-states');
+  assertRecord(generatedStates, 'generated-states');
+  const remoteKeys = Object.keys(remoteStates).sort();
+  const generatedKeys = Object.keys(generatedStates).sort();
+  const generatedOnly = generatedKeys.filter((key) => !remoteKeys.includes(key));
+  if (generatedOnly.length > 0) {
+    throw new Error(`CONTRACT_KEYS_CHANGED:states:generated_only=${generatedOnly.join(',')}`);
+  }
+  const remoteOnlyKeys = remoteKeys.filter((key) => !generatedKeys.includes(key));
+  const unknownRemoteOnly = remoteOnlyKeys.filter((key) => !allowedRemoteOnlyStateNames.has(key));
+  if (unknownRemoteOnly.length > 0) {
+    throw new Error(`CONTRACT_KEYS_CHANGED:states:remote_only=${unknownRemoteOnly.join(',')}`);
+  }
+  for (const key of generatedKeys) {
+    if (!equal(remoteStates[key], generatedStates[key])) {
+      throw new Error(`CONTRACT_CHANGED:states.${key}`);
+    }
+  }
+  return { remoteOnlyKeys };
+}
+
+export function inspectBotpressPreservedMessageTagContract({ remoteTags, generatedTags }) {
+  assertRecord(remoteTags, 'remote-message-tags');
+  assertRecord(generatedTags, 'generated-message-tags');
+  const remoteKeys = Object.keys(remoteTags).sort();
+  const generatedKeys = Object.keys(generatedTags).sort();
+  const generatedOnly = generatedKeys.filter((key) => !remoteKeys.includes(key));
+  if (generatedOnly.length > 0) {
+    throw new Error(`CONTRACT_KEYS_CHANGED:message.tags:generated_only=${generatedOnly.join(',')}`);
+  }
+  const remoteOnlyKeys = remoteKeys.filter((key) => !generatedKeys.includes(key));
+  const unknownRemoteOnly = remoteOnlyKeys.filter((key) => !allowedRemoteOnlyMessageTagNames.has(key));
+  if (unknownRemoteOnly.length > 0) {
+    throw new Error(`CONTRACT_KEYS_CHANGED:message.tags:remote_only=${unknownRemoteOnly.join(',')}`);
+  }
+  for (const key of generatedKeys) {
+    if (!equal(remoteTags[key], generatedTags[key])) {
+      throw new Error(`CONTRACT_CHANGED:message.tags.${key}`);
+    }
+  }
+  return { remoteOnlyKeys };
+}
+
+export function inspectBotpressPreservedPublicationContracts({
+  before,
+  after,
+  actionPatch = {},
+  eventPatch = {},
+  conversationTagPatch = {},
+}) {
+  return equal(after.actions ?? {}, { ...(before.actions ?? {}), ...actionPatch })
+    && equal(after.states ?? {}, before.states ?? {})
+    && equal(after.recurringEvents ?? {}, before.recurringEvents ?? {})
+    && equal(after.events ?? {}, { ...(before.events ?? {}), ...eventPatch })
+    && equal(after.message?.tags ?? {}, before.message?.tags ?? {})
+    && equal(after.user?.tags ?? {}, before.user?.tags ?? {})
+    && equal(after.conversation?.tags ?? {}, {
+      ...(before.conversation?.tags ?? {}),
+      ...conversationTagPatch,
+    });
+}
 
 export function normalizeBotpressConfigurationForComparison(configuration) {
   assertRecord(configuration, 'configuration-comparison');
@@ -257,12 +339,12 @@ export function planBotpressAdditiveConversationTagPatch({ remoteTags, generated
   const removed = remoteKeys.filter((key) => !generatedKeys.includes(key));
   const added = generatedKeys.filter((key) => !remoteKeys.includes(key));
 
-  if (removed.length > 0
+  if (removed.some((key) => !allowedRemoteOnlyConversationTagNames.has(key))
     || added.some((key) => !Object.prototype.hasOwnProperty.call(allowedConversationTagContracts, key))) {
     throw new Error(`CONTRACT_KEYS_CHANGED:conversation.tags:added=${added.join(',')}:removed=${removed.join(',')}`);
   }
 
-  for (const key of remoteKeys) {
+  for (const key of remoteKeys.filter((key) => generatedKeys.includes(key))) {
     if (!equal(remoteTags[key], generatedTags[key])) {
       throw new Error(`CONTRACT_CHANGED:conversation.tags.${key}`);
     }
@@ -284,11 +366,17 @@ export function planBotpressReviewedActionPatch({ remoteActions, generatedAction
 
   const remoteKeys = Object.keys(remoteActions).sort();
   const generatedKeys = Object.keys(generatedActions).sort();
-  if (!equal(remoteKeys, generatedKeys)) {
-    throw new Error('CONTRACT_KEYS_CHANGED:actions');
+  const generatedOnly = generatedKeys.filter((key) => !remoteKeys.includes(key));
+  if (generatedOnly.length > 0) {
+    throw new Error(`CONTRACT_KEYS_CHANGED:actions:generated_only=${generatedOnly.join(',')}`);
+  }
+  const remoteOnly = remoteKeys.filter((key) => !generatedKeys.includes(key));
+  const unknownRemoteOnly = remoteOnly.filter((key) => !allowedRemoteOnlyActionNames.has(key));
+  if (unknownRemoteOnly.length > 0) {
+    throw new Error(`CONTRACT_KEYS_CHANGED:actions:remote_only=${unknownRemoteOnly.join(',')}`);
   }
 
-  for (const key of remoteKeys) {
+  for (const key of generatedKeys) {
     if (key !== allowedActionName
       && !equal(normalizedContract(remoteActions[key]), normalizedContract(generatedActions[key]))) {
       throw new Error(`CONTRACT_CHANGED:actions.${key}`);

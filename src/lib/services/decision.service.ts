@@ -1,3 +1,4 @@
+import { isCheckoutLockedV1 } from '@/features/payments/application/negotiation-payment-state';
 import { courseBonusLadderRejectionSubjectsV1 } from '@/shared/conversation/bonus-ladder-rejection';
 import { copyNamesCourseV1 } from '@/shared/conversation/course-bonus-claim';
 import { messageIndexOfSentenceV1 } from '@/shared/conversation/sentence-locator';
@@ -86,6 +87,7 @@ import {
 } from '@/features/promotions/application/read-course-bonus-capability';
 import {
   cancelOpenCourseBonusOffersForCourseChangeV1,
+  CourseChangeBlockedByPaymentError,
   commitCommercialActionV1,
   type ScheduledCommercialFollowupV1,
 } from '@/features/promotions/application/commercial-followup-service';
@@ -982,6 +984,7 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
             );
             return loadLatestPaymentVerificationV1(paymentInput, db);
           },
+          checkout_locked: async (lock) => isCheckoutLockedV1(db, { workspace_id: workspaceId, ...lock }),
         });
       } catch (error) {
         if (error instanceof AgentTurnV2RejectedError) {
@@ -1214,7 +1217,9 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
           FROM payments p
           JOIN offerings o ON o.id=p.offering_id AND o.workspace_id=p.workspace_id AND o.code=${action.offering_sku}
           WHERE p.workspace_id=${canonicalWorkspaceId}::uuid AND p.contact_id=${turn.contact_id}::uuid
-            AND p.source_conversation_id=${turn.conversation_id}::uuid AND p.provider='stripe'
+            AND sale_family_root_v1(p.workspace_id,p.contact_id,p.source_conversation_id)
+              IS NOT DISTINCT FROM sale_family_root_v1(${canonicalWorkspaceId}::uuid,${turn.contact_id}::uuid,${turn.conversation_id}::uuid)
+            AND p.provider='stripe'
             AND p.plan_code IS NOT NULL AND p.status='reserved' AND p.provider_session_id IS NULL
             AND p.environment=${stripePaymentLinkEnvironment(materialized.block.url) ?? 'live'}
             AND NOT EXISTS (SELECT 1 FROM payment_intent_supersessions s WHERE s.payment_id=p.id)
@@ -1256,14 +1261,21 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
       // mismatched SKU or a current veto could obtain a friendly acknowledgement
       // merely because an older valid link existed in the same conversation.
       const priorPaymentLinks = revisedCheckout ? [] : await db<Array<{ id: string; checkout_url: string | null; status: string | null }>>`
+        WITH root AS (SELECT sale_family_root_v1(${canonicalWorkspaceId ?? null}::uuid, ${turn.contact_id}::uuid, ${turn.conversation_id}::uuid) AS id),
+        family AS (SELECT id FROM root WHERE id IS NOT NULL
+          UNION SELECT l.source_conversation_id FROM conversation_history_recovery_links l JOIN root ON l.canonical_conversation_id=root.id
+            WHERE l.workspace_id=${canonicalWorkspaceId ?? null}::uuid AND l.contact_id=${turn.contact_id}::uuid)
         SELECT ad.id, prior_payment.checkout_url, prior_payment.status
         FROM agent_decisions AS ad
         JOIN messages AS prior_turn ON prior_turn.id = ad.turn_id
         LEFT JOIN payments AS prior_payment
           ON prior_payment.idempotency_key = 'agent-a-payment-link:' || ad.turn_id::text
-        WHERE prior_turn.conversation_id = ${turn.conversation_id}::uuid
+        WHERE prior_turn.conversation_id IN (SELECT id FROM family)
+          AND prior_turn.contact_id = ${turn.contact_id}::uuid
           AND ad.outbound_message_id IS NOT NULL
           AND ad.business_action ->> 'type' = 'send_payment_link'
+          -- A match from another conversation of the family counts only when a real payment backs it.
+          AND (prior_turn.conversation_id = ${turn.conversation_id}::uuid OR prior_payment.id IS NOT NULL)
           AND ad.business_action ->> 'plan_code' = ${action.plan_code}
           AND ad.business_action ->> 'offering_sku' = ${action.offering_sku}
           AND COALESCE(prior_payment.environment, 'live') = ${stripePaymentLinkEnvironment(materialized.block.url) ?? 'live'}
@@ -1767,7 +1779,8 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
         prompt_version,
         payload_hash,
         diagnostics,
-        negotiation_observations
+        negotiation_observations,
+        already_said
       )
       VALUES (
         ${validatedInput.turn_id}::uuid,
@@ -1789,7 +1802,8 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
         ${validatedInput.model.prompt_version},
         decode(${payloadHash}, 'hex'),
         ${jsonbParam(db, actualDiagnostics)},
-        ${jsonbParam(db, negotiationObservations.length ? negotiationObservations : null)}
+        ${jsonbParam(db, negotiationObservations.length ? negotiationObservations : null)},
+        ${validatedInput.agent_turn_v2?.proposal.turn_reasoning?.already_said?.trim().slice(0, 400) || null}
       )
       RETURNING id
     `;
@@ -1935,16 +1949,20 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
           await db`UPDATE agent_decisions SET business_action = NULL WHERE id = ${decisionId}::uuid`;
         }
       }
-      // Order of the media parts: course image first, then the PDF (both before the text bubbles on delivery).
-      const imageIndex = programHasImage ? partTexts.length : -1;
-      const documentIndex = programDocument === null ? -1 : partTexts.length + (programHasImage ? 1 : 0);
-      const partsToPersist = programDocument === null ? partTexts
-        : [...partTexts, ...(programHasImage ? [`[imagen enviada: ${programDocument.title}]`] : []), `[programa enviado: ${programDocument.title}]`];
-      const profileRequests = preparedAgentTurn && validatedInput.agent_turn_v2
+      // WhatsApp material handoff: the useful files arrive before the model's
+      // short explanation. This keeps the promise and the physical delivery in
+      // the same visual order: PDF, course image, then authored text.
+      const documentIndex = programDocument === null ? -1 : 0;
+      const imageIndex = programHasImage ? 1 : -1;
+      const mediaParts = programDocument === null ? []
+        : [`[programa enviado: ${programDocument.title}]`, ...(programHasImage ? [`[imagen enviada: ${programDocument.title}]`] : [])];
+      const partsToPersist = [...mediaParts, ...partTexts];
+      const authoredProfileRequests = preparedAgentTurn && validatedInput.agent_turn_v2
         ? contactProfileRequestsForPartsV1({
             authored_messages: validatedInput.agent_turn_v2.proposal.response.messages,
             part_texts: partTexts, requests: validatedInput.agent_turn_v2.proposal.profile_requests ?? [],
           }) : partTexts.map(() => []);
+      const profileRequests = [...mediaParts.map(() => []), ...authoredProfileRequests];
       const purpose = decision.response_type === 'opt_out_ack'
         ? 'consent_confirmation'
         : decision.response_type === 'commercial_reply' || decision.response_type === 'clarification'
@@ -2172,13 +2190,19 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
         ) ON CONFLICT (workspace_id, conversation_id) DO NOTHING`;
         if (preparedAgentTurn.abandons_course_bonus_offer
           && preparedAgentTurn.transition.selected_offering_code) {
-          await cancelOpenCourseBonusOffersForCourseChangeV1(db, {
-            workspace_id: canonicalWorkspaceId,
-            contact_id: turn.contact_id,
-            conversation_id: turn.conversation_id,
-            selected_offering_code: preparedAgentTurn.transition.selected_offering_code,
-            source_turn_id:turn.id,
-          });
+          try {
+            await cancelOpenCourseBonusOffersForCourseChangeV1(db, {
+              workspace_id: canonicalWorkspaceId,
+              contact_id: turn.contact_id,
+              conversation_id: turn.conversation_id,
+              selected_offering_code: preparedAgentTurn.transition.selected_offering_code,
+              source_turn_id:turn.id,
+            });
+          } catch (error) {
+            // Backstop of the authorization layer: the new course is never persisted over a locked checkout.
+            if (error instanceof CourseChangeBlockedByPaymentError) throw new DecisionPolicyError('COURSE_CHANGE_BLOCKED_BY_CHECKOUT');
+            throw error;
+          }
         }
         await recordPromotionConversationContextV1(db, {
           workspace_id: canonicalWorkspaceId,

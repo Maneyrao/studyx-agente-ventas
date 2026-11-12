@@ -2886,7 +2886,9 @@ describe('course prerequisites come from any authorized course fact', () => {
 
 // 2026-11-05 18:19Z (5b138536): «sabes qué dan?» sobre Real Estate (material
 // disponible) respondió el temario sin enviar imagen + PDF.
-describe('a contents answer for the course in focus carries its material', () => {
+// 2026-11-11 (owner): «inglés me coparía» recibió la ficha de Inglés 1 sin
+// asesorar; sólo un pedido explícito del programa obliga a enviarlo.
+describe('a programme request for the course in focus carries its material', () => {
   const id = '00000000-0000-4000-8000-000000000001';
   const withProgram = (sent: string[] = []) => {
     const current = context();
@@ -2901,13 +2903,18 @@ describe('a contents answer for the course in focus carries its material', () =>
   };
   const contents = { used_fact_ids: ['offering:redes-informaticas:name:v1', 'knowledge-source:redes'], used_memory_ids: [] };
 
-  it('requires send_course_program when the syllabus of the focus course is explained and the material is unsent', () => {
-    expect(codes(withProgram(), contents)).toContain('PROGRAM_SEND_REQUIRED:send_course_program:redes-informaticas');
-    expect(codes(withProgram(), { ...contents, proposed_action: { type: 'send_course_program', offering_code: 'redes-informaticas' } }))
+  const requestsProgram = { ...contents, move: { schema_version: 1, move: 'request_course_program',
+    secondary_moves: [], vetoes: [], course_reference: 'Redes Informáticas', confidence: 0.9 } };
+  it('requires send_course_program when the customer asks for the programme and the material is unsent', () => {
+    expect(codes(withProgram(), requestsProgram)).toContain('PROGRAM_SEND_REQUIRED:send_course_program:redes-informaticas');
+    expect(codes(withProgram(), { ...requestsProgram, proposed_action: { type: 'send_course_program', offering_code: 'redes-informaticas' } }))
       .not.toContain('PROGRAM_SEND_REQUIRED:send_course_program:redes-informaticas');
   });
+  it('does not require it when the course is only explained (advise first)', () => {
+    expect(codes(withProgram(), contents).some((c) => c.startsWith('PROGRAM_SEND_REQUIRED'))).toBe(false);
+  });
   it('does not require it once sent, without the syllabus, or on a price turn', () => {
-    expect(codes(withProgram(['redes-informaticas']), contents).some((c) => c.startsWith('PROGRAM_SEND_REQUIRED'))).toBe(false);
+    expect(codes(withProgram(['redes-informaticas']), requestsProgram).some((c) => c.startsWith('PROGRAM_SEND_REQUIRED'))).toBe(false);
     expect(codes(withProgram(), { used_memory_ids: [] }).some((c) => c.startsWith('PROGRAM_SEND_REQUIRED'))).toBe(false);
     expect(codes(withProgram(), { ...contents, move: { schema_version: 1, move: 'ask_course_information',
       secondary_moves: ['price_objection'], vetoes: [], course_reference: 'Redes Informáticas', confidence: 0.9 } })

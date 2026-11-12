@@ -726,10 +726,11 @@ export function buildAgentAContextV1(
       ...(mayRequestCallNow ? ['request_call_now'] : []),
       ...(claimed.policy.may_respond && paymentOptions.length > 0 ? ['present_payment_options'] : []),
       ...(hasReadableCurrentInput && maySendPaymentLink ? ['send_payment_link'] : []),
-      // Never advertised in checkout. A capability, never an order: it needs a motive from the current message.
+      // Only a current backend permission can reopen an unpaid checkout; it remains a capability, not an order.
       ...(bonusCapability?.may_offer_bonus && !isBonusCheckoutStateV1({ stage: effectiveStage,
         awaiting_reply: effectiveAwaitingReply,
-        payment_link_request_pending: !startsFreshInterestCycle && state.payment_link_request?.status === 'pending' })
+        payment_link_request_pending: !startsFreshInterestCycle && state.payment_link_request?.status === 'pending',
+        may_reopen_negotiation: bonusCapability.may_reopen_negotiation })
         ? ['offer_course_bonus_requires_current_motive']
         : []),
       ...(bonusCapability?.may_accept_offer ? ['accept_promotion'] : []),
@@ -754,6 +755,8 @@ export function buildAgentAContextV1(
       assistant_has_spoken: previousAgentReplies.length > 0,
       first_name_status: firstNameStatus,
       last_agent_reply: lastAgentReply,
+      ...(claimed.continuity && claimed.continuity.prior_already_said.length > 0
+        ? { prior_already_said: [...claimed.continuity.prior_already_said] } : {}),
     },
     customer: {
       display_name: nonBlankOrNull(claimed.contact.name),
@@ -781,6 +784,8 @@ export function buildAgentAContextV1(
     identity: agentAIdentityFromClaim(claimed, advisorName),
     commercial_state: {
       sales_profile: salesProfile,
+      ...(claimed.sale_continuity && claimed.sale_continuity.status !== 'none'
+        ? { sale_continuity: claimed.sale_continuity } : {}),
       negotiation: {
         price_objections: {
           count: claimed.negotiation_facts?.price_objection_count ?? null,

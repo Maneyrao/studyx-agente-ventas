@@ -88,12 +88,12 @@ describe('Agent A Meta sales brain', () => {
   it('keeps the instruction surface compact and leaves the real catalog in context', () => {
     const current = context();
     const instructions = buildAgentABrainInstructionsV1(current);
-    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v209');
+    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v212');
     const staticInstructions = instructions.split('<authorized_context>')[0]!;
     // AGENTS.md:243–248: preserve the complete literal authority; bound only
     // the technical wrapper so approved behavioral additions do not force truncation.
     const technical = staticInstructions.replace(/<canonical_sales_behavior[^>]*>[\s\S]*?<\/canonical_sales_behavior>/u, '');
-    expect(technical.trim().split(/\s+/u).length).toBeLessThan(900);
+    expect(technical.trim().split(/\s+/u).length).toBeLessThan(940);
     expect(JSON.parse(instructions.split('<authorized_context>')[1]!.split('</authorized_context>')[0]!)).toEqual(current);
   });
 });

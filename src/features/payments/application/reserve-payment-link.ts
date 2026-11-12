@@ -1,3 +1,4 @@
+import { readNegotiationPaymentStateV1 } from './negotiation-payment-state';
 import { randomUUID } from 'node:crypto';
 import type { DbClient } from '@/lib/db/types';
 import { jsonbParam } from '@/lib/db/json';
@@ -153,6 +154,25 @@ export async function reservePaymentLink(
   if(input.conversation_id) await db`SELECT conversation_id FROM conversation_sales_context_states_v1
     WHERE workspace_id=${input.workspace_id}::uuid AND contact_id=${input.contact_id}::uuid
       AND conversation_id=${input.conversation_id}::uuid FOR UPDATE`;
+  const paymentState = await readNegotiationPaymentStateV1(db,{workspace_id:input.workspace_id,
+    contact_id:input.contact_id,conversation_id:input.conversation_id ?? null,offering_id:input.offering_id},true);
+  const [renegotiated] = await db`SELECT 1 FROM payment_intent_supersessions
+    WHERE workspace_id=${input.workspace_id}::uuid AND contact_id=${input.contact_id}::uuid
+      AND sale_family_root_v1(workspace_id,contact_id,conversation_id) IS NOT DISTINCT FROM sale_family_root_v1(${input.workspace_id}::uuid,${input.contact_id}::uuid,${input.conversation_id ?? null}::uuid) AND original_offering_id=${input.offering_id}::uuid
+      AND reason='NEGOTIATION_REOPENED' LIMIT 1`;
+  if (renegotiated && paymentState.blocked) throw new PaymentLinkReservationError('PAYMENT_RECONCILIATION_REQUIRED');
+  if (renegotiated) {
+    const [currentPackage] = await db<Array<{promotion_code:string;status:string;promotion_cycle_id:string;offer_version:number}>>`
+      SELECT p.promotion_code,o.status,o.promotion_cycle_id,o.offer_version
+      FROM promotion_offers o JOIN promotions p ON p.id=o.promotion_id
+      WHERE o.workspace_id=${input.workspace_id}::uuid AND o.contact_id=${input.contact_id}::uuid
+        AND sale_family_root_v1(o.workspace_id,o.contact_id,o.conversation_id) IS NOT DISTINCT FROM sale_family_root_v1(${input.workspace_id}::uuid,${input.contact_id}::uuid,${input.conversation_id ?? null}::uuid) AND o.paid_offering_id=${input.offering_id}::uuid
+        AND o.package_mode='direct' AND o.status IN ('offered','accepted') ORDER BY o.created_at DESC LIMIT 1`;
+    if (currentPackage && (currentPackage.status!=='accepted' || currentPackage.promotion_code!==input.promotion_code
+      || currentPackage.promotion_cycle_id!==input.promotion_cycle_id || currentPackage.offer_version!==input.accepted_offer_version)) {
+      throw new PaymentLinkReservationError('PROMOTION_NOT_AUTHORIZED');
+    }
+  }
   if (input.promotion_code) {
     await lockPromotionRedemptionV1(db, {
       workspace_id: input.workspace_id,
@@ -189,6 +209,9 @@ export async function reservePaymentLink(
   `;
   if (existing[0]) {
     const found = existing[0];
+    const [retired] = await db`SELECT 1 FROM payment_intent_supersessions
+      WHERE payment_id=${found.id}::uuid AND reason='NEGOTIATION_REOPENED'`;
+    if (retired) throw new PaymentLinkReservationError('CHECKOUT_ALREADY_SUPERSEDED');
     if (
       found.workspace_id !== input.workspace_id
       || found.contact_id !== input.contact_id
@@ -212,13 +235,16 @@ export async function reservePaymentLink(
     return { payment_id: found.id, status: found.status, url: found.checkout_url };
   }
 
+  // Processing, paid, reconciling or uncertain: the conversation continues but no new checkout is created.
+  if (paymentState.blocked) throw new PaymentLinkReservationError('PAYMENT_RECONCILIATION_REQUIRED');
+
   // A fresh ordinary request cannot bypass an attached package's manual path
   // by omitting promotion_code. Historical exact replays above stay durable.
   const supersededPackage=await db<Array<{id:string}>>`
     SELECT offer.id FROM promotion_offers offer
     JOIN payment_intent_supersessions superseded ON superseded.payment_id=offer.payment_id
     WHERE offer.workspace_id=${input.workspace_id}::uuid AND offer.contact_id=${input.contact_id}::uuid
-      AND offer.conversation_id=${input.conversation_id ?? null}::uuid
+      AND sale_family_root_v1(offer.workspace_id,offer.contact_id,offer.conversation_id) IS NOT DISTINCT FROM sale_family_root_v1(${input.workspace_id}::uuid,${input.contact_id}::uuid,${input.conversation_id ?? null}::uuid)
       AND offer.paid_offering_id=${input.offering_id}::uuid
       AND offer.package_mode='direct' AND offer.status='attached'
     LIMIT 1`;
