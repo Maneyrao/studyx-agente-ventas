@@ -210,6 +210,7 @@ describe('instrumented Botpress release provenance from the reviewed source comm
       'evals/a.ts',
       'tests/b.ts',
       'botpress-agent/evals/personas/heldout.json',
+      'assets/course-material/programas-studyx/marketing-digital.pdf',
       'scripts/lib/botpress-additive-event-contract.mjs',
       'scripts/publish-botpress-code-preserving-connections.mjs',
       'AGENTS.md',

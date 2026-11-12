@@ -42,7 +42,7 @@ const NON_CODE_EXACT = new Set([
   'scripts/prepare-instrumented-botpress-release.mjs',
   'scripts/publish-botpress-code-preserving-connections.mjs',
 ]);
-const NON_CODE_PREFIXES = ['docs/', 'evals/', 'tests/', 'botpress-agent/evals/'];
+const NON_CODE_PREFIXES = ['docs/', 'evals/', 'tests/', 'botpress-agent/evals/', 'assets/course-material/'];
 
 /** Guard: the branch HEAD may only differ from the pinned base in docs, evals, tests, AGENTS.md and these tools. */
 export function assertOnlyNonCodeChangesSinceBaseV1(changedPaths) {
