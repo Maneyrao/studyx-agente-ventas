@@ -22,7 +22,14 @@ tests/
 scripts/*
 !scripts/stage-course-programs.mjs
 specs/
-docs/
+# Salvo las fichas PDF, que el prebuild publica en public/material/fichas.
+# Una carpeta ignorada no se puede re-incluir: hay que abrir cada nivel.
+docs/*
+!docs/authority/
+docs/authority/*
+!docs/authority/material-gabi-2026-11-03/
+docs/authority/material-gabi-2026-11-03/*
+!docs/authority/material-gabi-2026-11-03/fichas_pdf/
 /data/
 .superpowers/
 .claude/
