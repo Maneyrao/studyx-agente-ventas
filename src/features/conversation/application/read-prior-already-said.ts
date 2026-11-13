@@ -13,9 +13,12 @@ export async function readPriorAlreadySaidV1(input: {
   workspace_slug: string; conversation_id: string; contact_id: string; source_turn_id: string;
 }, deps: { db: DbClient }): Promise<string[]> {
   const rows = await deps.db<Array<{ already_said: string }>>`
-    WITH root AS (SELECT sale_family_root_v1(w.id,${input.contact_id}::uuid,${input.conversation_id}::uuid) AS id FROM workspaces w WHERE w.slug=${input.workspace_slug}),
+    WITH root AS (SELECT w.id AS workspace_id,
+        sale_family_root_v1(w.id,${input.contact_id}::uuid,${input.conversation_id}::uuid) AS id
+      FROM workspaces w WHERE w.slug=${input.workspace_slug}),
     family AS (SELECT id FROM root WHERE id IS NOT NULL
-      UNION SELECT l.source_conversation_id FROM conversation_history_recovery_links l JOIN root ON l.canonical_conversation_id=root.id
+      UNION SELECT l.source_conversation_id FROM conversation_history_recovery_links l
+        JOIN root ON l.workspace_id=root.workspace_id AND l.canonical_conversation_id=root.id
         WHERE l.contact_id=${input.contact_id}::uuid)
     SELECT left(btrim(d.already_said), ${MAX_CHARS}) AS already_said
     FROM workspaces w
