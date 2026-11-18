@@ -20,7 +20,7 @@ import ts from 'typescript';
 // 2026-11-18 self-managed missing level/plan question with its last-resort fallback).
 // Anything committed after it must be docs/evals/tests only (see assertOnlyNonCodeChangesSinceBaseV1), so a release
 // prepared from the branch HEAD runs exactly this code. Re-pin whenever a code file changes.
-export const BOT_RELEASE_BASE_SHA = '7940fa7da8dd6c648aa65ae3cb6b178448906bb7';
+export const BOT_RELEASE_BASE_SHA = 'ed707bc6e19d2ee1d1222c7de38a934164825252';
 export const BOT_RELEASE_BRAIN_VERSION = 'studyx-agent-a-brain-v214';
 export const BOT_RELEASE_PROMPT_VERSION = 'studyx-agent-a-canonical-v123';
 export const BOT_RELEASE_INSTRUMENTATION_VERSION = 'studyx-release-provenance-v1';
