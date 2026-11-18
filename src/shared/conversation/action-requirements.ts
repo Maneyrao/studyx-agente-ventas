@@ -16,6 +16,8 @@ export interface ActionRequirementV1 {
   readonly missing: readonly ActionRequirementMissingV1[];
   /** Complete options for each missing item; empty when the backend cannot enumerate them. */
   readonly options: {
+    /** `levels` of one course, or unrelated `courses` the customer may mean. */
+    readonly course_selection_kind: 'levels' | 'courses';
     readonly course_selection: readonly { readonly code: string; readonly display_name: string }[];
     readonly payment_plan: readonly string[];
   };
@@ -25,6 +27,7 @@ export function computeActionRequirementsV1(input: {
   readonly selected_offering_code: string | null;
   readonly selected_payment_plan: string | null;
   /** Complete level list of the course family named by the customer (never trimmed). */
+  readonly family_kind: 'levels' | 'courses';
   readonly family_offerings: readonly { readonly code: string; readonly display_name: string }[];
   readonly payment_plan_codes: readonly string[];
 }): ActionRequirementV1[] {
@@ -36,6 +39,7 @@ export function computeActionRequirementsV1(input: {
     ready: missing.length === 0,
     missing,
     options: {
+      course_selection_kind: input.family_kind,
       course_selection: input.selected_offering_code === null ? input.family_offerings : [],
       payment_plan: input.selected_payment_plan === null ? input.payment_plan_codes : [],
     },

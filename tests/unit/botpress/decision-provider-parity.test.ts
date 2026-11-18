@@ -1074,7 +1074,7 @@ describe('paymentRequirementsQuestionDecision (owner D2, 2026-11-18)', () => {
     const claimed = claimedTurn({ allowed_response_types: ['commercial_reply'], batch_message_content: 'Pero mandame el link',
       course_of_interest: null, offering_code: null, selected_payment_plan: null });
     claimed.action_requirements = [{ action: 'send_payment_link', ready: false, missing,
-      options: { course_selection: levels, payment_plan: ['monthly_12', 'monthly_6', 'one_time'] } }];
+      options: { course_selection_kind: 'levels' as const, course_selection: levels, payment_plan: ['monthly_12', 'monthly_6', 'one_time'] } }];
     return claimed;
   };
   it('asks the level with every canonical option: tuteo, no opening question mark, no «no te entendí»', () => {
@@ -1086,7 +1086,7 @@ describe('paymentRequirementsQuestionDecision (owner D2, 2026-11-18)', () => {
   });
   it('asks the plan when only the plan is missing', () => {
     const decision = paymentRequirementsQuestionDecision(withRequirement(['payment_plan']))!;
-    expect(decision.response).toBe('Cómo prefieres pagar: 12 cuotas, 6 cuotas o un solo pago?');
+    expect(decision.response).toBe('Cómo prefieres pagar: en cuotas mensuales o en un solo pago?');
     expect(decision.reason_code).toBe('PAYMENT_PLAN_REQUIRED');
   });
   it('with no enumerable family it still asks which course, and with no requirement it stays null', () => {
@@ -1095,9 +1095,21 @@ describe('paymentRequirementsQuestionDecision (owner D2, 2026-11-18)', () => {
       course_of_interest: null, offering_code: null, selected_payment_plan: null });
     expect(paymentRequirementsQuestionDecision(none)).toBeNull();
   });
-  it('the exhausted-validation notice reuses the question with options when the claim publishes requirements', () => {
-    const decision = validationExhaustedNotice('commercial_reply', { claimed: withRequirement(['course_selection']),
-      failure_codes: ['PLANNERLESS_PROPOSAL_REJECTED:ACTION_NOT_AUTHORIZED:send_payment_link'] });
-    expect(decision.response).toContain('Inglés IV');
+  it('asks which of several unrelated courses, never a level', () => {
+    const claimed = withRequirement(['course_selection']);
+    claimed.action_requirements![0]!.options.course_selection_kind = 'courses';
+    claimed.action_requirements![0]!.options.course_selection = [
+      { code: 'a', display_name: 'Introducción al Catering' }, { code: 'b', display_name: 'Introducción al Ecommerce' },
+      { code: 'c', display_name: 'Introducción a las Criptomonedas' }];
+    expect(paymentRequirementsQuestionDecision(claimed)!.response)
+      .toBe('Cuál de estos cursos te interesa: Introducción al Catering, Introducción al Ecommerce o Introducción a las Criptomonedas?');
+  });
+  it('with level and plan settled, asks the missing contact data by field name', () => {
+    const claimed = claimedTurn({ allowed_response_types: ['commercial_reply'], batch_message_content: 'mandame el link',
+      course_of_interest: 'Inglés 3', offering_code: 'ingles_3', selected_payment_plan: 'monthly_12' });
+    claimed.contact_intake_missing = ['correo', 'telefono'];
+    const decision = paymentRequirementsQuestionDecision(claimed)!;
+    expect(decision.response).toBe('Para preparar el enlace me falta tu correo y tu teléfono con código de país. Me lo compartes?');
+    expect(decision.reason_code).toBe('PAYMENT_CONTACT_REQUIRED');
   });
 });

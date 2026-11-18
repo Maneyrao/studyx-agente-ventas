@@ -42,17 +42,24 @@ export function unmetPaymentLinkRequirementsV1(input: {
   return missing.length === 0 ? null : { ...requirement, missing }
 }
 
-/** The reply asks (with a question) for the first missing item, naming its options or the item itself. */
+const LINK_WORD = /\b(link|links|enlace|enlaces|checkout)\b/u
+
+/**
+ * The reply asks, in an interrogative sentence, for the first missing item (naming one of its
+ * options or the concept), and NO clause that is not a question mentions the link: a reply that
+ * promises or announces the link in any verb («te preparo el link», «ya te genero el enlace»)
+ * is never accepted as a question; the existing rejection and its repair stand.
+ */
 export function asksForFirstMissingRequirementV1(messages: readonly string[], requirement: Requirement): boolean {
-  const text = fold(messages.join(' '))
-  if (!text.includes('?')) return false
+  const text = fold(messages.join('\n'))
+  const clauses = text.match(/[^.!?\n,;]+[.!?\n,;]?/gu) ?? []
+  if (clauses.some((clause) => !clause.trimEnd().endsWith('?') && LINK_WORD.test(clause))) return false
   const first = requirement.missing[0]
-  if (first === 'course_selection') {
-    return requirement.options.course_selection.some((option) => text.includes(fold(option.display_name)))
-      || /\b(nivel|curso)\b/u.test(text)
-  }
-  if (first === 'payment_plan') return /\b(pago|pagos|cuota|cuotas|plan|mensual|mensuales)\b/u.test(text)
-  return false
+  const names = (sentence: string) => first === 'course_selection'
+    ? requirement.options.course_selection.some((option) => sentence.includes(fold(option.display_name)))
+      || /\b(nivel|curso|cursos)\b/u.test(sentence)
+    : first === 'payment_plan' && /\b(pago|pagos|cuota|cuotas|plan|mensual|mensuales)\b/u.test(sentence)
+  return (text.match(/[^.!?\n]+\?/gu) ?? []).some(names)
 }
 
 /**

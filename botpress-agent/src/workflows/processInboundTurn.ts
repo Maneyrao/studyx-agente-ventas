@@ -2600,18 +2600,17 @@ export const processInboundTurn = new Workflow({
         return false
       }
     }
-    // Owner D2 (2026-11-18): the continuation was unavailable or failed. Never silence: commit
-    // the short state-derived question (first missing level/plan with canonical options).
-    const commitPaymentRequirementsQuestion = async (): Promise<boolean> => {
-      const question = paymentRequirementsQuestionDecision(owned)
-      if (question === null) return false
+    // Owner D2 (2026-11-18): never silence on exhaustion. Commits a state-derived decision (the
+    // missing level/plan/contact question, or the technical continuity reply). False when the
+    // backend refuses it too, so the caller can fall through to the next floor.
+    const commitExhaustionDecision = async (candidate: Decision, model: string, stepName: string): Promise<boolean> => {
       try {
         agentTurnV2Commit = null
         pipelineCommit = null
         pipelineMemoryCandidates = []
-        decision = question
+        decision = candidate
         decisionProvider = 'botpress'
-        decisionModel = 'policy:payment-requirements-question'
+        decisionModel = model
         turnDiagnostics = {
           schema_version: 1,
           generation_attempts: agentAGenerationAttempts,
@@ -2619,15 +2618,16 @@ export const processInboundTurn = new Workflow({
           failure_codes: latestRejection ? diagnosticRejectionCodesV1(latestRejection.rejections) : [],
           action_status: 'rejected',
         }
-        linkContinuation.committed = await commitCurrentDecision('commit-payment-requirements-question-v1')
+        linkContinuation.committed = await commitCurrentDecision(stepName)
         return true
-      } catch (questionError) {
-        if (isTurnEvidencePersistenceError(questionError)) throw questionError
-        if (!(questionError instanceof Error)) throw questionError
-        safeLog('studyx.turn.payment_requirements_question_failed', {
+      } catch (floorError) {
+        if (isTurnEvidencePersistenceError(floorError)) throw floorError
+        if (!(floorError instanceof Error)) throw floorError
+        safeLog('studyx.turn.exhaustion_floor_failed', {
           trace_id: input.trace_id,
           turn_id: owned.turn_id,
-          error_code: errorCode(questionError),
+          floor: model,
+          error_code: errorCode(floorError),
         })
         return false
       }
@@ -2659,14 +2659,21 @@ export const processInboundTurn = new Workflow({
           outcome: recovery.outcome,
           attempt: recovery.attempt,
         })
-        if (recovery.outcome === 'exhausted' && latestRejection !== null
-          && rejectionConcernsPaymentLinkV1(latestRejection, [
+        if (recovery.outcome === 'exhausted') {
+          const concernsLink = latestRejection !== null && rejectionConcernsPaymentLinkV1(latestRejection, [
             ...(agentTurnV2Commit ? [agentTurnV2Commit.proposal] : []),
             ...precommitModelAuthoredCandidates.map(({ proposal }) => proposal),
           ])
-          && (await commitFencedContinuationAfterLink() || await commitPaymentRequirementsQuestion())) {
-          state.errorCode = null
-          return null
+          const question = concernsLink ? paymentRequirementsQuestionDecision(owned) : null
+          if ((concernsLink && await commitFencedContinuationAfterLink())
+            || (question !== null
+              && await commitExhaustionDecision(question, 'policy:payment-requirements-question',
+                'commit-payment-requirements-question-v1'))
+            || await commitExhaustionDecision(technicalContinuityFallback(owned),
+              'policy:exhausted-technical-continuity', 'commit-exhausted-technical-continuity-v1')) {
+            state.errorCode = null
+            return null
+          }
         }
         if (recovery.outcome === 'scheduled') {
           await step.sleep(`rejected-turn-recovery-wait-${recovery.attempt}`, recovery.delay_ms)

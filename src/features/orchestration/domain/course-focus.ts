@@ -212,26 +212,36 @@ export function deriveCourseSelection(input: {
   return { course_of_interest: null, offering_code: null };
 }
 
-function familyToken(displayName: string): string {
-  return displayName.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase()
-    .replace(/[^\p{L}\p{N}]+/gu, ' ').trim().split(' ')[0] ?? '';
+/** Name without a trailing level suffix (arabic/roman number, «Nivel N», inicial/intermedio/avanzado). */
+function levelBase(displayName: string): { base: string; hasSuffix: boolean } {
+  const folded = displayName.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+  const base = folded.replace(/\s+(?:nivel\s+)?(?:\d+|[ivx]+|inicial|intermedio|avanzado)$/u, '').trim();
+  return { base, hasSuffix: base !== folded && base.length > 0 };
+}
+
+export interface CourseFamilyV1 {
+  /** `levels`: same name apart from the level suffix. `courses`: unrelated alternatives. */
+  readonly kind: 'levels' | 'courses';
+  readonly offerings: readonly { readonly code: string; readonly display_name: string }[];
 }
 
 /**
- * Complete level list of the course family the customer named without choosing a level
- * (owner 2026-11-18). Same durable source as `deriveCourseSelection`: the current batch, or the
- * newest recent inbound turn with catalog intent when the current one is neutral. Only an
- * ambiguous resolution seeds a family; family = same first display-name token (the rule the
- * resolver uses for family requests). Never trimmed to the resolver's three candidates.
+ * Options for a course the customer named without choosing (owner 2026-11-18). Source: the
+ * current batch, or the newest recent inbound turn (same session window as `deriveCourseSelection`)
+ * with an ambiguous catalog request. A LEVELS family exists only when the names are identical once
+ * the level suffix is removed (Inglés 1..IV); the complete list is returned, never trimmed. Any
+ * other ambiguity is a list of alternative courses: the resolver's candidates.
  */
 export function deriveCourseFamilyOfferingsV1(input: {
   current: CatalogResolution;
   currentMessageTexts: readonly string[];
   recentTurns: readonly CourseFocusTurnV1[];
   catalogIndex: CatalogIndexView | null;
-}): { readonly code: string; readonly display_name: string }[] {
+}): CourseFamilyV1 {
   const index = input.catalogIndex;
-  if (index === null) return [];
+  const none: CourseFamilyV1 = { kind: 'courses', offerings: [] };
+  if (index === null) return none;
   let seeds: readonly string[] = [];
   if (input.current.kind === 'ambiguous') seeds = input.current.candidateCodes;
   else if (input.current.kind === 'no_catalog_intent' && isCatalogRequestNeutral(input.currentMessageTexts)) {
@@ -244,14 +254,18 @@ export function deriveCourseFamilyOfferingsV1(input: {
       break;
     }
   }
-  const tokens = new Set(seeds.flatMap(code => {
-    const offering = index.offerings.find(candidate => candidate.code === code);
-    return offering ? [familyToken(offering.display_name)] : [];
+  const seeded = seeds.flatMap(code => index.offerings.filter(offering => offering.code === code));
+  const bases = new Set(seeded.flatMap(offering => {
+    const { base, hasSuffix } = levelBase(offering.display_name);
+    return hasSuffix ? [base] : [];
   }));
-  tokens.delete('');
-  const family = index.offerings.filter(offering => tokens.has(familyToken(offering.display_name)))
-    .map(offering => ({ code: offering.code, display_name: offering.display_name }));
-  return family.length >= 2 ? family : [];
+  const levels = index.offerings.filter(offering => {
+    const { base, hasSuffix } = levelBase(offering.display_name);
+    return hasSuffix && bases.has(base);
+  }).map(offering => ({ code: offering.code, display_name: offering.display_name }));
+  if (levels.length >= 2) return { kind: 'levels', offerings: levels };
+  const alternatives = seeded.map(offering => ({ code: offering.code, display_name: offering.display_name }));
+  return { kind: 'courses', offerings: alternatives.length >= 2 ? alternatives : [] };
 }
 
 /**

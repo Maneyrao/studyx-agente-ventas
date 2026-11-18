@@ -620,6 +620,7 @@ const ActionRequirementV1Schema = z.object({
   ready: z.boolean(),
   missing: z.array(z.enum(['course_selection', 'payment_plan'])),
   options: z.object({
+    course_selection_kind: z.enum(['levels', 'courses']).default('levels'),
     course_selection: z.array(z.object({ code: z.string().min(1), display_name: z.string().min(1) })),
     payment_plan: z.array(z.string().min(1)),
   }),

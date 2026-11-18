@@ -757,6 +757,15 @@ export function authorizeAgentTurnV2(input: {
   // declares its paid course; that is the paid identity of this copy, even
   // while an older course is still the persisted selection.
   const mentionPaidCourse = action.type==='offer_course_bonus' ? action.interest_offering_code : primaryCourse;
+  // A copy that presents a course as a gift (existing structural detector) is never auto-declared:
+  // the undeclared mention keeps the rejection and its repair.
+  const giftClaimedInCopy = inspectCourseBonusClaimsV1({
+    content:[...proposal.response.messages,...(proposal.response.call_offer ? [proposal.response.call_offer] : [])].join('\n'),
+    authorized_bonus_names:[],known_offering_names:input.offerings.map(offering=>offering.display_name),
+    paid_offering_names:input.offerings.filter(offering=>offering.code===mentionPaidCourse).map(offering=>offering.display_name),
+  }).has_unauthorized_claim
+    // Fail-closed only: gift wording can withhold the auto-declaration, never infer a role.
+    || /\b(?:regal\w*|gratis|obsequi\w*|bonus)\b/u.test([...proposal.response.messages,proposal.response.call_offer ?? ''].join('\n').toLocaleLowerCase('es'));
   const courseMentions = validateCourseMentionsV1({
     messages:proposal.response.messages,call_offer:proposal.response.call_offer,catalog:input.offerings,
     course_mentions:mentionsForValidation,paid_offering_code:mentionPaidCourse,
@@ -767,13 +776,13 @@ export function authorizeAgentTurnV2(input: {
     delivered_bonus_offering_codes:packageIsCurrent ? (input.course_bonus?.delivered_bonus_offerings ?? []).map(course=>course.code) : [],
     // Owner 2026-11-18 (D1 by state): an undeclared mention is auto-declared `alternative`
     // unless the course is already a bonus identity in state; those keep the rejection.
-    bonus_protected_offering_codes:[
+    ...(giftClaimedInCopy ? {} : {bonus_protected_offering_codes:[
       ...(input.course_bonus?.bonus_candidates ?? []).map(course=>course.code),
       ...(input.course_bonus?.rule_bonus ? [input.course_bonus.rule_bonus.bonus_offering_code] : []),
       ...(input.course_bonus?.delivered_bonus_offerings ?? []).map(course=>course.code),
       ...(input.course_bonus?.bonus_offerings ?? []).map(course=>course.code),
       ...(action.type==='offer_course_bonus' ? [action.bonus_offering_code] : []),
-    ],
+    ]}),
   });
   if (courseMentions.violations.length>0) return {
     ok:false,

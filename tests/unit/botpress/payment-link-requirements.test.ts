@@ -43,7 +43,7 @@ function context(overrides: { selected?: string | null; plan?: string | null; re
       authorized_payment_plan: null, intake_status: 'known' as const, intake_missing: [],
       action_requirements: [{
         action: 'send_payment_link' as const, ready: missing.length === 0, missing,
-        options: { course_selection: selected === null ? LEVELS : [], payment_plan: plan === null ? ['monthly_12', 'monthly_6', 'one_time'] : [] },
+        options: { course_selection_kind: 'levels' as const, course_selection: selected === null ? LEVELS : [], payment_plan: plan === null ? ['monthly_12', 'monthly_6', 'one_time'] : [] },
       }],
     },
   } as AgentAContextV1;
@@ -129,9 +129,28 @@ describe('payment link requirements (owner 2026-11-18)', () => {
   });
 });
 
+describe('a promise about the link is never a question (architect review)', () => {
+  const link = (messages: string[]) => pruneLinkActionWhileMissingRequirementsV1({
+    proposal: proposal({ response: { messages, call_offer: null } }), context: context() });
+  it.each([
+    ['Te preparo el link del curso Inglés 1. Te sirve en 12 cuotas?'],
+    ['Ya te genero el enlace, qué nivel?'],
+    ['Te armo el link ahora. Desde qué nivel arrancas?'],
+  ])('keeps the rejection for %s', (text) => {
+    expect(link([text])).toBeNull();
+  });
+  it('still accepts a plain level question and one that only names the link as a noun in a question', () => {
+    expect(link([ASK_LEVEL])).not.toBeNull();
+    expect(link(['Para pasarte el link, desde qué nivel arrancas: Inglés 1, Inglés 2, Inglés 3 o Inglés IV?'])).toBeNull();
+  });
+  it('needs an interrogative sentence that names the first missing item', () => {
+    expect(link(['Hay varios niveles de inglés.'])).toBeNull();
+  });
+});
+
 describe('claim compatibility with the previous bot (v213)', () => {
   const requirement = { action: 'send_payment_link', ready: false, missing: ['course_selection'],
-    options: { course_selection: LEVELS, payment_plan: [] } };
+    options: { course_selection_kind: 'levels', course_selection: LEVELS, payment_plan: [] } };
   it('parses the new top-level field and ignores it when absent', () => {
     const parsed = ClaimedTurnSchema.shape.action_requirements.parse([requirement]);
     expect(parsed?.[0]?.options.course_selection).toHaveLength(4);
@@ -151,7 +170,9 @@ describe('brain prompt v214 requirements contract', () => {
     const missing = buildAgentABrainInstructionsV1(context());
     expect(missing).toContain('kind="payment_requirements"');
     expect(missing).toContain('Inglés IV (ingles_4)');
-    expect(missing).toContain('select_course plus select_payment_plan');
+    expect(missing).toContain('select_payment_plan');
+    expect(missing).toContain('never carry that plan over');
+    expect(missing).toContain('Levels of the course the customer named');
     const ready = buildAgentABrainInstructionsV1(context({ selected: 'ingles_2', plan: 'one_time' }));
     expect(ready).not.toContain('kind="payment_requirements"');
   });

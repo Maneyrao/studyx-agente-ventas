@@ -1285,9 +1285,9 @@ export async function claimBatch(
     action_requirements: computeActionRequirementsV1({
       selected_offering_code: conversationStateV1?.selected_offering_code ?? null,
       selected_payment_plan: conversationStateV1?.selected_payment_plan ?? null,
-      family_offerings: deriveCourseFamilyOfferingsV1({
+      ...((family) => ({ family_kind: family.kind, family_offerings: family.offerings }))(deriveCourseFamilyOfferingsV1({
         current: catalog_resolution, currentMessageTexts, recentTurns: logicalRecentTurns, catalogIndex: catalog_index,
-      }),
+      })),
       payment_plan_codes: business_context?.workspace.payment_options.map(option => option.code) ?? [],
     }),
     ...(priorAlreadySaid.length > 0 ? { continuity: { prior_already_said: priorAlreadySaid } } : {}),

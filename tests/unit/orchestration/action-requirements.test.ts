@@ -13,7 +13,7 @@ const INDEX: CatalogIndexView = {
 };
 const ENGLISH = INDEX.offerings.slice(0, 4).map(({ code, display_name }) => ({ code, display_name }));
 const PLANS = ['monthly_12', 'monthly_6', 'one_time'];
-const family = (current: string[], recent: Array<{ direction: 'inbound' | 'outbound'; content: string }> = []) =>
+const familyOf = (current: string[], recent: Array<{ direction: 'inbound' | 'outbound'; content: string }> = []) =>
   deriveCourseFamilyOfferingsV1({
     current: resolveCatalogFromSnapshot(current, INDEX, []), currentMessageTexts: current, recentTurns: recent, catalogIndex: INDEX,
   });
@@ -21,32 +21,35 @@ const family = (current: string[], recent: Array<{ direction: 'inbound' | 'outbo
 describe('computeActionRequirementsV1', () => {
   it('family without level: asks the level first with the complete family, then the plan', () => {
     const [link, test] = computeActionRequirementsV1({ selected_offering_code: null, selected_payment_plan: null,
-      family_offerings: ENGLISH, payment_plan_codes: PLANS });
+      family_kind: 'levels', family_offerings: ENGLISH, payment_plan_codes: PLANS });
     expect(link).toMatchObject({ action: 'send_payment_link', ready: false, missing: ['course_selection', 'payment_plan'] });
     expect(link!.options.course_selection).toHaveLength(4);
     expect(test!.action).toBe('send_test_payment_link');
   });
   it('plan said before the course stays missing until the durable plan exists', () => {
     const [link] = computeActionRequirementsV1({ selected_offering_code: null, selected_payment_plan: null,
-      family_offerings: [], payment_plan_codes: PLANS });
+      family_kind: 'levels', family_offerings: [], payment_plan_codes: PLANS });
     expect(link!.missing).toEqual(['course_selection', 'payment_plan']);
     expect(link!.options.course_selection).toEqual([]);
   });
   it('course chosen, plan missing: only the plan with its options', () => {
     const [link] = computeActionRequirementsV1({ selected_offering_code: 'ingles_2', selected_payment_plan: null,
-      family_offerings: ENGLISH, payment_plan_codes: PLANS });
+      family_kind: 'levels', family_offerings: ENGLISH, payment_plan_codes: PLANS });
     expect(link).toMatchObject({ ready: false, missing: ['payment_plan'] });
-    expect(link!.options).toEqual({ course_selection: [], payment_plan: PLANS });
+    expect(link!.options).toMatchObject({ course_selection: [], payment_plan: PLANS });
   });
   it('is ready when level and plan are durable, and recomputes when the level or plan changes', () => {
     const ready = computeActionRequirementsV1({ selected_offering_code: 'ingles_2', selected_payment_plan: 'one_time',
-      family_offerings: ENGLISH, payment_plan_codes: PLANS })[0]!;
+      family_kind: 'levels', family_offerings: ENGLISH, payment_plan_codes: PLANS })[0]!;
     expect(ready).toMatchObject({ ready: true, missing: [] });
     const changed = computeActionRequirementsV1({ selected_offering_code: 'ingles_3', selected_payment_plan: null,
-      family_offerings: ENGLISH, payment_plan_codes: PLANS })[0]!;
+      family_kind: 'levels', family_offerings: ENGLISH, payment_plan_codes: PLANS })[0]!;
     expect(changed.missing).toEqual(['payment_plan']);
   });
 });
+
+const family = (current: string[], recent: Array<{ direction: 'inbound' | 'outbound'; content: string }> = []) =>
+  familyOf(current, recent).offerings;
 
 describe('deriveCourseFamilyOfferingsV1 (family when the message names no course)', () => {
   it('current ambiguous request: the whole family, not the resolver’s three candidates', () => {
@@ -78,5 +81,26 @@ describe('deriveCourseFamilyOfferingsV1 (family when the message names no course
       { direction: 'inbound', content: 'holaa, qiero info d ingles' },
       { direction: 'inbound', content: 'mejor Marketing Digital' },
     ])).toEqual([]);
+  });
+});
+
+describe('levels versus unrelated alternatives (real catalog names)', () => {
+  const real = (code: string, name: string) => ({ code, display_name: name, academy: 'Academia', aliases: [] });
+  const REAL: CatalogIndexView = { as_of: 'x', injection_suspected_count: 0, offerings_total: 8, offerings: [
+    real('ingles_1', 'Inglés 1'), real('ingles_2', 'Inglés 2'), real('ingles_3', 'Inglés 3'), real('ingles_4', 'Inglés IV'),
+    real('intro_cripto', 'Introducción a las Criptomonedas'), real('intro_catering', 'Introducción al Catering'),
+    real('intro_ecommerce', 'Introducción al Ecommerce'), real('intro_vino', 'Introducción al Vino, la Cata y el Maridaje'),
+  ] };
+  const of = (text: string) => deriveCourseFamilyOfferingsV1({
+    current: resolveCatalogFromSnapshot([text], REAL, []), currentMessageTexts: [text], recentTurns: [], catalogIndex: REAL });
+  it('Inglés 1..IV is one family of levels, complete', () => {
+    const result = of('holaa, qiero info d ingles');
+    expect(result.kind).toBe('levels');
+    expect(result.offerings.map((o) => o.code)).toEqual(['ingles_1', 'ingles_2', 'ingles_3', 'ingles_4']);
+  });
+  it('the «Introducción a…» courses are never levels of each other', () => {
+    const result = of('quiero info de introduccion');
+    expect(result.kind).toBe('courses');
+    expect(result.offerings.every((o) => o.code.startsWith('intro_'))).toBe(true);
   });
 });

@@ -414,9 +414,9 @@ function currentPaymentRequirementsContractV1(context: AgentAContextV1): string 
   const levels = requirement.options.course_selection.map(option => `${option.display_name} (${option.code})`).join(', ');
   const plans = requirement.options.payment_plan.join(', ');
   return `<current_effect_contract kind="payment_requirements">
-The payment link still lacks: ${requirement.missing.join(', ')}.${levels ? ` Course options the customer named: ${levels}.` : ''}${plans ? ` Payment plans: ${plans}.` : ''}
+The payment link still lacks: ${requirement.missing.join(', ')}.${levels ? ` ${requirement.options.course_selection_kind === 'courses' ? 'Different courses the customer may mean (ask which one, not which level)' : 'Levels of the course the customer named (ask the level)'}: ${levels}.` : ''}${plans ? ` Payment plans: ${plans}.` : ''}
 If the customer asks for the link (or a payment plan) while something is missing, ask for the FIRST missing item in your own words, showing every option listed, with proposed_action=none. Do not guess a level or a plan, do not promise or announce the link, and never answer that you did not understand.
-If the customer has already said a payment plan (sales_profile.preferences) and now picks the level, use move=select_course plus select_payment_plan in that same turn with the plan they said; an old plan does not carry over to a different course.
+A payment plan the customer already said (sales_profile.preferences) applies only to the course they are choosing right now: in that turn use move=select_course plus select_payment_plan with that plan. If they later switch to another course, never carry that plan over; ask or take the one they state for the new course.
 </current_effect_contract>`;
 }
 

@@ -142,10 +142,6 @@ function callOperationalContinuityFallback(claimed: ClaimedTurn): Decision | nul
   }
 }
 
-const PAYMENT_PLAN_SPOKEN_V1: Record<string, string> = {
-  monthly_12: '12 cuotas', monthly_6: '6 cuotas', one_time: 'un solo pago',
-}
-
 /**
  * Owner D2 (2026-11-18), explicit exception to "no fixed backend text": the LAST resort, after
  * Agent A exhausted its attempts on a rejected payment-link request. A short question derived
@@ -153,20 +149,13 @@ const PAYMENT_PLAN_SPOKEN_V1: Record<string, string> = {
  * Null when the claim publishes no unmet requirement.
  */
 export function paymentRequirementsQuestionDecision(claimed: ClaimedTurn): Decision | null {
-  const requirement = claimed.action_requirements?.find((entry) => entry.action === 'send_payment_link' && !entry.ready)
-  const first = requirement?.missing[0]
-  if (!requirement || !first) return null
   const responseType = claimed.policy.allowed_response_types.includes('commercial_reply')
     ? 'commercial_reply' : 'technical_fallback'
-  const levels = requirement.options.course_selection.map((option) => option.display_name)
-  const plans = requirement.options.payment_plan.map((code) => PAYMENT_PLAN_SPOKEN_V1[code] ?? code)
   const list = (items: readonly string[]) => items.length <= 1 ? (items[0] ?? '')
     : `${items.slice(0, -1).join(', ')} o ${items.at(-1)}`
-  const course = first === 'course_selection'
-  const response = course
-    ? levels.length > 0 ? `Desde qué nivel arrancas: ${list(levels)}?` : 'Qué curso quieres comprar?'
-    : plans.length > 0 ? `Cómo prefieres pagar: ${list(plans)}?` : 'Cómo prefieres pagar?'
-  return {
+  const joined = (items: readonly string[]) => items.length <= 1 ? (items[0] ?? '')
+    : `${items.slice(0, -1).join(', ')} y ${items.at(-1)}`
+  const reply = (response: string, missing: Decision['missing_information'], reason_code: string): Decision => ({
     schema_version: 4,
     intent: 'commercial',
     kind: 'reply',
@@ -174,12 +163,36 @@ export function paymentRequirementsQuestionDecision(claimed: ClaimedTurn): Decis
     response_type: responseType,
     business_action: null,
     memory_candidates: [],
-    missing_information: [first],
+    missing_information: missing,
     next_state: 'waiting_user',
-    reason_code: course ? 'PAYMENT_COURSE_REQUIRED' : 'PAYMENT_PLAN_REQUIRED',
+    reason_code,
     confidence: 1,
     retrieval_used: null,
+  })
+  const requirement = claimed.action_requirements?.find((entry) => entry.action === 'send_payment_link' && !entry.ready)
+  const first = requirement?.missing[0]
+  if (requirement && first) {
+    const names = requirement.options.course_selection.map((option) => option.display_name)
+    if (first === 'course_selection') {
+      const asked = names.length === 0 ? 'Qué curso quieres comprar?'
+        : requirement.options.course_selection_kind === 'courses'
+          ? `Cuál de estos cursos te interesa: ${list(names)}?`
+          : `Desde qué nivel arrancas: ${list(names)}?`
+      return reply(asked, ['course_selection'], 'PAYMENT_COURSE_REQUIRED')
+    }
+    // No plan figures here: the backend egress guard removes fixed text that states plan terms
+    // without authorized facts, so the question stays generic and the model words the amounts.
+    return reply('Cómo prefieres pagar: en cuotas mensuales o en un solo pago?', ['payment_plan'], 'PAYMENT_PLAN_REQUIRED')
   }
+  // Level and plan are settled: the link can still lack contact data (named by field).
+  const missingContact = claimed.contact_intake_missing ?? []
+  if (missingContact.length > 0) {
+    const label: Record<string, string> = { nombre: 'tu nombre', apellido: 'tu apellido', correo: 'tu correo',
+      telefono: 'tu teléfono con código de país' }
+    return reply(`Para preparar el enlace me falta ${joined(missingContact.map((field) => label[field] ?? field))}. Me lo compartes?`,
+      [...missingContact], 'PAYMENT_CONTACT_REQUIRED')
+  }
+  return null
 }
 
 /**
@@ -214,8 +227,6 @@ export function validationExhaustedNotice(
   const selectedOfferingCode = recovery?.claimed.conversation_state_v1?.selected_offering_code
     ?? recovery?.claimed.sales_context.offering_code
     ?? null
-  const withRequirements = recovery ? paymentRequirementsQuestionDecision(recovery.claimed) : null
-  if (paymentActionRejected && withRequirements !== null && withRequirements.missing_information[0] !== undefined) return withRequirements
   if (paymentActionRejected && selectedOfferingCode === null) {
     return {
       schema_version: 4,

@@ -378,6 +378,11 @@ describe('plannerless Agent A authority', () => {
       proposal:proposal({response:{messages:['Con Excel Integral te armas la base.']},course_mentions:[]})});
     expect(result).toMatchObject({ok:false,reasons:['COURSE_ROLE_UNDECLARED'],rejection_subjects:['course_mentions:undeclared:excel_integral']});
   });
+  it('«te regalo X» with no bonus candidates is not auto-declared: the undeclared mention is still rejected',()=>{
+    const result=authorize({state:state({selected_offering_code:null}),
+      proposal:proposal({response:{messages:['Te regalo Excel Integral si te inscribes hoy.']},course_mentions:[]})});
+    expect(result).toMatchObject({ok:false,reasons:['COURSE_ROLE_UNDECLARED']});
+  });
   it('a new course after an old plan does not bring the old plan back (E3)',()=>{
     const result=authorize({state:state({selected_offering_code:'redes_informaticas',selected_payment_plan:'monthly_6',stage:'plan_selected'}),
       proposal:proposal({move:{schema_version:1,move:'select_course',course_reference:'excel_integral',secondary_moves:[],vetoes:[],confidence:1},

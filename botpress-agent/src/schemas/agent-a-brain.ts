@@ -435,6 +435,7 @@ export const AgentAContextV1Schema = z.object({
       ready: z.boolean(),
       missing: z.array(z.enum(['course_selection', 'payment_plan'])),
       options: z.object({
+        course_selection_kind: z.enum(['levels', 'courses']).optional(),
         course_selection: z.array(z.object({ code: IdentifierSchema, display_name: z.string().trim().min(1).max(240) }).strict()),
         payment_plan: z.array(IdentifierSchema),
       }).strict(),

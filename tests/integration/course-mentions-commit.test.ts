@@ -22,13 +22,13 @@ async function noEffects(f:Fixture,turn=f.turn_id) {
   expect(await db!`SELECT id FROM promotion_offer_bonus_offerings WHERE source_turn_id=${turn}`).toHaveLength(0);
 }
 run('mandatory course role commit boundary (authority prompt:123,129; spec:59-71)',()=>{
-  it.each(['bubble','call_offer','conversation_only'] as const)('rejects undeclared additional canonical names in %s without effects',async where=>{
+  it.each(['bubble','call_offer','conversation_only'] as const)('auto-declares an undeclared non-bonus course as alternative (owner 2026-11-18) in %s',async where=>{
     const f=await seedConversationForAgentTurn({selected_offering_code:'entrenamiento_funcional',intake_complete:true});
-    const request=input(f,{response:where==='call_offer'?{messages:['Entrenamiento Funcional puede servirte.'],call_offer:'Podemos revisar Inglés 1 por teléfono.'}
-      :{messages:['Entrenamiento Funcional puede servirte.','También Inglés 1.'],call_offer:null}});
+    const request=input(f,{response:where==='call_offer'?{messages:['Entrenamiento Funcional puede servirte.'],call_offer:'Podemos revisar Diplomado en Barista por teléfono.'}
+      :{messages:['Entrenamiento Funcional puede servirte.','También Diplomado en Barista.'],call_offer:null}});
     if(where==='conversation_only') Object.assign(request.agent_turn_v2,{conversation_only:true});
-    await expect(commitAgentDecision(request)).rejects.toMatchObject({code:'DECISION_REJECTED',reason:'AGENT_TURN_V2_REJECTED:COURSE_ROLE_UNDECLARED'});
-    await noEffects(f);
+    expect((await commitAgentDecision(request)).status).toBe('committed');
+    expect(await db!`SELECT id FROM promotion_offer_bonus_offerings WHERE source_turn_id=${f.turn_id}`).toHaveLength(0);
   });
   it('does not let a stale primary declaration override fresh selected state',async()=>{
     const f=await seedConversationForAgentTurn({selected_offering_code:'entrenamiento_funcional',intake_complete:true});
