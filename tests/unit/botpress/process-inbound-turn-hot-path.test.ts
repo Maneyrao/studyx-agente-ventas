@@ -3475,6 +3475,72 @@ describe('processInboundTurn hot path', () => {
   });
 
 
+  it('owner D2 2026-11-18: an exhaustion that is not about the link still ends in the technical continuity reply, never silence', async () => {
+    actionSpies.recovery.mockReset().mockResolvedValue({ outcome: 'exhausted', attempt: 3, delay_ms: 0 });
+    const reason = 'AGENT_TURN_V2_REJECTED:FACT_NOT_AUTHORIZED';
+    const claimed = claimedResponse() as unknown as ClaimedTurn;
+    claimed.features = { agent_loop_v3_mode: 'off', conversation_pipeline_v1_enabled: false,
+      agent_a_brain_v1_enabled: true, agent_a_brain_v1_shadow: false, agent_a_repair_enabled: true };
+    claimed.context.batch_messages[0].content = 'dale, mandame el link en un solo pago';
+    claimed.conversation_state_v1 = { selected_offering_code: 'ingles_1', selected_payment_plan: 'one_time',
+      stage: 'plan_selected', call_preference: 'chat', call_offer_status: 'declined', call_offer_count: 1,
+      awaiting_reply: 'payment_confirmation', version: 7 };
+    claimed.catalog_index = { as_of: NOW, offerings_total: 1,
+      offerings: [{ code: 'ingles_1', display_name: 'Inglés 1', academy: 'Idiomas', aliases: ['ingles'] }],
+      injection_suspected_count: 0 };
+    const business = paymentBusinessContext();
+    business.offerings = [{ ...business.offerings[0]!, code: 'ingles_1', display_name: 'Inglés 1', academy: 'Idiomas' }];
+    claimed.business_context = business;
+    claimed.business_context_available = true;
+    claimed.contact_intake_missing = [];
+    actionSpies.claim.mockResolvedValue(claimed);
+    configuration.agentAPlannerlessV2Enabled = true;
+    actionSpies.agentABrainValidate.mockImplementation(() => null);
+    actionSpies.agentABrainDeepSeek.mockImplementation(async (input: { context: AgentAContextV1; on_provider_request?: () => void;
+      conversation_only?: boolean }) => {
+      input.on_provider_request?.();
+      if (input.conversation_only === true) throw new Error('BRAIN_DEEPSEEK_TIMEOUT');
+      const fenced = false;
+      return { proposal: { schema_version: 1,
+        move: { schema_version: 1, move: 'ask_course_information', secondary_moves: [], vetoes: [],
+          confidence: 1, course_reference: 'ingles_1' },
+        response: { messages: [fenced ? 'Perfecto, queda en un solo pago.' : 'Inglés 1 tiene clases en vivo.'], call_offer: null },
+        proposed_action: fenced ? { type: 'none' }
+          : { type: 'none' },
+        course_mentions: [{ offering_code: 'ingles_1', role: 'paid' }],
+        used_fact_ids: [], used_memory_ids: [], memory_candidates: [],
+        repair_of: input.context.turn_rejection ? { rejection_id: input.context.turn_rejection.rejection_id, attempt: 1 } : null },
+        provider: 'deepseek-direct', model: 'deepseek-v4-flash', latency_ms: 1, attempt_count: 1 };
+    });
+    actionSpies.commit.mockReset().mockImplementation(async ({ input }) => {
+      if (input.agent_turn_v2) throw new StudyxHttpError('DECISION_REJECTED', false, 422, 1,
+        { error: 'DECISION_REJECTED', reason });
+      const content = input.decision?.response ?? '';
+      const outbound = { id: UUID, content, status: 'pending', delivery_attempt: 1,
+        authorized_egress: buildAuthorizedEgress({ content, authorized_urls: [], protected_facts: [] }) };
+      return { status: 'committed', replayed: false, trace_id: UUID, turn_id: UUID, decision_id: UUID,
+        next_state: 'waiting_user', outbound, outbounds: [outbound], call_request: null };
+    });
+    const createMessage = vi.fn(async () => ({ message: { id: 'bp-link-config-message' } }));
+    const step = Object.assign(async (_name: string, run: () => Promise<unknown>) => run(),
+      { sleep: vi.fn(async () => undefined) });
+    const handler = (processInboundTurn as unknown as {
+      definition: { handler: (args: Record<string, unknown>) => Promise<unknown> };
+    }).definition.handler;
+    await handler({ input: workflowInput(), state: processingState(), step,
+      execute: vi.fn(async () => { throw new Error('LEGACY_MODEL_MUST_NOT_RUN'); }),
+      client: { createMessage }, signal: new AbortController().signal, workflow: { id: 'workflow-link-config' } });
+
+    const commits = actionSpies.commit.mock.calls.map(call => call[0].input);
+    // A non-link rejection does not use whole-turn recovery: it goes straight to the continuity floor.
+    expect(commits.at(-1)!.decision).toMatchObject({ kind: 'reply', reason_code: 'MODEL_UNAVAILABLE' });
+    expect(commits.at(-1)!.agent_turn_v2).toBeNull();
+    // The refused effect commit aside, what reached the customer never claims a link nor «no te entendí».
+    expect(JSON.stringify(commits.at(-1))).not.toMatch(/suppress|te mando el enlace/iu);
+    expect(createMessage).toHaveBeenCalled();
+  });
+
+
   it('owner D2 2026-11-18: a backend that refuses the plan question still gets the technical continuity reply, never silence', async () => {
     actionSpies.recovery.mockReset().mockResolvedValue({ outcome: 'exhausted', attempt: 3, delay_ms: 0 });
     const reason = 'PAYMENT_PLAN_MISMATCH';

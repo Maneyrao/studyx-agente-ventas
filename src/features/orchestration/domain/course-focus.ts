@@ -263,7 +263,10 @@ export function deriveCourseFamilyOfferingsV1(input: {
     const { base, hasSuffix } = levelBase(offering.display_name);
     return hasSuffix && bases.has(base);
   }).map(offering => ({ code: offering.code, display_name: offering.display_name }));
-  if (levels.length >= 2) return { kind: 'levels', offerings: levels };
+  // One levels family only when every candidate shares the same base (Inglés 1 + Francés 1 do not).
+  if (bases.size === 1 && seeded.every(offering => levelBase(offering.display_name).hasSuffix) && levels.length >= 2) {
+    return { kind: 'levels', offerings: levels };
+  }
   const alternatives = seeded.map(offering => ({ code: offering.code, display_name: offering.display_name }));
   return { kind: 'courses', offerings: alternatives.length >= 2 ? alternatives : [] };
 }

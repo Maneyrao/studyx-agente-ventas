@@ -103,4 +103,13 @@ describe('levels versus unrelated alternatives (real catalog names)', () => {
     expect(result.kind).toBe('courses');
     expect(result.offerings.every((o) => o.code.startsWith('intro_'))).toBe(true);
   });
+  it('candidates with different bases (Inglés 1 + Francés 1) are alternatives, never one levels family', () => {
+    const mixed: CatalogIndexView = { as_of: 'x', injection_suspected_count: 0, offerings_total: 4, offerings: [
+      real('ingles_1', 'Inglés 1'), real('ingles_2', 'Inglés 2'), real('frances_1', 'Francés 1'), real('frances_2', 'Francés 2')] };
+    const result = deriveCourseFamilyOfferingsV1({
+      current: { kind: 'ambiguous', requestedText: 'idiomas', candidateCodes: ['ingles_1', 'frances_1'], clarification: 'choose_offering' },
+      currentMessageTexts: ['idiomas'], recentTurns: [], catalogIndex: mixed });
+    expect(result.kind).toBe('courses');
+    expect(result.offerings.map((o) => o.code)).toEqual(['ingles_1', 'frances_1']);
+  });
 });
