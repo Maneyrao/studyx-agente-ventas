@@ -3,7 +3,7 @@ import { readFileSync, readdirSync, readlinkSync } from 'node:fs';
 import path from 'node:path';
 import ts from 'typescript';
 
-// Last reviewed commit that changed deployable code (brain v213, prompt v123,
+// Last reviewed commit that changed deployable code (brain v214, prompt v123,
 // owner-only WhatsApp typing presence with bounded start/stop, natural
 // multipart cadence, the active StudyX WhatsApp release destination, and the
 // 2026-11-10 course switch / checkout revision / effect-rejection fixes, and the
@@ -16,11 +16,12 @@ import ts from 'typescript';
 // flexible unpaid sale: reopening after a link, verified cross-conversation
 // continuity and durable selections through unresolved course mentions, plus
 // workspace-scoped recovery of prior conversation markers, and the 2026-11-18
-// call-intake promise pruning and customer-requested programme resend).
+// call-intake promise pruning and customer-requested programme resend, and the
+// 2026-11-18 self-managed missing level/plan question with its last-resort fallback).
 // Anything committed after it must be docs/evals/tests only (see assertOnlyNonCodeChangesSinceBaseV1), so a release
 // prepared from the branch HEAD runs exactly this code. Re-pin whenever a code file changes.
-export const BOT_RELEASE_BASE_SHA = 'd2d45c3638ec92f65b68124d70340d56c000cafb';
-export const BOT_RELEASE_BRAIN_VERSION = 'studyx-agent-a-brain-v213';
+export const BOT_RELEASE_BASE_SHA = '70f842d463b3ff06d80897eda9074cfb7190dc37';
+export const BOT_RELEASE_BRAIN_VERSION = 'studyx-agent-a-brain-v214';
 export const BOT_RELEASE_PROMPT_VERSION = 'studyx-agent-a-canonical-v123';
 export const BOT_RELEASE_INSTRUMENTATION_VERSION = 'studyx-release-provenance-v1';
 export const BOT_RELEASE_SOURCE_PATHS = Object.freeze([
@@ -30,7 +31,7 @@ export const BOT_RELEASE_SOURCE_PATHS = Object.freeze([
 ]);
 const REVIEWED_SOURCE_HASHES = Object.freeze({
   [BOT_RELEASE_SOURCE_PATHS[0]]: 'c1a85e1d95000cd56f885e02d3cf900d7900ea5102b08ed51910500387c2de93',
-  [BOT_RELEASE_SOURCE_PATHS[1]]: 'c8c738dab9e120eb8c1fd8607cbd4a6335c93c90dd9d6c16500cf795041d52fb',
+  [BOT_RELEASE_SOURCE_PATHS[1]]: 'feb9dee41cbabefedb9ded76730bc875c97bb645ced0cdd87184920ec59fbd02',
   [BOT_RELEASE_SOURCE_PATHS[2]]: '77809dcfbf8e605affe2eeb746f56bcf5ce91ca07ef05726ec5fe20111c07fd2',
 });
 // Paths that may change after the pinned base without altering what is deployed.
