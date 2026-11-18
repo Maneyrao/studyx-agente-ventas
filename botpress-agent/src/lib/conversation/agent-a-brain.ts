@@ -41,6 +41,7 @@ import {
   type CommercialTurnPlanV1,
 } from '../../schemas/agent-a-commercial-plan';
 import { assertedCommercialClausesV1, assertedCommercialPricesV1 } from '../../../../src/features/orchestration/domain/commercial-truth-guard';
+import { asksUnmetPaymentLinkRequirementV1 } from './payment-link-requirements';
 import {
   extractProtectedFacts,
   extractUrlCandidates,
@@ -2257,8 +2258,17 @@ export function validateAgentATurnProposalV1(input: {
   // `linkRequestFillsMissingPlan`). With NO persisted course, a link action may
   // name an exact catalog course only if the model declares it as the paid
   // course; the backend policy re-checks it against durable facts.
+  // Owner 2026-11-18: a code taken from the family the customer named, without a level chosen
+  // (select_course naming that exact code), is a guess, not a recovered selection.
+  const unchosenFamilyLevel = action.type === 'send_payment_link'
+    && (input.context.capabilities.action_requirements ?? []).some((requirement) => (
+      requirement.action === 'send_payment_link' && requirement.missing.includes('course_selection')
+        && requirement.options.course_selection.some((option) => option.code === action.offering_code)))
+    && !((input.proposal.move.move === 'select_course' || input.proposal.move.secondary_moves.includes('select_course'))
+      && input.proposal.move.course_reference === action.offering_code)
   const recoversCourseNow = input.context.commercial_state.selected_offering_code === null
     && action.type === 'send_payment_link'
+    && !unchosenFamilyLevel
     && input.context.catalog.available_offerings.some((offering) => offering.code === action.offering_code)
     && (input.proposal.course_mentions ?? []).some((mention) => (
       mention.offering_code === action.offering_code && mention.role === 'paid'
@@ -2283,6 +2293,7 @@ export function validateAgentATurnProposalV1(input: {
   if (action.type === 'none' && requestsPaymentLink
     && input.context.commercial_state.selected_payment_plan === null
     && !selectsKnownPlanNow
+    && !asksUnmetPaymentLinkRequirementV1({ proposal: input.proposal, context: input.context })
     && (input.context.capabilities.intake_missing ?? []).length === 0) {
     rejections.push({ code: 'PLAN_NOT_SELECTED', subject: 'payment_plan' })
   }

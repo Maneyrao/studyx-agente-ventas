@@ -319,7 +319,9 @@ describe('plannerless Agent A authority', () => {
       proposal: proposal({ move: { schema_version: 1, move: 'select_course', course_reference: reference, secondary_moves: [], vetoes: [], confidence: 1 },
         response: { messages: ['Excel Integral es el que más se acerca. Te cuento qué vas a ver?'] } }) });
     expect(select('Excel Integral')).toMatchObject({ ok: true, transition: { selected_offering_code: 'excel_integral' } });
-    expect(select('Real Estate')).toMatchObject({ ok: false });
+    // Owner 2026-11-18: the undeclared Excel mention no longer rejects the turn; an unresolved
+    // reference still does not select a course.
+    expect(select('Real Estate')).toMatchObject({ ok: true, transition: { selected_offering_code: null } });
   });
   it.each(['payment_plan', 'payment_confirmation', 'contact_details'] as const)(
     // Owner 2026-11-05: a price complaint during checkout may open the bonus until the link is sent; call invitations stay blocked.
@@ -361,6 +363,26 @@ describe('plannerless Agent A authority', () => {
       proposal:proposal({move:PRICE_MOVE,response:{messages:['Redes Informáticas e Excel Integral pueden servirte.']},
         course_mentions:[{offering_code:'redes_informaticas',role:'paid'},{offering_code:'excel_integral',role:'bonus'}]})});
     expect(result.ok).toBe(status==='offered');
+  });
+  it('auto-declares an undeclared named course as alternative instead of rejecting the turn (owner 2026-11-18)',()=>{
+    const result=authorize({state:state({selected_offering_code:null}),
+      proposal:proposal({response:{messages:['Tenemos Excel Integral y Marketing Digital.']},course_mentions:[]})});
+    expect(result.ok).toBe(true);
+  });
+  it('keeps rejecting an undeclared course that is a bonus candidate even without the word gift (E1 by state)',()=>{
+    const result=authorize({state:state({selected_offering_code:null}),
+      courseBonus:{enabled:true,max_bonus_courses:3,may_offer_bonus:true,status:'offer_available',package_status:null,
+        may_schedule_checkin:false,may_request_review:false,may_accept_offer:false,may_send_promoted_payment:false,promotion_code:null,
+        interest_offering_code:null,bonus_offerings:[],delivered_bonus_offerings:[],
+        bonus_candidates:[{code:'excel_integral',display_name:'Excel Integral'}]},
+      proposal:proposal({response:{messages:['Con Excel Integral te armas la base.']},course_mentions:[]})});
+    expect(result).toMatchObject({ok:false,reasons:['COURSE_ROLE_UNDECLARED'],rejection_subjects:['course_mentions:undeclared:excel_integral']});
+  });
+  it('a new course after an old plan does not bring the old plan back (E3)',()=>{
+    const result=authorize({state:state({selected_offering_code:'redes_informaticas',selected_payment_plan:'monthly_6',stage:'plan_selected'}),
+      proposal:proposal({move:{schema_version:1,move:'select_course',course_reference:'excel_integral',secondary_moves:[],vetoes:[],confidence:1},
+        response:{messages:['Excel Integral es una buena opción. Te cuento qué vas a ver?']},course_mentions:[{offering_code:'excel_integral',role:'paid'}]})});
+    expect(result).toMatchObject({ok:true,transition:{selected_offering_code:'excel_integral',selected_payment_plan:null}});
   });
   it('does not override primary A with a delivered package for old primary B',()=>{
     const result=authorize({state:state({selected_offering_code:'redes_informaticas'}),courseBonus:{enabled:true,max_bonus_courses:3,may_offer_bonus:false,status:'offer_available',package_status:'offered',
@@ -411,8 +433,12 @@ describe('plannerless Agent A authority', () => {
         response:{messages:['Podemos continuar.']},course_mentions:[{offering_code:'inactive_paid',role:'paid'}]})});
     expect(result).toMatchObject({ok:true,transition:{selected_offering_code:'inactive_paid'}});
   });
-  it('blocks an undeclared extra course even in advisory mode and call_offer',()=>{
+  it('blocks an undeclared bonus-candidate course even in advisory mode and call_offer',()=>{
     const result=authorize({state:state({selected_offering_code:'redes_informaticas'}),semanticRejections:'advisory',
+      courseBonus:{enabled:true,max_bonus_courses:3,may_offer_bonus:true,status:'offer_available',package_status:null,
+        may_schedule_checkin:false,may_request_review:false,may_accept_offer:false,may_send_promoted_payment:false,promotion_code:null,
+        interest_offering_code:'redes_informaticas',bonus_offerings:[],delivered_bonus_offerings:[],
+        bonus_candidates:[{code:'excel_integral',display_name:'Excel Integral'}]},
       proposal:proposal({response:{messages:['Redes Informáticas puede servirte.'],call_offer:'Podemos revisar Excel Integral.'}})});
     expect(result).toMatchObject({ok:false,reasons:['COURSE_ROLE_UNDECLARED'],rejection_subjects:['course_mentions:undeclared:excel_integral']});
   });

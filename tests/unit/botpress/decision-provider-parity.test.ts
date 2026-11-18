@@ -7,6 +7,7 @@ import {
   policyRejectedStateFallback,
   technicalContinuityFallback,
   validationExhaustedNotice,
+  paymentRequirementsQuestionDecision,
 } from '../../../botpress-agent/src/utils/decision-policy';
 import type { ClaimedTurn, Decision } from '../../../botpress-agent/src/schemas/contracts';
 
@@ -1063,5 +1064,40 @@ describe('applyDecisionPolicy — provider parity', () => {
       }));
       expect(fallback.response).toBe('Perdón, no te entendí bien, a qué te refieres?');
     });
+  });
+});
+
+describe('paymentRequirementsQuestionDecision (owner D2, 2026-11-18)', () => {
+  const english = [['ingles_1', 'Inglés 1'], ['ingles_2', 'Inglés 2'], ['ingles_3', 'Inglés 3'], ['ingles_4', 'Inglés IV']]
+    .map(([code, display_name]) => ({ code: code!, display_name: display_name! }));
+  const withRequirement = (missing: Array<'course_selection' | 'payment_plan'>, levels = english) => {
+    const claimed = claimedTurn({ allowed_response_types: ['commercial_reply'], batch_message_content: 'Pero mandame el link',
+      course_of_interest: null, offering_code: null, selected_payment_plan: null });
+    claimed.action_requirements = [{ action: 'send_payment_link', ready: false, missing,
+      options: { course_selection: levels, payment_plan: ['monthly_12', 'monthly_6', 'one_time'] } }];
+    return claimed;
+  };
+  it('asks the level with every canonical option: tuteo, no opening question mark, no «no te entendí»', () => {
+    const decision = paymentRequirementsQuestionDecision(withRequirement(['course_selection', 'payment_plan']))!;
+    expect(decision).toMatchObject({ kind: 'reply', business_action: null, missing_information: ['course_selection'],
+      reason_code: 'PAYMENT_COURSE_REQUIRED' });
+    expect(decision.response).toBe('Desde qué nivel arrancas: Inglés 1, Inglés 2, Inglés 3 o Inglés IV?');
+    expect(decision.response).not.toMatch(/¿|no te entend/u);
+  });
+  it('asks the plan when only the plan is missing', () => {
+    const decision = paymentRequirementsQuestionDecision(withRequirement(['payment_plan']))!;
+    expect(decision.response).toBe('Cómo prefieres pagar: 12 cuotas, 6 cuotas o un solo pago?');
+    expect(decision.reason_code).toBe('PAYMENT_PLAN_REQUIRED');
+  });
+  it('with no enumerable family it still asks which course, and with no requirement it stays null', () => {
+    expect(paymentRequirementsQuestionDecision(withRequirement(['course_selection'], []))!.response).toBe('Qué curso quieres comprar?');
+    const none = claimedTurn({ allowed_response_types: ['commercial_reply'], batch_message_content: 'hola',
+      course_of_interest: null, offering_code: null, selected_payment_plan: null });
+    expect(paymentRequirementsQuestionDecision(none)).toBeNull();
+  });
+  it('the exhausted-validation notice reuses the question with options when the claim publishes requirements', () => {
+    const decision = validationExhaustedNotice('commercial_reply', { claimed: withRequirement(['course_selection']),
+      failure_codes: ['PLANNERLESS_PROPOSAL_REJECTED:ACTION_NOT_AUTHORIZED:send_payment_link'] });
+    expect(decision.response).toContain('Inglés IV');
   });
 });

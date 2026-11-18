@@ -803,6 +803,35 @@ describe('claimBatch', () => {
     });
   });
 
+  it('publishes top-level action_requirements with the complete family and plans; v213 and v214 both parse the claim', async () => {
+    const bounded = businessContextView({ offerings_truncated: 0, offerings: [businessOffering('ingles_1', 'Inglés 1', 'Idiomas')] });
+    const index = {
+      as_of: bounded.as_of, offerings_total: 4, injection_suspected_count: 0,
+      offerings: [1, 2, 3, 4].map((n) => ({ code: `ingles_${n}`, display_name: n === 4 ? 'Inglés IV' : `Inglés ${n}`, academy: 'Idiomas', aliases: [] })),
+    };
+    const result = await claimBatch(input, {
+      ...buildDeps({ messagesResult: [{ id: 'm1', conversation_seq: 1, content: 'Ingles',
+        created_at: '2026-08-11T12:00:00.000Z', message_type: 'text' }] }),
+      conversationPipelineEnabled: true,
+      conversationState: { load: vi.fn().mockResolvedValue({
+        workspace_id: 'workspace-1', conversation_id: 'conversation-1', contact_id: 'contact-1',
+        selected_offering_code: null, selected_payment_plan: null, stage: 'exploring', call_preference: 'chat',
+        call_offer_status: 'declined', awaiting_reply: 'none', source_turn_id: 'turn-0', version: 1,
+        created_at: '2026-08-27T00:00:00.000Z', updated_at: '2026-08-27T00:01:00.000Z' }) },
+      business: { load: vi.fn().mockResolvedValue(bounded), loadCompleteIndex: vi.fn().mockResolvedValue(index),
+        loadByCode: vi.fn().mockResolvedValue(bounded) },
+    });
+    if (result.outcome !== 'claimed') throw new Error('expected a claim');
+    const link = result.action_requirements?.find((entry) => entry.action === 'send_payment_link');
+    expect(link).toMatchObject({ ready: false, missing: ['course_selection', 'payment_plan'] });
+    expect(link?.options.course_selection.map((option) => option.code)).toEqual(['ingles_1', 'ingles_2', 'ingles_3', 'ingles_4']);
+    // The resolver itself still caps candidates at three: the full list lives only in action_requirements.
+    expect(result.catalog_resolution).toMatchObject({ kind: 'ambiguous', candidateCodes: ['ingles_1', 'ingles_2', 'ingles_3'] });
+    const wire = withWireUuids(result);
+    expect(ClaimedTurnSchema.parse(wire).action_requirements?.[0]?.missing).toEqual(['course_selection', 'payment_plan']);
+    expect(ClaimedTurnSchema.omit({ action_requirements: true }).parse(wire)).not.toHaveProperty('action_requirements');
+  });
+
   it('lets new Botpress parse a legacy non-null business snapshot fail closed', async () => {
     const result = await claimBatch(input, {
       ...buildDeps(),

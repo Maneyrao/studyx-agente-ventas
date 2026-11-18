@@ -5,7 +5,7 @@ import {
 } from './studyx-agent-a-canonical.generated';
 import { resolveCanonicalPromptIdentityV1 } from './agent-a-identity';
 
-export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v213' as const;
+export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v214' as const;
 
 /**
  * Runtime contract only. The sales behavior lives in the canonical prompt so
@@ -407,6 +407,19 @@ The customer is answering the requested payment-plan choice. For a clear canonic
   return '';
 }
 
+function currentPaymentRequirementsContractV1(context: AgentAContextV1): string {
+  const requirement = (context.capabilities.action_requirements ?? [])
+    .find(entry => entry.action === 'send_payment_link' && !entry.ready);
+  if (!requirement) return '';
+  const levels = requirement.options.course_selection.map(option => `${option.display_name} (${option.code})`).join(', ');
+  const plans = requirement.options.payment_plan.join(', ');
+  return `<current_effect_contract kind="payment_requirements">
+The payment link still lacks: ${requirement.missing.join(', ')}.${levels ? ` Course options the customer named: ${levels}.` : ''}${plans ? ` Payment plans: ${plans}.` : ''}
+If the customer asks for the link (or a payment plan) while something is missing, ask for the FIRST missing item in your own words, showing every option listed, with proposed_action=none. Do not guess a level or a plan, do not promise or announce the link, and never answer that you did not understand.
+If the customer has already said a payment plan (sales_profile.preferences) and now picks the level, use move=select_course plus select_payment_plan in that same turn with the plan they said; an old plan does not carry over to a different course.
+</current_effect_contract>`;
+}
+
 const EXECUTION_CONSISTENCY_CHECK = `<execution_consistency_check>
 Before returning AgentATurnProposalV1, make response, move, profile metadata and proposed_action describe the same next step.
 - An accepted or requested call stays primary move=request_call while collecting contact data and while asking availability. provide_contact_details may be secondary, never the primary replacement for that live call intent.
@@ -502,6 +515,8 @@ ${currentCourseProgramEffectContractV1(context)}
 ${currentCallEffectContractV1(context)}
 
 ${currentCheckoutEffectContractV1(context)}
+
+${currentPaymentRequirementsContractV1(context)}
 
 ${EXECUTION_CONSISTENCY_CHECK}
 

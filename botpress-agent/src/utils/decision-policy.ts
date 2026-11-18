@@ -142,6 +142,46 @@ function callOperationalContinuityFallback(claimed: ClaimedTurn): Decision | nul
   }
 }
 
+const PAYMENT_PLAN_SPOKEN_V1: Record<string, string> = {
+  monthly_12: '12 cuotas', monthly_6: '6 cuotas', one_time: 'un solo pago',
+}
+
+/**
+ * Owner D2 (2026-11-18), explicit exception to "no fixed backend text": the LAST resort, after
+ * Agent A exhausted its attempts on a rejected payment-link request. A short question derived
+ * from state with the canonical options, never silence. Tuteo, no opening question mark.
+ * Null when the claim publishes no unmet requirement.
+ */
+export function paymentRequirementsQuestionDecision(claimed: ClaimedTurn): Decision | null {
+  const requirement = claimed.action_requirements?.find((entry) => entry.action === 'send_payment_link' && !entry.ready)
+  const first = requirement?.missing[0]
+  if (!requirement || !first) return null
+  const responseType = claimed.policy.allowed_response_types.includes('commercial_reply')
+    ? 'commercial_reply' : 'technical_fallback'
+  const levels = requirement.options.course_selection.map((option) => option.display_name)
+  const plans = requirement.options.payment_plan.map((code) => PAYMENT_PLAN_SPOKEN_V1[code] ?? code)
+  const list = (items: readonly string[]) => items.length <= 1 ? (items[0] ?? '')
+    : `${items.slice(0, -1).join(', ')} o ${items.at(-1)}`
+  const course = first === 'course_selection'
+  const response = course
+    ? levels.length > 0 ? `Desde qué nivel arrancas: ${list(levels)}?` : 'Qué curso quieres comprar?'
+    : plans.length > 0 ? `Cómo prefieres pagar: ${list(plans)}?` : 'Cómo prefieres pagar?'
+  return {
+    schema_version: 4,
+    intent: 'commercial',
+    kind: 'reply',
+    response,
+    response_type: responseType,
+    business_action: null,
+    memory_candidates: [],
+    missing_information: [first],
+    next_state: 'waiting_user',
+    reason_code: course ? 'PAYMENT_COURSE_REQUIRED' : 'PAYMENT_PLAN_REQUIRED',
+    confidence: 1,
+    retrieval_used: null,
+  }
+}
+
 /**
  * Last-resort continuity after Agent A prose and effects have both crossed
  * their dedicated repair budget. It reuses the fact-free technical reply and
@@ -174,6 +214,8 @@ export function validationExhaustedNotice(
   const selectedOfferingCode = recovery?.claimed.conversation_state_v1?.selected_offering_code
     ?? recovery?.claimed.sales_context.offering_code
     ?? null
+  const withRequirements = recovery ? paymentRequirementsQuestionDecision(recovery.claimed) : null
+  if (paymentActionRejected && withRequirements !== null && withRequirements.missing_information[0] !== undefined) return withRequirements
   if (paymentActionRejected && selectedOfferingCode === null) {
     return {
       schema_version: 4,

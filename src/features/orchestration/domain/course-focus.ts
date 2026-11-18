@@ -212,6 +212,48 @@ export function deriveCourseSelection(input: {
   return { course_of_interest: null, offering_code: null };
 }
 
+function familyToken(displayName: string): string {
+  return displayName.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, ' ').trim().split(' ')[0] ?? '';
+}
+
+/**
+ * Complete level list of the course family the customer named without choosing a level
+ * (owner 2026-11-18). Same durable source as `deriveCourseSelection`: the current batch, or the
+ * newest recent inbound turn with catalog intent when the current one is neutral. Only an
+ * ambiguous resolution seeds a family; family = same first display-name token (the rule the
+ * resolver uses for family requests). Never trimmed to the resolver's three candidates.
+ */
+export function deriveCourseFamilyOfferingsV1(input: {
+  current: CatalogResolution;
+  currentMessageTexts: readonly string[];
+  recentTurns: readonly CourseFocusTurnV1[];
+  catalogIndex: CatalogIndexView | null;
+}): { readonly code: string; readonly display_name: string }[] {
+  const index = input.catalogIndex;
+  if (index === null) return [];
+  let seeds: readonly string[] = [];
+  if (input.current.kind === 'ambiguous') seeds = input.current.candidateCodes;
+  else if (input.current.kind === 'no_catalog_intent' && isCatalogRequestNeutral(input.currentMessageTexts)) {
+    for (let at = input.recentTurns.length - 1; at >= 0; at -= 1) {
+      const turn = input.recentTurns[at]!;
+      if (turn.direction !== 'inbound') continue;
+      const historical = resolveCatalogFromSnapshot([turn.content], index, previousAgentTurnMessages(input.recentTurns, at));
+      if (historical.kind === 'no_catalog_intent' && isCatalogRequestNeutral(turn.content)) continue;
+      if (historical.kind === 'ambiguous') seeds = historical.candidateCodes;
+      break;
+    }
+  }
+  const tokens = new Set(seeds.flatMap(code => {
+    const offering = index.offerings.find(candidate => candidate.code === code);
+    return offering ? [familyToken(offering.display_name)] : [];
+  }));
+  tokens.delete('');
+  const family = index.offerings.filter(offering => tokens.has(familyToken(offering.display_name)))
+    .map(offering => ({ code: offering.code, display_name: offering.display_name }));
+  return family.length >= 2 ? family : [];
+}
+
 /**
  * Recent turns are short-term dialogue, not durable memory. Keep only the
  * contiguous suffix that belongs to the current session; summaries, selected

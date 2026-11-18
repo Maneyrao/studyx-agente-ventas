@@ -429,6 +429,16 @@ export const AgentAContextV1Schema = z.object({
       next_step: z.enum(['none', 'collect_contact_details', 'confirm_availability', 'dispatch_authorized']),
       request_call_now_authorized: z.boolean(),
     }).strict().optional(),
+    /** Payment-link requirements still missing, with the full canonical options (owner 2026-11-18). */
+    action_requirements: z.array(z.object({
+      action: z.enum(['send_payment_link', 'send_test_payment_link']),
+      ready: z.boolean(),
+      missing: z.array(z.enum(['course_selection', 'payment_plan'])),
+      options: z.object({
+        course_selection: z.array(z.object({ code: IdentifierSchema, display_name: z.string().trim().min(1).max(240) }).strict()),
+        payment_plan: z.array(IdentifierSchema),
+      }).strict(),
+    }).strict()).optional(),
   }).strict(),
 }).strict();
 

@@ -6,6 +6,7 @@ import { claimsImmediatePaymentLinkDeliveryV1 } from '../../../../src/shared/con
 import { messagesWithoutExactCallOfferV1 } from '../../../../src/shared/conversation/call-offer-format'
 import { AgentATurnProposalV1Schema, type AgentAContextV1, type AgentATurnProposalV1 } from '../../schemas/agent-a-brain'
 import { pruneCallPromiseWhileCollectingIntakeV1, removeEffectClaimBubblesV1, salvageFactClaimsV1, salvageProgramSendClaimsV1 } from './agent-a-claim-repair'
+import { pruneLinkActionWhileMissingRequirementsV1 } from './payment-link-requirements'
 import {
   AgentABrainError,
   claimsImmediateCallDispatchV1,
@@ -290,7 +291,10 @@ function preparePlannerlessProposal<T extends AgentAProposalEnvelopeV1>(input: {
   })
   // Call requested and only intake is missing: drop the dispatch promise, keep the data request.
   const callPromisePruned = pruneCallPromiseWhileCollectingIntakeV1({ proposal: input.initial.proposal, context: input.context })
-  const effective = callPromisePruned === null ? input.initial : { ...input.initial, proposal: callPromisePruned }
+  const afterCall = callPromisePruned === null ? input.initial : { ...input.initial, proposal: callPromisePruned }
+  // Owner 2026-11-18: a link without level/plan whose reply asks for it is a question, not a failure.
+  const linkPruned = pruneLinkActionWhileMissingRequirementsV1({ proposal: afterCall.proposal, context: input.context })
+  const effective = linkPruned === null ? afterCall : { ...afterCall, proposal: linkPruned }
   const originalRejection = validate(effective)
   if (originalRejection?.rejections.some((reason) => reason.code === 'PROPOSAL_SCHEMA_INVALID')) {
     return { effective: input.initial, rejection: originalRejection, originalRejection }

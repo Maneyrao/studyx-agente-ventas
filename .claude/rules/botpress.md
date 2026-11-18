@@ -41,8 +41,11 @@ los nombres reales de los tags.
   para materializadores implícitos de enlaces. No neutralizar la intención
   de llamar ni el plan para impedir un efecto.
 - Una continuación opcional fallida no descarta una primera respuesta de A
-  ya validada. Las generaciones comparten un límite de dos solicitudes
-  reales, contando reparaciones de JSON y replay de pasos durables.
+  ya validada. Las generaciones comparten un límite de tres solicitudes
+  reales por turno (`accountAgentAProviderRequest` en processInboundTurn),
+  contando reparaciones de JSON y replay de pasos durables; la tercera queda
+  reservada a la reparación tras un rechazo del commit del backend. Así lo
+  hace el código (corregido 2026-11-18; antes decía dos).
 - Excepción del dueño (2026-11-06): el plan comercial model-owned de Agent A
   suma UNA solicitud por turno, sin reintento, fuera de ese límite y
   registrada aparte. Ver «Planificación comercial en dos pasos» en AGENTS.md.

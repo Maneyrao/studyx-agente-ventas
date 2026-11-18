@@ -3206,6 +3206,140 @@ describe('processInboundTurn hot path', () => {
     }
   });
 
+  it('owner D2 2026-11-18: recovery exhausted on a rejected link with the continuation down commits the plan question, not silence', async () => {
+    actionSpies.recovery.mockReset().mockResolvedValue({ outcome: 'exhausted', attempt: 3, delay_ms: 0 });
+    const reason = 'PAYMENT_PLAN_MISMATCH';
+    const claimed = claimedResponse() as unknown as ClaimedTurn;
+    claimed.features = { agent_loop_v3_mode: 'off', conversation_pipeline_v1_enabled: false,
+      agent_a_brain_v1_enabled: true, agent_a_brain_v1_shadow: false, agent_a_repair_enabled: true };
+    claimed.context.batch_messages[0].content = 'dale, mandame el link en un solo pago';
+    claimed.conversation_state_v1 = { selected_offering_code: 'ingles_1', selected_payment_plan: 'one_time',
+      stage: 'plan_selected', call_preference: 'chat', call_offer_status: 'declined', call_offer_count: 1,
+      awaiting_reply: 'payment_confirmation', version: 7 };
+    claimed.catalog_index = { as_of: NOW, offerings_total: 1,
+      offerings: [{ code: 'ingles_1', display_name: 'Inglés 1', academy: 'Idiomas', aliases: ['ingles'] }],
+      injection_suspected_count: 0 };
+    const business = paymentBusinessContext();
+    business.offerings = [{ ...business.offerings[0]!, code: 'ingles_1', display_name: 'Inglés 1', academy: 'Idiomas' }];
+    claimed.business_context = business;
+    claimed.business_context_available = true;
+    claimed.contact_intake_missing = [];
+    claimed.action_requirements = [{ action: 'send_payment_link', ready: false, missing: ['payment_plan'],
+      options: { course_selection: [], payment_plan: ['monthly_12', 'monthly_6', 'one_time'] } }];
+    actionSpies.claim.mockResolvedValue(claimed);
+    configuration.agentAPlannerlessV2Enabled = true;
+    actionSpies.agentABrainValidate.mockImplementation(() => null);
+    actionSpies.agentABrainDeepSeek.mockImplementation(async (input: { context: AgentAContextV1; on_provider_request?: () => void;
+      conversation_only?: boolean }) => {
+      input.on_provider_request?.();
+      if (input.conversation_only === true) throw new Error('BRAIN_DEEPSEEK_TIMEOUT');
+      const fenced = false;
+      return { proposal: { schema_version: 1,
+        move: { schema_version: 1, move: 'request_payment_link', secondary_moves: [], vetoes: [],
+          confidence: 1, payment_plan: 'one_time', course_reference: 'ingles_1' },
+        response: { messages: [fenced ? 'Perfecto, queda en un solo pago.' : 'Te mando el enlace ahora.'], call_offer: null },
+        proposed_action: fenced ? { type: 'none' }
+          : { type: 'send_payment_link', offering_code: 'ingles_1', payment_plan: 'one_time' },
+        course_mentions: [{ offering_code: 'ingles_1', role: 'paid' }],
+        used_fact_ids: [], used_memory_ids: [], memory_candidates: [],
+        repair_of: input.context.turn_rejection ? { rejection_id: input.context.turn_rejection.rejection_id, attempt: 1 } : null },
+        provider: 'deepseek-direct', model: 'deepseek-v4-flash', latency_ms: 1, attempt_count: 1 };
+    });
+    actionSpies.commit.mockReset().mockImplementation(async ({ input }) => {
+      if (input.agent_turn_v2) throw new StudyxHttpError('DECISION_REJECTED', false, 422, 1,
+        { error: 'DECISION_REJECTED', reason });
+      const content = input.decision?.response ?? '';
+      const outbound = { id: UUID, content, status: 'pending', delivery_attempt: 1,
+        authorized_egress: buildAuthorizedEgress({ content, authorized_urls: [], protected_facts: [] }) };
+      return { status: 'committed', replayed: false, trace_id: UUID, turn_id: UUID, decision_id: UUID,
+        next_state: 'waiting_user', outbound, outbounds: [outbound], call_request: null };
+    });
+    const createMessage = vi.fn(async () => ({ message: { id: 'bp-link-config-message' } }));
+    const step = Object.assign(async (_name: string, run: () => Promise<unknown>) => run(),
+      { sleep: vi.fn(async () => undefined) });
+    const handler = (processInboundTurn as unknown as {
+      definition: { handler: (args: Record<string, unknown>) => Promise<unknown> };
+    }).definition.handler;
+    await handler({ input: workflowInput(), state: processingState(), step,
+      execute: vi.fn(async () => { throw new Error('LEGACY_MODEL_MUST_NOT_RUN'); }),
+      client: { createMessage }, signal: new AbortController().signal, workflow: { id: 'workflow-link-config' } });
+
+    const commits = actionSpies.commit.mock.calls.map(call => call[0].input);
+    expect(actionSpies.recovery).toHaveBeenCalledTimes(1);
+    expect(commits.at(-1)!.decision).toMatchObject({ kind: 'reply', reason_code: 'PAYMENT_PLAN_REQUIRED',
+      response: 'Cómo prefieres pagar: 12 cuotas, 6 cuotas o un solo pago?' });
+    expect(commits.at(-1)!.agent_turn_v2).toBeNull();
+    // The refused effect commit aside, what reached the customer never claims a link nor «no te entendí».
+    expect(JSON.stringify(commits.at(-1))).not.toMatch(/no te entend|suppress|te mando el enlace/iu);
+    expect(createMessage).toHaveBeenCalled();
+  });
+
+  it('owner D2 2026-11-18: exhausted link recovery with the continuation down asks the level with its options, never silence', async () => {
+    actionSpies.recovery.mockReset().mockResolvedValue({ outcome: 'exhausted', attempt: 3, delay_ms: 0 });
+    const claimed = claimedResponse() as unknown as ClaimedTurn;
+    claimed.features = { agent_loop_v3_mode: 'off', conversation_pipeline_v1_enabled: false,
+      agent_a_brain_v1_enabled: true, agent_a_brain_v1_shadow: false, agent_a_repair_enabled: true };
+    claimed.context.batch_messages[0].content = 'Pero mandame el link';
+    claimed.conversation_state_v1 = { selected_offering_code: null, selected_payment_plan: null,
+      stage: 'exploring', call_preference: 'chat', call_offer_status: 'declined', call_offer_count: 1,
+      awaiting_reply: 'none', version: 7 };
+    const levels = [['ingles_1', 'Inglés 1'], ['ingles_2', 'Inglés 2'], ['ingles_3', 'Inglés 3'], ['ingles_4', 'Inglés IV']];
+    claimed.catalog_index = { as_of: NOW, offerings_total: 4,
+      offerings: levels.map(([code, display_name]) => ({ code: code!, display_name: display_name!, academy: 'Idiomas', aliases: [] })),
+      injection_suspected_count: 0 };
+    claimed.action_requirements = [{ action: 'send_payment_link', ready: false, missing: ['course_selection', 'payment_plan'],
+      options: { course_selection: levels.map(([code, display_name]) => ({ code: code!, display_name: display_name! })),
+        payment_plan: ['monthly_12', 'monthly_6', 'one_time'] } }];
+    const business = paymentBusinessContext();
+    business.offerings = [{ ...business.offerings[0]!, code: 'ingles_1', display_name: 'Inglés 1', academy: 'Idiomas' }];
+    claimed.business_context = business;
+    claimed.business_context_available = true;
+    claimed.contact_intake_missing = [];
+    actionSpies.claim.mockResolvedValue(claimed);
+    configuration.agentAPlannerlessV2Enabled = true;
+    actionSpies.agentABrainValidate.mockImplementation(() => null);
+    actionSpies.agentABrainDeepSeek.mockImplementation(async (input: { context: AgentAContextV1; on_provider_request?: () => void;
+      conversation_only?: boolean }) => {
+      input.on_provider_request?.();
+      if (input.conversation_only === true) throw new Error('BRAIN_DEEPSEEK_TIMEOUT');
+      return { proposal: { schema_version: 1,
+        move: { schema_version: 1, move: 'request_payment_link', secondary_moves: [], vetoes: [], confidence: 1 },
+        response: { messages: ['Te mando el enlace ahora.'], call_offer: null },
+        proposed_action: { type: 'send_payment_link', offering_code: 'ingles_1', payment_plan: 'one_time' },
+        course_mentions: [{ offering_code: 'ingles_1', role: 'paid' }],
+        used_fact_ids: [], used_memory_ids: [], memory_candidates: [],
+        repair_of: input.context.turn_rejection ? { rejection_id: input.context.turn_rejection.rejection_id, attempt: 1 } : null },
+        provider: 'deepseek-direct', model: 'deepseek-v4-flash', latency_ms: 1, attempt_count: 1 };
+    });
+    actionSpies.commit.mockReset().mockImplementation(async ({ input }) => {
+      const turn = input.agent_turn_v2;
+      if (turn) throw new StudyxHttpError('DECISION_REJECTED', false, 422, 1,
+        { error: 'DECISION_REJECTED', reason: 'PAYMENT_PLAN_MISMATCH' });
+      const content = input.decision?.response ?? '';
+      const outbound = { id: UUID, content, status: 'pending', delivery_attempt: 1,
+        authorized_egress: buildAuthorizedEgress({ content, authorized_urls: [], protected_facts: [] }) };
+      return { status: 'committed', replayed: false, trace_id: UUID, turn_id: UUID, decision_id: UUID,
+        next_state: 'waiting_user', outbound, outbounds: [outbound], call_request: null };
+    });
+    const createMessage = vi.fn(async () => ({ message: { id: 'bp-d2-message' } }));
+    const step = Object.assign(async (_name: string, run: () => Promise<unknown>) => run(),
+      { sleep: vi.fn(async () => undefined) });
+    const handler = (processInboundTurn as unknown as {
+      definition: { handler: (args: Record<string, unknown>) => Promise<unknown> };
+    }).definition.handler;
+    await handler({ input: workflowInput(), state: processingState(), step,
+      execute: vi.fn(async () => { throw new Error('LEGACY_MODEL_MUST_NOT_RUN'); }),
+      client: { createMessage }, signal: new AbortController().signal, workflow: { id: 'workflow-d2' } });
+
+    const commits = actionSpies.commit.mock.calls.map(call => call[0].input);
+    const last = commits.at(-1)!;
+    expect(last.decision).toMatchObject({ kind: 'reply', reason_code: 'PAYMENT_COURSE_REQUIRED',
+      response: 'Desde qué nivel arrancas: Inglés 1, Inglés 2, Inglés 3 o Inglés IV?' });
+    expect(last.agent_turn_v2).toBeNull();
+    expect(JSON.stringify(commits)).not.toMatch(/no te entend|suppress/iu);
+    expect(createMessage).toHaveBeenCalled();
+  });
+
   it.each([
     { finalBackendRejected: false, initialProviderRequests: 1, precommitProviderRequests: 1 },
     { finalBackendRejected: true, initialProviderRequests: 1, precommitProviderRequests: 1 },

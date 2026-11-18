@@ -34,6 +34,12 @@ export function validateCourseMentionsV1(input: {
   readonly paid_mention_offering_code?: string | null;
   readonly authorized_bonus_action?: { readonly paid_offering_code: string; readonly bonus_offering_code: string };
   readonly delivered_bonus_offering_codes: readonly string[];
+  /**
+   * Owner 2026-11-18: when present, a named course that is NOT in this list and has no
+   * declaration is auto-declared `alternative` instead of rejecting the turn. The list is
+   * state, never wording: bonus candidates, rule bonus, delivered bonuses, offered package.
+   */
+  readonly bonus_protected_offering_codes?: readonly string[];
 }): { readonly violations: readonly CourseMentionViolationV1[]; readonly named_offering_codes: readonly string[] } {
   const violations: CourseMentionViolationV1[] = [];
   const reject = (rawSubject: string, code: CourseMentionViolationV1['code'] = 'COURSE_ROLE_UNDECLARED') => {
@@ -83,7 +89,10 @@ export function validateCourseMentionsV1(input: {
     declared.set(mention.offering_code,mention);
   }
   for(const code of named) {
-    if (!declared.has(code) && code!==paidMentionCode) reject(`course_mentions:undeclared:${code}`);
+    if (!declared.has(code) && code!==paidMentionCode) {
+      if (input.bonus_protected_offering_codes && !input.bonus_protected_offering_codes.includes(code)) continue;
+      reject(`course_mentions:undeclared:${code}`);
+    }
   }
   const effectDeclaration=input.authorized_bonus_action
     ? declared.get(input.authorized_bonus_action.bonus_offering_code) : undefined;

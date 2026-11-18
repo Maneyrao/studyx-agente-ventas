@@ -1,5 +1,6 @@
 import { resolveCatalogFromSnapshot, latestAgentTurnMessages, deriveCourseSelection, activeSessionRecentTurns,
-  currentFactualCourseReferencesV1 } from '../domain/course-focus';
+  currentFactualCourseReferencesV1, deriveCourseFamilyOfferingsV1 } from '../domain/course-focus';
+import { computeActionRequirementsV1, type ActionRequirementV1 } from '@/shared/conversation/action-requirements';
 import type { ContactProfileContextV1 } from '@/shared/conversation/contact-profile-contract';
 import type { RecordedNegotiationFactsV1 } from '@/shared/conversation/negotiation-facts';
 import { evaluateTurnPolicy, type TurnPolicy } from '../domain/turn-policy';
@@ -241,6 +242,8 @@ export interface ClaimedTurn {
   readonly negotiation_facts?: RecordedNegotiationFactsV1 | null;
   /** Persisted commercial memories (latest per type/key), each with its source quote. */
   readonly sales_profile?: SalesProfileMemoriesV1 | null;
+  /** Top-level and additive (bot v213 ignores it): what a payment-link action still lacks. */
+  readonly action_requirements?: readonly ActionRequirementV1[];
   /** Model-authored `already_said` markers of the verified family's earlier turns, newest first (<=5). */
   readonly continuity?: { readonly prior_already_said: readonly string[] };
   /** Verified sale continuity from a linked WhatsApp conversation. Absent = none. */
@@ -1279,6 +1282,14 @@ export async function claimBatch(
     ...(courseProgramsCapability ? { course_programs: courseProgramsCapability } : {}),
     negotiation_facts: negotiationFacts,
     sales_profile: salesProfile,
+    action_requirements: computeActionRequirementsV1({
+      selected_offering_code: conversationStateV1?.selected_offering_code ?? null,
+      selected_payment_plan: conversationStateV1?.selected_payment_plan ?? null,
+      family_offerings: deriveCourseFamilyOfferingsV1({
+        current: catalog_resolution, currentMessageTexts, recentTurns: logicalRecentTurns, catalogIndex: catalog_index,
+      }),
+      payment_plan_codes: business_context?.workspace.payment_options.map(option => option.code) ?? [],
+    }),
     ...(priorAlreadySaid.length > 0 ? { continuity: { prior_already_said: priorAlreadySaid } } : {}),
     ...(continuity.value.kind === 'none' ? {} : { sale_continuity: continuity.value.kind === 'ambiguous'
       ? { status: 'ambiguous' as const, candidate_offering_codes: continuity.value.candidate_offering_codes }

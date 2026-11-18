@@ -51,6 +51,7 @@ import {
   suppress,
   technicalFallback,
   technicalContinuityFallback,
+  paymentRequirementsQuestionDecision,
   modelUnavailableFallback,
 } from '../utils/decision-policy'
 import {
@@ -2171,7 +2172,14 @@ export const processInboundTurn = new Workflow({
           } else {
             // Owner P0 (2026-11-03): a provider outage answers from canonical
             // facts (price, plans, catalog), never with the generic clarification.
-            pipelineFailureDecision = customerVisibleModelFallback(owned, brainFailureReason)
+            // Owner D2 (2026-11-18): when the turn was a payment-link request that still lacks level
+            // or plan, the question with the canonical options replaces the generic clarification.
+            const linkIntent = precommitModelAuthoredCandidates.some(({ proposal }) => (
+              proposal.proposed_action.type === 'send_payment_link'
+              || proposal.move.move === 'request_payment_link'
+              || proposal.move.secondary_moves.includes('request_payment_link')))
+            pipelineFailureDecision = (linkIntent ? paymentRequirementsQuestionDecision(owned) : null)
+              ?? customerVisibleModelFallback(owned, brainFailureReason)
           }
         }
       }
@@ -2592,6 +2600,38 @@ export const processInboundTurn = new Workflow({
         return false
       }
     }
+    // Owner D2 (2026-11-18): the continuation was unavailable or failed. Never silence: commit
+    // the short state-derived question (first missing level/plan with canonical options).
+    const commitPaymentRequirementsQuestion = async (): Promise<boolean> => {
+      const question = paymentRequirementsQuestionDecision(owned)
+      if (question === null) return false
+      try {
+        agentTurnV2Commit = null
+        pipelineCommit = null
+        pipelineMemoryCandidates = []
+        decision = question
+        decisionProvider = 'botpress'
+        decisionModel = 'policy:payment-requirements-question'
+        turnDiagnostics = {
+          schema_version: 1,
+          generation_attempts: agentAGenerationAttempts,
+          failure_stage: 'backend_commit',
+          failure_codes: latestRejection ? diagnosticRejectionCodesV1(latestRejection.rejections) : [],
+          action_status: 'rejected',
+        }
+        linkContinuation.committed = await commitCurrentDecision('commit-payment-requirements-question-v1')
+        return true
+      } catch (questionError) {
+        if (isTurnEvidencePersistenceError(questionError)) throw questionError
+        if (!(questionError instanceof Error)) throw questionError
+        safeLog('studyx.turn.payment_requirements_question_failed', {
+          trace_id: input.trace_id,
+          turn_id: owned.turn_id,
+          error_code: errorCode(questionError),
+        })
+        return false
+      }
+    }
     const recoverRejectedTurn = async (): Promise<WorkflowResult | null> => {
       try {
         const recoveryCause = turnDiagnostics?.failure_codes.map((code) => code.split(':', 1)[0]!).find(
@@ -2624,7 +2664,7 @@ export const processInboundTurn = new Workflow({
             ...(agentTurnV2Commit ? [agentTurnV2Commit.proposal] : []),
             ...precommitModelAuthoredCandidates.map(({ proposal }) => proposal),
           ])
-          && await commitFencedContinuationAfterLink()) {
+          && (await commitFencedContinuationAfterLink() || await commitPaymentRequirementsQuestion())) {
           state.errorCode = null
           return null
         }
@@ -2649,7 +2689,9 @@ export const processInboundTurn = new Workflow({
                   authorized_alternatives: {
                     fact_ids: [],
                     actions: ['none'],
-                    missing_information: [],
+                    // Keep the unmet link requirements across retries (owner 2026-11-18).
+                    missing_information: owned.action_requirements
+                      ?.find((entry) => entry.action === 'send_payment_link' && !entry.ready)?.missing ?? [],
                   },
                 },
               } : undefined,

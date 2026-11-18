@@ -615,6 +615,16 @@ const IncomingClaimCourseBonusLadderV1Schema = z.preprocess((raw) => {
   return { retention_used: legacy.data.retention_used ?? false, previous_turn_asked_price_question: false }
 }, CourseBonusLadderV1Schema)
 
+const ActionRequirementV1Schema = z.object({
+  action: z.enum(['send_payment_link', 'send_test_payment_link']),
+  ready: z.boolean(),
+  missing: z.array(z.enum(['course_selection', 'payment_plan'])),
+  options: z.object({
+    course_selection: z.array(z.object({ code: z.string().min(1), display_name: z.string().min(1) })),
+    payment_plan: z.array(z.string().min(1)),
+  }),
+})
+
 export const ClaimedTurnSchema = z.object({
   outcome: z.literal('claimed'),
   trace_id: z.string().uuid(),
@@ -668,6 +678,8 @@ export const ClaimedTurnSchema = z.object({
   }).strict().nullable().optional(),
   negotiation_facts: RecordedNegotiationFactsV1Schema.nullable().optional(),
   sales_profile: SalesProfileMemoriesV1Schema.nullable().optional(),
+  /** Top-level and additive: what a payment-link action still lacks (owner 2026-11-18). Never nest in strict objects. */
+  action_requirements: z.array(ActionRequirementV1Schema).optional(),
   continuity: z.object({ prior_already_said: z.array(z.string().max(200)).max(5) }).strict().optional(),
   sale_continuity: z.object({
     status: z.enum(['none', 'single', 'ambiguous']),

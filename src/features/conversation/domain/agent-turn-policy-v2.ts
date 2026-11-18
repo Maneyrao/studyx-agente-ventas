@@ -765,6 +765,15 @@ export function authorizeAgentTurnV2(input: {
     ...(action.type==='offer_course_bonus' ? {authorized_bonus_action:{
       paid_offering_code:action.interest_offering_code,bonus_offering_code:action.bonus_offering_code}} : {}),
     delivered_bonus_offering_codes:packageIsCurrent ? (input.course_bonus?.delivered_bonus_offerings ?? []).map(course=>course.code) : [],
+    // Owner 2026-11-18 (D1 by state): an undeclared mention is auto-declared `alternative`
+    // unless the course is already a bonus identity in state; those keep the rejection.
+    bonus_protected_offering_codes:[
+      ...(input.course_bonus?.bonus_candidates ?? []).map(course=>course.code),
+      ...(input.course_bonus?.rule_bonus ? [input.course_bonus.rule_bonus.bonus_offering_code] : []),
+      ...(input.course_bonus?.delivered_bonus_offerings ?? []).map(course=>course.code),
+      ...(input.course_bonus?.bonus_offerings ?? []).map(course=>course.code),
+      ...(action.type==='offer_course_bonus' ? [action.bonus_offering_code] : []),
+    ],
   });
   if (courseMentions.violations.length>0) return {
     ok:false,

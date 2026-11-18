@@ -931,6 +931,7 @@ export function buildAgentAContextV1(
       intake_missing: intakeMissing,
       required_contact_fields: requiredContactFields,
       call_contact_requirements: callRequirements,
+      ...(claimed.action_requirements ? { action_requirements: claimed.action_requirements } : {}),
       call_execution: {
         next_step: callExecutionNextStep,
         request_call_now_authorized: mayRequestCallNow,
