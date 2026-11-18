@@ -113,16 +113,19 @@ describe('send_course_program authorization', () => {
   it('choosing a course while it is explained (select_course) also sends the material (replay 9397adf t04)', () => {
     expect(authorize(available, { move: 'select_course' })).toMatchObject({ ok: true, action: { type: 'send_course_program' } });
   });
-  it('already sent: the action is dropped (not an error) and the text stays', () => {
-    expect(authorize({ available_offering_codes: ['real_estate'], sent_offering_codes: ['real_estate'] }))
-      .toMatchObject({ ok: true, action: { type: 'none' } });
+  it('already sent: the action is dropped (not an error) and the text stays, unless the customer asks for it again', () => {
+    const sent = { available_offering_codes: ['real_estate'], sent_offering_codes: ['real_estate'] };
+    expect(authorize(sent, { move: 'ask_course_information' })).toMatchObject({ ok: true, action: { type: 'none' } });
+    expect(authorize(sent, { move: 'select_course' })).toMatchObject({ ok: true, action: { type: 'none' } });
+    expect(authorize(sent, { move: 'request_course_program' }))
+      .toMatchObject({ ok: true, action: { type: 'send_course_program', offering_code: 'real_estate' } });
   });
 });
 
 describe('context and prompt', () => {
-  it('lists only programmes not already sent', () => {
+  it('lists every available programme as proposable; the validator limits an already sent one to an explicit request', () => {
     const context = { capabilities: { course_programs: { available_offering_codes: ['real_estate', 'barista'], sent_offering_codes: ['barista'] } } };
-    expect(sendableProgramCodesV1(context as never)).toEqual(['real_estate']);
+    expect(sendableProgramCodesV1(context as never)).toEqual(['real_estate', 'barista']);
     expect(sendableProgramCodesV1({ capabilities: {} } as never)).toEqual([]);
   });
   it('the context schemas carry the capability and the prompt states the contract', () => {

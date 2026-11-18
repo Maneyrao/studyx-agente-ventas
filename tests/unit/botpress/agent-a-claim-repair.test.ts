@@ -264,26 +264,30 @@ describe('focused-29-41-r3 recorded attempts: salvage instead of the P0 sentence
       { code: 'monthly_12', label: '12 pagos mensuales de USD 30', fact_id: 'payment:marketing_digital:monthly_12:label:v1' }] },
   }) as unknown as AgentAContextV1;
   const move = (name: string) => ({ schema_version: 1, move: name, secondary_moves: [], vetoes: [], confidence: 1 });
-  const p = (messages: string[], action: unknown = { type: 'send_course_program', offering_code: 'marketing_digital' }) => ({
-    schema_version: 1, move: move('request_course_program'), response: { messages, call_offer: null }, proposed_action: action, course_mentions: [], used_fact_ids: [], profile_requests: [],
+  const p = (messages: string[], action: unknown = { type: 'send_course_program', offering_code: 'marketing_digital' }, moveName = 'request_course_program') => ({
+    schema_version: 1, move: move(moveName), response: { messages, call_offer: null }, proposed_action: action, course_mentions: [], used_fact_ids: [], profile_requests: [],
   }) as unknown as AgentATurnProposalV1;
 
   it('36/syllabus_again attempt 1 and 3: "ya te lo había enviado, pero te lo comparto otra vez" becomes the canonical already-sent fact', () => {
     for (const recorded of [
-      ['Ya te lo había enviado, pero te lo comparto otra vez por si no te llegó bien.'],
-      ['Ya te lo había enviado, pero te lo comparto de nuevo por acá. Si algo del temario te genera dudas, dime y lo revisamos juntos.'],
+      ['Ya te lo había enviado, pero te comparto el programa otra vez por si no te llegó bien.'],
+      ['Ya te lo había enviado, pero te comparto el programa de nuevo por acá. Si algo del temario te genera dudas, dime y lo revisamos juntos.'],
     ]) {
-      const fixed = salvageProgramSendClaimsV1({ proposal: p(recorded), context: withPrograms(['marketing_digital']) });
+      const fixed = salvageProgramSendClaimsV1({ proposal: p(recorded, undefined, 'ask_course_information'), context: withPrograms(['marketing_digital']) });
       expect(fixed).not.toBeNull();
       expect(fixed!.proposed_action).toEqual({ type: 'none' });
       expect(fixed!.response.messages[0]).toBe('El programa de Marketing Digital te lo envié más arriba en este chat.');
-      expect(fixed!.response.messages.join(' ')).not.toMatch(/te lo comparto/u);
+      expect(fixed!.response.messages.join(' ')).not.toMatch(/te comparto/u);
     }
   });
   it('keeps the valid rest of the reply and reports nothing to salvage when there is no claim', () => {
-    const fixed = salvageProgramSendClaimsV1({ proposal: p(['Te lo comparto de nuevo ahora.', 'Si quieres lo repasamos juntos.']), context: withPrograms(['marketing_digital']) });
+    const fixed = salvageProgramSendClaimsV1({ proposal: p(['Te comparto el programa de nuevo ahora.', 'Si quieres lo repasamos juntos.'], undefined, 'ask_course_information'), context: withPrograms(['marketing_digital']) });
     expect(fixed!.response.messages).toEqual(['El programa de Marketing Digital te lo envié más arriba en este chat.', 'Si quieres lo repasamos juntos.']);
     expect(salvageProgramSendClaimsV1({ proposal: p(['Ya te lo compartí antes, está arriba en el chat.']), context: withPrograms(['marketing_digital']) })).toBeNull();
+  });
+  it('an explicit re-request of an already sent programme is not reported as already sent', () => {
+    const fixed = salvageProgramSendClaimsV1({ proposal: p(['Te comparto el programa de nuevo ahora.']), context: withPrograms(['marketing_digital']) });
+    expect(fixed!.response.messages[0]).not.toMatch(/más arriba/u);
   });
   it('a course without a PDF gets the "no tengo el archivo" fact, never a sending claim', () => {
     const none = withPrograms([]);

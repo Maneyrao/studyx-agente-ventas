@@ -430,7 +430,7 @@ describe('Agent A Brain prompt', () => {
     expect(JSON.parse(encoded)).toEqual(current);
     expect(instructions).not.toContain('<current_turn_guidance>');
     expect(STUDYX_AGENT_A_CANONICAL_PROMPT_VERSION).toBe('studyx-agent-a-canonical-v123');
-    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v212');
+    expect(AGENT_A_BRAIN_PROMPT_VERSION).toBe('studyx-agent-a-brain-v213');
   });
 
   it('presents the current conversation after the large factual context without mutating it', () => {
@@ -1165,7 +1165,9 @@ describe('Agent A Brain prompt', () => {
       expect(contract).toContain('instead of picking a level for them');
       expect(contract).not.toContain('for the first time in this conversation, propose the action in that same turn');
       expect(contract).toContain('do not bring the earlier file up on your own');
-      expect(contract).toContain('La ficha ya te la dejé más arriba en este chat; si quieres repasamos algún punto.');
+      expect(contract).toContain('Only when the customer explicitly asks for that material again (move=request_course_program), propose send_course_program again');
+      expect(contract).toContain('barista [already sent]');
+      expect(contract).not.toContain('La ficha ya te la dejé más arriba');
       expect(contract).toContain('Not on pure price or payment turns, and never more than once per course');
       expect(contract).toContain('never write a URL');
       expect(contract).toContain('Already delivered in this conversation: barista');

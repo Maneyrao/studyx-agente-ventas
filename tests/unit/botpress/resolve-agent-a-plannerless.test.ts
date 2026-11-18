@@ -2785,17 +2785,19 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
     expect(result.evidence.repair_attempted).toBe(false);
   });
 
-  it('rejects the production missing-identity reply that falsely promises a call', async () => {
+  const missingIdentityCall = (messages: string[], tweak: (current: AgentAContextV1) => void = () => {}) => {
     const current = context();
     current.turn.batch_messages = [
       { id: 'm1', text: 'buenas' },
       { id: 'm2', text: 'me podes llamar?' },
-      { id: 'm3', text: 'entonces' },
     ];
     current.customer.contact_intake = {
       nombre: null, apellido: null, correo: null, telefono: '+5491169004497',
     };
     current.capabilities.intake_missing = ['nombre', 'apellido', 'correo'];
+    current.capabilities.required_contact_fields = {
+      call: ['nombre', 'apellido', 'correo'], payment: [], identity: [],
+    };
     current.capabilities.may_request_call_now = false;
     current.commercial_state.selected_offering_code = null;
     current.commercial_state.stage = 'exploring';
@@ -2803,9 +2805,7 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
     current.commercial_state.call_offer_status = 'offered';
     current.commercial_state.awaiting_reply = 'call_or_chat';
     current.catalog.selected_offering = null;
-    const messages = [
-      'Claro, te llamo. Para agendarla necesito tu nombre y apellido.',
-    ];
+    tweak(current);
     const initial = generated(proposal({
       move: {
         schema_version: 1, move: 'request_call', secondary_moves: [], vetoes: [], confidence: 1,
@@ -2815,13 +2815,47 @@ describe('resolveAgentAPlannerlessProposalV2', () => {
       used_fact_ids: [],
     }));
     const repair = vi.fn();
-
-    await expect(resolveAgentAPlannerlessProposalV2({
+    const run = () => resolveAgentAPlannerlessProposalV2({
       initial, context: current, repair_enabled: false, semantic_rejections: 'advisory', repair,
       rejection_id: '00000000-0000-4000-8000-000000000449',
-    })).rejects.toThrow('UNSUPPORTED_OPERATIONAL_CLAIM:call_confirmation');
+    });
+    return { run, repair };
+  };
 
+  it('prunes the call promise but keeps the data request when the call is requested and intake is missing', async () => {
+    const { run, repair } = missingIdentityCall(['Dale, te llamamos. Pasame tu nombre, apellido y correo.']);
+    const result = await run();
+    expect(result.effective.proposal.response.messages).toEqual(['Pasame tu nombre, apellido y correo.']);
     expect(repair).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['active call', (c: AgentAContextV1) => { c.commercial_state.active_call = { status: 'requested' } as never; }],
+    ['closed stage', (c: AgentAContextV1) => { c.commercial_state.stage = 'closed'; }],
+    ['declined call', (c: AgentAContextV1) => { c.commercial_state.call_offer_status = 'declined'; }],
+  ])('keeps rejecting the call promise with %s', async (_label, tweak) => {
+    const { run } = missingIdentityCall(['Dale, te llamamos. Pasame tu nombre, apellido y correo.'], tweak);
+    await expect(run()).rejects.toThrow('UNSUPPORTED_OPERATIONAL_CLAIM:call_confirmation');
+  });
+
+  it('keeps rejecting a call promise that does not ask for the missing data', async () => {
+    const { run } = missingIdentityCall(['Dale, te llamamos.']);
+    await expect(run()).rejects.toThrow('UNSUPPORTED_OPERATIONAL_CLAIM:call_confirmation');
+  });
+
+  it('keeps rejecting a call promise when no call was requested', async () => {
+    const current = context();
+    current.capabilities.intake_missing = ['nombre', 'apellido'];
+    current.capabilities.required_contact_fields = { call: ['nombre', 'apellido'], payment: [], identity: [] };
+    await expect(resolveAgentAPlannerlessProposalV2({
+      initial: generated(proposal({
+        response: { messages: ['Dale, te llamamos. Pasame tu nombre y apellido.'], call_offer: null },
+        used_fact_ids: [],
+      })),
+      context: current, repair_enabled: false, semantic_rejections: 'advisory',
+      rejection_id: '00000000-0000-4000-8000-00000000044a',
+      repair: async () => { throw new Error('Unexpected repair'); },
+    })).rejects.toThrow('UNSUPPORTED_OPERATIONAL_CLAIM:call_confirmation');
   });
 
   it('prunes an unsolicited payment action and keeps the copy without spending the repair', async () => {

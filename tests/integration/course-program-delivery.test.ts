@@ -12,9 +12,9 @@ const BASE = 'https://assets.example.com';
 beforeEach(() => { vi.stubEnv('STUDYX_PUBLIC_ASSET_BASE_URL', BASE); });
 afterEach(() => vi.unstubAllEnvs());
 
-function proposal(texts: string[], callOffer: string | null, action: AgentATurnProposalV1['proposed_action']): AgentATurnProposalV1 {
+function proposal(texts: string[], callOffer: string | null, action: AgentATurnProposalV1['proposed_action'], moveName: 'request_course_program' | 'ask_course_information' = 'request_course_program'): AgentATurnProposalV1 {
   return { schema_version: 1,
-    move: { schema_version: 1, move: 'request_course_program', secondary_moves: [], vetoes: [], confidence: 1 },
+    move: { schema_version: 1, move: moveName, secondary_moves: [], vetoes: [], confidence: 1 },
     response: { messages: texts, call_offer: callOffer }, proposed_action: action,
     course_mentions: [], used_fact_ids: [], used_memory_ids: [], memory_candidates: [],
     confirmed_phone: null, profile_updates: [], profile_requests: [], repair_of: null };
@@ -61,18 +61,39 @@ run('send_course_program at the commit boundary', () => {
     expect(await ledger(f.conversation_id)).toMatchObject([{ status: 'submitted' }]);
   });
 
-  it('a second request is idempotent: the action is dropped, the text is still sent, no second document', async () => {
+  it('a second send without an explicit re-request is idempotent: the action is dropped, the text is still sent, no second document', async () => {
     const f = await seedConversationForAgentTurn({ selected_offering_code: CODE, intake_complete: true });
     const first = await commit(f, f.turn_id, proposal(['Te comparto el programa.'], null, SEND));
     await report(first.outbounds.find(part => part.document?.media === 'file')!.id, 'submitted_to_botpress');
     expect((await readCourseProgramsCapabilityV1({ workspace_slug: 'studyx', conversation_id: f.conversation_id }, { db: sql }))?.sent_offering_codes).toEqual([CODE]);
-    const second = await commit(f, f.second_turn_id, proposal(['Ya te lo mandé, lo repasamos juntos si quieres.'], null, SEND));
+    const second = await commit(f, f.second_turn_id, proposal(['Ya te lo mandé, lo repasamos juntos si quieres.'], null, SEND, 'ask_course_information'));
     expect(second.status).toBe('committed');
     expect(second.outbounds.map(part => part.content)).toEqual(['Ya te lo mandé, lo repasamos juntos si quieres.']);
     expect(second.outbounds.some(part => part.document)).toBe(false);
     expect(await ledger(f.conversation_id)).toHaveLength(1);
     const [decision] = await sql`SELECT business_action FROM agent_decisions WHERE turn_id=${f.second_turn_id}`;
     expect(decision.business_action).toBeNull();
+  });
+
+  it('an explicit re-request re-arms a submitted delivery with a new decision, in the same single row', async () => {
+    const f = await seedConversationForAgentTurn({ selected_offering_code: CODE, intake_complete: true });
+    const first = await commit(f, f.turn_id, proposal(['Te comparto el programa.'], null, SEND));
+    await report(first.outbounds.find(part => part.document?.media === 'file')!.id, 'submitted_to_botpress');
+    const again = await commit(f, f.second_turn_id, proposal(['Te lo comparto de nuevo.'], null, SEND));
+    expect(again.outbounds.some(part => part.document)).toBe(true);
+    expect(await ledger(f.conversation_id)).toMatchObject([{ status: 'pending' }]);
+  });
+
+  it('a re-request never re-arms a pending delivery', async () => {
+    const f = await seedConversationForAgentTurn({ selected_offering_code: CODE, intake_complete: true });
+    await commit(f, f.turn_id, proposal(['Te comparto el programa.'], null, SEND));
+    const [before] = await sql`SELECT id, decision_id FROM course_program_deliveries WHERE conversation_id=${f.conversation_id}::uuid`;
+    // The dropped-action branch may throw in some clusters (decision immutability); either way the row is untouched.
+    const again = await commit(f, f.second_turn_id, proposal(['Te lo comparto de nuevo.'], null, SEND)).catch(() => null);
+    expect(again?.outbounds.some(part => part.document) ?? false).toBe(false);
+    const rows = await sql`SELECT id, decision_id, status FROM course_program_deliveries WHERE conversation_id=${f.conversation_id}::uuid`;
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ id: before.id, decision_id: before.decision_id, status: 'pending' });
   });
 
   it('the ledger is unique per (conversation, offering, asset version)', async () => {

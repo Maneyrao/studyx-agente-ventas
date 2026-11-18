@@ -102,7 +102,7 @@ async function seedTurn(identity: Identity, text: string): Promise<string> {
   return context.turn_id;
 }
 
-const CONFIRMATION = 'Recibí tu solicitud de llamada.';
+const CONFIRMATION = 'Perfecto, te llamo ahora.';
 
 function callConfirmation(reason: 'direct_request' | 'accepted_offer') {
   return {

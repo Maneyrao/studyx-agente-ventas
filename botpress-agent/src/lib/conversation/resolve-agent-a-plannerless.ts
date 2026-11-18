@@ -5,7 +5,7 @@ import { claimsProgramSendNowV1 } from '../../../../src/shared/conversation/prog
 import { claimsImmediatePaymentLinkDeliveryV1 } from '../../../../src/shared/conversation/payment-link-claim'
 import { messagesWithoutExactCallOfferV1 } from '../../../../src/shared/conversation/call-offer-format'
 import { AgentATurnProposalV1Schema, type AgentAContextV1, type AgentATurnProposalV1 } from '../../schemas/agent-a-brain'
-import { removeEffectClaimBubblesV1, salvageFactClaimsV1, salvageProgramSendClaimsV1 } from './agent-a-claim-repair'
+import { pruneCallPromiseWhileCollectingIntakeV1, removeEffectClaimBubblesV1, salvageFactClaimsV1, salvageProgramSendClaimsV1 } from './agent-a-claim-repair'
 import {
   AgentABrainError,
   claimsImmediateCallDispatchV1,
@@ -288,11 +288,13 @@ function preparePlannerlessProposal<T extends AgentAProposalEnvelopeV1>(input: {
     proposal: candidate.proposal, context: input.context,
     authorized_fact_ids: input.authorized_fact_ids, rejection_id: input.rejection_id,
   })
-  const originalRejection = validate(input.initial)
+  // Call requested and only intake is missing: drop the dispatch promise, keep the data request.
+  const callPromisePruned = pruneCallPromiseWhileCollectingIntakeV1({ proposal: input.initial.proposal, context: input.context })
+  const effective = callPromisePruned === null ? input.initial : { ...input.initial, proposal: callPromisePruned }
+  const originalRejection = validate(effective)
   if (originalRejection?.rejections.some((reason) => reason.code === 'PROPOSAL_SCHEMA_INVALID')) {
     return { effective: input.initial, rejection: originalRejection, originalRejection }
   }
-  const effective = input.initial
   const rejection = validate(effective)
   if (rejection === null) return { effective, rejection, originalRejection }
   if (

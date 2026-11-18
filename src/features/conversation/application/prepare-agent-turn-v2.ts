@@ -31,6 +31,7 @@ import {
   customerResumesCommercialFlowAfterCallV1,
   reconcileTerminalCallStateV1,
 } from '../domain/call-lifecycle-reconciliation';
+import { pruneCallDispatchClaimsV1 } from '@/shared/conversation/call-dispatch-claim';
 import { claimsImmediateCallDispatchV1, claimsImmediatePaymentLinkDelivery, solicitsACall } from '../domain/operational-promise-guard';
 import type { ConversationStateStoreV1 } from '../ports/conversation-state-store';
 import type { PaymentVerificationV1 } from '@/features/payments/application/read-payment-verification';
@@ -402,13 +403,39 @@ export async function prepareAgentTurnV2(input: {
   }
   const requestedProposal = input.requested_action === undefined ? input.proposal
     : { ...input.proposal, proposed_action: input.requested_action };
-  const effectiveProposal = { ...requestedProposal, memory_candidates: requestedProposal.memory_candidates.filter(candidate =>
+  const proposalWithClaims = { ...requestedProposal, memory_candidates: requestedProposal.memory_candidates.filter(candidate =>
     candidate.type === 'objection' && candidate.key === PURCHASE_DECLINE_MEMORY_KEY
       ? declineQuoteInBatchV1(candidate.source_quote, currentCustomerMessages)
       : !(candidate.type === 'objection' && candidate.key === 'price_objection'
         || candidate.type === 'constraint' && candidate.key === 'price_only_barrier' && candidate.value === 'confirmed')
         || priceObservationQuoteInBatchV1(candidate.source_quote, currentCustomerMessages)) };
-  const authority = authorize(effectiveProposal);
+  const initialAuthority = authorize(proposalWithClaims);
+  // The call is pending and only intake is missing (state, not wording): the
+  // dispatch promise is dropped sentence by sentence and the request for the
+  // data stays. Without text left, the claim check below rejects as before.
+  const transitionAwaitsCallIntake = initialAuthority.ok
+    && initialAuthority.transition.call_preference === 'call'
+    && initialAuthority.transition.call_offer_status === 'accepted'
+    && initialAuthority.transition.awaiting_reply === 'contact_details'
+    && initialAuthority.transition.stage !== 'handoff' && initialAuthority.transition.stage !== 'closed'
+    && initialAuthority.action.type !== 'request_call_now'
+    && noActiveCall && callIntakeReadiness.status !== 'ready';
+  const prunedCallPromise = transitionAwaitsCallIntake
+    ? pruneCallDispatchClaimsV1({
+        messages: proposalWithClaims.response.messages,
+        call_offer: proposalWithClaims.response.call_offer ?? null,
+      })
+    : null;
+  const effectiveProposal = prunedCallPromise === null ? proposalWithClaims : {
+    ...proposalWithClaims,
+    response: { ...proposalWithClaims.response,
+      messages: prunedCallPromise.messages as [string, ...string[]], call_offer: prunedCallPromise.call_offer },
+    profile_requests: (proposalWithClaims.profile_requests ?? []).flatMap((request) => {
+      const index = prunedCallPromise.kept_indices.indexOf(request.message_index);
+      return index < 0 ? [] : [{ ...request, message_index: index }];
+    }),
+  };
+  const authority = prunedCallPromise === null ? initialAuthority : authorize(effectiveProposal);
   let actionRejection: AgentActionRejectionV1 | null = null;
 
   // A delivered package must be accepted before checkout. Returning only a
@@ -497,7 +524,8 @@ export async function prepareAgentTurnV2(input: {
     const sentCodes = input.course_programs?.sent_offering_codes ?? [];
     const focus = proposed ?? authority.transition.selected_offering_code ?? state.selected_offering_code
       ?? (sentCodes.length === 1 ? sentCodes[0]! : null);
-    const why = focus !== null && input.course_programs?.sent_offering_codes.includes(focus) ? 'already_sent'
+    const resendRequested = [effectiveProposal.move.move, ...effectiveProposal.move.secondary_moves].includes('request_course_program');
+    const why = focus !== null && !resendRequested && input.course_programs?.sent_offering_codes.includes(focus) ? 'already_sent'
       : proposed !== null && input.course_programs?.available_offering_codes.includes(proposed) ? 'not_requested'
       : proposed === null && focus !== null && input.course_programs?.available_offering_codes.includes(focus) ? 'not_proposed'
       : 'unavailable';

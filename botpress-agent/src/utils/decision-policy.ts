@@ -130,7 +130,7 @@ function callOperationalContinuityFallback(claimed: ClaimedTurn): Decision | nul
     schema_version: 4,
     intent: 'commercial',
     kind: responseType === 'clarification' ? 'clarify' : 'reply',
-    response: 'Claro. Puedes atender ahora?',
+    response: 'Dale, puedes atender ahora?',
     response_type: responseType,
     business_action: null,
     memory_candidates: [],

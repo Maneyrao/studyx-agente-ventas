@@ -5,7 +5,7 @@ import {
 } from './studyx-agent-a-canonical.generated';
 import { resolveCanonicalPromptIdentityV1 } from './agent-a-identity';
 
-export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v212' as const;
+export const AGENT_A_BRAIN_PROMPT_VERSION = 'studyx-agent-a-brain-v213' as const;
 
 /**
  * Runtime contract only. The sales behavior lives in the canonical prompt so
@@ -352,17 +352,17 @@ Never claim a completed effect before the matching action commits.
 function currentCourseProgramEffectContractV1(context: AgentAContextV1): string {
   const programs = context.capabilities.course_programs
   if (!programs) return ''
-  const sendable = programs.available_offering_codes.filter(code => !programs.sent_offering_codes.includes(code))
+  const sendable = programs.available_offering_codes
   if (sendable.length === 0 && programs.sent_offering_codes.length === 0) return ''
   const materials = (programs.materials ?? []).filter(item => sendable.includes(item.offering_code))
-    .map(item => `${item.offering_code}(${item.has_program_pdf ? 'official programme PDF' : 'manual ficha PDF'}${item.has_image ? ' + course image' : ''})`)
+    .map(item => `${item.offering_code}${programs.sent_offering_codes.includes(item.offering_code) ? ' [already sent]' : ''}(${item.has_program_pdf ? 'official programme PDF' : 'manual ficha PDF'}${item.has_image ? ' + course image' : ''})`)
   return `<current_effect_contract kind="course_program">
-Course material can be sent over WhatsApp with ONE action, proposed_action={type:"send_course_program", offering_code}: the programme PDF (the official programme when it exists, otherwise the manual ficha) and then the official course image go out before your text. Available now: ${materials.join(', ') || '(none left to send)'}.
+Course material can be sent over WhatsApp with ONE action, proposed_action={type:"send_course_program", offering_code}: the programme PDF (the official programme when it exists, otherwise the manual ficha) and then the official course image go out before your text. Available: ${materials.join(', ') || '(none)'}.
 Never send material on your own initiative. Propose the action only when the customer asks for the programme, temario, ficha, PDF or the detailed contents of a course, or answers yes to your offer to share it (both are move=request_course_program). While the customer has not chosen a course, advise: answer briefly and ask one diagnostic question (goal, or current level when the subject has several levels such as Inglés 1, 2, 3) instead of picking a level for them. Once the customer has chosen a course and you first present it on an informational turn, give the key information and offer once to share the programme or ficha. Do not send it until the customer accepts that offer. A real purchase or checkout signal takes priority: do not interrupt it with the material offer. Not on pure price or payment turns, and never more than once per course.
 With the material, write one or two human sentences summarizing what the course teaches, from its authorized description or syllabus facts (cite them in used_fact_ids); the files carry the detail, so never paste the whole syllabus. The backend resolves the files; never write a URL.
 Phrase it as something you are sharing only together with the action; never state as already done what the backend has not delivered. Name the file by what it is: an official programme PDF is "el programa"; a manual ficha PDF is "la ficha" or "el detalle de contenidos", never "el programa" or "el programa completo".
 A course that is not in the list above has no material available: say naturally that you do not have the file for it and offer the information you do have; never say you are sending it, and do not propose the action.
-Already delivered in this conversation: ${programs.sent_offering_codes.join(', ') || 'none'}. Do not propose the action again for those, and do not bring the earlier file up on your own. Only when the customer asks for that material again, mention it gently, for example "La ficha ya te la dejé más arriba en este chat; si quieres repasamos algún punto." ("el programa" for an official programme), never a curt "Ya te dejé la ficha".
+Already delivered in this conversation: ${programs.sent_offering_codes.join(', ') || 'none'}. Do not propose the action for those on your own initiative, and do not bring the earlier file up on your own. Only when the customer explicitly asks for that material again (move=request_course_program), propose send_course_program again for that course and say naturally that you are sharing it again; never answer that it was already left above, and never resend it without that explicit request.
 </current_effect_contract>`
 }
 
@@ -372,6 +372,7 @@ function currentCallEffectContractV1(context: AgentAContextV1): string {
     return `<current_effect_contract kind="call">
 The customer has an accepted or requested call whose contact intake is incomplete.
 While collecting the missing fields, keep move=request_call. Put received values in profile_updates and, if useful, include provide_contact_details as a secondary move; never replace the call intent with provide_contact_details as the primary move.
+While data are missing, ask together only for the missing ones and do not promise or announce the call (no "te llamamos", no "te llamo"); the call is arranged once the data are complete.
 Use proposed_action=none. Once all four call fields are complete, ask once whether the customer can take the call now; a later confirmation separately authorizes request_call_now.
 If the current batch supplies every remaining call field, treat intake as complete for this reply: ask availability now instead of asking whether the contact summary is correct. A contact-summary confirmation belongs to enrollment checkout, not call intake. New call data are not pending confirmations unless the customer corrected a value or the agent had proposed one.
 </current_effect_contract>`;

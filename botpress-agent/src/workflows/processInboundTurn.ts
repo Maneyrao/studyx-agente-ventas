@@ -2332,7 +2332,10 @@ export const processInboundTurn = new Workflow({
         proposal: {
           schema_version: 1,
           move: { schema_version: 1, move: 'request_call', secondary_moves: [], vetoes: [], confidence: 1 },
-          response: { messages: ['Recibí tu solicitud de llamada.'], call_offer: null },
+          response: { messages: [owned.conversation_state_v1?.call_preference === 'call'
+            && owned.conversation_state_v1.call_offer_status === 'accepted'
+            && owned.conversation_state_v1.awaiting_reply === 'call_or_chat'
+            ? 'Perfecto, te llamo ahora.' : 'Dale, te llamo ahora.'], call_offer: null },
           proposed_action: { type: 'request_call_now', reason: 'direct_request' },
           course_mentions: [],
           used_fact_ids: [], used_memory_ids: [], memory_candidates: [],

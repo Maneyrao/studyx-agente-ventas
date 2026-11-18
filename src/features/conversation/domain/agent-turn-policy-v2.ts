@@ -584,8 +584,9 @@ export function authorizeAgentTurnV2(input: {
     const commercialTurn = ['ask_payment_options', 'select_payment_plan', 'request_payment_link', 'price_objection', 'defer_payment',
       'decline_purchase', 'report_payment'].some(move => moves.has(move));
     if (!known || !materialTurn || (commercialTurn && !moves.has('request_course_program'))) reasons.push('ACTION_NOT_AUTHORIZED');
-    // Already delivered in this conversation: not an error, the text stays and the file is not resent.
-    else if (!input.course_programs?.sent_offering_codes.includes(code)) action = proposal.proposed_action;
+    // Already delivered in this conversation: resent only when the customer asks for it again
+    // (request_course_program). Otherwise not an error: the text stays and the file is not resent.
+    else if (!input.course_programs?.sent_offering_codes.includes(code) || moves.has('request_course_program')) action = proposal.proposed_action;
   }
   if (proposal.proposed_action.type === 'schedule_price_objection_checkin') {
     if (input.course_bonus?.may_schedule_checkin === true && promotionMatchesCurrentInterest) {

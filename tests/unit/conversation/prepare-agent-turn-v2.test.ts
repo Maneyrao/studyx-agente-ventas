@@ -181,10 +181,12 @@ describe('prepareAgentTurnV2', () => {
   });
   describe('program-send claims need an executed send_course_program (traces 36 and 38 of focused-29-41-r2)', () => {
     const programMove = { schema_version: 1 as const, move: 'request_course_program' as const, secondary_moves: [] as never[], vetoes: [] as never[], confidence: 1 };
-    const run = (text: string, action: unknown, programs: { available_offering_codes: string[]; sent_offering_codes: string[] }) => prepareAgentTurnV2({
+    // Without request_course_program an already sent programme is not resendable (explaining the course is not a request).
+    const explainMove = { ...programMove, move: 'ask_course_information' as never };
+    const run = (text: string, action: unknown, programs: { available_offering_codes: string[]; sent_offering_codes: string[] }, turnMove: typeof programMove = programMove) => prepareAgentTurnV2({
       turn: { id: ids.turn, workspace_id: ids.workspace, conversation_id: ids.conversation, contact_id: ids.contact },
       workspace_slug: 'studyx', business_context: business, catalog_index: index, current_customer_messages: ['me lo mandás de nuevo?'],
-      proposal: proposal({ move: programMove, response: { messages: [text] }, proposed_action: action as never }),
+      proposal: proposal({ move: turnMove, response: { messages: [text] }, proposed_action: action as never }),
       course_programs: programs,
     }, { state_store: store(state({ selected_offering_code: 'redes_informaticas' })), contact_intake: completeIntake,
       now: () => Date.parse(index.as_of) });
@@ -192,9 +194,14 @@ describe('prepareAgentTurnV2', () => {
     const SEND = { type: 'send_course_program', offering_code: 'redes_informaticas' };
 
     it('already sent: the pruned action cannot ride with "te lo comparto de nuevo"', async () => {
-      expect(await reasons(run('Claro, te lo comparto de nuevo por acá.', SEND,
-        { available_offering_codes: ['redes_informaticas'], sent_offering_codes: ['redes_informaticas'] })))
+      expect(await reasons(run('Claro, te comparto el programa de nuevo por acá.', SEND,
+        { available_offering_codes: ['redes_informaticas'], sent_offering_codes: ['redes_informaticas'] }, explainMove)))
         .toEqual(['send_course_program', 'program_send_not_executed:already_sent']);
+    });
+    it('already sent but the customer asks for it again (request_course_program): the resend is authorized', async () => {
+      expect(await reasons(run('Claro, te comparto el programa de nuevo por acá.', SEND,
+        { available_offering_codes: ['redes_informaticas'], sent_offering_codes: ['redes_informaticas'] })))
+        .toBeNull();
     });
     it('no PDF for the course: "te comparto el programa" without an action is rejected for repair', async () => {
       expect(await reasons(run('Claro, te comparto el programa del curso.', { type: 'none' },
@@ -209,14 +216,14 @@ describe('prepareAgentTurnV2', () => {
     });
     it('already sent and no proposed action: already_sent, not unavailable', async () => {
       expect(await reasons(run('Claro, te comparto el programa del curso.', { type: 'none' },
-        { available_offering_codes: ['redes_informaticas'], sent_offering_codes: ['redes_informaticas'] })))
+        { available_offering_codes: ['redes_informaticas'], sent_offering_codes: ['redes_informaticas'] }, explainMove)))
         .toEqual(['send_course_program', 'program_send_not_executed:already_sent']);
     });
     it('without a selected course, the only material sent in the chat is the focus (2026-11-05 replay t27)', async () => {
       const run2 = (text: string) => prepareAgentTurnV2({
         turn: { id: ids.turn, workspace_id: ids.workspace, conversation_id: ids.conversation, contact_id: ids.contact },
         workspace_slug: 'studyx', business_context: business, catalog_index: index, current_customer_messages: ['qué promo?'],
-        proposal: proposal({ move: programMove, response: { messages: [text] }, proposed_action: { type: 'none' } as never }),
+        proposal: proposal({ move: explainMove, response: { messages: [text] }, proposed_action: { type: 'none' } as never }),
         course_programs: { available_offering_codes: ['redes_informaticas'], sent_offering_codes: ['redes_informaticas'] },
       }, { state_store: store(state({ selected_offering_code: null })), contact_intake: completeIntake, now: () => Date.parse(index.as_of) });
       expect(await reasons(run2('Claro, te comparto el programa del curso.')))
@@ -408,6 +415,36 @@ describe('prepareAgentTurnV2', () => {
       })).rejects.toMatchObject({ code: 'AGENT_TURN_V2_REJECTED', reasons: ['ACTION_NOT_AUTHORIZED'] });
     },
   );
+
+  const pendingCallPrepare = (messages: string[], stateOverrides: Partial<ConversationStateV1> = {}) => prepareAgentTurnV2({
+    turn: { id: ids.turn, workspace_id: ids.workspace, conversation_id: ids.conversation, contact_id: ids.contact },
+    workspace_slug: 'studyx', business_context: business, catalog_index: index,
+    semantic_rejections: 'advisory', current_customer_messages: ['Sí, llamame'],
+    proposal: proposal({
+      move: { schema_version: 1, move: 'request_call', secondary_moves: [], vetoes: [], confidence: 1 },
+      response: { messages }, proposed_action: { type: 'none' },
+    }),
+  }, {
+    state_store: store(state({ call_preference: 'call', call_offer_status: 'accepted', awaiting_reply: 'call_or_chat', ...stateOverrides })),
+    contact_intake: async () => ({ ...(await completeIntake()), apellido: null }),
+    now: () => Date.parse(index.as_of),
+  });
+
+  it('prunes the call dispatch promise and keeps the data request while call intake is missing', async () => {
+    const prepared = await pendingCallPrepare(['Dale, te llamamos. Pasame tu apellido.']);
+    expect(prepared.decision.response).toBe('Pasame tu apellido.');
+    expect(prepared.decision.response).not.toMatch(/llam/iu);
+  });
+
+  it('still rejects a call dispatch promise when no text remains after pruning', async () => {
+    await expect(pendingCallPrepare(['Dale, te llamamos.']))
+      .rejects.toMatchObject({ code: 'AGENT_TURN_V2_REJECTED', reasons: ['ACTION_NOT_AUTHORIZED'] });
+  });
+
+  it('still rejects the dispatch promise when the conversation is closed', async () => {
+    await expect(pendingCallPrepare(['Dale, te llamamos. Pasame tu apellido.'], { stage: 'closed' }))
+      .rejects.toMatchObject({ code: 'AGENT_TURN_V2_REJECTED' });
+  });
 
   it('preserves a model-authored surname question and reports the missing call field', async () => {
     const prepared = await prepareAgentTurnV2({

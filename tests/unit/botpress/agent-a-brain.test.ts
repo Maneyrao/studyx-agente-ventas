@@ -2913,8 +2913,18 @@ describe('a programme request for the course in focus carries its material', () 
   it('does not require it when the course is only explained (advise first)', () => {
     expect(codes(withProgram(), contents).some((c) => c.startsWith('PROGRAM_SEND_REQUIRED'))).toBe(false);
   });
-  it('does not require it once sent, without the syllabus, or on a price turn', () => {
-    expect(codes(withProgram(['redes-informaticas']), requestsProgram).some((c) => c.startsWith('PROGRAM_SEND_REQUIRED'))).toBe(false);
+  it('resends an already sent programme only when the customer asks for it again', () => {
+    const sent = withProgram(['redes-informaticas']);
+    const resend = { type: 'send_course_program', offering_code: 'redes-informaticas' };
+    expect(codes(sent, requestsProgram)).toContain('PROGRAM_SEND_REQUIRED:send_course_program:redes-informaticas');
+    expect(codes(sent, { ...requestsProgram, proposed_action: resend }))
+      .not.toContain('ACTION_NOT_AUTHORIZED:send_course_program');
+    const explainsOnly = { ...contents, move: { schema_version: 1, move: 'ask_course_information',
+      secondary_moves: [], vetoes: [], course_reference: 'Redes Informáticas', confidence: 0.9 } };
+    expect(codes(sent, explainsOnly).some((c) => c.startsWith('PROGRAM_SEND_REQUIRED'))).toBe(false);
+    expect(codes(sent, { ...explainsOnly, proposed_action: resend })).toContain('ACTION_NOT_AUTHORIZED:send_course_program');
+  });
+  it('does not require it without the syllabus or on a price turn', () => {
     expect(codes(withProgram(), { used_memory_ids: [] }).some((c) => c.startsWith('PROGRAM_SEND_REQUIRED'))).toBe(false);
     expect(codes(withProgram(), { ...contents, move: { schema_version: 1, move: 'ask_course_information',
       secondary_moves: ['price_objection'], vetoes: [], course_reference: 'Redes Informáticas', confidence: 0.9 } })

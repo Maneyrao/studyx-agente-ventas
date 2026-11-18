@@ -2147,7 +2147,7 @@ describe('processInboundTurn hot path', () => {
           conversation_only: true,
           proposal: {
             move: { move: 'request_call' },
-            response: { messages: ['Claro. Puedes atender ahora?'], call_offer: null },
+            response: { messages: ['Dale, puedes atender ahora?'], call_offer: null },
             proposed_action: { type: 'none' },
           },
         },
@@ -5492,7 +5492,54 @@ describe('processInboundTurn hot path', () => {
     expect(actionSpies.commit.mock.calls[0]?.[0]?.input).toMatchObject({
       conversation_pipeline_v1: null,
       agent_turn_v2: { schema_version: 2, proposal: {
-        response: { messages: ['Recibí tu solicitud de llamada.'] },
+        response: { messages: ['Perfecto, te llamo ahora.'] },
+        proposed_action: { type: 'request_call_now', reason: 'direct_request' },
+      } },
+    });
+  });
+
+  it('keeps a direct call request without a prior availability question as «Dale, te llamo ahora.» when the model is unavailable', async () => {
+    const claimed = claimedResponse() as unknown as ClaimedTurn;
+    claimed.features = {
+      agent_loop_v3_mode: 'off',
+      conversation_pipeline_v1_enabled: false,
+      agent_a_brain_v1_enabled: true,
+      agent_a_brain_v1_shadow: false,
+    };
+    claimed.deterministic_route = 'call_direct_request';
+    configuration.agentAPlannerlessV2Enabled = true;
+    claimed.conversation_state_v1 = {
+      selected_offering_code: null, selected_payment_plan: null,
+      stage: 'exploring', call_preference: 'unknown', call_offer_status: 'not_offered',
+      call_offer_count: 0, awaiting_reply: 'none', version: 2,
+    };
+    claimed.context.batch_messages[0].content = 'Llamame';
+    claimed.sales_context.allowed_actions = ['request_call_now'];
+    claimed.contact_intake_missing = [];
+    claimed.catalog_index = { as_of: NOW, offerings_total: 0, offerings: [], injection_suspected_count: 0 };
+    actionSpies.claim.mockResolvedValue(claimed);
+    secrets.DEEPSEEK_API_KEY = 'deepseek-local-test-only';
+    actionSpies.agentABrainDeepSeek.mockRejectedValueOnce(new Error('MODEL_PROVIDER_UNAVAILABLE'));
+    const step = Object.assign(
+      async (_name: string, run: () => Promise<unknown>) => run(),
+      { sleep: vi.fn(async () => undefined) },
+    );
+    const execute = vi.fn(async () => { throw new Error('MANAGED_UNAVAILABLE'); });
+    const handler = (processInboundTurn as unknown as {
+      definition: { handler: (args: Record<string, unknown>) => Promise<unknown> };
+    }).definition.handler;
+
+    await handler({
+      input: workflowInput(), state: processingState(), step, execute, client: {},
+      signal: new AbortController().signal, workflow: { id: 'workflow-test' },
+    });
+
+    expect(actionSpies.plan).not.toHaveBeenCalled();
+    expect(actionSpies.agentABrainDeepSeek).toHaveBeenCalled();
+    expect(actionSpies.commit.mock.calls[0]?.[0]?.input).toMatchObject({
+      conversation_pipeline_v1: null,
+      agent_turn_v2: { schema_version: 2, proposal: {
+        response: { messages: ['Dale, te llamo ahora.'] },
         proposed_action: { type: 'request_call_now', reason: 'direct_request' },
       } },
     });

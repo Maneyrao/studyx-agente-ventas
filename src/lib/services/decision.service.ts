@@ -1929,6 +1929,14 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
       if (committedBusinessAction?.type === 'send_course_program') {
         const code = committedBusinessAction.offering_code;
         const asset = courseProgramAssetV1(code);
+        // Explicit re-request of material already delivered (request_course_program in this turn).
+        // The prepared action is only authorized for a sent code in that case. Re-arms a 'submitted'
+        // row from an earlier decision; never a pending row (that PDF is already going out, so the text is true).
+        // If a resend then fails the row stays 'failed' and leaves sent_offering_codes, the same
+        // outcome as a failed first send.
+        const requestedProgramAgain = validatedInput.agent_turn_v2 != null
+          && [validatedInput.agent_turn_v2.proposal.move.move, ...validatedInput.agent_turn_v2.proposal.move.secondary_moves]
+            .includes('request_course_program');
         const workspace = await db<Array<{ id: string; display_name: string }>>`
           SELECT w.id, o.display_name FROM workspaces w JOIN offerings o ON o.workspace_id=w.id AND o.code=${code} AND o.status='active'
           WHERE w.slug=${workspaceSlug} LIMIT 1`;
@@ -1939,6 +1947,8 @@ export async function commitAgentDecision(input: CommitDecisionInput): Promise<C
               ON CONFLICT (conversation_id, offering_code, asset_version) DO UPDATE
                 SET status='pending', decision_id=EXCLUDED.decision_id, outbound_message_id=NULL, image_outbound_message_id=NULL, updated_at=now()
                 WHERE course_program_deliveries.status='failed'
+                  OR (${requestedProgramAgain} AND course_program_deliveries.status='submitted'
+                    AND course_program_deliveries.decision_id <> EXCLUDED.decision_id)
               RETURNING id`
           : [];
         if (asset && workspace[0] && reserved[0]) {

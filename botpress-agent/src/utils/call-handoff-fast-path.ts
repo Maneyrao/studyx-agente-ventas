@@ -17,14 +17,16 @@ import type { ClaimedTurn, Decision } from '../schemas/contracts'
  *   - any decline or opt-out wording → null: this path never requests a
  *     call on a negation, and the reply stays with the normal pipeline.
  *
- * The confirmation copy never claims the call is connected — the backend
- * only reserved it; dispatch and provider acceptance come later.
+ * The dispatch copy («Perfecto, te llamo ahora.») is only emitted together
+ * with the authorized request_call_now action; it never claims the call is
+ * connected — the backend only reserved it; dispatch and provider acceptance
+ * come later.
  */
 
 export const CALL_HANDOFF_FAST_PATH_MODEL = 'deterministic:call-handoff-fast-path-v1'
 
 export const CALL_CONFIRMATION_RESPONSE =
-  'Recibí tu solicitud de llamada.'
+  'Perfecto, te llamo ahora.'
 
 const CALL_CLARIFICATION_RESPONSE =
   '¿Me confirmás a qué te referís? Contame qué curso o información estás buscando.'

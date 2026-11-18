@@ -117,6 +117,7 @@ describe('matchCallHandoffFastPath', () => {
     );
     expect(decision).toMatchObject({
       schema_version: 4,
+      response: 'Perfecto, te llamo ahora.',
       response_type: 'call_confirmation',
       business_action: {
         type: 'request_call_now',
@@ -137,9 +138,7 @@ describe('matchCallHandoffFastPath', () => {
       }),
     );
 
-    expect(decision?.response).toBe(
-      'Recibí tu solicitud de llamada.',
-    );
+    expect(decision?.response).toBe('Perfecto, te llamo ahora.');
   });
 
   it('a direct request without policy permission falls through to the model', () => {

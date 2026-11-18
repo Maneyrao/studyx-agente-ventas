@@ -1,6 +1,7 @@
 import { rejectedProfileValuesInReplyV1 } from './contact-profile-receipt-claims';
 import { COURSE_MENTION_ROLES_V1 } from '../../../../src/shared/conversation/course-mentions';
 import { messagesWithoutExactCallOfferV1 } from '../../../../src/shared/conversation/call-offer-format';
+import { claimsImmediateCallDispatchV1 } from '../../../../src/shared/conversation/call-dispatch-claim';
 import type { ModelObservation } from '../observability/turn-evidence';
 import { courseLogisticsInV1 } from '../../../../src/shared/conversation/course-logistics';
 import { copyNamesCourseV1, inspectCourseBonusClaimsV1 } from '../../../../src/shared/conversation/course-bonus-claim';
@@ -2301,7 +2302,11 @@ export function validateAgentATurnProposalV1(input: {
       rejections.push({ code: 'MISSING_INTAKE', subject: field })
     }
   }
-  if (action.type === 'send_course_program' && !sendableProgramCodesV1(input.context).includes(action.offering_code)) {
+  const resendsProgramWithoutRequest = action.type === 'send_course_program'
+    && input.context.capabilities.course_programs?.sent_offering_codes.includes(action.offering_code) === true
+    && ![input.proposal.move.move, ...input.proposal.move.secondary_moves].includes('request_course_program');
+  if (action.type === 'send_course_program'
+    && (!sendableProgramCodesV1(input.context).includes(action.offering_code) || resendsProgramWithoutRequest)) {
     rejections.push({ code: 'ACTION_NOT_AUTHORIZED', subject: 'send_course_program' })
   }
   // An explicit request for the programme of the course in focus comes with
@@ -2476,11 +2481,15 @@ export function validateAgentATurnProposalV1(input: {
   }
 }
 
-/** Programme PDFs that can be proposed now: available and not already delivered in this conversation. */
+/**
+ * Programme PDFs that can be proposed: every available one. A code already
+ * delivered is proposable only when the customer asks for it again
+ * (request_course_program in the turn); the validator enforces that.
+ */
 export function sendableProgramCodesV1(context: AgentAContextV1): string[] {
   const programs = context.capabilities.course_programs
   if (!programs) return []
-  return programs.available_offering_codes.filter(code => !programs.sent_offering_codes.includes(code))
+  return [...programs.available_offering_codes]
 }
 
 function authorizedActionsV1(context: AgentAContextV1): string[] {
@@ -2505,30 +2514,7 @@ function authorizedActionsV1(context: AgentAContextV1): string[] {
 const CALL_SOLICITATION_V1 = /\b(?:te\s+llamo|te\s+llamamos|(?:puedo|podemos)\s+llamar(?:te|los?|las?|le|les|nos)?|una\s+llamada|coordinamos\s+una\s+llamada|prefer[íi]s\s+que\s+te\s+llame)\b/iu
 const NOT_AN_OFFER_V1 = /\b(?:ya\s+(?:qued|registr|solicit)|no\s+te\s+llam|sin\s+llamada)/iu
 const DECLARED_CALL_CHANNEL_V1 = /\b(?:llam|videollam)|\btel[eé]fono\b|\btelef[oó]nic(?:a|o|as|os)\b|\bvoz\b|\bcontact(?:arte|emos)\b/iu
-const CALL_DISPATCH_CLAIM_V1 = /\b(?:te\s+(?:voy|vamos)\s+a\s+llamar|te\s+llam(?:o|amos)\b|(?:la\s+)?llamada\s+(?:ya\s+)?(?:qued[oó]|fue)\s+(?:registrad|solicitad|coordinad)\w*|(?:ya\s+)?(?:registr[eé]|solicit[eé]|coordin[eé])\s+(?:la\s+)?llamada)\b/iu
-// Scope negation and conditions to each matched claim. A reassurance such as
-// “no te preocupes” or another sentence's question cannot cancel a dispatch.
-const CALL_DISPATCH_NEGATION_PREFIX_V1 = /\b(?:no|nunca|tampoco)\s+(?:ya\s+)?$/iu;
-const CALL_DISPATCH_CONDITION_PREFIX_V1 = /(?:^|,)\s*(?:si|cuando)\s+[^,;]+,?\s*$/iu;
-const CALL_DISPATCH_CONDITION_SUFFIX_V1 = /^\s*(?:ahora\s*)?,?\s*(?:si|cuando)\s+/iu;
-const REGISTERED_CALL_STATUSES_V1 = new Set(['requested', 'dispatching', 'provider_accepted', 'in_progress']);
-
-/** An unconditional call-effect claim, not a question or a conditional offer. */
-export function claimsImmediateCallDispatchV1(text: string, activeCallStatus?: string | null): boolean {
-  return (text.match(/[^.!?;¿\n]+[.!?;]?/gu) ?? []).some((clause) => {
-    if (clause.trimEnd().endsWith('?')) return false;
-    return [...clause.matchAll(new RegExp(CALL_DISPATCH_CLAIM_V1.source, 'giu'))].some((claim) => {
-      // A known request can substantiate its registration. It cannot support
-      // a fresh “te llamo” promise, nor an ambiguous or terminal call outcome.
-      if (REGISTERED_CALL_STATUSES_V1.has(activeCallStatus ?? '') && !/^te\s+/iu.test(claim[0])) return false;
-      const before = clause.slice(0, claim.index);
-      const after = clause.slice(claim.index + claim[0].length);
-      return !CALL_DISPATCH_NEGATION_PREFIX_V1.test(before)
-        && !CALL_DISPATCH_CONDITION_PREFIX_V1.test(before)
-        && !CALL_DISPATCH_CONDITION_SUFFIX_V1.test(after);
-    });
-  });
-}
+export { claimsImmediateCallDispatchV1 }
 
 export function solicitsACallV1(message: string, declaredOffer = false): boolean {
   if (declaredOffer) {

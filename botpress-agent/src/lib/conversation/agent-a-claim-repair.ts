@@ -7,9 +7,12 @@ import { hardClaimKindsInSentenceV1, splitClaimSentencesV1 } from '../../../../s
 import { sentencesOverlapV1 } from '../../../../src/shared/conversation/sentence-locator'
 import { assertedCommercialPricesV1 } from '../../../../src/features/orchestration/domain/commercial-truth-guard'
 import type { AgentAContextV1, AgentATurnProposalV1 } from '../../schemas/agent-a-brain'
+import { pruneCallDispatchClaimsV1 } from '../../../../src/shared/conversation/call-dispatch-claim'
+import { supportsChatPreferenceV1 } from './channel-preference-evidence'
 import {
   claimsImmediateCallDispatchV1,
   hasAuthorizedPrerequisiteStatementV1,
+  mentionsMissingIntakeField,
   withoutUnsupportedPrerequisiteClausesV1,
 } from './agent-a-brain'
 
@@ -217,7 +220,8 @@ export function salvageProgramSendClaimsV1(input: {
   const name = (code !== null ? context.catalog.available_offerings.find(offering => offering.code === code)?.display_name : undefined)
     ?? context.catalog.selected_offering?.display_name ?? null
   const programs = context.capabilities.course_programs
-  const alreadySent = code !== null && programs?.sent_offering_codes.includes(code) === true
+  // A resend the customer asked for (request_course_program) is not "already sent".
+  const alreadySent = code !== null && programs?.sent_offering_codes.includes(code) === true && !programTopic
   // Structured availability, never prose: material the capability lists for
   // this course exists. A removed claim must not become "no tengo el archivo"
   // (2026-11-05, 18:20Z: Real Estate had image + PDF available).
@@ -243,6 +247,51 @@ export function salvageProgramSendClaimsV1(input: {
 
 function normalizedIncludes(message: string, name: string): boolean {
   return fold(message).includes(fold(name))
+}
+
+/**
+ * The customer asked for a call and only call intake data is missing: the
+ * backend already keeps the pending call and resumes it when the data arrives.
+ * Agent A's reply may not announce the call yet («te llamamos»), but the rest
+ * of it (the request for the missing data) is right. Prune only the sentences
+ * that claim the dispatch and keep the reply when it still asks for every
+ * missing field. State only, never the customer's wording. Null when the case
+ * does not apply, nothing claims a dispatch, or the remainder no longer asks
+ * for the data (the existing rejection then stands).
+ */
+export function pruneCallPromiseWhileCollectingIntakeV1(input: {
+  readonly proposal: AgentATurnProposalV1
+  readonly context: AgentAContextV1
+}): AgentATurnProposalV1 | null {
+  const { proposal, context } = input
+  const state = context.commercial_state
+  const capabilities = context.capabilities
+  const moves = new Set([proposal.move.move, ...proposal.move.secondary_moves])
+  const missingCall = capabilities.required_contact_fields?.call
+    ?? (['nombre', 'apellido', 'correo', 'telefono'] as const)
+      .filter((field) => (capabilities.intake_missing ?? []).includes(field))
+  const resumesAcceptedCall = state.call_preference === 'call' && state.call_offer_status === 'accepted'
+  const rejectsCall = moves.has('continue_by_chat') || moves.has('decline_call')
+    || proposal.move.vetoes.includes('call')
+    || state.call_offer_status === 'declined'
+    || supportsChatPreferenceV1(context.turn.batch_messages.map((message) => message.text).join(' '),
+      state.awaiting_reply === 'call_or_chat')
+  if (!(moves.has('request_call') || resumesAcceptedCall) || rejectsCall
+    || proposal.proposed_action.type === 'request_call_now'
+    || missingCall.length === 0 || capabilities.may_request_call_now
+    || state.active_call != null
+    || state.stage === 'handoff' || state.stage === 'closed') return null
+  const offer = proposal.response.call_offer
+  const pruned = pruneCallDispatchClaimsV1({
+    messages: proposal.response.messages,
+    call_offer: typeof offer === 'string' ? offer : null,
+  })
+  if (pruned === null || !mentionsMissingIntakeField(pruned.messages, missingCall)) return null
+  return {
+    ...proposal,
+    response: { ...proposal.response, messages: pruned.messages as [string, ...string[]], call_offer: pruned.call_offer },
+    profile_requests: remapProfileRequestsV1(proposal.profile_requests, pruned.kept_indices),
+  }
 }
 
 /**
