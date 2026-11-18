@@ -44,7 +44,10 @@ export function classifyOwnerReset(snapshot, botpress) {
   ensure(related.conversations.length >= 1 && related.conversations.some(row => row.id === s.conversationId), 'RESET_CONVERSATION_SCOPE_MISMATCH');
   ensure(related.channel_threads.length >= 1 && related.channel_threads.every(row => row.provider === 'botpress'
     && row.integration_id === 'whatsapp' && row.channel === 'whatsapp')
-    && related.channel_threads.some(row => row.external_conversation_id === s.botpressConversationId), 'RESET_THREAD_SCOPE_MISMATCH');
+    // A thread carried over from the previous bot keeps its original external id; the
+    // destination bot's conversation is recorded in metadata.botpress_conversation_id.
+    && related.channel_threads.some(row => row.external_conversation_id === s.botpressConversationId
+      || row.metadata?.botpress_conversation_id === s.botpressConversationId), 'RESET_THREAD_SCOPE_MISMATCH');
   let participants = [{ id: null }];
   // botpress === null: the Botpress conversation no longer exists (DB-only reset).
   if (botpress !== null) {
