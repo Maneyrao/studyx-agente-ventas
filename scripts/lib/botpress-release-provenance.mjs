@@ -20,7 +20,7 @@ import ts from 'typescript';
 // 2026-11-18 self-managed missing level/plan question with its last-resort fallback).
 // Anything committed after it must be docs/evals/tests only (see assertOnlyNonCodeChangesSinceBaseV1), so a release
 // prepared from the branch HEAD runs exactly this code. Re-pin whenever a code file changes.
-export const BOT_RELEASE_BASE_SHA = '70f842d463b3ff06d80897eda9074cfb7190dc37';
+export const BOT_RELEASE_BASE_SHA = '7940fa7da8dd6c648aa65ae3cb6b178448906bb7';
 export const BOT_RELEASE_BRAIN_VERSION = 'studyx-agent-a-brain-v214';
 export const BOT_RELEASE_PROMPT_VERSION = 'studyx-agent-a-canonical-v123';
 export const BOT_RELEASE_INSTRUMENTATION_VERSION = 'studyx-release-provenance-v1';
@@ -31,7 +31,7 @@ export const BOT_RELEASE_SOURCE_PATHS = Object.freeze([
 ]);
 const REVIEWED_SOURCE_HASHES = Object.freeze({
   [BOT_RELEASE_SOURCE_PATHS[0]]: 'c1a85e1d95000cd56f885e02d3cf900d7900ea5102b08ed51910500387c2de93',
-  [BOT_RELEASE_SOURCE_PATHS[1]]: 'feb9dee41cbabefedb9ded76730bc875c97bb645ced0cdd87184920ec59fbd02',
+  [BOT_RELEASE_SOURCE_PATHS[1]]: '59c6f095f91452eae9f198e6148d5811080c0ce5597c95253f7786eb03d436b9',
   [BOT_RELEASE_SOURCE_PATHS[2]]: '77809dcfbf8e605affe2eeb746f56bcf5ce91ca07ef05726ec5fe20111c07fd2',
 });
 // Paths that may change after the pinned base without altering what is deployed.
