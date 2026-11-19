@@ -186,8 +186,7 @@ describe('brain prompt v214 requirements contract', () => {
     const prompt = buildAgentABrainInstructionsV1(live);
     expect(prompt).toContain('<pending_payment_link_context>');
     expect(prompt).not.toContain('kind="payment_requirements"');
-    expect(prompt).toContain('Never switch topic to push it');
-    expect(prompt).toContain('nor on a message about a call in progress');
+    expect(prompt).toContain('Background only.');
   });
 
   it('with an active call and a link request lacking the level, still asks for the level', () => {
@@ -202,18 +201,6 @@ describe('brain prompt v214 requirements contract', () => {
     const prompt = buildAgentABrainInstructionsV1(context());
     expect(prompt).toContain('Background only.');
     expect(prompt).not.toContain('<current_effect_contract kind="payment_requirements">');
-    expect(prompt).toContain('Never switch topic to push it');
-  });
-
-  it('applies the no-topic-switch rule on «oki» with awaiting_reply=none, a live call and a pending link', () => {
-    const live = context();
-    live.turn.batch_messages = [{ id: 'm2', text: 'oki' }];
-    live.commercial_state.awaiting_reply = 'none';
-    live.commercial_state.active_call = { call_id: '00000000-0000-4000-8000-000000000001', status: 'in_progress' };
-    const prompt = buildAgentABrainInstructionsV1(live);
-    expect(prompt).toContain('With awaiting_reply=none, an acknowledgement or greeting never switches topic');
-    expect(prompt).toContain('while awaiting_reply=none');
-    expect(prompt).toContain('<pending_payment_link_context>');
   });
 
   it('keeps «dale» as the answer to a pending payment_confirmation: link still authorized, not an acknowledgement', () => {
@@ -223,12 +210,7 @@ describe('brain prompt v214 requirements contract', () => {
     current.capabilities.may_send_payment_link = true;
     const prompt = buildAgentABrainInstructionsV1(current);
     expect(prompt).toContain('proposed_action=send_payment_link');
-    expect(prompt).toContain('With awaiting_reply=none, an acknowledgement');
-    const withPending = buildAgentABrainInstructionsV1(context({ plan: 'one_time' }));
-    expect(withPending).toContain('When awaiting_reply is anything else, «dale» or «sí» answers that pending question');
+    expect(prompt).not.toMatch(/acknowledgement or greeting/);
   });
 
-  it('tells the model a bare acknowledgement or greeting never triggers a pending-sale topic switch', () => {
-    expect(buildAgentABrainInstructionsV1(context())).toContain('never switches topic to push a pending sale');
-  });
 });
