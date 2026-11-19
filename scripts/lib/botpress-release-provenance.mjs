@@ -3,7 +3,7 @@ import { readFileSync, readdirSync, readlinkSync } from 'node:fs';
 import path from 'node:path';
 import ts from 'typescript';
 
-// Last reviewed commit that changed deployable code (brain v214, prompt v123,
+// Last reviewed commit that changed deployable code (brain v215, prompt v123,
 // owner-only WhatsApp typing presence with bounded start/stop, natural
 // multipart cadence, the active StudyX WhatsApp release destination, and the
 // 2026-11-10 course switch / checkout revision / effect-rejection fixes, and the
@@ -20,8 +20,8 @@ import ts from 'typescript';
 // 2026-11-18 self-managed missing level/plan question with its last-resort fallback).
 // Anything committed after it must be docs/evals/tests only (see assertOnlyNonCodeChangesSinceBaseV1), so a release
 // prepared from the branch HEAD runs exactly this code. Re-pin whenever a code file changes.
-export const BOT_RELEASE_BASE_SHA = 'ed707bc6e19d2ee1d1222c7de38a934164825252';
-export const BOT_RELEASE_BRAIN_VERSION = 'studyx-agent-a-brain-v214';
+export const BOT_RELEASE_BASE_SHA = 'af31c1fdb269e9582ba14cc6434038b07f7b1127';
+export const BOT_RELEASE_BRAIN_VERSION = 'studyx-agent-a-brain-v215';
 export const BOT_RELEASE_PROMPT_VERSION = 'studyx-agent-a-canonical-v123';
 export const BOT_RELEASE_INSTRUMENTATION_VERSION = 'studyx-release-provenance-v1';
 export const BOT_RELEASE_SOURCE_PATHS = Object.freeze([
