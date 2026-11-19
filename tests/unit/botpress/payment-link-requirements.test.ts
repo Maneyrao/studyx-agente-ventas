@@ -168,12 +168,67 @@ describe('claim compatibility with the previous bot (v213)', () => {
 describe('brain prompt v214 requirements contract', () => {
   it('lists the missing items with every option and the same-turn plan rule only when the link lacks something', () => {
     const missing = buildAgentABrainInstructionsV1(context());
-    expect(missing).toContain('kind="payment_requirements"');
+    expect(missing).toContain('<pending_payment_link_context>');
+    expect(missing).not.toContain('kind="payment_requirements"');
+    expect(missing).toContain('ask for the FIRST missing item');
     expect(missing).toContain('Inglés IV (ingles_4)');
     expect(missing).toContain('select_payment_plan');
     expect(missing).toContain('never carry that plan over');
     expect(missing).toContain('Levels of the course the customer named');
     const ready = buildAgentABrainInstructionsV1(context({ selected: 'ingles_2', plan: 'one_time' }));
-    expect(ready).not.toContain('kind="payment_requirements"');
+    expect(ready).not.toContain('pending_payment_link_context');
+  });
+
+  it('keeps the pending link as background context during an active call (v215 incident: «oki» during a live call)', () => {
+    const live = context();
+    live.turn.batch_messages = [{ id: 'm2', text: 'oki' }];
+    live.commercial_state.active_call = { call_id: '00000000-0000-4000-8000-000000000001', status: 'in_progress' };
+    const prompt = buildAgentABrainInstructionsV1(live);
+    expect(prompt).toContain('<pending_payment_link_context>');
+    expect(prompt).not.toContain('kind="payment_requirements"');
+    expect(prompt).toContain('Never switch topic to push it');
+    expect(prompt).toContain('nor on a message about a call in progress');
+  });
+
+  it('with an active call and a link request lacking the level, still asks for the level', () => {
+    const live = context();
+    live.commercial_state.active_call = { call_id: '00000000-0000-4000-8000-000000000001', status: 'in_progress' };
+    expect(buildAgentABrainInstructionsV1(live)).toContain('also during a call');
+    const pruned = pruneLinkActionWhileMissingRequirementsV1({ proposal: proposal(), context: live });
+    expect(pruned?.proposed_action).toEqual({ type: 'none' });
+  });
+
+  it('frames the pending link as background, not as a current effect contract, without an active call', () => {
+    const prompt = buildAgentABrainInstructionsV1(context());
+    expect(prompt).toContain('Background only.');
+    expect(prompt).not.toContain('<current_effect_contract kind="payment_requirements">');
+    expect(prompt).toContain('Never switch topic to push it');
+  });
+
+  it('applies the no-topic-switch rule on «oki» with awaiting_reply=none, a live call and a pending link', () => {
+    const live = context();
+    live.turn.batch_messages = [{ id: 'm2', text: 'oki' }];
+    live.commercial_state.awaiting_reply = 'none';
+    live.commercial_state.active_call = { call_id: '00000000-0000-4000-8000-000000000001', status: 'in_progress' };
+    const prompt = buildAgentABrainInstructionsV1(live);
+    expect(prompt).toContain('With awaiting_reply=none, an acknowledgement or greeting never switches topic');
+    expect(prompt).toContain('while awaiting_reply=none');
+    expect(prompt).toContain('<pending_payment_link_context>');
+  });
+
+  it('keeps «dale» as the answer to a pending payment_confirmation: link still authorized, not an acknowledgement', () => {
+    const current = context({ selected: 'ingles_2', plan: 'one_time' });
+    current.turn.batch_messages = [{ id: 'm3', text: 'dale' }];
+    current.commercial_state.awaiting_reply = 'payment_confirmation';
+    current.capabilities.may_send_payment_link = true;
+    const prompt = buildAgentABrainInstructionsV1(current);
+    expect(prompt).toContain('proposed_action=send_payment_link');
+    expect(prompt).toContain('With awaiting_reply=none, an acknowledgement');
+    const withPending = buildAgentABrainInstructionsV1(context({ plan: 'one_time' }));
+    expect(withPending).toContain('When awaiting_reply is anything else, «dale» or «sí» answers that pending question');
+  });
+
+  it('tells the model a bare acknowledgement or greeting never triggers a pending-sale topic switch', () => {
+    expect(buildAgentABrainInstructionsV1(context())).toContain('never switches topic to push a pending sale');
   });
 });
